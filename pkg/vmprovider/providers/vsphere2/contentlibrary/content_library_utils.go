@@ -13,6 +13,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 )
 
 var vmxRe = regexp.MustCompile(`vmx-(\d+)`)
@@ -35,10 +37,10 @@ func ParseVirtualHardwareVersion(vmxVersion string) int32 {
 }
 
 // UpdateVmiWithOvfEnvelope updates the given vmi object with the content of given OVF envelope.
-func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
+func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 	var status *vmopv1.VirtualMachineImageStatus
 
-	switch vmi := vmi.(type) {
+	switch vmi := obj.(type) {
 	case *vmopv1.VirtualMachineImage:
 		status = &vmi.Status
 	case *vmopv1.ClusterVirtualMachineImage:
@@ -49,6 +51,14 @@ func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
 
 	if ovfEnvelope.VirtualSystem != nil {
 		initImageStatusFromOVFVirtualSystem(status, ovfEnvelope.VirtualSystem)
+
+		if setter, ok := obj.(conditions.Setter); ok {
+			if isOVFV1Alpha1Compatible(ovfEnvelope.VirtualSystem) {
+				conditions.MarkTrue(setter, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
+			} else {
+				conditions.Delete(setter, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
+			}
+		}
 	}
 }
 
@@ -135,6 +145,21 @@ func getVmwareSystemPropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[s
 	}
 
 	return properties
+}
+
+// isOVFV1Alpha1Compatible checks if the image has VMOperatorV1Alpha1ExtraConfigKey
+// set to VMOperatorV1Alpha1ConfigReady in it's the ExtraConfig.
+func isOVFV1Alpha1Compatible(ovfVirtualSystem *ovf.VirtualSystem) bool {
+	if ovfVirtualSystem != nil {
+		for _, virtualHardware := range ovfVirtualSystem.VirtualHardware {
+			for _, config := range virtualHardware.ExtraConfig {
+				if config.Key == constants.VMOperatorV1Alpha1ExtraConfigKey && config.Value == constants.VMOperatorV1Alpha1ConfigReady {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // getFirmwareType returns the firmware type (eg: "efi", "bios") present in the virtual hardware section of the OVF.

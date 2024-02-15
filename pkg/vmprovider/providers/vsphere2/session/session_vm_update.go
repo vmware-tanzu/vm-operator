@@ -6,16 +6,16 @@ package session
 import (
 	goctx "context"
 	"fmt"
+	"maps"
 	"reflect"
 	"time"
-
-	"k8s.io/utils/pointer"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg"
@@ -301,28 +301,20 @@ func UpdateConfigSpecExtraConfig(
 	globalExtraConfig map[string]string,
 	imageV1Alpha1Compatible bool) {
 
-	extraConfig := make(map[string]string)
-	for k, v := range globalExtraConfig {
-		extraConfig[k] = v
-	}
+	extraConfig := maps.Clone(globalExtraConfig)
 
 	virtualDevices := vmClassSpec.Hardware.Devices
-	pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(util.DevicesFromConfigSpec(classConfigSpec))
-	if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 || len(pciPassthruFromConfigSpec) > 0 {
+	if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 ||
+		(classConfigSpec != nil && util.HasVirtualPCIPassthroughDeviceChange(classConfigSpec.DeviceChange)) {
 		setMMIOExtraConfig(vm, extraConfig)
 	}
 
-	if pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate {
-		// Merge non intersecting keys from the desired config spec extra config with the class config spec extra config
-		// (ie) class config spec extra config keys takes precedence over the desired config spec extra config keys
-		ecFromClassConfigSpec := util.ExtraConfigToMap(classConfigSpec.ExtraConfig)
-		mergedExtraConfig := classConfigSpec.ExtraConfig
-		for k, v := range extraConfig {
-			if _, exists := ecFromClassConfigSpec[k]; !exists {
-				mergedExtraConfig = append(mergedExtraConfig, &vimTypes.OptionValue{Key: k, Value: v})
-			}
-		}
-		extraConfig = util.ExtraConfigToMap(mergedExtraConfig)
+	if classConfigSpec != nil && pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate {
+		// Merge non-intersecting keys from the desired config spec extra config with the class config spec
+		// extra config (ie) class config spec extra config keys takes precedence over the desired config
+		// spec extra config keys.
+		combinedExtraConfig := util.AppendNewExtraConfigValues(classConfigSpec.ExtraConfig, extraConfig)
+		extraConfig = util.ExtraConfigToMap(combinedExtraConfig)
 	}
 
 	// Ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig as
@@ -331,29 +323,32 @@ func UpdateConfigSpecExtraConfig(
 		if o := config.ExtraConfig[i].GetOptionValue(); o != nil {
 			if o.Key == constants.MMPowerOffVMExtraConfigKey && o.Value != "" {
 				extraConfig[constants.MMPowerOffVMExtraConfigKey] = ""
+				break
+			}
+		}
+	}
+
+	if bootstrap := vm.Spec.Bootstrap; imageV1Alpha1Compatible && bootstrap != nil {
+		// For our special V1Alpha1Compatible images, set the VMOperatorV1Alpha1ExtraConfigKey to"Ready"
+		// to fix configuration races between cloud-init, vApp & GOSC, by deferring cloud-init from
+		// running on first boot and disables networking configurations by cloud-init. This only matters
+		// for 2 legacy marketplace images. The check below is what the v1a1 OvfEnv transport converts to
+		// in v1a2 bootstrap. The v1a1 ExtraConfig transport isn't really supported anymore.
+		if bootstrap.LinuxPrep != nil && bootstrap.VAppConfig != nil {
+			for i := range config.ExtraConfig {
+				if o := config.ExtraConfig[i].GetOptionValue(); o != nil {
+					if o.Key == constants.VMOperatorV1Alpha1ExtraConfigKey {
+						if val, _ := o.Value.(string); val == constants.VMOperatorV1Alpha1ConfigReady {
+							extraConfig[o.Key] = constants.VMOperatorV1Alpha1ConfigEnabled
+							break
+						}
+					}
+				}
 			}
 		}
 	}
 
 	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
-
-	// Enabling the defer-cloud-init extraConfig key for V1Alpha1Compatible images defers cloud-init from running on first boot
-	// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
-	// when the vmMetadata is nil or when the transport requested is not CloudInit.
-	// VMSVC-1261: we may always set this extra config key to remove image from VM customization.
-	// If a VM is deployed from an incompatible image,
-	// it will do nothing and won't cause any issues, but can introduce confusion.
-	// BMV: Is this needed anymore? IMO we shouldn't have bootstrap stuff here. The EC mangling is already hard to follow.
-	emptyBSSpec := vmopv1.VirtualMachineBootstrapSpec{}
-	if vm.Spec.Bootstrap == nil || *vm.Spec.Bootstrap == emptyBSSpec || vm.Spec.Bootstrap.CloudInit == nil {
-		ecMap := util.ExtraConfigToMap(config.ExtraConfig)
-		if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady &&
-			imageV1Alpha1Compatible {
-			// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
-			configSpec.ExtraConfig = append(configSpec.ExtraConfig,
-				&vimTypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled})
-		}
-	}
 }
 
 func setMMIOExtraConfig(vm *vmopv1.VirtualMachine, extraConfig map[string]string) {

@@ -166,6 +166,9 @@ type VirtualMachineNetworkSpec struct {
 	// Please note this feature is available only with the following bootstrap
 	// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
 	//
+	// When the bootstrap provider is Sysprep (except for RawSysprep) this is
+	// used as the Computer Name.
+	//
 	// +optional
 	HostName string `json:"hostName,omitempty"`
 

@@ -1371,7 +1371,9 @@ spec:
                     description: "HostName is the value the guest uses as its host
                       name. If omitted then the name of the VM will be used. \n Please
                       note this feature is available only with the following bootstrap
-                      providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep)."
+                      providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+                      \n When the bootstrap provider is Sysprep (except for RawSysprep)
+                      this is used as the Computer Name."
                     type: string
                   interfaces:
                     description: "Interfaces is the list of network interfaces used

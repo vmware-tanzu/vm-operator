@@ -59,6 +59,15 @@ type CloudConfig struct {
 	// +listType=map
 	// +listMapKey=path
 	WriteFiles []WriteFile `json:"write_files,omitempty"`
+
+	// SSHPwdAuth sets whether or not to accept password authentication. ``true`` will enable password
+	// auth. ``false`` will disable. Default: leave the value unchanged. In order for this
+	// config to be applied, SSH may need to be restarted. On systemd systems, this restart will
+	// only happen if the SSH service has already been started. On non-systemd systems, a
+	// restart will be attempted regardless of the service state.
+	//
+	// +optional
+	SSHPwdAuth *bool `json:"ssh_pwauth,omitempty"`
 }
 
 // User is a CloudConfig user data structure.

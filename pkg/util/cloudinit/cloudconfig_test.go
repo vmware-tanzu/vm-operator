@@ -330,6 +330,7 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 						Permissions: "0644",
 					},
 				},
+				SSHPwdAuth: addrOf(true),
 			}
 			cloudConfigSecretData = cloudinit.CloudConfigSecretData{
 				Users: map[string]cloudinit.CloudConfigUserSecretData{
@@ -656,4 +657,5 @@ write_files:
     owner: bob.wilson:bob.wilson
     path: /doc
     permissions: "0644"
+ssh_pwauth: true
 `

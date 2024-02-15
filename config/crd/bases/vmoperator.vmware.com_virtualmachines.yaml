@@ -737,6 +737,16 @@ spec:
                               - \"ls -al\" \n Format 2 -- a list of the command and
                               its arguments, ex. \n runcmd: - - echo - \"Hello, world.\""
                             x-kubernetes-preserve-unknown-fields: true
+                          ssh_pwauth:
+                            description: 'SSHPwdAuth sets whether or not to accept
+                              password authentication. ``true`` will enable password
+                              auth. ``false`` will disable. Default: leave the value
+                              unchanged. In order for this config to be applied, SSH
+                              may need to be restarted. On systemd systems, this restart
+                              will only happen if the SSH service has already been
+                              started. On non-systemd systems, a restart will be attempted
+                              regardless of the service state.'
+                            type: boolean
                           timezone:
                             description: Timezone describes the timezone represented
                               in /usr/share/zoneinfo.

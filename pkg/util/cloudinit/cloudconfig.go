@@ -31,6 +31,7 @@ type cloudConfig struct {
 	Users      *cloudConfigUsers   `json:"users,omitempty" yaml:"users,omitempty"`
 	RunCmd     []cloudConfigRunCmd `json:"runcmd,omitempty" yaml:"runcmd,omitempty"`
 	WriteFiles []writeFile         `json:"write_files,omitempty" yaml:"write_files,omitempty"`
+	SSHPwdAuth *bool               `json:"ssh_pwauth,omitempty" yaml:"ssh_pwauth,omitempty"`
 }
 
 type cloudConfigUsers struct {
@@ -153,6 +154,10 @@ func MarshalYAML(
 				&out.WriteFiles[i],
 				content)
 		}
+	}
+
+	if in.SSHPwdAuth != nil {
+		out.SSHPwdAuth = in.SSHPwdAuth
 	}
 
 	var w1 bytes.Buffer

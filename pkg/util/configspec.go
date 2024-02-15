@@ -215,7 +215,7 @@ func MergeExtraConfig(
 	existingExtraConfig []vimTypes.BaseOptionValue,
 	newKeyValuePairs map[string]string) []vimTypes.BaseOptionValue {
 
-	mergedExtraConfig := make([]vimTypes.BaseOptionValue, 0)
+	var mergedExtraConfig []vimTypes.BaseOptionValue
 	existingExtraConfigKeyValuePairs := ExtraConfigToMap(existingExtraConfig)
 
 	for nk, nv := range newKeyValuePairs {

@@ -98,6 +98,7 @@ func unitTestsValidateCreate() {
 		validStorageClass                 bool
 		withInstanceStorageVolumes        bool
 		invalidReadinessProbe             bool
+		invalidReadinessProbe2            bool
 		isRestrictedNetworkEnv            bool
 		isRestrictedNetworkValidProbePort bool
 		isNonRestrictedNetworkEnv         bool
@@ -171,6 +172,16 @@ func unitTestsValidateCreate() {
 		if args.invalidReadinessProbe {
 			ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
 				TCPSocket:      &vmopv1.TCPSocketAction{},
+				GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+			}
+		}
+		if args.invalidReadinessProbe2 {
+			ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+				GuestInfo: []vmopv1.GuestInfoAction{
+					{
+						Key: "my-key",
+					},
+				},
 				GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
 			}
 		}
@@ -286,6 +297,8 @@ func unitTestsValidateCreate() {
 			field.Required(specPath.Child("imageName"), "").Error(), nil),
 
 		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false,
+			field.Forbidden(specPath.Child("readinessProbe"), "only one action can be specified").Error(), nil),
+		Entry("should fail when Readiness probe has multiple actions #2", createArgs{invalidReadinessProbe2: true}, false,
 			field.Forbidden(specPath.Child("readinessProbe"), "only one action can be specified").Error(), nil),
 
 		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false,

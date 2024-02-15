@@ -749,7 +749,17 @@ func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm
 
 	readinessProbePath := field.NewPath("spec", "readinessProbe")
 
-	if probe.TCPSocket != nil && probe.GuestHeartbeat != nil {
+	actionsCnt := 0
+	if probe.TCPSocket != nil {
+		actionsCnt++
+	}
+	if probe.GuestHeartbeat != nil {
+		actionsCnt++
+	}
+	if len(probe.GuestInfo) != 0 {
+		actionsCnt++
+	}
+	if actionsCnt > 1 {
 		allErrs = append(allErrs, field.Forbidden(readinessProbePath, readinessProbeOnlyOneAction))
 	}
 

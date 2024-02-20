@@ -187,20 +187,26 @@ func getGuestNetworkStatus(
 }
 
 func guestNicInfoToInterfaceStatus(idx int, guestNicInfo *types.GuestNicInfo) vmopv1.VirtualMachineNetworkInterfaceStatus {
-	status := vmopv1.VirtualMachineNetworkInterfaceStatus{}
+	status := vmopv1.VirtualMachineNetworkInterfaceStatus{
+		Name: fmt.Sprintf("nic-%d-%d", idx, guestNicInfo.DeviceConfigId),
+	}
 
-	// Try to provide some default, useful name that can otherwise help identify the interface.
-	status.Name = fmt.Sprintf("nic-%d-%d", idx, guestNicInfo.DeviceConfigId)
-	status.IP.MACAddr = guestNicInfo.MacAddress
+	if guestNicInfo.MacAddress != "" {
+		status.IP = &vmopv1.VirtualMachineNetworkInterfaceIPStatus{
+			MACAddr: guestNicInfo.MacAddress,
+		}
+	}
 
 	if guestIPConfig := guestNicInfo.IpConfig; guestIPConfig != nil {
-		ip := &status.IP
+		if status.IP == nil {
+			status.IP = &vmopv1.VirtualMachineNetworkInterfaceIPStatus{}
+		}
 
-		ip.AutoConfigurationEnabled = guestIPConfig.AutoConfigurationEnabled
-		ip.Addresses = convertNetIPConfigInfoIPAddresses(guestIPConfig.IpAddress)
+		status.IP.AutoConfigurationEnabled = guestIPConfig.AutoConfigurationEnabled
+		status.IP.Addresses = convertNetIPConfigInfoIPAddresses(guestIPConfig.IpAddress)
 
 		if guestIPConfig.Dhcp != nil {
-			ip.DHCP = convertNetDhcpConfigInfo(guestIPConfig.Dhcp)
+			status.IP.DHCP = convertNetDhcpConfigInfo(guestIPConfig.Dhcp)
 		}
 	}
 
@@ -264,8 +270,8 @@ func convertNetIPConfigInfoIPAddresses(ipAddresses []types.NetIpConfigInfoIpAddr
 	return out
 }
 
-func convertNetDNSConfigInfo(dnsConfig *types.NetDnsConfigInfo) vmopv1.VirtualMachineNetworkDNSStatus {
-	return vmopv1.VirtualMachineNetworkDNSStatus{
+func convertNetDNSConfigInfo(dnsConfig *types.NetDnsConfigInfo) *vmopv1.VirtualMachineNetworkDNSStatus {
+	return &vmopv1.VirtualMachineNetworkDNSStatus{
 		DHCP:          dnsConfig.Dhcp,
 		DomainName:    dnsConfig.DomainName,
 		HostName:      dnsConfig.HostName,
@@ -274,20 +280,23 @@ func convertNetDNSConfigInfo(dnsConfig *types.NetDnsConfigInfo) vmopv1.VirtualMa
 	}
 }
 
-func convertNetDhcpConfigInfo(dhcpConfig *types.NetDhcpConfigInfo) vmopv1.VirtualMachineNetworkDHCPStatus {
-	status := vmopv1.VirtualMachineNetworkDHCPStatus{}
+func convertNetDhcpConfigInfo(dhcpConfig *types.NetDhcpConfigInfo) *vmopv1.VirtualMachineNetworkDHCPStatus {
+	if ipv4, ipv6 := dhcpConfig.Ipv4, dhcpConfig.Ipv6; ipv4 != nil || ipv6 != nil {
+		status := &vmopv1.VirtualMachineNetworkDHCPStatus{}
 
-	if ipv4 := dhcpConfig.Ipv4; ipv4 != nil {
-		status.IP4.Enabled = ipv4.Enable
-		status.IP4.Config = convertKeyValueSlice(ipv4.Config)
+		if ipv4 != nil {
+			status.IP4.Enabled = ipv4.Enable
+			status.IP4.Config = convertKeyValueSlice(ipv4.Config)
+		}
+		if ipv6 != nil {
+			status.IP6.Enabled = ipv6.Enable
+			status.IP6.Config = convertKeyValueSlice(ipv6.Config)
+		}
+
+		return status
 	}
 
-	if ipv6 := dhcpConfig.Ipv6; ipv6 != nil {
-		status.IP6.Enabled = ipv6.Enable
-		status.IP6.Config = convertKeyValueSlice(ipv6.Config)
-	}
-
-	return status
+	return nil
 }
 
 func convertNetIPRouteConfigInfo(routeConfig *types.NetIpRouteConfigInfo) []vmopv1.VirtualMachineNetworkIPRouteStatus {

@@ -421,13 +421,20 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Interfaces: []nextver.VirtualMachineNetworkInterfaceStatus{
 						{
 							Name: "eth0",
-							IP: nextver.VirtualMachineNetworkInterfaceIPStatus{
+							IP: &nextver.VirtualMachineNetworkInterfaceIPStatus{
 								Addresses: []nextver.VirtualMachineNetworkInterfaceIPAddrStatus{
 									{
 										Address: "my-ip",
 									},
 								},
 								MACAddr: "my-mac",
+							},
+							DNS: &nextver.VirtualMachineNetworkDNSStatus{
+								DHCP:          true,
+								DomainName:    "vmware.com",
+								HostName:      "my-host",
+								Nameservers:   []string{"8.8.8.8"},
+								SearchDomains: []string{"broadcom.com"},
 							},
 						},
 					},
@@ -526,6 +533,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(hub.Status.Network).ToNot(BeNil())
 		g.Expect(hub.Status.Network.PrimaryIP4).To(Equal(spoke.Status.VmIp))
 		g.Expect(hub.Status.Network.Interfaces).To(HaveLen(1))
+		g.Expect(hub.Status.Network.Interfaces[0].IP).ToNot(BeNil())
 		g.Expect(hub.Status.Network.Interfaces[0].IP.MACAddr).To(Equal(spoke.Status.NetworkInterfaces[0].MacAddress))
 		g.Expect(hub.Status.Network.Interfaces[0].IP.Addresses).To(HaveLen(1))
 		g.Expect(hub.Status.Network.Interfaces[0].IP.Addresses[0].Address).To(Equal(spoke.Status.NetworkInterfaces[0].IpAddresses[0]))

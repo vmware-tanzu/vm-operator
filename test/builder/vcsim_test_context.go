@@ -60,9 +60,11 @@ type NetworkEnv string
 const (
 	NetworkEnvVDS   = NetworkEnv("vds")
 	NetworkEnvNSXT  = NetworkEnv("nsx-t")
+	NetworkEnvVPC   = NetworkEnv("nsx-t-vpc")
 	NetworkEnvNamed = NetworkEnv("named")
 
 	NsxTLogicalSwitchUUID = "nsxt-dummy-ls-uuid"
+	VPCLogicalSwitchUUID  = "vpc-dummy-ls-uuid"
 )
 
 // VCSimTestConfig configures the vcsim environment.
@@ -316,6 +318,8 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
 		case NetworkEnvNSXT:
 			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeNSXT
+		case NetworkEnvVPC:
+			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeVPC
 		case NetworkEnvNamed:
 			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
 		default:
@@ -410,6 +414,11 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 		dvpg, ok := simulator.Map.Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
 		Expect(ok).To(BeTrue())
 		dvpg.Config.LogicalSwitchUuid = NsxTLogicalSwitchUUID
+		dvpg.Config.BackingType = "nsx"
+	case NetworkEnvVPC:
+		dvpg, ok := simulator.Map.Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
+		Expect(ok).To(BeTrue())
+		dvpg.Config.LogicalSwitchUuid = VPCLogicalSwitchUUID
 		dvpg.Config.BackingType = "nsx"
 	}
 }

@@ -20,9 +20,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
-	fakeprobe "github.com/vmware-tanzu/vm-operator/pkg/prober2/fake/probe"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/probe"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	fakeprobe "github.com/vmware-tanzu/vm-operator/pkg/prober/fake/probe"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )

@@ -8,7 +8,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 type guestHeartbeatProber struct {

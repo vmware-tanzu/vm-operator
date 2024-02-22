@@ -14,7 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 type fakeGuestInfoProvider struct {

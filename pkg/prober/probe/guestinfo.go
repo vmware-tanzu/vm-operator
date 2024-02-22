@@ -6,7 +6,7 @@ package probe
 import (
 	"regexp"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 type guestInfoProber struct {

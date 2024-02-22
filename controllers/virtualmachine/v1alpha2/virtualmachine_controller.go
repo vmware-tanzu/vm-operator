@@ -30,7 +30,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	metrics "github.com/vmware-tanzu/vm-operator/pkg/metrics2"
 	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
-	prober "github.com/vmware-tanzu/vm-operator/pkg/prober2"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"

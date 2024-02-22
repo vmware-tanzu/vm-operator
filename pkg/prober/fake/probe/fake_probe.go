@@ -6,8 +6,8 @@ package probe
 import (
 	"sync"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/probe"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 )
 
 type funcs struct {

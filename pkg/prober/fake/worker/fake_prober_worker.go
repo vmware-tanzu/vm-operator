@@ -13,9 +13,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/probe"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/worker"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
 )
 
 type funcs struct {

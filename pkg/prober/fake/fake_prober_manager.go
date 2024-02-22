@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	prober "github.com/vmware-tanzu/vm-operator/pkg/prober2"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 )
 
 type funcs struct {

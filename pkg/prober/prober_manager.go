@@ -1,7 +1,7 @@
 // Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package prober2
+package prober
 
 import (
 	goctx "context"
@@ -19,9 +19,9 @@ import (
 	"github.com/go-logr/logr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/probe"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/worker"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )

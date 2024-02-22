@@ -17,8 +17,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober2/probe"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 

@@ -16,15 +16,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var (
-	intgFakeVMProvider   = providerfake.NewVMProvider()
-	intgFakeVMProviderA2 = providerfake.NewVMProviderA2()
-)
+var intgFakeVMProviderA2 = providerfake.NewVMProviderA2()
 
 var suite = builder.NewTestSuiteForController(
 	v1alpha1.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
-		ctx.VMProvider = intgFakeVMProvider
 		ctx.VMProviderA2 = intgFakeVMProviderA2
 		return nil
 	},

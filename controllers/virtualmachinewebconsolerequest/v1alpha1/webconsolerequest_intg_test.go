@@ -27,7 +27,6 @@ func intgTests() {
 }
 
 func webConsoleRequestReconcile() {
-	const v1a1Ticket = "some-fake-webmksticket"
 	const v1a2Ticket = "some-fake-webmksticket-v1a2"
 
 	var (
@@ -35,7 +34,6 @@ func webConsoleRequestReconcile() {
 		wcr                *vmopv1.WebConsoleRequest
 		vm                 *vmopv1.VirtualMachine
 		proxySvc           *corev1.Service
-		v1a1ProviderCalled bool
 		v1a2ProviderCalled bool
 	)
 
@@ -89,13 +87,6 @@ func webConsoleRequestReconcile() {
 			},
 		}
 
-		intgFakeVMProvider.Lock()
-		intgFakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
-			v1a1ProviderCalled = true
-			return v1a1Ticket, nil
-		}
-		intgFakeVMProvider.Unlock()
-
 		intgFakeVMProviderA2.Lock()
 		intgFakeVMProviderA2.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1alpha2.VirtualMachine, pubKey string) (string, error) {
 			v1a2ProviderCalled = true
@@ -107,9 +98,7 @@ func webConsoleRequestReconcile() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		intgFakeVMProvider.Reset()
 		intgFakeVMProviderA2.Reset()
-		v1a1ProviderCalled = false
 		v1a2ProviderCalled = false
 	})
 
@@ -137,24 +126,6 @@ func webConsoleRequestReconcile() {
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 			err = ctx.Client.Delete(ctx, proxySvc)
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
-		})
-
-		When("v1a1 provider", func() {
-			It("resource successfully created", func() {
-				objKey := types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace}
-
-				Eventually(func(g Gomega) {
-					wcr = getWebConsoleRequest(ctx, objKey)
-					g.Expect(wcr).ToNot(BeNil())
-					g.Expect(wcr.Status.Response).ToNot(BeEmpty())
-				}).Should(Succeed(), "waiting response to be set")
-
-				Expect(v1a1ProviderCalled).Should(BeTrue())
-				Expect(wcr.Status.ProxyAddr).To(Equal("192.168.0.1"))
-				Expect(wcr.Status.Response).To(Equal(v1a1Ticket))
-				Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
-				Expect(wcr.Labels).To(HaveKeyWithValue(webconsolerequest.UUIDLabelKey, string(wcr.UID)))
-			})
 		})
 
 		When("VM Service v1a2 FSS enabled", func() {

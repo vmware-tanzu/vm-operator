@@ -10,12 +10,11 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/placement"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -72,14 +71,14 @@ func vcSimPlacement() {
 		testConfig  builder.VCSimTestConfig
 
 		vm         *vmopv1.VirtualMachine
-		vmCtx      context.VirtualMachineContext
+		vmCtx      context.VirtualMachineContextA2
 		configSpec *types.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{WithV1A2: true}
 
-		vm = builder.DummyVirtualMachine()
+		vm = builder.DummyVirtualMachineA2()
 		vm.Name = "placement-test"
 
 		// Other than the name ConfigSpec contents don't matter for vcsim.
@@ -94,7 +93,7 @@ func vcSimPlacement() {
 
 		vm.Namespace = nsInfo.Namespace
 
-		vmCtx = context.VirtualMachineContext{
+		vmCtx = context.VirtualMachineContextA2{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,
@@ -183,7 +182,9 @@ func vcSimPlacement() {
 				Expect(resourcePolicy).ToNot(BeNil())
 				childRPName := resourcePolicy.Spec.ResourcePool.Name
 				Expect(childRPName).ToNot(BeEmpty())
-				vmCtx.VM.Spec.ResourcePolicyName = resourcePolicy.Name
+				vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
+					ResourcePolicyName: resourcePolicy.Name,
+				}
 
 				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
 				Expect(err).ToNot(HaveOccurred())
@@ -202,7 +203,7 @@ func vcSimPlacement() {
 
 		BeforeEach(func() {
 			testConfig.WithInstanceStorage = true
-			builder.AddDummyInstanceStorageVolume(vm)
+			builder.AddDummyInstanceStorageVolumeA2(vm)
 			testConfig.NumFaultDomains = 1 // Only support for non-HA "HA"
 		})
 
@@ -246,7 +247,9 @@ func vcSimPlacement() {
 				Expect(resourcePolicy).ToNot(BeNil())
 				childRPName := resourcePolicy.Spec.ResourcePool.Name
 				Expect(childRPName).ToNot(BeEmpty())
-				vmCtx.VM.Spec.ResourcePolicyName = resourcePolicy.Name
+				vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
+					ResourcePolicyName: resourcePolicy.Name,
+				}
 
 				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
 				Expect(err).ToNot(HaveOccurred())

@@ -4,12 +4,16 @@
 package placement_test
 
 import (
+	goctx "context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/placement"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func createRelocateSpec() *types.VirtualMachineRelocateSpec {
@@ -55,6 +59,15 @@ func createValidRecommendation() (types.ClusterRecommendation, *types.VirtualMac
 }
 
 var _ = Describe("ParsePlaceVMResponse", func() {
+	var vmCtx context.VirtualMachineContextA2
+
+	BeforeEach(func() {
+		vmCtx = context.VirtualMachineContextA2{
+			Context: goctx.TODO(),
+			VM:      builder.DummyVirtualMachineA2(),
+			Logger:  suite.GetLogger(),
+		}
+	})
 
 	Context("when response is valid", func() {
 		Specify("PlaceVm Response is valid", func() {
@@ -66,7 +79,7 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 			rec, spec := createValidRecommendation()
 			res.Recommendations = append(res.Recommendations, rec)
 
-			rSpec := placement.ParseRelocateVMResponse(&res)
+			rSpec := placement.ParseRelocateVMResponse(vmCtx, &res)
 			Expect(rSpec).NotTo(BeNil())
 			Expect(rSpec.Host).To(BeEquivalentTo(spec.Host))
 			Expect(rSpec.Pool).To(BeEquivalentTo(spec.Pool))
@@ -77,7 +90,7 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 	Context("when response is not valid", func() {
 		Specify("PlaceVm Response without recommendations", func() {
 			res := types.PlacementResult{}
-			rSpec := placement.ParseRelocateVMResponse(&res)
+			rSpec := placement.ParseRelocateVMResponse(vmCtx, &res)
 			Expect(rSpec).To(BeNil())
 		})
 	})
@@ -90,7 +103,7 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 			rec.Reason = string(types.RecommendationReasonCodePowerOnVm)
 			res.Recommendations = append(res.Recommendations, rec)
 
-			rSpec := placement.ParseRelocateVMResponse(&res)
+			rSpec := placement.ParseRelocateVMResponse(vmCtx, &res)
 			Expect(rSpec).To(BeNil())
 		})
 	})
@@ -101,36 +114,36 @@ var _ = Describe("CheckPlacementRelocateSpec", func() {
 	Context("when relocation spec is valid", func() {
 		Specify("Relocation spec is valid", func() {
 			spec := createRelocateSpec()
-			isValid := placement.CheckPlacementRelocateSpec(spec)
-			Expect(isValid).To(BeTrue())
+			err := placement.CheckPlacementRelocateSpec(spec)
+			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 
 	Context("when relocation spec is not valid", func() {
 		Specify("Relocation spec is nil", func() {
-			isValid := placement.CheckPlacementRelocateSpec(nil)
-			Expect(isValid).To(BeFalse())
+			err := placement.CheckPlacementRelocateSpec(nil)
+			Expect(err).To(HaveOccurred())
 		})
 
 		Specify("Host is nil", func() {
 			spec := createRelocateSpec()
 			spec.Host = nil
-			isValid := placement.CheckPlacementRelocateSpec(spec)
-			Expect(isValid).To(BeFalse())
+			err := placement.CheckPlacementRelocateSpec(spec)
+			Expect(err).To(HaveOccurred())
 		})
 
 		Specify("Pool is nil", func() {
 			spec := createRelocateSpec()
 			spec.Pool = nil
-			isValid := placement.CheckPlacementRelocateSpec(spec)
-			Expect(isValid).To(BeFalse())
+			err := placement.CheckPlacementRelocateSpec(spec)
+			Expect(err).To(HaveOccurred())
 		})
 
 		Specify("Datastore is nil", func() {
 			spec := createRelocateSpec()
 			spec.Datastore = nil
-			isValid := placement.CheckPlacementRelocateSpec(spec)
-			Expect(isValid).To(BeFalse())
+			err := placement.CheckPlacementRelocateSpec(spec)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 })

@@ -230,7 +230,7 @@ func convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(
 				// Best approx we can do.
 				out.Transport = VirtualMachineMetadataCloudInitTransport
 			}
-		} else if cloudInit.CloudConfig != nil {
+		} else {
 			out.Transport = VirtualMachineMetadataCloudInitTransport
 		}
 	} else if sysprep := in.Sysprep; sysprep != nil {

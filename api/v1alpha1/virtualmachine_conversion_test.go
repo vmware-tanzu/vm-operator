@@ -255,6 +255,22 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine hub-spoke-hub with CloudInit w/ just SSHAuthorizedKeys", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub := nextver.VirtualMachine{
+			Spec: nextver.VirtualMachineSpec{
+				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
+					CloudInit: &nextver.VirtualMachineBootstrapCloudInitSpec{
+						SSHAuthorizedKeys: []string{"my-ssh-key"},
+					},
+				},
+			},
+		}
+
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
+	})
+
 	t.Run("VirtualMachine hub-spoke-hub with LinuxPrep", func(t *testing.T) {
 		g := NewWithT(t)
 

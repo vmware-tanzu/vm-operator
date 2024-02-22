@@ -28,7 +28,7 @@ import (
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	metrics "github.com/vmware-tanzu/vm-operator/pkg/metrics2"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"

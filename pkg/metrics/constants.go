@@ -1,7 +1,7 @@
 // Copyright (c) 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package metrics2
+package metrics
 
 const (
 	// If this changes, the metrics collection configs (e.g. telegraf) will need to be updated as well.

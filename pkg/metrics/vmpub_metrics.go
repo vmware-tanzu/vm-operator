@@ -1,7 +1,7 @@
 // Copyright (c) 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package metrics2
+package metrics
 
 import (
 	"sync"

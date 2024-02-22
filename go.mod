@@ -26,7 +26,7 @@ require (
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/24
 	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/text v0.14.0
-	gomodules.xyz/jsonpatch/v2 v2.4.0
+	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/37
 	google.golang.org/grpc v1.56.3
 	gopkg.in/yaml.v2 v2.4.0

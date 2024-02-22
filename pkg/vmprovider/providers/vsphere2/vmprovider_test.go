@@ -12,7 +12,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -21,7 +21,7 @@ func cpuFreqTests() {
 	var (
 		testConfig builder.VCSimTestConfig
 		ctx        *builder.TestContextForVCSim
-		vmProvider vmprovider.VirtualMachineProviderInterface
+		vmProvider vmprovider.VirtualMachineProviderInterfaceA2
 	)
 
 	BeforeEach(func() {

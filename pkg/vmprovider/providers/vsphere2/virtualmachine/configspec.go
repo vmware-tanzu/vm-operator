@@ -168,12 +168,9 @@ func CreateConfigSpecForPlacement(
 	deviceChangeCopy := make([]types.BaseVirtualDeviceConfigSpec, 0, len(baseConfigSpec.DeviceChange))
 	for _, devChange := range baseConfigSpec.DeviceChange {
 		if spec := devChange.GetVirtualDeviceConfigSpec(); spec != nil {
-			// VC PlaceVmsXCluster() cannot handle VirtualEthernetCard devices that don't have a backing.
-			// Since backing-less cards cannot influence placement (except for assignable devices which
-			// it also doesn't consider today) remove these devices from the placement ConfigSpec. This
-			// can only happen on stretched NSX-T when the VM Class ConfigSpec has VirtualEthernetCard
-			// device that is matched with a VM Spec.Network.Interfaces entry.
-			if util.IsEthernetCard(spec.Device) && spec.Device.GetVirtualDevice().Backing == nil {
+			// VC PlaceVmsXCluster() has issues when the ConfigSpec has EthCards so return to the
+			// prior status quo until those issues get sorted out.
+			if util.IsEthernetCard(spec.Device) {
 				continue
 			}
 		}

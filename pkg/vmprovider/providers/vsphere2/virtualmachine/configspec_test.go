@@ -387,14 +387,16 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			Expect(configSpec.MemoryAllocation).To(Equal(baseConfigSpec.MemoryAllocation))
 			Expect(configSpec.Firmware).To(Equal(baseConfigSpec.Firmware))
 
-			Expect(configSpec.DeviceChange).To(HaveLen(3))
+			Expect(configSpec.DeviceChange).To(HaveLen(2))
 			dSpec0 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
 			_, ok := dSpec0.Device.(*vimtypes.VirtualPCIPassthrough)
 			Expect(ok).To(BeTrue())
+			/* Removed until PlaceVmsXCluster() bugs get fixed.
 			dSpec1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
 			_, ok = dSpec1.Device.(*vimtypes.VirtualVmxnet3)
 			Expect(ok).To(BeTrue())
-			dSpec2 := configSpec.DeviceChange[2].GetVirtualDeviceConfigSpec()
+			*/
+			dSpec2 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
 			_, ok = dSpec2.Device.(*vimtypes.VirtualDisk)
 			Expect(ok).To(BeTrue())
 		})

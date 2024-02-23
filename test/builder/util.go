@@ -51,44 +51,6 @@ var (
 	converter runtime.UnstructuredConverter = runtime.DefaultUnstructuredConverter
 )
 
-func DummyVirtualMachineImage(imageName string) *vmopv1.VirtualMachineImage {
-	return &vmopv1.VirtualMachineImage{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: imageName,
-		},
-		Spec: vmopv1.VirtualMachineImageSpec{
-			ProductInfo: vmopv1.VirtualMachineImageProductInfo{
-				FullVersion: DummyDistroVersion,
-			},
-			OSInfo: vmopv1.VirtualMachineImageOSInfo{
-				Type: DummyOSType,
-			},
-		},
-		Status: vmopv1.VirtualMachineImageStatus{
-			ImageName: imageName,
-		},
-	}
-}
-
-func DummyClusterVirtualMachineImage(imageName string) *vmopv1.ClusterVirtualMachineImage {
-	return &vmopv1.ClusterVirtualMachineImage{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: imageName,
-		},
-		Spec: vmopv1.VirtualMachineImageSpec{
-			ProductInfo: vmopv1.VirtualMachineImageProductInfo{
-				FullVersion: DummyDistroVersion,
-			},
-			OSInfo: vmopv1.VirtualMachineImageOSInfo{
-				Type: DummyOSType,
-			},
-		},
-		Status: vmopv1.VirtualMachineImageStatus{
-			ImageName: imageName,
-		},
-	}
-}
-
 func DummyStorageClass() *storagev1.StorageClass {
 	return &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{

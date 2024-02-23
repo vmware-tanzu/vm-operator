@@ -26,8 +26,7 @@ func hostFQDN() {
 	)
 
 	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{WithV1A2: true}
-		testConfig.WithInstanceStorage = true
+		testConfig = builder.VCSimTestConfig{WithInstanceStorage: true}
 	})
 
 	JustBeforeEach(func() {

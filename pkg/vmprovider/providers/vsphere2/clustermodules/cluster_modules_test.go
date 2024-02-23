@@ -30,7 +30,7 @@ func cmTests() {
 		)
 
 		BeforeEach(func() {
-			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{WithV1A2: true})
+			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 			cmProvider = clustermodules.NewProvider(ctx.RestClient)
 
 			clusterRef = ctx.GetFirstClusterFromFirstZone().Reference()

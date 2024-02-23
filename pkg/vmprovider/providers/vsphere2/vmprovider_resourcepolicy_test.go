@@ -52,7 +52,6 @@ func resourcePolicyTests() {
 		BeforeEach(func() {
 			testConfig = builder.VCSimTestConfig{
 				NumFaultDomains: 3,
-				WithV1A2:        true,
 			}
 		})
 

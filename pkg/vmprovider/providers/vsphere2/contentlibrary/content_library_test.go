@@ -29,8 +29,7 @@ func clTests() {
 		)
 
 		BeforeEach(func() {
-			testConfig = builder.VCSimTestConfig{WithV1A2: true}
-			testConfig.WithContentLibrary = true
+			testConfig = builder.VCSimTestConfig{WithContentLibrary: true}
 		})
 
 		JustBeforeEach(func() {

@@ -97,9 +97,6 @@ type VCSimTestConfig struct {
 	// WithVMClassAsConfigDaynDate enables the WCP_VM_CLASS_AS_CONFIG_DAYNDATE FSS.
 	WithVMClassAsConfigDaynDate bool
 
-	// WithV1A2 enables the VMServiceV1Alpha2FSS FSS.
-	WithV1A2 bool
-
 	// WithNetworkEnv is the network environment type.
 	WithNetworkEnv NetworkEnv
 
@@ -143,7 +140,6 @@ type TestContextForVCSim struct {
 
 	folder    *object.Folder
 	datastore *object.Datastore
-	withV1A2  bool
 
 	azCCRs map[string][]*object.ClusterComputeResource
 }
@@ -185,7 +181,6 @@ func newTestContextForVCSim(
 		UnitTestContext: NewUnitTestContext(initObjects...),
 		PodNamespace:    "vmop-pod-test",
 		Recorder:        fakeRecorder,
-		withV1A2:        true,
 	}
 
 	if config.NumFaultDomains != 0 {
@@ -309,7 +304,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.ContentAPIWait = 1 * time.Second
 		cc.JSONExtraConfig = config.WithJSONExtraConfig
 
-		cc.Features.VMOpV1Alpha2 = config.WithV1A2
+		cc.Features.VMOpV1Alpha2 = true
 		cc.Features.InstanceStorage = config.WithInstanceStorage
 		cc.Features.VMClassAsConfig = config.WithVMClassAsConfig
 		cc.Features.VMClassAsConfigDayNDate = config.WithVMClassAsConfigDaynDate
@@ -661,8 +656,6 @@ func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.Clus
 func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicyA2(
 	name string,
 	nsInfo WorkloadNamespaceInfo) (*v1alpha2.VirtualMachineSetResourcePolicy, *object.Folder) {
-
-	ExpectWithOffset(1, c.withV1A2).To(BeTrue())
 
 	resourcePolicy := DummyVirtualMachineSetResourcePolicy2A2(name, nsInfo.Namespace)
 	Expect(c.Client.Create(c, resourcePolicy)).To(Succeed())

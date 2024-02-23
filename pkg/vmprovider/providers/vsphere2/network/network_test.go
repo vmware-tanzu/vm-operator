@@ -43,7 +43,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 	)
 
 	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{WithV1A2: true}
+		testConfig = builder.VCSimTestConfig{}
 
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{

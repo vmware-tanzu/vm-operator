@@ -77,7 +77,6 @@ func unitTestsValidateCreate() {
 		invalidTargetLocationKind       bool
 		sourceNotFound                  bool
 		defaultSourceNotFound           bool
-		defaultSourceExists             bool
 		targetLocationNotWritable       bool
 		targetLocationNameEmpty         bool
 		targetLocationNotFound          bool
@@ -107,13 +106,6 @@ func unitTestsValidateCreate() {
 
 		if args.defaultSourceNotFound {
 			ctx.vmPub.Spec.Source.Name = ""
-		}
-
-		if args.defaultSourceExists {
-			defaultVM := builder.DummyVirtualMachine()
-			defaultVM.Name = ctx.vmPub.Name
-			defaultVM.Namespace = ctx.vmPub.Namespace
-			Expect(ctx.Client.Create(ctx, defaultVM)).To(Succeed())
 		}
 
 		if args.targetLocationNotWritable {

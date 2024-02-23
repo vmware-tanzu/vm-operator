@@ -720,23 +720,6 @@ func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.Clus
 	return ccrs
 }
 
-func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicy(
-	name string,
-	nsInfo WorkloadNamespaceInfo) (*v1alpha1.VirtualMachineSetResourcePolicy, *object.Folder) {
-
-	ExpectWithOffset(1, c.withV1A2).To(BeFalse())
-
-	resourcePolicy := DummyVirtualMachineSetResourcePolicy2(name, nsInfo.Namespace)
-	Expect(c.Client.Create(c, resourcePolicy)).To(Succeed())
-
-	folder := c.createVirtualMachineSetResourcePolicyCommon(
-		resourcePolicy.Spec.ResourcePool.Name,
-		resourcePolicy.Spec.Folder.Name,
-		nsInfo)
-
-	return resourcePolicy, folder
-}
-
 func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicyA2(
 	name string,
 	nsInfo WorkloadNamespaceInfo) (*v1alpha2.VirtualMachineSetResourcePolicy, *object.Folder) {

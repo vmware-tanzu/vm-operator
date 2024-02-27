@@ -5,6 +5,7 @@ package vmlifecycle
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/vmware/govmomi/vim25/types"
@@ -86,7 +87,7 @@ func BootStrapCloudInit(
 
 	switch vmCtx.VM.Annotations[constants.CloudInitTypeAnnotation] {
 	case constants.CloudInitTypeValueCloudInitPrep:
-		configSpec, customSpec, err = GetCloudInitPrepCustSpec(metadata, userdata)
+		configSpec, customSpec, err = GetCloudInitPrepCustSpec(config, metadata, userdata)
 	case constants.CloudInitTypeValueGuestInfo, "":
 		fallthrough
 	default:
@@ -123,6 +124,7 @@ func GetCloudInitMetadata(
 }
 
 func GetCloudInitPrepCustSpec(
+	config *types.VirtualMachineConfigInfo,
 	metadata, userdata string) (*types.VirtualMachineConfigSpec, *types.CustomizationSpec, error) {
 
 	if userdata != "" {
@@ -135,14 +137,19 @@ func GetCloudInitPrepCustSpec(
 		userdata = plainText
 	}
 
-	// FIXME: This is the old behavior but isn't quite correct: we need current config, and only
-	// do this if the transport isn't already set. Otherwise, this always results in a Reconfigure.
-	configSpec := &types.VirtualMachineConfigSpec{
-		VAppConfig: &types.VmConfigSpec{
-			// Ensure the transport is guestInfo in case the VM does not have
-			// a CD-ROM device required to use the ISO transport.
-			OvfEnvironmentTransport: []string{OvfEnvironmentTransportGuestInfo},
-		},
+	var configSpec *types.VirtualMachineConfigSpec
+
+	// Set the ConfigSpec if the vAppConfig needs updating so a Reconfigure is only done if needed.
+	if vAppConfig := config.VAppConfig; vAppConfig == nil || vAppConfig.GetVmConfigInfo() == nil ||
+		!slices.Contains(vAppConfig.GetVmConfigInfo().OvfEnvironmentTransport, OvfEnvironmentTransportGuestInfo) {
+
+		configSpec = &types.VirtualMachineConfigSpec{
+			VAppConfig: &types.VmConfigSpec{
+				// Ensure the transport is guestInfo in case the VM does not have
+				// a CD-ROM device required to use the ISO transport.
+				OvfEnvironmentTransport: []string{OvfEnvironmentTransportGuestInfo},
+			},
+		}
 	}
 
 	customSpec := &types.CustomizationSpec{
@@ -185,15 +192,14 @@ func GetCloudInitGuestInfoCustSpec(
 		extraConfig[constants.CloudInitGuestInfoUserdataEncoding] = "gzip+base64"
 	}
 
-	// FIXME: This is the old behavior but isn't quite correct: we really need the current ExtraConfig,
-	// and then only add/update it if new or updated (so we don't customize with stale data). Also,
-	// always setting VAppConfigRemoved isn't correct: should only set it if the VM has vApp data.
-	// As-is we will always Reconfigure the VM.
 	configSpec := &types.VirtualMachineConfigSpec{}
 	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
-	// Remove the VAppConfig to ensure Cloud-Init inside the guest does not
-	// activate and prefer the OVF datasource over the VMware datasource.
-	configSpec.VAppConfigRemoved = types.NewBool(true) // FIXME
+	if config.VAppConfig != nil && config.VAppConfig.GetVmConfigInfo() != nil {
+		// Remove the VAppConfig to ensure Cloud-Init inside the guest does not
+		// activate and prefer the OVF datasource over the VMware datasource.
+		// Only set this if needed so we don't do a needless Reconfigure.
+		configSpec.VAppConfigRemoved = types.NewBool(true)
+	}
 
 	return configSpec, nil
 }

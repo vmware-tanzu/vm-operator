@@ -131,6 +131,11 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			})
 
 			Context("With no default user", func() {
+				BeforeEach(func() {
+					// Assert vAppConfig removal in this test too.
+					configInfo.VAppConfig = &types.VmConfigInfo{}
+				})
+
 				It("Should return valid data", func() {
 					Expect(custSpec).To(BeNil())
 
@@ -141,13 +146,13 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 					Expect(extraConfig).To(HaveLen(4))
 					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
-					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
 					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
 					Expect(err).ToNot(HaveOccurred())
 					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIALlxe2UAA1XMSw7DIAxF0blXYYVx+v+ymYgEpxA5gMAR2y+qOsn43XeUQqE1sRHSuPiwGFATx832Uwyz/wBshXLRgNijM8WRHZIppVqN3el8ud7uj+fr3bUdMZi1KWMcD9VziQFq9kLD7Jn+QkOFgmisMbP9nZIRp/HoiDnuG3GUadd4+AJhz3mVsAAAAA=="))
 					Expect(err).ToNot(HaveOccurred())
 					Expect(act).To(Equal(exp))
-					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdataEncoding, "gzip+base64"))
 				})
 			})
 
@@ -159,19 +164,18 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(custSpec).To(BeNil())
 
 					Expect(configSpec).ToNot(BeNil())
-					Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
-					Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+					Expect(configSpec.VAppConfigRemoved).To(BeNil())
 
 					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 					Expect(extraConfig).To(HaveLen(4))
 					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
-					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
 					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
 					Expect(err).ToNot(HaveOccurred())
 					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIANFxe2UAA1WNSw6EIBBE95yio2vn/3G4jGmlHTAtEGjD9YeY2birpF69alsQWiOjkIbF+QVVO3HYTDcFP7uvUlumlLUC6MDQjBvLni1mS2aImHMxGprL9XZ/PF/v/tPUHsDjWo1jGE/FcQ5eleSEhtkx/W31QMiLhhISm30UUayGsyXmcGTEUqID49QPnrBjF7wAAAA="))
 					Expect(err).ToNot(HaveOccurred())
 					Expect(act).To(Equal(exp))
-					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdataEncoding, "gzip+base64"))
 				})
 			})
 
@@ -183,19 +187,18 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(custSpec).To(BeNil())
 
 					Expect(configSpec).ToNot(BeNil())
-					Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
-					Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+					Expect(configSpec.VAppConfigRemoved).To(BeNil())
 
 					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 					Expect(extraConfig).To(HaveLen(4))
 					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
-					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
 					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
 					Expect(err).ToNot(HaveOccurred())
 					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIAPZxe2UAA1WOSw6EIBBE95yio9tR5//hMgalHTAtGMBw/WFQF+5eql91qiwh4DSTCMhh1GYUrOzJLrLqrRn0l7HFo/OcAVSghFco21l4HyWH4ny53u6P5+v9KdIdwIgpfelsV0dN3hrmFtNPci2ThybDH7OeUOxAG+wK9spukUIie4JoHcmaRacDtoMm3EalnQFN4KuQO7MIikOTi0cnKHR4cDT7AUt79Z4DAQAA"))
 					Expect(err).ToNot(HaveOccurred())
 					Expect(act).To(Equal(exp))
-					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdataEncoding, "gzip+base64"))
 				})
 			})
 		})
@@ -238,15 +241,14 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(configSpec).ToNot(BeNil())
-					Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
-					Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+					Expect(configSpec.VAppConfigRemoved).To(BeNil())
 
 					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 					Expect(extraConfig).To(HaveLen(4))
 					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata)) // TODO: Better assertion (reduce w/ GetCloudInitMetadata)
-					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
-					Expect(extraConfig[constants.CloudInitGuestInfoUserdata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
-					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
+					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdataEncoding, "gzip+base64"))
 
 					Expect(custSpec).To(BeNil())
 				})
@@ -267,10 +269,10 @@ var _ = Describe("CloudInit Bootstrap", func() {
 						extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 						Expect(extraConfig).To(HaveLen(4))
 						Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata)) // TODO: Better assertion (reduce w/ GetCloudInitMetadata)
-						Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+						Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
 
 						Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoUserdata))
-						Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+						Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdataEncoding, "gzip+base64"))
 
 						data, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
 						Expect(err).ToNot(HaveOccurred())
@@ -335,13 +337,32 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			configSpec, err = vmlifecycle.GetCloudInitGuestInfoCustSpec(configInfo, metaData, userData)
 		})
 
-		Context("VAppConfig Disabled", func() {
-			It("Should disable the VAppConfig", func() {
-				Expect(err).ToNot(HaveOccurred())
+		Context("vAppConfig", func() {
 
-				Expect(configSpec).ToNot(BeNil())
-				Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
-				Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+			Context("Config has vAppConfig", func() {
+				BeforeEach(func() {
+					configInfo.VAppConfig = &types.VmConfigInfo{}
+				})
+
+				It("ConfigSpec should disable vAppConfig", func() {
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(configSpec).ToNot(BeNil())
+					Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
+					Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+				})
+			})
+
+			Context("Config does not have vAppConfig", func() {
+				BeforeEach(func() {
+					configInfo.VAppConfig = nil
+				})
+
+				It("ConfigSpec does not set remove vAppConfig field", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(configSpec).ToNot(BeNil())
+					Expect(configSpec.VAppConfigRemoved).To(BeNil())
+				})
 			})
 		})
 
@@ -351,13 +372,13 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			})
 
 			It("ConfigSpec.ExtraConfig to only have metadata", func() {
-				Expect(configSpec).ToNot(BeNil())
 				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec).ToNot(BeNil())
 
 				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(2))
-				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
-				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
 			})
 		})
 
@@ -368,10 +389,10 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(4))
-				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
-				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
-				Expect(extraConfig[constants.CloudInitGuestInfoUserdata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
-				Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdataEncoding, "gzip+base64"))
 			})
 		})
 
@@ -386,10 +407,10 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(4))
-				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
-				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
-				Expect(extraConfig[constants.CloudInitGuestInfoUserdata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
-				Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdataEncoding, "gzip+base64"))
 			})
 		})
 
@@ -406,36 +427,70 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(4))
-				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
-				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
-				Expect(extraConfig[constants.CloudInitGuestInfoUserdata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
-				Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
+				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoUserdataEncoding, "gzip+base64"))
 			})
 		})
-
 	})
 
 	Context("GetCloudInitPrepCustSpec", func() {
 		var (
-			custSpec *types.CustomizationSpec
+			configSpec *types.VirtualMachineConfigSpec
+			custSpec   *types.CustomizationSpec
 		)
 
 		JustBeforeEach(func() {
-			var configSpec *types.VirtualMachineConfigSpec
 			var err error
-
-			configSpec, custSpec, err = vmlifecycle.GetCloudInitPrepCustSpec(metaData, userData)
+			configSpec, custSpec, err = vmlifecycle.GetCloudInitPrepCustSpec(configInfo, metaData, userData)
 			Expect(err).ToNot(HaveOccurred())
-
-			// Validate that Cloud-Init Prep always uses the GuestInfo transport for the CI Prep's meta and user data.
-			Expect(configSpec).ToNot(BeNil())
-			Expect(configSpec.VAppConfig).ToNot(BeNil())
-			Expect(configSpec.VAppConfig.GetVmConfigSpec()).ToNot(BeNil())
-			Expect(configSpec.VAppConfig.GetVmConfigSpec().OvfEnvironmentTransport).To(HaveLen(1))
-			Expect(configSpec.VAppConfig.GetVmConfigSpec().OvfEnvironmentTransport[0]).To(Equal(vmlifecycle.OvfEnvironmentTransportGuestInfo))
 		})
 
-		Context("No userdata", func() {
+		Context("vAppConfig", func() {
+
+			Context("Config does not have vAppConfig", func() {
+				BeforeEach(func() {
+					configInfo.VAppConfig = nil
+				})
+
+				It("ConfigSpec has expected vAppConfig", func() {
+					Expect(configSpec).ToNot(BeNil())
+					Expect(configSpec.VAppConfig).ToNot(BeNil())
+					Expect(configSpec.VAppConfig.GetVmConfigSpec()).ToNot(BeNil())
+					Expect(configSpec.VAppConfig.GetVmConfigSpec().OvfEnvironmentTransport).To(HaveLen(1))
+					Expect(configSpec.VAppConfig.GetVmConfigSpec().OvfEnvironmentTransport[0]).To(Equal(vmlifecycle.OvfEnvironmentTransportGuestInfo))
+				})
+			})
+
+			Context("Config already has a vAppConfig", func() {
+				BeforeEach(func() {
+					configInfo.VAppConfig = &types.VmConfigInfo{}
+				})
+
+				It("ConfigSpec updates to expected vAppConfig", func() {
+					Expect(configSpec).ToNot(BeNil())
+					Expect(configSpec.VAppConfig).ToNot(BeNil())
+					Expect(configSpec.VAppConfig.GetVmConfigSpec()).ToNot(BeNil())
+					Expect(configSpec.VAppConfig.GetVmConfigSpec().OvfEnvironmentTransport).To(HaveLen(1))
+					Expect(configSpec.VAppConfig.GetVmConfigSpec().OvfEnvironmentTransport[0]).To(Equal(vmlifecycle.OvfEnvironmentTransportGuestInfo))
+				})
+			})
+
+			Context("Config already has expected vAppConfig", func() {
+				BeforeEach(func() {
+					configInfo.VAppConfig = &types.VmConfigInfo{
+						OvfEnvironmentTransport: []string{vmlifecycle.OvfEnvironmentTransportGuestInfo},
+					}
+				})
+
+				It("ConfigSpec is nil", func() {
+					Expect(configSpec).To(BeNil())
+				})
+			})
+		})
+
+		Context("With no userdata", func() {
 			BeforeEach(func() {
 				userData = ""
 			})
@@ -448,8 +503,9 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			})
 		})
 
-		Context("With userdata", func() {
-			It("Cust spec to have metadata and userdata", func() {
+		Context("With metadata and userdata", func() {
+
+			It("Cust spec to have metadata", func() {
 				Expect(custSpec).ToNot(BeNil())
 				cloudInitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
 				Expect(cloudInitPrepSpec.Metadata).To(Equal(cloudInitMetadata))

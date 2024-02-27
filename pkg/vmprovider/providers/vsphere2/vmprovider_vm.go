@@ -1143,9 +1143,8 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		// Enabling the defer-cloud-init extraConfig key for V1Alpha1Compatible images defers cloud-init from running on first boot
 		// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
 		// when the vmMetadata is nil or when the transport requested is not CloudInit.
-		// TODO: Is this still actually needed?
 		updateArgs.VirtualMachineImageV1Alpha1Compatible =
-			conditions.IsTrueFromConditions(vmImageStatus.Conditions, "VirtualMachineImageV1Alpha1Compatible" /*vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition*/)
+			conditions.IsTrueFromConditions(vmImageStatus.Conditions, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
 	}
 
 	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(

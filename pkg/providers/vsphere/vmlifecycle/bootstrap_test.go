@@ -10,6 +10,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 )
 
@@ -43,6 +44,159 @@ var _ = Describe("Customization utils", func() {
 			It("is pending", func() {
 				Expect(pending).To(BeTrue())
 			})
+		})
+	})
+})
+
+var _ = Describe("SanitizeConfigSpec", func() {
+	var (
+		inConfigSpec, outConfigSpec vimTypes.VirtualMachineConfigSpec
+	)
+
+	BeforeEach(func() {
+		inConfigSpec = vimTypes.VirtualMachineConfigSpec{}
+	})
+
+	JustBeforeEach(func() {
+		outConfigSpec = vmlifecycle.SanitizeConfigSpec(inConfigSpec)
+	})
+
+	When("EC CloudInitGuestInfoUserdata", func() {
+		BeforeEach(func() {
+			inConfigSpec.ExtraConfig = append(inConfigSpec.ExtraConfig, &vimTypes.OptionValue{
+				Key:   constants.CloudInitGuestInfoUserdata,
+				Value: "value",
+			})
+		})
+
+		It("redacts value", func() {
+			Expect(inConfigSpec.ExtraConfig).To(HaveLen(1))
+			Expect(inConfigSpec.ExtraConfig[0].GetOptionValue().Key).To(Equal(constants.CloudInitGuestInfoUserdata))
+			Expect(inConfigSpec.ExtraConfig[0].GetOptionValue().Value).To(Equal("value"))
+
+			Expect(outConfigSpec.ExtraConfig).To(HaveLen(1))
+			Expect(outConfigSpec.ExtraConfig[0].GetOptionValue().Key).To(Equal(constants.CloudInitGuestInfoUserdata))
+			Expect(outConfigSpec.ExtraConfig[0].GetOptionValue().Value).To(Equal("***"))
+		})
+	})
+
+	When("vAppConfig user property", func() {
+		BeforeEach(func() {
+			inConfigSpec.VAppConfig = &vimTypes.VmConfigSpec{
+				Property: []vimTypes.VAppPropertySpec{
+					{
+						Info: &vimTypes.VAppPropertyInfo{
+							UserConfigurable: vimTypes.NewBool(true),
+							Value:            "value",
+						},
+					},
+				},
+			}
+		})
+
+		It("redacts value", func() {
+			vmConfigSpec := inConfigSpec.VAppConfig.GetVmConfigSpec()
+			Expect(vmConfigSpec).ToNot(BeNil())
+			Expect(vmConfigSpec.Property).To(HaveLen(1))
+			Expect(vmConfigSpec.Property[0].Info.Value).To(Equal("value"))
+
+			vmConfigSpec = outConfigSpec.VAppConfig.GetVmConfigSpec()
+			Expect(vmConfigSpec).ToNot(BeNil())
+			Expect(vmConfigSpec.Property).To(HaveLen(1))
+			Expect(vmConfigSpec.Property[0].Info.Value).To(Equal("***"))
+		})
+	})
+})
+
+var _ = Describe("SanitizeCustomizationSpec", func() {
+	var (
+		inCustSpec, outCustSpec vimTypes.CustomizationSpec
+	)
+
+	BeforeEach(func() {
+		inCustSpec = vimTypes.CustomizationSpec{}
+	})
+
+	JustBeforeEach(func() {
+		outCustSpec = vmlifecycle.SanitizeCustomizationSpec(inCustSpec)
+	})
+
+	When("CustomizationCloudinitPrep", func() {
+		BeforeEach(func() {
+			inCustSpec.Identity = &internal.CustomizationCloudinitPrep{
+				Metadata: "metadata",
+				Userdata: "userdata",
+			}
+		})
+
+		It("redacts userdata", func() {
+			Expect(inCustSpec.Identity).ToNot(BeNil())
+			c := inCustSpec.Identity.(*internal.CustomizationCloudinitPrep)
+			Expect(c.Metadata).To(Equal("metadata"))
+			Expect(c.Userdata).To(Equal("userdata"))
+
+			Expect(outCustSpec.Identity).ToNot(BeNil())
+			c = outCustSpec.Identity.(*internal.CustomizationCloudinitPrep)
+			Expect(c.Metadata).To(Equal("metadata"))
+			Expect(c.Userdata).To(Equal("***"))
+		})
+	})
+
+	When("CustomizationSysprepText", func() {
+		BeforeEach(func() {
+			inCustSpec.Identity = &vimTypes.CustomizationSysprepText{
+				Value: "value",
+			}
+		})
+
+		It("redacts value", func() {
+			Expect(inCustSpec.Identity).ToNot(BeNil())
+			s := inCustSpec.Identity.(*vimTypes.CustomizationSysprepText)
+			Expect(s.Value).To(Equal("value"))
+
+			Expect(outCustSpec.Identity).ToNot(BeNil())
+			s = outCustSpec.Identity.(*vimTypes.CustomizationSysprepText)
+			Expect(s.Value).To(Equal("***"))
+		})
+	})
+
+	When("CustomizationSysprep", func() {
+		BeforeEach(func() {
+			inCustSpec.Identity = &vimTypes.CustomizationSysprep{
+				GuiUnattended: vimTypes.CustomizationGuiUnattended{
+					Password: &vimTypes.CustomizationPassword{
+						Value: "value",
+					},
+					TimeZone: 42,
+				},
+				UserData: vimTypes.CustomizationUserData{},
+				Identification: vimTypes.CustomizationIdentification{
+					DomainAdmin: "admin",
+					DomainAdminPassword: &vimTypes.CustomizationPassword{
+						Value: "value",
+					},
+				},
+			}
+		})
+
+		It("redacts fields", func() {
+			Expect(inCustSpec.Identity).ToNot(BeNil())
+			s := inCustSpec.Identity.(*vimTypes.CustomizationSysprep)
+			Expect(s.GuiUnattended.TimeZone).To(BeEquivalentTo(42))
+			Expect(s.GuiUnattended.Password).ToNot(BeNil())
+			Expect(s.GuiUnattended.Password.Value).To(Equal("value"))
+			Expect(s.Identification.DomainAdmin).To(Equal("admin"))
+			Expect(s.Identification.DomainAdminPassword).ToNot(BeNil())
+			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("value"))
+
+			Expect(outCustSpec.Identity).ToNot(BeNil())
+			s = outCustSpec.Identity.(*vimTypes.CustomizationSysprep)
+			Expect(s.GuiUnattended.TimeZone).To(BeEquivalentTo(42))
+			Expect(s.GuiUnattended.Password).ToNot(BeNil())
+			Expect(s.GuiUnattended.Password.Value).To(Equal("***"))
+			Expect(s.Identification.DomainAdmin).To(Equal("admin"))
+			Expect(s.Identification.DomainAdminPassword).ToNot(BeNil())
+			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("***"))
 		})
 	})
 })

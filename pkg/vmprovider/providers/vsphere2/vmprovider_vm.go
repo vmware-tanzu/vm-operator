@@ -1086,11 +1086,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	updateArgs := &vmUpdateArgs{}
 	updateArgs.VMClass = vmClass
 	updateArgs.ResourcePolicy = resourcePolicy
-	updateArgs.BootstrapData.Data = bsData.Data
-	updateArgs.BootstrapData.VAppData = bsData.VAppData
-	updateArgs.BootstrapData.VAppExData = bsData.VAppExData
-	updateArgs.BootstrapData.CloudConfig = bsData.CloudConfig
-	updateArgs.BootstrapData.Sysprep = bsData.Sysprep
+	updateArgs.BootstrapData = bsData
 
 	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
 		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)

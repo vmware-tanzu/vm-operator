@@ -30,10 +30,6 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 
 	ctx.vmPub = builder.DummyVirtualMachinePublishRequestA2("dummy-vmpub", ctx.Namespace, "dummy-vm",
 		"dummy-item", "dummy-cl")
-	vm := builder.DummyVirtualMachine()
-	vm.Name = "dummy-vm"
-	vm.Namespace = ctx.Namespace
-
 	return ctx
 }
 

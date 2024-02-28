@@ -5,6 +5,7 @@ package vmlifecycle
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/task"
@@ -60,7 +61,13 @@ func DoBootstrap(
 
 	bootstrap := vmCtx.VM.Spec.Bootstrap
 	if bootstrap == nil {
-		// V1ALPHA1: We always defaulted to LinuxPrep w/ HwClockUTC=true.
+		// V1ALPHA1: We had always defaulted to LinuxPrep w/ HwClockUTC=true.
+		// Now, try to just do that on Linux VMs.
+		if !isLinuxGuest(config.GuestId) {
+			vmCtx.Logger.V(6).Info("no bootstrap provider specified")
+			return nil
+		}
+
 		bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 			LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
 				HardwareClockIsUTC: true,
@@ -95,9 +102,6 @@ func DoBootstrap(
 		configSpec, customSpec, err = BootstrapSysPrep(vmCtx, config, sysPrep, vAppConfig, bootstrapArgs)
 	case vAppConfig != nil:
 		configSpec, customSpec, err = BootstrapVAppConfig(vmCtx, config, vAppConfig, bootstrapArgs)
-	default:
-		vmCtx.Logger.V(6).Info("no bootstrap provider specified")
-		return nil
 	}
 
 	if err != nil {
@@ -273,4 +277,37 @@ func isCustomizationPendingError(err error) bool {
 		}
 	}
 	return false
+}
+
+// linuxGuestIDPrefixes is derived from the vimTypes.VirtualMachineGuestOsIdentifier values.
+var linuxGuestIDPrefixes = [...]string{
+	"redhat",
+	"rhel",
+	"centos",
+	"oracle",
+	"suse",
+	"sles",
+	"mandrake",
+	"mandriva",
+	"ubuntu",
+	"debian",
+	"asianux",
+	"opensuse",
+	"fedora",
+	"coreos64",
+	"vmwarePhoton",
+}
+
+func isLinuxGuest(guestID string) bool {
+	if guestID == "" {
+		return false
+	}
+
+	for _, p := range linuxGuestIDPrefixes {
+		if strings.HasPrefix(guestID, p) {
+			return true
+		}
+	}
+
+	return strings.Contains(guestID, "Linux") || strings.Contains(guestID, "linux")
 }

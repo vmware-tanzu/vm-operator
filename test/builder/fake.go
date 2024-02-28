@@ -58,6 +58,7 @@ func KnownObjectTypes() []client.Object {
 		&netopv1alpha1.NetworkInterface{},
 		&vpcv1alpha1.Subnet{},
 		&vpcv1alpha1.SubnetSet{},
+		&vpcv1alpha1.SubnetPort{},
 	}
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 //nolint:revive
@@ -23,12 +23,14 @@ import (
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/nsx.vmware.com/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 )
 
 type NetworkInterfaceResults struct {
@@ -126,6 +128,8 @@ func CreateAndWaitForNetworkInterfaces(
 			result, err = createNetOPNetworkInterface(vmCtx, client, vimClient, interfaceSpec)
 		case pkgconfig.NetworkProviderTypeNSXT:
 			result, err = createNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
+		case pkgconfig.NetworkProviderTypeVPC:
+			result, err = createVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		case pkgconfig.NetworkProviderTypeNamed:
 			result, err = createNamedNetworkInterface(vmCtx, finder, interfaceSpec)
 		default:
@@ -516,6 +520,157 @@ func ncpNetIfToResult(
 	}
 
 	return result, nil
+}
+
+// VPCCRName returns the name to be used for the VPC SubnetPort CR.
+func VPCCRName(vmName, networkName, interfaceName string) string {
+	var name string
+
+	if networkName != "" {
+		name = fmt.Sprintf("%s-%s-%s", vmName, networkName, interfaceName)
+	} else {
+		name = fmt.Sprintf("%s-%s", vmName, interfaceName)
+	}
+
+	return name
+}
+
+func createVPCNetworkInterface(
+	vmCtx context.VirtualMachineContextA2,
+	client ctrlruntime.Client,
+	vimClient *vim25.Client,
+	clusterMoRef *vimtypes.ManagedObjectReference,
+	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec) (*NetworkInterfaceResult, error) {
+
+	networkName := interfaceSpec.Network.Name
+	vpcSubnetPort := &vpcv1alpha1.SubnetPort{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      VPCCRName(vmCtx.VM.Name, networkName, interfaceSpec.Name),
+			Namespace: vmCtx.VM.Namespace,
+		},
+	}
+
+	switch interfaceSpec.Network.Kind {
+	case "SubnetSet":
+		vpcSubnetPort.Spec.SubnetSet = networkName
+	case "":
+		vpcSubnetPort.Spec.SubnetSet = networkName
+	case "Subnet":
+		vpcSubnetPort.Spec.Subnet = networkName
+	default:
+		return nil, fmt.Errorf("network kind %q is not supported for VPC", interfaceSpec.Network.Kind)
+	}
+
+	_, err := controllerutil.CreateOrUpdate(vmCtx, client, vpcSubnetPort, func() error {
+		if err := controllerutil.SetOwnerReference(vmCtx.VM, vpcSubnetPort, client.Scheme()); err != nil {
+			return err
+		}
+		if vpcSubnetPort.Annotations == nil {
+			vpcSubnetPort.Annotations = make(map[string]string)
+		}
+		vpcSubnetPort.Annotations[constants.VPCAttachmentRef] = "virtualmachine/" + vmCtx.VM.Name
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	vpcSubnetPort, err = waitForReadyVPCSubnetPort(vmCtx, client, vpcSubnetPort.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return vpcSubnetPortToResult(vmCtx, vimClient, clusterMoRef, vpcSubnetPort)
+}
+
+func vpcSubnetPortToResult(
+	ctx goctx.Context,
+	vimClient *vim25.Client,
+	clusterMoRef *vimtypes.ManagedObjectReference,
+	subnetPort *vpcv1alpha1.SubnetPort) (*NetworkInterfaceResult, error) {
+
+	var backing object.NetworkReference
+	networkID := subnetPort.Status.LogicalSwitchID
+	if clusterMoRef != nil {
+		ccr := object.NewClusterComputeResource(vimClient, *clusterMoRef)
+		// VPC is an NSX-T construct that is attached to an NSX-T Project.
+		networkRef, err := searchNsxtNetworkReference(ctx, ccr, networkID)
+		if err != nil {
+			return nil, err
+		}
+
+		backing = networkRef
+	}
+
+	ipConfigs := []NetworkInterfaceIPConfig{}
+
+	// No DHCP supported in VPC at the moment.
+	ipAddress := subnetPort.Status.IPAddresses
+	for _, ipAddr := range ipAddress {
+		if ipAddr.IP == "" {
+			continue
+		}
+
+		isIPv4 := net.ParseIP(ipAddr.IP).To4() != nil
+		ipConfig := NetworkInterfaceIPConfig{
+			IPCIDR:  ipCIDRNotation(ipAddr.IP, ipAddr.Netmask, isIPv4),
+			IsIPv4:  isIPv4,
+			Gateway: ipAddr.Gateway,
+		}
+
+		ipConfigs = append(ipConfigs, ipConfig)
+	}
+
+	result := &NetworkInterfaceResult{
+		IPConfigs:  ipConfigs,
+		MacAddress: subnetPort.Status.MACAddress,
+		ExternalID: subnetPort.Status.VIFID,
+		NetworkID:  networkID,
+		Backing:    backing,
+	}
+
+	return result, nil
+}
+
+func waitForReadyVPCSubnetPort(
+	vmCtx context.VirtualMachineContextA2,
+	client ctrlruntime.Client,
+	name string) (*vpcv1alpha1.SubnetPort, error) {
+
+	subnetPort := &vpcv1alpha1.SubnetPort{}
+	subnetPortKey := types.NamespacedName{Namespace: vmCtx.VM.Namespace, Name: name}
+
+	// TODO: Watch() this type instead.
+	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, RetryTimeout, true, func(_ goctx.Context) (bool, error) {
+		if err := client.Get(vmCtx, subnetPortKey, subnetPort); err != nil {
+			return false, ctrlruntime.IgnoreNotFound(err)
+		}
+
+		for _, condition := range subnetPort.Status.Conditions {
+			if condition.Type == vpcv1alpha1.Ready && condition.Status == corev1.ConditionTrue {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	})
+
+	if err != nil {
+		if wait.Interrupted(err) {
+			// Try to return a more meaningful error when timed out.
+			for _, cond := range subnetPort.Status.Conditions {
+				if cond.Type == vpcv1alpha1.Ready && cond.Status != corev1.ConditionTrue {
+					return nil, fmt.Errorf("subnetPort is not ready: %s - %s", cond.Reason, cond.Message)
+				}
+			}
+			return nil, fmt.Errorf("subnetPort is not ready yet")
+		}
+
+		return nil, err
+	}
+
+	return subnetPort, nil
 }
 
 func waitForReadyNCPNetworkInterface(

@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vm_test
@@ -12,6 +12,8 @@ import (
 
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
+
+const doesNotExist = "does-not-exist"
 
 func managedObjectTests() {
 	getVMMoRef := func() types.ManagedObjectReference {

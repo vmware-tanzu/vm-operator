@@ -31,7 +31,6 @@ import (
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/placement"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/storage"
@@ -255,7 +254,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 
 func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 	ctx goctx.Context,
-	vm *vmopv1.VirtualMachine) (int32, error) {
+	vm *vmopv1.VirtualMachine) (types.HardwareVersion, error) {
 
 	vmCtx := context.VirtualMachineContextA2{
 		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "hardware-version")),
@@ -279,7 +278,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 		return 0, err
 	}
 
-	return contentlibrary.ParseVirtualHardwareVersion(o.Config.Version), nil
+	return types.ParseHardwareVersion(o.Config.Version)
 }
 
 func (vs *vSphereVMProvider) createVirtualMachine(

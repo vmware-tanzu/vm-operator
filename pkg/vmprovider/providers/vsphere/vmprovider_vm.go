@@ -213,7 +213,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 		return 0, err
 	}
 
-	return util.ParseVirtualHardwareVersion(o.Config.Version), nil
+	return int32(types.MustParseHardwareVersion(o.Config.Version)), nil
 }
 
 func (vs *vSphereVMProvider) createVirtualMachine(

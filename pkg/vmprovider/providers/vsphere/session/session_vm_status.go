@@ -152,7 +152,7 @@ func (s *Session) updateVMStatus(
 	vm.Status.UniqueID = resVM.MoRef().Value
 	vm.Status.BiosUUID = summary.Config.Uuid
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
-	vm.Status.HardwareVersion = util.ParseVirtualHardwareVersion(summary.Config.HwVersion)
+	vm.Status.HardwareVersion = int32(vimTypes.MustParseHardwareVersion(summary.Config.HwVersion))
 
 	if host := summary.Runtime.Host; host != nil {
 		hostSystem := object.NewHostSystem(s.Client.VimClient(), *host)

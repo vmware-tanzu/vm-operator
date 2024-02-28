@@ -34,7 +34,7 @@ type funcsA2 struct {
 	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
 	GetVirtualMachineGuestInfoFn       func(ctx context.Context, vm *vmopv1.VirtualMachine) (map[string]string, error)
 	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
-	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (int32, error)
+	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (vimTypes.HardwareVersion, error)
 
 	// ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error)
 	// GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider, itemID string,
@@ -140,13 +140,13 @@ func (s *VMProviderA2) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *vm
 	return "", nil
 }
 
-func (s *VMProviderA2) GetVirtualMachineHardwareVersion(ctx context.Context, vm *vmopv1.VirtualMachine) (int32, error) {
+func (s *VMProviderA2) GetVirtualMachineHardwareVersion(ctx context.Context, vm *vmopv1.VirtualMachine) (vimTypes.HardwareVersion, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachineHardwareVersionFn != nil {
 		return s.GetVirtualMachineHardwareVersionFn(ctx, vm)
 	}
-	return 15, nil
+	return vimTypes.VMX15, nil
 }
 
 func (s *VMProviderA2) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {

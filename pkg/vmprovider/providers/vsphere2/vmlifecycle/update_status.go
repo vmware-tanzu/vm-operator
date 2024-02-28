@@ -85,7 +85,8 @@ func UpdateStatus(
 	vm.Status.UniqueID = vcVM.Reference().Value
 	vm.Status.BiosUUID = summary.Config.Uuid
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
-	vm.Status.HardwareVersion = util.ParseVirtualHardwareVersion(summary.Config.HwVersion)
+	hardwareVersion, _ := types.ParseHardwareVersion(summary.Config.HwVersion)
+	vm.Status.HardwareVersion = int32(hardwareVersion)
 
 	var networkInterfaces []vmopv1.VirtualMachineNetworkInterfaceSpec
 	if vmCtx.VM.Spec.Network != nil {

@@ -762,7 +762,11 @@ func (s *Session) UpdateVirtualMachine(
 
 	resVM := res.NewVMFromObject(vcVM)
 
-	moVM, err := resVM.GetProperties(vmCtx, []string{"config", "runtime"})
+	moVM, err := resVM.GetProperties(vmCtx, []string{
+		"config",
+		"runtime",
+		"summary.config.hwVersion",
+	})
 	if err != nil {
 		return err
 	}
@@ -799,16 +803,28 @@ func (s *Session) UpdateVirtualMachine(
 			}
 		}
 		if powerOff {
-			return resVM.SetPowerState(
+			if err := resVM.SetPowerState(
 				logr.NewContext(vmCtx, vmCtx.Logger),
 				existingPowerState,
 				vmCtx.VM.Spec.PowerState,
-				vmCtx.VM.Spec.PowerOffMode)
+				vmCtx.VM.Spec.PowerOffMode); err != nil {
+
+				return err
+			}
 		}
 
-		// BMV: We'll likely want to reconfigure a powered off VM too, but right now
-		// we'll defer that until the pre power on (and until more people complain
-		// that the UI appears wrong).
+		// A VM's hardware can only be upgraded if the VM is powered off.
+		if _, err := vmutil.ReconcileMinHardwareVersion(
+			vmCtx,
+			vcVM.Client(),
+			*moVM,
+			false,
+			vmCtx.VM.Spec.MinHardwareVersion); err != nil {
+
+			return err
+		}
+
+		return nil
 
 	case vmopv1.VirtualMachinePowerStateSuspended:
 		if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
@@ -884,6 +900,17 @@ func (s *Session) UpdateVirtualMachine(
 
 		// TODO: Find a better place for this?
 		if err := s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy); err != nil {
+			return err
+		}
+
+		// A VM's hardware can only be upgraded if the VM is powered off.
+		if _, err := vmutil.ReconcileMinHardwareVersion(
+			vmCtx,
+			vcVM.Client(),
+			*moVM,
+			false,
+			vmCtx.VM.Spec.MinHardwareVersion); err != nil {
+
 			return err
 		}
 

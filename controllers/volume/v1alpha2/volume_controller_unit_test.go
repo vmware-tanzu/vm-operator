@@ -10,6 +10,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/vim25/types"
 
 	corev1 "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -465,7 +466,7 @@ func unitTestsReconcile() {
 
 			It("returns error when failed to get VM hardware version", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (int32, error) {
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (types.HardwareVersion, error) {
 					return 0, errors.New("dummy-error")
 				}
 				fakeVMProvider.Unlock()
@@ -481,8 +482,8 @@ func unitTestsReconcile() {
 
 			It("returns error when VM hardware version is smaller than minimal requirement", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (int32, error) {
-					return 11, nil
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (types.HardwareVersion, error) {
+					return types.VMX11, nil
 				}
 				fakeVMProvider.Unlock()
 
@@ -497,7 +498,7 @@ func unitTestsReconcile() {
 
 			It("returns success when failed to parse VM hardware version", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (int32, error) {
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (types.HardwareVersion, error) {
 					return 0, nil
 				}
 				fakeVMProvider.Unlock()

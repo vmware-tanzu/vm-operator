@@ -67,6 +67,8 @@ const (
 	invalidNextRestartTimeOnUpdate           = "must be formatted as RFC3339Nano"
 	invalidNextRestartTimeOnUpdateNow        = "mutation webhooks are required to restart VM"
 	modifyAnnotationNotAllowedForNonAdmin    = "modifying this annotation is not allowed for non-admin users"
+	invalidMinHardwareVersionDowngrade       = "cannot downgrade hardware version"
+	invalidMinHardwareVersionPowerState      = "cannot upgrade hardware version unless powered off"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha2-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha2,name=default.validating.virtualmachine.v1alpha2.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -178,6 +180,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -952,7 +955,6 @@ func (v validator) validateImmutableFields(_ *context.WebhookRequestContext, vm,
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, specPath.Child("imageName"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, specPath.Child("className"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
-	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.MinHardwareVersion, oldVM.Spec.MinHardwareVersion, specPath.Child("minHardwareVersion"))...)
 	// TODO: More checks.
 
 	// TODO: Allow privilege?
@@ -1044,6 +1046,34 @@ func (v validator) validateAnnotation(ctx *context.WebhookRequestContext, vm, ol
 
 		if vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] != oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] {
 			allErrs = append(allErrs, field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateMinHardwareVersion(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+	fieldPath := field.NewPath("spec", "minHardwareVersion")
+
+	// Disallow downgrades.
+	oldHV, newHV := oldVM.Spec.MinHardwareVersion, vm.Spec.MinHardwareVersion
+	if newHV < oldHV {
+		allErrs = append(allErrs, field.Invalid(
+			fieldPath,
+			vm.Spec.MinHardwareVersion,
+			invalidMinHardwareVersionDowngrade))
+	}
+
+	// Disallow upgrades unless powered off or will be powered off.
+	if newHV > oldHV {
+		if oldVM.Spec.PowerState != vmopv1.VirtualMachinePowerStateOff &&
+			vm.Spec.PowerState != vmopv1.VirtualMachinePowerStateOff {
+
+			allErrs = append(allErrs, field.Invalid(
+				fieldPath,
+				vm.Spec.MinHardwareVersion,
+				invalidMinHardwareVersionPowerState))
 		}
 	}
 

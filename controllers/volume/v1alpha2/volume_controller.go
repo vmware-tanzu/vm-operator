@@ -583,7 +583,7 @@ func (r *Reconciler) processAttachments(
 
 			// If hardware version is 0, which means we failed to parse the version from VM, then just assume that it
 			// is above minimal requirement.
-			if hardwareVersion != 0 && hardwareVersion < constants.MinSupportedHWVersionForPVC {
+			if hardwareVersion.IsValid() && hardwareVersion < constants.MinSupportedHWVersionForPVC {
 				retErr := fmt.Errorf("VirtualMachine has an unsupported "+
 					"hardware version %d for PersistentVolumes. Minimum supported hardware version %d",
 					hardwareVersion, constants.MinSupportedHWVersionForPVC)

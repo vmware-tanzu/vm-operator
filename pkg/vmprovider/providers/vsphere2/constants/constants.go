@@ -4,6 +4,8 @@
 package constants
 
 import (
+	vimTypes "github.com/vmware/govmomi/vim25/types"
+
 	"github.com/vmware-tanzu/vm-operator/pkg"
 )
 
@@ -55,9 +57,9 @@ const (
 	PCIPassthruMMIOSizeDefault        = "512"
 
 	// MinSupportedHWVersionForPVC is the supported virtual hardware version for persistent volumes.
-	MinSupportedHWVersionForPVC = 15
+	MinSupportedHWVersionForPVC = vimTypes.VMX15
 	// MinSupportedHWVersionForPCIPassthruDevices is the supported virtual hardware version for NVidia PCI devices.
-	MinSupportedHWVersionForPCIPassthruDevices = 17
+	MinSupportedHWVersionForPCIPassthruDevices = vimTypes.VMX17
 
 	// FirmwareOverrideAnnotation is the annotation key used for firmware override.
 	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"

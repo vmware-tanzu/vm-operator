@@ -338,15 +338,19 @@ type VirtualMachineSpec struct {
 	// +optional
 	Reserved *VirtualMachineReservedSpec `json:"reserved,omitempty"`
 
-	// MinHardwareVersion specifies the desired minimum hardware version
-	// for this VM.
+	// +optional
+	// +kubebuilder:validation:Minimum=13
+
+	// MinHardwareVersion describes the desired, minimum hardware version.
 	//
-	// Usually the VM's hardware version is derived from:
-	// 1. the VirtualMachineClass used to deploy the VM provided by the ClassName field
-	// 2. the datacenter/cluster/host default hardware version
-	// Setting this field will ensure that the hardware version of the VM
-	// is at least set to the specified value. To enforce this, it will override
-	// the value from the VirtualMachineClass.
+	// The logic that determines the hardware version is as follows:
+	//
+	// 1. If this field is set, then its value is used.
+	// 2. Otherwise, if the VirtualMachineClass used to deploy the VM contains a
+	//    non-empty hardware version, then it is used.
+	// 3. Finally, if the hardware version is still undetermined, the value is
+	//    set to the default hardware version for the Datacenter/Cluster/Host
+	//    where the VM is provisioned.
 	//
 	// This field is never updated to reflect the derived hardware version.
 	// Instead, VirtualMachineStatus.HardwareVersion surfaces
@@ -360,7 +364,7 @@ type VirtualMachineSpec struct {
 	//
 	// Several features are hardware version dependent, for example:
 	//
-	// * NVMe Controllers        		 >= 14
+	// * NVMe Controllers                >= 14
 	// * Dynamic Direct Path I/O devices >= 17
 	//
 	// Please refer to https://kb.vmware.com/s/article/1003746 for a list of VM
@@ -371,9 +375,6 @@ type VirtualMachineSpec struct {
 	// hardware version to a more recent one may result in unpredictable
 	// behavior. In other words, please be careful when choosing to upgrade a
 	// VM to a newer hardware version.
-	//
-	// +optional
-	// +kubebuilder:validation:Minimum=13
 	MinHardwareVersion int32 `json:"minHardwareVersion,omitempty"`
 }
 

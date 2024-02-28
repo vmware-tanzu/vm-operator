@@ -14,6 +14,7 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
+	"github.com/vmware/govmomi/vim25/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
@@ -22,7 +23,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
 
@@ -150,7 +150,8 @@ func updateImageSpecWithOvfVirtualSystem(imageSpec *vmopv1.VirtualMachineImageSp
 	if virtualHwSection := ovfVirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
 		hw := virtualHwSection[0]
 		if hw.System != nil && hw.System.VirtualSystemType != nil {
-			hwVersion = util.ParseVirtualHardwareVersion(*hw.System.VirtualSystemType)
+			hwv, _ := types.ParseHardwareVersion(*hw.System.VirtualSystemType)
+			hwVersion = int32(hwv)
 		}
 	}
 

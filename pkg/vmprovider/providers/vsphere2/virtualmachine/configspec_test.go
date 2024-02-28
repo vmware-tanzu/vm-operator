@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	vimtypes "github.com/vmware/govmomi/vim25/types"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/pointer"
 
@@ -30,8 +30,8 @@ var _ = Describe("CreateConfigSpec", func() {
 		vmClassSpec     *vmopv1.VirtualMachineClassSpec
 		vmImageStatus   *vmopv1.VirtualMachineImageStatus
 		minCPUFreq      uint64
-		configSpec      *vimtypes.VirtualMachineConfigSpec
-		classConfigSpec *vimtypes.VirtualMachineConfigSpec
+		configSpec      *vimTypes.VirtualMachineConfigSpec
+		classConfigSpec *vimTypes.VirtualMachineConfigSpec
 		pvcVolume       = vmopv1.VirtualMachineVolume{
 			Name: "vmware",
 			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -96,37 +96,37 @@ var _ = Describe("CreateConfigSpec", func() {
 		When("VM has min version", func() {
 			BeforeEach(func() {
 				vmImageStatus = nil
-				vm.Spec.MinHardwareVersion = 1000
+				vm.Spec.MinHardwareVersion = int32(vimTypes.VMX10)
 			})
 
 			It("config spec has expected version", func() {
-				Expect(configSpec.Version).To(Equal("vmx-1000"))
+				Expect(configSpec.Version).To(Equal(vimTypes.VMX10.String()))
 			})
 		})
 
 		When("VM has PVCs", func() {
 			BeforeEach(func() {
 				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{pvcVolume}
-				vm.Spec.MinHardwareVersion = 1
+				vm.Spec.MinHardwareVersion = int32(vimTypes.VMX10)
 			})
 
 			It("config spec has expected version for PVCs", func() {
-				Expect(configSpec.Version).To(Equal("vmx-15"))
+				Expect(configSpec.Version).To(Equal(vimTypes.VMX15.String()))
 			})
 		})
 	})
 
 	Context("VM Class ConfigSpec", func() {
 		BeforeEach(func() {
-			classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+			classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
 				Name:       "dont-use-this-dummy-VM",
 				Annotation: "test-annotation",
-				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
-					&vimtypes.VirtualDeviceConfigSpec{
-						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-						Device: &vimtypes.VirtualE1000{
-							VirtualEthernetCard: vimtypes.VirtualEthernetCard{
-								VirtualDevice: vimtypes.VirtualDevice{
+				DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+					&vimTypes.VirtualDeviceConfigSpec{
+						Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimTypes.VirtualE1000{
+							VirtualEthernetCard: vimTypes.VirtualEthernetCard{
+								VirtualDevice: vimTypes.VirtualDevice{
 									Key: 4000,
 								},
 							},
@@ -148,7 +148,7 @@ var _ = Describe("CreateConfigSpec", func() {
 			Expect(configSpec.Firmware).To(Equal(vmImageStatus.Firmware))
 			Expect(configSpec.DeviceChange).To(HaveLen(1))
 			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
-			_, ok := dSpec.Device.(*vimtypes.VirtualE1000)
+			_, ok := dSpec.Device.(*vimTypes.VirtualE1000)
 			Expect(ok).To(BeTrue())
 		})
 
@@ -186,11 +186,11 @@ var _ = Describe("CreateConfigSpec", func() {
 		When("VM Image hardware version is set", func() {
 			BeforeEach(func() {
 				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{pvcVolume}
-				vmImageStatus.HardwareVersion = pointer.Int32(101)
+				vmImageStatus.HardwareVersion = pointer.Int32(int32(vimTypes.VMX21))
 			})
 
 			It("config spec has expected version", func() {
-				Expect(configSpec.Version).To(Equal("vmx-101"))
+				Expect(configSpec.Version).To(Equal(vimTypes.VMX21.String()))
 			})
 		})
 
@@ -199,11 +199,11 @@ var _ = Describe("CreateConfigSpec", func() {
 			Context("VM Class has vGPU", func() {
 				BeforeEach(func() {
 					classConfigSpec.DeviceChange = append(classConfigSpec.DeviceChange,
-						&vimtypes.VirtualDeviceConfigSpec{
-							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-							Device: &vimtypes.VirtualPCIPassthrough{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+						&vimTypes.VirtualDeviceConfigSpec{
+							Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimTypes.VirtualPCIPassthrough{
+								VirtualDevice: vimTypes.VirtualDevice{
+									Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
 										Vgpu: "profile-from-configspec",
 									},
 								},
@@ -213,16 +213,16 @@ var _ = Describe("CreateConfigSpec", func() {
 				})
 
 				It("config spec has expected version", func() {
-					Expect(configSpec.Version).To(Equal("vmx-17"))
+					Expect(configSpec.Version).To(Equal(vimTypes.VMX17.String()))
 				})
 
 				Context("VM MinHardwareVersion is greatest", func() {
 					BeforeEach(func() {
-						vm.Spec.MinHardwareVersion = 99
+						vm.Spec.MinHardwareVersion = int32(vimTypes.MaxValidHardwareVersion)
 					})
 
 					It("config spec has expected version", func() {
-						Expect(configSpec.Version).To(Equal("vmx-99"))
+						Expect(configSpec.Version).To(Equal(vimTypes.MaxValidHardwareVersion.String()))
 					})
 				})
 			})
@@ -230,12 +230,12 @@ var _ = Describe("CreateConfigSpec", func() {
 			Context("VM Class has DDPIO", func() {
 				BeforeEach(func() {
 					classConfigSpec.DeviceChange = append(classConfigSpec.DeviceChange,
-						&vimtypes.VirtualDeviceConfigSpec{
-							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-							Device: &vimtypes.VirtualPCIPassthrough{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
-										AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
+						&vimTypes.VirtualDeviceConfigSpec{
+							Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimTypes.VirtualPCIPassthrough{
+								VirtualDevice: vimTypes.VirtualDevice{
+									Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+										AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
 											{
 												VendorId: 52,
 												DeviceId: 53,
@@ -255,11 +255,11 @@ var _ = Describe("CreateConfigSpec", func() {
 
 				Context("VM MinHardwareVersion is greatest", func() {
 					BeforeEach(func() {
-						vm.Spec.MinHardwareVersion = 99
+						vm.Spec.MinHardwareVersion = int32(vimTypes.MaxValidHardwareVersion)
 					})
 
 					It("config spec has expected version", func() {
-						Expect(configSpec.Version).To(Equal("vmx-99"))
+						Expect(configSpec.Version).To(Equal(vimTypes.MaxValidHardwareVersion.String()))
 					})
 				})
 			})
@@ -267,46 +267,46 @@ var _ = Describe("CreateConfigSpec", func() {
 
 		When("VM Class config spec specifies version", func() {
 			BeforeEach(func() {
-				classConfigSpec.Version = "vmx-100"
+				classConfigSpec.Version = vimTypes.MaxValidHardwareVersion.String()
 			})
 
 			It("config spec has expected version", func() {
-				Expect(configSpec.Version).To(Equal("vmx-100"))
+				Expect(configSpec.Version).To(Equal(vimTypes.MaxValidHardwareVersion.String()))
 			})
 
 			When("VM and/or VM Image have version set", func() {
 				Context("VM and VM Image are less than class", func() {
 					BeforeEach(func() {
-						vm.Spec.MinHardwareVersion = 98
-						vmImageStatus.HardwareVersion = pointer.Int32(99)
+						vm.Spec.MinHardwareVersion = int32(vimTypes.MaxValidHardwareVersion - 2)
+						vmImageStatus.HardwareVersion = pointer.Int32(int32(vimTypes.MaxValidHardwareVersion - 1))
 					})
 
 					It("config spec has expected version", func() {
-						Expect(configSpec.Version).To(Equal("vmx-100"))
+						Expect(configSpec.Version).To(Equal(vimTypes.MaxValidHardwareVersion.String()))
 					})
 				})
 
 				Context("VM MinHardwareVersion is greatest", func() {
 					BeforeEach(func() {
-						vm.Spec.MinHardwareVersion = 101
-						vmImageStatus.HardwareVersion = pointer.Int32(99)
+						vm.Spec.MinHardwareVersion = int32(vimTypes.MaxValidHardwareVersion)
+						vmImageStatus.HardwareVersion = pointer.Int32(int32(vimTypes.MaxValidHardwareVersion - 1))
 					})
 
 					It("config spec has expected version", func() {
-						Expect(configSpec.Version).To(Equal("vmx-101"))
+						Expect(configSpec.Version).To(Equal(vimTypes.MaxValidHardwareVersion.String()))
 					})
 				})
 
 				Context("VM Image HardwareVersion is greatest", func() {
 					BeforeEach(func() {
-						vm.Spec.MinHardwareVersion = 99
-						vmImageStatus.HardwareVersion = pointer.Int32(101)
+						vm.Spec.MinHardwareVersion = int32(vimTypes.MaxValidHardwareVersion - 3)
+						vmImageStatus.HardwareVersion = pointer.Int32(int32(vimTypes.MaxValidHardwareVersion - 1))
 					})
 
 					It("config spec has expected version", func() {
 						// When the ConfigSpec.Version is set the image is ignored so it won't
 						// be the expected value.
-						Expect(configSpec.Version).To(Equal("vmx-100"))
+						Expect(configSpec.Version).To(Equal(vimTypes.MaxValidHardwareVersion.String()))
 					})
 				})
 			})
@@ -319,12 +319,12 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 	var (
 		vmCtx               context.VirtualMachineContextA2
 		storageClassesToIDs map[string]string
-		baseConfigSpec      *vimtypes.VirtualMachineConfigSpec
-		configSpec          *vimtypes.VirtualMachineConfigSpec
+		baseConfigSpec      *vimTypes.VirtualMachineConfigSpec
+		configSpec          *vimTypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
-		baseConfigSpec = &vimtypes.VirtualMachineConfigSpec{}
+		baseConfigSpec = &vimTypes.VirtualMachineConfigSpec{}
 		storageClassesToIDs = map[string]string{}
 
 		vm := builder.DummyVirtualMachineA2()
@@ -345,30 +345,30 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 	Context("Returns expected ConfigSpec", func() {
 		BeforeEach(func() {
-			baseConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+			baseConfigSpec = &vimTypes.VirtualMachineConfigSpec{
 				Name:       "dummy-VM",
 				Annotation: "test-annotation",
 				NumCPUs:    42,
 				MemoryMB:   4096,
 				Firmware:   "secret-sauce",
-				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
-					&vimtypes.VirtualDeviceConfigSpec{
-						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-						Device: &vimtypes.VirtualPCIPassthrough{
-							VirtualDevice: vimtypes.VirtualDevice{
-								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+				DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+					&vimTypes.VirtualDeviceConfigSpec{
+						Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimTypes.VirtualPCIPassthrough{
+							VirtualDevice: vimTypes.VirtualDevice{
+								Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
 									Vgpu: "SampleProfile2",
 								},
 							},
 						},
 					},
-					&vimtypes.VirtualDeviceConfigSpec{
-						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-						Device: &vimtypes.VirtualVmxnet3{
-							VirtualVmxnet: vimtypes.VirtualVmxnet{
-								VirtualEthernetCard: vimtypes.VirtualEthernetCard{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Backing: &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{},
+					&vimTypes.VirtualDeviceConfigSpec{
+						Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimTypes.VirtualVmxnet3{
+							VirtualVmxnet: vimTypes.VirtualVmxnet{
+								VirtualEthernetCard: vimTypes.VirtualEthernetCard{
+									VirtualDevice: vimTypes.VirtualDevice{
+										Backing: &vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{},
 									},
 								},
 							},
@@ -389,15 +389,15 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 			Expect(configSpec.DeviceChange).To(HaveLen(2))
 			dSpec0 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
-			_, ok := dSpec0.Device.(*vimtypes.VirtualPCIPassthrough)
+			_, ok := dSpec0.Device.(*vimTypes.VirtualPCIPassthrough)
 			Expect(ok).To(BeTrue())
 			/* Removed until PlaceVmsXCluster() bugs get fixed.
 			dSpec1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
-			_, ok = dSpec1.Device.(*vimtypes.VirtualVmxnet3)
+			_, ok = dSpec1.Device.(*vimTypes.VirtualVmxnet3)
 			Expect(ok).To(BeTrue())
 			*/
 			dSpec2 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
-			_, ok = dSpec2.Device.(*vimtypes.VirtualDisk)
+			_, ok = dSpec2.Device.(*vimTypes.VirtualDisk)
 			Expect(ok).To(BeTrue())
 		})
 	})
@@ -422,12 +422,12 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 	Context("Removes VirtualEthernetCards without a backing", func() {
 		BeforeEach(func() {
-			baseConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+			baseConfigSpec = &vimTypes.VirtualMachineConfigSpec{
 				Name: "dummy-VM",
-				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
-					&vimtypes.VirtualDeviceConfigSpec{
-						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-						Device:    &vimtypes.VirtualVmxnet3{},
+				DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+					&vimTypes.VirtualDeviceConfigSpec{
+						Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    &vimTypes.VirtualVmxnet3{},
 					},
 				},
 			}
@@ -437,7 +437,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			// Just the dummy disk entry: vmxnet3 device should not be there.
 			Expect(configSpec.DeviceChange).To(HaveLen(1))
 			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
-			_, ok := dSpec.Device.(*vimtypes.VirtualDisk)
+			_, ok := dSpec.Device.(*vimTypes.VirtualDisk)
 			Expect(ok).To(BeTrue())
 		})
 	})
@@ -447,7 +447,7 @@ var _ = Describe("ConfigSpecFromVMClassDevices", func() {
 
 	var (
 		vmClassSpec *vmopv1.VirtualMachineClassSpec
-		configSpec  *vimtypes.VirtualMachineConfigSpec
+		configSpec  *vimTypes.VirtualMachineConfigSpec
 	)
 
 	Context("when Class specifies GPU/DDPIO in Hardware", func() {
@@ -475,18 +475,18 @@ var _ = Describe("ConfigSpecFromVMClassDevices", func() {
 			Expect(configSpec.DeviceChange).To(HaveLen(2)) // One each for GPU an DDPIO above
 
 			dSpec1 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
-			dev1, ok := dSpec1.Device.(*vimtypes.VirtualPCIPassthrough)
+			dev1, ok := dSpec1.Device.(*vimTypes.VirtualPCIPassthrough)
 			Expect(ok).To(BeTrue())
 			pciDev1 := dev1.GetVirtualDevice()
-			pciBacking1, ok1 := pciDev1.Backing.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
+			pciBacking1, ok1 := pciDev1.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
 			Expect(ok1).To(BeTrue())
 			Expect(pciBacking1.Vgpu).To(Equal(vmClassSpec.Hardware.Devices.VGPUDevices[0].ProfileName))
 
 			dSpec2 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
-			dev2, ok2 := dSpec2.Device.(*vimtypes.VirtualPCIPassthrough)
+			dev2, ok2 := dSpec2.Device.(*vimTypes.VirtualPCIPassthrough)
 			Expect(ok2).To(BeTrue())
 			pciDev2 := dev2.GetVirtualDevice()
-			pciBacking2, ok2 := pciDev2.Backing.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
+			pciBacking2, ok2 := pciDev2.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
 			Expect(ok2).To(BeTrue())
 			Expect(pciBacking2.AllowedDevice[0].DeviceId).To(BeEquivalentTo(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices[0].DeviceID))
 			Expect(pciBacking2.AllowedDevice[0].VendorId).To(BeEquivalentTo(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices[0].VendorID))
@@ -496,20 +496,20 @@ var _ = Describe("ConfigSpecFromVMClassDevices", func() {
 })
 
 func assertInstanceStorageDeviceChange(
-	deviceChange vimtypes.BaseVirtualDeviceConfigSpec,
+	deviceChange vimTypes.BaseVirtualDeviceConfigSpec,
 	expectedSizeGB int,
 	expectedStoragePolicyID string) {
 
 	dc := deviceChange.GetVirtualDeviceConfigSpec()
-	Expect(dc.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
-	Expect(dc.FileOperation).To(Equal(vimtypes.VirtualDeviceConfigSpecFileOperationCreate))
+	Expect(dc.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+	Expect(dc.FileOperation).To(Equal(vimTypes.VirtualDeviceConfigSpecFileOperationCreate))
 
-	dev, ok := dc.Device.(*vimtypes.VirtualDisk)
+	dev, ok := dc.Device.(*vimTypes.VirtualDisk)
 	Expect(ok).To(BeTrue())
 	Expect(dev.CapacityInBytes).To(BeEquivalentTo(expectedSizeGB * 1024 * 1024 * 1024))
 
 	Expect(dc.Profile).To(HaveLen(1))
-	profile, ok := dc.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec)
+	profile, ok := dc.Profile[0].(*vimTypes.VirtualMachineDefinedProfileSpec)
 	Expect(ok).To(BeTrue())
 	Expect(profile.ProfileId).To(Equal(expectedStoragePolicyID))
 }

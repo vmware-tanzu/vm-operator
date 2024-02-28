@@ -1487,6 +1487,162 @@ func unitTestsValidateUpdate() {
 			Expect(response.Result).ToNot(BeNil())
 		})
 	})
+
+	Context("HardwareVersion", func() {
+
+		type testParams struct {
+			setup         func(ctx *unitValidatingWebhookContext)
+			validate      func(response admission.Response)
+			expectAllowed bool
+		}
+
+		doTest := func(args testParams) {
+			args.setup(ctx)
+
+			var err error
+			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+			Expect(err).ToNot(HaveOccurred())
+			ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+			Expect(err).ToNot(HaveOccurred())
+
+			response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(Equal(args.expectAllowed))
+
+			if args.validate != nil {
+				args.validate(response)
+			}
+		}
+
+		doValidateWithMsg := func(msgs ...string) func(admission.Response) {
+			return func(response admission.Response) {
+				reasons := strings.Split(string(response.Result.Reason), ", ")
+				for _, m := range msgs {
+					Expect(reasons).To(ContainElement(m))
+				}
+				// This may be overly strict in some cases but catches missed assertions.
+				Expect(reasons).To(HaveLen(len(msgs)))
+			}
+		}
+
+		DescribeTable("MinHardwareVersion", doTest,
+			Entry("allow same version",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 17
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.MinHardwareVersion = 17
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow upgrade",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 17
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.MinHardwareVersion = 19
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow downgrade",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 19
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.MinHardwareVersion = 17
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					validate: doValidateWithMsg(
+						`spec.minHardwareVersion: Invalid value: 17: cannot downgrade hardware version`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow if powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 17
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.MinHardwareVersion = 19
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow if powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 17
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.MinHardwareVersion = 19
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.minHardwareVersion: Invalid value: 19: cannot upgrade hardware version unless powered off`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow if suspended",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 17
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+						ctx.vm.Spec.MinHardwareVersion = 19
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					},
+					validate: doValidateWithMsg(
+						`spec.minHardwareVersion: Invalid value: 19: cannot upgrade hardware version unless powered off`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow if powered on but updating to powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 17
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.MinHardwareVersion = 19
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow if powered off but updating to powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 17
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.MinHardwareVersion = 19
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow if suspended but updating to powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.MinHardwareVersion = 17
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+						ctx.vm.Spec.MinHardwareVersion = 19
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateDelete() {

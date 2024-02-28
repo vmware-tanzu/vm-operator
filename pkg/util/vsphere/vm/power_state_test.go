@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vm_test
@@ -183,7 +183,7 @@ func powerStateTests() {
 			BeforeEach(func() {
 				desiredPowerState = types.VirtualMachinePowerStatePoweredOff
 				powerOpBehavior = vmutil.PowerOpBehaviorHard
-				mgdObj.Self.Value = "does-not-exist"
+				mgdObj.Self.Value = doesNotExist
 				initialPowerState = ""
 				expectedErr = errors.New("failed to retrieve properties ServerFaultCode: The object has already been deleted or has not been completely created")
 			})
@@ -831,7 +831,7 @@ func powerStateTests() {
 		When("The VM does not exist", func() {
 			BeforeEach(func() {
 				powerOpBehavior = vmutil.PowerOpBehaviorHard
-				mgdObj.Self.Value = "does-not-exist"
+				mgdObj.Self.Value = doesNotExist
 				initialPowerState = ""
 				expectedErr = errors.New("failed to retrieve properties ServerFaultCode: The object has already been deleted or has not been completely created")
 			})

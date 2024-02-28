@@ -24,7 +24,7 @@ type VirtualMachineProviderInterfaceA2 interface {
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha2.VirtualMachine) (v1alpha2.GuestHeartbeatStatus, error)
 	GetVirtualMachineGuestInfo(ctx context.Context, vm *v1alpha2.VirtualMachine) (map[string]string, error)
 	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha2.VirtualMachine, pubKey string) (string, error)
-	GetVirtualMachineHardwareVersion(ctx context.Context, vm *v1alpha2.VirtualMachine) (int32, error)
+	GetVirtualMachineHardwareVersion(ctx context.Context, vm *v1alpha2.VirtualMachine) (vimTypes.HardwareVersion, error)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha2.VirtualMachineSetResourcePolicy) error
 	IsVirtualMachineSetResourcePolicyReady(ctx context.Context, availabilityZoneName string, resourcePolicy *v1alpha2.VirtualMachineSetResourcePolicy) (bool, error)

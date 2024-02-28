@@ -22,7 +22,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
@@ -153,30 +153,30 @@ func vmTests() {
 
 			var (
 				vcVM       *object.VirtualMachine
-				configSpec *types.VirtualMachineConfigSpec
-				ethCard    types.VirtualEthernetCard
+				configSpec *vimTypes.VirtualMachineConfigSpec
+				ethCard    vimTypes.VirtualEthernetCard
 			)
 
 			BeforeEach(func() {
 				testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 				testConfig.WithVMClassAsConfigDaynDate = true
 
-				ethCard = types.VirtualEthernetCard{
-					VirtualDevice: types.VirtualDevice{
+				ethCard = vimTypes.VirtualEthernetCard{
+					VirtualDevice: vimTypes.VirtualDevice{
 						Key: 4000,
-						DeviceInfo: &types.Description{
+						DeviceInfo: &vimTypes.Description{
 							Label:   "test-configspec-nic-label",
 							Summary: "VM Network",
 						},
-						SlotInfo: &types.VirtualDevicePciBusSlotInfo{
-							VirtualDeviceBusSlotInfo: types.VirtualDeviceBusSlotInfo{},
+						SlotInfo: &vimTypes.VirtualDevicePciBusSlotInfo{
+							VirtualDeviceBusSlotInfo: vimTypes.VirtualDeviceBusSlotInfo{},
 							PciSlotNumber:            32,
 						},
 						ControllerKey: 100,
 					},
-					AddressType: string(types.VirtualEthernetCardMacTypeManual),
+					AddressType: string(vimTypes.VirtualEthernetCardMacTypeManual),
 					MacAddress:  "00:0c:29:93:d7:27",
-					ResourceAllocation: &types.VirtualEthernetCardResourceAllocation{
+					ResourceAllocation: &vimTypes.VirtualEthernetCardResourceAllocation{
 						Reservation: pointer.Int64(42),
 					},
 				}
@@ -185,7 +185,7 @@ func vmTests() {
 			JustBeforeEach(func() {
 				if configSpec != nil {
 					var w bytes.Buffer
-					enc := types.NewJSONEncoder(&w)
+					enc := vimTypes.NewJSONEncoder(&w)
 					Expect(enc.Encode(configSpec)).To(Succeed())
 
 					// Update the VM Class with the XML.
@@ -229,7 +229,7 @@ func vmTests() {
 
 			Context("ConfigSpec specifies annotation", func() {
 				BeforeEach(func() {
-					configSpec = &types.VirtualMachineConfigSpec{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
 						Annotation: "my-annotation",
 					}
 				})
@@ -245,7 +245,7 @@ func vmTests() {
 
 			Context("ConfigSpec specifies hardware spec", func() {
 				BeforeEach(func() {
-					configSpec = &types.VirtualMachineConfigSpec{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
 						Name:     "config-spec-name-is-not-used",
 						NumCPUs:  7,
 						MemoryMB: 5102,
@@ -271,8 +271,8 @@ func vmTests() {
 					vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("3")
 
 					// Specify a CPU reservation via ConfigSpec. This value should not be honored.
-					configSpec = &types.VirtualMachineConfigSpec{
-						CpuAllocation: &types.ResourceAllocationInfo{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						CpuAllocation: &vimTypes.ResourceAllocationInfo{
 							Reservation: pointer.Int64(6),
 						},
 					}
@@ -303,8 +303,8 @@ func vmTests() {
 					vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("0")
 
 					// Specify a CPU reservation via ConfigSpec
-					configSpec = &types.VirtualMachineConfigSpec{
-						CpuAllocation: &types.ResourceAllocationInfo{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						CpuAllocation: &vimTypes.ResourceAllocationInfo{
 							Reservation: pointer.Int64(6),
 						},
 					}
@@ -329,8 +329,8 @@ func vmTests() {
 					vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("4Mi")
 
 					// Specify a Memory reservation via ConfigSpec
-					configSpec = &types.VirtualMachineConfigSpec{
-						MemoryAllocation: &types.ResourceAllocationInfo{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						MemoryAllocation: &vimTypes.ResourceAllocationInfo{
 							Reservation: pointer.Int64(5120),
 						},
 					}
@@ -361,8 +361,8 @@ func vmTests() {
 					vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("0Mi")
 
 					// Specify a Memory reservation via ConfigSpec
-					configSpec = &types.VirtualMachineConfigSpec{
-						MemoryAllocation: &types.ResourceAllocationInfo{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						MemoryAllocation: &vimTypes.ResourceAllocationInfo{
 							Reservation: pointer.Int64(5120),
 						},
 					}
@@ -387,11 +387,11 @@ func vmTests() {
 					testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 
 					// Create the ConfigSpec with an ethernet card.
-					configSpec = &types.VirtualMachineConfigSpec{
-						DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualE1000{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualE1000{
 									VirtualEthernetCard: ethCard,
 								},
 							},
@@ -406,16 +406,16 @@ func vmTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					l := devList.SelectByType(&vimTypes.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
 
 					dev := l[0].GetVirtualDevice()
-					backing, ok := dev.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					backing, ok := dev.Backing.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					_, dvpg := getDVPG(ctx, dvpgName)
 					Expect(backing.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
 
-					ethDevice, ok := l[0].(*types.VirtualE1000)
+					ethDevice, ok := l[0].(*vimTypes.VirtualE1000)
 					Expect(ok).To(BeTrue())
 					Expect(ethDevice.AddressType).To(Equal(ethCard.AddressType))
 					Expect(ethDevice.MacAddress).To(Equal(ethCard.MacAddress))
@@ -435,7 +435,7 @@ func vmTests() {
 				BeforeEach(func() {
 					testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 
-					configSpec = &types.VirtualMachineConfigSpec{}
+					configSpec = &vimTypes.VirtualMachineConfigSpec{}
 				})
 
 				It("Reconfigures the VM with the default NIC settings from provider", func() {
@@ -443,11 +443,11 @@ func vmTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					l := devList.SelectByType(&vimTypes.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
 
 					dev := l[0].GetVirtualDevice()
-					backing, ok := dev.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					backing, ok := dev.Backing.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					_, dvpg := getDVPG(ctx, dvpgName)
 					Expect(backing.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
@@ -472,24 +472,24 @@ func vmTests() {
 					}
 
 					// Create the ConfigSpec with a GPU and a DDPIO device.
-					configSpec = &types.VirtualMachineConfigSpec{
-						DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualPCIPassthrough{
-									VirtualDevice: types.VirtualDevice{
-										Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPCIPassthrough{
+									VirtualDevice: vimTypes.VirtualDevice{
+										Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
 											Vgpu: "profile-from-config-spec",
 										},
 									},
 								},
 							},
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualPCIPassthrough{
-									VirtualDevice: types.VirtualDevice{
-										Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
-											AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPCIPassthrough{
+									VirtualDevice: vimTypes.VirtualDevice{
+										Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+											AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
 												{
 													VendorId: 52,
 													DeviceId: 53,
@@ -509,16 +509,16 @@ func vmTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-					p := devList.SelectByType(&types.VirtualPCIPassthrough{})
+					p := devList.SelectByType(&vimTypes.VirtualPCIPassthrough{})
 					Expect(p).To(HaveLen(2))
 
 					pciDev1 := p[0].GetVirtualDevice()
-					pciBacking1, ok1 := pciDev1.Backing.(*types.VirtualPCIPassthroughVmiopBackingInfo)
+					pciBacking1, ok1 := pciDev1.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
 					Expect(ok1).Should(BeTrue())
 					Expect(pciBacking1.Vgpu).To(Equal("profile-from-config-spec"))
 
 					pciDev2 := p[1].GetVirtualDevice()
-					pciBacking2, ok2 := pciDev2.Backing.(*types.VirtualPCIPassthroughDynamicBackingInfo)
+					pciBacking2, ok2 := pciDev2.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
 					Expect(ok2).Should(BeTrue())
 					Expect(pciBacking2.AllowedDevice).To(HaveLen(1))
 					Expect(pciBacking2.AllowedDevice[0].VendorId).To(Equal(int32(52)))
@@ -531,30 +531,30 @@ func vmTests() {
 
 				BeforeEach(func() {
 					// Create the ConfigSpec with an ethernet card, a GPU and a DDPIO device.
-					configSpec = &types.VirtualMachineConfigSpec{
-						DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualE1000{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualE1000{
 									VirtualEthernetCard: ethCard,
 								},
 							},
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualPCIPassthrough{
-									VirtualDevice: types.VirtualDevice{
-										Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPCIPassthrough{
+									VirtualDevice: vimTypes.VirtualDevice{
+										Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
 											Vgpu: "SampleProfile2",
 										},
 									},
 								},
 							},
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualPCIPassthrough{
-									VirtualDevice: types.VirtualDevice{
-										Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
-											AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPCIPassthrough{
+									VirtualDevice: vimTypes.VirtualDevice{
+										Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+											AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
 												{
 													VendorId: 52,
 													DeviceId: 53,
@@ -574,16 +574,16 @@ func vmTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					l := devList.SelectByType(&vimTypes.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
 
 					dev := l[0].GetVirtualDevice()
-					backing, ok := dev.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					backing, ok := dev.Backing.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					_, dvpg := getDVPG(ctx, dvpgName)
 					Expect(backing.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
 
-					ethDevice, ok := l[0].(*types.VirtualE1000)
+					ethDevice, ok := l[0].(*vimTypes.VirtualE1000)
 					Expect(ok).To(BeTrue())
 					Expect(ethDevice.AddressType).To(Equal(ethCard.AddressType))
 					Expect(dev.DeviceInfo).To(Equal(ethCard.VirtualDevice.DeviceInfo))
@@ -595,14 +595,14 @@ func vmTests() {
 					Expect(ethDevice.ResourceAllocation.Reservation).ToNot(BeNil())
 					Expect(*ethDevice.ResourceAllocation.Reservation).To(Equal(*ethCard.ResourceAllocation.Reservation))
 
-					p := devList.SelectByType(&types.VirtualPCIPassthrough{})
+					p := devList.SelectByType(&vimTypes.VirtualPCIPassthrough{})
 					Expect(p).To(HaveLen(2))
 					pciDev1 := p[0].GetVirtualDevice()
-					pciBacking1, ok1 := pciDev1.Backing.(*types.VirtualPCIPassthroughVmiopBackingInfo)
+					pciBacking1, ok1 := pciDev1.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
 					Expect(ok1).Should(BeTrue())
 					Expect(pciBacking1.Vgpu).To(Equal("SampleProfile2"))
 					pciDev2 := p[1].GetVirtualDevice()
-					pciBacking2, ok2 := pciDev2.Backing.(*types.VirtualPCIPassthroughDynamicBackingInfo)
+					pciBacking2, ok2 := pciDev2.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
 					Expect(ok2).Should(BeTrue())
 					Expect(pciBacking2.AllowedDevice).To(HaveLen(1))
 					Expect(pciBacking2.AllowedDevice[0].VendorId).To(Equal(int32(52)))
@@ -622,13 +622,13 @@ func vmTests() {
 					// The simulator can still reconfigure the VM with default device types like pointing devices,
 					// keyboard, video card, etc. But VC has some restrictions with reconfiguring a VM with new
 					// default device types via ConfigSpec and are usually ignored.
-					configSpec = &types.VirtualMachineConfigSpec{
-						DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualPointingDevice{
-									VirtualDevice: types.VirtualDevice{
-										Backing: &types.VirtualPointingDeviceDeviceBackingInfo{
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPointingDevice{
+									VirtualDevice: vimTypes.VirtualDevice{
+										Backing: &vimTypes.VirtualPointingDeviceDeviceBackingInfo{
 											HostPointingDevice: "autodetect",
 										},
 										Key:           700,
@@ -636,55 +636,55 @@ func vmTests() {
 									},
 								},
 							},
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualPS2Controller{
-									VirtualController: types.VirtualController{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPS2Controller{
+									VirtualController: vimTypes.VirtualController{
 										Device: []int32{700},
-										VirtualDevice: types.VirtualDevice{
+										VirtualDevice: vimTypes.VirtualDevice{
 											Key: 300,
 										},
 									},
 								},
 							},
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualMachineVideoCard{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualMachineVideoCard{
 									UseAutoDetect: pointer.Bool(false),
 									NumDisplays:   1,
-									VirtualDevice: types.VirtualDevice{
+									VirtualDevice: vimTypes.VirtualDevice{
 										Key:           500,
 										ControllerKey: 100,
 									},
 								},
 							},
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualPCIController{
-									VirtualController: types.VirtualController{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPCIController{
+									VirtualController: vimTypes.VirtualController{
 										Device: []int32{500},
-										VirtualDevice: types.VirtualDevice{
+										VirtualDevice: vimTypes.VirtualDevice{
 											Key: 100,
 										},
 									},
 								},
 							},
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualDisk{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualDisk{
 									CapacityInBytes: 1024,
-									VirtualDevice: types.VirtualDevice{
+									VirtualDevice: vimTypes.VirtualDevice{
 										Key: -42,
-										Backing: &types.VirtualDiskFlatVer2BackingInfo{
+										Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
 											ThinProvisioned: pointer.Bool(true),
 										},
 									},
 								},
 							},
-							&types.VirtualDeviceConfigSpec{
-								Operation: types.VirtualDeviceConfigSpecOperationAdd,
-								Device: &types.VirtualSCSIController{
-									VirtualController: types.VirtualController{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualSCSIController{
+									VirtualController: vimTypes.VirtualController{
 										Device: []int32{-42},
 									},
 								},
@@ -702,28 +702,28 @@ func vmTests() {
 
 					// VM already has a default pointing device and the spec adds one more
 					// info about the default device is unknown to assert on
-					pointingDev := devList.SelectByType(&types.VirtualPointingDevice{})
+					pointingDev := devList.SelectByType(&vimTypes.VirtualPointingDevice{})
 					Expect(pointingDev).To(HaveLen(2))
 					dev := pointingDev[0].GetVirtualDevice()
-					backing, ok := dev.Backing.(*types.VirtualPointingDeviceDeviceBackingInfo)
+					backing, ok := dev.Backing.(*vimTypes.VirtualPointingDeviceDeviceBackingInfo)
 					Expect(ok).Should(BeTrue())
 					Expect(backing.HostPointingDevice).To(Equal("autodetect"))
 					Expect(dev.Key).To(Equal(int32(700)))
 					Expect(dev.ControllerKey).To(Equal(int32(300)))
 
-					ps2Controllers := devList.SelectByType(&types.VirtualPS2Controller{})
+					ps2Controllers := devList.SelectByType(&vimTypes.VirtualPS2Controller{})
 					Expect(ps2Controllers).To(HaveLen(1))
 					dev = ps2Controllers[0].GetVirtualDevice()
 					Expect(dev.Key).To(Equal(int32(300)))
 
-					pciControllers := devList.SelectByType(&types.VirtualPCIController{})
+					pciControllers := devList.SelectByType(&vimTypes.VirtualPCIController{})
 					Expect(pciControllers).To(HaveLen(1))
 					dev = pciControllers[0].GetVirtualDevice()
 					Expect(dev.Key).To(Equal(int32(100)))
 
 					// VM already has a default video card and the spec adds one more
 					// info about the default device is unknown to assert on
-					video := devList.SelectByType(&types.VirtualMachineVideoCard{})
+					video := devList.SelectByType(&vimTypes.VirtualMachineVideoCard{})
 					Expect(video).To(HaveLen(2))
 					dev = video[0].GetVirtualDevice()
 					Expect(dev.Key).To(Equal(int32(500)))
@@ -731,11 +731,11 @@ func vmTests() {
 
 					// Disk and disk controllers from config spec should not get added, since we
 					// filter them out in our ConfigSpec
-					diskControllers := devList.SelectByType(&types.VirtualSCSIController{})
+					diskControllers := devList.SelectByType(&vimTypes.VirtualSCSIController{})
 					Expect(diskControllers).To(BeEmpty())
 
 					// Only preexisting disk should be present on VM -- len: 1
-					disks := devList.SelectByType(&types.VirtualDisk{})
+					disks := devList.SelectByType(&vimTypes.VirtualDisk{})
 					Expect(disks).To(HaveLen(1))
 					dev = disks[0].GetVirtualDevice()
 					Expect(dev.Key).ToNot(Equal(int32(-42)))
@@ -747,25 +747,25 @@ func vmTests() {
 				Context("VM Class has vGPU and/or DDPIO devices", func() {
 					BeforeEach(func() {
 						// Create the ConfigSpec with a GPU and a DDPIO device.
-						configSpec = &types.VirtualMachineConfigSpec{
+						configSpec = &vimTypes.VirtualMachineConfigSpec{
 							Name: "dummy-VM",
-							DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPCIPassthrough{
-										VirtualDevice: types.VirtualDevice{
-											Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
+							DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+								&vimTypes.VirtualDeviceConfigSpec{
+									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+									Device: &vimTypes.VirtualPCIPassthrough{
+										VirtualDevice: vimTypes.VirtualDevice{
+											Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
 												Vgpu: "profile-from-configspec",
 											},
 										},
 									},
 								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPCIPassthrough{
-										VirtualDevice: types.VirtualDevice{
-											Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
-												AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
+								&vimTypes.VirtualDeviceConfigSpec{
+									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+									Device: &vimTypes.VirtualPCIPassthrough{
+										VirtualDevice: vimTypes.VirtualDevice{
+											Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+												AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
 													{
 														VendorId: 52,
 														DeviceId: 53,
@@ -790,25 +790,25 @@ func vmTests() {
 				Context("VM Class has vGPU and/or DDPIO devices and VM spec has a PVC", func() {
 					BeforeEach(func() {
 						// Create the ConfigSpec with a GPU and a DDPIO device.
-						configSpec = &types.VirtualMachineConfigSpec{
+						configSpec = &vimTypes.VirtualMachineConfigSpec{
 							Name: "dummy-VM",
-							DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPCIPassthrough{
-										VirtualDevice: types.VirtualDevice{
-											Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
+							DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+								&vimTypes.VirtualDeviceConfigSpec{
+									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+									Device: &vimTypes.VirtualPCIPassthrough{
+										VirtualDevice: vimTypes.VirtualDevice{
+											Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
 												Vgpu: "profile-from-configspec",
 											},
 										},
 									},
 								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPCIPassthrough{
-										VirtualDevice: types.VirtualDevice{
-											Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
-												AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
+								&vimTypes.VirtualDeviceConfigSpec{
+									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+									Device: &vimTypes.VirtualPCIPassthrough{
+										VirtualDevice: vimTypes.VirtualDevice{
+											Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+												AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
 													{
 														VendorId: 52,
 														DeviceId: 53,
@@ -883,7 +883,7 @@ func vmTests() {
 
 			Context("VM Class Config specifies a hardware version", func() {
 				BeforeEach(func() {
-					configSpec = &types.VirtualMachineConfigSpec{Version: "vmx-14"}
+					configSpec = &vimTypes.VirtualMachineConfigSpec{Version: "vmx-14"}
 				})
 
 				When("The minimum hardware version on the VMSpec is greater than VMClass", func() {
@@ -919,46 +919,46 @@ func vmTests() {
 
 				When("configSpec has disk and disk controllers", func() {
 					BeforeEach(func() {
-						configSpec = &types.VirtualMachineConfigSpec{
+						configSpec = &vimTypes.VirtualMachineConfigSpec{
 							Name: "dummy-VM",
-							DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualSATAController{
-										VirtualController: types.VirtualController{
-											VirtualDevice: types.VirtualDevice{
+							DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+								&vimTypes.VirtualDeviceConfigSpec{
+									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+									Device: &vimTypes.VirtualSATAController{
+										VirtualController: vimTypes.VirtualController{
+											VirtualDevice: vimTypes.VirtualDevice{
 												Key: 101,
 											},
 										},
 									},
 								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualSCSIController{
-										VirtualController: types.VirtualController{
-											VirtualDevice: types.VirtualDevice{
+								&vimTypes.VirtualDeviceConfigSpec{
+									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+									Device: &vimTypes.VirtualSCSIController{
+										VirtualController: vimTypes.VirtualController{
+											VirtualDevice: vimTypes.VirtualDevice{
 												Key: 103,
 											},
 										},
 									},
 								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualNVMEController{
-										VirtualController: types.VirtualController{
-											VirtualDevice: types.VirtualDevice{
+								&vimTypes.VirtualDeviceConfigSpec{
+									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+									Device: &vimTypes.VirtualNVMEController{
+										VirtualController: vimTypes.VirtualController{
+											VirtualDevice: vimTypes.VirtualDevice{
 												Key: 104,
 											},
 										},
 									},
 								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualDisk{
+								&vimTypes.VirtualDeviceConfigSpec{
+									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+									Device: &vimTypes.VirtualDisk{
 										CapacityInBytes: 1024,
-										VirtualDevice: types.VirtualDevice{
+										VirtualDevice: vimTypes.VirtualDevice{
 											Key: -42,
-											Backing: &types.VirtualDiskFlatVer2BackingInfo{
+											Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
 												ThinProvisioned: pointer.Bool(true),
 											},
 										},
@@ -973,23 +973,23 @@ func vmTests() {
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 						devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-						satacont := devList.SelectByType(&types.VirtualSATAController{})
+						satacont := devList.SelectByType(&vimTypes.VirtualSATAController{})
 						Expect(satacont).To(HaveLen(1))
 						dev := satacont[0].GetVirtualDevice()
 						Expect(dev.Key).To(Equal(int32(101)))
 
-						scsicont := devList.SelectByType(&types.VirtualSCSIController{})
+						scsicont := devList.SelectByType(&vimTypes.VirtualSCSIController{})
 						Expect(scsicont).To(HaveLen(1))
 						dev = scsicont[0].GetVirtualDevice()
 						Expect(dev.Key).To(Equal(int32(103)))
 
-						nvmecont := devList.SelectByType(&types.VirtualNVMEController{})
+						nvmecont := devList.SelectByType(&vimTypes.VirtualNVMEController{})
 						Expect(nvmecont).To(HaveLen(1))
 						dev = nvmecont[0].GetVirtualDevice()
 						Expect(dev.Key).To(Equal(int32(104)))
 
 						// only preexisting disk should be present on VM -- len: 1
-						disks := devList.SelectByType(&types.VirtualDisk{})
+						disks := devList.SelectByType(&vimTypes.VirtualDisk{})
 						Expect(disks).To(HaveLen(1))
 						dev1 := disks[0].GetVirtualDevice()
 						Expect(dev1.Key).ToNot(Equal(int32(-42)))
@@ -1061,7 +1061,7 @@ func vmTests() {
 				})
 
 				By("has expected power state", func() {
-					Expect(o.Summary.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
+					Expect(o.Summary.Runtime.PowerState).To(Equal(vimTypes.VirtualMachinePowerStatePoweredOn))
 				})
 
 				vmClassRes := &vmClass.Spec.Policies.Resources
@@ -1148,16 +1148,16 @@ func vmTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-					p := devList.SelectByType(&types.VirtualPCIPassthrough{})
+					p := devList.SelectByType(&vimTypes.VirtualPCIPassthrough{})
 					Expect(p).To(HaveLen(2))
 
 					pciDev1 := p[0].GetVirtualDevice()
-					pciBacking1, ok1 := pciDev1.Backing.(*types.VirtualPCIPassthroughVmiopBackingInfo)
+					pciBacking1, ok1 := pciDev1.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
 					Expect(ok1).Should(BeTrue())
 					Expect(pciBacking1.Vgpu).To(Equal("profile-from-class-without-class-as-config-fss"))
 
 					pciDev2 := p[1].GetVirtualDevice()
-					pciBacking2, ok2 := pciDev2.Backing.(*types.VirtualPCIPassthroughDynamicBackingInfo)
+					pciBacking2, ok2 := pciDev2.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
 					Expect(ok2).Should(BeTrue())
 					Expect(pciBacking2.AllowedDevice).To(HaveLen(1))
 					Expect(pciBacking2.AllowedDevice[0].VendorId).To(Equal(int32(59)))
@@ -1241,7 +1241,7 @@ func vmTests() {
 					})
 
 					By("has expected power state", func() {
-						Expect(o.Summary.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
+						Expect(o.Summary.Runtime.PowerState).To(Equal(vimTypes.VirtualMachinePowerStatePoweredOn))
 					})
 
 					By("has expected hardware config", func() {
@@ -1410,7 +1410,7 @@ func vmTests() {
 				Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 				state, err := vcVM.PowerState(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(state).To(Equal(types.VirtualMachinePowerStatePoweredOff))
+				Expect(state).To(Equal(vimTypes.VirtualMachinePowerStatePoweredOff))
 			})
 
 			It("returns error when StorageClass is required but none specified", func() {
@@ -1533,7 +1533,7 @@ func vmTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					l := devList.SelectByType(&vimTypes.VirtualEthernetCard{})
 					Expect(l).To(BeEmpty())
 				})
 
@@ -1563,16 +1563,16 @@ func vmTests() {
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 						devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-						l := devList.SelectByType(&types.VirtualEthernetCard{})
+						l := devList.SelectByType(&vimTypes.VirtualEthernetCard{})
 						Expect(l).To(HaveLen(2))
 
 						dev1 := l[0].GetVirtualDevice()
-						backing1, ok := dev1.Backing.(*types.VirtualEthernetCardNetworkBackingInfo)
+						backing1, ok := dev1.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
 						Expect(ok).Should(BeTrue())
 						Expect(backing1.DeviceName).To(Equal("VM Network"))
 
 						dev2 := l[1].GetVirtualDevice()
-						backing2, ok := dev2.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+						backing2, ok := dev2.Backing.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 						Expect(ok).Should(BeTrue())
 						_, dvpg := getDVPG(ctx, dvpgName)
 						Expect(backing2.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
@@ -1783,7 +1783,7 @@ func vmTests() {
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
 
-				var members []types.ManagedObjectReference
+				var members []vimTypes.ManagedObjectReference
 				for i := range resourcePolicy.Status.ClusterModules {
 					m, err := cluster.NewManager(ctx.RestClient).ListModuleMembers(ctx, resourcePolicy.Status.ClusterModules[i].ModuleUuid)
 					Expect(err).ToNot(HaveOccurred())
@@ -1902,7 +1902,7 @@ func vmTests() {
 			It("return version", func() {
 				version, err := vmProvider.GetVirtualMachineHardwareVersion(ctx, vm)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(version).To(Equal(int32(9)))
+				Expect(version).To(Equal(vimTypes.VMX9))
 			})
 		})
 	})
@@ -1912,7 +1912,7 @@ func vmTests() {
 func getVMHomeDisk(
 	ctx *builder.TestContextForVCSim,
 	vcVM *object.VirtualMachine,
-	o mo.VirtualMachine) (*types.VirtualDisk, *types.VirtualDiskFlatVer2BackingInfo) {
+	o mo.VirtualMachine) (*vimTypes.VirtualDisk, *vimTypes.VirtualDiskFlatVer2BackingInfo) {
 
 	ExpectWithOffset(1, vcVM.Name()).ToNot(BeEmpty())
 	ExpectWithOffset(1, o.Datastore).ToNot(BeEmpty())
@@ -1920,15 +1920,15 @@ func getVMHomeDisk(
 	ExpectWithOffset(1, vcVM.Properties(ctx, o.Datastore[0], nil, &dso)).To(Succeed())
 
 	devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-	l := devList.SelectByBackingInfo(&types.VirtualDiskFlatVer2BackingInfo{
-		VirtualDeviceFileBackingInfo: types.VirtualDeviceFileBackingInfo{
+	l := devList.SelectByBackingInfo(&vimTypes.VirtualDiskFlatVer2BackingInfo{
+		VirtualDeviceFileBackingInfo: vimTypes.VirtualDeviceFileBackingInfo{
 			FileName: fmt.Sprintf("[%s] %s/disk-0.vmdk", dso.Name, vcVM.Name()),
 		},
 	})
 	ExpectWithOffset(1, l).To(HaveLen(1))
 
-	disk := l[0].(*types.VirtualDisk)
-	backing := disk.Backing.(*types.VirtualDiskFlatVer2BackingInfo)
+	disk := l[0].(*vimTypes.VirtualDisk)
+	backing := disk.Backing.(*vimTypes.VirtualDiskFlatVer2BackingInfo)
 
 	return disk, backing
 }

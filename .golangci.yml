@@ -74,6 +74,12 @@ issues:
     - staticcheck
     text: "^SA1019: [^.]+.Status.ContentLibraryRef is deprecated"
   - linters:
+    - staticcheck
+    text: "^SA1019: [^.]+.Wait is deprecated: Please use WaitEx instead."
+  - linters:
+    - staticcheck
+    text: "^SA1019: [^.]+.WaitForResult is deprecated: Please use WaitForResultEx instead."
+  - linters:
     - revive
     text: ".*should have (a package )?comment.*"
   - linters:

@@ -132,11 +132,35 @@ func intgTestsValidateUpdate() {
 		BeforeEach(func() {
 			ctx.vm.Spec.MinHardwareVersion += 2
 		})
-		It("should deny the request", func() {
-			Expect(err).To(HaveOccurred())
-			expectedPath := field.NewPath("spec", "minHardwareVersion")
-			Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
-			Expect(err.Error()).To(ContainSubstring(immutableFieldMsg))
+		When("vm is powered off", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			})
+			It("should allow the request", func() {
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+		When("vm is powered on", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			})
+			It("should deny the request", func() {
+				Expect(err).To(HaveOccurred())
+				expectedPath := field.NewPath("spec", "minHardwareVersion")
+				Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
+				Expect(err.Error()).To(ContainSubstring("cannot upgrade hardware version unless powered off"))
+			})
+		})
+		When("vm is suspended", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+			})
+			It("should deny the request", func() {
+				Expect(err).To(HaveOccurred())
+				expectedPath := field.NewPath("spec", "minHardwareVersion")
+				Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
+				Expect(err.Error()).To(ContainSubstring("cannot upgrade hardware version unless powered off"))
+			})
 		})
 	})
 

@@ -6,7 +6,6 @@ package util
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"reflect"
 
 	"github.com/vmware/govmomi/vim25"
@@ -232,19 +231,23 @@ func MergeExtraConfig(
 	return mergedExtraConfig
 }
 
-// EnsureMinHardwareVersionInConfigSpec ensures that the hardware version in the ConfigSpec
-// is at least equal to the passed minimum hardware version value.
-func EnsureMinHardwareVersionInConfigSpec(configSpec *vimTypes.VirtualMachineConfigSpec, minVersion int32) {
-	if minVersion == 0 {
+// EnsureMinHardwareVersionInConfigSpec ensures that the hardware version in the
+// ConfigSpec is at least equal to the passed minimum hardware version value.
+func EnsureMinHardwareVersionInConfigSpec(
+	configSpec *vimTypes.VirtualMachineConfigSpec,
+	minVersion int32) {
+
+	minHwVersion := vimTypes.HardwareVersion(minVersion)
+	if !minHwVersion.IsValid() {
 		return
 	}
 
-	configSpecHwVersion := int32(0)
+	var configSpecHwVersion vimTypes.HardwareVersion
 	if configSpec.Version != "" {
-		configSpecHwVersion = ParseVirtualHardwareVersion(configSpec.Version)
+		configSpecHwVersion, _ = vimTypes.ParseHardwareVersion(configSpec.Version)
 	}
-	if minVersion > configSpecHwVersion {
-		configSpecHwVersion = minVersion
+	if minHwVersion > configSpecHwVersion {
+		configSpecHwVersion = minHwVersion
 	}
-	configSpec.Version = fmt.Sprintf("vmx-%d", configSpecHwVersion)
+	configSpec.Version = configSpecHwVersion.String()
 }

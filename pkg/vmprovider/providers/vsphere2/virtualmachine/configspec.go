@@ -4,8 +4,6 @@
 package virtualmachine
 
 import (
-	"fmt"
-
 	"github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/pointer"
 
@@ -53,8 +51,8 @@ func CreateConfigSpec(
 	}
 
 	hardwareVersion := determineHardwareVersion(vmCtx.VM, &configSpec, vmImageStatus)
-	if hardwareVersion != 0 {
-		configSpec.Version = fmt.Sprintf("vmx-%d", hardwareVersion)
+	if hardwareVersion.IsValid() {
+		configSpec.Version = hardwareVersion.String()
 	}
 
 	if val, ok := vmCtx.VM.Annotations[constants.FirmwareOverrideAnnotation]; ok && (val == "efi" || val == "bios") {
@@ -119,16 +117,16 @@ func CreateConfigSpec(
 func determineHardwareVersion(
 	vm *vmopv1.VirtualMachine,
 	configSpec *types.VirtualMachineConfigSpec,
-	vmImageStatus *vmopv1.VirtualMachineImageStatus) int32 {
+	vmImageStatus *vmopv1.VirtualMachineImageStatus) types.HardwareVersion {
 
-	vmMinVersion := vm.Spec.MinHardwareVersion
+	vmMinVersion := types.HardwareVersion(vm.Spec.MinHardwareVersion)
 
-	var configSpecVersion int32
+	var configSpecVersion types.HardwareVersion
 	if configSpec.Version != "" {
-		configSpecVersion = util.ParseVirtualHardwareVersion(configSpec.Version)
+		configSpecVersion, _ = types.ParseHardwareVersion(configSpec.Version)
 	}
 
-	if configSpecVersion != 0 {
+	if configSpecVersion.IsValid() {
 		if vmMinVersion <= configSpecVersion {
 			// No update needed.
 			return 0
@@ -137,16 +135,16 @@ func determineHardwareVersion(
 		return vmMinVersion
 	}
 
-	// A VM Class with an embedded ConfigSpec should have the version set, so this is
-	// a ConfigSpec we created from the HW devices in the class. If the image's version
-	// is too old to support passthrough devices or PVCs if configured, bump the version
-	// so those devices will work.
-	var imageVersion int32
+	// A VM Class with an embedded ConfigSpec should have the version set, so
+	// this is a ConfigSpec we created from the HW devices in the class. If the
+	// image's version is too old to support passthrough devices or PVCs if
+	// configured, bump the version so those devices will work.
+	var imageVersion types.HardwareVersion
 	if vmImageStatus != nil && vmImageStatus.HardwareVersion != nil {
-		imageVersion = *vmImageStatus.HardwareVersion
+		imageVersion = types.HardwareVersion(*vmImageStatus.HardwareVersion)
 	}
 
-	var minVerFromDevs int32
+	var minVerFromDevs types.HardwareVersion
 	if util.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange) {
 		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPCIPassthruDevices)
 	} else if hasPVC(vm) {

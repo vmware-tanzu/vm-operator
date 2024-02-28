@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vm_test
@@ -13,6 +13,7 @@ import (
 
 func vcSimTests() {
 	Describe("Power State", powerStateTests)
+	Describe("Hardware Version", hardwareVersionTests)
 	Describe("Managed Object", managedObjectTests)
 }
 

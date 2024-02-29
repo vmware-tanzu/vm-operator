@@ -6,6 +6,7 @@ package builder
 import (
 	"flag"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -48,14 +49,37 @@ func init() {
 			args = append(args, os.Args[i])
 		}
 	}
-	cmdLine.BoolVar(&flags.IntegrationTestsEnabled, "enable-integration-tests", false, "Enables integration tests")
-	cmdLine.BoolVar(&flags.UnitTestsEnabled, "enable-unit-tests", true, "Enables unit tests")
+
+	eitFlagDefaultValue, _ := strconv.ParseBool(os.Getenv("ENABLE_INTEGRATION_TESTS"))
+	var eutFlagDefaultValue bool
+	if v, ok := os.LookupEnv("ENABLE_UNIT_TESTS"); ok {
+		eutFlagDefaultValue, _ = strconv.ParseBool(v)
+	} else {
+		eutFlagDefaultValue = true
+	}
+
+	cmdLine.BoolVar(
+		&flags.IntegrationTestsEnabled,
+		"enable-integration-tests",
+		eitFlagDefaultValue,
+		"Enables integration tests")
+	cmdLine.BoolVar(
+		&flags.UnitTestsEnabled,
+		"enable-unit-tests",
+		eutFlagDefaultValue,
+		"Enables unit tests")
 	_ = cmdLine.Parse(args)
 
 	// We still need to add the flags to the default flagset, because otherwise
 	// Ginkgo will complain that the flags are not recognized.
-	flag.Bool("enable-integration-tests", false, "Enables integration tests")
-	flag.Bool("enable-unit-tests", true, "Enables unit tests")
+	flag.Bool(
+		"enable-integration-tests",
+		eitFlagDefaultValue,
+		"Enables integration tests")
+	flag.Bool(
+		"enable-unit-tests",
+		eutFlagDefaultValue,
+		"Enables unit tests")
 
 	flag.StringVar(&flags.RootDir, "root-dir", "../..", "Root project directory")
 }

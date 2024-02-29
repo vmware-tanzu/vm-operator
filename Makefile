@@ -142,19 +142,28 @@ help: ## Display this help
 ## --------------------------------------
 
 .PHONY: test-nocover
+test-nocover: | $(GINKGO)
 test-nocover: ## Run Tests (without code coverage)
-	hack/test-unit.sh
+	ENABLE_UNIT_TESTS=true \
+	ENABLE_INTEGRATION_TESTS=false \
+	hack/test.sh
 
 .PHONY: test
-test: $(GOCOVMERGE)
+test: | $(GINKGO)
 test: ## Run tests
 	@rm -f $(COVERAGE_FILE)
-	hack/test-unit.sh $(COVERAGE_FILE)
+	ENABLE_UNIT_TESTS=true \
+	ENABLE_INTEGRATION_TESTS=false \
+	hack/test.sh $(COVERAGE_FILE)
 
 .PHONY: test-integration
-test-integration: $(ETCD) $(KUBE_APISERVER)
+test-integration: | $(GINKGO) $(ETCD) $(KUBE_APISERVER)
 test-integration: ## Run integration tests
-	KUBECONFIG=$(KUBECONFIG) hack/test-integration.sh $(INT_COV_FILE)
+	@rm -f $(INT_COV_FILE)
+	ENABLE_UNIT_TESTS=false \
+	ENABLE_INTEGRATION_TESTS=true \
+	TEST_PKGS="./controllers ./pkg ./webhooks" \
+	hack/test.sh $(INT_COV_FILE)
 
 .PHONY: coverage
 coverage-merge: $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)

@@ -223,6 +223,9 @@ type VirtualMachineSpec struct {
 	// Bootstrap describes the desired state of the guest's bootstrap
 	// configuration.
 	//
+	// If omitted, a default bootstrap method may be selected based on the
+	// guest OS identifier. If Linux, then the LinuxPrep method is used.
+	//
 	// +optional
 	Bootstrap *VirtualMachineBootstrapSpec `json:"bootstrap,omitempty"`
 

@@ -705,8 +705,10 @@ spec:
                     type: string
                 type: object
               bootstrap:
-                description: Bootstrap describes the desired state of the guest's
-                  bootstrap configuration.
+                description: "Bootstrap describes the desired state of the guest's
+                  bootstrap configuration. \n If omitted, a default bootstrap method
+                  may be selected based on the guest OS identifier. If Linux, then
+                  the LinuxPrep method is used."
                 properties:
                   cloudInit:
                     description: "CloudInit may be used to bootstrap Linux guests

@@ -15,7 +15,8 @@ import (
 
 var _ = Describe("Netplan", func() {
 	const (
-		ifName        = "eth0"
+		ifName        = "my-interface"
+		guestDevName  = "eth42"
 		macAddr1      = "50-8A-80-9D-28-22"
 		macAddr1Norm  = "50:8a:80:9d:28:22"
 		ipv4Gateway   = "192.168.1.1"
@@ -61,13 +62,14 @@ var _ = Describe("Netplan", func() {
 								Gateway: ipv6Gateway,
 							},
 						},
-						MacAddress:    macAddr1,
-						Name:          ifName,
-						DHCP4:         false,
-						DHCP6:         false,
-						MTU:           1500,
-						Nameservers:   []string{dnsServer1},
-						SearchDomains: []string{searchDomain1},
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						DHCP4:           false,
+						DHCP6:           false,
+						MTU:             1500,
+						Nameservers:     []string{dnsServer1},
+						SearchDomains:   []string{searchDomain1},
 						Routes: []network.NetworkInterfaceRoute{
 							{
 								To:     "185.107.56.59",
@@ -89,7 +91,7 @@ var _ = Describe("Netplan", func() {
 
 				np := netplan.Ethernets[ifName]
 				Expect(np.Match.MacAddress).To(Equal(macAddr1Norm))
-				Expect(np.SetName).To(Equal(ifName))
+				Expect(np.SetName).To(Equal(guestDevName))
 				Expect(np.Dhcp4).To(BeFalse())
 				Expect(np.Dhcp6).To(BeFalse())
 				Expect(np.Addresses).To(HaveLen(2))
@@ -112,13 +114,14 @@ var _ = Describe("Netplan", func() {
 			BeforeEach(func() {
 				results.Results = []network.NetworkInterfaceResult{
 					{
-						MacAddress:    macAddr1,
-						Name:          "eth0",
-						DHCP4:         true,
-						DHCP6:         true,
-						MTU:           9000,
-						Nameservers:   []string{dnsServer1},
-						SearchDomains: []string{searchDomain1},
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						DHCP4:           true,
+						DHCP6:           true,
+						MTU:             9000,
+						Nameservers:     []string{dnsServer1},
+						SearchDomains:   []string{searchDomain1},
 					},
 				}
 			})
@@ -133,7 +136,7 @@ var _ = Describe("Netplan", func() {
 
 				np := netplan.Ethernets[ifName]
 				Expect(np.Match.MacAddress).To(Equal(macAddr1Norm))
-				Expect(np.SetName).To(Equal(ifName))
+				Expect(np.SetName).To(Equal(guestDevName))
 				Expect(np.Dhcp4).To(BeTrue())
 				Expect(np.Dhcp6).To(BeTrue())
 				Expect(np.MTU).To(BeEquivalentTo(9000))

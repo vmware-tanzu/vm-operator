@@ -474,7 +474,11 @@ type VirtualMachineSpec struct {
 	// NetworkInterfaces describes a list of VirtualMachineNetworkInterfaces to be configured on the VirtualMachine instance.
 	// Each of these VirtualMachineNetworkInterfaces describes external network integration configurations that are to be
 	// used by the VirtualMachine controller when integrating the VirtualMachine into one or more external networks.
+	//
+	// The maximum number of network interface allowed is 10 because of the limit built into vSphere.
+	//
 	// +optional
+	// +kubebuilder:validation:MaxItems=10
 	NetworkInterfaces []VirtualMachineNetworkInterface `json:"networkInterfaces,omitempty"`
 
 	// ResourcePolicyName describes the name of a VirtualMachineSetResourcePolicy to be used when creating the

@@ -7,6 +7,7 @@ import (
 	goctx "context"
 	"fmt"
 	"net"
+	"slices"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -87,12 +88,7 @@ func UpdateStatus(
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
 	hardwareVersion, _ := types.ParseHardwareVersion(summary.Config.HwVersion)
 	vm.Status.HardwareVersion = int32(hardwareVersion)
-
-	var networkInterfaces []vmopv1.VirtualMachineNetworkInterfaceSpec
-	if vmCtx.VM.Spec.Network != nil {
-		networkInterfaces = vmCtx.VM.Spec.Network.Interfaces
-	}
-	vm.Status.Network = getGuestNetworkStatus(networkInterfaces, vmMO.Guest)
+	vm.Status.Network = getGuestNetworkStatus(vmCtx, vmMO.Guest)
 
 	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {
@@ -146,7 +142,7 @@ func getRuntimeHostHostname(
 }
 
 func getGuestNetworkStatus(
-	networkInterfaces []vmopv1.VirtualMachineNetworkInterfaceSpec,
+	vmCtx context.VirtualMachineContextA2,
 	guestInfo *types.GuestInfo,
 ) *vmopv1.VirtualMachineNetworkStatus {
 
@@ -165,19 +161,36 @@ func getGuestNetworkStatus(
 		}
 	}
 
-	for i := range guestInfo.Net {
-		// Skip pseudo devices.
-		if guestInfo.Net[i].DeviceConfigId != -1 {
-			status.Interfaces = append(status.Interfaces, guestNicInfoToInterfaceStatus(i, &guestInfo.Net[i]))
+	if len(guestInfo.Net) > 0 {
+		var networkInterfaces []vmopv1.VirtualMachineNetworkInterfaceSpec
+		if vmCtx.VM.Spec.Network != nil {
+			networkInterfaces = vmCtx.VM.Spec.Network.Interfaces
 		}
-	}
 
-	// Hack: the exceedingly common case is just one nic - our boostrap effectively only works with one -
-	// so do the best effort here and apply the name in that common case. We have a long ways to go until
-	// we can always line up interfaces in the Spec with what both is observed in the VM hardware config
-	// and what the GuestNicInfo provides.
-	if len(networkInterfaces) == 1 && len(status.Interfaces) == 1 {
-		status.Interfaces[0].Name = networkInterfaces[0].Name
+		slices.SortFunc(guestInfo.Net, func(a, b types.GuestNicInfo) int {
+			// Sort by the DeviceKey (DeviceConfigId) to order the guest info list by the
+			// order in the initial ConfigSpec which is the order of the []networkInterfaces.
+			// since it is immutable.
+			return int(a.DeviceConfigId - b.DeviceConfigId)
+		})
+
+		networkInterfaceIdx := 0
+		for i := range guestInfo.Net {
+			deviceKey := guestInfo.Net[i].DeviceConfigId
+
+			// Skip pseudo devices.
+			if deviceKey < 0 {
+				continue
+			}
+
+			var name string
+			if networkInterfaceIdx < len(networkInterfaces) {
+				name = networkInterfaces[networkInterfaceIdx].Name
+				networkInterfaceIdx++
+			}
+
+			status.Interfaces = append(status.Interfaces, guestNicInfoToInterfaceStatus(name, deviceKey, &guestInfo.Net[i]))
+		}
 	}
 
 	if len(guestInfo.IpStack) > 0 {
@@ -187,9 +200,14 @@ func getGuestNetworkStatus(
 	return status
 }
 
-func guestNicInfoToInterfaceStatus(idx int, guestNicInfo *types.GuestNicInfo) vmopv1.VirtualMachineNetworkInterfaceStatus {
+func guestNicInfoToInterfaceStatus(
+	name string,
+	deviceKey int32,
+	guestNicInfo *types.GuestNicInfo) vmopv1.VirtualMachineNetworkInterfaceStatus {
+
 	status := vmopv1.VirtualMachineNetworkInterfaceStatus{
-		Name: fmt.Sprintf("nic-%d-%d", idx, guestNicInfo.DeviceConfigId),
+		Name:      name,
+		DeviceKey: deviceKey,
 	}
 
 	if guestNicInfo.MacAddress != "" {

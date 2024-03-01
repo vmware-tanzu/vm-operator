@@ -132,11 +132,12 @@ spec:
                 minimum: 13
                 type: integer
               networkInterfaces:
-                description: NetworkInterfaces describes a list of VirtualMachineNetworkInterfaces
+                description: "NetworkInterfaces describes a list of VirtualMachineNetworkInterfaces
                   to be configured on the VirtualMachine instance. Each of these VirtualMachineNetworkInterfaces
                   describes external network integration configurations that are to
                   be used by the VirtualMachine controller when integrating the VirtualMachine
-                  into one or more external networks.
+                  into one or more external networks. \n The maximum number of network
+                  interface allowed is 10 because of the limit built into vSphere."
                 items:
                   description: VirtualMachineNetworkInterface defines the properties
                     of a network interface to attach to a VirtualMachine instance.  A
@@ -190,6 +191,7 @@ spec:
                       - name
                       type: object
                   type: object
+                maxItems: 10
                 type: array
               nextRestartTime:
                 description: "NextRestartTime may be used to restart the VM, in accordance
@@ -1392,7 +1394,8 @@ spec:
                     description: "Interfaces is the list of network interfaces used
                       by this VM. \n If the Interfaces field is empty and the Disabled
                       field is false, then a default interface with the name eth0
-                      will be created."
+                      will be created. \n The maximum number of network interface
+                      allowed is 10 because of the limit built into vSphere."
                     items:
                       description: VirtualMachineNetworkInterfaceSpec describes the
                         desired state of a VM's network interface.
@@ -1542,6 +1545,7 @@ spec:
                       required:
                       - name
                       type: object
+                    maxItems: 10
                     type: array
                     x-kubernetes-list-map-keys:
                     - name
@@ -2082,6 +2086,11 @@ spec:
                       description: VirtualMachineNetworkInterfaceStatus describes
                         the observed state of a VM's network interface.
                       properties:
+                        deviceKey:
+                          description: DeviceKey describes the unique hardware device
+                            key of this network interface.
+                          format: int32
+                          type: integer
                         dns:
                           description: DNS describes the observed state of the interface's
                             DNS configuration.
@@ -2276,19 +2285,15 @@ spec:
                               type: string
                           type: object
                         name:
-                          description: "Name describes the unique name of this network
-                            interface, used to distinguish it from other network interfaces
-                            attached to this VM. \n Please note this name is not related
-                            to the name of the device as it is surfaced inside of
-                            the guest."
+                          description: "Name describes the corresponding network interface
+                            with the same name in the VM's desired network interface
+                            list. If unset, then there is no corresponding entry for
+                            this interface. \n Please note this name is not necessarily
+                            related to the name of the device as it is surfaced inside
+                            of the guest."
                           type: string
-                      required:
-                      - name
                       type: object
                     type: array
-                    x-kubernetes-list-map-keys:
-                    - name
-                    x-kubernetes-list-type: map
                   ipRoutes:
                     description: IPRoutes contain the VM's routing tables for all
                       address families.

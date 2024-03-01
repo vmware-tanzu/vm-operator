@@ -61,34 +61,74 @@ var _ = Describe("UpdateStatus", func() {
 	Context("Network", func() {
 
 		Context("Interfaces", func() {
-			BeforeEach(func() {
-				vmMO.Guest = &types.GuestInfo{
-					Net: []types.GuestNicInfo{
-						{
-							DeviceConfigId: -1,
-							MacAddress:     "mac-1",
-						},
-						{
-							DeviceConfigId: 4000,
-							MacAddress:     "mac-4000",
-						},
-					},
-				}
 
-				vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
-					{
-						Name: "eth42",
-					},
-				}
+			Context("VM has pseudo devices", func() {
+				BeforeEach(func() {
+					vmMO.Guest = &types.GuestInfo{
+						Net: []types.GuestNicInfo{
+							{
+								DeviceConfigId: -1,
+								MacAddress:     "mac-1",
+							},
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "mac-4000",
+							},
+						},
+					}
+
+					vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth42",
+						},
+					}
+				})
+
+				It("Skips pseudo devices", func() {
+					network := vmCtx.VM.Status.Network
+					Expect(network).ToNot(BeNil())
+
+					Expect(network.Interfaces).To(HaveLen(1))
+					Expect(network.Interfaces[0].Name).To(Equal("eth42"))
+					Expect(network.Interfaces[0].IP).ToNot(BeNil())
+					Expect(network.Interfaces[0].IP.MACAddr).To(Equal("mac-4000"))
+				})
 			})
 
-			It("Skips pseudo devices", func() {
-				network := vmCtx.VM.Status.Network
+			Context("VM has more interfaces than expected", func() {
+				BeforeEach(func() {
+					vmMO.Guest = &types.GuestInfo{
+						Net: []types.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "mac-4000",
+							},
+							{
+								DeviceConfigId: 4001,
+								MacAddress:     "mac-4001",
+							},
+						},
+					}
 
-				Expect(network.Interfaces).To(HaveLen(1))
-				Expect(network.Interfaces[0].IP).ToNot(BeNil())
-				Expect(network.Interfaces[0].IP.MACAddr).To(Equal("mac-4000"))
-				Expect(network.Interfaces[0].Name).To(Equal("eth42"))
+					vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth42",
+						},
+					}
+				})
+
+				It("Reports all interfaces", func() {
+					network := vmCtx.VM.Status.Network
+					Expect(network).ToNot(BeNil())
+
+					Expect(network.Interfaces).To(HaveLen(2))
+					Expect(network.Interfaces[0].Name).To(Equal("eth42"))
+					Expect(network.Interfaces[0].IP).ToNot(BeNil())
+					Expect(network.Interfaces[0].IP.MACAddr).To(Equal("mac-4000"))
+					Expect(network.Interfaces[1].Name).To(BeEmpty())
+					Expect(network.Interfaces[1].IP).ToNot(BeNil())
+					Expect(network.Interfaces[1].IP.MACAddr).To(Equal("mac-4001"))
+				})
 			})
 		})
 
@@ -128,6 +168,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			It("Skips IPs", func() {
 				network := vmCtx.VM.Status.Network
+				Expect(network).ToNot(BeNil())
 
 				Expect(network.IPRoutes).To(HaveLen(2))
 				Expect(network.IPRoutes[0].NetworkAddress).To(Equal("192.168.1.0/24"))

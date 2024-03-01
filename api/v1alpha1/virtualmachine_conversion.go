@@ -882,23 +882,23 @@ func restore_v1alpha2_VirtualMachineNetworkSpec(
 		return
 	}
 
-	// The exceedingly common case is there was and still is just one interface, and for the same
-	// network. With multiple interfaces it gets much harder to line things up. We really just
-	// don't have info in v1a1 so this is a little best effort. The API supports it, but  we really
-	// never supported-supported it yet.
-	//
-	// Do the about the easiest thing and zip the interfaces together, using the network name to
-	// determine if it is the "same" interface. v1a1 could not support multiple interfaces on the
-	// same network, and it probably won't be common place in v1a2, so we could try to refine this
-	// a little more later.
+	// In v1a2 we made the network interfaces immutable. In v1a1 one could, in theory, add, remove,
+	// reorder network interfaces, but it hardly would have "worked". The exceedingly common case is
+	// just one interface and the list will never change post-create. Here, we overlay the saved
+	// source on to the destination, and restore the network Name and Kind. If those were changed in
+	// v1a1, then we expect the VM validation webhook to fail.
+	// For truly mutable network interfaces, we'll have to get a little creative on how to line the
+	// src and dst network interfaces together in the face of changes.
 	for i := range dstNetwork.Interfaces {
 		if i >= len(srcNetwork.Interfaces) {
 			break
 		}
 
-		if dstNetwork.Interfaces[i].Network.Name == srcNetwork.Interfaces[i].Network.Name {
-			dstNetwork.Interfaces[i] = srcNetwork.Interfaces[i]
-		}
+		networkName := dstNetwork.Interfaces[i].Network.Name
+		networkType := dstNetwork.Interfaces[i].Network.TypeMeta
+		dstNetwork.Interfaces[i] = srcNetwork.Interfaces[i]
+		dstNetwork.Interfaces[i].Network.Name = networkName
+		dstNetwork.Interfaces[i].Network.TypeMeta = networkType
 	}
 }
 

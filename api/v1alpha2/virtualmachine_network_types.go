@@ -218,9 +218,13 @@ type VirtualMachineNetworkSpec struct {
 	// If the Interfaces field is empty and the Disabled field is false, then
 	// a default interface with the name eth0 will be created.
 	//
+	// The maximum number of network interface allowed is 10 because of the limit
+	// built into vSphere.
+	//
 	// +optional
 	// +listType=map
 	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=10
 	Interfaces []VirtualMachineNetworkInterfaceSpec `json:"interfaces,omitempty"`
 }
 
@@ -414,12 +418,21 @@ type VirtualMachineNetworkInterfaceIPStatus struct {
 // VirtualMachineNetworkInterfaceStatus describes the observed state of a
 // VM's network interface.
 type VirtualMachineNetworkInterfaceStatus struct {
-	// Name describes the unique name of this network interface, used to
-	// distinguish it from other network interfaces attached to this VM.
+	// Name describes the corresponding network interface with the same name
+	// in the VM's desired network interface list. If unset, then there is no
+	// corresponding entry for this interface.
 	//
-	// Please note this name is not related to the name of the device as it is
-	// surfaced inside of the guest.
-	Name string `json:"name"`
+	// Please note this name is not necessarily related to the name of the
+	// device as it is surfaced inside of the guest.
+	//
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// DeviceKey describes the unique hardware device key of this network
+	// interface.
+	//
+	// +optional
+	DeviceKey int32 `json:"deviceKey,omitempty"`
 
 	// IP describes the observed state of the interface's IP configuration.
 	//
@@ -471,8 +484,6 @@ type VirtualMachineNetworkStatus struct {
 	// Interfaces describes the status of the VM's network interfaces.
 	//
 	// +optional
-	// +listType=map
-	// +listMapKey=name
 	Interfaces []VirtualMachineNetworkInterfaceStatus `json:"interfaces,omitempty"`
 
 	// PrimaryIP4 describes the VM's primary IP4 address.

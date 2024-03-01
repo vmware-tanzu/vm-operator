@@ -642,29 +642,46 @@ func (s *Session) ensureCNSVolumes(vmCtx context.VirtualMachineContextA2) error 
 	return nil
 }
 
+func (s *Session) fixupMacAddresses(
+	vmCtx context.VirtualMachineContextA2,
+	resVM *res.VirtualMachine,
+	updateArgs *VMUpdateArgs) error {
+
+	missingMAC := false
+	for i := range updateArgs.NetworkResults.Results {
+		if updateArgs.NetworkResults.Results[i].MacAddress == "" {
+			missingMAC = true
+			break
+		}
+	}
+	if !missingMAC {
+		// Expected path in NSX-T since it always provides the MAC address.
+		return nil
+	}
+
+	networkDevices, err := resVM.GetNetworkDevices(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	// Just zip these together until we can do interface identification.
+	for i := 0; i < min(len(networkDevices), len(updateArgs.NetworkResults.Results)); i++ {
+		result := &updateArgs.NetworkResults.Results[i]
+
+		if result.MacAddress == "" {
+			ethCard := networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+			result.MacAddress = ethCard.MacAddress
+		}
+	}
+
+	return nil
+}
+
 func (s *Session) customize(
 	vmCtx context.VirtualMachineContextA2,
 	resVM *res.VirtualMachine,
 	cfg *vimTypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) error {
-
-	{
-		// Hack: the old code only populated the first nic address - getFirstNicMacAddr() - so just keep
-		// doing the same here. We need a generalized UpdateEthCardDeviceChanges() to match up the Spec
-		// with the actual devices. Old code also made this best effort so do that here too.
-		// I've got a larger change that removes the old session stuff, and improves on all this behavior
-		// but I didn't have the BW to sort out all the changes.
-		if len(updateArgs.NetworkResults.Results) > 0 {
-			mac := updateArgs.NetworkResults.Results[0].MacAddress
-			if mac == "" {
-				ethCards, _ := resVM.GetNetworkDevices(vmCtx)
-				if len(ethCards) > 0 {
-					curNic := ethCards[0].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-					updateArgs.NetworkResults.Results[0].MacAddress = curNic.GetVirtualEthernetCard().MacAddress
-				}
-			}
-		}
-	}
 
 	err := vmlifecycle.DoBootstrap(vmCtx, resVM.VcVM(), cfg, s.K8sClient, updateArgs.NetworkResults, updateArgs.BootstrapData)
 	if err != nil {
@@ -688,6 +705,11 @@ func (s *Session) prepareVMForPowerOn(
 	updateArgs.NetworkResults = netIfList
 
 	err = s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs)
+	if err != nil {
+		return err
+	}
+
+	err = s.fixupMacAddresses(vmCtx, resVM, updateArgs)
 	if err != nil {
 		return err
 	}

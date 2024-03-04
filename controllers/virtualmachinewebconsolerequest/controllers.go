@@ -19,5 +19,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 			return err
 		}
 	}
+	// NOTE: In v1a1 this CRD has a different name - WebConsoleRequest - so this is
+	// still required until we stop supporting v1a1.
 	return v1alpha1.AddToManager(ctx, mgr)
 }

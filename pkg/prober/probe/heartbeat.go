@@ -6,18 +6,18 @@ package probe
 import (
 	"fmt"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 type guestHeartbeatProber struct {
-	prober vmProviderProber
+	prober vmProviderGuestHeartbeatProber
 }
 
-func NewGuestHeartbeatProber(vmProviderProber vmProviderProber) Probe {
+func NewGuestHeartbeatProber(prober vmProviderGuestHeartbeatProber) Probe {
 	return &guestHeartbeatProber{
-		prober: vmProviderProber,
+		prober: prober,
 	}
 }
 
@@ -42,7 +42,7 @@ func (hbp guestHeartbeatProber) Probe(ctx *context.ProbeContext) (Result, error)
 		return Unknown, fmt.Errorf("no heartbeat value")
 	}
 
-	if heartbeatValue(heartbeat) < heartbeatValue(ctx.ProbeSpec.GuestHeartbeat.ThresholdStatus) {
+	if heartbeatValue(heartbeat) < heartbeatValue(ctx.VM.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus) {
 		return Failure, fmt.Errorf("heartbeat status %q is below threshold", heartbeat)
 	}
 

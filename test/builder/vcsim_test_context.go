@@ -37,7 +37,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	// Blank import to make govmomi client aware of these bindings.
 	_ "github.com/vmware/govmomi/pbm/simulator"
@@ -46,9 +45,8 @@ import (
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 
@@ -99,9 +97,6 @@ type VCSimTestConfig struct {
 	// WithVMClassAsConfigDaynDate enables the WCP_VM_CLASS_AS_CONFIG_DAYNDATE FSS.
 	WithVMClassAsConfigDaynDate bool
 
-	// WithV1A2 enables the VMServiceV1Alpha2FSS FSS.
-	WithV1A2 bool
-
 	// WithNetworkEnv is the network environment type.
 	WithNetworkEnv NetworkEnv
 
@@ -145,7 +140,6 @@ type TestContextForVCSim struct {
 
 	folder    *object.Folder
 	datastore *object.Datastore
-	withV1A2  bool
 
 	azCCRs map[string][]*object.ClusterComputeResource
 }
@@ -187,7 +181,6 @@ func newTestContextForVCSim(
 		UnitTestContext: NewUnitTestContext(initObjects...),
 		PodNamespace:    "vmop-pod-test",
 		Recorder:        fakeRecorder,
-		withV1A2:        config.WithV1A2,
 	}
 
 	if config.NumFaultDomains != 0 {
@@ -264,24 +257,6 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		Expect(c.Client.Update(c, az)).To(Succeed())
 	}
 
-	// Not the exact right FFS, but it's what we've plumbed and is otherwise implied.
-	if !c.withV1A2 {
-		if clID := c.ContentLibraryID; clID != "" {
-			csBinding := &v1alpha1.ContentSourceBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clID,
-					Namespace: ns.Name,
-				},
-				ContentSourceRef: v1alpha1.ContentSourceReference{
-					APIVersion: v1alpha1.SchemeGroupVersion.Group,
-					Kind:       "ContentSource",
-					Name:       clID,
-				},
-			}
-			Expect(c.Client.Create(c, csBinding)).To(Succeed())
-		}
-	}
-
 	resourceQuota := &corev1.ResourceQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "dummy-resource-quota",
@@ -329,7 +304,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.ContentAPIWait = 1 * time.Second
 		cc.JSONExtraConfig = config.WithJSONExtraConfig
 
-		cc.Features.VMOpV1Alpha2 = config.WithV1A2
+		cc.Features.VMOpV1Alpha2 = true
 		cc.Features.InstanceStorage = config.WithInstanceStorage
 		cc.Features.VMClassAsConfig = config.WithVMClassAsConfig
 		cc.Features.VMClassAsConfigDayNDate = config.WithVMClassAsConfigDaynDate
@@ -456,47 +431,13 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	itemID := createContentLibraryItem(c, libMgr, libraryItem,
 		path.Join(testutil.GetRootDirOrDie(), "images", "ttylinux-pc_i486-16.1.ovf"))
 
-	// Not the exact right FFS, but it's what we've plumbed and is otherwise implied.
-	if c.withV1A2 {
-		// The image isn't quite as prod but sufficient for what we need here ATM.
-		clusterVMImage := DummyClusterVirtualMachineImageA2(c.ContentLibraryImageName)
-		clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
-		Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
-		clusterVMImage.Status.ProviderItemID = itemID
-		conditions2.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
-		Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
-
-	} else {
-		clProvider := &v1alpha1.ContentLibraryProvider{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: clID,
-			},
-			Spec: v1alpha1.ContentLibraryProviderSpec{
-				UUID: clID,
-			},
-		}
-		Expect(c.Client.Create(c, clProvider)).To(Succeed())
-
-		cs := &v1alpha1.ContentSource{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: clID,
-			},
-			Spec: v1alpha1.ContentSourceSpec{
-				ProviderRef: v1alpha1.ContentProviderReference{
-					Name: clProvider.Name,
-					Kind: "ContentLibraryProvider",
-				},
-			},
-		}
-		Expect(c.Client.Create(c, cs)).To(Succeed())
-
-		Expect(controllerutil.SetOwnerReference(cs, clProvider, c.Client.Scheme())).To(Succeed())
-		Expect(c.Client.Update(c, clProvider)).To(Succeed())
-
-		vmImage := DummyVirtualMachineImage(c.ContentLibraryImageName)
-		Expect(controllerutil.SetOwnerReference(clProvider, vmImage, c.Client.Scheme())).To(Succeed())
-		Expect(c.Client.Create(c, vmImage)).To(Succeed())
-	}
+	// The image isn't quite as prod but sufficient for what we need here ATM.
+	clusterVMImage := DummyClusterVirtualMachineImageA2(c.ContentLibraryImageName)
+	clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
+	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
+	clusterVMImage.Status.ProviderItemID = itemID
+	conditions.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
+	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 }
 
 func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName string) {
@@ -526,20 +467,12 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 	Expect(err).ToNot(HaveOccurred())
 
 	// Create the expected VirtualMachineImage for the template.
-	if c.withV1A2 {
-		clusterVMImage := DummyClusterVirtualMachineImageA2(templateName)
-		clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
-		Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
-		clusterVMImage.Status.ProviderItemID = itemID
-		conditions2.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
-		Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
-	} else {
-		vmImage := DummyVirtualMachineImage(templateName)
-		cl := &v1alpha1.ContentLibraryProvider{}
-		Expect(c.Client.Get(c, client.ObjectKey{Name: clID}, cl)).To(Succeed())
-		Expect(controllerutil.SetOwnerReference(cl, vmImage, c.Client.Scheme())).To(Succeed())
-		Expect(c.Client.Create(c, vmImage)).To(Succeed())
-	}
+	clusterVMImage := DummyClusterVirtualMachineImageA2(templateName)
+	clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
+	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
+	clusterVMImage.Status.ProviderItemID = itemID
+	conditions.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
+	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 }
 
 func createContentLibraryItem(
@@ -720,28 +653,9 @@ func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.Clus
 	return ccrs
 }
 
-func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicy(
-	name string,
-	nsInfo WorkloadNamespaceInfo) (*v1alpha1.VirtualMachineSetResourcePolicy, *object.Folder) {
-
-	ExpectWithOffset(1, c.withV1A2).To(BeFalse())
-
-	resourcePolicy := DummyVirtualMachineSetResourcePolicy2(name, nsInfo.Namespace)
-	Expect(c.Client.Create(c, resourcePolicy)).To(Succeed())
-
-	folder := c.createVirtualMachineSetResourcePolicyCommon(
-		resourcePolicy.Spec.ResourcePool.Name,
-		resourcePolicy.Spec.Folder.Name,
-		nsInfo)
-
-	return resourcePolicy, folder
-}
-
 func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicyA2(
 	name string,
 	nsInfo WorkloadNamespaceInfo) (*v1alpha2.VirtualMachineSetResourcePolicy, *object.Folder) {
-
-	ExpectWithOffset(1, c.withV1A2).To(BeTrue())
 
 	resourcePolicy := DummyVirtualMachineSetResourcePolicy2A2(name, nsInfo.Namespace)
 	Expect(c.Client.Create(c, resourcePolicy)).To(Succeed())

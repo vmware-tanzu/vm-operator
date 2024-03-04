@@ -25,10 +25,9 @@ import (
 	"github.com/onsi/gomega/format"
 	"github.com/onsi/gomega/types"
 	"github.com/pkg/errors"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
 func TestHasSameState(t *testing.T) {
@@ -49,11 +48,7 @@ func TestHasSameState(t *testing.T) {
 	g.Expect(hasSameState(falseInfo1, falseInfo2)).To(BeFalse())
 
 	falseInfo2 = falseInfo1.DeepCopy()
-	falseInfo2.Status = corev1.ConditionTrue
-	g.Expect(hasSameState(falseInfo1, falseInfo2)).To(BeFalse())
-
-	falseInfo2 = falseInfo1.DeepCopy()
-	falseInfo2.Severity = vmopv1.ConditionSeverityWarning
+	falseInfo2.Status = metav1.ConditionTrue
 	g.Expect(hasSameState(falseInfo1, falseInfo2)).To(BeFalse())
 
 	falseInfo2 = falseInfo1.DeepCopy()
@@ -78,25 +73,25 @@ func TestLexicographicLess(t *testing.T) {
 	g.Expect(lexicographicLess(a, b)).To(BeFalse())
 
 	// Ready condition is treated as an exception and always goes first
-	a = TrueCondition(vmopv1.ReadyCondition)
+	a = TrueCondition(vmopv1.ReadyConditionType)
 	b = TrueCondition("A")
 	g.Expect(lexicographicLess(a, b)).To(BeTrue())
 
 	a = TrueCondition("A")
-	b = TrueCondition(vmopv1.ReadyCondition)
+	b = TrueCondition(vmopv1.ReadyConditionType)
 	g.Expect(lexicographicLess(a, b)).To(BeFalse())
 }
 
 func TestSet(t *testing.T) {
 	a := TrueCondition("a")
 	b := TrueCondition("b")
-	ready := TrueCondition(vmopv1.ReadyCondition)
+	ready := TrueCondition(vmopv1.ReadyConditionType)
 
 	tests := []struct {
 		name      string
 		to        Setter
-		condition *vmopv1.Condition
-		want      vmopv1.Conditions
+		condition *metav1.Condition
+		want      []metav1.Condition
 	}{
 		{
 			name:      "Set adds a condition",
@@ -138,15 +133,15 @@ func TestSet(t *testing.T) {
 func TestSetLastTransitionTime(t *testing.T) {
 	x := metav1.Date(2012, time.January, 1, 12, 15, 30, 5e8, time.UTC)
 
-	foo := FalseCondition("foo", "reason foo", vmopv1.ConditionSeverityInfo, "message foo")
-	fooWithLastTransitionTime := FalseCondition("foo", "reason foo", vmopv1.ConditionSeverityInfo, "message foo")
+	foo := FalseCondition("foo", "reason foo", "message foo")
+	fooWithLastTransitionTime := FalseCondition("foo", "reason foo", "message foo")
 	fooWithLastTransitionTime.LastTransitionTime = x
 	fooWithAnotherState := TrueCondition("foo")
 
 	tests := []struct {
 		name                    string
 		to                      Setter
-		new                     *vmopv1.Condition
+		new                     *metav1.Condition
 		LastTransitionTimeCheck func(*WithT, metav1.Time)
 	}{
 		{
@@ -201,26 +196,26 @@ func TestMarkMethods(t *testing.T) {
 
 	// test MarkTrue
 	MarkTrue(vm, "conditionFoo")
-	g.Expect(Get(vm, "conditionFoo")).To(haveSameStateOf(&vmopv1.Condition{
+	g.Expect(Get(vm, "conditionFoo")).To(haveSameStateOf(&metav1.Condition{
 		Type:   "conditionFoo",
-		Status: corev1.ConditionTrue,
+		Status: metav1.ConditionTrue,
+		Reason: "True",
 	}))
 
 	// test MarkFalse
-	MarkFalse(vm, "conditionBar", "reasonBar", vmopv1.ConditionSeverityError, "messageBar")
-	g.Expect(Get(vm, "conditionBar")).To(haveSameStateOf(&vmopv1.Condition{
-		Type:     "conditionBar",
-		Status:   corev1.ConditionFalse,
-		Severity: vmopv1.ConditionSeverityError,
-		Reason:   "reasonBar",
-		Message:  "messageBar",
+	MarkFalse(vm, "conditionBar", "reasonBar", "messageBar")
+	g.Expect(Get(vm, "conditionBar")).To(haveSameStateOf(&metav1.Condition{
+		Type:    "conditionBar",
+		Status:  metav1.ConditionFalse,
+		Reason:  "reasonBar",
+		Message: "messageBar",
 	}))
 
 	// test MarkUnknown
 	MarkUnknown(vm, "conditionBaz", "reasonBaz", "messageBaz")
-	g.Expect(Get(vm, "conditionBaz")).To(haveSameStateOf(&vmopv1.Condition{
+	g.Expect(Get(vm, "conditionBaz")).To(haveSameStateOf(&metav1.Condition{
 		Type:    "conditionBaz",
-		Status:  corev1.ConditionUnknown,
+		Status:  metav1.ConditionUnknown,
 		Reason:  "reasonBaz",
 		Message: "messageBaz",
 	}))
@@ -232,12 +227,12 @@ func TestSetSummary(t *testing.T) {
 
 	SetSummary(target)
 
-	g.Expect(Has(target, vmopv1.ReadyCondition)).To(BeTrue())
+	g.Expect(Has(target, vmopv1.ReadyConditionType)).To(BeTrue())
 }
 
 func TestSetMirror(t *testing.T) {
 	g := NewWithT(t)
-	source := getterWithConditions(TrueCondition(vmopv1.ReadyCondition))
+	source := getterWithConditions(TrueCondition(vmopv1.ReadyConditionType))
 	target := setterWithConditions()
 
 	SetMirror(target, "foo", source)
@@ -247,8 +242,8 @@ func TestSetMirror(t *testing.T) {
 
 func TestSetAggregate(t *testing.T) {
 	g := NewWithT(t)
-	source1 := getterWithConditions(TrueCondition(vmopv1.ReadyCondition))
-	source2 := getterWithConditions(TrueCondition(vmopv1.ReadyCondition))
+	source1 := getterWithConditions(TrueCondition(vmopv1.ReadyConditionType))
+	source2 := getterWithConditions(TrueCondition(vmopv1.ReadyConditionType))
 	target := setterWithConditions()
 
 	SetAggregate(target, "foo", []Getter{source1, source2})
@@ -256,24 +251,24 @@ func TestSetAggregate(t *testing.T) {
 	g.Expect(Has(target, "foo")).To(BeTrue())
 }
 
-func setterWithConditions(conditions ...*vmopv1.Condition) Setter {
+func setterWithConditions(conditions ...*metav1.Condition) Setter {
 	obj := &vmopv1.VirtualMachine{}
 	obj.SetConditions(conditionList(conditions...))
 	return obj
 }
 
-func haveSameConditionsOf(expected vmopv1.Conditions) types.GomegaMatcher {
+func haveSameConditionsOf(expected []metav1.Condition) types.GomegaMatcher {
 	return &ConditionsMatcher{
 		Expected: expected,
 	}
 }
 
 type ConditionsMatcher struct {
-	Expected vmopv1.Conditions
+	Expected []metav1.Condition
 }
 
 func (matcher *ConditionsMatcher) Match(actual interface{}) (success bool, err error) {
-	actualConditions, ok := actual.(vmopv1.Conditions)
+	actualConditions, ok := actual.([]metav1.Condition)
 	if !ok {
 		return false, errors.New("Value should be a conditions list")
 	}

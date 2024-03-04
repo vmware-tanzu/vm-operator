@@ -21,7 +21,7 @@ import (
 	virtualmachineservice "github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2/utils"
-	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )

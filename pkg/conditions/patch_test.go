@@ -22,15 +22,14 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
 func TestNewPatch(t *testing.T) {
 	fooTrue := TrueCondition("foo")
-	fooFalse := FalseCondition("foo", "reason foo", vmopv1.ConditionSeverityInfo, "message foo")
+	fooFalse := FalseCondition("foo", "reason foo", "message foo")
 
 	tests := []struct {
 		name   string
@@ -101,8 +100,8 @@ func TestNewPatch(t *testing.T) {
 
 func TestApply(t *testing.T) {
 	fooTrue := TrueCondition("foo")
-	fooFalse := FalseCondition("foo", "reason foo", vmopv1.ConditionSeverityInfo, "message foo")
-	fooWarning := FalseCondition("foo", "reason foo", vmopv1.ConditionSeverityWarning, "message foo")
+	fooFalse := FalseCondition("foo", "reason foo", "message foo")
+	fooFalse2 := FalseCondition("foo", "different reason foo", "message foo")
 
 	tests := []struct {
 		name    string
@@ -110,7 +109,7 @@ func TestApply(t *testing.T) {
 		after   Getter
 		latest  Setter
 		options []ApplyOption
-		want    vmopv1.Conditions
+		want    []metav1.Condition
 		wantErr bool
 	}{
 		{
@@ -203,9 +202,10 @@ func TestApply(t *testing.T) {
 			want:    conditionList(fooTrue),
 			wantErr: false,
 		},
+
 		{
 			name:    "Change: When a condition exists with conflicts but there is no agreement on the final state, it should error",
-			before:  getterWithConditions(fooWarning),
+			before:  getterWithConditions(fooFalse2),
 			after:   getterWithConditions(fooFalse),
 			latest:  setterWithConditions(fooTrue),
 			want:    nil,
@@ -213,13 +213,14 @@ func TestApply(t *testing.T) {
 		},
 		{
 			name:    "Change: When a condition exists with conflicts but there is no agreement on the final state, it should not error if the condition is owned",
-			before:  getterWithConditions(fooWarning),
+			before:  getterWithConditions(fooFalse2),
 			after:   getterWithConditions(fooFalse),
 			latest:  setterWithConditions(fooTrue),
 			options: []ApplyOption{WithOwnedConditions("foo")},
 			want:    conditionList(fooFalse), // after condition should be kept in case of error
 			wantErr: false,
 		},
+
 		{
 			name:    "Change: When a condition was deleted, it should error",
 			before:  getterWithConditions(fooTrue),
@@ -263,10 +264,10 @@ func TestApplyDoesNotAlterLastTransitionTime(t *testing.T) {
 	before := &vmopv1.VirtualMachine{}
 	after := &vmopv1.VirtualMachine{
 		Status: vmopv1.VirtualMachineStatus{
-			Conditions: vmopv1.Conditions{
-				vmopv1.Condition{
+			Conditions: []metav1.Condition{
+				{
 					Type:               "foo",
-					Status:             corev1.ConditionTrue,
+					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.NewTime(time.Now().UTC().Truncate(time.Second)),
 				},
 			},

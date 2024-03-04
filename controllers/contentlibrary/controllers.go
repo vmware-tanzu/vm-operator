@@ -6,7 +6,6 @@ package contentlibrary
 import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -17,5 +16,5 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
 		return v1alpha2.AddToManager(ctx, mgr)
 	}
-	return v1alpha1.AddToManager(ctx, mgr)
+	return nil
 }

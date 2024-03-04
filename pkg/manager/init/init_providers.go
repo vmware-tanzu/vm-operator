@@ -11,7 +11,6 @@ import (
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	vsphere2 "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2"
 )
 
@@ -24,8 +23,6 @@ func InitializeProviders(
 
 	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
 		ctx.VMProviderA2 = vsphere2.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), recorder)
-	} else {
-		ctx.VMProvider = vsphere.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), recorder)
 	}
 
 	return nil

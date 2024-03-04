@@ -21,23 +21,22 @@ import (
 
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// MatchConditions returns a custom matcher to check equality of vmopv1.Conditions.
-func MatchConditions(expected vmopv1.Conditions) types.GomegaMatcher {
+// MatchConditions returns a custom matcher to check equality of metav1.Conditions.
+func MatchConditions(expected []metav1.Condition) types.GomegaMatcher {
 	return &matchConditions{
 		expected: expected,
 	}
 }
 
 type matchConditions struct {
-	expected vmopv1.Conditions
+	expected []metav1.Condition
 }
 
 func (m matchConditions) Match(actual interface{}) (success bool, err error) {
-	elems := []interface{}{}
+	elems := make([]interface{}, 0, len(m.expected))
 	for _, condition := range m.expected {
 		elems = append(elems, MatchCondition(condition))
 	}
@@ -53,19 +52,19 @@ func (m matchConditions) NegatedFailureMessage(actual interface{}) (message stri
 	return fmt.Sprintf("expected\n\t%#v\nto not match\n\t%#v\n", actual, m.expected)
 }
 
-// MatchCondition returns a custom matcher to check equality of vmopv1.Condition.
-func MatchCondition(expected vmopv1.Condition) types.GomegaMatcher {
+// MatchCondition returns a custom matcher to check equality of metav1.Condition.
+func MatchCondition(expected metav1.Condition) types.GomegaMatcher {
 	return &matchCondition{
 		expected: expected,
 	}
 }
 
 type matchCondition struct {
-	expected vmopv1.Condition
+	expected metav1.Condition
 }
 
 func (m matchCondition) Match(actual interface{}) (success bool, err error) {
-	actualCondition, ok := actual.(vmopv1.Condition)
+	actualCondition, ok := actual.(metav1.Condition)
 	if !ok {
 		return false, fmt.Errorf("actual should be of type Condition")
 	}
@@ -75,10 +74,6 @@ func (m matchCondition) Match(actual interface{}) (success bool, err error) {
 		return ok, err
 	}
 	ok, err = gomega.Equal(m.expected.Status).Match(actualCondition.Status)
-	if !ok {
-		return ok, err
-	}
-	ok, err = gomega.Equal(m.expected.Severity).Match(actualCondition.Severity)
 	if !ok {
 		return ok, err
 	}

@@ -29,8 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 )
 
@@ -175,7 +173,7 @@ func (h *Helper) patchStatus(ctx context.Context, obj client.Object) error {
 //
 // Condition changes are then applied to the latest version of the object, and if there are
 // no unresolvable conflicts, the patch is sent again.
-func (h *Helper) patchStatusConditions(ctx context.Context, obj client.Object, forceOverwrite bool, ownedConditions []vmopv1.ConditionType) error {
+func (h *Helper) patchStatusConditions(ctx context.Context, obj client.Object, forceOverwrite bool, ownedConditions []string) error {
 	// Nothing to do if the object isn't a condition patcher.
 	if !h.isConditionsSetter {
 		return nil

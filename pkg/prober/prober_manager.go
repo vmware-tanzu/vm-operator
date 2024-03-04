@@ -18,7 +18,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
@@ -60,28 +60,32 @@ type manager struct {
 	// if the time duration set in the AddAfter is not zero. vmReadinessProbeList can be used to avoid
 	// adding VMs to the readiness queue when this VM is already in the heap but not in the queue.
 	readinessMutex       sync.Mutex
-	vmReadinessProbeList map[string]*vmopv1.Probe
+	vmReadinessProbeList map[string]vmopv1.VirtualMachineReadinessProbeSpec
 }
 
-// NewManger initializes a prober manager.
-func NewManger(client client.Client, record vmoprecord.Recorder, vmProvider vmprovider.VirtualMachineProviderInterface) Manager {
+// NewManager initializes a prober manager.
+func NewManager(
+	client client.Client,
+	record vmoprecord.Recorder,
+	vmProvider vmprovider.VirtualMachineProviderInterfaceA2) Manager {
+
 	probeManager := &manager{
 		client:               client,
 		readinessQueue:       workqueue.NewNamedDelayingQueue(readinessProbeQueueName),
 		prober:               probe.NewProber(vmProvider),
 		log:                  ctrl.Log.WithName(proberManagerName),
 		recorder:             record,
-		vmReadinessProbeList: make(map[string]*vmopv1.Probe),
+		vmReadinessProbeList: make(map[string]vmopv1.VirtualMachineReadinessProbeSpec),
 	}
 	return probeManager
 }
 
 // AddToManager adds the probe manager controller manager.
-func AddToManager(mgr ctrlmgr.Manager, vmProvider vmprovider.VirtualMachineProviderInterface) (Manager, error) {
+func AddToManager(mgr ctrlmgr.Manager, vmProvider vmprovider.VirtualMachineProviderInterfaceA2) (Manager, error) {
 	probeRecorder := vmoprecord.New(mgr.GetEventRecorderFor(proberManagerName))
 
 	// Add the probe manager explicitly as runnable in order to receive a Start() event.
-	m := NewManger(mgr.GetClient(), probeRecorder, vmProvider)
+	m := NewManager(mgr.GetClient(), probeRecorder, vmProvider)
 	if err := mgr.Add(m); err != nil {
 		return nil, err
 	}
@@ -97,17 +101,17 @@ func (m *manager) AddToProberManager(vm *vmopv1.VirtualMachine) {
 	m.readinessMutex.Lock()
 	defer m.readinessMutex.Unlock()
 
-	if vm.Spec.ReadinessProbe != nil {
+	if vm.Spec.ReadinessProbe != nil &&
+		(vm.Spec.ReadinessProbe.TCPSocket != nil || vm.Spec.ReadinessProbe.GuestHeartbeat != nil || len(vm.Spec.ReadinessProbe.GuestInfo) != 0) {
 		// if the VM is not in the list, or its readiness probe spec has been updated, immediately add it to the queue
 		// otherwise, ignore it.
-		newProbe := vm.Spec.ReadinessProbe
-		if oldProbe, ok := m.vmReadinessProbeList[vmName]; ok && reflect.DeepEqual(oldProbe, newProbe) {
+		if oldProbe, ok := m.vmReadinessProbeList[vmName]; ok && reflect.DeepEqual(oldProbe, vm.Spec.ReadinessProbe) {
 			m.log.V(4).Info("VM is already in the readiness probe list and its probe spec is not updated, skip it", "vm", vmName)
 			return
 		}
 
 		m.readinessQueue.Add(client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace})
-		m.vmReadinessProbeList[vmName] = newProbe
+		m.vmReadinessProbeList[vmName] = *vm.Spec.ReadinessProbe
 	} else {
 		delete(m.vmReadinessProbeList, vmName)
 	}
@@ -169,21 +173,15 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 
 	vm := &vmopv1.VirtualMachine{}
 	if err := m.client.Get(goctx.Background(), item, vm); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false
+		if !apierrors.IsNotFound(err) {
+			// Get VM error, immediately re-queue the VM.
+			queue.Add(item)
 		}
-		// Get VM error, immediately re-queue the VM.
-		queue.Add(item)
 		return false
 	}
 
 	ctx, err := w.CreateProbeContext(vm)
-	if err != nil {
-		return false
-	}
-
-	if ctx.ProbeSpec == nil {
-		ctx.Logger.V(4).Info("probe is not specified")
+	if err != nil || ctx == nil {
 		return false
 	}
 
@@ -201,8 +199,7 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 
 // processVMProbe processes the Probe specified in VM spec.
 func (m *manager) processVMProbe(w worker.Worker, ctx *context.ProbeContext) error {
-	vm := ctx.VM
-	if vm.Status.PowerState != vmopv1.VirtualMachinePoweredOn {
+	if ctx.VM.Status.PowerState != vmopv1.VirtualMachinePowerStateOn {
 		// If a vm is not powered on, we don't run probes against it and translate probe result to failure.
 		// Populate the Condition and update the VM status.
 		ctx.Logger.V(4).Info("the VirtualMachine is not powered on")
@@ -217,7 +214,7 @@ func (m *manager) addItemToQueue(queue workqueue.DelayingInterface, ctx *context
 	if immediate {
 		queue.Add(item)
 	} else {
-		periodSeconds := ctx.ProbeSpec.PeriodSeconds
+		periodSeconds := ctx.PeriodSeconds
 		if periodSeconds <= 0 {
 			periodSeconds = defaultPeriodSeconds
 		}

@@ -21,7 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha2/contentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha2/utils"
-	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"

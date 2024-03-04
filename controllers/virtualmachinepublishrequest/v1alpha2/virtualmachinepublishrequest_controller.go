@@ -30,11 +30,11 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	metrics "github.com/vmware-tanzu/vm-operator/pkg/metrics2"
-	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )

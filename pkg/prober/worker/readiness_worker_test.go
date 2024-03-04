@@ -11,14 +11,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	clientgorecord "k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
@@ -71,9 +70,9 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 		testWorker = NewReadinessWorker(queue, prober, fakeClient, fakeRecorder)
 	})
 
-	checkReadyCondition := func(c client.Client, objKey client.ObjectKey, expectedCondition corev1.ConditionStatus) {
+	checkReadyCondition := func(c client.Client, objKey client.ObjectKey, expectedCondition metav1.ConditionStatus) {
 		Expect(c.Get(ctx, objKey, vm)).Should(Succeed())
-		condition := conditions.Get(vm, vmopv1.ReadyCondition)
+		condition := conditions.Get(vm, vmopv1.ReadyConditionType)
 		Expect(condition).ToNot(BeNil())
 		Expect(condition.Status).Should(Equal(expectedCondition))
 	}
@@ -105,7 +104,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 				Expect(testWorker.DoProbe(ctx)).Should(Succeed())
 
 				By("Should set ReadyCondition status as true", func() {
-					checkReadyCondition(fakeClient, vmKey, corev1.ConditionTrue)
+					checkReadyCondition(fakeClient, vmKey, metav1.ConditionTrue)
 				})
 
 				By("Conditions in VM status should be updated", func() {
@@ -123,7 +122,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 				Expect(testWorker.DoProbe(ctx)).Should(Succeed())
 
 				By("Should set ReadyCondition value as false", func() {
-					checkReadyCondition(fakeClient, vmKey, corev1.ConditionFalse)
+					checkReadyCondition(fakeClient, vmKey, metav1.ConditionFalse)
 				})
 
 				By("Conditions in VM status should be updated", func() {
@@ -136,7 +135,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 			When("new ReadyCondition isn't in a transition", func() {
 
 				BeforeEach(func() {
-					vmReadyCondition := conditions.TrueCondition(vmopv1.ReadyCondition)
+					vmReadyCondition := conditions.TrueCondition(vmopv1.ReadyConditionType)
 					vm.Status.Conditions = append(vm.Status.Conditions, *vmReadyCondition)
 					Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 					Expect(fakeClient.Get(ctx, vmKey, vm)).Should(Succeed())
@@ -180,7 +179,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 			Expect(testWorker.DoProbe(ctx)).Should(Succeed())
 			Expect(fakeClient.Get(ctx, vmKey, vm)).Should(Succeed())
-			condition := conditions.Get(vm, vmopv1.ReadyCondition)
+			condition := conditions.Get(vm, vmopv1.ReadyConditionType)
 			Expect(condition).ToNot(BeNil())
 			Expect(condition.Message).To(ContainSubstring("heartbeat error"))
 		})
@@ -192,8 +191,8 @@ func TestReadinessProbeWorker(t *testing.T) {
 	RunSpecs(t, "VM Readiness Workers")
 }
 
-func getVirtualMachineReadinessTCPProbe(port int) *vmopv1.Probe {
-	return &vmopv1.Probe{
+func getVirtualMachineReadinessTCPProbe(port int) *vmopv1.VirtualMachineReadinessProbeSpec {
+	return &vmopv1.VirtualMachineReadinessProbeSpec{
 		TCPSocket: &vmopv1.TCPSocketAction{
 			Port: intstr.FromInt(port),
 		},
@@ -201,8 +200,8 @@ func getVirtualMachineReadinessTCPProbe(port int) *vmopv1.Probe {
 	}
 }
 
-func getVirtualMachineHeartbeatProbe() *vmopv1.Probe {
-	return &vmopv1.Probe{
+func getVirtualMachineHeartbeatProbe() *vmopv1.VirtualMachineReadinessProbeSpec {
+	return &vmopv1.VirtualMachineReadinessProbeSpec{
 		GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
 		PeriodSeconds:  1,
 	}

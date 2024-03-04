@@ -12,7 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
@@ -26,7 +26,7 @@ func NewTCPProber() Probe {
 
 func (pr tcpProber) Probe(ctx *context.ProbeContext) (Result, error) {
 	vm := ctx.VM
-	p := ctx.ProbeSpec
+	p := ctx.VM.Spec.ReadinessProbe
 
 	portProto := corev1.ProtocolTCP
 	portNum, err := findPort(vm, p.TCPSocket.Port, portProto)
@@ -34,12 +34,16 @@ func (pr tcpProber) Probe(ctx *context.ProbeContext) (Result, error) {
 		return Failure, err
 	}
 
-	var host string
-	if p.TCPSocket.Host != "" {
-		host = p.TCPSocket.Host
-	} else {
+	ip := p.TCPSocket.Host
+	if ip == "" {
 		ctx.Logger.V(4).Info("TCPSocket Host not specified, using VM IP", "probe", ctx.String())
-		if host = vm.Status.VmIp; host == "" {
+		if vm.Status.Network != nil {
+			ip = vm.Status.Network.PrimaryIP4
+			if ip == "" {
+				ip = vm.Status.Network.PrimaryIP6
+			}
+		}
+		if ip == "" {
 			return Failure, fmt.Errorf("VM %s doesn't have an IP assigned", vm.NamespacedName())
 		}
 	}
@@ -51,22 +55,17 @@ func (pr tcpProber) Probe(ctx *context.ProbeContext) (Result, error) {
 		timeout = time.Duration(p.TimeoutSeconds) * time.Second
 	}
 
-	if err := checkConnection("tcp", host, strconv.Itoa(portNum), timeout); err != nil {
+	if err := checkConnection("tcp", ip, strconv.Itoa(portNum), timeout); err != nil {
 		return Failure, err
 	}
 
 	return Success, nil
 }
 
-func findPort(vm *vmopv1.VirtualMachine, portName intstr.IntOrString, portProto corev1.Protocol) (int, error) {
+func findPort(vm *vmopv1.VirtualMachine, portName intstr.IntOrString, _ corev1.Protocol) (int, error) {
 	switch portName.Type {
 	case intstr.String:
-		name := portName.StrVal
-		for _, port := range vm.Spec.Ports {
-			if port.Name == name && port.Protocol == portProto {
-				return port.Port, nil
-			}
-		}
+		// Not supported.
 	case intstr.Int:
 		return portName.IntValue(), nil
 	}

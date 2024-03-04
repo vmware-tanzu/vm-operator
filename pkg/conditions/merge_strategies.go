@@ -19,17 +19,15 @@ package conditions
 import (
 	"fmt"
 	"strings"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 // mergeOptions allows to set strategies for merging a set of conditions into a single condition,
 // and more specifically for computing the target Reason and the target Message.
 type mergeOptions struct {
-	conditionTypes                     []vmopv1.ConditionType
+	conditionTypes                     []string
 	addSourceRef                       bool
 	addStepCounter                     bool
-	addStepCounterIfOnlyConditionTypes []vmopv1.ConditionType
+	addStepCounterIfOnlyConditionTypes []string
 	stepCounter                        int
 }
 
@@ -44,7 +42,7 @@ type MergeOption func(*mergeOptions)
 // NOTE: The order of conditions types defines the priority for determining the Reason and Message for the
 // target condition.
 // IMPORTANT: This options works only while generating the Summary condition.
-func WithConditions(t ...vmopv1.ConditionType) MergeOption {
+func WithConditions(t ...string) MergeOption {
 	return func(c *mergeOptions) {
 		c.conditionTypes = t
 	}
@@ -75,7 +73,7 @@ func WithStepCounterIf(value bool) MergeOption {
 //
 // IMPORTANT: This options requires WithStepCounter or WithStepCounterIf to be set.
 // IMPORTANT: This options works only while generating the Summary condition.
-func WithStepCounterIfOnly(t ...vmopv1.ConditionType) MergeOption {
+func WithStepCounterIfOnly(t ...string) MergeOption {
 	return func(c *mergeOptions) {
 		c.addStepCounterIfOnlyConditionTypes = t
 	}
@@ -96,7 +94,7 @@ func getReason(groups conditionGroups, options *mergeOptions) string {
 
 // getFirstReason returns the first reason from the ordered list of conditions in the top group.
 // If required, the reason gets localized with the source object reference.
-func getFirstReason(g conditionGroups, order []vmopv1.ConditionType, addSourceRef bool) string {
+func getFirstReason(g conditionGroups, order []string, addSourceRef bool) string {
 	if condition := getFirstCondition(g, order); condition != nil {
 		reason := condition.Reason
 		if addSourceRef {
@@ -137,7 +135,7 @@ func getStepCounterMessage(groups conditionGroups, to int) string {
 }
 
 // getFirstMessage returns the message from the ordered list of conditions in the top group.
-func getFirstMessage(groups conditionGroups, order []vmopv1.ConditionType) string {
+func getFirstMessage(groups conditionGroups, order []string) string {
 	if condition := getFirstCondition(groups, order); condition != nil {
 		return condition.Message
 	}
@@ -145,7 +143,7 @@ func getFirstMessage(groups conditionGroups, order []vmopv1.ConditionType) strin
 }
 
 // getFirstCondition returns a first condition from the ordered list of conditions in the top group.
-func getFirstCondition(g conditionGroups, priority []vmopv1.ConditionType) *localizedCondition {
+func getFirstCondition(g conditionGroups, priority []string) *localizedCondition {
 	topGroup := g.TopGroup()
 	if topGroup == nil {
 		return nil

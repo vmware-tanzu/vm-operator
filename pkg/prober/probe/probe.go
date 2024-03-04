@@ -7,7 +7,7 @@ import (
 	goctx "context"
 	"time"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
@@ -31,20 +31,29 @@ type Probe interface {
 }
 
 // Probing related provider methods.
-type vmProviderProber interface {
+type vmProviderGuestHeartbeatProber interface {
 	GetVirtualMachineGuestHeartbeat(ctx goctx.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
+}
+type vmProviderGuestInfoProber interface {
+	GetVirtualMachineGuestInfo(ctx goctx.Context, vm *vmopv1.VirtualMachine) (map[string]string, error)
+}
+type vmProviderProber interface {
+	vmProviderGuestHeartbeatProber
+	vmProviderGuestInfoProber
 }
 
 // Prober contains the different type of probes.
 type Prober struct {
 	TCPProbe       Probe
 	GuestHeartbeat Probe
+	GuestInfo      Probe
 }
 
 // NewProber creates a new Prober.
-func NewProber(vmProviderProber vmProviderProber) *Prober {
+func NewProber(vmProvider vmProviderProber) *Prober {
 	return &Prober{
 		TCPProbe:       NewTCPProber(),
-		GuestHeartbeat: NewGuestHeartbeatProber(vmProviderProber),
+		GuestHeartbeat: NewGuestHeartbeatProber(vmProvider),
+		GuestInfo:      NewGuestInfoProber(vmProvider),
 	}
 }

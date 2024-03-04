@@ -19,15 +19,13 @@ package conditions
 import (
 	"sort"
 
-	corev1 "k8s.io/api/core/v1"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // localizedCondition defines a condition with the information of the object the conditions
 // was originated from.
 type localizedCondition struct {
-	*vmopv1.Condition
+	*metav1.Condition
 	Getter
 }
 
@@ -51,20 +49,20 @@ type localizedCondition struct {
 // condition; in order to complete such task some trade-off should be made, because there is no a golden rule
 // for summarizing many Reason/Message into single Reason/Message.
 // mergeOptions allows the user to adapt this process to the specific needs by exposing a set of merge strategies.
-func merge(conditions []localizedCondition, targetCondition vmopv1.ConditionType, options *mergeOptions) *vmopv1.Condition {
+func merge(conditions []localizedCondition, targetCondition string, options *mergeOptions) *metav1.Condition {
 	g := getConditionGroups(conditions)
 	if len(g) == 0 {
 		return nil
 	}
 
-	if g.TopGroup().status == corev1.ConditionTrue {
+	if g.TopGroup().status == metav1.ConditionTrue {
 		return TrueCondition(targetCondition)
 	}
 
 	targetReason := getReason(g, options)
 	targetMessage := getMessage(g, options)
-	if g.TopGroup().status == corev1.ConditionFalse {
-		return FalseCondition(targetCondition, targetReason, g.TopGroup().severity, targetMessage)
+	if g.TopGroup().status == metav1.ConditionFalse {
+		return FalseCondition(targetCondition, targetReason, targetMessage)
 	}
 	return UnknownCondition(targetCondition, targetReason, targetMessage)
 }
@@ -81,7 +79,7 @@ func getConditionGroups(conditions []localizedCondition) conditionGroups {
 
 		added := false
 		for i := range groups {
-			if groups[i].status == condition.Status && groups[i].severity == condition.Severity {
+			if groups[i].status == condition.Status {
 				groups[i].conditions = append(groups[i].conditions, condition)
 				added = true
 				break
@@ -91,7 +89,6 @@ func getConditionGroups(conditions []localizedCondition) conditionGroups {
 			groups = append(groups, conditionGroup{
 				conditions: []localizedCondition{condition},
 				status:     condition.Status,
-				severity:   condition.Severity,
 			})
 		}
 	}
@@ -132,7 +129,7 @@ func (g conditionGroups) Swap(i, j int) {
 	g[i], g[j] = g[j], g[i]
 }
 
-// TopGroup returns the the condition group with the highest mergePriority.
+// TopGroup returns the condition group with the highest mergePriority.
 func (g conditionGroups) TopGroup() *conditionGroup {
 	if len(g) == 0 {
 		return nil
@@ -140,38 +137,32 @@ func (g conditionGroups) TopGroup() *conditionGroup {
 	return &g[0]
 }
 
-// TrueGroup returns the the condition group with status True, if any.
+// TrueGroup returns the condition group with status True, if any.
 func (g conditionGroups) TrueGroup() *conditionGroup {
-	return g.getByStatusAndSeverity(corev1.ConditionTrue, vmopv1.ConditionSeverityNone)
+	return g.getByStatusAndSeverity(metav1.ConditionTrue)
 }
 
-// ErrorGroup returns the the condition group with status False and severity Error, if any.
-func (g conditionGroups) ErrorGroup() *conditionGroup {
-	return g.getByStatusAndSeverity(corev1.ConditionFalse, vmopv1.ConditionSeverityError)
+// FalseGroup returns the condition group with status False, if any.
+func (g conditionGroups) FalseGroup() *conditionGroup {
+	return g.getByStatusAndSeverity(metav1.ConditionFalse)
 }
 
-// WarningGroup returns the the condition group with status False and severity Warning, if any.
-func (g conditionGroups) WarningGroup() *conditionGroup {
-	return g.getByStatusAndSeverity(corev1.ConditionFalse, vmopv1.ConditionSeverityWarning)
-}
-
-func (g conditionGroups) getByStatusAndSeverity(status corev1.ConditionStatus, severity vmopv1.ConditionSeverity) *conditionGroup {
+func (g conditionGroups) getByStatusAndSeverity(status metav1.ConditionStatus) *conditionGroup {
 	if len(g) == 0 {
 		return nil
 	}
 	for _, group := range g {
-		if group.status == status && group.severity == severity {
+		if group.status == status {
 			return &group
 		}
 	}
 	return nil
 }
 
-// conditionGroup define a group of conditions with the same status and severity,
+// conditionGroup define a group of conditions with the same status,
 // and thus with the same priority when merging into a Ready condition.
 type conditionGroup struct {
-	status     corev1.ConditionStatus
-	severity   vmopv1.ConditionSeverity
+	status     metav1.ConditionStatus
 	conditions []localizedCondition
 }
 
@@ -179,18 +170,11 @@ type conditionGroup struct {
 // condition group. The mergePriority value allows an easier sorting of conditions groups.
 func (g conditionGroup) mergePriority() int {
 	switch g.status {
-	case corev1.ConditionFalse:
-		switch g.severity {
-		case vmopv1.ConditionSeverityError:
-			return 0
-		case vmopv1.ConditionSeverityWarning:
-			return 1
-		case vmopv1.ConditionSeverityInfo:
-			return 2
-		}
-	case corev1.ConditionTrue:
+	case metav1.ConditionFalse:
+		return 2
+	case metav1.ConditionTrue:
 		return 3
-	case corev1.ConditionUnknown:
+	case metav1.ConditionUnknown:
 		return 4
 	}
 

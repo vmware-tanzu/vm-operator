@@ -25,12 +25,12 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
-	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	metrics "github.com/vmware-tanzu/vm-operator/pkg/metrics2"
-	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
-	prober "github.com/vmware-tanzu/vm-operator/pkg/prober2"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -188,7 +188,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list
-// +kubebuilder:rbac:groups=vmware.com,resources=virtualnetworkinterfaces;virtualnetworkinterfaces/status,verbs=create;get;list;patch;delete;watch;update
+// +kubebuilder:rbac:groups=vmware.com,resources=virtualnetworkinterfaces;virtualnetworkinterfaces/status,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networkinterfaces;vmxnet3networkinterfaces,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyquotas,verbs=get;list;watch
 // +kubebuilder:rbac:groups=nsx.vmware.com,resources=subnetports,verbs=get;list;watch;create;update;patch;delete

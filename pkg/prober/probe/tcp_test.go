@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
@@ -41,6 +41,9 @@ var _ = Describe("TCP probe", func() {
 			Spec: vmopv1.VirtualMachineSpec{
 				ClassName: "dummy-vmclass",
 			},
+			Status: vmopv1.VirtualMachineStatus{
+				Network: &vmopv1.VirtualMachineNetworkStatus{},
+			},
 		}
 
 		testServer, testHost, testPort = setupTestServer()
@@ -54,9 +57,8 @@ var _ = Describe("TCP probe", func() {
 	It("TCP probe succeeds, with TCP host set in VM spec ", func() {
 		vm.Spec.ReadinessProbe = getVirtualMachineReadinessTCPProbe(testHost, testPort)
 		probeCtx := &context.ProbeContext{
-			VM:        vm,
-			ProbeSpec: vm.Spec.ReadinessProbe,
-			Logger:    ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
+			VM:     vm,
+			Logger: ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
 		}
 
 		res, err := testTCPProbe.Probe(probeCtx)
@@ -65,12 +67,11 @@ var _ = Describe("TCP probe", func() {
 	})
 
 	It("TCP probe succeeds, with empty TCP host", func() {
-		vm.Status.VmIp = testHost
+		vm.Status.Network.PrimaryIP4 = testHost
 		vm.Spec.ReadinessProbe = getVirtualMachineReadinessTCPProbe("", testPort)
 		probeCtx := &context.ProbeContext{
-			VM:        vm,
-			ProbeSpec: vm.Spec.ReadinessProbe,
-			Logger:    ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
+			VM:     vm,
+			Logger: ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
 		}
 
 		res, err := testTCPProbe.Probe(probeCtx)
@@ -81,8 +82,7 @@ var _ = Describe("TCP probe", func() {
 	It("TCP probe fails", func() {
 		vm.Spec.ReadinessProbe = getVirtualMachineReadinessTCPProbe(testHost, 10001)
 		probeCtx := &context.ProbeContext{
-			VM:        vm,
-			ProbeSpec: vm.Spec.ReadinessProbe,
+			VM: vm,
 		}
 
 		res, err := testTCPProbe.Probe(probeCtx)
@@ -107,8 +107,8 @@ func setupTestServer() (*httptest.Server, string, int) {
 	return s, host, portInt
 }
 
-func getVirtualMachineReadinessTCPProbe(host string, port int) *vmopv1.Probe {
-	return &vmopv1.Probe{
+func getVirtualMachineReadinessTCPProbe(host string, port int) *vmopv1.VirtualMachineReadinessProbeSpec {
+	return &vmopv1.VirtualMachineReadinessProbeSpec{
 		TCPSocket: &vmopv1.TCPSocketAction{
 			Host: host,
 			Port: intstr.FromInt(port),

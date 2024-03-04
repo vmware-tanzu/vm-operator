@@ -31,18 +31,11 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 	)
 
-	var provider infraProvider
-	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
-		provider = ctx.VMProviderA2
-	} else {
-		provider = ctx.VMProvider
-	}
-
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
-		provider,
+		ctx.VMProviderA2,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).

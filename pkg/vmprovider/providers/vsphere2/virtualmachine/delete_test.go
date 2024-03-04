@@ -23,7 +23,7 @@ func deleteTests() {
 	)
 
 	BeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{WithV1A2: true})
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 
 		var err error
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")

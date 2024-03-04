@@ -23,7 +23,7 @@ func configTests() {
 	)
 
 	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{WithV1A2: true}
+		testConfig = builder.VCSimTestConfig{}
 	})
 
 	JustBeforeEach(func() {

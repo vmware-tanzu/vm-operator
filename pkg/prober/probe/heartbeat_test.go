@@ -13,24 +13,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
-type fakeVMProviderProber struct {
+type fakeGuestHeartbeatProvider struct {
 	status vmopv1.GuestHeartbeatStatus
 	err    error
 }
 
-func (tp fakeVMProviderProber) GetVirtualMachineGuestHeartbeat(_ goctx.Context, _ *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
+func (tp fakeGuestHeartbeatProvider) GetVirtualMachineGuestHeartbeat(_ goctx.Context, _ *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 	return tp.status, tp.err
 }
 
 var _ = Describe("Guest heartbeat probe", func() {
 	var (
 		vm                   *vmopv1.VirtualMachine
-		fakeProvider         fakeVMProviderProber
+		fakeProvider         fakeGuestHeartbeatProvider
 		testVMwareToolsProbe Probe
 
 		err error
@@ -49,15 +49,14 @@ var _ = Describe("Guest heartbeat probe", func() {
 			},
 		}
 
-		fakeProvider = fakeVMProviderProber{}
+		fakeProvider = fakeGuestHeartbeatProvider{}
 		testVMwareToolsProbe = NewGuestHeartbeatProber(&fakeProvider)
 	})
 
 	JustBeforeEach(func() {
 		probeCtx := &context.ProbeContext{
-			Logger:    ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
-			ProbeSpec: vm.Spec.ReadinessProbe,
-			VM:        vm,
+			Logger: ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
+			VM:     vm,
 		}
 
 		res, err = testVMwareToolsProbe.Probe(probeCtx)
@@ -142,8 +141,8 @@ var _ = Describe("Guest heartbeat probe", func() {
 	})
 })
 
-func getVirtualMachineReadinessHeartbeatProbe() *vmopv1.Probe {
-	return &vmopv1.Probe{
+func getVirtualMachineReadinessHeartbeatProbe() *vmopv1.VirtualMachineReadinessProbeSpec {
+	return &vmopv1.VirtualMachineReadinessProbeSpec{
 		GuestHeartbeat: &vmopv1.GuestHeartbeatAction{
 			ThresholdStatus: vmopv1.GreenHeartbeatStatus, // Default.
 		},

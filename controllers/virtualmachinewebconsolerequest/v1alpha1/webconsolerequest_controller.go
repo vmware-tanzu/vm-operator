@@ -22,9 +22,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1/patch"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
@@ -52,7 +52,6 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		ctx.VMProvider,
 		ctx.VMProviderA2,
 	)
 
@@ -67,14 +66,12 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmProvider vmprovider.VirtualMachineProviderInterface,
 	vmProviderA2 vmprovider.VirtualMachineProviderInterfaceA2) *Reconciler {
 	return &Reconciler{
 		Context:      ctx,
 		Client:       client,
 		Logger:       logger,
 		Recorder:     recorder,
-		VMProvider:   vmProvider,
 		VMProviderA2: vmProviderA2,
 	}
 }
@@ -85,7 +82,6 @@ type Reconciler struct {
 	Context      goctx.Context
 	Logger       logr.Logger
 	Recorder     record.Recorder
-	VMProvider   vmprovider.VirtualMachineProviderInterface
 	VMProviderA2 vmprovider.VirtualMachineProviderInterfaceA2
 }
 
@@ -176,21 +172,14 @@ func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContext) erro
 		ctx.Logger.Info("Finished reconciling WebConsoleRequest")
 	}()
 
-	var ticket string
-	var err error
-	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
-		v1a2VM := &vmopv1alpha2.VirtualMachine{}
-		_ = ctx.VM.ConvertTo(v1a2VM)
+	v1a2VM := &vmopv1alpha2.VirtualMachine{}
+	if err := ctx.VM.ConvertTo(v1a2VM); err != nil {
+		return errors.Wrapf(err, "failed to convert VM to v1a2")
+	}
 
-		ticket, err = r.VMProviderA2.GetVirtualMachineWebMKSTicket(ctx, v1a2VM, ctx.WebConsoleRequest.Spec.PublicKey)
-		if err != nil {
-			return errors.Wrapf(err, "failed to get webmksticket")
-		}
-	} else {
-		ticket, err = r.VMProvider.GetVirtualMachineWebMKSTicket(ctx, ctx.VM, ctx.WebConsoleRequest.Spec.PublicKey)
-		if err != nil {
-			return errors.Wrapf(err, "failed to get webmksticket")
-		}
+	ticket, err := r.VMProviderA2.GetVirtualMachineWebMKSTicket(ctx, v1a2VM, ctx.WebConsoleRequest.Spec.PublicKey)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get webmksticket")
 	}
 
 	r.Recorder.EmitEvent(ctx.WebConsoleRequest, "Acquired Ticket", nil, false)

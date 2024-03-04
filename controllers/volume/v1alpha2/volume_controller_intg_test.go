@@ -22,7 +22,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	volume "github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"

@@ -7,15 +7,14 @@ import (
 	goctx "context"
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/pkg/errors"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
@@ -59,18 +58,24 @@ func (w *readinessWorker) GetQueue() workqueue.DelayingInterface {
 
 // CreateProbeContext creates a probe context for readiness probe.
 func (w *readinessWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*context.ProbeContext, error) {
+	p := vm.Spec.ReadinessProbe
+
+	if p.TCPSocket == nil && p.GuestHeartbeat == nil && len(p.GuestInfo) == 0 {
+		return nil, nil
+	}
+
 	patchHelper, err := patch.NewHelper(vm, w.client)
 	if err != nil {
 		return nil, err
 	}
 
 	return &context.ProbeContext{
-		Context:     goctx.Background(),
-		Logger:      ctrl.Log.WithName("readiness-probe").WithValues("vmName", vm.NamespacedName()),
-		PatchHelper: patchHelper,
-		VM:          vm,
-		ProbeSpec:   vm.Spec.ReadinessProbe,
-		ProbeType:   "readiness",
+		Context:       goctx.Background(),
+		Logger:        ctrl.Log.WithName("readiness-probe").WithValues("vmName", vm.NamespacedName()),
+		PatchHelper:   patchHelper,
+		VM:            vm,
+		ProbeType:     "readiness",
+		PeriodSeconds: p.PeriodSeconds,
 	}, nil
 }
 
@@ -83,12 +88,12 @@ func (w *readinessWorker) ProcessProbeResult(ctx *context.ProbeContext, res prob
 	// We only send event when either the condition type is added or its status changes, not
 	// if either its reason, severity, or message changes.
 	if c := conditions.Get(vm, condition.Type); c == nil || c.Status != condition.Status {
-		if condition.Status == corev1.ConditionTrue {
+		if condition.Status == metav1.ConditionTrue {
 			w.recorder.Eventf(vm, readyReason, "")
 		} else {
 			w.recorder.Eventf(vm, condition.Reason, condition.Message)
 		}
-		// Log the time when the VM changes it's readiness condition.
+		// Log the time when the VM changes its readiness condition.
 		ctx.Logger.Info("VM resource READINESS probe condition updated",
 			"condition.status", condition.Status, "time", condition.LastTransitionTime,
 			"reason", condition.Reason)
@@ -97,7 +102,7 @@ func (w *readinessWorker) ProcessProbeResult(ctx *context.ProbeContext, res prob
 	conditions.Set(vm, condition)
 
 	err := ctx.PatchHelper.Patch(ctx, vm, patch.WithOwnedConditions{
-		Conditions: []vmopv1.ConditionType{vmopv1.ReadyCondition},
+		Conditions: []string{vmopv1.ReadyConditionType},
 	})
 	if err != nil {
 		return errors.Wrapf(err, "patched failed")
@@ -115,12 +120,19 @@ func (w *readinessWorker) DoProbe(ctx *context.ProbeContext) error {
 }
 
 // getProbe returns a specific type of probe method.
-func (w *readinessWorker) getProbe(probeSpec *vmopv1.Probe) probe.Probe {
+func (w *readinessWorker) getProbe(probeSpec *vmopv1.VirtualMachineReadinessProbeSpec) probe.Probe {
+	if probeSpec == nil {
+		return nil
+	}
+
 	if probeSpec.TCPSocket != nil {
 		return w.prober.TCPProbe
 	}
 	if probeSpec.GuestHeartbeat != nil {
 		return w.prober.GuestHeartbeat
+	}
+	if len(probeSpec.GuestInfo) != 0 {
+		return w.prober.GuestInfo
 	}
 
 	return nil
@@ -128,7 +140,7 @@ func (w *readinessWorker) getProbe(probeSpec *vmopv1.Probe) probe.Probe {
 
 // runProbe runs a specific type of probe based on the VM probe spec.
 func (w *readinessWorker) runProbe(ctx *context.ProbeContext) (probe.Result, error) {
-	if p := w.getProbe(ctx.ProbeSpec); p != nil {
+	if p := w.getProbe(ctx.VM.Spec.ReadinessProbe); p != nil {
 		return p.Probe(ctx)
 	}
 
@@ -136,7 +148,7 @@ func (w *readinessWorker) runProbe(ctx *context.ProbeContext) (probe.Result, err
 }
 
 // getCondition returns condition based on VM probe results.
-func (w *readinessWorker) getCondition(res probe.Result, err error) *vmopv1.Condition {
+func (w *readinessWorker) getCondition(res probe.Result, err error) *metav1.Condition {
 	msg := ""
 	if err != nil {
 		msg = err.Error()
@@ -144,10 +156,10 @@ func (w *readinessWorker) getCondition(res probe.Result, err error) *vmopv1.Cond
 
 	switch res {
 	case probe.Success:
-		return conditions.TrueCondition(vmopv1.ReadyCondition)
+		return conditions.TrueCondition(vmopv1.ReadyConditionType)
 	case probe.Failure:
-		return conditions.FalseCondition(vmopv1.ReadyCondition, notReadyReason, vmopv1.ConditionSeverityInfo, msg)
+		return conditions.FalseCondition(vmopv1.ReadyConditionType, notReadyReason, msg)
 	default: // probe.Unknown
-		return conditions.UnknownCondition(vmopv1.ReadyCondition, unknownReason, msg)
+		return conditions.UnknownCondition(vmopv1.ReadyConditionType, unknownReason, msg)
 	}
 }

@@ -72,9 +72,6 @@ type ControllerManagerContext struct {
 	// responsiveness to change if there are many watched resources.
 	SyncPeriod time.Duration
 
-	// VMProvider is the controller manager's VM Provider
-	VMProvider vmprovider.VirtualMachineProviderInterface
-
 	// VMProviderA2 is the controller manager's VM Provider for v1alpha2
 	VMProviderA2 vmprovider.VirtualMachineProviderInterfaceA2
 }

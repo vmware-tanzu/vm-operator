@@ -22,7 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
 func TestGetStepCounterMessage(t *testing.T) {
@@ -67,8 +67,8 @@ func TestLocalizeReason(t *testing.T) {
 func TestGetFirstReasonAndMessage(t *testing.T) {
 	g := NewWithT(t)
 
-	foo := FalseCondition("foo", "falseFoo", vmopv1.ConditionSeverityInfo, "message falseFoo")
-	bar := FalseCondition("bar", "falseBar", vmopv1.ConditionSeverityInfo, "message falseBar")
+	foo := FalseCondition("foo", "falseFoo", "message falseFoo")
+	bar := FalseCondition("bar", "falseBar", "message falseBar")
 
 	getter := &vmopv1.VirtualMachine{
 		TypeMeta: metav1.TypeMeta{
@@ -88,21 +88,21 @@ func TestGetFirstReasonAndMessage(t *testing.T) {
 	g.Expect(gotMessage).To(Equal("message falseBar"))
 
 	// getFirst should report should respect order
-	gotReason = getFirstReason(groups, []vmopv1.ConditionType{"foo", "bar"}, false)
+	gotReason = getFirstReason(groups, []string{"foo", "bar"}, false)
 	g.Expect(gotReason).To(Equal("falseFoo"))
-	gotMessage = getFirstMessage(groups, []vmopv1.ConditionType{"foo", "bar"})
+	gotMessage = getFirstMessage(groups, []string{"foo", "bar"})
 	g.Expect(gotMessage).To(Equal("message falseFoo"))
 
 	// getFirst should report should respect order in case of missing conditions
-	gotReason = getFirstReason(groups, []vmopv1.ConditionType{"missingBaz", "foo", "bar"}, false)
+	gotReason = getFirstReason(groups, []string{"missingBaz", "foo", "bar"}, false)
 	g.Expect(gotReason).To(Equal("falseFoo"))
-	gotMessage = getFirstMessage(groups, []vmopv1.ConditionType{"missingBaz", "foo", "bar"})
+	gotMessage = getFirstMessage(groups, []string{"missingBaz", "foo", "bar"})
 	g.Expect(gotMessage).To(Equal("message falseFoo"))
 
 	// getFirst should fallback to first condition if none of the conditions in the list exists
-	gotReason = getFirstReason(groups, []vmopv1.ConditionType{"missingBaz"}, false)
+	gotReason = getFirstReason(groups, []string{"missingBaz"}, false)
 	g.Expect(gotReason).To(Equal("falseBar"))
-	gotMessage = getFirstMessage(groups, []vmopv1.ConditionType{"missingBaz"})
+	gotMessage = getFirstMessage(groups, []string{"missingBaz"})
 	g.Expect(gotMessage).To(Equal("message falseBar"))
 
 	// getFirstReason should localize reason if required

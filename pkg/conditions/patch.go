@@ -21,8 +21,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Patch defines a list of operations to change a list of conditions into another.
@@ -30,8 +29,8 @@ type Patch []PatchOperation
 
 // PatchOperation define an operation that changes a single condition.
 type PatchOperation struct {
-	Before *vmopv1.Condition
-	After  *vmopv1.Condition
+	Before *metav1.Condition
+	After  *metav1.Condition
 	Op     PatchOperationType
 }
 
@@ -82,11 +81,11 @@ func NewPatch(before Getter, after Getter) Patch {
 
 // applyOptions allows to set strategies for patch apply.
 type applyOptions struct {
-	ownedConditions []vmopv1.ConditionType
+	ownedConditions []string
 	forceOverwrite  bool
 }
 
-func (o *applyOptions) isOwnedCondition(t vmopv1.ConditionType) bool {
+func (o *applyOptions) isOwnedCondition(t string) bool {
 	for _, i := range o.ownedConditions {
 		if i == t {
 			return true
@@ -100,7 +99,7 @@ type ApplyOption func(*applyOptions)
 
 // WithOwnedConditions allows to define condition types owned by the controller.
 // In case of conflicts for the owned conditions, the patch helper will always use the value provided by the controller.
-func WithOwnedConditions(t ...vmopv1.ConditionType) ApplyOption {
+func WithOwnedConditions(t ...string) ApplyOption {
 	return func(c *applyOptions) {
 		c.ownedConditions = t
 	}

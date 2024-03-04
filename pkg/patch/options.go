@@ -13,8 +13,6 @@ limitations under the License.
 
 package patch
 
-import vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 // Option is some configuration that modifies options for a patch request.
 type Option interface {
 	// ApplyToHelper applies this configuration to the given Helper options.
@@ -33,7 +31,7 @@ type HelperOptions struct {
 
 	// OwnedConditions defines condition types owned by the controller.
 	// In case of conflicts for the owned conditions, the patch helper will always use the value provided by the controller.
-	OwnedConditions []vmopv1.ConditionType
+	OwnedConditions []string
 }
 
 // WithForceOverwriteConditions allows the patch helper to overwrite conditions in case of conflicts.
@@ -57,7 +55,7 @@ func (w WithStatusObservedGeneration) ApplyToHelper(in *HelperOptions) {
 // WithOwnedConditions allows to define condition types owned by the controller.
 // In case of conflicts for the owned conditions, the patch helper will always use the value provided by the controller.
 type WithOwnedConditions struct {
-	Conditions []vmopv1.ConditionType
+	Conditions []string
 }
 
 // ApplyToHelper applies this configuration to the given HelperOptions.

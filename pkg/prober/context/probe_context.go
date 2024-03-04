@@ -8,19 +8,18 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 )
 
 // ProbeContext is the context used for VM Probes.
 type ProbeContext struct {
 	context.Context
-	Logger      logr.Logger
-	PatchHelper *patch.Helper
-	VM          *vmopv1.VirtualMachine
-	ProbeType   string
-	ProbeSpec   *vmopv1.Probe
+	Logger        logr.Logger
+	PatchHelper   *patch.Helper
+	VM            *vmopv1.VirtualMachine
+	ProbeType     string
+	PeriodSeconds int32
 }
 
 // String returns probe type.

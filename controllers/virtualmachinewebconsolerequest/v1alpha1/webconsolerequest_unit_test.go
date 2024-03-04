@@ -28,13 +28,11 @@ func unitTests() {
 }
 
 func unitTestsReconcile() {
-	const v1a1Ticket = "some-fake-webmksticket"
 	const v1a2Ticket = "some-fake-webmksticket-v1a2"
 
 	var (
 		initObjects      []client.Object
 		ctx              *builder.UnitTestContextForController
-		fakeVMProvider   *providerfake.VMProvider
 		fakeVMProviderA2 *providerfake.VMProviderA2
 
 		reconciler *webconsolerequest.Reconciler
@@ -85,10 +83,8 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			ctx.VMProvider,
 			ctx.VMProviderA2,
 		)
-		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		fakeVMProviderA2 = ctx.VMProviderA2.(*providerfake.VMProviderA2)
 
 		wcrCtx = &vmopContext.WebConsoleRequestContext{
@@ -108,7 +104,6 @@ func unitTestsReconcile() {
 
 	Context("ReconcileNormal", func() {
 		var (
-			v1a1ProviderCalled bool
 			v1a2ProviderCalled bool
 		)
 
@@ -117,11 +112,6 @@ func unitTestsReconcile() {
 		})
 
 		JustBeforeEach(func() {
-			fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
-				v1a1ProviderCalled = true
-				return v1a1Ticket, nil
-			}
-
 			fakeVMProviderA2.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1alpha2.VirtualMachine, pubKey string) (string, error) {
 				v1a2ProviderCalled = true
 				return v1a2Ticket, nil
@@ -129,24 +119,8 @@ func unitTestsReconcile() {
 		})
 
 		AfterEach(func() {
-			fakeVMProvider.Reset()
 			fakeVMProviderA2.Reset()
-			v1a1ProviderCalled = false
 			v1a2ProviderCalled = false
-		})
-
-		When("NoOp", func() {
-			It("returns success", func() {
-				err := reconciler.ReconcileNormal(wcrCtx)
-				Expect(err).ToNot(HaveOccurred())
-
-				Expect(v1a1ProviderCalled).Should(BeTrue())
-				Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("dummy-proxy-ip"))
-				Expect(wcrCtx.WebConsoleRequest.Status.Response).To(Equal(v1a1Ticket))
-				Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
-				// Checking the label key only because UID will not be set to a resource during unit test.
-				Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(webconsolerequest.UUIDLabelKey))
-			})
 		})
 
 		When("VM Service v1alpha2 FSS is enabled", func() {

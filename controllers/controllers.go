@@ -11,7 +11,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
 	"github.com/vmware-tanzu/vm-operator/controllers/infraprovider"
-	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
@@ -55,13 +54,6 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	if pkgconfig.FromContext(ctx).Features.ImageRegistry {
 		if err := virtualmachinepublishrequest.AddToManager(ctx, mgr); err != nil {
 			return errors.Wrap(err, "failed to initialize VirtualMachinePublishRequest controller")
-		}
-	} else {
-		// We only update TKG related ContentSource/ContentLibraryProvider/ContentSourceBinding resources
-		// in provider configmap reconcile. These resources will be removed when the FSS is enabled,
-		// add provider configmap controller to the manager only when the FSS is disabled.
-		if err := providerconfigmap.AddToManager(ctx, mgr); err != nil {
-			return errors.Wrap(err, "failed to initialize ProviderConfigMap controller")
 		}
 	}
 	return nil

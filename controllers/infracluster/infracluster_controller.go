@@ -46,20 +46,13 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	var provider infraClusterProvider
-	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
-		provider = ctx.VMProviderA2
-	} else {
-		provider = ctx.VMProvider
-	}
-
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.Namespace, // Aka lib.GetVmOpNamespaceFromEnv()
-		provider,
+		ctx.VMProviderA2,
 	)
 
 	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})

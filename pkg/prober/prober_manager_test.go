@@ -16,7 +16,7 @@ import (
 	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	fakeworker "github.com/vmware-tanzu/vm-operator/pkg/prober/fake/worker"
@@ -35,7 +35,6 @@ var _ = Describe("VirtualMachine probes", func() {
 		testManager   *manager
 		vm            *vmopv1.VirtualMachine
 		vmKey         client.ObjectKey
-		vmProbe       *vmopv1.Probe
 		periodSeconds int32
 
 		fakeClient   client.Client
@@ -45,6 +44,9 @@ var _ = Describe("VirtualMachine probes", func() {
 	)
 
 	BeforeEach(func() {
+		ctx = goctx.Background()
+		periodSeconds = 1
+
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
@@ -52,17 +54,16 @@ var _ = Describe("VirtualMachine probes", func() {
 			},
 			Spec: vmopv1.VirtualMachineSpec{
 				ClassName: "dummy-vmclass",
+				ReadinessProbe: &vmopv1.VirtualMachineReadinessProbeSpec{
+					TCPSocket: &vmopv1.TCPSocketAction{
+						Port: intstr.FromInt(10001),
+					},
+					PeriodSeconds: periodSeconds,
+				},
 			},
 		}
 		vmKey = client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace}
-		periodSeconds = 1
-		vmProbe = &vmopv1.Probe{
-			TCPSocket: &vmopv1.TCPSocketAction{
-				Port: intstr.FromInt(10001),
-			},
-			PeriodSeconds: periodSeconds,
-		}
-		ctx = goctx.Background()
+
 		initObjects = append(initObjects, vm)
 	})
 
@@ -70,8 +71,8 @@ var _ = Describe("VirtualMachine probes", func() {
 		fakeClient = builder.NewFakeClient(initObjects...)
 		eventRecorder := clientgorecord.NewFakeRecorder(1024)
 		fakeRecorder = record.New(eventRecorder)
-		fakeVMProvider := &fake.VMProvider{}
-		testManagerIf := NewManger(fakeClient, fakeRecorder, fakeVMProvider)
+		fakeVMProvider := &fake.VMProviderA2{}
+		testManagerIf := NewManager(fakeClient, fakeRecorder, fakeVMProvider)
 		testManager = testManagerIf.(*manager)
 		fakeWorkerIf = fakeworker.NewFakeWorker(testManager.readinessQueue)
 		fakeWorker = fakeWorkerIf.(*fakeworker.FakeWorker)
@@ -104,6 +105,10 @@ var _ = Describe("VirtualMachine probes", func() {
 		})
 
 		When("VM doesn't specify a probe", func() {
+			BeforeEach(func() {
+				vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{}
+			})
+
 			It("Should return immediately", func() {
 				quit := testManager.processItemFromQueue(fakeWorker)
 				Expect(quit).To(BeFalse())
@@ -112,9 +117,6 @@ var _ = Describe("VirtualMachine probes", func() {
 		})
 
 		When("VM specifies a probe", func() {
-			BeforeEach(func() {
-				vm.Spec.ReadinessProbe = vmProbe
-			})
 
 			It("Should not run probes when VM is in deleting phase", func() {
 				Expect(fakeClient.Delete(ctx, vm)).To(Succeed())
@@ -125,7 +127,7 @@ var _ = Describe("VirtualMachine probes", func() {
 			})
 
 			It("Should set probe result as failed if the VM is powered off", func() {
-				vm.Status.PowerState = vmopv1.VirtualMachinePoweredOff
+				vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
 				Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 				fakeWorker.ProcessProbeResultFn = func(ctx *context.ProbeContext, res probe.Result, err error) error {
 					if res != probe.Failure {
@@ -143,7 +145,7 @@ var _ = Describe("VirtualMachine probes", func() {
 
 			When("VM is powered on", func() {
 				JustBeforeEach(func() {
-					vm.Status.PowerState = vmopv1.VirtualMachinePoweredOn
+					vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
 					Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 				})
 
@@ -189,22 +191,14 @@ var _ = Describe("VirtualMachine probes", func() {
 	})
 
 	Context("Probe manager manages VMs when they are created, updated or deleted", func() {
-		var err error
-		BeforeEach(func() {
-			vmProbe.PeriodSeconds = defaultPeriodSeconds
-			vm.Spec.ReadinessProbe = vmProbe
-		})
 
 		JustBeforeEach(func() {
-			vm.Status.PowerState = vmopv1.VirtualMachinePoweredOn
+			vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
 			Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
-
-			Expect(fakeClient.Get(ctx, vmKey, vm)).To(Succeed())
-			Expect(err).ShouldNot(HaveOccurred())
 		})
 
 		It("Should not add to prober manager if Probe spec is not specified", func() {
-			vm.Spec.ReadinessProbe = nil
+			vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{}
 			testManager.AddToProberManager(vm)
 
 			Expect(testManager.readinessQueue.Len()).To(Equal(0))
@@ -240,6 +234,7 @@ var _ = Describe("VirtualMachine probes", func() {
 			})
 
 			It("Should do nothing if VM probe is not updated", func() {
+				newVM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{}
 				testManager.AddToProberManager(newVM)
 				Expect(testManager.readinessQueue.Len()).To(Equal(0))
 			})
@@ -254,7 +249,7 @@ var _ = Describe("VirtualMachine probes", func() {
 			})
 
 			It("Should remove from the manager if the VM's probe spec is changed to nil", func() {
-				newVM.Spec.ReadinessProbe = nil
+				newVM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{}
 				Expect(fakeClient.Update(ctx, newVM)).To(Succeed())
 
 				testManager.AddToProberManager(newVM)

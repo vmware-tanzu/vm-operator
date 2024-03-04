@@ -19,7 +19,7 @@ import (
 	virtualmachine "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober2/fake"
+	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )

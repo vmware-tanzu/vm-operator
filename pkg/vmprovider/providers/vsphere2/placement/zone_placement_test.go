@@ -76,7 +76,7 @@ func vcSimPlacement() {
 	)
 
 	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{WithV1A2: true}
+		testConfig = builder.VCSimTestConfig{}
 
 		vm = builder.DummyVirtualMachineA2()
 		vm.Name = "placement-test"

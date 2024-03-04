@@ -21,24 +21,21 @@ import (
 	"sort"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 // Setter interface defines methods that a Cluster API object should implement in order to
 // use the conditions package for setting conditions.
 type Setter interface {
 	Getter
-	SetConditions(vmopv1.Conditions)
+	SetConditions([]metav1.Condition)
 }
 
 // Set sets the given condition.
 //
 // NOTE: If a condition already exists, the LastTransitionTime is updated only if a change is detected
 // in any of the following fields: Status, Reason, Severity and Message.
-func Set(to Setter, condition *vmopv1.Condition) {
+func Set(to Setter, condition *metav1.Condition) {
 	if to == nil || condition == nil {
 		return
 	}
@@ -78,47 +75,58 @@ func Set(to Setter, condition *vmopv1.Condition) {
 }
 
 // TrueCondition returns a condition with Status=True and the given type.
-func TrueCondition(t vmopv1.ConditionType) *vmopv1.Condition {
-	return &vmopv1.Condition{
+func TrueCondition(t string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:   t,
-		Status: corev1.ConditionTrue,
+		Status: metav1.ConditionTrue,
+		// This is a non-empty field in metav1.Conditions, when it was not in our v1a1 Conditions. This
+		// really doesn't work with how we've defined our conditions so do something to make things
+		// work for now.
+		Reason: string(metav1.ConditionTrue),
 	}
 }
 
 // FalseCondition returns a condition with Status=False and the given type.
-func FalseCondition(t vmopv1.ConditionType, reason string, severity vmopv1.ConditionSeverity, messageFormat string, messageArgs ...interface{}) *vmopv1.Condition {
-	return &vmopv1.Condition{
-		Type:     t,
-		Status:   corev1.ConditionFalse,
-		Reason:   reason,
-		Severity: severity,
-		Message:  fmt.Sprintf(messageFormat, messageArgs...),
+func FalseCondition(t string, reason string, messageFormat string, messageArgs ...interface{}) *metav1.Condition {
+	if reason == "" {
+		reason = string(metav1.ConditionFalse)
+	}
+
+	return &metav1.Condition{
+		Type:    t,
+		Status:  metav1.ConditionFalse,
+		Reason:  reason,
+		Message: fmt.Sprintf(messageFormat, messageArgs...),
 	}
 }
 
 // UnknownCondition returns a condition with Status=Unknown and the given type.
-func UnknownCondition(t vmopv1.ConditionType, reason string, messageFormat string, messageArgs ...interface{}) *vmopv1.Condition {
-	return &vmopv1.Condition{
+func UnknownCondition(t string, reason string, messageFormat string, messageArgs ...interface{}) *metav1.Condition {
+	if reason == "" {
+		reason = string(metav1.ConditionUnknown)
+	}
+
+	return &metav1.Condition{
 		Type:    t,
-		Status:  corev1.ConditionUnknown,
+		Status:  metav1.ConditionUnknown,
 		Reason:  reason,
 		Message: fmt.Sprintf(messageFormat, messageArgs...),
 	}
 }
 
 // MarkTrue sets Status=True for the condition with the given type.
-func MarkTrue(to Setter, t vmopv1.ConditionType) {
+func MarkTrue(to Setter, t string) {
 	Set(to, TrueCondition(t))
 }
 
 // MarkUnknown sets Status=Unknown for the condition with the given type.
-func MarkUnknown(to Setter, t vmopv1.ConditionType, reason, messageFormat string, messageArgs ...interface{}) {
+func MarkUnknown(to Setter, t string, reason, messageFormat string, messageArgs ...interface{}) {
 	Set(to, UnknownCondition(t, reason, messageFormat, messageArgs...))
 }
 
 // MarkFalse sets Status=False for the condition with the given type.
-func MarkFalse(to Setter, t vmopv1.ConditionType, reason string, severity vmopv1.ConditionSeverity, messageFormat string, messageArgs ...interface{}) {
-	Set(to, FalseCondition(t, reason, severity, messageFormat, messageArgs...))
+func MarkFalse(to Setter, t string, reason string, messageFormat string, messageArgs ...interface{}) {
+	Set(to, FalseCondition(t, reason, messageFormat, messageArgs...))
 }
 
 // SetSummary sets a Ready condition with the summary of all the conditions existing
@@ -127,28 +135,28 @@ func SetSummary(to Setter, options ...MergeOption) {
 	Set(to, summary(to, options...))
 }
 
-// SetMirror creates a new condition by mirroring the the Ready condition from a dependent object;
-// if the Ready condition does not exists in the source object, no target conditions is generated.
-func SetMirror(to Setter, targetCondition vmopv1.ConditionType, from Getter, options ...MirrorOptions) {
+// SetMirror creates a new condition by mirroring the Ready condition from a dependent object;
+// if the Ready condition does not exist in the source object, no target conditions is generated.
+func SetMirror(to Setter, targetCondition string, from Getter, options ...MirrorOptions) {
 	Set(to, mirror(from, targetCondition, options...))
 }
 
-// SetAggregate creates a new condition with the aggregation of all the the Ready condition
-// from a list of dependent objects; if the Ready condition does not exists in one of the source object,
+// SetAggregate creates a new condition with the aggregation of all the Ready condition
+// from a list of dependent objects; if the Ready condition does not exist in one of the source object,
 // the object is excluded from the aggregation; if none of the source object have ready condition,
 // no target conditions is generated.
-func SetAggregate(to Setter, targetCondition vmopv1.ConditionType, from []Getter, options ...MergeOption) {
+func SetAggregate(to Setter, targetCondition string, from []Getter, options ...MergeOption) {
 	Set(to, aggregate(from, targetCondition, options...))
 }
 
 // Delete deletes the condition with the given type.
-func Delete(to Setter, t vmopv1.ConditionType) {
+func Delete(to Setter, t string) {
 	if to == nil {
 		return
 	}
 
 	conditions := to.GetConditions()
-	newConditions := make(vmopv1.Conditions, 0, len(conditions))
+	newConditions := make([]metav1.Condition, 0, len(conditions))
 	for _, condition := range conditions {
 		if condition.Type != t {
 			newConditions = append(newConditions, condition)
@@ -161,16 +169,15 @@ func Delete(to Setter, t vmopv1.ConditionType) {
 // to order of conditions designed for convenience of the consumer, i.e. kubectl.
 // According to this order the Ready condition always goes first, followed by all the other
 // conditions sorted by Type.
-func lexicographicLess(i, j *vmopv1.Condition) bool {
-	return (i.Type == vmopv1.ReadyCondition || i.Type < j.Type) && j.Type != vmopv1.ReadyCondition
+func lexicographicLess(i, j *metav1.Condition) bool {
+	return (i.Type == ReadyConditionType || i.Type < j.Type) && j.Type != ReadyConditionType
 }
 
 // hasSameState returns true if a condition has the same state of another; state is defined
 // by the union of following fields: Type, Status, Reason, Severity and Message (it excludes LastTransitionTime).
-func hasSameState(i, j *vmopv1.Condition) bool {
+func hasSameState(i, j *metav1.Condition) bool {
 	return i.Type == j.Type &&
 		i.Status == j.Status &&
 		i.Reason == j.Reason &&
-		i.Severity == j.Severity &&
 		i.Message == j.Message
 }

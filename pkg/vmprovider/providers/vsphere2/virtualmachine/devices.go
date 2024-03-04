@@ -5,7 +5,7 @@ package virtualmachine
 
 import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
@@ -85,7 +85,7 @@ func CreateInstanceStorageDiskDevices(isVolumes []vmopv1.VirtualMachineVolume) [
 			VirtualDevice: vimTypes.VirtualDevice{
 				Key: deviceKey,
 				Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-					ThinProvisioned: pointer.Bool(false),
+					ThinProvisioned: ptr.To(false),
 				},
 			},
 			VDiskId: &vimTypes.ID{

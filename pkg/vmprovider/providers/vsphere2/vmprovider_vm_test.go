@@ -16,7 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/object"
@@ -176,7 +176,7 @@ func vmTests() {
 					AddressType: string(vimTypes.VirtualEthernetCardMacTypeManual),
 					MacAddress:  "00:0c:29:93:d7:27",
 					ResourceAllocation: &vimTypes.VirtualEthernetCardResourceAllocation{
-						Reservation: pointer.Int64(42),
+						Reservation: ptr.To[int64](42),
 					},
 				}
 			})
@@ -272,7 +272,7 @@ func vmTests() {
 					// Specify a CPU reservation via ConfigSpec. This value should not be honored.
 					configSpec = &vimTypes.VirtualMachineConfigSpec{
 						CpuAllocation: &vimTypes.ResourceAllocationInfo{
-							Reservation: pointer.Int64(6),
+							Reservation: ptr.To[int64](6),
 						},
 					}
 				})
@@ -304,7 +304,7 @@ func vmTests() {
 					// Specify a CPU reservation via ConfigSpec
 					configSpec = &vimTypes.VirtualMachineConfigSpec{
 						CpuAllocation: &vimTypes.ResourceAllocationInfo{
-							Reservation: pointer.Int64(6),
+							Reservation: ptr.To[int64](6),
 						},
 					}
 				})
@@ -330,7 +330,7 @@ func vmTests() {
 					// Specify a Memory reservation via ConfigSpec
 					configSpec = &vimTypes.VirtualMachineConfigSpec{
 						MemoryAllocation: &vimTypes.ResourceAllocationInfo{
-							Reservation: pointer.Int64(5120),
+							Reservation: ptr.To[int64](5120),
 						},
 					}
 				})
@@ -362,7 +362,7 @@ func vmTests() {
 					// Specify a Memory reservation via ConfigSpec
 					configSpec = &vimTypes.VirtualMachineConfigSpec{
 						MemoryAllocation: &vimTypes.ResourceAllocationInfo{
-							Reservation: pointer.Int64(5120),
+							Reservation: ptr.To[int64](5120),
 						},
 					}
 				})
@@ -649,7 +649,7 @@ func vmTests() {
 							&vimTypes.VirtualDeviceConfigSpec{
 								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
 								Device: &vimTypes.VirtualMachineVideoCard{
-									UseAutoDetect: pointer.Bool(false),
+									UseAutoDetect: ptr.To(false),
 									NumDisplays:   1,
 									VirtualDevice: vimTypes.VirtualDevice{
 										Key:           500,
@@ -675,7 +675,7 @@ func vmTests() {
 									VirtualDevice: vimTypes.VirtualDevice{
 										Key: -42,
 										Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-											ThinProvisioned: pointer.Bool(true),
+											ThinProvisioned: ptr.To(true),
 										},
 									},
 								},
@@ -958,7 +958,7 @@ func vmTests() {
 										VirtualDevice: vimTypes.VirtualDevice{
 											Key: -42,
 											Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-												ThinProvisioned: pointer.Bool(true),
+												ThinProvisioned: ptr.To(true),
 											},
 										},
 									},

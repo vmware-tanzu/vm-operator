@@ -15,7 +15,7 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/client-go/util/flowcontrol"
 	klog "k8s.io/klog/v2"
-	"k8s.io/klog/v2/klogr"
+	"k8s.io/klog/v2/textlogger"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -47,7 +47,7 @@ var defaultConfig = config.FromEnv()
 
 func main() {
 	klog.InitFlags(nil)
-	ctrllog.SetLogger(klogr.New())
+	ctrllog.SetLogger(textlogger.NewLogger(textlogger.NewConfig()))
 	setupLog := ctrllog.Log.WithName("entrypoint")
 
 	setupLog.Info("Starting VM Operator controller", "version", pkg.BuildVersion,

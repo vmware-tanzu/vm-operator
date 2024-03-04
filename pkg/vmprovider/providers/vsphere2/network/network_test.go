@@ -12,7 +12,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/nsx.vmware.com/v1alpha1"
@@ -129,7 +129,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 							},
 							Gateway4:    "172.42.1.1",
 							Gateway6:    "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
-							MTU:         pointer.Int64(9000),
+							MTU:         ptr.To[int64](9000),
 							Nameservers: []string{"9.9.9.9"},
 							Routes: []vmopv1.VirtualMachineNetworkRouteSpec{
 								{

@@ -6,9 +6,9 @@ package contentlibrary_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/utils/ptr"
 
 	"github.com/vmware/govmomi/ovf"
-	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -62,34 +62,34 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 							{
 								Key:     versionKey,
 								Type:    ovfStringType,
-								Default: pointer.String(versionVal),
+								Default: ptr.To(versionVal),
 							},
 							{
 								Key:              userConfigurableKey,
 								Type:             ovfStringType,
-								Default:          pointer.String(defaultValue),
-								UserConfigurable: pointer.Bool(true),
+								Default:          ptr.To(defaultValue),
+								UserConfigurable: ptr.To(true),
 							},
 							{
 								Key:              notUserConfigurableKey,
 								Type:             ovfStringType,
-								Default:          pointer.String(defaultValue),
-								UserConfigurable: pointer.Bool(false),
+								Default:          ptr.To(defaultValue),
+								UserConfigurable: ptr.To(false),
 							},
 							{
 								Key:              notUserConfigurableKey,
 								Type:             ovfStringType,
-								Default:          pointer.String(defaultValue),
-								UserConfigurable: pointer.Bool(false),
+								Default:          ptr.To(defaultValue),
+								UserConfigurable: ptr.To(false),
 							},
 						},
 					},
 				},
 				OperatingSystem: []ovf.OperatingSystemSection{
 					{
-						OSType:  pointer.String("dummy_os_type"),
+						OSType:  ptr.To("dummy_os_type"),
 						ID:      int16(100),
-						Version: pointer.String("dummy_version"),
+						Version: ptr.To("dummy_version"),
 					},
 				},
 				VirtualHardware: []ovf.VirtualHardwareSection{
@@ -103,7 +103,7 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 
 						System: &ovf.VirtualSystemSettingData{
 							CIMVirtualSystemSettingData: ovf.CIMVirtualSystemSettingData{
-								VirtualSystemType: pointer.String("vmx-10"),
+								VirtualSystemType: ptr.To("vmx-10"),
 							},
 						},
 					},
@@ -136,13 +136,13 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 		Expect(image.Status.OSInfo.Version).Should(Equal("dummy_version"))
 		Expect(image.Status.OSInfo.ID).Should(Equal("100"))
 
-		Expect(image.Status.HardwareVersion).Should(Equal(pointer.Int32(10)))
+		Expect(image.Status.HardwareVersion).Should(Equal(ptr.To[int32](10)))
 		Expect(image.Status.Firmware).Should(Equal("efi"))
 
 		Expect(image.Status.OVFProperties).Should(HaveLen(1))
 		Expect(image.Status.OVFProperties[0].Key).Should(Equal(userConfigurableKey))
 		Expect(image.Status.OVFProperties[0].Type).Should(Equal(ovfStringType))
-		Expect(image.Status.OVFProperties[0].Default).Should(Equal(pointer.String(defaultValue)))
+		Expect(image.Status.OVFProperties[0].Default).Should(Equal(ptr.To(defaultValue)))
 
 		Expect(image.Status.VMwareSystemProperties).Should(HaveLen(1))
 		Expect(image.Status.VMwareSystemProperties[0].Key).Should(Equal(versionKey))

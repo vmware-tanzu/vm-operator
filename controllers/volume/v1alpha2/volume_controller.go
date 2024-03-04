@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -425,8 +424,8 @@ func (r *Reconciler) createInstanceStoragePVC(
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			StorageClassName: &claim.StorageClass,
-			Resources: corev1.ResourceRequirements{
-				Requests: map[corev1.ResourceName]resource.Quantity{
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: claim.Size,
 				},
 			},

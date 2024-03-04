@@ -10,8 +10,11 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	// Load the GCP authentication plug-in.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -56,30 +59,42 @@ func New(ctx goctx.Context, opts Options) (Manager, error) {
 		_ = vmopv1alpha2.AddToScheme(opts.Scheme)
 	}
 
-	if networkType := pkgconfig.FromContext(ctx).NetworkProviderType; networkType == pkgconfig.NetworkProviderTypeVPC {
+	if pkgconfig.FromContext(ctx).NetworkProviderType == pkgconfig.NetworkProviderTypeVPC {
 		_ = vpcv1alpha1.AddToScheme(opts.Scheme)
 	}
-	// +kubebuilder:scaffold:scheme
-
-	// controller-runtime Client creates an Informer for each resource that we watch.
-	// This can cause VM operator pod to be OOM killed. To avoid that, we by-pass
-	// the cache for ConfigMaps and Secrets so they are looked up from API sever directly.
-	cacheDisabledObjects := []client.Object{&corev1.ConfigMap{}, &corev1.Secret{}}
 
 	// Build the controller manager.
 	mgr, err := ctrlmgr.New(opts.KubeConfig, ctrlmgr.Options{
-		Scheme:                  opts.Scheme,
-		MetricsBindAddress:      opts.MetricsAddr,
+		Scheme: opts.Scheme,
+		Cache: cache.Options{
+			DefaultNamespaces: GetNamespaceCacheConfigs(opts.WatchNamespace),
+			SyncPeriod:        &opts.SyncPeriod,
+		},
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				// An informer is created for each watched resource. Due to the
+				// number of ConfigMap and Secret resources that can exist,
+				// watching each one can result in VM Operator being terminated
+				// due to an out-of-memory error, i.e. OOMKill. To avoid this
+				// outcome, ConfigMap and Secret resources are not cached.
+				DisableFor: []client.Object{
+					&corev1.ConfigMap{},
+					&corev1.Secret{},
+				},
+			},
+		},
+		Metrics: metricsserver.Options{
+			BindAddress: opts.MetricsAddr,
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			CertDir: opts.WebhookSecretVolumeMountPath,
+			Port:    opts.WebhookServiceContainerPort,
+		}),
 		HealthProbeBindAddress:  opts.HealthProbeBindAddress,
 		LeaderElection:          opts.LeaderElectionEnabled,
 		LeaderElectionID:        opts.LeaderElectionID,
 		LeaderElectionNamespace: opts.PodNamespace,
-		SyncPeriod:              &opts.SyncPeriod,
-		Namespace:               opts.WatchNamespace,
 		NewCache:                opts.NewCache,
-		CertDir:                 opts.WebhookSecretVolumeMountPath,
-		Port:                    opts.WebhookServiceContainerPort,
-		ClientDisableCacheFor:   cacheDisabledObjects,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create manager")
@@ -108,8 +123,6 @@ func New(ctx goctx.Context, opts Options) (Manager, error) {
 	if err := opts.AddToManager(controllerManagerContext, mgr); err != nil {
 		return nil, errors.Wrap(err, "failed to add resources to the manager")
 	}
-
-	// +kubebuilder:scaffold:builder
 
 	return &manager{
 		Manager: mgr,

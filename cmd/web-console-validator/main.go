@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	klog "k8s.io/klog/v2"
-	"k8s.io/klog/v2/klogr"
+	"k8s.io/klog/v2/textlogger"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
@@ -34,7 +34,7 @@ func init() {
 func main() {
 	// Using the same type of logger as in the controller-manager.
 	klog.InitFlags(nil)
-	ctrllog.SetLogger(klogr.New())
+	ctrllog.SetLogger(textlogger.NewLogger(textlogger.NewConfig()))
 	logger := ctrllog.Log.WithName("entrypoint")
 
 	logger.Info("VM Operator web-console validation server info", "version", pkg.BuildVersion,

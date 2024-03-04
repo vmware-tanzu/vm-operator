@@ -8,9 +8,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/utils/ptr"
 
 	"github.com/vmware/govmomi/vim25/types"
-	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
@@ -34,7 +34,7 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 				{
 					Id:               key,
 					Value:            "should-change",
-					UserConfigurable: pointer.Bool(true),
+					UserConfigurable: ptr.To(true),
 				},
 			},
 		}
@@ -109,7 +109,7 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 					Properties: []common.KeyValueOrSecretKeySelectorPair{
 						{
 							Key:   key,
-							Value: common.ValueOrSecretKeySelector{Value: pointer.String(value)},
+							Value: common.ValueOrSecretKeySelector{Value: ptr.To(value)},
 						},
 					},
 				}
@@ -231,7 +231,7 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 			},
 			[]types.VAppPropertyInfo{
 				{Key: 1, Id: "one-id", Value: "one-value"},
-				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: pointer.Bool(false)},
+				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: ptr.To(false)},
 			},
 			nil,
 		),
@@ -239,7 +239,7 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 			map[string]string{},
 			[]types.VAppPropertyInfo{
 				{Key: 1, Id: "one-id", Value: "one-value"},
-				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: pointer.Bool(true)},
+				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: ptr.To(true)},
 			},
 			nil,
 		),
@@ -251,8 +251,8 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 			},
 			[]types.VAppPropertyInfo{
 				{Key: 1, Id: "one-id", Value: "one-value", UserConfigurable: nil},
-				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: pointer.Bool(true)},
-				{Key: 3, Id: "three-id", Value: "three-value", UserConfigurable: pointer.Bool(false)},
+				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: ptr.To(true)},
+				{Key: 3, Id: "three-id", Value: "three-value", UserConfigurable: ptr.To(false)},
 			},
 			&types.VmConfigSpec{
 				Property: []types.VAppPropertySpec{

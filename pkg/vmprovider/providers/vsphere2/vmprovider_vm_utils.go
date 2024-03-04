@@ -19,6 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/sysprep"
@@ -85,8 +86,20 @@ func GetVirtualMachineImageSpecAndStatus(
 			return nil, nil, nil, fmt.Errorf("%s: %w", msg, err)
 		}
 
+		// Ensure the GVK for the object is synced back into the object since
+		// the object's APIVersion and Kind fields may be used later.
+		if err := kube.SyncGVKToObject(clusterVMImage, k8sClient.Scheme()); err != nil {
+			return nil, nil, nil, err
+		}
+
 		obj, spec, status = clusterVMImage, &clusterVMImage.Spec, &clusterVMImage.Status
 	} else {
+		// Ensure the GVK for the object is synced back into the object since
+		// the object's APIVersion and Kind fields may be used later.
+		if err := kube.SyncGVKToObject(vmImage, k8sClient.Scheme()); err != nil {
+			return nil, nil, nil, err
+		}
+
 		obj, spec, status = vmImage, &vmImage.Spec, &vmImage.Status
 	}
 

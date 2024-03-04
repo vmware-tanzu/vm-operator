@@ -15,7 +15,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg"
@@ -383,11 +383,11 @@ func UpdateConfigSpecChangeBlockTracking(
 
 	if adv := vmSpec.Advanced; adv != nil && adv.ChangeBlockTracking {
 		if config.ChangeTrackingEnabled == nil || !*config.ChangeTrackingEnabled {
-			configSpec.ChangeTrackingEnabled = pointer.Bool(true)
+			configSpec.ChangeTrackingEnabled = ptr.To(true)
 		}
 	} else {
 		if config.ChangeTrackingEnabled != nil && *config.ChangeTrackingEnabled {
-			configSpec.ChangeTrackingEnabled = pointer.Bool(false)
+			configSpec.ChangeTrackingEnabled = ptr.To(false)
 		}
 	}
 }

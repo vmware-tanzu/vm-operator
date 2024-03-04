@@ -10,7 +10,7 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/placement"
@@ -60,7 +60,7 @@ func createCloneSpec(
 
 	cloneSpec := &vimtypes.VirtualMachineCloneSpec{
 		Config: createArgs.ConfigSpec,
-		Memory: pointer.Bool(false), // No full memory clones.
+		Memory: ptr.To(false), // No full memory clones.
 	}
 
 	virtualDevices, err := srcVM.Device(vmCtx)
@@ -140,11 +140,11 @@ func cloneVMDiskLocators(
 		if backing, ok := disk.(*vimtypes.VirtualDisk).Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
 			switch createArgs.StorageProvisioning {
 			case string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin):
-				backing.ThinProvisioned = pointer.Bool(true)
+				backing.ThinProvisioned = ptr.To(true)
 			case string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick):
-				backing.ThinProvisioned = pointer.Bool(false)
+				backing.ThinProvisioned = ptr.To(false)
 			case string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeEagerZeroedThick):
-				backing.EagerlyScrub = pointer.Bool(true)
+				backing.EagerlyScrub = ptr.To(true)
 			}
 			locator.DiskBackingInfo = backing
 		}

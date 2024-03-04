@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -118,7 +118,7 @@ func cclItemReconcile() {
 				cclItem := &imgregv1a1.ClusterContentLibraryItem{}
 				Expect(ctx.Client.Get(ctx, cclItemKey, cclItem)).To(Succeed())
 				cclItem.Status = origCCLItem.Status
-				cclItem.Status.SecurityCompliance = pointer.Bool(false)
+				cclItem.Status.SecurityCompliance = ptr.To(false)
 				Expect(ctx.Client.Status().Update(ctx, cclItem)).To(Succeed())
 
 				By("sets ClusterVirtualMachineImage status to not Ready", func() {

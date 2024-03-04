@@ -63,8 +63,8 @@ type manager struct {
 	vmReadinessProbeList map[string]vmopv1.VirtualMachineReadinessProbeSpec
 }
 
-// NewManger initializes a prober manager.
-func NewManger(
+// NewManager initializes a prober manager.
+func NewManager(
 	client client.Client,
 	record vmoprecord.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterfaceA2) Manager {
@@ -85,7 +85,7 @@ func AddToManager(mgr ctrlmgr.Manager, vmProvider vmprovider.VirtualMachineProvi
 	probeRecorder := vmoprecord.New(mgr.GetEventRecorderFor(proberManagerName))
 
 	// Add the probe manager explicitly as runnable in order to receive a Start() event.
-	m := NewManger(mgr.GetClient(), probeRecorder, vmProvider)
+	m := NewManager(mgr.GetClient(), probeRecorder, vmProvider)
 	if err := mgr.Add(m); err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ package webconsolevalidation
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -45,7 +46,13 @@ func RunServer(addr, path string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc(path, HandleWebConsoleValidation)
 
-	return http.ListenAndServe(addr, mux)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	return server.ListenAndServe()
 }
 
 // HandleWebConsoleValidation handles the web-console validation server requests.

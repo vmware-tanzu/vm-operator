@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 //nolint:scopelint
-package conditions2
+package conditions
 
 import (
 	"testing"

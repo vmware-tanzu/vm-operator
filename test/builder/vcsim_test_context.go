@@ -46,7 +46,7 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 
@@ -436,7 +436,7 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
 	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
 	clusterVMImage.Status.ProviderItemID = itemID
-	conditions2.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
+	conditions.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 }
 
@@ -471,7 +471,7 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 	clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
 	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
 	clusterVMImage.Status.ProviderItemID = itemID
-	conditions2.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
+	conditions.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 }
 

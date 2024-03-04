@@ -1,7 +1,7 @@
 // Copyright (c) 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package conditions2
+package conditions
 
 import (
 	_ "github.com/onsi/ginkgo/v2"

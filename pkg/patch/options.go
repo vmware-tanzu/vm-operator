@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package patch2
+package patch
 
 // Option is some configuration that modifies options for a patch request.
 type Option interface {

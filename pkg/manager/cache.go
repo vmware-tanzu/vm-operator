@@ -16,12 +16,13 @@ import (
 func NewNamespaceCache(mgr ctrlmgr.Manager, resync *time.Duration, namespace string) (cache.Cache, error) {
 	nsCache, err := cache.New(mgr.GetConfig(),
 		cache.Options{
-			Scheme:     mgr.GetScheme(),
-			Mapper:     mgr.GetRESTMapper(),
-			SyncPeriod: resync,
-			Namespaces: []string{namespace},
+			Scheme:            mgr.GetScheme(),
+			Mapper:            mgr.GetRESTMapper(),
+			SyncPeriod:        resync,
+			DefaultNamespaces: GetNamespaceCacheConfigs(namespace),
 		},
 	)
+
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create cache for namespace %s", namespace)
 	}
@@ -31,4 +32,20 @@ func NewNamespaceCache(mgr ctrlmgr.Manager, resync *time.Duration, namespace str
 	}
 
 	return nsCache, nil
+}
+
+func GetNamespaceCacheConfigs(namespaces ...string) map[string]cache.Config {
+	if len(namespaces) == 0 {
+		return nil
+	}
+	if len(namespaces) == 1 && namespaces[0] == "" {
+		return nil
+	}
+	nsc := make(map[string]cache.Config, len(namespaces))
+	for i := range namespaces {
+		if v := namespaces[i]; v != "" {
+			nsc[v] = cache.Config{}
+		}
+	}
+	return nsc
 }

@@ -12,7 +12,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -130,7 +130,7 @@ func unitTestsReconcile() {
 		When("ClusterContentLibraryItem is not security compliant", func() {
 
 			BeforeEach(func() {
-				cclItem.Status.SecurityCompliance = pointer.Bool(false)
+				cclItem.Status.SecurityCompliance = ptr.To(false)
 			})
 
 			It("should mark ClusterVirtualMachineImage condition as provider security not compliant", func() {
@@ -202,7 +202,7 @@ func unitTestsReconcile() {
 				Expect(readyCond).ToNot(BeNil())
 				Expect(readyCond.Status).To(Equal(corev1.ConditionTrue))
 
-				Expect(cclItemCtx.CCLItem.Status.SecurityCompliance).To(Equal(pointer.Bool(true)))
+				Expect(cclItemCtx.CCLItem.Status.SecurityCompliance).To(Equal(ptr.To(true)))
 			})
 
 			When("ClusterVirtualMachineImage resource has not been created yet", func() {

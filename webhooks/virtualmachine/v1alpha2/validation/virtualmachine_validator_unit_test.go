@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -676,7 +676,7 @@ func unitTestsValidateCreate() {
 												Name: "secret-name",
 												Key:  "key",
 											},
-											Value: pointer.String("value"),
+											Value: ptr.To("value"),
 										},
 									},
 								},
@@ -697,7 +697,7 @@ func unitTestsValidateCreate() {
 								Properties: []common.KeyValueOrSecretKeySelectorPair{
 									{
 										Value: common.ValueOrSecretKeySelector{
-											Value: pointer.String("value"),
+											Value: ptr.To("value"),
 										},
 									},
 								},
@@ -873,7 +873,7 @@ func unitTestsValidateCreate() {
 									DHCP6:    false,
 									Gateway4: "192.168.1.1",
 									Gateway6: "2605:a601:a0ba:720:2ce6::1",
-									MTU:      pointer.Int64(9000),
+									MTU:      ptr.To[int64](9000),
 									Nameservers: []string{
 										"8.8.8.8",
 										"2001:4860:4860::8888",
@@ -1018,7 +1018,7 @@ func unitTestsValidateCreate() {
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
 									Name: "eth0",
-									MTU:  pointer.Int64(9000),
+									MTU:  ptr.To[int64](9000),
 								},
 							},
 						}
@@ -1040,7 +1040,7 @@ func unitTestsValidateCreate() {
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
 									Name: "eth0",
-									MTU:  pointer.Int64(9000),
+									MTU:  ptr.To[int64](9000),
 								},
 							},
 						}

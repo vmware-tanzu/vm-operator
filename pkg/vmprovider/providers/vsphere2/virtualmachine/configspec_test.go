@@ -11,7 +11,7 @@ import (
 
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -186,7 +186,7 @@ var _ = Describe("CreateConfigSpec", func() {
 		When("VM Image hardware version is set", func() {
 			BeforeEach(func() {
 				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{pvcVolume}
-				vmImageStatus.HardwareVersion = pointer.Int32(int32(vimTypes.VMX21))
+				vmImageStatus.HardwareVersion = ptr.To(int32(vimTypes.VMX21))
 			})
 
 			It("config spec has expected version", func() {
@@ -278,7 +278,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				Context("VM and VM Image are less than class", func() {
 					BeforeEach(func() {
 						vm.Spec.MinHardwareVersion = int32(vimTypes.MaxValidHardwareVersion - 2)
-						vmImageStatus.HardwareVersion = pointer.Int32(int32(vimTypes.MaxValidHardwareVersion - 1))
+						vmImageStatus.HardwareVersion = ptr.To(int32(vimTypes.MaxValidHardwareVersion - 1))
 					})
 
 					It("config spec has expected version", func() {
@@ -289,7 +289,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				Context("VM MinHardwareVersion is greatest", func() {
 					BeforeEach(func() {
 						vm.Spec.MinHardwareVersion = int32(vimTypes.MaxValidHardwareVersion)
-						vmImageStatus.HardwareVersion = pointer.Int32(int32(vimTypes.MaxValidHardwareVersion - 1))
+						vmImageStatus.HardwareVersion = ptr.To(int32(vimTypes.MaxValidHardwareVersion - 1))
 					})
 
 					It("config spec has expected version", func() {
@@ -300,7 +300,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				Context("VM Image HardwareVersion is greatest", func() {
 					BeforeEach(func() {
 						vm.Spec.MinHardwareVersion = int32(vimTypes.MaxValidHardwareVersion - 3)
-						vmImageStatus.HardwareVersion = pointer.Int32(int32(vimTypes.MaxValidHardwareVersion - 1))
+						vmImageStatus.HardwareVersion = ptr.To(int32(vimTypes.MaxValidHardwareVersion - 1))
 					})
 
 					It("config spec has expected version", func() {

@@ -5,7 +5,7 @@ package virtualmachine
 
 import (
 	"github.com/vmware/govmomi/vim25/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -67,7 +67,7 @@ func CreateConfigSpec(
 	}
 
 	if advanced := vmCtx.VM.Spec.Advanced; advanced != nil && advanced.ChangeBlockTracking {
-		configSpec.ChangeTrackingEnabled = pointer.Bool(true)
+		configSpec.ChangeTrackingEnabled = ptr.To(true)
 	}
 
 	// Populate the CPU reservation and limits in the ConfigSpec if VAPI fields specify any.
@@ -188,7 +188,7 @@ func CreateConfigSpecForPlacement(
 			VirtualDevice: types.VirtualDevice{
 				Key: -42,
 				Backing: &types.VirtualDiskFlatVer2BackingInfo{
-					ThinProvisioned: pointer.Bool(true),
+					ThinProvisioned: ptr.To(true),
 				},
 			},
 		},

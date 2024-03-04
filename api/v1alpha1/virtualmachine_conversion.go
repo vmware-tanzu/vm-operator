@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
@@ -434,21 +434,21 @@ func convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvan
 	out := &VirtualMachineAdvancedOptions{}
 
 	if in.ChangeBlockTracking {
-		out.ChangeBlockTracking = pointer.Bool(true)
+		out.ChangeBlockTracking = ptr.To(true)
 	}
 
 	switch in.DefaultVolumeProvisioningMode {
 	case v1alpha2.VirtualMachineVolumeProvisioningModeThin:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
-			ThinProvisioned: pointer.Bool(true),
+			ThinProvisioned: ptr.To(true),
 		}
 	case v1alpha2.VirtualMachineVolumeProvisioningModeThick:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
-			ThinProvisioned: pointer.Bool(false),
+			ThinProvisioned: ptr.To(false),
 		}
 	case v1alpha2.VirtualMachineVolumeProvisioningModeThickEagerZero:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
-			EagerZeroed: pointer.Bool(true),
+			EagerZeroed: ptr.To(true),
 		}
 	}
 
@@ -472,7 +472,7 @@ func convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(capacity
 			Capacity: corev1.ResourceList{
 				corev1.ResourceEphemeralStorage: *capacity,
 			},
-			DeviceKey: pointer.Int(bootDiskDeviceKey),
+			DeviceKey: ptr.To(bootDiskDeviceKey),
 		},
 	}
 }

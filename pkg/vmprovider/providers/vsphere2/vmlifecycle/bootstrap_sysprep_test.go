@@ -11,7 +11,7 @@ import (
 
 	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
@@ -233,7 +233,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 							{
 								Id:               key,
 								Value:            "should-change",
-								UserConfigurable: pointer.Bool(true),
+								UserConfigurable: ptr.To(true),
 							},
 						},
 					}
@@ -242,7 +242,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 						Properties: []common.KeyValueOrSecretKeySelectorPair{
 							{
 								Key:   key,
-								Value: common.ValueOrSecretKeySelector{Value: pointer.String(value)},
+								Value: common.ValueOrSecretKeySelector{Value: ptr.To(value)},
 							},
 						},
 					}

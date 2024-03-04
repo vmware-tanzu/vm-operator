@@ -32,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
-	"k8s.io/klog/v2/klogr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -66,9 +65,8 @@ type Reconciler interface{}
 type NewReconcilerFunc func() Reconciler
 
 func init() {
-	klog.InitFlags(nil)
 	klog.SetOutput(GinkgoWriter)
-	logf.SetLogger(klogr.New())
+	logf.SetLogger(klog.Background())
 }
 
 // TestSuite is used for unit and integration testing builder. Each TestSuite

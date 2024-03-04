@@ -905,6 +905,7 @@ func patchInstanceStoragePVCs(ctx *volContext.VolumeContextA2, testCtx *builder.
 		pvc := pvc
 		if setStatusBound {
 			pvc.Status.Phase = corev1.ClaimBound
+			Expect(testCtx.Client.Status().Update(ctx, &pvc)).To(Succeed())
 		}
 		if setErrorAnnotation {
 			if pvc.Annotations == nil {
@@ -914,9 +915,7 @@ func patchInstanceStoragePVCs(ctx *volContext.VolumeContextA2, testCtx *builder.
 		} else {
 			delete(pvc.Annotations, constants.InstanceStoragePVPlacementErrorAnnotationKey)
 		}
-
 		Expect(testCtx.Client.Update(ctx, &pvc)).To(Succeed())
-		Expect(testCtx.Client.Status().Update(ctx, &pvc)).To(Succeed())
 	}
 }
 

@@ -11,13 +11,12 @@ import (
 	"reflect"
 	"time"
 
-	"k8s.io/utils/pointer"
-
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
+	"k8s.io/utils/ptr"
 
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -230,7 +229,7 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 						VirtualDevice: vimTypes.VirtualDevice{
 							Key: -42,
 							Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-								ThinProvisioned: pointer.Bool(true),
+								ThinProvisioned: ptr.To(true),
 							},
 						},
 					},
@@ -338,7 +337,7 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 						VirtualDevice: vimTypes.VirtualDevice{
 							Key: -42,
 							Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-								ThinProvisioned: pointer.Bool(true),
+								ThinProvisioned: ptr.To(true),
 							},
 						},
 					},

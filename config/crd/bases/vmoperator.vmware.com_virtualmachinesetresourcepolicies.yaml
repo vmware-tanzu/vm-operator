@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.12.0
+    controller-gen.kubebuilder.io/version: v0.14.0
   name: virtualmachinesetresourcepolicies.vmoperator.vmware.com
 spec:
   group: vmoperator.vmware.com
@@ -21,14 +21,19 @@ spec:
           API.
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -38,10 +43,9 @@ spec:
             properties:
               clustermodules:
                 items:
-                  description: ClusterModuleSpec defines a grouping of VirtualMachines
-                    that are to be grouped together as a logical unit by the infrastructure
-                    provider.  Within vSphere, the ClusterModuleSpec maps directly
-                    to a vSphere ClusterModule.
+                  description: |-
+                    ClusterModuleSpec defines a grouping of VirtualMachines that are to be grouped together as a logical unit by
+                    the infrastructure provider.  Within vSphere, the ClusterModuleSpec maps directly to a vSphere ClusterModule.
                   properties:
                     groupname:
                       description: GroupName describes the name of the ClusterModule
@@ -133,20 +137,26 @@ spec:
           API.
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
           spec:
-            description: VirtualMachineSetResourcePolicySpec defines the desired state
-              of VirtualMachineSetResourcePolicy.
+            description: |-
+              VirtualMachineSetResourcePolicySpec defines the desired state of
+              VirtualMachineSetResourcePolicy.
             properties:
               clusterModuleGroups:
                 items:
@@ -155,8 +165,9 @@ spec:
               folder:
                 type: string
               resourcePool:
-                description: ResourcePoolSpec defines a Logical Grouping of workloads
-                  that share resource policies.
+                description: |-
+                  ResourcePoolSpec defines a Logical Grouping of workloads that share resource
+                  policies.
                 properties:
                   limits:
                     description: Limits describes the limit to resources available
@@ -179,8 +190,9 @@ spec:
                     description: Name describes the name of the ResourcePool grouping.
                     type: string
                   reservations:
-                    description: Reservations describes the guaranteed resources reserved
-                      for the ResourcePool.
+                    description: |-
+                      Reservations describes the guaranteed resources reserved for the
+                      ResourcePool.
                     properties:
                       cpu:
                         anyOf:
@@ -198,13 +210,15 @@ spec:
                 type: object
             type: object
           status:
-            description: VirtualMachineSetResourcePolicyStatus defines the observed
-              state of VirtualMachineSetResourcePolicy.
+            description: |-
+              VirtualMachineSetResourcePolicyStatus defines the observed state of
+              VirtualMachineSetResourcePolicy.
             properties:
               clustermodules:
                 items:
-                  description: VSphereClusterModuleStatus describes the observed state
-                    of a vSphere cluster module.
+                  description: |-
+                    VSphereClusterModuleStatus describes the observed state of a vSphere
+                    cluster module.
                   properties:
                     clusterMoID:
                       type: string

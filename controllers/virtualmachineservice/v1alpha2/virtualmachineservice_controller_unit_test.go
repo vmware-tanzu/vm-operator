@@ -13,7 +13,7 @@ import (
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -164,7 +164,7 @@ func unitTestsReconcile() {
 				Expect(ownerRefs).To(HaveLen(1))
 				ownerRef := ownerRefs[0]
 				Expect(ownerRef.Name).To(Equal(vmService.Name))
-				Expect(ownerRef.Controller).To(Equal(pointer.Bool(true)))
+				Expect(ownerRef.Controller).To(Equal(ptr.To(true)))
 			})
 
 			It("With Expected Spec", func() {
@@ -394,7 +394,7 @@ func unitTestsReconcile() {
 							Hostname: "hostname1",
 						},
 					}
-					Expect(ctx.Client.Update(ctx, service)).To(Succeed())
+					Expect(ctx.Client.Status().Update(ctx, service)).To(Succeed())
 
 					err := reconciler.ReconcileNormal(vmServiceCtx)
 					Expect(err).ToNot(HaveOccurred())
@@ -479,7 +479,7 @@ func unitTestsReconcile() {
 				Expect(ownerRefs).To(HaveLen(1))
 				ownerRef := ownerRefs[0]
 				Expect(ownerRef.Name).To(Equal(vmService.Name))
-				Expect(ownerRef.Controller).To(Equal(pointer.Bool(true)))
+				Expect(ownerRef.Controller).To(Equal(ptr.To(true)))
 			})
 
 			It("With Expected Annotations and Labels", func() {

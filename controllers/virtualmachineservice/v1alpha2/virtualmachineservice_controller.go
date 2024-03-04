@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -398,7 +398,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *context.Virt
 		service.Spec.LoadBalancerIP = vmService.Spec.LoadBalancerIP
 		service.Spec.LoadBalancerSourceRanges = vmService.Spec.LoadBalancerSourceRanges
 		if service.Spec.Type == corev1.ServiceTypeLoadBalancer {
-			service.Spec.AllocateLoadBalancerNodePorts = pointer.Bool(false)
+			service.Spec.AllocateLoadBalancerNodePorts = ptr.To(false)
 		} else {
 			service.Spec.AllocateLoadBalancerNodePorts = nil
 		}

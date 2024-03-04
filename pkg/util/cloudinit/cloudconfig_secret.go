@@ -140,15 +140,10 @@ func getSecretDataForWriteFile(
 		return err
 	}
 
-	if err := util.GetSecretData(
+	return util.GetSecretData(
 		ctx,
 		k8sClient,
 		secretNamespace,
 		sks.Name, sks.Key,
-		out); err != nil {
-
-		return err
-	}
-
-	return nil
+		out)
 }

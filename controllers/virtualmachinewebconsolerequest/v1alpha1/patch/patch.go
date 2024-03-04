@@ -30,8 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1/conditions"
 )
 
 // Helper is a utility for ensuring the proper patching of objects.

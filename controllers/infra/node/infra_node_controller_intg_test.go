@@ -1,7 +1,7 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package infraprovider_test
+package node_test
 
 import (
 	"context"
@@ -19,14 +19,13 @@ import (
 
 func intgTests() {
 	var (
-		ctx  *builder.IntegrationTestContext
-		node *corev1.Node
+		ctx *builder.IntegrationTestContext
+		obj *corev1.Node
 	)
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
-
-		node = &corev1.Node{
+		obj = &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-node",
 			},
@@ -50,11 +49,11 @@ func intgTests() {
 			}
 			intgFakeVMProvider.Unlock()
 
-			Expect(ctx.Client.Create(ctx, node)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
 		})
 
 		AfterEach(func() {
-			err := ctx.Client.Delete(ctx, node)
+			err := ctx.Client.Delete(ctx, obj)
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 		})
 

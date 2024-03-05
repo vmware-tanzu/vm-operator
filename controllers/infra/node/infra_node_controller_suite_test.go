@@ -1,7 +1,7 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package infracluster_test
+package node_test
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/node"
 	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -19,19 +19,15 @@ import (
 var intgFakeVMProvider = providerfake.NewVMProviderA2()
 
 var suite = builder.NewTestSuiteForController(
-	infracluster.AddToManager,
+	node.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProviderA2 = intgFakeVMProvider
 		return nil
 	},
 )
 
-var unitTests = func() {
-	Describe("WCP ConfigMap", unitTestsWcpConfig)
-}
-
-func TestInfraclusterController(t *testing.T) {
-	suite.Register(t, "Infracluster controller suite", intgTests, unitTests)
+func TestInfraProvider(t *testing.T) {
+	suite.Register(t, "Infra Node Controller suite", intgTests, nil)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

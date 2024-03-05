@@ -9,8 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary"
-	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
-	"github.com/vmware-tanzu/vm-operator/controllers/infraprovider"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
@@ -27,11 +26,8 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	if err := contentlibrary.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize ContentLibrary controllers")
 	}
-	if err := infracluster.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize InfraCluster controller")
-	}
-	if err := infraprovider.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize InfraProvider controller")
+	if err := infra.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize Infra controllers")
 	}
 	if err := virtualmachine.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachine controller")

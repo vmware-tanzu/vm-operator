@@ -69,17 +69,16 @@ func New(ctx goctx.Context, opts Options) (Manager, error) {
 		Cache: cache.Options{
 			DefaultNamespaces: GetNamespaceCacheConfigs(opts.WatchNamespace),
 			SyncPeriod:        &opts.SyncPeriod,
-		},
-		Client: client.Options{
-			Cache: &client.CacheOptions{
-				// An informer is created for each watched resource. Due to the
-				// number of ConfigMap and Secret resources that can exist,
-				// watching each one can result in VM Operator being terminated
-				// due to an out-of-memory error, i.e. OOMKill. To avoid this
-				// outcome, ConfigMap and Secret resources are not cached.
-				DisableFor: []client.Object{
-					&corev1.ConfigMap{},
-					&corev1.Secret{},
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.ConfigMap{}: {
+					Namespaces: map[string]cache.Config{
+						"kube-system": {}, // WCP config map
+					},
+				},
+				&corev1.Secret{}: {
+					Namespaces: map[string]cache.Config{
+						opts.PodNamespace: {}, // VM Op credentials
+					},
 				},
 			},
 		},

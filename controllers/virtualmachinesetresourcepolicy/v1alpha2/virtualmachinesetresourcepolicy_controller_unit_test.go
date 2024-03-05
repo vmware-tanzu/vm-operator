@@ -20,13 +20,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func unitTests() {
-	Describe("Invoking Reconcile", unitTestsReconcile)
-}
-
 const (
 	finalizer = "virtualmachinesetresourcepolicy.vmoperator.vmware.com"
 )
+
+func unitTests() {
+	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
+}
 
 func unitTestsReconcile() {
 	var (

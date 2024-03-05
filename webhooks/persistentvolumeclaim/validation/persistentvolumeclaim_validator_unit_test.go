@@ -24,9 +24,9 @@ const (
 )
 
 func unitTests() {
-	Describe("Invoking ValidateCreate", unitTestsValidatePVCCreate)
-	Describe("Invoking ValidateUpdate", unitTestsValidatePVCUpdate)
-	Describe("Invoking ValidateDelete", unitTestsValidatePVCDelete)
+	Describe("Create", Label("create", "v1alpha2", "validation", "webhook"), unitTestsValidatePVCCreate)
+	Describe("Update", Label("update", "v1alpha2", "validation", "webhook"), unitTestsValidatePVCUpdate)
+	Describe("Delete", Label("delete", "v1alpha2", "validation", "webhook"), unitTestsValidatePVCDelete)
 }
 
 type unitValidatingWebhookContext struct {

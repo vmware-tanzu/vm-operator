@@ -34,7 +34,7 @@ const (
 	valid   = "valid"
 )
 
-var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.SessionIdleTimeout */, func() {
+var _ = Describe("Client", Label("vcsim"), Ordered /* Avoided race for pkg symbol simulator.SessionIdleTimeout */, func() {
 
 	Describe("NewClient", func() {
 		var (

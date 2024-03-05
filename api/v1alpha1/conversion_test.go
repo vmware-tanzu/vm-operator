@@ -1,13 +1,13 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1_test
 
 import (
-	"testing"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	fuzz "github.com/google/gofuzz"
-	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,70 +19,177 @@ import (
 	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
-//nolint:paralleltest
-func TestFuzzyConversion(t *testing.T) {
-	g := NewWithT(t)
-	scheme := runtime.NewScheme()
-	g.Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
-	g.Expect(nextver.AddToScheme(scheme)).To(Succeed())
+var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 
-	t.Run("for VirtualMachine", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
-		Scheme: scheme,
-		Hub:    &nextver.VirtualMachine{},
-		Spoke:  &v1alpha1.VirtualMachine{},
-		FuzzerFuncs: []fuzzer.FuzzerFuncs{
-			overrideVirtualMachineFieldsFuncs,
-		},
-	}))
+	var (
+		scheme *runtime.Scheme
+		input  utilconversion.FuzzTestFuncInput
+	)
 
-	t.Run("for VirtualMachineClass", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
-		Scheme: scheme,
-		Hub:    &nextver.VirtualMachineClass{},
-		Spoke:  &v1alpha1.VirtualMachineClass{},
-		FuzzerFuncs: []fuzzer.FuzzerFuncs{
-			overrideVirtualMachineClassFieldsFuncs,
-		},
-	}))
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(nextver.AddToScheme(scheme)).To(Succeed())
+	})
 
-	t.Run("for VirtualMachineImage", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
-		Scheme: scheme,
-		Hub:    &nextver.VirtualMachineImage{},
-		Spoke:  &v1alpha1.VirtualMachineImage{},
-		FuzzerFuncs: []fuzzer.FuzzerFuncs{
-			overrideVirtualMachineImageFieldsFuncs,
-		},
-	}))
+	AfterEach(func() {
+		input = utilconversion.FuzzTestFuncInput{}
+	})
 
-	t.Run("for ClusterVirtualMachineImage", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
-		Scheme: scheme,
-		Hub:    &nextver.ClusterVirtualMachineImage{},
-		Spoke:  &v1alpha1.ClusterVirtualMachineImage{},
-		FuzzerFuncs: []fuzzer.FuzzerFuncs{
-			overrideVirtualMachineImageFieldsFuncs,
-		},
-	}))
+	Context("VirtualMachine", func() {
+		BeforeEach(func() {
+			input = utilconversion.FuzzTestFuncInput{
+				Scheme: scheme,
+				Hub:    &nextver.VirtualMachine{},
+				Spoke:  &v1alpha1.VirtualMachine{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineFieldsFuncs,
+				},
+			}
+		})
+		Context("Spoke-Hub-Spoke", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.SpokeHubSpoke(input)
+			})
+		})
+		Context("Hub-Spoke-Hub", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.HubSpokeHub(input)
+			})
+		})
+	})
 
-	t.Run("for VirtualMachinePublishRequest", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
-		Scheme: scheme,
-		Hub:    &nextver.VirtualMachinePublishRequest{},
-		Spoke:  &v1alpha1.VirtualMachinePublishRequest{},
-		FuzzerFuncs: []fuzzer.FuzzerFuncs{
-			overrideVirtualMachinePublishRequestFieldsFuncs,
-		},
-	}))
+	Context("VirtualMachineClass", func() {
+		BeforeEach(func() {
+			input = utilconversion.FuzzTestFuncInput{
+				Scheme: scheme,
+				Hub:    &nextver.VirtualMachineClass{},
+				Spoke:  &v1alpha1.VirtualMachineClass{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineClassFieldsFuncs,
+				},
+			}
+		})
+		Context("Spoke-Hub-Spoke", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.SpokeHubSpoke(input)
+			})
+		})
+		Context("Hub-Spoke-Hub", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.HubSpokeHub(input)
+			})
+		})
+	})
 
-	t.Run("for VirtualMachineService", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
-		Scheme: scheme,
-		Hub:    &nextver.VirtualMachineService{},
-		Spoke:  &v1alpha1.VirtualMachineService{},
-	}))
+	Context("VirtualMachineImage", func() {
+		BeforeEach(func() {
+			input = utilconversion.FuzzTestFuncInput{
+				Scheme: scheme,
+				Hub:    &nextver.VirtualMachineImage{},
+				Spoke:  &v1alpha1.VirtualMachineImage{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineImageFieldsFuncs,
+				},
+			}
+		})
+		Context("Spoke-Hub-Spoke", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.SpokeHubSpoke(input)
+			})
+		})
+		Context("Hub-Spoke-Hub", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.HubSpokeHub(input)
+			})
+		})
+	})
 
-	t.Run("for VirtualMachineSetResourcePolicy", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
-		Scheme: scheme,
-		Hub:    &nextver.VirtualMachineSetResourcePolicy{},
-		Spoke:  &v1alpha1.VirtualMachineSetResourcePolicy{},
-	}))
-}
+	Context("ClusterVirtualMachineImage", func() {
+		BeforeEach(func() {
+			input = utilconversion.FuzzTestFuncInput{
+				Scheme: scheme,
+				Hub:    &nextver.ClusterVirtualMachineImage{},
+				Spoke:  &v1alpha1.ClusterVirtualMachineImage{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineImageFieldsFuncs,
+				},
+			}
+		})
+		Context("Spoke-Hub-Spoke", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.SpokeHubSpoke(input)
+			})
+		})
+		Context("Hub-Spoke-Hub", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.HubSpokeHub(input)
+			})
+		})
+	})
+
+	Context("VirtualMachinePublishRequest", func() {
+		BeforeEach(func() {
+			input = utilconversion.FuzzTestFuncInput{
+				Scheme: scheme,
+				Hub:    &nextver.VirtualMachinePublishRequest{},
+				Spoke:  &v1alpha1.VirtualMachinePublishRequest{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachinePublishRequestFieldsFuncs,
+				},
+			}
+		})
+		Context("Spoke-Hub-Spoke", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.SpokeHubSpoke(input)
+			})
+		})
+		Context("Hub-Spoke-Hub", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.HubSpokeHub(input)
+			})
+		})
+	})
+
+	Context("VirtualMachineService", func() {
+		BeforeEach(func() {
+			input = utilconversion.FuzzTestFuncInput{
+				Scheme: scheme,
+				Hub:    &nextver.VirtualMachineService{},
+				Spoke:  &v1alpha1.VirtualMachineService{},
+			}
+		})
+		Context("Spoke-Hub-Spoke", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.SpokeHubSpoke(input)
+			})
+		})
+		Context("Hub-Spoke-Hub", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.HubSpokeHub(input)
+			})
+		})
+	})
+	Context("VirtualMachineSetResourcePolicy", func() {
+		BeforeEach(func() {
+			input = utilconversion.FuzzTestFuncInput{
+				Scheme: scheme,
+				Hub:    &nextver.VirtualMachineSetResourcePolicy{},
+				Spoke:  &v1alpha1.VirtualMachineSetResourcePolicy{},
+			}
+		})
+		Context("Spoke-Hub-Spoke", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.SpokeHubSpoke(input)
+			})
+		})
+		Context("Hub-Spoke-Hub", func() {
+			It("should get fuzzy with it", func() {
+				utilconversion.HubSpokeHub(input)
+			})
+		})
+	})
+})
 
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{

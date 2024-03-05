@@ -12,7 +12,7 @@ import (
 )
 
 func vcSimTests() {
-	Describe("ContentLibrary Provider", clTests)
+	Describe("ContentLibrary Provider", Label("vcsim"), clTests)
 }
 
 var suite = builder.NewTestSuite()

@@ -16,6 +16,10 @@ import (
 )
 
 func intgTests() {
+	Describe("Reconcile", Label("controller", "envtest", "v1alpha2", "vcsim"), intgTestsReconcile)
+}
+
+func intgTestsReconcile() {
 	var (
 		ctx     *builder.IntegrationTestContext
 		vmClass *vmopv1.VirtualMachineClass

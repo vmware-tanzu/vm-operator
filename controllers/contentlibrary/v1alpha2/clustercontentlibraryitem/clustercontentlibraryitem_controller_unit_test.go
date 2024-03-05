@@ -28,7 +28,7 @@ import (
 )
 
 func unitTests() {
-	Describe("Invoking ClusterContentLibraryItem controller unit tests", unitTestsReconcile)
+	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
 }
 
 func unitTestsReconcile() {

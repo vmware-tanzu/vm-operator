@@ -12,7 +12,7 @@ import (
 )
 
 func vcSimTests() {
-	Describe("Placement", vcSimPlacement)
+	Describe("Placement", Label("vcsim"), vcSimPlacement)
 }
 
 var suite = builder.NewTestSuite()

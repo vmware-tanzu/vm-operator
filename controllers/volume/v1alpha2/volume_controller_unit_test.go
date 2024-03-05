@@ -33,10 +33,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func unitTests() {
-	Describe("Invoking Reconcile", unitTestsReconcile)
-}
-
 type testFailClient struct {
 	client.Client
 }
@@ -44,6 +40,10 @@ type testFailClient struct {
 // This is used for returning an error while unit testing.
 func (f *testFailClient) Create(ctx goctx.Context, obj client.Object, opts ...client.CreateOption) error {
 	return k8sapierrors.NewForbidden(schema.GroupResource{}, "", errors.New("insufficient quota for creating PVC"))
+}
+
+func unitTests() {
+	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
 }
 
 func unitTestsReconcile() {

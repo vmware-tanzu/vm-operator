@@ -12,8 +12,8 @@ import (
 )
 
 func vcSimTests() {
-	Describe("Power State", powerStateTests)
-	Describe("Hardware Version", hardwareVersionTests)
+	Describe("Power State", Label("vcsim"), powerStateTests)
+	Describe("Hardware Version", Label("vcsim"), hardwareVersionTests)
 	Describe("Managed Object", managedObjectTests)
 }
 

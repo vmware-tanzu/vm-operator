@@ -18,7 +18,7 @@ import (
 )
 
 func unitTests() {
-	Describe("Invoking Reconcile", unitTestsReconcile)
+	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
 }
 
 func unitTestsReconcile() {

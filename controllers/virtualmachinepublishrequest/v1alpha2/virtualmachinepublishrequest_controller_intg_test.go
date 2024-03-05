@@ -27,10 +27,10 @@ import (
 )
 
 func intgTests() {
-	Describe("Invoking VirtualMachinePublishRequest controller tests", virtualMachinePublishRequestReconcile)
+	Describe("Reconcile", Label("controller", "envtest", "v1alpha2", "vcsim"), intgTestsReconcile)
 }
 
-func virtualMachinePublishRequestReconcile() {
+func intgTestsReconcile() {
 	var (
 		ctx      *builder.IntegrationTestContext
 		vmPubReq *vmopv1.VirtualMachinePublishRequest

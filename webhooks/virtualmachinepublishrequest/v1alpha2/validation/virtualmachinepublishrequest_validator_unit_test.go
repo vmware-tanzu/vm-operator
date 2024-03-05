@@ -20,9 +20,9 @@ import (
 )
 
 func unitTests() {
-	Describe("Invoking ValidateCreate", unitTestsValidateCreate)
-	Describe("Invoking ValidateUpdate", unitTestsValidateUpdate)
-	Describe("Invoking ValidateDelete", unitTestsValidateDelete)
+	Describe("Create", Label("create", "v1alpha2", "validation", "webhook"), unitTestsValidateCreate)
+	Describe("Update", Label("update", "v1alpha2", "validation", "webhook"), unitTestsValidateUpdate)
+	Describe("Delete", Label("delete", "v1alpha2", "validation", "webhook"), unitTestsValidateDelete)
 }
 
 type unitValidatingWebhookContext struct {

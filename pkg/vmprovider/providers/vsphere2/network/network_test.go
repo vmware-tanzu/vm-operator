@@ -27,7 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
+var _ = Describe("CreateAndWaitForNetworkInterfaces", Label("vcsim"), func() {
 
 	var (
 		testConfig builder.VCSimTestConfig

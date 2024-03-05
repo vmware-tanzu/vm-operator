@@ -24,7 +24,7 @@ import (
 )
 
 func unitTests() {
-	Describe("Invoking WebConsoleRequest Reconcile", unitTestsReconcile)
+	Describe("Reconcile", Label("controller", "v1alpha1"), unitTestsReconcile)
 }
 
 func unitTestsReconcile() {

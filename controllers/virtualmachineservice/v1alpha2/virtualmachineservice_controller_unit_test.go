@@ -27,8 +27,8 @@ import (
 )
 
 func unitTests() {
-	Describe("Invoking Reconcile", unitTestsReconcile)
-	Describe("Invoking NSXT Reconcile", nsxtLBProviderTestsReconcile)
+	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
+	Describe("Reconcile", Label("controller", "nsxt", "v1alpha2"), nsxtLBProviderTestsReconcile)
 }
 
 const LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"

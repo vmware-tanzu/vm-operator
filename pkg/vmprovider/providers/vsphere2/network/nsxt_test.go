@@ -11,7 +11,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("ResolveBackingPostPlacement", func() {
+var _ = Describe("ResolveBackingPostPlacement", Label("nsxt", "vcsim"), func() {
 
 	var (
 		testConfig builder.VCSimTestConfig

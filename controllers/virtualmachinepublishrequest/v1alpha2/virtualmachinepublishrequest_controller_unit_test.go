@@ -30,11 +30,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func unitTests() {
-	Describe("Invoking VirtualMachinePublishRequest Reconcile", unitTestsReconcile)
-}
-
 const finalizerName = "virtualmachinepublishrequest.vmoperator.vmware.com"
+
+func unitTests() {
+	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
+}
 
 func unitTestsReconcile() {
 	var (

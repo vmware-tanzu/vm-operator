@@ -15,9 +15,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 COVERAGE_FILE="${1:-}"
 
-TEST_PKGS="${TEST_PKGS:-./api ./controllers ./pkg ./webhooks}"
-
 GO_TEST_FLAGS=("-v" "-r" "--race" "--keep-going")
+
+if [ -n "${LABEL_FILTER:-}" ]; then
+  GO_TEST_FLAGS+=("--label-filter" "${LABEL_FILTER:-}")
+fi
 
 # The first argument is the name of the coverage file to use.
 if [ -n "${COVERAGE_FILE}" ]; then
@@ -28,9 +30,7 @@ fi
 
 # Run the tests.
 # shellcheck disable=SC2086
-ginkgo "${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}" \
-  ${TEST_PKGS} || \
-  TEST_CMD_EXIT_CODE="${?}"
+ginkgo "${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}" || TEST_CMD_EXIT_CODE="${?}"
 
 # TEST_CMD_EXIT_CODE may be set to 2 if there are any tests marked as
 # pending/skipped. This pattern is used by developers to leave test

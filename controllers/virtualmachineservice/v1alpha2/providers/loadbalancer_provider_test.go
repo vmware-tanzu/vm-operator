@@ -20,7 +20,7 @@ const (
 	dummyNamespace = "dummy"
 )
 
-var _ = Describe("Loadbalancer Provider", func() {
+var _ = Describe("Loadbalancer Provider", Label("controller", "v1alpha2"), func() {
 	var (
 		ctx        context.Context
 		vmService  *vmopv1.VirtualMachineService

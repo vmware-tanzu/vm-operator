@@ -16,9 +16,9 @@ import (
 )
 
 func intgTests() {
-	Describe("Invoking Create", intgTestsValidateCreate)
-	Describe("Invoking Update", intgTestsValidateUpdate)
-	Describe("Invoking Delete", intgTestsValidateDelete)
+	Describe("Create", Label("create", "envtest", "v1alpha2", "validation", "vcsim", "webhook"), intgTestsValidateCreate)
+	Describe("Update", Label("update", "envtest", "v1alpha2", "validation", "vcsim", "webhook"), intgTestsValidateUpdate)
+	Describe("Delete", Label("delete", "envtest", "v1alpha2", "validation", "vcsim", "webhook"), intgTestsValidateDelete)
 }
 
 type intgValidatingWebhookContext struct {

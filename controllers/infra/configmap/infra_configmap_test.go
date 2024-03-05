@@ -10,6 +10,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 )
 
+func unitTests() {
+	Describe("WCP Config", Label("v1alpha2"), unitTestsWcpConfig)
+}
+
 func unitTestsWcpConfig() {
 	Describe("ParseWcpClusterConfig", func() {
 		var (

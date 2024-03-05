@@ -13,7 +13,7 @@ import (
 )
 
 func intgTests() {
-	XDescribe("Invoking Mutation", intgTestsMutating)
+	Describe("Mutate", Label("create", "update", "delete", "envtest", "v1alpha2", "mutation", "vcsim", "webhook"), intgTestsMutating)
 }
 
 type intgMutatingWebhookContext struct {

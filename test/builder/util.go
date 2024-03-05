@@ -188,6 +188,11 @@ func DummyStoragePolicyQuota(quotaName, quotaNs, className string) *cnsstoragev1
 		},
 		Spec: cnsstoragev1.StoragePolicyQuotaSpec{StoragePolicyId: "uuid-abcd-1234"},
 		Status: cnsstoragev1.StoragePolicyQuotaStatus{
+			SCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{
+				{
+					StorageClassName: className,
+				},
+			},
 			ResourceTypeLevelQuotaStatuses: []cnsstoragev1.ResourceTypeLevelQuotaStatus{
 				{
 					ResourceExtensionName: "volume.cns.vsphere.vmware.com",

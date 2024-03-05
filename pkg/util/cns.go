@@ -3,8 +3,6 @@
 
 package util
 
-import "fmt"
-
 // CNSAttachmentNameForVolume returns the name of the CnsNodeVmAttachment based
 // on the VM and Volume name.
 // This matches the naming used in previous code but there are situations where
@@ -16,10 +14,4 @@ import "fmt"
 // The VM webhook validate that this result will be a valid k8s name.
 func CNSAttachmentNameForVolume(vmName, volumeName string) string {
 	return vmName + "-" + volumeName
-}
-
-// CNSStoragePolicyQuotaName returns the name of the StorageQuotaPolicy CR based
-// on the name of the storage class.
-func CNSStoragePolicyQuotaName(storageClassName string) string {
-	return fmt.Sprintf("%s-storagepolicyquota", storageClassName)
 }

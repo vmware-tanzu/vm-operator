@@ -109,9 +109,6 @@ func unitTestsValidateCreate() {
 		invalidVolumeSource               bool
 		invalidPVCName                    bool
 		invalidPVCReadOnly                bool
-		invalidStorageClass               bool
-		notFoundStorageClass              bool
-		validStorageClass                 bool
 		withInstanceStorageVolumes        bool
 		invalidReadinessProbe             bool
 		invalidReadinessProbe2            bool
@@ -125,9 +122,6 @@ func unitTestsValidateCreate() {
 		nextRestartTime                   string
 		adminOnlyAnnotations              bool
 		isPrivilegedUser                  bool
-		multipleZones                     bool
-		podVMOnStretchedSupervisor        bool
-		noStoragePolicyQuota              bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -157,27 +151,6 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidPVCReadOnly {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ReadOnly = true
-		}
-
-		if args.invalidStorageClass {
-			// StorageClass specifies but not assigned to ResourceQuota.
-			storageClass := builder.DummyStorageClass()
-			ctx.vm.Spec.StorageClass = storageClass.Name
-			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
-		}
-		if args.notFoundStorageClass {
-			// StorageClass specified but no ResourceQuotas.
-			ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
-		}
-		if args.validStorageClass {
-			// StorageClass specified and is assigned to ResourceQuota.
-			storageClass := builder.DummyStorageClass()
-			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
-			ctx.vm.Spec.StorageClass = storageClass.Name
-
-			rlName := storageClass.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
-			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
-			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
 		}
 
 		if args.withInstanceStorageVolumes {
@@ -254,25 +227,6 @@ func unitTestsValidateCreate() {
 			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 		}
 
-		if args.multipleZones {
-			zone := builder.DummyNamedAvailabilityZone("zone-2")
-			Expect(ctx.Client.Create(ctx, zone)).To(Succeed())
-		}
-
-		if args.podVMOnStretchedSupervisor {
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.Features.PodVMOnStretchedSupervisor = true
-			})
-			if !args.noStoragePolicyQuota {
-				storagePolicyQuota := builder.DummyStoragePolicyQuota(
-					builder.DummyStorageClassName+"-storagepolicyquota",
-					ctx.vm.Namespace,
-					builder.DummyStorageClassName,
-				)
-				Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
-			}
-		}
-
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
@@ -327,11 +281,6 @@ func unitTestsValidateCreate() {
 			field.Required(volPath.Index(0).Child("persistentVolumeClaim", "claimName"), "").Error(), nil),
 		Entry("should deny invalid PVC read only", createArgs{invalidPVCReadOnly: true}, false,
 			field.NotSupported(volPath.Index(0).Child("persistentVolumeClaim", "readOnly"), true, []string{"false"}).Error(), nil),
-		Entry("should deny a StorageClass that does not exist", createArgs{notFoundStorageClass: true}, false,
-			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
-		Entry("should deny a StorageClass that is not associated with the namespace", createArgs{invalidStorageClass: true}, false,
-			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
-		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 		Entry("should deny when there are instance storage volumes and user is SSO user", createArgs{withInstanceStorageVolumes: true}, false,
 			field.Forbidden(volPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
 		Entry("should allow when there are instance storage volumes and user is service user", createArgs{isServiceUser: true, withInstanceStorageVolumes: true}, true, nil, nil),
@@ -370,14 +319,6 @@ func unitTestsValidateCreate() {
 		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
 
 		Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled", createArgs{adminOnlyAnnotations: true, isPrivilegedUser: true}, true, nil, nil),
-
-		Entry("should allow creating VM, there is 1 availability zone, and PodVMOnSupervisor FSS is disabled", createArgs{validStorageClass: true, podVMOnStretchedSupervisor: false}, true, nil, nil),
-		Entry("should allow creating VM, there is 1 availability zone, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, podVMOnStretchedSupervisor: true}, true, nil, nil),
-		Entry("should allow creating VM, there is 1 availability zone, there is no storage policy quota, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, podVMOnStretchedSupervisor: true, noStoragePolicyQuota: true}, true, nil, nil),
-
-		Entry("should allow creating VM, there are >1 availability zones, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, multipleZones: true, podVMOnStretchedSupervisor: true}, true, nil, nil),
-		Entry("should disallow creating VM, there are >1 availability zones, there is no storage policy quota, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, multipleZones: true, podVMOnStretchedSupervisor: true, noStoragePolicyQuota: true}, false, nil, nil),
-		Entry("should allow creating VM, there are >1 availability zones, and there is no storage policy quota", createArgs{validStorageClass: true, multipleZones: true, noStoragePolicyQuota: true}, true, nil, nil),
 	)
 
 	doTest := func(args testParams) {
@@ -394,6 +335,107 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	Context("StorageClass", func() {
+
+		DescribeTable("StorageClass create", doTest,
+			Entry("storage class not found",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy dummy-storage-class does not exist`),
+				},
+			),
+			Entry("storage class not associated with namespace",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						storageClass := builder.DummyStorageClass()
+						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+						ctx.vm.Spec.StorageClass = storageClass.Name
+
+						rlName := "not-found" + ".storageclass.storage.k8s.io/persistentvolumeclaims"
+						resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
+						Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy is not associated with the namespace dummy-vm-namespace-for-webhook-validation`),
+				},
+			),
+			Entry("storage class associated with namespace",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						storageClass := builder.DummyStorageClass()
+						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+						ctx.vm.Spec.StorageClass = storageClass.Name
+
+						rlName := storageClass.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
+						resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
+						Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+
+		Context("PodVMOnStretchedSupervisor is enabled", func() {
+
+			BeforeEach(func() {
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.Features.PodVMOnStretchedSupervisor = true
+				})
+			})
+
+			DescribeTable("StorageClass create", doTest,
+				Entry("storage class associated with namespace",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							storageClass := builder.DummyStorageClass()
+							Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+							ctx.vm.Spec.StorageClass = storageClass.Name
+
+							storagePolicyQuota := builder.DummyStoragePolicyQuota(
+								storageClass.Name+"-storagepolicyquota", ctx.vm.Namespace, storageClass.Name)
+							Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("storage class not associated with namespace",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							storageClass := builder.DummyStorageClass()
+							Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+							ctx.vm.Spec.StorageClass = storageClass.Name
+
+							storagePolicyQuota := builder.DummyStoragePolicyQuota(
+								storageClass.Name+"-storagepolicyquota", ctx.vm.Namespace, storageClass.Name+"foo")
+							Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+						},
+						validate: doValidateWithMsg(
+							`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy is not associated with the namespace dummy-vm-namespace-for-webhook-validation`),
+					},
+				),
+				Entry("WFFC storage class associated with namespace",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							storageClass := builder.DummyStorageClass()
+							baseSCName := storageClass.Name
+							storageClass.Name += "wffc"
+							Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+							ctx.vm.Spec.StorageClass = storageClass.Name
+
+							storagePolicyQuota := builder.DummyStoragePolicyQuota(
+								baseSCName+"-storagepolicyquota", ctx.vm.Namespace, storageClass.Name)
+							Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+						},
+						expectAllowed: true,
+					},
+				),
+			)
+		})
+	})
 
 	Context("Bootstrap", func() {
 

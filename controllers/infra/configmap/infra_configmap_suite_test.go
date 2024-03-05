@@ -26,10 +26,6 @@ var suite = builder.NewTestSuiteForController(
 	},
 )
 
-var unitTests = func() {
-	Describe("Infra ConfigMap", unitTestsWcpConfig)
-}
-
 func TestWCPConfigMapController(t *testing.T) {
 	suite.Register(t, "Infra ConfigMap Controller suite", intgTests, unitTests)
 }

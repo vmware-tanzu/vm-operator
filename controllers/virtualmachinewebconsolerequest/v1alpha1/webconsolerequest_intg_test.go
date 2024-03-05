@@ -23,10 +23,10 @@ import (
 )
 
 func intgTests() {
-	Describe("Invoking WebConsoleRequest controller tests", webConsoleRequestReconcile)
+	Describe("Reconcile", Label("controller", "envtest", "v1alpha1", "vcsim"), intgTestsReconcile)
 }
 
-func webConsoleRequestReconcile() {
+func intgTestsReconcile() {
 	const v1a2Ticket = "some-fake-webmksticket-v1a2"
 
 	var (

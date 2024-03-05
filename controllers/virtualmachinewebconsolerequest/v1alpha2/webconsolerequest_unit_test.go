@@ -22,7 +22,7 @@ import (
 )
 
 func unitTests() {
-	Describe("Invoking VirtualMachineWebConsoleRequest Reconcile", unitTestsReconcile)
+	Describe("Reconcile", Label("controller", "v1alpha1"), unitTestsReconcile)
 }
 
 func unitTestsReconcile() {

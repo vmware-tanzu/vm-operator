@@ -253,7 +253,7 @@ func (s *TestSuite) init() {
 		panic(err)
 	}
 
-	if s.flags.IntegrationTestsEnabled {
+	if envTestsEnabled() {
 		s.envTest = envtest.Environment{
 			CRDs: s.applyFeatureStatesToCRDs(crds),
 			CRDDirectoryPaths: []string{
@@ -275,23 +275,13 @@ func (s *TestSuite) init() {
 func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, runUnitTestsFn func()) {
 	RegisterFailHandler(Fail)
 
-	if runIntegrationTestsFn == nil {
-		s.flags.IntegrationTestsEnabled = false
-	}
-	if runUnitTestsFn == nil {
-		s.flags.UnitTestsEnabled = false
-	}
-
-	if s.flags.IntegrationTestsEnabled {
+	if runIntegrationTestsFn != nil && envTestsEnabled() {
 		Describe("Integration tests", runIntegrationTestsFn)
-	}
-	if s.flags.UnitTestsEnabled {
-		Describe("Unit tests", runUnitTestsFn)
-	}
-
-	if s.flags.IntegrationTestsEnabled {
 		SetDefaultEventuallyTimeout(time.Second * 10)
 		SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
+	}
+	if runUnitTestsFn != nil {
+		Describe("Unit tests", runUnitTestsFn)
 	}
 
 	RunSpecs(t, name)
@@ -302,11 +292,7 @@ func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, r
 //
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForController(initObjects ...client.Object) *UnitTestContextForController {
-	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForController(initObjects)
-		return ctx
-	}
-	return nil
+	return NewUnitTestContextForController(initObjects)
 }
 
 // NewUnitTestContextForValidatingWebhook returns a new unit test context for this
@@ -317,11 +303,7 @@ func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 	obj, oldObj *unstructured.Unstructured,
 	initObjects ...client.Object) *UnitTestContextForValidatingWebhook {
 
-	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForValidatingWebhook(s.validatorFn, obj, oldObj, initObjects...)
-		return ctx
-	}
-	return nil
+	return NewUnitTestContextForValidatingWebhook(s.validatorFn, obj, oldObj, initObjects...)
 }
 
 // NewUnitTestContextForMutatingWebhook returns a new unit test context for this
@@ -329,23 +311,19 @@ func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 //
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForMutatingWebhook(obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
-	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForMutatingWebhook(s.mutatorFn, obj)
-		return ctx
-	}
-	return nil
+	return NewUnitTestContextForMutatingWebhook(s.mutatorFn, obj)
 }
 
 // BeforeSuite should be invoked by ginkgo.BeforeSuite.
 func (s *TestSuite) BeforeSuite() {
-	if s.flags.IntegrationTestsEnabled {
+	if envTestsEnabled() {
 		s.beforeSuiteForIntegrationTesting()
 	}
 }
 
 // AfterSuite should be invoked by ginkgo.AfterSuite.
 func (s *TestSuite) AfterSuite() {
-	if s.flags.IntegrationTestsEnabled {
+	if envTestsEnabled() {
 		s.afterSuiteForIntegrationTesting()
 	}
 }
@@ -685,4 +663,8 @@ func updateMutatingWebhookConfig(webhookConfig admissionregv1.MutatingWebhookCon
 	result, err := yaml.Marshal(webhookConfigToInstall)
 	Expect(err).ShouldNot(HaveOccurred())
 	return result
+}
+
+func envTestsEnabled() bool {
+	return Label("envtest").MatchesLabelFilter(GinkgoLabelFilter())
 }

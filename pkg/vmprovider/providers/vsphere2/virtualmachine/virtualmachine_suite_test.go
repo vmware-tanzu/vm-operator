@@ -12,11 +12,11 @@ import (
 )
 
 func vcSimTests() {
-	Describe("ClusterComputeResource", ccrTests)
-	Describe("Delete", deleteTests)
-	Describe("Publish", publishTests)
-	Describe("Backup", backupTests)
-	Describe("GuestInfo", guestInfoTests)
+	Describe("ClusterComputeResource", Label("vcsim"), ccrTests)
+	Describe("Delete", Label("vcsim"), deleteTests)
+	Describe("Publish", Label("vcsim"), publishTests)
+	Describe("Backup", Label("vcsim"), backupTests)
+	Describe("GuestInfo", Label("vcsim"), guestInfoTests)
 }
 
 var suite = builder.NewTestSuite()

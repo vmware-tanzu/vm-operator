@@ -23,10 +23,10 @@ import (
 )
 
 func intgTests() {
-	Describe("Invoking ContentLibraryItem controller integration tests", clItemReconcile)
+	Describe("Reconcile", Label("controller", "envtest", "v1alpha2", "vcsim"), intgTestsReconcile)
 }
 
-func clItemReconcile() {
+func intgTestsReconcile() {
 	const firmwareValue = "my-firmware"
 
 	var (

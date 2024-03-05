@@ -144,26 +144,19 @@ help: ## Display this help
 .PHONY: test-nocover
 test-nocover: | $(GINKGO)
 test-nocover: ## Run Tests (without code coverage)
-	ENABLE_UNIT_TESTS=true \
-	ENABLE_INTEGRATION_TESTS=false \
-	hack/test.sh
+	LABEL_FILTER='!envtest' hack/test.sh
 
 .PHONY: test
 test: | $(GINKGO)
 test: ## Run tests
 	@rm -f $(COVERAGE_FILE)
-	ENABLE_UNIT_TESTS=true \
-	ENABLE_INTEGRATION_TESTS=false \
-	hack/test.sh $(COVERAGE_FILE)
+	LABEL_FILTER='!envtest' hack/test.sh $(COVERAGE_FILE)
 
 .PHONY: test-integration
 test-integration: | $(GINKGO) $(ETCD) $(KUBE_APISERVER)
 test-integration: ## Run integration tests
 	@rm -f $(INT_COV_FILE)
-	ENABLE_UNIT_TESTS=false \
-	ENABLE_INTEGRATION_TESTS=true \
-	TEST_PKGS="./controllers ./pkg ./webhooks" \
-	hack/test.sh $(INT_COV_FILE)
+	LABEL_FILTER='envtest' hack/test.sh $(INT_COV_FILE)
 
 .PHONY: coverage
 coverage-merge: $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)

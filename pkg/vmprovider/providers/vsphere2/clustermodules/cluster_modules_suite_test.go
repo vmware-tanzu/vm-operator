@@ -12,7 +12,7 @@ import (
 )
 
 func vcSimTests() {
-	Describe("ClusterModules Provider", cmTests)
+	Describe("ClusterModules Provider", Label("vcsim"), cmTests)
 }
 
 var suite = builder.NewTestSuite()

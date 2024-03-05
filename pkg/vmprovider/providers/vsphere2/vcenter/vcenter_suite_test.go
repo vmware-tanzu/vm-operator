@@ -14,11 +14,11 @@ import (
 var suite = builder.NewTestSuite()
 
 func vcSimTests() {
-	Describe("Cluster", clusterTests)
-	Describe("Folder", folderTests)
-	Describe("GetVM", getVMTests)
-	Describe("Host", hostTests)
-	Describe("ResourcePool", resourcePoolTests)
+	Describe("Cluster", Label("vcsim"), clusterTests)
+	Describe("Folder", Label("vcsim"), folderTests)
+	Describe("GetVM", Label("vcsim"), getVMTests)
+	Describe("Host", Label("vcsim"), hostTests)
+	Describe("ResourcePool", Label("vcsim"), resourcePoolTests)
 }
 
 func TestVCenter(t *testing.T) {

@@ -37,6 +37,10 @@ import (
 )
 
 func intgTests() {
+	Describe("Patch", Label("envtest"), intgTestsPatch)
+}
+
+func intgTestsPatch() {
 	var (
 		ctx *builder.IntegrationTestContext
 	)

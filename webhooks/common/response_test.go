@@ -19,7 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
-var _ = Describe("Validation Response", func() {
+var _ = Describe("Validation Response", Label("envtest", "v1alpha2", "vcsim", "webhook"), func() {
 
 	var (
 		gr  = schema.GroupResource{Group: vmopv1.SchemeGroupVersion.Group, Resource: "VirtualMachine"}

@@ -28,7 +28,7 @@ import (
 )
 
 func unitTests() {
-	Describe("Invoking ContentLibraryItem controller unit tests", unitTestsReconcile)
+	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
 }
 
 func unitTestsReconcile() {

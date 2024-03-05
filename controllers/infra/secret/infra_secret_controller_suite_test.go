@@ -1,7 +1,7 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package infraprovider_test
+package secret_test
 
 import (
 	"testing"
@@ -10,24 +10,24 @@ import (
 
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/infraprovider"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/secret"
 	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var intgFakeVMProvider = providerfake.NewVMProviderA2()
+var provider = providerfake.NewVMProviderA2()
 
 var suite = builder.NewTestSuiteForController(
-	infraprovider.AddToManager,
+	secret.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
-		ctx.VMProviderA2 = intgFakeVMProvider
+		ctx.VMProviderA2 = provider
 		return nil
 	},
 )
 
-func TestInfraProvider(t *testing.T) {
-	suite.Register(t, "InfraProvider controller suite", intgTests, nil)
+func TestVMOpCredentialsSecret(t *testing.T) {
+	suite.Register(t, "Infra Secret Controller suite", intgTests, nil)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

@@ -1,25 +1,25 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package infracluster_test
+package configmap_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 )
 
 func unitTestsWcpConfig() {
 	Describe("ParseWcpClusterConfig", func() {
 		var (
 			err    error
-			config *infracluster.WcpClusterConfig
+			config *configmap.WcpClusterConfig
 			data   map[string]string
 		)
 
 		JustBeforeEach(func() {
-			config, err = infracluster.ParseWcpClusterConfig(data)
+			config, err = configmap.ParseWcpClusterConfig(data)
 		})
 
 		AfterEach(func() {
@@ -36,7 +36,7 @@ func unitTestsWcpConfig() {
 		Context("invalid data", func() {
 			BeforeEach(func() {
 				data = map[string]string{
-					infracluster.WcpClusterConfigFileName: "not-valid-yaml",
+					configmap.WcpClusterConfigFileName: "not-valid-yaml",
 				}
 			})
 
@@ -51,7 +51,7 @@ func unitTestsWcpConfig() {
 			port := "foo-port"
 
 			BeforeEach(func() {
-				cm, err := infracluster.NewWcpClusterConfigMap(infracluster.WcpClusterConfig{
+				cm, err := configmap.NewWcpClusterConfigMap(configmap.WcpClusterConfig{
 					VcPNID: pnid,
 					VcPort: port,
 				})

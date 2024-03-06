@@ -99,3 +99,6 @@ issues:
   - path: _test.go
     linters:
     - gosec
+  - linters:
+    - revive
+    text: "unused-parameter: parameter"

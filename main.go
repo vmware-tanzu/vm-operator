@@ -240,6 +240,8 @@ func main() {
 // addConversionWebhooksToManager adds the ctrl-runtime managed webhooks. We just use these
 // for version conversion, but they can also do mutation and validation webhook callbacks
 // instead of our separate webhooks.
+//
+//nolint:revive
 func addConversionWebhooksToManager(_ *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	if err := (&v1alpha1.VirtualMachine{}).SetupWebhookWithManager(mgr); err != nil {
 		return err

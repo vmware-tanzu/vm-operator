@@ -18,7 +18,7 @@ import (
 )
 
 func intgTests() {
-	Describe("Reconcile", Label("controller", "envtest", "v1alpha2", "vcsim"), intgTestsReconcile)
+	Describe("Reconcile", Label("controller", "envtest", "v1alpha2"), intgTestsReconcile)
 }
 
 func intgTestsReconcile() {
@@ -55,19 +55,22 @@ func intgTestsReconcile() {
 
 		JustBeforeEach(func() {
 			provider.Lock()
-			defer provider.Unlock()
 			provider.UpdateVcPNIDFn = func(_ context.Context, pnid, port string) error {
 				savedPnid = pnid
 				savedPort = port
 				return nil
 			}
+			provider.Unlock()
 			Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
 		})
 
 		AfterEach(func() {
-			savedPnid, savedPort = "", ""
 			err := ctx.Client.Delete(ctx, obj)
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+
+			provider.Lock()
+			savedPnid, savedPort = "", ""
+			provider.Unlock()
 		})
 
 		When("updated", func() {
@@ -97,6 +100,9 @@ func intgTestsReconcile() {
 				})
 				It("should not be reconciled", func() {
 					Consistently(func() string {
+						// NOTE: UpdateVcPNID() won't be called during the reconcile because the
+						// obj namespace won't match the system namespace. It is bad news if you
+						// see "Reconciling unexpected object" in the logs.
 						provider.Lock()
 						defer provider.Unlock()
 						return savedPnid + "::" + savedPort

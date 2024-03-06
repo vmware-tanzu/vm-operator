@@ -26,7 +26,7 @@ var suite = builder.NewTestSuiteForController(
 	},
 )
 
-func TestInfraProvider(t *testing.T) {
+func TestInfraNodeProvider(t *testing.T) {
 	suite.Register(t, "Infra Node Controller suite", intgTests, nil)
 }
 

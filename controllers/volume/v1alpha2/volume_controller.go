@@ -26,9 +26,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -50,6 +50,17 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controllerName))
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
+
+	if err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&cnsv1alpha1.CnsNodeVmAttachment{},
+		"spec.nodeuuid",
+		func(rawObj client.Object) []string {
+			attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
+			return []string{attachment.Spec.NodeUUID}
+		}); err != nil {
+		return err
+	}
 
 	r := NewReconciler(
 		ctx,
@@ -503,21 +514,20 @@ func (r *Reconciler) getAttachmentsForVM(ctx *context.VolumeContextA2) (map[stri
 	//    attachments.
 	//  - Match the attachment NodeUUID to the VM BiosUUID.
 	//
-	// We use the NodeUUID option here. Note that we could speed this by adding an indexer on the
-	// NodeUUID field, but expect the number of attachments to be manageable. Note that doing List
-	// is safer here, as it will discover otherwise orphaned attachments (previous code used the
-	// Volumes in the VM Status as the source of truth).
+	// We use the NodeUUID option here. We do a List() here so we discover all attachments including
+	// orphaned ones for this VM (previous code used the VM Status.Volumes as the source of truth).
 
 	list := &cnsv1alpha1.CnsNodeVmAttachmentList{}
-	if err := r.Client.List(ctx, list, client.InNamespace(ctx.VM.Namespace)); err != nil {
+	err := r.Client.List(ctx, list,
+		client.InNamespace(ctx.VM.Namespace),
+		client.MatchingFields{"spec.nodeuuid": ctx.VM.Status.BiosUUID})
+	if err != nil {
 		return nil, errors.Wrap(err, "failed to list CnsNodeVmAttachments")
 	}
 
-	attachments := map[string]cnsv1alpha1.CnsNodeVmAttachment{}
+	attachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(list.Items))
 	for _, attachment := range list.Items {
-		if attachment.Spec.NodeUUID == ctx.VM.Status.BiosUUID {
-			attachments[attachment.Name] = attachment
-		}
+		attachments[attachment.Name] = attachment
 	}
 
 	return attachments, nil

@@ -10,8 +10,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/vim25/types"
 
+	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
@@ -127,7 +128,22 @@ func unitTestsReconcile() {
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewUnitTestContextForController(initObjects...)
+		ctx = suite.NewUnitTestContextForController()
+
+		// Replace the fake client with our own that has the expected index.
+		ctx.Client = fake.NewClientBuilder().
+			WithScheme(ctx.Client.Scheme()).
+			WithObjects(initObjects...).
+			WithStatusSubresource(builder.KnownObjectTypes()...).
+			WithIndex(
+				&cnsv1alpha1.CnsNodeVmAttachment{},
+				"spec.nodeuuid",
+				func(rawObj client.Object) []string {
+					attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
+					return []string{attachment.Spec.NodeUUID}
+				}).
+			Build()
+
 		reconciler = volume.NewReconciler(
 			ctx,
 			ctx.Client,

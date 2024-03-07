@@ -197,7 +197,9 @@ func unitTestsReconcile() {
 			})
 
 			JustBeforeEach(func() {
-				volCtx.InstanceStorageFSSEnabled = true
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.Features.InstanceStorage = true
+				})
 			})
 
 			It("selected-node annotation not set - no PVCs created", func() {

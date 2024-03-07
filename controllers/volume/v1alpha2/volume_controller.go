@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -23,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -95,15 +97,47 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		return err
 	}
 
-	// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is the owner of PersistentVolumeClaim.
-	err = c.Watch(source.Kind(mgr.GetCache(), &corev1.PersistentVolumeClaim{}),
-		handler.EnqueueRequestForOwner(
-			mgr.GetScheme(),
-			mgr.GetRESTMapper(),
-			&vmopv1.VirtualMachine{},
-			handler.OnlyControllerOwner()))
-	if err != nil {
-		return err
+	// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is the owner of
+	// the PVC. We only need care about PVCs when InstanceStorage in enabled.
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
+		// Don't waste CPU and memory watching PVCs so defer the watch until a VM with
+		// instance storage is reconciled.
+		lock := sync.Mutex{}
+		var watchStarted bool
+
+		// PVC label we set in createInstanceStoragePVC().
+		labelSelector, err := predicate.LabelSelectorPredicate(
+			metav1.LabelSelector{
+				MatchLabels: map[string]string{constants.InstanceStorageLabelKey: "true"},
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		r.startPVCWatch = func() error {
+			lock.Lock()
+			defer lock.Unlock()
+
+			if watchStarted {
+				return nil
+			}
+
+			if err := c.Watch(
+				source.Kind(mgr.GetCache(), &corev1.PersistentVolumeClaim{}),
+				handler.EnqueueRequestForOwner(
+					mgr.GetScheme(),
+					mgr.GetRESTMapper(),
+					&vmopv1.VirtualMachine{},
+					handler.OnlyControllerOwner()),
+				labelSelector); err != nil {
+				return err
+			}
+
+			r.logger.Info("Started deferred PVC watch")
+			watchStarted = true
+			return nil
+		}
 	}
 
 	return nil
@@ -116,11 +150,12 @@ func NewReconciler(
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterfaceA2) *Reconciler {
 	return &Reconciler{
-		Context:    ctx,
-		Client:     client,
-		logger:     logger,
-		recorder:   recorder,
-		VMProvider: vmProvider,
+		Context:       ctx,
+		Client:        client,
+		logger:        logger,
+		recorder:      recorder,
+		startPVCWatch: func() error { return nil },
+		VMProvider:    vmProvider,
 	}
 }
 
@@ -128,10 +163,11 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
-	Context    goctx.Context
-	logger     logr.Logger
-	recorder   record.Recorder
-	VMProvider vmprovider.VirtualMachineProviderInterfaceA2
+	Context       goctx.Context
+	logger        logr.Logger
+	recorder      record.Recorder
+	startPVCWatch func() error
+	VMProvider    vmprovider.VirtualMachineProviderInterfaceA2
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
@@ -156,10 +192,9 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 	}
 
 	volCtx := &context.VolumeContextA2{
-		Context:                   ctx,
-		Logger:                    ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
-		VM:                        vm,
-		InstanceStorageFSSEnabled: pkgconfig.FromContext(ctx).Features.InstanceStorage,
+		Context: ctx,
+		Logger:  ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
+		VM:      vm,
 	}
 
 	// If the VM has a pause reconcile annotation, it is being restored on vCenter. Return here so our reconcile
@@ -195,7 +230,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 }
 
 func (r *Reconciler) reconcileResult(ctx *context.VolumeContextA2) ctrl.Result {
-	if ctx.InstanceStorageFSSEnabled {
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
 		// Requeue the request if all instance storage PVCs are not bound.
 		_, pvcsBound := ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]
 		if instancestorage.IsPresent(ctx.VM) && !pvcsBound {
@@ -223,7 +258,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VolumeContextA2) error {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine for processing volumes")
 	}()
 
-	if ctx.InstanceStorageFSSEnabled {
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
 		ready, err := r.reconcileInstanceStoragePVCs(ctx)
 		if err != nil || !ready {
 			return err
@@ -272,6 +307,11 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *context.VolumeContextA2) 
 	isVolumes := instancestorage.FilterVolumes(ctx.VM)
 	if len(isVolumes) == 0 {
 		return true, nil
+	}
+
+	if err := r.startPVCWatch(); err != nil {
+		ctx.Logger.Error(err, "Failed to start deferred PVC watch for instance storage")
+		return false, err
 	}
 
 	pvcList, getErrs := r.getInstanceStoragePVCs(ctx, isVolumes)

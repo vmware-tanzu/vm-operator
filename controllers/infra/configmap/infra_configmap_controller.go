@@ -11,22 +11,25 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
+		controlledType      = &corev1.ConfigMap{}
 		controllerName      = "infra-configmap"
 		controllerNameShort = fmt.Sprintf("%s-controller", controllerName)
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
@@ -41,29 +44,39 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		ctx.VMProviderA2,
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(controllerName).
-		Watches(
-			&corev1.ConfigMap{},
-			&handler.EnqueueRequestForObject{},
-			ctrlbuilder.WithPredicates(
-				predicate.Funcs{
-					CreateFunc: func(e event.CreateEvent) bool {
-						return e.Object.GetName() == WcpClusterConfigMapName
-					},
-					UpdateFunc: func(e event.UpdateEvent) bool {
-						return e.ObjectOld.GetName() == WcpClusterConfigMapName
-					},
-					DeleteFunc: func(e event.DeleteEvent) bool {
-						return false
-					},
-					GenericFunc: func(e event.GenericEvent) bool {
-						return false
-					},
-				},
-				predicate.ResourceVersionChangedPredicate{},
-			)).
-		Complete(r)
+	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
+	if err != nil {
+		return err
+	}
+
+	cache, err := pkgmgr.NewNamespacedCacheForObject(
+		mgr,
+		&ctx.SyncPeriod,
+		controlledType,
+		WcpClusterConfigMapNamespace)
+	if err != nil {
+		return err
+	}
+
+	return c.Watch(
+		source.Kind(cache, controlledType),
+		&handler.EnqueueRequestForObject{},
+		predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return e.Object.GetName() == WcpClusterConfigMapName
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return e.ObjectOld.GetName() == WcpClusterConfigMapName
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return false
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+				return false
+			},
+		},
+		predicate.ResourceVersionChangedPredicate{},
+	)
 }
 
 type provider interface {

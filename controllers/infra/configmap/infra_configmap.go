@@ -12,7 +12,8 @@ import (
 )
 
 const (
-	// WcpClusterConfigMapNamespace is the namespace of the wcp-cluster-config ConfigMap.
+	// WcpClusterConfigMapNamespace is the namespace of the wcp-cluster-config
+	// ConfigMap.
 	WcpClusterConfigMapNamespace = "kube-system"
 
 	// WcpClusterConfigMapName is the name of the wcp-cluster-config ConfigMap.

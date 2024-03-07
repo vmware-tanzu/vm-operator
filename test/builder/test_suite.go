@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/yaml"
@@ -88,6 +89,7 @@ type TestSuite struct {
 	addToManagerFn      pkgmgr.AddToManagerFunc
 	initProvidersFn     pkgmgr.InitializeProvidersFunc
 	integrationTest     bool
+	newCacheFn          ctrlcache.NewCacheFunc
 	manager             pkgmgr.Manager
 	managerRunning      bool
 	managerRunningMutex sync.Mutex
@@ -103,6 +105,14 @@ type TestSuite struct {
 
 func (s *TestSuite) isWebhookTest() bool {
 	return s.webhookName != ""
+}
+
+func (s *TestSuite) GetManager() pkgmgr.Manager {
+	return s.manager
+}
+
+func (s *TestSuite) SetManagerNewCacheFunc(f ctrlcache.NewCacheFunc) {
+	s.newCacheFn = f
 }
 
 func (s *TestSuite) GetEnvTestConfig() *rest.Config {
@@ -337,6 +347,7 @@ func (s *TestSuite) createManager() {
 		MetricsAddr:         "0",
 		AddToManager:        s.addToManagerFn,
 		InitializeProviders: s.initProvidersFn,
+		NewCache:            s.newCacheFn,
 	}
 
 	if pkgconfig.FromContext(s).Features.VMOpV1Alpha2 {

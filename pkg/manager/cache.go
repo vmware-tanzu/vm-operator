@@ -4,23 +4,65 @@
 package manager
 
 import (
-	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"fmt"
+	"time"
+
+	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 )
+
+// NewNamespacedCacheForObject creates a new cache that watches the specified
+// object type only for the specified namespaces. The cache is added to the
+// manager and starts alongside the other leader-election runnables.
+func NewNamespacedCacheForObject(
+	mgr ctrlmgr.Manager,
+	resync *time.Duration,
+	object ctrlclient.Object,
+	namespaces ...string) (ctrlcache.Cache, error) {
+
+	cache, err := ctrlcache.New(mgr.GetConfig(),
+		ctrlcache.Options{
+			Scheme:     mgr.GetScheme(),
+			Mapper:     mgr.GetRESTMapper(),
+			SyncPeriod: resync,
+			ByObject: map[ctrlclient.Object]ctrlcache.ByObject{
+				object: {
+					Namespaces: GetNamespaceCacheConfigs(namespaces...),
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to create cache for %T for namespaces %v: %w",
+			object, namespaces, err)
+	}
+
+	if err := mgr.Add(cache); err != nil {
+		return nil, fmt.Errorf(
+			"failed to add cache for %T for namespaces %v: %w",
+			object, namespaces, err)
+	}
+
+	return cache, nil
+}
 
 // GetNamespaceCacheConfigs returns a map of cache configurations for the
 // provided namespaces. A nil value is returned if the provided list is
 // empty or has a single, empty element.
-func GetNamespaceCacheConfigs(namespaces ...string) map[string]cache.Config {
+func GetNamespaceCacheConfigs(namespaces ...string) map[string]ctrlcache.Config {
 	if len(namespaces) == 0 {
 		return nil
 	}
 	if len(namespaces) == 1 && namespaces[0] == "" {
 		return nil
 	}
-	nsc := make(map[string]cache.Config, len(namespaces))
+	nsc := make(map[string]ctrlcache.Config, len(namespaces))
 	for i := range namespaces {
 		if v := namespaces[i]; v != "" {
-			nsc[v] = cache.Config{}
+			nsc[v] = ctrlcache.Config{}
 		}
 	}
 	return nsc

@@ -13,23 +13,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/pkg/errors"
-
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -54,9 +52,8 @@ const (
 
 	readinessProbeOnlyOneAction              = "only one action can be specified"
 	updatesNotAllowedWhenPowerOn             = "updates to this field is not allowed when VM power is on"
+	storageClassNotFoundFmt                  = "Storage policy %s does not exist"
 	storageClassNotAssignedFmt               = "Storage policy is not associated with the namespace %s"
-	storageClassNotFoundFmt                  = "Storage policy is not associated with the namespace %s"
-	storagePolicyQuotaNotFoundFmt            = "StoragePolicyQuota not found in namespace %s: error: %s"
 	vSphereVolumeSizeNotMBMultiple           = "value must be a multiple of MB"
 	addingModifyingInstanceVolumesNotAllowed = "adding or modifying instance storage volume claim(s) is not allowed"
 	featureNotEnabled                        = "the %s feature is not enabled"
@@ -363,30 +360,30 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 	scPath := field.NewPath("spec", "storageClass")
 	scName := vm.Spec.StorageClass
 
-	var zones []topologyv1.AvailabilityZone
-	if pkgconfig.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
-		azs, err := topology.GetAvailabilityZones(ctx, v.client)
-		if err != nil {
-			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storagePolicyQuotaNotFoundFmt, vm.Namespace, err.Error())))
+	sc := &storagev1.StorageClass{}
+	if err := v.client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
+		if apierrors.IsNotFound(err) {
+			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotFoundFmt, scName)))
 		}
-		zones = azs
+		return append(allErrs, field.Invalid(scPath, scName, err.Error()))
 	}
 
-	if pkgconfig.FromContext(ctx).Features.PodVMOnStretchedSupervisor && len(zones) > 1 {
-		storagePolicyQuota := &cnsstoragev1.StoragePolicyQuota{}
-		if err := v.client.Get(ctx, client.ObjectKey{
-			Namespace: vm.Namespace,
-			Name:      util.CNSStoragePolicyQuotaName(scName),
-		}, storagePolicyQuota); err != nil {
-			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storagePolicyQuotaNotFoundFmt, vm.Namespace, err.Error())))
-		}
-	} else {
-		// TODO: This validation shouldn't be done in the webhook.
-		sc := &storagev1.StorageClass{}
-		if err := v.client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
-			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotFoundFmt, vm.Namespace)))
+	// This is what enforces that the storage policy has been associated with this namespace.
+	if pkgconfig.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
+		storagePolicyQuotas := &cnsstoragev1.StoragePolicyQuotaList{}
+		if err := v.client.List(ctx, storagePolicyQuotas, client.InNamespace(vm.Namespace)); err != nil {
+			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
 		}
 
+		for _, q := range storagePolicyQuotas.Items {
+			for i := range q.Status.SCLevelQuotaStatuses {
+				if q.Status.SCLevelQuotaStatuses[i].StorageClassName == scName {
+					return nil
+				}
+			}
+		}
+
+	} else {
 		resourceQuotas := &corev1.ResourceQuotaList{}
 		if err := v.client.List(ctx, resourceQuotas, client.InNamespace(vm.Namespace)); err != nil {
 			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
@@ -400,11 +397,9 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 				}
 			}
 		}
-
-		return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotAssignedFmt, vm.Namespace)))
 	}
 
-	return nil
+	return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotAssignedFmt, vm.Namespace)))
 }
 
 func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {

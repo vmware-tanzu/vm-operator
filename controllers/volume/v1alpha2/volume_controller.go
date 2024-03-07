@@ -6,6 +6,7 @@ package v1alpha2
 import (
 	goctx "context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -21,8 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -78,8 +81,61 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		return err
 	}
 
+	var vmWatchPredicate predicate.Predicate = predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+
+			oldVM := e.ObjectOld.(*vmopv1.VirtualMachine)
+			newVM := e.ObjectNew.(*vmopv1.VirtualMachine)
+
+			// TBD: Just in case do we want this to run on re-syncs?
+			if oldVM.ResourceVersion == newVM.ResourceVersion {
+				return true
+			}
+
+			if oldVM.Generation != newVM.Generation {
+				if !reflect.DeepEqual(oldVM.Spec.Volumes, newVM.Spec.Volumes) {
+					return true
+				}
+			}
+
+			if (oldVM.Status.BiosUUID != newVM.Status.BiosUUID) ||
+				(oldVM.Status.PowerState != newVM.Status.PowerState) {
+				return true
+			}
+
+			// Just in case our status somehow got completely lost.
+			return len(newVM.Spec.Volumes) != 0 && len(newVM.Status.Volumes) == 0 ||
+				len(newVM.Spec.Volumes) == 0 && len(newVM.Status.Volumes) != 0
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			// ReconcileDelete() is noop but this doesn't matter much.
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return true
+		},
+	}
+
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
+		// InstanceStorage uses annotations for placement info.
+		vmWatchPredicate = predicate.Or(
+			vmWatchPredicate,
+			predicate.AnnotationChangedPredicate{},
+		)
+	}
+
 	// Watch for changes to VirtualMachine.
-	err = c.Watch(source.Kind(mgr.GetCache(), &vmopv1.VirtualMachine{}), &handler.EnqueueRequestForObject{})
+	err = c.Watch(
+		source.Kind(mgr.GetCache(), &vmopv1.VirtualMachine{}),
+		&handler.EnqueueRequestForObject{},
+		vmWatchPredicate,
+	)
 	if err != nil {
 		return err
 	}

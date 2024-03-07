@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -84,15 +85,29 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		return err
 	}
 
-	// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is the owner of PersistentVolumeClaim.
-	err = c.Watch(source.Kind(mgr.GetCache(), &corev1.PersistentVolumeClaim{}),
-		handler.EnqueueRequestForOwner(
-			mgr.GetScheme(),
-			mgr.GetRESTMapper(),
-			&vmopv1.VirtualMachine{},
-			handler.OnlyControllerOwner()))
-	if err != nil {
-		return err
+	// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is
+	// the owner of the PVC. We only need care about PVCs when InstanceStorage in enabled.
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
+		// PVC label we set in createInstanceStoragePVC().
+		labelSelector, err := predicate.LabelSelectorPredicate(
+			metav1.LabelSelector{
+				MatchLabels: map[string]string{constants.InstanceStorageLabelKey: "true"},
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		err = c.Watch(source.Kind(mgr.GetCache(), &corev1.PersistentVolumeClaim{}),
+			handler.EnqueueRequestForOwner(
+				mgr.GetScheme(),
+				mgr.GetRESTMapper(),
+				&vmopv1.VirtualMachine{},
+				handler.OnlyControllerOwner()),
+			labelSelector)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -145,10 +160,9 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 	}
 
 	volCtx := &context.VolumeContextA2{
-		Context:                   ctx,
-		Logger:                    ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
-		VM:                        vm,
-		InstanceStorageFSSEnabled: pkgconfig.FromContext(ctx).Features.InstanceStorage,
+		Context: ctx,
+		Logger:  ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
+		VM:      vm,
 	}
 
 	// If the VM has a pause reconcile annotation, it is being restored on vCenter. Return here so our reconcile
@@ -184,7 +198,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 }
 
 func (r *Reconciler) reconcileResult(ctx *context.VolumeContextA2) ctrl.Result {
-	if ctx.InstanceStorageFSSEnabled {
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
 		// Requeue the request if all instance storage PVCs are not bound.
 		_, pvcsBound := ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]
 		if instancestorage.IsPresent(ctx.VM) && !pvcsBound {
@@ -212,7 +226,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VolumeContextA2) error {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine for processing volumes")
 	}()
 
-	if ctx.InstanceStorageFSSEnabled {
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
 		ready, err := r.reconcileInstanceStoragePVCs(ctx)
 		if err != nil || !ready {
 			return err

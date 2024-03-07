@@ -28,9 +28,8 @@ func (v *VolumeContext) String() string {
 // VolumeContextA2 is the context used for VolumeController.
 type VolumeContextA2 struct {
 	context.Context
-	Logger                    logr.Logger
-	VM                        *vmopv1.VirtualMachine
-	InstanceStorageFSSEnabled bool
+	Logger logr.Logger
+	VM     *vmopv1.VirtualMachine
 }
 
 func (v *VolumeContextA2) String() string {

@@ -19,7 +19,7 @@ import (
 )
 
 func intgTests() {
-	Describe("Reconcile", Label("controller", "envtest", "v1alpha2", "vcsim"), intgTestsReconcile)
+	Describe("Reconcile", Label("controller", "envtest", "v1alpha2"), intgTestsReconcile)
 }
 
 func intgTestsReconcile() {
@@ -62,9 +62,9 @@ func intgTestsReconcile() {
 		})
 
 		AfterEach(func() {
-			called = 0
 			err := ctx.Client.Delete(ctx, obj)
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			atomic.StoreInt32(&called, 0)
 		})
 
 		When("created", func() {
@@ -82,6 +82,9 @@ func intgTestsReconcile() {
 				})
 				It("should not be reconciled", func() {
 					Consistently(func() int32 {
+						// NOTE: ResetVcClient() won't be called during the reconcile because the
+						// obj namespace won't match the pod's namespace. It is bad news if you see
+						// "Reconciling unexpected object" in the logs.
 						return atomic.LoadInt32(&called)
 					}).Should(Equal(int32(0)))
 				})
@@ -108,11 +111,13 @@ func intgTestsReconcile() {
 				})
 				It("should not be reconciled", func() {
 					Consistently(func() int32 {
+						// NOTE: ResetVcClient() won't be called during the reconcile because the
+						// obj namespace won't match the pod's namespace. It is bad news if you see
+						// "Reconciling unexpected object" in the logs.
 						return atomic.LoadInt32(&called)
 					}).Should(Equal(int32(0)))
 				})
 			})
 		})
 	})
-
 }

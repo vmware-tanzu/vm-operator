@@ -119,9 +119,6 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	ctx = pkgconfig.JoinContext(ctx, r.Context)
 
-	// This is totally wrong and we should break this controller apart so we're not
-	// watching different types.
-
 	if req.Name == VcCredsSecretName && req.Namespace == r.vmOpNamespace {
 		r.reconcileVcCreds(ctx, req)
 		return ctrl.Result{}, nil

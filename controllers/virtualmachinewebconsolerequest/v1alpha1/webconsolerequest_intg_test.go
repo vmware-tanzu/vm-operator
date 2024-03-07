@@ -23,7 +23,7 @@ import (
 )
 
 func intgTests() {
-	Describe("Reconcile", Label("controller", "envtest", "v1alpha1", "vcsim"), intgTestsReconcile)
+	Describe("Reconcile", Label("controller", "envtest", "v1alpha1"), intgTestsReconcile)
 }
 
 func intgTestsReconcile() {

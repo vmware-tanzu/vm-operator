@@ -24,7 +24,6 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 	manager.InitializeProvidersNoopFn)
 
 func TestVirtualMachineService(t *testing.T) {
-
 	suite.Register(t, "VirtualMachineService controller suite", intgTests, unitTests)
 }
 

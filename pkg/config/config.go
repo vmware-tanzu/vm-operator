@@ -107,6 +107,7 @@ type FeatureStates struct {
 	VMClassAsConfigDayNDate    bool // FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
 	VMOpV1Alpha2               bool // FSS_WCP_VMSERVICE_V1ALPHA2
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR
+	TKGMultipleCL              bool // FSS_WCP_TKG_Multiple_CL
 }
 
 type InstanceStorage struct {

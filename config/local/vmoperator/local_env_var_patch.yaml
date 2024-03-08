@@ -33,3 +33,5 @@ spec:
           value: "false"
         - name: FSS_PODVMONSTRETCHEDSUPERVISOR
           value: "false"
+        - name: FSS_WCP_TKG_Multiple_CL
+          value: "false"

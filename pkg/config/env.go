@@ -57,6 +57,7 @@ func FromEnv() Config {
 	setBool(env.FSSWindowsSysprep, &config.Features.WindowsSysprep)
 	setBool(env.FSSVMServiceBackupRestore, &config.Features.AutoVADPBackupRestore)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
+	setBool(env.FSSTKGMultipleCL, &config.Features.TKGMultipleCL)
 
 	return config
 }

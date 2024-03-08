@@ -20,13 +20,25 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/v1alpha2/mutation"
 )
 
 func uniTests() {
-	Describe("Mutate", Label("create", "update", "delete", "v1alpha2", "mutation", "webhook"), unitTestsMutating)
+	Describe(
+		"Mutate",
+		Label(
+			testlabels.Create,
+			testlabels.Update,
+			testlabels.Delete,
+			testlabels.V1Alpha2,
+			testlabels.Mutation,
+			testlabels.Webhook,
+		),
+		unitTestsMutating,
+	)
 }
 
 type unitMutationWebhookContext struct {

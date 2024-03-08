@@ -17,12 +17,21 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func intgTests() {
-	Describe("Reconcile", Label("controller", "envtest", "v1alpha2"), intgTestsReconcile)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.EnvTest,
+			testlabels.V1Alpha2,
+		),
+		intgTestsReconcile,
+	)
 }
 
 func intgTestsReconcile() {

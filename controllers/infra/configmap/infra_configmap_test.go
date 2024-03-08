@@ -8,10 +8,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 )
 
 func unitTests() {
-	Describe("WCP Config", Label("v1alpha2"), unitTestsWcpConfig)
+	Describe("WCP Config", Label(testlabels.V1Alpha2), unitTestsWcpConfig)
 }
 
 func unitTestsWcpConfig() {

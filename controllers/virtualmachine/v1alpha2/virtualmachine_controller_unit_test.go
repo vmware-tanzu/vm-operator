@@ -18,6 +18,7 @@ import (
 
 	virtualmachine "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
@@ -27,7 +28,14 @@ import (
 const finalizer = "virtualmachine.vmoperator.vmware.com"
 
 func unitTests() {
-	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.V1Alpha2,
+		),
+		unitTestsReconcile,
+	)
 }
 
 func unitTestsReconcile() {

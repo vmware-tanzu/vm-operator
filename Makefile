@@ -247,17 +247,21 @@ modules: ## Validates the modules
 	go mod tidy
 	cd hack/tools && go mod tidy
 	cd api && go mod tidy
+	cd pkg/constants/testlabels && go mod tidy
 
 .PHONY: modules-vendor
 modules-vendor: ## Vendors the modules
 	go mod vendor
-	cd api && go mod tidy
+	cd hack/tools && go mod vendor
+	cd api && go mod vendor
+	cd pkg/constants/testlabels && go mod vendor
 
 .PHONY: modules-download
 modules-download: ## Downloads and caches the modules
 	go mod download
 	cd hack/tools && go mod download
 	cd api && go mod download
+	cd pkg/constants/testlabels && go mod download
 
 .PHONY: generate
 generate: ## Generate code

@@ -25,6 +25,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	virtualmachinepublishrequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -33,7 +34,14 @@ import (
 const finalizerName = "virtualmachinepublishrequest.vmoperator.vmware.com"
 
 func unitTests() {
-	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.V1Alpha2,
+		),
+		unitTestsReconcile,
+	)
 }
 
 func unitTestsReconcile() {

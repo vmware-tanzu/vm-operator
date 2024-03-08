@@ -61,6 +61,90 @@ make lint 1> /dev/null
 
 The above script will execute prior to a Git commit operation, prior to even the commit message dialog. The script will invoke the `Makefile`'s `lint` target, formatting the sources. If the command returns a non-zero exit code, the commit operation will abort with the error.
 
+## Test Labels
+
+Tests written using [Ginkgo](https://github.com/onsi/ginkgo) should apply labels to simplify running specify test categories. For example, to run all tests that rely on `vcsim`, the following command may be used:
+
+```shell
+ginkgo -v -r --label-filter vcsim
+```
+
+The test labels are maintained in the `pkg/constants/testlabels` package. Please ensure any new test labels are added to this package and are well-documented. For example:
+
+```golang
+	// API describes a test related to the APIs.
+	API = "api"
+
+	// Controller describes a test related to the controllers.
+	Controller = "controller"
+```
+
+To add a test label to a test, use the `Label` function for any Ginkgo test container. For example, the following code snippet illustrates a `Describe` container that specifies labels for a validation webhook's create logic:
+
+```golang
+Describe(
+	"Create",
+	Label(
+		testlabels.Create,
+		testlabels.Validation,
+		testlabels.Webhook,
+	),
+	func() {
+		// ...
+	},
+)
+```
+
+Because constants are used for the test labels, the command `ginkgo labels -r` will not print a list of all the project's labels. In order to discover all of the labels used by the project, please use the following command:
+
+```shell
+find . -name '*.go' -print0 | \
+  xargs -0 grep -noH 'testlabels\.[[:alnum:]]\{1,\}'
+```
+
+The above command searches for any use of constant from the `pkg/constants/testlabels` package and prints the name of the file and line number where the value was used as well as the matched value. For example, here is a snippet of the output from the above command:
+
+```shell
+./controllers/volume/v1alpha2/volume_controller_unit_test.go:50:testlabels.Controller
+./controllers/volume/v1alpha2/volume_controller_unit_test.go:51:testlabels.V1Alpha2
+./controllers/volume/v1alpha2/volume_controller_intg_test.go:37:testlabels.Controller
+./controllers/volume/v1alpha2/volume_controller_intg_test.go:38:testlabels.EnvTest
+./controllers/volume/v1alpha2/volume_controller_intg_test.go:39:testlabels.V1Alpha2
+./pkg/util/vsphere/vm/suite_test.go:16:testlabels.VCSim
+./pkg/util/vsphere/vm/suite_test.go:17:testlabels.VCSim
+./pkg/util/vsphere/client/client_test.go:34:testlabels.VCSim
+./pkg/vmprovider/providers/vsphere2/clustermodules/cluster_modules_suite_test.go:16:testlabels.VCSim
+```
+
+To find all of the unique labels, the command may be modified as such:
+
+```shell
+find . -name '*.go' -print0 | \
+  xargs -0 grep -oh 'testlabels\.[[:alnum:]]\{1,\}' | \
+  awk -F. '{print $2}' | \
+  sort -u
+```
+
+The above command will emit output similar to the following:
+
+```shell
+API
+Controller
+Create
+Delete
+EnvTest
+Fuzz
+Mutation
+NSXT
+Update
+V1Alpha1
+V1Alpha2
+VCSim
+Validation
+Webhook
+```
+
+
 ## Code Coverage
 
 All new work submitted to the project should have associated tests where applicable. If there is ever a question of whether or not a test is applicable then the answer is likely yes.

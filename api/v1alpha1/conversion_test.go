@@ -14,12 +14,13 @@ import (
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
-var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
+var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func() {
 
 	var (
 		scheme *runtime.Scheme

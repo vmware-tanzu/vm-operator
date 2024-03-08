@@ -8,11 +8,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func vcSimTests() {
-	Describe("Config", Label("vcsim"), configTests)
+	Describe("Config", Label(testlabels.VCSim), configTests)
 }
 
 var suite = builder.NewTestSuite()

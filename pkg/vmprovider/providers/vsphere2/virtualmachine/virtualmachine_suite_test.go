@@ -8,15 +8,16 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func vcSimTests() {
-	Describe("ClusterComputeResource", Label("vcsim"), ccrTests)
-	Describe("Delete", Label("vcsim"), deleteTests)
-	Describe("Publish", Label("vcsim"), publishTests)
-	Describe("Backup", Label("vcsim"), backupTests)
-	Describe("GuestInfo", Label("vcsim"), guestInfoTests)
+	Describe("ClusterComputeResource", Label(testlabels.VCSim), ccrTests)
+	Describe("Delete", Label(testlabels.VCSim), deleteTests)
+	Describe("Publish", Label(testlabels.VCSim), publishTests)
+	Describe("Backup", Label(testlabels.VCSim), backupTests)
+	Describe("GuestInfo", Label(testlabels.VCSim), guestInfoTests)
 }
 
 var suite = builder.NewTestSuite()

@@ -21,13 +21,14 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("CreateAndWaitForNetworkInterfaces", Label("vcsim"), func() {
+var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), func() {
 
 	var (
 		testConfig builder.VCSimTestConfig

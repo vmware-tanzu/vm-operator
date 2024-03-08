@@ -8,12 +8,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func vcSimTests() {
-	Describe("Power State", Label("vcsim"), powerStateTests)
-	Describe("Hardware Version", Label("vcsim"), hardwareVersionTests)
+	Describe("Power State", Label(testlabels.VCSim), powerStateTests)
+	Describe("Hardware Version", Label(testlabels.VCSim), hardwareVersionTests)
 	Describe("Managed Object", managedObjectTests)
 }
 

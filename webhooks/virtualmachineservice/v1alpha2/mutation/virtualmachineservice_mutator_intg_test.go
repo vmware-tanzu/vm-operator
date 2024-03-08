@@ -8,12 +8,25 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func intgTests() {
-	Describe("Mutate", Label("create", "update", "delete", "envtest", "v1alpha2", "mutation", "vcsim", "webhook"), intgTestsMutating)
+	Describe(
+		"Mutate",
+		Label(
+			testlabels.Create,
+			testlabels.Update,
+			testlabels.Delete,
+			testlabels.EnvTest,
+			testlabels.V1Alpha2,
+			testlabels.Mutation,
+			testlabels.Webhook,
+		),
+		intgTestsMutating,
+	)
 }
 
 type intgMutatingWebhookContext struct {

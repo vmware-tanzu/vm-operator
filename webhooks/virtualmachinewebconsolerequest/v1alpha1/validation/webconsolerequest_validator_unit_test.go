@@ -15,13 +15,44 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func unitTests() {
-	Describe("Create", Label("create", "v1alpha1", "validation", "webhook"), unitTestsValidateCreate)
-	Describe("Update", Label("update", "v1alpha1", "validation", "webhook"), unitTestsValidateUpdate)
-	Describe("Delete", Label("delete", "v1alpha1", "validation", "webhook"), unitTestsValidateDelete)
+	Describe(
+		"Create",
+		Label(
+			testlabels.Create,
+			testlabels.EnvTest,
+			testlabels.V1Alpha1,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidateCreate,
+	)
+	Describe(
+		"Update",
+		Label(
+			testlabels.Update,
+			testlabels.EnvTest,
+			testlabels.V1Alpha1,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidateUpdate,
+	)
+	Describe(
+		"Delete",
+		Label(
+			testlabels.Delete,
+			testlabels.EnvTest,
+			testlabels.V1Alpha1,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidateDelete,
+	)
 }
 
 type unitValidatingWebhookContext struct {

@@ -6,6 +6,7 @@ replace (
 	github.com/envoyproxy/go-control-plane => github.com/envoyproxy/go-control-plane v0.9.4
 	github.com/envoyproxy/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v0.1.0
 	github.com/vmware-tanzu/vm-operator/api => ./api
+	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ./pkg/constants/testlabels
 )
 
 require (
@@ -42,6 +43,7 @@ require (
 
 require (
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.1.0
+	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000
 	gopkg.in/yaml.v3 v3.0.1
 )
 

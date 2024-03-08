@@ -4,13 +4,14 @@ go 1.21
 
 toolchain go1.21.5
 
-replace github.com/onsi/ginkgo/v2 => github.com/onsi/ginkgo/v2 v2.15.0
+replace github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ../pkg/constants/testlabels
 
 require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/gofuzz v1.2.0
 	github.com/onsi/ginkgo/v2 v2.15.0
 	github.com/onsi/gomega v1.31.0
+	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b

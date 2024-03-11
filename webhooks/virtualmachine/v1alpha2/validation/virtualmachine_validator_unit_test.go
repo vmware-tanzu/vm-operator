@@ -101,27 +101,22 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		isServiceUser                     bool
-		invalidImageName                  bool
-		invalidClassName                  bool
-		invalidVolumeName                 bool
-		dupVolumeName                     bool
-		invalidVolumeSource               bool
-		invalidPVCName                    bool
-		invalidPVCReadOnly                bool
-		withInstanceStorageVolumes        bool
-		invalidReadinessProbe             bool
-		invalidReadinessProbe2            bool
-		isRestrictedNetworkEnv            bool
-		isRestrictedNetworkValidProbePort bool
-		isNonRestrictedNetworkEnv         bool
-		isNoAvailabilityZones             bool
-		isInvalidAvailabilityZone         bool
-		isEmptyAvailabilityZone           bool
-		powerState                        vmopv1.VirtualMachinePowerState
-		nextRestartTime                   string
-		adminOnlyAnnotations              bool
-		isPrivilegedUser                  bool
+		isServiceUser              bool
+		invalidImageName           bool
+		invalidClassName           bool
+		invalidVolumeName          bool
+		dupVolumeName              bool
+		invalidVolumeSource        bool
+		invalidPVCName             bool
+		invalidPVCReadOnly         bool
+		withInstanceStorageVolumes bool
+		isNoAvailabilityZones      bool
+		isInvalidAvailabilityZone  bool
+		isEmptyAvailabilityZone    bool
+		powerState                 vmopv1.VirtualMachinePowerState
+		nextRestartTime            string
+		adminOnlyAnnotations       bool
+		isPrivilegedUser           bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -158,43 +153,6 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
 		}
 
-		if args.invalidReadinessProbe {
-			ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
-				TCPSocket:      &vmopv1.TCPSocketAction{},
-				GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
-			}
-		}
-		if args.invalidReadinessProbe2 {
-			ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
-				GuestInfo: []vmopv1.GuestInfoAction{
-					{
-						Key: "my-key",
-					},
-				},
-				GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
-			}
-		}
-		if args.isRestrictedNetworkEnv || args.isNonRestrictedNetworkEnv {
-			cm := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      config.ProviderConfigMapName,
-					Namespace: ctx.Namespace,
-				},
-				Data: make(map[string]string),
-			}
-			if args.isRestrictedNetworkEnv {
-				cm.Data["IsRestrictedNetwork"] = "true"
-			}
-			Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
-
-			portValue := 6443
-			if !args.isRestrictedNetworkValidProbePort {
-				portValue = 443
-			}
-			ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
-				TCPSocket: &vmopv1.TCPSocketAction{Port: intstr.FromInt(portValue)},
-			}
-		}
 		if args.isNoAvailabilityZones {
 			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 		}
@@ -266,11 +224,6 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false,
 			field.Required(specPath.Child("imageName"), "").Error(), nil),
 
-		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false,
-			field.Forbidden(specPath.Child("readinessProbe"), "only one action can be specified").Error(), nil),
-		Entry("should fail when Readiness probe has multiple actions #2", createArgs{invalidReadinessProbe2: true}, false,
-			field.Forbidden(specPath.Child("readinessProbe"), "only one action can be specified").Error(), nil),
-
 		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false,
 			field.Invalid(volPath.Index(0).Child("name"), "underscore_not_valid", validation.IsDNS1123Subdomain("underscore_not_valid")[0]).Error(), nil),
 		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false,
@@ -284,11 +237,6 @@ func unitTestsValidateCreate() {
 		Entry("should deny when there are instance storage volumes and user is SSO user", createArgs{withInstanceStorageVolumes: true}, false,
 			field.Forbidden(volPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
 		Entry("should allow when there are instance storage volumes and user is service user", createArgs{isServiceUser: true, withInstanceStorageVolumes: true}, true, nil, nil),
-
-		Entry("should deny when restricted network and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false,
-			field.NotSupported(specPath.Child("readinessProbe", "tcpSocket", "port"), 443, []string{"6443"}).Error(), nil),
-		Entry("should allow when restricted network and TCP port in readiness probe is 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: true}, true, nil, nil),
-		Entry("should allow when not restricted network and TCP port in readiness probe is not 6443", createArgs{isNonRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, true, nil, nil),
 
 		Entry("should allow when VM specifies no availability zone, there are availability zones", createArgs{isEmptyAvailabilityZone: true}, true, nil, nil),
 		Entry("should allow when VM specifies no availability zone, there are no availability zones", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
@@ -335,6 +283,144 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+	Context("Readiness Probe", func() {
+
+		DescribeTable("create", doTest,
+			Entry("should fail when Readiness probe has multiple actions #2",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						cm := &corev1.ConfigMap{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      config.ProviderConfigMapName,
+								Namespace: ctx.Namespace,
+							},
+							Data: make(map[string]string),
+						}
+						Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
+
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							TCPSocket:      &vmopv1.TCPSocketAction{},
+							GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.readinessProbe: Forbidden: only one action can be specified`),
+				},
+			),
+			Entry("should fail when Readiness probe has multiple actions #2",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							GuestInfo: []vmopv1.GuestInfoAction{
+								{
+									Key: "my-key",
+								},
+							},
+							GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.readinessProbe: Forbidden: only one action can be specified`),
+				},
+			),
+			Entry("should deny when TCP readiness probe is specified under VPC networking",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							TCPSocket: &vmopv1.TCPSocketAction{},
+						}
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.NetworkProviderType = pkgconfig.NetworkProviderTypeVPC
+						})
+					},
+					validate: doValidateWithMsg(
+						`spec.readinessProbe.tcpSocket: Forbidden: VPC networking doesn't allow TCP readiness probe to be specified`),
+				},
+			),
+			Entry("should allow when non-TCP readiness probe is specified under VPC networking",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+						}
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.NetworkProviderType = pkgconfig.NetworkProviderTypeVPC
+						})
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny when restricted network and TCP port in readiness probe is not 6443",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						cm := &corev1.ConfigMap{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      config.ProviderConfigMapName,
+								Namespace: ctx.Namespace,
+							},
+							Data: make(map[string]string),
+						}
+						cm.Data["IsRestrictedNetwork"] = "true"
+
+						Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
+
+						portValue := 443
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							TCPSocket: &vmopv1.TCPSocketAction{Port: intstr.FromInt(portValue)},
+						}
+
+					},
+					validate: doValidateWithMsg(
+						`spec.readinessProbe.tcpSocket.port: Unsupported value: 443: supported values: "6443"`),
+				},
+			),
+			Entry("should allow when restricted network and TCP port in readiness probe is 6443",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						cm := &corev1.ConfigMap{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      config.ProviderConfigMapName,
+								Namespace: ctx.Namespace,
+							},
+							Data: make(map[string]string),
+						}
+						cm.Data["IsRestrictedNetwork"] = "true"
+
+						Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
+
+						portValue := 6443
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							TCPSocket: &vmopv1.TCPSocketAction{Port: intstr.FromInt(portValue)},
+						}
+
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow when not restricted network and TCP port in readiness probe is not 6443",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						cm := &corev1.ConfigMap{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      config.ProviderConfigMapName,
+								Namespace: ctx.Namespace,
+							},
+							Data: make(map[string]string),
+						}
+
+						Expect(ctx.Client.Create(ctx, cm)).To(Succeed())
+
+						portValue := 443
+						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+							TCPSocket: &vmopv1.TCPSocketAction{Port: intstr.FromInt(portValue)},
+						}
+
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
 
 	Context("StorageClass", func() {
 

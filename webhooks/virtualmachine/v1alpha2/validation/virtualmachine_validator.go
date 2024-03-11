@@ -51,6 +51,7 @@ const (
 	allowedRestrictedNetworkTCPProbePort = 6443
 
 	readinessProbeOnlyOneAction              = "only one action can be specified"
+	tcpReadinessProbeNotAllowedVPC           = "VPC networking doesn't allow TCP readiness probe to be specified"
 	updatesNotAllowedWhenPowerOn             = "updates to this field is not allowed when VM power is on"
 	storageClassNotFoundFmt                  = "Storage policy %s does not exist"
 	storageClassNotAssignedFmt               = "Storage policy is not associated with the namespace %s"
@@ -773,8 +774,11 @@ func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm
 	if probe.TCPSocket != nil {
 		tcpSocketPath := readinessProbePath.Child("tcpSocket")
 
-		// Validate port if environment is a restricted network environment between SV CP VMs and Workload VMs e.g. VMC.
-		if probe.TCPSocket.Port.IntValue() != allowedRestrictedNetworkTCPProbePort {
+		// TCP readiness probe is not allowed under VPC Networking
+		if pkgconfig.FromContext(ctx).NetworkProviderType == pkgconfig.NetworkProviderTypeVPC {
+			allErrs = append(allErrs, field.Forbidden(tcpSocketPath, tcpReadinessProbeNotAllowedVPC))
+		} else if probe.TCPSocket.Port.IntValue() != allowedRestrictedNetworkTCPProbePort {
+			// Validate port if environment is a restricted network environment between SV CP VMs and Workload VMs e.g. VMC.
 			isRestrictedEnv, err := v.isNetworkRestrictedForReadinessProbe(ctx)
 			if err != nil {
 				allErrs = append(allErrs, field.Forbidden(tcpSocketPath, err.Error()))

@@ -54,7 +54,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 	lbProviderType := pkgconfig.FromContext(ctx).LoadBalancerProvider
 	if lbProviderType == "" {
-		if !pkgconfig.FromContext(ctx).VSphereNetworking {
+		if pkgconfig.FromContext(ctx).NetworkProviderType == pkgconfig.NetworkProviderTypeNSXT {
 			lbProviderType = providers.NSXTLoadBalancer
 		}
 	}

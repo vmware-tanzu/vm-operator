@@ -14,11 +14,20 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func intgTests() {
-	Describe("Reconcile", Label("controller", "envtest", "v1alpha2"), intgTestsReconcile)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.EnvTest,
+			testlabels.V1Alpha2,
+		),
+		intgTestsReconcile,
+	)
 }
 
 func intgTestsReconcile() {

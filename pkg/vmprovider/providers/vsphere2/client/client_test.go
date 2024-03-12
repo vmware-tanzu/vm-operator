@@ -23,6 +23,7 @@ import (
 	"github.com/vmware/govmomi/vim25/soap"
 
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vsphereclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
@@ -34,7 +35,7 @@ const (
 	valid   = "valid"
 )
 
-var _ = Describe("Client", Label("vcsim"), Ordered /* Avoided race for pkg symbol simulator.SessionIdleTimeout */, func() {
+var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for pkg symbol simulator.SessionIdleTimeout */, func() {
 
 	Describe("NewClient", func() {
 		var (

@@ -11,12 +11,33 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func intgTests() {
-	Describe("Create", Label("create", "envtest", "v1alpha2", "validation", "webhook"), intgTestsValidateCreate)
-	Describe("Delete", Label("delete", "envtest", "v1alpha2", "validation", "webhook"), intgTestsValidateDelete)
+	Describe(
+		"Create",
+		Label(
+			testlabels.Create,
+			testlabels.EnvTest,
+			testlabels.V1Alpha2,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		intgTestsValidateCreate,
+	)
+	Describe(
+		"Delete",
+		Label(
+			testlabels.Delete,
+			testlabels.EnvTest,
+			testlabels.V1Alpha2,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		intgTestsValidateDelete,
+	)
 }
 
 type intgValidatingWebhookContext struct {

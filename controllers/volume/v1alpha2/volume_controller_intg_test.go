@@ -22,6 +22,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	volume "github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
@@ -30,7 +31,15 @@ import (
 )
 
 func intgTests() {
-	Describe("Reconcile", Label("controller", "envtest", "v1alpha2"), intgTestsReconcile)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.EnvTest,
+			testlabels.V1Alpha2,
+		),
+		intgTestsReconcile,
+	)
 }
 
 func intgTestsReconcile() {

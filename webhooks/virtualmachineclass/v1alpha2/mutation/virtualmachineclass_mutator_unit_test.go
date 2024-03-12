@@ -10,12 +10,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/v1alpha2/mutation"
 )
 
 func uniTests() {
-	Describe("Mutate", Label("create", "update", "delete", "v1alpha2", "mutation", "webhook"), unitTestsMutating)
+	Describe(
+		"Mutate",
+		Label(
+			testlabels.Create,
+			testlabels.Update,
+			testlabels.Delete,
+			testlabels.V1Alpha2,
+			testlabels.Mutation,
+			testlabels.Webhook,
+		),
+		unitTestsMutating,
+	)
 }
 
 type unitMutationWebhookContext struct {

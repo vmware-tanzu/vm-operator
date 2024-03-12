@@ -13,12 +13,20 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	virtualmachineclass "github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func unitTests() {
-	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.V1Alpha2,
+		),
+		unitTestsReconcile,
+	)
 }
 
 func unitTestsReconcile() {

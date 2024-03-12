@@ -8,11 +8,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func integTests() {
-	Describe("Cache", Ordered, Label("envtest"), cacheTests)
+	Describe("Cache", Ordered, Label(testlabels.EnvTest), cacheTests)
 }
 
 var suite = builder.NewTestSuite()

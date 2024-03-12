@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -24,9 +25,36 @@ const (
 )
 
 func unitTests() {
-	Describe("Create", Label("create", "v1alpha2", "validation", "webhook"), unitTestsValidatePVCCreate)
-	Describe("Update", Label("update", "v1alpha2", "validation", "webhook"), unitTestsValidatePVCUpdate)
-	Describe("Delete", Label("delete", "v1alpha2", "validation", "webhook"), unitTestsValidatePVCDelete)
+	Describe(
+		"Create",
+		Label(
+			testlabels.Create,
+			testlabels.V1Alpha2,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidatePVCCreate,
+	)
+	Describe(
+		"Update",
+		Label(
+			testlabels.Update,
+			testlabels.V1Alpha2,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidatePVCUpdate,
+	)
+	Describe(
+		"Delete",
+		Label(
+			testlabels.Delete,
+			testlabels.V1Alpha2,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidatePVCDelete,
+	)
 }
 
 type unitValidatingWebhookContext struct {

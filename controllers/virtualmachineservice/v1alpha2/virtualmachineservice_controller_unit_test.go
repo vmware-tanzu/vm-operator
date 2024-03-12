@@ -22,13 +22,29 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func unitTests() {
-	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
-	Describe("Reconcile", Label("controller", "nsxt", "v1alpha2"), nsxtLBProviderTestsReconcile)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.V1Alpha2,
+		),
+		unitTestsReconcile,
+	)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.NSXT,
+			testlabels.V1Alpha2,
+		),
+		nsxtLBProviderTestsReconcile,
+	)
 }
 
 const LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"

@@ -25,6 +25,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	volume "github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	volContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
@@ -43,7 +44,14 @@ func (f *testFailClient) Create(ctx goctx.Context, obj client.Object, opts ...cl
 }
 
 func unitTests() {
-	Describe("Reconcile", Label("controller", "v1alpha2"), unitTestsReconcile)
+	Describe(
+		"Reconcile",
+		Label(
+			testlabels.Controller,
+			testlabels.V1Alpha2,
+		),
+		unitTestsReconcile,
+	)
 }
 
 func unitTestsReconcile() {

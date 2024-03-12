@@ -28,6 +28,7 @@ import (
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -59,9 +60,36 @@ func doValidateWithMsg(msgs ...string) func(admission.Response) {
 }
 
 func unitTests() {
-	Describe("Create", Label("create", "v1alpha2", "validation", "webhook"), unitTestsValidateCreate)
-	Describe("Update", Label("update", "v1alpha2", "validation", "webhook"), unitTestsValidateUpdate)
-	Describe("Delete", Label("delete", "v1alpha2", "validation", "webhook"), unitTestsValidateDelete)
+	Describe(
+		"Create",
+		Label(
+			testlabels.Create,
+			testlabels.V1Alpha2,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidateCreate,
+	)
+	Describe(
+		"Update",
+		Label(
+			testlabels.Update,
+			testlabels.V1Alpha2,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidateUpdate,
+	)
+	Describe(
+		"Delete",
+		Label(
+			testlabels.Delete,
+			testlabels.V1Alpha2,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		unitTestsValidateDelete,
+	)
 }
 
 type unitValidatingWebhookContext struct {

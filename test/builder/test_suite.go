@@ -45,6 +45,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/util/remote"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	ctrlCtx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
@@ -677,5 +678,5 @@ func updateMutatingWebhookConfig(webhookConfig admissionregv1.MutatingWebhookCon
 }
 
 func envTestsEnabled() bool {
-	return Label("envtest").MatchesLabelFilter(GinkgoLabelFilter())
+	return Label(testlabels.EnvTest).MatchesLabelFilter(GinkgoLabelFilter())
 }

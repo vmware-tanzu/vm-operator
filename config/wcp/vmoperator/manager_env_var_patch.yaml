@@ -87,3 +87,9 @@
   value:
     name: FSS_PODVMONSTRETCHEDSUPERVISOR
     value: "<FSS_PODVMONSTRETCHEDSUPERVISOR>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_TKG_Multiple_CL
+    value: "<FSS_WCP_TKG_Multiple_CL_VALUE>"

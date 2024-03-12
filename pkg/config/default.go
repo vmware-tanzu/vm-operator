@@ -33,6 +33,7 @@ func Default() Config {
 			VMClassAsConfigDayNDate:    true,
 			VMOpV1Alpha2:               true,
 			PodVMOnStretchedSupervisor: false,
+			TKGMultipleCL:              false,
 		},
 		InstanceStorage: InstanceStorage{
 			JitterMaxFactor:      1.0,

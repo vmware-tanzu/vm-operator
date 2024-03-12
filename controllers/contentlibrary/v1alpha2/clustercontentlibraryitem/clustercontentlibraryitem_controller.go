@@ -245,13 +245,32 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItem
 		return err
 	}
 
+	// Setting the label Key Prefix on the basis of
+	// WCP_TKG_Multiple_CL FSS is enabled or not
+
 	if cvmi.Labels == nil {
 		cvmi.Labels = make(map[string]string)
 	}
 
+	labelKeyPrefix := utils.TKGServiceTypeLabelKeyPrefix
+	if pkgconfig.FromContext(ctx).Features.TKGMultipleCL {
+		labelKeyPrefix = utils.MultipleCLServiceTypeLabelKeyPrefix
+
+		// Reconcile the labels between CCLItem and CVMI
+		// This should execute only for labels containing MultipleCLServiceTypeLabelKeyPrefix
+		for label := range cvmi.Labels {
+			if strings.HasPrefix(label, labelKeyPrefix) {
+				_, labelExists := cclItem.Labels[label]
+				if !labelExists {
+					delete(cvmi.Labels, label)
+				}
+			}
+		}
+	}
+
 	// Only watch for service type labels from ClusterContentLibraryItem
 	for label := range cclItem.Labels {
-		if strings.HasPrefix(label, "type.services.vmware.com/") {
+		if strings.HasPrefix(label, labelKeyPrefix) {
 			cvmi.Labels[label] = ""
 		}
 	}

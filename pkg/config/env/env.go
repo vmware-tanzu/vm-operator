@@ -50,6 +50,7 @@ const (
 	FSSWindowsSysprep
 	FSSVMServiceBackupRestore
 	FSSPodVMOnStretchedSupervisor
+	FSSTKGMultipleCL
 
 	_varNameEnd
 )
@@ -152,6 +153,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_VMSERVICE_BACKUPRESTORE"
 	case FSSPodVMOnStretchedSupervisor:
 		return "FSS_PODVMONSTRETCHEDSUPERVISOR"
+	case FSSTKGMultipleCL:
+		return "FSS_WCP_TKG_Multiple_CL"
 	}
 	panic("unknown environment variable")
 }

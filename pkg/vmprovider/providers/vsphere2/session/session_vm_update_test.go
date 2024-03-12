@@ -6,6 +6,7 @@ package session_test
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -22,7 +23,24 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/vmlifecycle"
 )
+
+var _ = Describe("UpdateVM selected MO Properties", func() {
+
+	It("Covers VM Status properties", func() {
+		for _, p := range vmlifecycle.VMStatusPropertiesSelector {
+			match := false
+			for _, pp := range session.VMUpdatePropertiesSelector {
+				if p == pp || strings.HasPrefix(p, pp+".") {
+					match = true
+					break
+				}
+			}
+			Expect(match).To(BeTrue(), "Status prop %q not found in update props", p)
+		}
+	})
+})
 
 var _ = Describe("Update ConfigSpec", func() {
 

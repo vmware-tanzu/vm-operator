@@ -26,9 +26,10 @@ import (
 )
 
 var (
-	// The minimum properties needed to be retrieved in order to populate the Status. Callers may
-	// provide a MO with more. This often saves us a second round trip in the common steady state.
-	vmStatusPropertiesSelector = []string{
+	// VMStatusPropertiesSelector is the minimum properties needed to be retrieved in order to populate
+	// the Status. Callers may provide a MO with more. This often saves us a second round trip in the
+	// common steady state.
+	VMStatusPropertiesSelector = []string{
 		"config.changeTrackingEnabled",
 		"config.extraConfig",
 		"guest",
@@ -40,7 +41,7 @@ func UpdateStatus(
 	vmCtx context.VirtualMachineContextA2,
 	k8sClient ctrlclient.Client,
 	vcVM *object.VirtualMachine,
-	vmMO *mo.VirtualMachine) error {
+	moVM *mo.VirtualMachine) error {
 
 	vm := vmCtx.VM
 
@@ -66,13 +67,13 @@ func UpdateStatus(
 		}
 	}
 
-	if vmMO == nil {
+	if moVM == nil {
 		// In the common case, our caller will have already gotten the MO properties in order to determine
 		// if it had any reconciliation to do, and there was nothing to do since the VM is in the steady
 		// state so that MO is still entirely valid here.
 		// NOTE: The properties must have been retrieved with at least vmStatusPropertiesSelector.
-		vmMO = &mo.VirtualMachine{}
-		if err := vcVM.Properties(vmCtx, vcVM.Reference(), vmStatusPropertiesSelector, vmMO); err != nil {
+		moVM = &mo.VirtualMachine{}
+		if err := vcVM.Properties(vmCtx, vcVM.Reference(), VMStatusPropertiesSelector, moVM); err != nil {
 			// Leave the current Status unchanged for now.
 			return fmt.Errorf("failed to get VM properties for status update: %w", err)
 		}
@@ -80,7 +81,7 @@ func UpdateStatus(
 
 	var errs []error
 	var err error
-	summary := vmMO.Summary
+	summary := moVM.Summary
 
 	vm.Status.PowerState = convertPowerState(summary.Runtime.PowerState)
 	vm.Status.UniqueID = vcVM.Reference().Value
@@ -88,18 +89,18 @@ func UpdateStatus(
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
 	hardwareVersion, _ := types.ParseHardwareVersion(summary.Config.HwVersion)
 	vm.Status.HardwareVersion = int32(hardwareVersion)
-	vm.Status.Network = getGuestNetworkStatus(vmCtx, vmMO.Guest)
+	vm.Status.Network = getGuestNetworkStatus(vmCtx, moVM.Guest)
 
 	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {
 		errs = append(errs, err)
 	}
 
-	MarkVMToolsRunningStatusCondition(vmCtx.VM, vmMO.Guest)
-	MarkCustomizationInfoCondition(vmCtx.VM, vmMO.Guest)
-	MarkBootstrapCondition(vmCtx.VM, vmMO.Config)
+	MarkVMToolsRunningStatusCondition(vmCtx.VM, moVM.Guest)
+	MarkCustomizationInfoCondition(vmCtx.VM, moVM.Guest)
+	MarkBootstrapCondition(vmCtx.VM, moVM.Config)
 
-	if config := vmMO.Config; config != nil {
+	if config := moVM.Config; config != nil {
 		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled
 	} else {
 		vm.Status.ChangeBlockTracking = nil

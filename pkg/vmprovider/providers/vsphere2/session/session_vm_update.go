@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -730,17 +731,19 @@ func (s *Session) prepareVMForPowerOn(
 func (s *Session) poweredOnVMReconfigure(
 	vmCtx context.VirtualMachineContextA2,
 	resVM *res.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo) error {
+	config *vimTypes.VirtualMachineConfigInfo) (bool, error) {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
+
+	var refetchProps bool
 
 	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
 		vmCtx.Logger.Info("PoweredOn Reconfigure", "configSpec", configSpec)
 		if err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
 			vmCtx.Logger.Error(err, "powered on reconfigure failed")
-			return err
+			return false, err
 		}
 
 		// Special case for CBT: in order for CBT change take effect for a powered on VM,
@@ -749,12 +752,14 @@ func (s *Session) poweredOnVMReconfigure(
 		if configSpec.ChangeTrackingEnabled != nil {
 			if err := s.invokeFsrVirtualMachine(vmCtx, resVM); err != nil {
 				vmCtx.Logger.Error(err, "Failed to invoke FSR for CBT update")
-				return err
+				return false, err
 			}
 		}
+
+		refetchProps = true
 	}
 
-	return nil
+	return refetchProps, nil
 }
 
 func (s *Session) attachClusterModule(
@@ -777,35 +782,210 @@ func (s *Session) attachClusterModule(
 	return s.Client.ClusterModuleClient().AddMoRefToModule(vmCtx, moduleUUID, resVM.MoRef())
 }
 
-func (s *Session) UpdateVirtualMachine(
+func (s *Session) updateVMDesiredPowerStateOff(
 	vmCtx context.VirtualMachineContextA2,
 	vcVM *object.VirtualMachine,
-	getUpdateArgsFn func() (*VMUpdateArgs, error)) (err error) {
+	moVM *mo.VirtualMachine,
+	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
+
+	var powerOff bool
+	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
+		powerOff = true
+	} else if existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
+		if vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeHard {
+			powerOff = true
+		}
+	}
+	if powerOff {
+		err = res.NewVMFromObject(vcVM).SetPowerState(
+			logr.NewContext(vmCtx, vmCtx.Logger),
+			existingPowerState,
+			vmCtx.VM.Spec.PowerState,
+			vmCtx.VM.Spec.PowerOffMode)
+		if err != nil {
+			return
+		}
+
+		refetchProps = true
+	}
+
+	// A VM's hardware can only be upgraded if the VM is powered off.
+	opResult, err := vmutil.ReconcileMinHardwareVersion(
+		vmCtx,
+		vcVM.Client(),
+		*moVM,
+		false,
+		vmCtx.VM.Spec.MinHardwareVersion)
+	if err != nil {
+		return
+	}
+	if opResult == vmutil.ReconcileMinHardwareVersionResultUpgraded {
+		refetchProps = true
+	}
+
+	return refetchProps, err
+}
+
+func (s *Session) updateVMDesiredPowerStateSuspended(
+	vmCtx context.VirtualMachineContextA2,
+	vcVM *object.VirtualMachine,
+	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
+
+	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
+		err = res.NewVMFromObject(vcVM).SetPowerState(
+			logr.NewContext(vmCtx, vmCtx.Logger),
+			existingPowerState,
+			vmCtx.VM.Spec.PowerState,
+			vmCtx.VM.Spec.SuspendMode)
+		if err != nil {
+			return
+		}
+
+		refetchProps = true
+	}
+
+	return
+}
+
+func (s *Session) updateVMDesiredPowerStateOn(
+	vmCtx context.VirtualMachineContextA2,
+	vcVM *object.VirtualMachine,
+	moVM *mo.VirtualMachine,
+	getUpdateArgsFn func() (*VMUpdateArgs, error),
+	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
+
+	config := moVM.Config
+
+	// See GoVmomi's VirtualMachine::Device() explanation for this check.
+	if config == nil {
+		return refetchProps, fmt.Errorf("VM config is not available, connectionState=%s", moVM.Summary.Runtime.ConnectionState)
+	}
 
 	resVM := res.NewVMFromObject(vcVM)
 
-	moVM, err := resVM.GetProperties(vmCtx, []string{
-		"config",
-		"runtime",
-		"summary.config.hwVersion",
-	})
+	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
+		// Check to see if a possible restart is required.
+		// Please note a VM may only be restarted if it is powered on.
+		if vmCtx.VM.Spec.NextRestartTime != "" {
+			// If non-empty, the value of spec.nextRestartTime is guaranteed
+			// to be a valid RFC3339Nano timestamp due to the webhooks,
+			// however, we still check for the error due to testing that may
+			// not involve webhooks.
+			nextRestartTime, err := time.Parse(time.RFC3339Nano, vmCtx.VM.Spec.NextRestartTime)
+			if err != nil {
+				return refetchProps, fmt.Errorf("spec.nextRestartTime %q cannot be parsed with %q %w",
+					vmCtx.VM.Spec.NextRestartTime, time.RFC3339Nano, err)
+			}
+
+			result, err := vmutil.RestartAndWait(
+				logr.NewContext(vmCtx, vmCtx.Logger),
+				vcVM.Client(),
+				vmutil.ManagedObjectFromObject(vcVM),
+				false,
+				nextRestartTime,
+				vmutil.ParsePowerOpMode(string(vmCtx.VM.Spec.RestartMode)))
+			if err != nil {
+				return refetchProps, err
+			}
+			if result.AnyChange() {
+				refetchProps = true
+				lastRestartTime := metav1.NewTime(nextRestartTime)
+				vmCtx.VM.Status.LastRestartTime = &lastRestartTime
+			}
+		}
+
+		// Do not pass classConfigSpec to poweredOnVMReconfigure when VM is already powered
+		// on since we do not have to get VM class at this point.
+		var reconfigured bool
+		reconfigured, err = s.poweredOnVMReconfigure(vmCtx, resVM, config)
+		if err != nil {
+			return
+		}
+		refetchProps = refetchProps || reconfigured
+
+		return
+	}
+
+	if existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
+		// A suspended VM cannot be reconfigured.
+		err = resVM.SetPowerState(
+			logr.NewContext(vmCtx, vmCtx.Logger),
+			existingPowerState,
+			vmCtx.VM.Spec.PowerState,
+			vmopv1.VirtualMachinePowerOpModeHard)
+		return err == nil, err
+	}
+
+	updateArgs, err := getUpdateArgsFn()
 	if err != nil {
+		return
+	}
+
+	// TODO: Find a better place for this?
+	err = s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy)
+	if err != nil {
+		return
+	}
+
+	// A VM's hardware can only be upgraded if the VM is powered off.
+	_, err = vmutil.ReconcileMinHardwareVersion(
+		vmCtx,
+		vcVM.Client(),
+		*moVM,
+		false,
+		vmCtx.VM.Spec.MinHardwareVersion)
+	if err != nil {
+		return
+	}
+
+	// Just assume something is going to change after this point - which is most likely true - until
+	// this code is refactored more.
+	refetchProps = true
+
+	err = s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs)
+	if err != nil {
+		return
+	}
+
+	err = resVM.SetPowerState(
+		logr.NewContext(vmCtx, vmCtx.Logger),
+		existingPowerState,
+		vmCtx.VM.Spec.PowerState,
+		vmopv1.VirtualMachinePowerOpModeHard)
+	if err != nil {
+		return
+	}
+
+	if vmCtx.VM.Annotations == nil {
+		vmCtx.VM.Annotations = map[string]string{}
+	}
+	vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
+
+	return //nolint:nakedret
+}
+
+// VMUpdatePropertiesSelector is the VM properties fetched at the start of UpdateVirtualMachine() when we are
+// It must be a super set of vmlifecycle.vmStatusPropertiesSelector[] since we may pass the properties collected
+// here to vmlifecycle.UpdateStatus() to avoid a second fetch of the VM properties.
+var VMUpdatePropertiesSelector = []string{
+	"config",
+	"guest",
+	"summary",
+}
+
+func (s *Session) UpdateVirtualMachine(
+	vmCtx context.VirtualMachineContextA2,
+	vcVM *object.VirtualMachine,
+	getUpdateArgsFn func() (*VMUpdateArgs, error)) error {
+
+	moVM := &mo.VirtualMachine{}
+	if err := vcVM.Properties(vmCtx, vcVM.Reference(), VMUpdatePropertiesSelector, moVM); err != nil {
 		return err
 	}
 
-	defer func() {
-		updateErr := vmlifecycle.UpdateStatus(vmCtx, s.K8sClient, vcVM, nil)
-		if updateErr != nil {
-			vmCtx.Logger.Error(updateErr, "Updating VM status failed")
-			if err == nil {
-				err = updateErr
-			}
-		}
-	}()
-
 	// Translate the VM's current power state into the VM Op power state value.
 	var existingPowerState vmopv1.VirtualMachinePowerState
-	switch moVM.Runtime.PowerState {
+	switch moVM.Summary.Runtime.PowerState {
 	case vimTypes.VirtualMachinePowerStatePoweredOn:
 		existingPowerState = vmopv1.VirtualMachinePowerStateOn
 	case vimTypes.VirtualMachinePowerStatePoweredOff:
@@ -814,144 +994,45 @@ func (s *Session) UpdateVirtualMachine(
 		existingPowerState = vmopv1.VirtualMachinePowerStateSuspended
 	}
 
+	var refetchProps bool
+	var err error
+
 	switch vmCtx.VM.Spec.PowerState {
 	case vmopv1.VirtualMachinePowerStateOff:
-		var powerOff bool
-		if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
-			powerOff = true
-		} else if existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
-			if vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeHard {
-				powerOff = true
-			}
-		}
-		if powerOff {
-			if err := resVM.SetPowerState(
-				logr.NewContext(vmCtx, vmCtx.Logger),
-				existingPowerState,
-				vmCtx.VM.Spec.PowerState,
-				vmCtx.VM.Spec.PowerOffMode); err != nil {
-
-				return err
-			}
-		}
-
-		// A VM's hardware can only be upgraded if the VM is powered off.
-		if _, err := vmutil.ReconcileMinHardwareVersion(
+		refetchProps, err = s.updateVMDesiredPowerStateOff(
 			vmCtx,
-			vcVM.Client(),
-			*moVM,
-			false,
-			vmCtx.VM.Spec.MinHardwareVersion); err != nil {
-
-			return err
-		}
-
-		return nil
+			vcVM,
+			moVM,
+			existingPowerState)
 
 	case vmopv1.VirtualMachinePowerStateSuspended:
-		if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
-			return resVM.SetPowerState(
-				logr.NewContext(vmCtx, vmCtx.Logger),
-				existingPowerState,
-				vmCtx.VM.Spec.PowerState,
-				vmCtx.VM.Spec.SuspendMode)
-		}
+		refetchProps, err = s.updateVMDesiredPowerStateSuspended(
+			vmCtx,
+			vcVM,
+			existingPowerState)
 
 	case vmopv1.VirtualMachinePowerStateOn:
-		config := moVM.Config
-
-		// See GoVmomi's VirtualMachine::Device() explanation for this check.
-		if config == nil {
-			return fmt.Errorf("VM config is not available, connectionState=%s", moVM.Runtime.ConnectionState)
-		}
-
-		switch existingPowerState {
-		case vmopv1.VirtualMachinePowerStateOn:
-
-			// Check to see if a possible restart is required.
-			// Please note a VM may only be restarted if it is powered on.
-			if vmCtx.VM.Spec.NextRestartTime != "" {
-
-				// If non-empty, the value of spec.nextRestartTime is guaranteed
-				// to be a valid RFC3339Nano timestamp due to the webhooks,
-				// however, we still check for the error due to testing that may
-				// not involve webhooks.
-				nextRestartTime, err := time.Parse(
-					time.RFC3339Nano, vmCtx.VM.Spec.NextRestartTime)
-				if err != nil {
-					return fmt.Errorf(
-						"spec.nextRestartTime %q cannot be parsed with %q %w",
-						vmCtx.VM.Spec.NextRestartTime,
-						time.RFC3339Nano,
-						err)
-				}
-				result, err := vmutil.RestartAndWait(
-					logr.NewContext(vmCtx, vmCtx.Logger),
-					vcVM.Client(),
-					vmutil.ManagedObjectFromObject(vcVM),
-					false,
-					nextRestartTime,
-					vmutil.ParsePowerOpMode(string(vmCtx.VM.Spec.RestartMode)))
-				if err != nil {
-					return err
-				}
-				if result.AnyChange() {
-					lastRestartTime := metav1.NewTime(nextRestartTime)
-					vmCtx.VM.Status.LastRestartTime = &lastRestartTime
-				}
-			}
-
-			// Do not pass classConfigSpec to poweredOnVMReconfigure when VM is
-			// already powered on since we do not have to get VM class at this
-			// point.
-			return s.poweredOnVMReconfigure(vmCtx, resVM, config)
-
-		case vmopv1.VirtualMachinePowerStateSuspended:
-			// A suspended VM cannot be reconfigured.
-			return resVM.SetPowerState(
-				logr.NewContext(vmCtx, vmCtx.Logger),
-				existingPowerState,
-				vmCtx.VM.Spec.PowerState,
-				vmopv1.VirtualMachinePowerOpModeHard)
-		}
-
-		updateArgs, err := getUpdateArgsFn()
-		if err != nil {
-			return err
-		}
-
-		// TODO: Find a better place for this?
-		if err := s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy); err != nil {
-			return err
-		}
-
-		// A VM's hardware can only be upgraded if the VM is powered off.
-		if _, err := vmutil.ReconcileMinHardwareVersion(
+		refetchProps, err = s.updateVMDesiredPowerStateOn(
 			vmCtx,
-			vcVM.Client(),
-			*moVM,
-			false,
-			vmCtx.VM.Spec.MinHardwareVersion); err != nil {
-
-			return err
-		}
-
-		if err := s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs); err != nil {
-			return err
-		}
-
-		if err := resVM.SetPowerState(
-			logr.NewContext(vmCtx, vmCtx.Logger),
-			existingPowerState,
-			vmCtx.VM.Spec.PowerState,
-			vmopv1.VirtualMachinePowerOpModeHard); err != nil {
-			return err
-		}
-
-		if vmCtx.VM.Annotations == nil {
-			vmCtx.VM.Annotations = map[string]string{}
-		}
-		vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
+			vcVM,
+			moVM,
+			getUpdateArgsFn,
+			existingPowerState)
 	}
-	return nil
+
+	if refetchProps {
+		moVM = nil
+	}
+
+	vmCtx.Logger.V(8).Info("UpdateVM", "refetchProps", refetchProps, "powerState", vmCtx.VM.Spec.PowerState)
+
+	updateErr := vmlifecycle.UpdateStatus(vmCtx, s.K8sClient, vcVM, moVM)
+	if updateErr != nil {
+		vmCtx.Logger.Error(updateErr, "Updating VM status failed")
+		if err == nil {
+			err = updateErr
+		}
+	}
+
+	return err
 }

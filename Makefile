@@ -292,9 +292,7 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 		output:webhook:dir=$(WEBHOOK_ROOT) \
 		webhook
 	$(CONTROLLER_GEN) \
-		paths=./controllers/... \
-		paths=./pkg/... \
-		paths=./webhooks/... \
+		paths=github.com/vmware-tanzu/vm-operator/... \
 		output:rbac:dir=$(RBAC_ROOT) \
 		rbac:roleName=manager-role
 

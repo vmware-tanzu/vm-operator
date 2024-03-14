@@ -27,7 +27,7 @@ var _ = Describe("UpdateStatus", func() {
 		err   error
 		vmCtx context.VirtualMachineContextA2
 		vcVM  *object.VirtualMachine
-		vmMO  *mo.VirtualMachine
+		moVM  *mo.VirtualMachine
 	)
 
 	BeforeEach(func() {
@@ -45,7 +45,7 @@ var _ = Describe("UpdateStatus", func() {
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).ToNot(HaveOccurred())
 
-		vmMO = &mo.VirtualMachine{}
+		moVM = &mo.VirtualMachine{}
 	})
 
 	AfterEach(func() {
@@ -54,7 +54,7 @@ var _ = Describe("UpdateStatus", func() {
 	})
 
 	JustBeforeEach(func() {
-		err = vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, vmMO)
+		err = vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, moVM)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -64,7 +64,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			Context("VM has pseudo devices", func() {
 				BeforeEach(func() {
-					vmMO.Guest = &types.GuestInfo{
+					moVM.Guest = &types.GuestInfo{
 						Net: []types.GuestNicInfo{
 							{
 								DeviceConfigId: -1,
@@ -97,7 +97,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			Context("VM has more interfaces than expected", func() {
 				BeforeEach(func() {
-					vmMO.Guest = &types.GuestInfo{
+					moVM.Guest = &types.GuestInfo{
 						Net: []types.GuestNicInfo{
 							{
 								DeviceConfigId: 4000,
@@ -134,7 +134,7 @@ var _ = Describe("UpdateStatus", func() {
 
 		Context("IPRoutes", func() {
 			BeforeEach(func() {
-				vmMO.Guest = &types.GuestInfo{
+				moVM.Guest = &types.GuestInfo{
 					IpStack: []types.GuestStackInfo{
 						{
 							IpRouteConfig: &types.NetIpRouteConfigInfo{
@@ -180,7 +180,7 @@ var _ = Describe("UpdateStatus", func() {
 	Context("Copies values to the VM status", func() {
 		biosUUID, instanceUUID := "f7c371d6-2003-5a48-9859-3bc9a8b0890", "6132d223-1566-5921-bc3b-df91ece09a4d"
 		BeforeEach(func() {
-			vmMO.Summary = types.VirtualMachineSummary{
+			moVM.Summary = types.VirtualMachineSummary{
 				Config: types.VirtualMachineConfigSummary{
 					Uuid:         biosUUID,
 					InstanceUuid: instanceUUID,

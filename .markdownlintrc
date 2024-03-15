@@ -20,6 +20,7 @@ MD033:
   - td
   - th
   - em
+  - abbr
 
 # no-hard-tabs
 MD010:

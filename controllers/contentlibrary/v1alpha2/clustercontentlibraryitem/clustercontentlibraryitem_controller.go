@@ -28,6 +28,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	imgutil "github.com/vmware-tanzu/vm-operator/pkg/util/image"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
@@ -306,6 +307,11 @@ func (r *Reconciler) syncImageContent(ctx *context.ClusterContentLibraryItemCont
 	} else {
 		cvmi.Status.ProviderContentVersion = latestVersion
 	}
+
+	// Sync the image's OS information and capabilities to the resource's labels
+	// to make it easier for clients to search for images based on OS info and
+	// image capabilities.
+	imgutil.SyncStatusToLabels(cvmi, cvmi.Status)
 
 	r.Recorder.EmitEvent(cvmi, "Update", err, false)
 	return err

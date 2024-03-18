@@ -1,11 +1,11 @@
-apiVersion: vmoperator.vmware.com/v1alpha1
+apiVersion: vmoperator.vmware.com/v1alpha2
 kind: VirtualMachine
 metadata:
   name: my-vm
 spec:
-  imageName: photon4
-  className: small
-  storageClass: iscsi
-  vmMetadata:
-    transport: CloudInit
-  powerState: poweredOn
+  className:    my-vm-class
+  imageName:    vmi-0a0044d7c690bcbea
+  storageClass: my-storage-class
+  bootstrap:
+    cloudInit:
+      cloudConfig: {}

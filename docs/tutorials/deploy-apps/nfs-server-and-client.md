@@ -7,16 +7,16 @@ This tutorial describes how to deploy two VMs in different namespaces, where the
 This tutorial assumes the following:
 
 * There are two namespaces in which the user is able to deploy `VirtualMachine` resources. In this tutorial, the namespaces shall be referred to as `ns-1` and `ns-2`.
-* Both namespaces have access to a `VirtualMachineClass`. In this tutorial, the class used is `best-effort-small`.
-* Both namespaces have access to a `VirtualMachineImage` (VMI) with Ubuntu 22.04+. In this tutorial, the VMI used is `vmi-a5bad5914ea06d469`.
-* Both namespaces have access to a `StorageClass`. In this tutorial, the class used is `global-storage`.
+* Both namespaces have access to a `VirtualMachineClass`. In this tutorial, the class used is `my-vm-class`.
+* Both namespaces have access to a `VirtualMachineImage` (VMI) with Ubuntu 22.04+. In this tutorial, the VMI used is `vmi-0a0044d7c690bcbea`.
+* Both namespaces have access to a `StorageClass`. In this tutorial, the class used is `my-storage-class`.
 
 ## Deploy the server
 
 The first step is to deploy a VM that will act as the NFS server, which is achieved by applying the following YAML:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha1
+apiVersion: vmoperator.vmware.com/v1alpha2
 kind: VirtualMachine
 metadata:
   name: nfs-server
@@ -24,12 +24,14 @@ metadata:
   labels:
     app: nfs-server
 spec:
-  className: best-effort-small
-  imageName: vmi-a5bad5914ea06d469 # Ubuntu 22.04 (jammy)
-  storageClass: global-storage
-  vmMetadata:
-    transport:  CloudInit
-    secretName: nfs-server-bootstrap-data
+  className:    my-vm-class
+  imageName:    vmi-0a0044d7c690bcbea # Ubuntu 22.04 (jammy)
+  storageClass: my-storage-class
+  bootstrap:
+    cloudInit:
+      rawCloudConfig:
+        name: nfs-server-bootstrap-data
+        key:  user-data
 
 ---
 
@@ -65,7 +67,7 @@ stringData:
 Great, an NFS server is up and running in namespace `ns-1`! To ensure workloads outside of that namespace are able to mount the NFS server's exports, a `VirtualMachineService` is used to provide a load balanced IP address that can be accessed across namespaces.
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha1
+apiVersion: vmoperator.vmware.com/v1alpha2
 kind: VirtualMachineService
 metadata:
   name: nfs-server
@@ -102,7 +104,7 @@ nfs-server   LoadBalancer   172.24.116.43   192.168.0.4   22/TCP,111/TCP,2049/TC
 With the NFS server up and running, it is time to deploy the VM that will act as the client by applying the following YAML:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha1
+apiVersion: vmoperator.vmware.com/v1alpha2
 kind: VirtualMachine
 metadata:
   name: nfs-client
@@ -110,12 +112,14 @@ metadata:
   labels:
     app: nfs-client
 spec:
-  className: best-effort-small
-  imageName: vmi-a5bad5914ea06d469 # Ubuntu 22.04 (jammy)
-  storageClass: global-storage
-  vmMetadata:
-    transport:  CloudInit
-    secretName: nfs-client-bootstrap-data
+  className:    my-vm-class
+  imageName:    vmi-0a0044d7c690bcbea # Ubuntu 22.04 (jammy)
+  storageClass: my-storage-class
+  bootstrap:
+    cloudInit:
+      rawCloudConfig:
+        name: nfs-client-bootstrap-data
+        key:  user-data
 
 ---
 
@@ -149,7 +153,7 @@ stringData:
 Just like a service is required to access the NFS exports across namespaces, the following YAML creates a service that allows external actors to access the NFS client via SSH:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha1
+apiVersion: vmoperator.vmware.com/v1alpha2
 kind: VirtualMachineService
 metadata:
   name: nfs-client

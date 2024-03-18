@@ -106,29 +106,47 @@ spec:
                   attributes that may help users to identify the desired image to use.
                 type: string
               minHardwareVersion:
-                description: "MinHardwareVersion specifies the desired minimum hardware
-                  version\nfor this VM.\n\n\nUsually the VM's hardware version is
-                  derived from:\n1. the VirtualMachineClass used to deploy the VM
-                  provided by the ClassName field\n2. the datacenter/cluster/host
-                  default hardware version\nSetting this field will ensure that the
-                  hardware version of the VM\nis at least set to the specified value.
-                  To enforce this, it will override\nthe value from the VirtualMachineClass.\n\n\nThis
-                  field is never updated to reflect the derived hardware version.\nInstead,
-                  VirtualMachineStatus.HardwareVersion surfaces\nthe observed hardware
-                  version.\n\n\nPlease note, setting this field's value to N ensures
-                  a VM's hardware\nversion is equal to or greater than N. For example,
-                  if a VM's observed\nhardware version is 10 and this field's value
-                  is 13, then the VM will be\nupgraded to hardware version 13. However,
-                  if the observed hardware\nversion is 17 and this field's value is
-                  13, no change will occur.\n\n\nSeveral features are hardware version
-                  dependent, for example:\n\n\n* NVMe Controllers        \t\t >= 14\n*
-                  Dynamic Direct Path I/O devices >= 17\n\n\nPlease refer to https://kb.vmware.com/s/article/1003746
-                  for a list of VM\nhardware versions.\n\n\nIt is important to remember
-                  that a VM's hardware version may not be\ndowngraded and upgrading
-                  a VM deployed from an image based on an older\nhardware version
-                  to a more recent one may result in unpredictable\nbehavior. In other
-                  words, please be careful when choosing to upgrade a\nVM to a newer
-                  hardware version."
+                description: |-
+                  MinHardwareVersion specifies the desired minimum hardware version
+                  for this VM.
+
+
+                  Usually the VM's hardware version is derived from:
+                  1. the VirtualMachineClass used to deploy the VM provided by the ClassName field
+                  2. the datacenter/cluster/host default hardware version
+                  Setting this field will ensure that the hardware version of the VM
+                  is at least set to the specified value. To enforce this, it will override
+                  the value from the VirtualMachineClass.
+
+
+                  This field is never updated to reflect the derived hardware version.
+                  Instead, VirtualMachineStatus.HardwareVersion surfaces
+                  the observed hardware version.
+
+
+                  Please note, setting this field's value to N ensures a VM's hardware
+                  version is equal to or greater than N. For example, if a VM's observed
+                  hardware version is 10 and this field's value is 13, then the VM will be
+                  upgraded to hardware version 13. However, if the observed hardware
+                  version is 17 and this field's value is 13, no change will occur.
+
+
+                  Several features are hardware version dependent, for example:
+
+
+                  * NVMe Controllers                >= 14
+                  * Dynamic Direct Path I/O devices >= 17
+
+
+                  Please refer to https://kb.vmware.com/s/article/1003746 for a list of VM
+                  hardware versions.
+
+
+                  It is important to remember that a VM's hardware version may not be
+                  downgraded and upgrading a VM deployed from an image based on an older
+                  hardware version to a more recent one may result in unpredictable
+                  behavior. In other words, please be careful when choosing to upgrade a
+                  VM to a newer hardware version.
                 format: int32
                 minimum: 13
                 type: integer

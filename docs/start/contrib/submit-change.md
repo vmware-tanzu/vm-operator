@@ -171,7 +171,7 @@ without losing utility.
 
 ```text
 commit e80c696939a03f26cd180934ba642a729b0d2941
-Author: akutz <sakutz@gmail.com>
+Author: jdoe <jdoe@example.com>
 Date:   Tue Oct 20 23:47:36 2015 -0500
 
     Added --format,-f option for CLI

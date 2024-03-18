@@ -70,7 +70,6 @@ kubectl get storageclass
 
 For more information on Storage Classes, please see the documentation for [`StorageClass`](https://kubernetes.io/docs/concepts/storage/storage-classes/).
 
-
 ## Updating a VM
 
 It is possible to update parts of an existing `VirtualMachine` resource. Some fields are completely immutable while some _can_ be modified depending on the VM's power state and whether or not the field has already been set to a non-empty value. The following table highlights what fields may or may not be updated and under what conditions:
@@ -82,18 +81,18 @@ It is possible to update parts of an existing `VirtualMachine` resource. Some fi
 | `spec.powerState` | The VM's desired power state | ✓ | ✓ | _NA_ |
 | `metadata.labels.topology.kubernetes.io/zone` | The desired availability zone in which to schedule the VM | ✓ | ✓ | ✓ |
 
-## Resources
-
 Some of a VM's hardware resources are derived from the policies defined by your infrastructure administrator, others may be influenced directly by a user.
 
-### CPU and Memory
-CPU and memory of a VM are derived form the `VirtualMachineClass` that is used to create the VM. Specifically, the `memoryMB` and `numCPUs` properties in the `configSpec` field of the `VirtualMachineClass` resource dictate the exact number of virtual CPUs, and the virtual memory that the VM will be created with.
+## CPU and Memory
 
-Additionally, your administrator might also define certain policies in your VM class in form of resource [reservations](https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.resmgmt.doc/GUID-8B88D3D8-E9D9-4C05-A065-B3DE1FFFB401.html) or [limits](https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.resmgmt.doc/GUID-117972E3-F5D3-4641-9EAC-F9DD2B0761C3.html). These are vSphere constructs which are used to reserve, or set a ceiling on resources consumed by a VM. Users can view these policies by inspecting the `ConfigSpec.cpuAllocation` and `ConfigSpec.memoryAllocation` fields of the VM Class for CPU and memory reservation/limits information respectively.
+CPU and memory of a VM are derived from the `VirtualMachineClass` resource used to deploy the VM. Specifically, the `spec.configSpec.numCPUs` and `spec.configSpec.memoryMB` properties in the `VirtualMachineClass` resource dictate the number of CPUs and amount of memory allocated to the VM.
+
+Additionally, an administrator might also define certain policies in a `VirtualMachineClass` resource in the form of resource [reservations](https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.resmgmt.doc/GUID-8B88D3D8-E9D9-4C05-A065-B3DE1FFFB401.html) or [limits](https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.resmgmt.doc/GUID-117972E3-F5D3-4641-9EAC-F9DD2B0761C3.html). These are vSphere constructs reserve or set a ceiling on resources consumed by a VM. Users may view these policies by inspecting the `spec.configSpec.cpuAllocation` and `spec.configSpec.memoryAllocation` fields of a `VirtualMachineClass` resource.
 
 For an example, consider the following VM Class:
-```
-apiVersion: vmoperator.vmware.com/v1alpha1
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha2
 kind: VirtualMachineClass
 metadata:
   name: my-vm-class
@@ -112,25 +111,69 @@ spec:
     cpus: 2
     memory: 4Gi
 ```
-A VM created with this VM class will have 2 vCPUs, 4 GiB of memory. Additionally, the VM will be created with a guaranteed CPU bandwidth of 200MHz and 1024 MB of memory. The CPU bandwidth of the VM will never be allowed to exceed 400MHz and the memory will not exceed 2GB.
+
+A VM created with this VM class will have 2 CPUs and 4 GiB of memory. Additionally, the VM will be created with a guaranteed CPU bandwidth of 200MHz and 1024 MB of memory. The CPU bandwidth of the VM will never be allowed to exceed 400MHz and the memory will not exceed 2GB.
 
 !!! note "Units for CPU reservations/limits are in MHz"
 
-    Please note that the units for CPU are different in hardware and reservations/limits.  Virtual hardware is specified in units of vCPUs, whereas CPU reservations/limits are in MHz.  Memory can be specified in MiB, GiB, whereas memory reservations/limits are always in MB.
+    Please note that the units for CPU are different in hardware and reservations/limits. Virtual hardware is specified in units of vCPUs, whereas CPU reservations/limits are in MHz. Memory can be specified in MiB, GiB, whereas memory reservations/limits are always in MB.
 
-### Networking
-Users can optionally specify a list of network interfaces for their VM in the `spec.NetworkInterfaces` field. Each interface must specify the network type which can be either `nsx-t`, `nsx-t-subnet`, `nsx-t-subnetset` or `vsphere-distributed`, depending on the network provider being used. Users can further customize each interface with optional fields such as the Ethernet card type, network name etc. If a VM does not specify any network interface, VM operator creates an interface that is connected to the default network available in the namespace. The IP address of the network interface is handled by the available network provider (configured by the administrator).
+## Networking
 
-#### How are a VM's Network Interfaces Configured?
-VM operator uses the network devices specified in the VM Class to configure the network interfaces specified in the VM spec. If it cannot find sufficient number of devices in the VM class, a set of defaults are used to configure the network interfaces.
+The field `spec.network` may be used to configure networking for a `VirtualMachine` resource.
 
-As an example, consider the following VM Class that specifies two network devices, each with a different Ethernet card type.
+!!! note "Immutable Network Configuration"
+
+    Currently, the VM's network configuration is immutable after the VM is deployed. This may change in the future, but at this time, if the VM's network settings need to be updated, the VM must be redeployed.
+
+### Disable Networking
+
+It is possible to disable a VM's networking entirely by setting `spec.network.disabled` to `true`. This ensures the VM is not configured with any network interfaces. Please note this field currently has no effect on VMs that are already deployed.
+
+### Global Guest Network Configuration
+
+There are several options which may be used to influence the guest's global networking configuration. The term _global_ is in contrast to _per network interface_. Support for these fields depends on the bootstrap provider:
+
+| Field | Description | Cloud-Init | LinuxPrep | Sysprep |
+|-------|-------------|:----------:|:---------:|:-------:|
+| `spec.network.hostName` | The guest's host name | ✓ | ✓ | ✓ |
+| `spec.network.nameservers` | A list DNS server IP addresses |  | ✓ | ✓ |
+| `spec.network.searchDomains` | A list of DNS search domains |  | ✓ | ✓ |
+
+### Network Interfaces
+
+The field `spec.network.interfaces` describes one or more network interfaces to add to the VM, ex.:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha1
+apiVersion: vmoperator.vmware.com/v1alpha2
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className:    my-vm-class
+  imageName:    vmi-0a0044d7c690bcbea
+  storageClass: my-storage-class
+  network:
+    interfaces:
+    - name: eth0
+    - name: eth1
+```
+
+#### Default Network Interface
+
+If `spec.network.interfaces` is not specified when deploying a VM, a default network interface is added unless `spec.network.disabled` is `true`.
+
+#### Network Adapter Type
+
+The `VirtualMachineClass` used to deploy a VM determines the type for the VM's network adapters. If the number of interfaces for a `VirtualMachine` exceeds the number of interfaces in a `VirtualMachineClass`, the `VirtualVmxnet3` type is used for the additional interfaces. For example, consider the following `VirtualMachineClass` that specifies two different network interfaces:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha2
 kind: VirtualMachineClass
 metadata:
-  name: class-with-two-nics
+  name: my-vm-class
+  namespace: my-namespace
 spec:
   configSpec:
     _typeName: VirtualMachineConfigSpec
@@ -142,7 +185,7 @@ spec:
       operation: add
     - _typeName: VirtualDeviceConfigSpec
       device:
-        _typeName: VirtualVmxnet3
+        _typeName: VirtualVmxnet2
         key: -200
       operation: add
   hardware:
@@ -150,32 +193,100 @@ spec:
     memory: 4Gi
 ```
 
-If the following VM is created using the class defined above:
+What happens when the following VM is deployed with the above class?
+
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha1
+apiVersion: vmoperator.vmware.com/v1alpha2
 kind: VirtualMachine
 metadata:
   name: my-vm
   namespace: my-namespace
 spec:
-  className: class-with-two-nics
-  imageName: ubuntu-kinetic
-  networkInterfaces:
-  - networkType: nsx-t
-    ethernetCardType: eth1000
-  - networkType: nsx-t
-    etherNetCardType: vmxNet3
-  - networkType: nsx-t
-    ethernetCardType: vmxnet2
-  - networkType: nsx-t
-  powerState: poweredOn
-  storageClass: wcpglobal-storage-profile
+  className: my-vm-class
+  imageName: vmi-0a0044d7c690bcbea
+  storageClass: my-storage-class
+  network:
+    interfaces:
+    - name: eth0
+    - name: eth1
+    - name: eth2
 ```
-The first two network interfaces of the VM are configured using the VM class. So, even though they specify a card type, they inherit the `VirtualE1000` and `VirtualVmxnet3` types respectively. The third interface is configured using the card type it specifies - `VirtualVmxnet2`. The fourth interface does not specify any type, so the default Ethernet card type of `VirtualVmxnet3` is used.
 
+The first two network interfaces in the VM are configured using the VM class. The third interface is configured using `VirtualVmxnet3`. In other words:
 
-### Storage
-A VM deployed using VM operator inherits the storage defined in the `VirtualMachineImage`.  However, developers can also provision and manage additional storage dynamically by leveraging [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes). To do this, a user would create a [PersistentVolumeClaim](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims) resource by picking a `StorageClass` associated with their namespace, along with other properties such as the disk size, mode etc. VM operator then dynamically provisions a first class disks which is exposed to the guest as a block volume. Users can start using the disk after formatting and mounting it at a mountpoint. VM operator also supports resizing these volumes to increase their size.
+| Interface | Type |
+|---|---|
+| `eth0` | `VirtualE1000` |
+| `eth1` | `VirtualVmxnet2` |
+| `eth2` | `VirtualVmxnet3` |
+
+#### Per-Interface Guest Network Configuration
+
+There are several options which may be used to influence the guest's per-interface networking configuration. Support for these fields depends on the bootstrap provider.
+
+| Field | Description | Cloud-Init | LinuxPrep | Sysprep |
+|-------|-------------|:----------:|:---------:|:-------:|
+| `spec.network.interfaces[].guestDeviceName` | The name of the interface in the guest | ✓ |  |  |
+| `spec.network.interfaces[].addresses` | The IP4 and IP6 addresses (with prefix length) for the interface | ✓ | ✓ | ✓ |
+| `spec.network.interfaces[].dhcp4` | Enables DHCP4 | ✓ | ✓ | ✓ |
+| `spec.network.interfaces[].dhcp6` | Enables DHCP6 | ✓ | ✓ | ✓ |
+| `spec.network.interfaces[].gateway4` | The IP4 address of the gateway for the IP4 address family | ✓ | ✓ | ✓ |
+| `spec.network.interfaces[].gateway6` | The IP6 address of the gateway for the IP6 address family | ✓ | ✓ | ✓ |
+| `spec.network.interfaces[].mtu` | The maximum transmission unit size in bytes | ✓ |  |  |
+| `spec.network.interfaces[].nameservers` | A list of DNS server IP addresses | ✓ |  |  |
+| `spec.network.interfaces[].routes` | A list of static routes | ✓ |  |  |
+| `spec.network.interfaces[].searchDomains` | A list of DNS search domains | ✓ |  |  |
+
+!!! note "Underlying Network Support"
+
+    Please note support for the fields `spec.network.interfaces[].addresses`, `spec.network.interfaces[].dhcp4`, and `spec.network.interfaces[].dhcp6` depends on the underlying network.
+
+## Storage
+
+Deployed VMs inherit the storage defined in the `VirtualMachineImage`. To provide additional storage, users may leverage [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes):
+
+1. Create a [PersistentVolumeClaim](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims) resource by picking a `StorageClass` associated with the namespace in which the VM exists:
+
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: my-pvc
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 8Gi
+      storageClassName: my-storage-class
+    ```
+
+2. Update the VM's `spec.volumes` field with a new volume that references the PVC:
+
+    ```yaml
+    apiVersion: vmoperator.vmware.com/v1alpha2
+    kind: VirtualMachine
+    metadata:
+      name: my-vm
+      namespace: my-namespace
+    spec:
+      className:    my-vm-class
+      imageName:    vmi-0a0044d7c690bcbea
+      storageClass: my-storage-class
+      volumes:
+      - name: my-disk-1
+        persistentVolumeClaim:
+          claimName: my-pvc
+    ```
+
+3. Wait for the new volume to be provisioned and attached to the VM.
+
+4. SSH into the guest.
+
+5. Format the new disk with desired filesystem.
+   
+6. Mount the disk and begin using it.
 
 ## Power States
 
@@ -247,13 +358,9 @@ Please note that there are supported power state transitions, and if a power sta
 
 The fields `spec.powerOffMode`, `spec.suspendMode`, and `spec.restartMode` control how a VM is powered off, suspended, and restarted:
 
-!!! note "Default Power Op Mode"
-
-    Please note that the default power op mode is changing in v1alpha2 to `TrySoft`. This should not impact users still managing resources using v1alpha1.
-
 | Mode | Description | Default |
 |-------------|-------------|:-----------------:|
-| `hard` | Halts, suspends, or restarts the VM with no interaction with the guest | ✓ |
-| `soft` | The guest is shutdown, suspended, or restarted gracefully (requires VM Tools) |
-| `trySoft` | Attempts a graceful shutdown/standby/restart if VM Tools is present, otherwise falls back to a hard operation the VM has not achieved the desired power state after five minutes. |
+| `Hard` | Halts, suspends, or restarts the VM with no interaction with the guest |  |
+| `Soft` | The guest is shutdown, suspended, or restarted gracefully (requires VM Tools) |  |
+| `TrySoft` | Attempts a graceful shutdown/standby/restart if VM Tools is present, otherwise falls back to a hard operation the VM has not achieved the desired power state after five minutes. | ✓ |
 

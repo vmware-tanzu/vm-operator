@@ -524,7 +524,7 @@ type VirtualMachineSpec struct {
 	//
 	// Several features are hardware version dependent, for example:
 	//
-	// * NVMe Controllers        		 >= 14
+	// * NVMe Controllers                >= 14
 	// * Dynamic Direct Path I/O devices >= 17
 	//
 	// Please refer to https://kb.vmware.com/s/article/1003746 for a list of VM

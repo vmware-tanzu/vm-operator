@@ -682,14 +682,9 @@ func (s *Session) customize(
 	vmCtx context.VirtualMachineContextA2,
 	resVM *res.VirtualMachine,
 	cfg *vimTypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) error {
+	bootstrapArgs vmlifecycle.BootstrapArgs) error {
 
-	err := vmlifecycle.DoBootstrap(vmCtx, resVM.VcVM(), cfg, s.K8sClient, updateArgs.NetworkResults, updateArgs.BootstrapData)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return vmlifecycle.DoBootstrap(vmCtx, resVM.VcVM(), cfg, bootstrapArgs)
 }
 
 func (s *Session) prepareVMForPowerOn(
@@ -702,26 +697,39 @@ func (s *Session) prepareVMForPowerOn(
 	if err != nil {
 		return err
 	}
-
 	updateArgs.NetworkResults = netIfList
 
-	err = s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs)
+	if err := s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs); err != nil {
+		return err
+	}
+
+	if err := s.fixupMacAddresses(vmCtx, resVM, updateArgs); err != nil {
+		return err
+	}
+
+	// Get the information required to bootstrap/customize the VM. This is
+	// retrieved outside of the customize/DoBootstrap call path in order to use
+	// the information to update the VM object's status with the resolved,
+	// intended network configuration.
+	bootstrapArgs, err := vmlifecycle.GetBootstrapArgs(
+		vmCtx,
+		s.K8sClient,
+		updateArgs.NetworkResults,
+		updateArgs.BootstrapData)
 	if err != nil {
 		return err
 	}
 
-	err = s.fixupMacAddresses(vmCtx, resVM, updateArgs)
-	if err != nil {
+	// Update the Kubernetes VM object's status with the resolved, intended
+	// network configuration.
+	vmlifecycle.UpdateNetworkStatusConfig(vmCtx.VM, bootstrapArgs)
+
+	if err := s.customize(vmCtx, resVM, cfg, bootstrapArgs); err != nil {
 		return err
 	}
 
-	err = s.customize(vmCtx, resVM, cfg, updateArgs)
-	if err != nil {
-		return err
-	}
-
-	err = s.ensureCNSVolumes(vmCtx)
-	if err != nil {
+	//nolint:revive
+	if err := s.ensureCNSVolumes(vmCtx); err != nil {
 		return err
 	}
 

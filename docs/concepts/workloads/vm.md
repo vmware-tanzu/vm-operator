@@ -241,6 +241,64 @@ There are several options which may be used to influence the guest's per-interfa
 
     Please note support for the fields `spec.network.interfaces[].addresses`, `spec.network.interfaces[].dhcp4`, and `spec.network.interfaces[].dhcp6` depends on the underlying network.
 
+### Intended Network Config
+
+Deploying a VM also normally means bootstrapping the guest with a valid network configuration. But what if the guest does not include a bootstrap engine, or the one included is not supported by VM Operator? Enter `status.network.config`.  Normally a Kubernetes resource's status contains _observed_ state. However, in the case of the VM's `status.network.config` field, the data represents the _intended_ network configuration. For example, the following YAML illustrates a VM deployed with a single network interface:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha2
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className: my-vm-class
+  imageName: vmi-0a0044d7c690bcbea
+  storageClass: my-storage-class
+  network:
+    interfaces:
+    - name: eth0
+```
+
+After being reconciled, the VM's status may resemble the following:
+
+```yaml
+status:
+  network:
+    config:
+      dns:
+        hostName: my-vm
+        nameservers:
+        - 8.8.8.8
+        - 8.8.4.4
+        searchDomains:
+        - hello.world
+        - fu.bar
+        - example.com
+      interfaces:
+      - name: eth0
+        ip:
+          addresses: 192.168.0.3/24
+          gateway4:  192.168.0.1
+```
+
+The above data does _not_ represent the _observed_ network configuration of the VM, but rather the network configuration that was _provided_ to the VM in order to bootstrap the guest. The information itself is derived from several locations:
+
+| Field | Source |
+|-------|--------|
+| `status.network.config.dns.hostName` | From `spec.network.hostName` if non-empty, otherwise from `metadata.name` |
+| `status.network.config.dns.nameservers[]` | From `spec.network.nameservers[]` if non-empty, otherwise from the `ConfigMap` used to initialize VM Operator | 
+| `status.network.config.dns.searchDomains[]` | From `spec.network.searchDomains[]` is used if non-empty, otherwise from the `ConfigMap` used to initialize VM Operator |
+| `status.network.config.interfaces[]` | There will be an interface for every corresponding interface in `spec.network.interfaces[]` |
+| `status.network.config.interfaces[].name` | From the corresponding `spec.network.interfaces[].name` |
+| `status.network.config.interfaces[].dns.nameservers[]` | From the corresponding `spec.network.interfaces[].nameservers[]` |
+| `status.network.config.interfaces[].dns.searchDomains[]` | From the corresponding `spec.network.interfaces[].searchDomains[]` |
+| `status.network.config.interfaces[].ip.addresses[]` | From the corresponding `spec.network.interfaces[].addresses[]` if non-empty, otherwise from IPAM unless the connected network is configured to use DHCP4 *and* DHCP6, in which case this field will be empty |
+| `status.network.config.interfaces[].ip.dhcp.ip4.enabled` | From the corresponding `spec.network.interfaces[].dhcp4` if `true`, otherwise `true` if the connected network is configured to use DHCP4 |
+| `status.network.config.interfaces[].ip.dhcp.ip6.enabled` | From the corresponding `spec.network.interfaces[].dhcp6` if `true`, otherwise `true` if the connected network is configured to use DHCP6 |
+| `status.network.config.interfaces[].ip.gateway4` | From the corresponding `spec.network.interfaces[].gateway4` if non-empty, otherwise from IPAM unless the connected network is configured to use DHCP4, in which case this field will be empty |
+| `status.network.config.interfaces[].ip.gateway6` | From the corresponding `spec.network.interfaces[].gateway6` if non-empty, otherwise from IPAM unless the connected network is configured to use DHCP6, in which case this field will be empty |
+
 ## Storage
 
 Deployed VMs inherit the storage defined in the `VirtualMachineImage`. To provide additional storage, users may leverage [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes):

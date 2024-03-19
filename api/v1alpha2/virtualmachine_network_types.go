@@ -270,6 +270,36 @@ type VirtualMachineNetworkDNSStatus struct {
 	SearchDomains []string `json:"searchDomains,omitempty"`
 }
 
+// VirtualMachineNetworkConfigDNSStatus describes the configured state of the
+// RFC 1034 client-side DNS settings.
+type VirtualMachineNetworkConfigDNSStatus struct {
+	// HostName is the host name portion of the DNS name. For example,
+	// the "my-vm" part of "my-vm.domain.local".
+	//
+	// +optional
+	HostName string `json:"hostName,omitempty"`
+
+	// Nameservers is a list of the IP addresses for the DNS servers to use.
+	//
+	// IP4 addresses are specified using dotted decimal notation. For example,
+	// "192.0.2.1".
+	//
+	// IP6 addresses are 128-bit addresses represented as eight fields of up to
+	// four hexadecimal digits. A colon separates each field (:). For example,
+	// 2001:DB8:101::230:6eff:fe04:d9ff. The address can also consist of the
+	// symbol '::' to represent multiple 16-bit groups of contiguous 0's only
+	// once in an address as described in RFC 2373.
+	//
+	// +optional
+	Nameservers []string `json:"nameservers,omitempty"`
+
+	// SearchDomains is a list of domains in which to search for hosts, in the
+	// order of preference.
+	//
+	// +optional
+	SearchDomains []string `json:"searchDomains,omitempty"`
+}
+
 // VirtualMachineNetworkDHCPOptionsStatus describes the observed state of
 // DHCP options.
 type VirtualMachineNetworkDHCPOptionsStatus struct {
@@ -293,6 +323,14 @@ type VirtualMachineNetworkDHCPOptionsStatus struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
+// VirtualMachineNetworkConfigDHCPOptionsStatus describes the configured
+// DHCP options.
+type VirtualMachineNetworkConfigDHCPOptionsStatus struct {
+	// Enabled describes whether DHCP is enabled.
+	// +omitempty
+	Enabled bool `json:"enabled,omitempty"`
+}
+
 // VirtualMachineNetworkDHCPStatus describes the observed state of the
 // client-side, system-wide DHCP settings for IP4 and IP6.
 type VirtualMachineNetworkDHCPStatus struct {
@@ -306,6 +344,21 @@ type VirtualMachineNetworkDHCPStatus struct {
 	//
 	// +optional
 	IP6 VirtualMachineNetworkDHCPOptionsStatus `json:"ip6,omitempty"`
+}
+
+// VirtualMachineNetworkConfigDHCPStatus describes the configured state of the
+// system-wide DHCP settings for IP4 and IP6.
+type VirtualMachineNetworkConfigDHCPStatus struct {
+
+	// IP4 describes the configured state of the IP4 DHCP settings.
+	//
+	// +optional
+	IP4 *VirtualMachineNetworkConfigDHCPOptionsStatus `json:"ip4,omitempty"`
+
+	// IP6 describes the configured state of the IP6 DHCP settings.
+	//
+	// +optional
+	IP6 *VirtualMachineNetworkConfigDHCPOptionsStatus `json:"ip6,omitempty"`
 }
 
 // VirtualMachineNetworkIPRouteGatewayStatus describes the observed state of
@@ -415,6 +468,38 @@ type VirtualMachineNetworkInterfaceIPStatus struct {
 	MACAddr string `json:"macAddr,omitempty"`
 }
 
+// VirtualMachineNetworkConfigInterfaceIPStatus describes the configured state
+// of a VM's network interface's IP configuration.
+type VirtualMachineNetworkConfigInterfaceIPStatus struct {
+	// DHCP describes the interface's configured DHCP options.
+	//
+	// +optional
+	DHCP *VirtualMachineNetworkConfigDHCPStatus `json:"dhcp,omitempty"`
+
+	// Addresses describes configured IP addresses for this interface.
+	// Addresses include the network's prefix length, ex. 192.168.0.0/24 or
+	// 2001:DB8:101::230:6eff:fe04:d9ff::/64.
+	//
+	// +optional
+	Addresses []string `json:"addresses,omitempty"`
+
+	// Gateway4 describes the interface's configured, default, IP4 gateway.
+	//
+	// Please note the IP address include the network prefix length, ex.
+	// 192.168.0.1/24.
+	//
+	// +optional
+	Gateway4 string `json:"gateway4,omitempty"`
+
+	// Gateway6 describes the interface's configured, default, IP6 gateway.
+	//
+	// Please note the IP address includes the network prefix length, ex.
+	// 2001:db8:101::1/64.
+	//
+	// +optional
+	Gateway6 string `json:"gateway6,omitempty"`
+}
+
 // VirtualMachineNetworkInterfaceStatus describes the observed state of a
 // VM's network interface.
 type VirtualMachineNetworkInterfaceStatus struct {
@@ -443,6 +528,27 @@ type VirtualMachineNetworkInterfaceStatus struct {
 	//
 	// +optional
 	DNS *VirtualMachineNetworkDNSStatus `json:"dns,omitempty"`
+}
+
+// VirtualMachineNetworkConfigInterfaceStatus describes the configured state of
+// network interface.
+type VirtualMachineNetworkConfigInterfaceStatus struct {
+	// Name describes the corresponding network interface with the same name
+	// in the VM's desired network interface list.
+	//
+	// Please note this name is not necessarily related to the name of the
+	// device as it is surfaced inside of the guest.
+	Name string `json:"name"`
+
+	// IP describes the interface's configured IP information.
+	//
+	// +optional
+	IP *VirtualMachineNetworkConfigInterfaceIPStatus `json:"ip,omitempty"`
+
+	// DNS describes the interface's configured DNS information.
+	//
+	// +optional
+	DNS *VirtualMachineNetworkConfigDNSStatus `json:"dns,omitempty"`
 }
 
 // VirtualMachineNetworkIPStackStatus describes the observed state of a
@@ -480,11 +586,28 @@ type VirtualMachineNetworkIPStackStatus struct {
 // VirtualMachineNetworkStatus defines the observed state of a VM's
 // network configuration.
 type VirtualMachineNetworkStatus struct {
+	// Config describes the resolved, configured network settings for the VM,
+	// such as an interface's IP address obtained from IPAM, or global DNS
+	// settings.
+	//
+	// Please note this information does *not* represent the *observed* network
+	// state of the VM, but is intended for situations where someone boots a VM
+	// with no appropriate bootstrap engine and needs to know the network config
+	// valid for the deployed VM.
+	//
+	// +optional
+	Config *VirtualMachineNetworkConfigStatus `json:"config,omitempty"`
 
 	// Interfaces describes the status of the VM's network interfaces.
 	//
 	// +optional
 	Interfaces []VirtualMachineNetworkInterfaceStatus `json:"interfaces,omitempty"`
+
+	// IPStacks describes information about the guest's configured IP networking
+	// stacks.
+	//
+	// +optional
+	IPStacks []VirtualMachineNetworkIPStackStatus `json:"ipStacks,omitempty"`
 
 	// PrimaryIP4 describes the VM's primary IP4 address.
 	//
@@ -513,6 +636,16 @@ type VirtualMachineNetworkStatus struct {
 	//
 	// +optional
 	PrimaryIP6 string `json:"primaryIP6,omitempty"`
+}
 
-	VirtualMachineNetworkIPStackStatus `json:",inline"`
+type VirtualMachineNetworkConfigStatus struct {
+	// Interfaces describes the configured state of the network interfaces.
+	//
+	// +optional
+	Interfaces []VirtualMachineNetworkConfigInterfaceStatus `json:"interfaces,omitempty"`
+
+	// DNS describes the configured state of client-side DNS.
+	//
+	// +optional
+	DNS *VirtualMachineNetworkConfigDNSStatus `json:"dns,omitempty"`
 }

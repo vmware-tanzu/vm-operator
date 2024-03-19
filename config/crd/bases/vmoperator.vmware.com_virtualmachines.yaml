@@ -2395,135 +2395,158 @@ spec:
                   Please note much of the network status information is only available if
                   the guest has VM Tools installed.
                 properties:
-                  dhcp:
-                    description: DHCP describes the VM's observed, client-side, system-wide
-                      DHCP options.
+                  config:
+                    description: |-
+                      Config describes the resolved, configured network settings for the VM,
+                      such as an interface's IP address obtained from IPAM, or global DNS
+                      settings.
+
+
+                      Please note this information does *not* represent the *observed* network
+                      state of the VM, but is intended for situations where someone boots a VM
+                      with no appropriate bootstrap engine and needs to know the network config
+                      valid for the deployed VM.
                     properties:
-                      ip4:
-                        description: IP4 describes the observed state of the IP4 DHCP
-                          client settings.
+                      dns:
+                        description: DNS describes the configured state of client-side
+                          DNS.
                         properties:
-                          config:
+                          hostName:
                             description: |-
-                              Config describes platform-dependent settings for the DHCP client.
-
-
-                              The key part is a unique number while the value part is the platform
-                              specific configuration command. For example on Linux and BSD systems
-                              using the file dhclient.conf output would be reported at system scope:
-                              key='1', value='timeout 60;' key='2', value='reboot 10;'. The output
-                              reported per interface would be:
-                              key='1', value='prepend domain-name-servers 192.0.2.1;'
-                              key='2', value='require subnet-mask, domain-name-servers;'.
-                            items:
-                              description: |-
-                                KeyValuePair is useful when wanting to realize a map as a list of key/value
-                                pairs.
-                              properties:
-                                key:
-                                  description: Key is the key part of the key/value
-                                    pair.
-                                  type: string
-                                value:
-                                  description: Value is the optional value part of
-                                    the key/value pair.
-                                  type: string
-                              required:
-                              - key
-                              type: object
-                            type: array
-                            x-kubernetes-list-map-keys:
-                            - key
-                            x-kubernetes-list-type: map
-                          enabled:
-                            description: Enabled reports the status of the DHCP client
-                              services.
-                            type: boolean
-                        type: object
-                      ip6:
-                        description: IP6 describes the observed state of the IP6 DHCP
-                          client settings.
-                        properties:
-                          config:
+                              HostName is the host name portion of the DNS name. For example,
+                              the "my-vm" part of "my-vm.domain.local".
+                            type: string
+                          nameservers:
                             description: |-
-                              Config describes platform-dependent settings for the DHCP client.
+                              Nameservers is a list of the IP addresses for the DNS servers to use.
 
 
-                              The key part is a unique number while the value part is the platform
-                              specific configuration command. For example on Linux and BSD systems
-                              using the file dhclient.conf output would be reported at system scope:
-                              key='1', value='timeout 60;' key='2', value='reboot 10;'. The output
-                              reported per interface would be:
-                              key='1', value='prepend domain-name-servers 192.0.2.1;'
-                              key='2', value='require subnet-mask, domain-name-servers;'.
+                              IP4 addresses are specified using dotted decimal notation. For example,
+                              "192.0.2.1".
+
+
+                              IP6 addresses are 128-bit addresses represented as eight fields of up to
+                              four hexadecimal digits. A colon separates each field (:). For example,
+                              2001:DB8:101::230:6eff:fe04:d9ff. The address can also consist of the
+                              symbol '::' to represent multiple 16-bit groups of contiguous 0's only
+                              once in an address as described in RFC 2373.
                             items:
-                              description: |-
-                                KeyValuePair is useful when wanting to realize a map as a list of key/value
-                                pairs.
-                              properties:
-                                key:
-                                  description: Key is the key part of the key/value
-                                    pair.
-                                  type: string
-                                value:
-                                  description: Value is the optional value part of
-                                    the key/value pair.
-                                  type: string
-                              required:
-                              - key
-                              type: object
+                              type: string
                             type: array
-                            x-kubernetes-list-map-keys:
-                            - key
-                            x-kubernetes-list-type: map
-                          enabled:
-                            description: Enabled reports the status of the DHCP client
-                              services.
-                            type: boolean
+                          searchDomains:
+                            description: |-
+                              SearchDomains is a list of domains in which to search for hosts, in the
+                              order of preference.
+                            items:
+                              type: string
+                            type: array
                         type: object
-                    type: object
-                  dns:
-                    description: DNS describes the VM's observed, client-side DNS
-                      configuration.
-                    properties:
-                      dhcp:
-                        description: |-
-                          DHCP indicates whether or not dynamic host control protocol (DHCP) was
-                          used to configure DNS configuration.
-                        type: boolean
-                      domainName:
-                        description: |-
-                          DomainName is the domain name portion of the DNS name. For example,
-                          the "domain.local" part of "my-vm.domain.local".
-                        type: string
-                      hostName:
-                        description: |-
-                          HostName is the host name portion of the DNS name. For example,
-                          the "my-vm" part of "my-vm.domain.local".
-                        type: string
-                      nameservers:
-                        description: |-
-                          Nameservers is a list of the IP addresses for the DNS servers to use.
-
-
-                          IP4 addresses are specified using dotted decimal notation. For example,
-                          "192.0.2.1".
-
-
-                          IP6 addresses are 128-bit addresses represented as eight fields of up to
-                          four hexadecimal digits. A colon separates each field (:). For example,
-                          2001:DB8:101::230:6eff:fe04:d9ff. The address can also consist of the
-                          symbol '::' to represent multiple 16-bit groups of contiguous 0's only
-                          once in an address as described in RFC 2373.
+                      interfaces:
+                        description: Interfaces describes the configured state of
+                          the network interfaces.
                         items:
-                          type: string
-                        type: array
-                      searchDomains:
-                        description: |-
-                          SearchDomains is a list of domains in which to search for hosts, in the
-                          order of preference.
-                        items:
-                          type: string
+                          description: |-
+                            VirtualMachineNetworkConfigInterfaceStatus describes the configured state of
+                            network interface.
+                          properties:
+                            dns:
+                              description: DNS describes the interface's configured
+                                DNS information.
+                              properties:
+                                hostName:
+                                  description: |-
+                                    HostName is the host name portion of the DNS name. For example,
+                                    the "my-vm" part of "my-vm.domain.local".
+                                  type: string
+                                nameservers:
+                                  description: |-
+                                    Nameservers is a list of the IP addresses for the DNS servers to use.
+
+
+                                    IP4 addresses are specified using dotted decimal notation. For example,
+                                    "192.0.2.1".
+
+
+                                    IP6 addresses are 128-bit addresses represented as eight fields of up to
+                                    four hexadecimal digits. A colon separates each field (:). For example,
+                                    2001:DB8:101::230:6eff:fe04:d9ff. The address can also consist of the
+                                    symbol '::' to represent multiple 16-bit groups of contiguous 0's only
+                                    once in an address as described in RFC 2373.
+                                  items:
+                                    type: string
+                                  type: array
+                                searchDomains:
+                                  description: |-
+                                    SearchDomains is a list of domains in which to search for hosts, in the
+                                    order of preference.
+                                  items:
+                                    type: string
+                                  type: array
+                              type: object
+                            ip:
+                              description: IP describes the interface's configured
+                                IP information.
+                              properties:
+                                addresses:
+                                  description: |-
+                                    Addresses describes configured IP addresses for this interface.
+                                    Addresses include the network's prefix length, ex. 192.168.0.0/24 or
+                                    2001:DB8:101::230:6eff:fe04:d9ff::/64.
+                                  items:
+                                    type: string
+                                  type: array
+                                dhcp:
+                                  description: DHCP describes the interface's configured
+                                    DHCP options.
+                                  properties:
+                                    ip4:
+                                      description: IP4 describes the configured state
+                                        of the IP4 DHCP settings.
+                                      properties:
+                                        enabled:
+                                          description: Enabled describes whether DHCP
+                                            is enabled.
+                                          type: boolean
+                                      type: object
+                                    ip6:
+                                      description: IP6 describes the configured state
+                                        of the IP6 DHCP settings.
+                                      properties:
+                                        enabled:
+                                          description: Enabled describes whether DHCP
+                                            is enabled.
+                                          type: boolean
+                                      type: object
+                                  type: object
+                                gateway4:
+                                  description: |-
+                                    Gateway4 describes the interface's configured, default, IP4 gateway.
+
+
+                                    Please note the IP address include the network prefix length, ex.
+                                    192.168.0.1/24.
+                                  type: string
+                                gateway6:
+                                  description: |-
+                                    Gateway6 describes the interface's configured, default, IP6 gateway.
+
+
+                                    Please note the IP address includes the network prefix length, ex.
+                                    2001:db8:101::1/64.
+                                  type: string
+                              type: object
+                            name:
+                              description: |-
+                                Name describes the corresponding network interface with the same name
+                                in the VM's desired network interface list.
+
+
+                                Please note this name is not necessarily related to the name of the
+                                device as it is surfaced inside of the guest.
+                              type: string
+                          required:
+                          - name
+                          type: object
                         type: array
                     type: object
                   interfaces:
@@ -2759,77 +2782,220 @@ spec:
                           type: string
                       type: object
                     type: array
-                  ipRoutes:
-                    description: IPRoutes contain the VM's routing tables for all
-                      address families.
-                    items:
-                      description: |-
-                        VirtualMachineNetworkIPRouteStatus describes the observed state of a
-                        guest network's IP routes.
-                      properties:
-                        gateway:
-                          description: Gateway describes where to send the packets
-                            to next.
-                          properties:
-                            address:
-                              description: Address is the IP4 or IP6 address of the
-                                gateway.
-                              type: string
-                            device:
-                              description: |-
-                                Device is the name of the device in the guest for which this gateway
-                                applies.
-                              type: string
-                          type: object
-                        networkAddress:
-                          description: |-
-                            NetworkAddress is the IP4 or IP6 address of the destination network.
-
-
-                            Addresses include the network's prefix length, ex. 192.168.0.0/24 or
-                            2001:DB8:101::230:6eff:fe04:d9ff::/64.
-
-
-                            IP6 addresses are 128-bit addresses represented as eight fields of up to
-                            four hexadecimal digits. A colon separates each field (:). For example,
-                            2001:DB8:101::230:6eff:fe04:d9ff. The address can also consist of symbol
-                            '::' to represent multiple 16-bit groups of contiguous 0's only once in
-                            an address as described in RFC 2373.
-                          type: string
-                      required:
-                      - gateway
-                      - networkAddress
-                      type: object
-                    type: array
-                  kernelConfig:
+                  ipStacks:
                     description: |-
-                      KernelConfig describes the observed state of the VM's kernel IP
-                      configuration settings.
-
-
-                      The key part contains a unique number while the value part contains the
-                      'key=value' as provided by the underlying provider. For example, on
-                      Linux and/or BSD, the systcl -a output would be reported as:
-                      key='5', value='net.ipv4.tcp_keepalive_time = 7200'.
+                      IPStacks describes information about the guest's configured IP networking
+                      stacks.
                     items:
                       description: |-
-                        KeyValuePair is useful when wanting to realize a map as a list of key/value
-                        pairs.
+                        VirtualMachineNetworkIPStackStatus describes the observed state of a
+                        VM's IP stack.
                       properties:
-                        key:
-                          description: Key is the key part of the key/value pair.
-                          type: string
-                        value:
-                          description: Value is the optional value part of the key/value
-                            pair.
-                          type: string
-                      required:
-                      - key
+                        dhcp:
+                          description: DHCP describes the VM's observed, client-side,
+                            system-wide DHCP options.
+                          properties:
+                            ip4:
+                              description: IP4 describes the observed state of the
+                                IP4 DHCP client settings.
+                              properties:
+                                config:
+                                  description: |-
+                                    Config describes platform-dependent settings for the DHCP client.
+
+
+                                    The key part is a unique number while the value part is the platform
+                                    specific configuration command. For example on Linux and BSD systems
+                                    using the file dhclient.conf output would be reported at system scope:
+                                    key='1', value='timeout 60;' key='2', value='reboot 10;'. The output
+                                    reported per interface would be:
+                                    key='1', value='prepend domain-name-servers 192.0.2.1;'
+                                    key='2', value='require subnet-mask, domain-name-servers;'.
+                                  items:
+                                    description: |-
+                                      KeyValuePair is useful when wanting to realize a map as a list of key/value
+                                      pairs.
+                                    properties:
+                                      key:
+                                        description: Key is the key part of the key/value
+                                          pair.
+                                        type: string
+                                      value:
+                                        description: Value is the optional value part
+                                          of the key/value pair.
+                                        type: string
+                                    required:
+                                    - key
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-map-keys:
+                                  - key
+                                  x-kubernetes-list-type: map
+                                enabled:
+                                  description: Enabled reports the status of the DHCP
+                                    client services.
+                                  type: boolean
+                              type: object
+                            ip6:
+                              description: IP6 describes the observed state of the
+                                IP6 DHCP client settings.
+                              properties:
+                                config:
+                                  description: |-
+                                    Config describes platform-dependent settings for the DHCP client.
+
+
+                                    The key part is a unique number while the value part is the platform
+                                    specific configuration command. For example on Linux and BSD systems
+                                    using the file dhclient.conf output would be reported at system scope:
+                                    key='1', value='timeout 60;' key='2', value='reboot 10;'. The output
+                                    reported per interface would be:
+                                    key='1', value='prepend domain-name-servers 192.0.2.1;'
+                                    key='2', value='require subnet-mask, domain-name-servers;'.
+                                  items:
+                                    description: |-
+                                      KeyValuePair is useful when wanting to realize a map as a list of key/value
+                                      pairs.
+                                    properties:
+                                      key:
+                                        description: Key is the key part of the key/value
+                                          pair.
+                                        type: string
+                                      value:
+                                        description: Value is the optional value part
+                                          of the key/value pair.
+                                        type: string
+                                    required:
+                                    - key
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-map-keys:
+                                  - key
+                                  x-kubernetes-list-type: map
+                                enabled:
+                                  description: Enabled reports the status of the DHCP
+                                    client services.
+                                  type: boolean
+                              type: object
+                          type: object
+                        dns:
+                          description: DNS describes the VM's observed, client-side
+                            DNS configuration.
+                          properties:
+                            dhcp:
+                              description: |-
+                                DHCP indicates whether or not dynamic host control protocol (DHCP) was
+                                used to configure DNS configuration.
+                              type: boolean
+                            domainName:
+                              description: |-
+                                DomainName is the domain name portion of the DNS name. For example,
+                                the "domain.local" part of "my-vm.domain.local".
+                              type: string
+                            hostName:
+                              description: |-
+                                HostName is the host name portion of the DNS name. For example,
+                                the "my-vm" part of "my-vm.domain.local".
+                              type: string
+                            nameservers:
+                              description: |-
+                                Nameservers is a list of the IP addresses for the DNS servers to use.
+
+
+                                IP4 addresses are specified using dotted decimal notation. For example,
+                                "192.0.2.1".
+
+
+                                IP6 addresses are 128-bit addresses represented as eight fields of up to
+                                four hexadecimal digits. A colon separates each field (:). For example,
+                                2001:DB8:101::230:6eff:fe04:d9ff. The address can also consist of the
+                                symbol '::' to represent multiple 16-bit groups of contiguous 0's only
+                                once in an address as described in RFC 2373.
+                              items:
+                                type: string
+                              type: array
+                            searchDomains:
+                              description: |-
+                                SearchDomains is a list of domains in which to search for hosts, in the
+                                order of preference.
+                              items:
+                                type: string
+                              type: array
+                          type: object
+                        ipRoutes:
+                          description: IPRoutes contain the VM's routing tables for
+                            all address families.
+                          items:
+                            description: |-
+                              VirtualMachineNetworkIPRouteStatus describes the observed state of a
+                              guest network's IP routes.
+                            properties:
+                              gateway:
+                                description: Gateway describes where to send the packets
+                                  to next.
+                                properties:
+                                  address:
+                                    description: Address is the IP4 or IP6 address
+                                      of the gateway.
+                                    type: string
+                                  device:
+                                    description: |-
+                                      Device is the name of the device in the guest for which this gateway
+                                      applies.
+                                    type: string
+                                type: object
+                              networkAddress:
+                                description: |-
+                                  NetworkAddress is the IP4 or IP6 address of the destination network.
+
+
+                                  Addresses include the network's prefix length, ex. 192.168.0.0/24 or
+                                  2001:DB8:101::230:6eff:fe04:d9ff::/64.
+
+
+                                  IP6 addresses are 128-bit addresses represented as eight fields of up to
+                                  four hexadecimal digits. A colon separates each field (:). For example,
+                                  2001:DB8:101::230:6eff:fe04:d9ff. The address can also consist of symbol
+                                  '::' to represent multiple 16-bit groups of contiguous 0's only once in
+                                  an address as described in RFC 2373.
+                                type: string
+                            required:
+                            - gateway
+                            - networkAddress
+                            type: object
+                          type: array
+                        kernelConfig:
+                          description: |-
+                            KernelConfig describes the observed state of the VM's kernel IP
+                            configuration settings.
+
+
+                            The key part contains a unique number while the value part contains the
+                            'key=value' as provided by the underlying provider. For example, on
+                            Linux and/or BSD, the systcl -a output would be reported as:
+                            key='5', value='net.ipv4.tcp_keepalive_time = 7200'.
+                          items:
+                            description: |-
+                              KeyValuePair is useful when wanting to realize a map as a list of key/value
+                              pairs.
+                            properties:
+                              key:
+                                description: Key is the key part of the key/value
+                                  pair.
+                                type: string
+                              value:
+                                description: Value is the optional value part of the
+                                  key/value pair.
+                                type: string
+                            required:
+                            - key
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - key
+                          x-kubernetes-list-type: map
                       type: object
                     type: array
-                    x-kubernetes-list-map-keys:
-                    - key
-                    x-kubernetes-list-type: map
                   primaryIP4:
                     description: |-
                       PrimaryIP4 describes the VM's primary IP4 address.

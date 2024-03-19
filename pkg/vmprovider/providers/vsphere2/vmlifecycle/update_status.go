@@ -7,6 +7,7 @@ import (
 	goctx "context"
 	"fmt"
 	"net"
+	"reflect"
 	"slices"
 
 	"github.com/vmware/govmomi/object"
@@ -22,6 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/virtualmachine"
 )
 
@@ -89,7 +91,7 @@ func UpdateStatus(
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
 	hardwareVersion, _ := types.ParseHardwareVersion(summary.Config.HwVersion)
 	vm.Status.HardwareVersion = int32(hardwareVersion)
-	vm.Status.Network = getGuestNetworkStatus(vmCtx, moVM.Guest)
+	updateGuestNetworkStatus(vmCtx.VM, moVM.Guest)
 
 	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {
@@ -140,65 +142,6 @@ func getRuntimeHostHostname(
 		return object.NewHostSystem(vcVM.Client(), *host).ObjectName(ctx)
 	}
 	return "", nil
-}
-
-func getGuestNetworkStatus(
-	vmCtx context.VirtualMachineContextA2,
-	guestInfo *types.GuestInfo,
-) *vmopv1.VirtualMachineNetworkStatus {
-
-	if guestInfo == nil {
-		return nil
-	}
-
-	status := &vmopv1.VirtualMachineNetworkStatus{}
-
-	if ipAddr := guestInfo.IpAddress; ipAddr != "" {
-		// TODO: Filter out local addresses.
-		if net.ParseIP(ipAddr).To4() != nil {
-			status.PrimaryIP4 = ipAddr
-		} else {
-			status.PrimaryIP6 = ipAddr
-		}
-	}
-
-	if len(guestInfo.Net) > 0 {
-		var networkInterfaces []vmopv1.VirtualMachineNetworkInterfaceSpec
-		if vmCtx.VM.Spec.Network != nil {
-			networkInterfaces = vmCtx.VM.Spec.Network.Interfaces
-		}
-
-		slices.SortFunc(guestInfo.Net, func(a, b types.GuestNicInfo) int {
-			// Sort by the DeviceKey (DeviceConfigId) to order the guest info list by the
-			// order in the initial ConfigSpec which is the order of the []networkInterfaces.
-			// since it is immutable.
-			return int(a.DeviceConfigId - b.DeviceConfigId)
-		})
-
-		networkInterfaceIdx := 0
-		for i := range guestInfo.Net {
-			deviceKey := guestInfo.Net[i].DeviceConfigId
-
-			// Skip pseudo devices.
-			if deviceKey < 0 {
-				continue
-			}
-
-			var name string
-			if networkInterfaceIdx < len(networkInterfaces) {
-				name = networkInterfaces[networkInterfaceIdx].Name
-				networkInterfaceIdx++
-			}
-
-			status.Interfaces = append(status.Interfaces, guestNicInfoToInterfaceStatus(name, deviceKey, &guestInfo.Net[i]))
-		}
-	}
-
-	if len(guestInfo.IpStack) > 0 {
-		status.VirtualMachineNetworkIPStackStatus = guestIPStackInfoToIPStackStatus(&guestInfo.IpStack[0])
-	}
-
-	return status
 }
 
 func guestNicInfoToInterfaceStatus(
@@ -456,5 +399,259 @@ func MarkBootstrapCondition(
 		conditions.Set(vm, c)
 	} else {
 		conditions.MarkFalse(vm, vmopv1.GuestBootstrapCondition, reason, msg)
+	}
+}
+
+var (
+	emptyNetConfig   vmopv1.VirtualMachineNetworkConfigStatus
+	emptyIfaceConfig vmopv1.VirtualMachineNetworkConfigInterfaceStatus
+)
+
+// UpdateNetworkStatusConfig updates the provided VM's status.network.config
+// field with information from the provided bootstrap arguments. This is useful
+// for folks booting VMs without bootstrap engines who may wish to manually
+// configure the VM's networking with the valid IP configuration for this VM.
+//
+//nolint:gocyclo
+func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
+
+	if vm == nil {
+		panic("vm is nil")
+	}
+
+	// Define the network configuration to update. However, it is not assigned
+	// to the VM's status.network.config field unless nc is non-empty before
+	// this function ends.
+	var nc vmopv1.VirtualMachineNetworkConfigStatus
+
+	// Update the global DNS information.
+	{
+		hn, ns, sd := args.Hostname, args.DNSServers, args.SearchSuffixes
+		lhn, lns, lsd := len(hn) > 0, len(ns) > 0, len(sd) > 0
+		if lhn || lns || lsd {
+			nc.DNS = &vmopv1.VirtualMachineNetworkConfigDNSStatus{}
+		}
+		if lhn {
+			nc.DNS.HostName = hn
+		}
+		if lns {
+			nc.DNS.Nameservers = ns
+		}
+		if lsd {
+			nc.DNS.SearchDomains = sd
+		}
+	}
+
+	// Iterate over each network result.
+	for i := range args.NetworkResults.Results {
+
+		// Declare the interface's config status.
+		var ifc vmopv1.VirtualMachineNetworkConfigInterfaceStatus
+
+		// Define a short alias for the indexed result.
+		r := args.NetworkResults.Results[i]
+
+		// Grab a temp copy of the result's IP configuration list to make it
+		// more obvious that the purpose of the next three lines of code is not
+		// to update the r.IPConfigs directly.
+		ipConfigs := args.NetworkResults.Results[i].IPConfigs
+
+		// The intended DHCP configuration is presented per interface, so if
+		// there are no resulting IP configs, but DHCP4 or DHCP6 is configured,
+		// go ahead and create a single, fake IP config so the DHCP info can be
+		// collected the same way below.
+		if len(ipConfigs) == 0 && (r.DHCP4 || r.DHCP6) {
+			ipConfigs = []network.NetworkInterfaceIPConfig{{}}
+		}
+
+		// If there *are* resulting IP configs, then ensure the field ifc.IP
+		// is not nil so avoid an NPE later. We do not initialize this field
+		// unless there *are* resulting IP configs to avoid an empty object
+		// when printing the VM's status.
+		if len(ipConfigs) > 0 {
+			ifc.IP = &vmopv1.VirtualMachineNetworkConfigInterfaceIPStatus{}
+		}
+
+		// Iterate over each of the result's IP configurations.
+		for j := range ipConfigs {
+			ipc := ipConfigs[j]
+
+			// Assign the gateways.
+			if gw := ipc.Gateway; gw != "" {
+				if ipc.IsIPv4 && ifc.IP.Gateway4 == "" {
+					ifc.IP.Gateway4 = gw
+				} else if !ipc.IsIPv4 && ifc.IP.Gateway6 == "" {
+					ifc.IP.Gateway6 = gw
+				}
+			}
+
+			// Append the IP address.
+			if ip := ipc.IPCIDR; ip != "" {
+				ifc.IP.Addresses = append(ifc.IP.Addresses, ip)
+			}
+
+			// Update DHCP information.
+			if v4, v6 := r.DHCP4, r.DHCP6; v4 || v6 {
+				ifc.IP.DHCP = &vmopv1.VirtualMachineNetworkConfigDHCPStatus{}
+				if v4 {
+					ifc.IP.DHCP.IP4 = &vmopv1.VirtualMachineNetworkConfigDHCPOptionsStatus{
+						Enabled: v4,
+					}
+				}
+				if v6 {
+					ifc.IP.DHCP.IP6 = &vmopv1.VirtualMachineNetworkConfigDHCPOptionsStatus{
+						Enabled: v6,
+					}
+				}
+			}
+
+			// Update DNS information.
+			{
+				ns, sd := r.Nameservers, r.SearchDomains
+				if ln, ls := len(ns), len(sd); ln > 0 || ls > 0 {
+					ifc.DNS = &vmopv1.VirtualMachineNetworkConfigDNSStatus{}
+					if ln > 0 {
+						ifc.DNS.Nameservers = ns
+					}
+					if ls > 0 {
+						ifc.DNS.SearchDomains = sd
+					}
+				}
+			}
+		}
+
+		if ip := ifc.IP; ip != nil && len(ip.Addresses) > 0 {
+			slices.Sort(ifc.IP.Addresses)
+		}
+
+		// Only append the interface config if it is not empty.
+		if !reflect.DeepEqual(ifc, emptyIfaceConfig) {
+			// Do not assign the name until the very end so as to not disrupt
+			// the comparison with the empty struct.
+			ifc.Name = r.Name
+
+			nc.Interfaces = append(nc.Interfaces, ifc)
+		}
+	}
+
+	// If the network config ended up empty, then ensure the VM's field
+	// status.network.config is nil IFF status.network is non-nil.
+	// Otherwise, assign the network config to the VM's status.network.config
+	// field.
+	if reflect.DeepEqual(nc, emptyNetConfig) {
+		if vm.Status.Network != nil {
+			vm.Status.Network.Config = nil
+		}
+	} else {
+		if vm.Status.Network == nil {
+			vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
+		}
+		vm.Status.Network.Config = &nc
+	}
+}
+
+// updateGuestNetworkStatus updates the provided VM's status.network.config
+// field with information from the guestInfo.
+func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *types.GuestInfo) {
+
+	if gi == nil {
+		return
+	}
+
+	var (
+		primaryIP4      string
+		primaryIP6      string
+		ifaceStatuses   []vmopv1.VirtualMachineNetworkInterfaceStatus
+		ipStackStatuses []vmopv1.VirtualMachineNetworkIPStackStatus
+	)
+
+	if ip := gi.IpAddress; ip != "" {
+		// Only act on the IP if it is valid.
+		if a := net.ParseIP(ip); len(a) > 0 {
+
+			// Ignore local IP addresses, i.e. addresses that are only valid on
+			// the guest OS. Please note this does not include private, or RFC
+			// 1918 (IPv4) and RFC 4193 (IPv6) addresses, ex. 192.168.0.2.
+			if !a.IsUnspecified() &&
+				!a.IsLinkLocalMulticast() &&
+				!a.IsLinkLocalUnicast() &&
+				!a.IsLoopback() {
+
+				if a.To4() != nil {
+					primaryIP4 = ip
+				} else {
+					primaryIP6 = ip
+				}
+			}
+		}
+	}
+
+	if len(gi.Net) > 0 {
+		var ifaceSpecs []vmopv1.VirtualMachineNetworkInterfaceSpec
+		if vm.Spec.Network != nil {
+			ifaceSpecs = vm.Spec.Network.Interfaces
+		}
+
+		slices.SortFunc(gi.Net, func(a, b types.GuestNicInfo) int {
+			// Sort by the DeviceKey (DeviceConfigId) to order the guest info
+			// list by the order in the initial ConfigSpec which is the order of
+			// the []ifaceSpecs since it is immutable.
+			return int(a.DeviceConfigId - b.DeviceConfigId)
+		})
+
+		ifaceIdx := 0
+		for i := range gi.Net {
+			deviceKey := gi.Net[i].DeviceConfigId
+
+			// Skip pseudo devices.
+			if deviceKey < 0 {
+				continue
+			}
+
+			var ifaceName string
+			if ifaceIdx < len(ifaceSpecs) {
+				ifaceName = ifaceSpecs[ifaceIdx].Name
+				ifaceIdx++
+			}
+
+			ifaceStatuses = append(
+				ifaceStatuses,
+				guestNicInfoToInterfaceStatus(
+					ifaceName,
+					deviceKey,
+					&gi.Net[i]))
+		}
+	}
+
+	if lip := len(gi.IpStack); lip > 0 {
+		ipStackStatuses = make([]vmopv1.VirtualMachineNetworkIPStackStatus, lip)
+		for i := range gi.IpStack {
+			ipStackStatuses[i] = guestIPStackInfoToIPStackStatus(&gi.IpStack[i])
+		}
+	}
+
+	var (
+		lip4 = len(primaryIP4) > 0
+		lip6 = len(primaryIP6) > 0
+		lip  = len(ipStackStatuses) > 0
+		lis  = len(ifaceStatuses) > 0
+	)
+
+	if lip4 || lip6 || lip || lis {
+		if vm.Status.Network == nil {
+			vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
+		}
+		vm.Status.Network.PrimaryIP4 = primaryIP4
+		vm.Status.Network.PrimaryIP6 = primaryIP6
+		if lip {
+			vm.Status.Network.IPStacks = ipStackStatuses
+		} else {
+			vm.Status.Network.IPStacks = nil
+		}
+		if lis {
+			vm.Status.Network.Interfaces = ifaceStatuses
+		} else {
+			vm.Status.Network.Interfaces = nil
+		}
 	}
 }

@@ -370,9 +370,24 @@ type GuestHeartbeatAction struct {
 
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
-	// ImageName describes the name of a VirtualMachineImage that is to be used as the base Operating System image of
-	// the desired VirtualMachine instances.  The VirtualMachineImage resources can be introspected to discover identifying
-	// attributes that may help users to identify the desired image to use.
+	// ImageName describes the name of the image resource used to deploy this
+	// VM.
+	//
+	// This field may be used to specify the name of a VirtualMachineImage
+	// or ClusterVirtualMachineImage resource. The resolver first checks to see
+	// if there is a VirtualMachineImage with the specified name. If no
+	// such resource exists, the resolver then checks to see if there is a
+	// ClusterVirtualMachineImage resource with the specified name in the same
+	// Namespace as the VM being deployed.
+	//
+	// This field may also be used to specify the display name (vSphere name) of
+	// a VirtualMachineImage or ClusterVirtualMachineImage resource. If the
+	// display name unambiguously resolves to a distinct VM image (among all
+	// existing VirtualMachineImages in the VM's namespace and all existing
+	// ClusterVirtualMachineImages), then a mutation webhook updates this field
+	// with the VM image resource name. If the display name resolves to multiple
+	// or no VM images, then the mutation webhook denies the request and outputs
+	// an error message accordingly.
 	ImageName string `json:"imageName"`
 
 	// ClassName describes the name of a VirtualMachineClass that is to be used as the overlaid resource configuration

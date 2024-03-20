@@ -550,14 +550,9 @@ func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
 	}
 }
 
-// updateGuestNetworkStatus updates the provided VM's status.network.config
+// updateGuestNetworkStatus updates the provided VM's status.network
 // field with information from the guestInfo.
 func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *types.GuestInfo) {
-
-	if gi == nil {
-		return
-	}
-
 	var (
 		primaryIP4      string
 		primaryIP6      string
@@ -565,68 +560,70 @@ func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *types.GuestInfo) {
 		ipStackStatuses []vmopv1.VirtualMachineNetworkIPStackStatus
 	)
 
-	if ip := gi.IpAddress; ip != "" {
-		// Only act on the IP if it is valid.
-		if a := net.ParseIP(ip); len(a) > 0 {
+	if gi != nil {
+		if ip := gi.IpAddress; ip != "" {
+			// Only act on the IP if it is valid.
+			if a := net.ParseIP(ip); len(a) > 0 {
 
-			// Ignore local IP addresses, i.e. addresses that are only valid on
-			// the guest OS. Please note this does not include private, or RFC
-			// 1918 (IPv4) and RFC 4193 (IPv6) addresses, ex. 192.168.0.2.
-			if !a.IsUnspecified() &&
-				!a.IsLinkLocalMulticast() &&
-				!a.IsLinkLocalUnicast() &&
-				!a.IsLoopback() {
+				// Ignore local IP addresses, i.e. addresses that are only valid on
+				// the guest OS. Please note this does not include private, or RFC
+				// 1918 (IPv4) and RFC 4193 (IPv6) addresses, ex. 192.168.0.2.
+				if !a.IsUnspecified() &&
+					!a.IsLinkLocalMulticast() &&
+					!a.IsLinkLocalUnicast() &&
+					!a.IsLoopback() {
 
-				if a.To4() != nil {
-					primaryIP4 = ip
-				} else {
-					primaryIP6 = ip
+					if a.To4() != nil {
+						primaryIP4 = ip
+					} else {
+						primaryIP6 = ip
+					}
 				}
 			}
 		}
-	}
 
-	if len(gi.Net) > 0 {
-		var ifaceSpecs []vmopv1.VirtualMachineNetworkInterfaceSpec
-		if vm.Spec.Network != nil {
-			ifaceSpecs = vm.Spec.Network.Interfaces
-		}
-
-		slices.SortFunc(gi.Net, func(a, b types.GuestNicInfo) int {
-			// Sort by the DeviceKey (DeviceConfigId) to order the guest info
-			// list by the order in the initial ConfigSpec which is the order of
-			// the []ifaceSpecs since it is immutable.
-			return int(a.DeviceConfigId - b.DeviceConfigId)
-		})
-
-		ifaceIdx := 0
-		for i := range gi.Net {
-			deviceKey := gi.Net[i].DeviceConfigId
-
-			// Skip pseudo devices.
-			if deviceKey < 0 {
-				continue
+		if len(gi.Net) > 0 {
+			var ifaceSpecs []vmopv1.VirtualMachineNetworkInterfaceSpec
+			if vm.Spec.Network != nil {
+				ifaceSpecs = vm.Spec.Network.Interfaces
 			}
 
-			var ifaceName string
-			if ifaceIdx < len(ifaceSpecs) {
-				ifaceName = ifaceSpecs[ifaceIdx].Name
-				ifaceIdx++
+			slices.SortFunc(gi.Net, func(a, b types.GuestNicInfo) int {
+				// Sort by the DeviceKey (DeviceConfigId) to order the guest info
+				// list by the order in the initial ConfigSpec which is the order of
+				// the []ifaceSpecs since it is immutable.
+				return int(a.DeviceConfigId - b.DeviceConfigId)
+			})
+
+			ifaceIdx := 0
+			for i := range gi.Net {
+				deviceKey := gi.Net[i].DeviceConfigId
+
+				// Skip pseudo devices.
+				if deviceKey < 0 {
+					continue
+				}
+
+				var ifaceName string
+				if ifaceIdx < len(ifaceSpecs) {
+					ifaceName = ifaceSpecs[ifaceIdx].Name
+					ifaceIdx++
+				}
+
+				ifaceStatuses = append(
+					ifaceStatuses,
+					guestNicInfoToInterfaceStatus(
+						ifaceName,
+						deviceKey,
+						&gi.Net[i]))
 			}
-
-			ifaceStatuses = append(
-				ifaceStatuses,
-				guestNicInfoToInterfaceStatus(
-					ifaceName,
-					deviceKey,
-					&gi.Net[i]))
 		}
-	}
 
-	if lip := len(gi.IpStack); lip > 0 {
-		ipStackStatuses = make([]vmopv1.VirtualMachineNetworkIPStackStatus, lip)
-		for i := range gi.IpStack {
-			ipStackStatuses[i] = guestIPStackInfoToIPStackStatus(&gi.IpStack[i])
+		if lip := len(gi.IpStack); lip > 0 {
+			ipStackStatuses = make([]vmopv1.VirtualMachineNetworkIPStackStatus, lip)
+			for i := range gi.IpStack {
+				ipStackStatuses[i] = guestIPStackInfoToIPStackStatus(&gi.IpStack[i])
+			}
 		}
 	}
 
@@ -643,15 +640,16 @@ func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *types.GuestInfo) {
 		}
 		vm.Status.Network.PrimaryIP4 = primaryIP4
 		vm.Status.Network.PrimaryIP6 = primaryIP6
-		if lip {
-			vm.Status.Network.IPStacks = ipStackStatuses
+		vm.Status.Network.IPStacks = ipStackStatuses
+		vm.Status.Network.Interfaces = ifaceStatuses
+	} else if vm.Status.Network != nil {
+		if cfg := vm.Status.Network.Config; cfg != nil {
+			// Config is the only field we need to preserve.
+			vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+				Config: cfg,
+			}
 		} else {
-			vm.Status.Network.IPStacks = nil
-		}
-		if lis {
-			vm.Status.Network.Interfaces = ifaceStatuses
-		} else {
-			vm.Status.Network.Interfaces = nil
+			vm.Status.Network = nil
 		}
 	}
 }

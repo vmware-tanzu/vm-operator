@@ -27,7 +27,6 @@ var _ = Describe("UpdateStatus", func() {
 
 	var (
 		ctx   *builder.TestContextForVCSim
-		err   error
 		vmCtx context.VirtualMachineContextA2
 		vcVM  *object.VirtualMachine
 		moVM  *mo.VirtualMachine
@@ -45,6 +44,7 @@ var _ = Describe("UpdateStatus", func() {
 			VM:      vm,
 		}
 
+		var err error
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).ToNot(HaveOccurred())
 
@@ -57,7 +57,7 @@ var _ = Describe("UpdateStatus", func() {
 	})
 
 	JustBeforeEach(func() {
-		err = vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, moVM)
+		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, moVM)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -76,254 +76,137 @@ var _ = Describe("UpdateStatus", func() {
 						Name: "eth0",
 					},
 				}
+				vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
 			})
-			Context("IP4", func() {
-				When("status.network is nil", func() {
-					When("address is invalid", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = invalid
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is unspecified", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "0.0.0.0"
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is link-local multicast", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "224.0.0.0"
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is link-local unicast", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "169.254.0.0"
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is loopback", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "127.0.0.0"
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is ip6", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = validIP6
-						})
-						Specify("status.network.primaryIP4 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
-						})
-					})
-					When("address is valid", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = validIP4
-						})
-						Specify("status.network.primaryIP4 should be expected value", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal("192.168.0.2"))
-						})
-					})
-				})
-				When("status.network is not nil", func() {
-					BeforeEach(func() {
-						vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
-					})
-					When("address is invalid", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = invalid
-						})
-						Specify("status.network.primaryIP4 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
-						})
-					})
-					When("address is unspecified", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "0.0.0.0"
-						})
-						Specify("status.network.primaryIP4 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
-						})
-					})
-					When("address is link-local multicast", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "224.0.0.0"
-						})
-						Specify("status.network.primaryIP4 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
-						})
-					})
-					When("address is link-local unicast", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "169.254.0.0"
-						})
-						Specify("status.network.primaryIP4 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
-						})
-					})
-					When("address is loopback", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "127.0.0.0"
-						})
-						Specify("status.network.primaryIP4 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
-						})
-					})
-					When("address is ip6", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = validIP6
-						})
-						Specify("status.network.primaryIP4 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
-						})
-					})
-					When("address is valid", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = validIP4
-						})
-						Specify("status.network.primaryIP4 should be expected value", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal("192.168.0.2"))
-						})
-					})
-				})
 
-			})
-			Context("IP6", func() {
-				When("status.network is nil", func() {
-					When("address is invalid", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = invalid
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
+			Context("IP4", func() {
+				When("address is invalid", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = invalid
 					})
-					When("address is unspecified", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "::0"
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is link-local multicast", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "FF02:::"
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is link-local unicast", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "FE80:::"
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is loopback", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "::1"
-						})
-						Specify("status.network should be nil", func() {
-							Expect(vmCtx.VM.Status.Network).To(BeNil())
-						})
-					})
-					When("address is ip4", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = validIP4
-						})
-						Specify("status.network.primaryIP6 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
-						})
-					})
-					When("address is valid", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = validIP6
-						})
-						Specify("status.network.primaryIP6 should be expected value", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal("FD00:F53B:82E4::54"))
-						})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
 					})
 				})
-				When("status.network is not nil", func() {
+				When("address is unspecified", func() {
 					BeforeEach(func() {
-						vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
+						moVM.Guest.IpAddress = "0.0.0.0"
 					})
-					When("address is invalid", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = invalid
-						})
-						Specify("status.network.primaryIP6 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
-						})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
 					})
-					When("address is unspecified", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "::0"
-						})
-						Specify("status.network.primaryIP6 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
-						})
+				})
+				When("address is link-local multicast", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = "224.0.0.0"
 					})
-					When("address is link-local multicast", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "FF02:::"
-						})
-						Specify("status.network.primaryIP6 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
-						})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
 					})
-					When("address is link-local unicast", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "FE80:::"
-						})
-						Specify("status.network.primaryIP6 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
-						})
+				})
+				When("address is link-local unicast", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = "169.254.0.0"
 					})
-					When("address is loopback", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = "::1"
-						})
-						Specify("status.network.primaryIP6 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
-						})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
 					})
-					When("address is ip4", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = validIP4
-						})
-						Specify("status.network.primaryIP6 should be empty", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
-						})
+				})
+				When("address is loopback", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = "127.0.0.0"
 					})
-					When("address is valid", func() {
-						BeforeEach(func() {
-							moVM.Guest.IpAddress = validIP6
-						})
-						Specify("status.network.primaryIP6 should be expected value", func() {
-							Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal("FD00:F53B:82E4::54"))
-						})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
+					})
+				})
+				When("address is ip6", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = validIP6
+					})
+					Specify("status.network.primaryIP4 should be empty", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(validIP6))
+					})
+				})
+				When("address is valid", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = validIP4
+					})
+					Specify("status.network.primaryIP4 should be expected value", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(validIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
+					})
+				})
+			})
+
+			Context("IP6", func() {
+				When("address is invalid", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = invalid
+					})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
+					})
+				})
+				When("address is unspecified", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = "::0"
+					})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
+					})
+				})
+				When("address is link-local multicast", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = "FF02:::"
+					})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
+					})
+				})
+				When("address is link-local unicast", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = "FE80:::"
+					})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
+					})
+				})
+				When("address is loopback", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = "::1"
+					})
+					Specify("status.network should be nil", func() {
+						Expect(vmCtx.VM.Status.Network).To(BeNil())
+					})
+				})
+				When("address is ip4", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = validIP4
+					})
+					Specify("status.network.primaryIP6 should be empty", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(validIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
+					})
+				})
+				When("address is valid", func() {
+					BeforeEach(func() {
+						moVM.Guest.IpAddress = validIP6
+					})
+					Specify("status.network.primaryIP6 should be expected value", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(validIP6))
 					})
 				})
 			})
 		})
 
 		Context("Interfaces", func() {
-
 			Context("VM has pseudo devices", func() {
 				BeforeEach(func() {
 					moVM.Guest = &types.GuestInfo{
@@ -435,6 +318,67 @@ var _ = Describe("UpdateStatus", func() {
 				Expect(network.IPStacks[0].IPRoutes).To(HaveLen(2))
 				Expect(network.IPStacks[0].IPRoutes[0].NetworkAddress).To(Equal("192.168.1.0/24"))
 				Expect(network.IPStacks[0].IPRoutes[1].NetworkAddress).To(Equal("e9ef:6df5:eb14:42e2:5c09:9982:a9b5:8c2b/48"))
+			})
+		})
+
+		Context("Status.Network", func() {
+
+			When("nil Guest property", func() {
+				BeforeEach(func() {
+					moVM.Guest = nil
+					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
+				})
+
+				Specify("status.network should be nil", func() {
+					Expect(vmCtx.VM.Status.Network).To(BeNil())
+				})
+			})
+
+			When("Guest property is empty", func() {
+				BeforeEach(func() {
+					moVM.Guest = &types.GuestInfo{}
+					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
+				})
+
+				Specify("status.network should be nil", func() {
+					Expect(vmCtx.VM.Status.Network).To(BeNil())
+				})
+			})
+
+			When("Empty guest property but has existing status.network.config", func() {
+				BeforeEach(func() {
+					moVM.Guest = &types.GuestInfo{}
+					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+						PrimaryIP4: "my-ipv4",
+						PrimaryIP6: "my-ipv6",
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceStatus{
+							{},
+						},
+						IPStacks: []vmopv1.VirtualMachineNetworkIPStackStatus{
+							{},
+						},
+						Config: &vmopv1.VirtualMachineNetworkConfigStatus{
+							Interfaces: []vmopv1.VirtualMachineNetworkConfigInterfaceStatus{
+								{
+									Name: "my-interface",
+								},
+							},
+						},
+					}
+				})
+
+				Specify("only status.network.config should be preserved", func() {
+					network := vmCtx.VM.Status.Network
+					Expect(network).ToNot(BeNil())
+
+					Expect(network.PrimaryIP4).To(BeEmpty())
+					Expect(network.PrimaryIP6).To(BeEmpty())
+					Expect(network.Interfaces).To(BeNil())
+					Expect(network.IPStacks).To(BeNil())
+					Expect(network.Config).ToNot(BeNil())
+					Expect(network.Config.Interfaces).To(HaveLen(1))
+					Expect(network.Config.Interfaces[0].Name).To(Equal("my-interface"))
+				})
 			})
 		})
 	})

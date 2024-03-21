@@ -12,7 +12,7 @@ spec:
       - name: manager
         resources:
           limits:
-            cpu: 250m
+            cpu: 750m
             memory: 550Mi
           requests:
             cpu: 100m

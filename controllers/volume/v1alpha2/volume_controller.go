@@ -6,6 +6,7 @@ package v1alpha2
 import (
 	goctx "context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -622,14 +623,29 @@ func (r *Reconciler) processAttachments(
 
 		attachmentName := util.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
 		if attachment, ok := attachments[attachmentName]; ok {
-			// The attachment for this volume already exists. Note it might make sense to ensure
-			// that the existing attachment matches what we expect (so like do an Update if needed)
-			// but the old code didn't and let's match that behavior until we need to do otherwise.
-			// Also, the CNS attachment controller doesn't reconcile Spec changes once the volume
-			// is attached.
-			volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volume.Name, attachment))
-			hasPendingAttachment = hasPendingAttachment || !attachment.Status.Attached
-			continue
+			// The attachment for this volume already existed when we listed the attachments for this VM.
+			// If this attachment ClaimName refers to the same PVC, then that is the current attachment so
+			// update our Status with it. Otherwise, the ClaimName has been changed so we previously deleted
+			// the existing attachment and need to create a new one below.
+			// CNS noop reconciles of an attachment that is already attached so we must delete the existing
+			// attachment and create a new one.
+			if volume.PersistentVolumeClaim.ClaimName == attachment.Spec.VolumeName {
+				volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volume.Name, attachment))
+				hasPendingAttachment = hasPendingAttachment || !attachment.Status.Attached
+				continue
+			}
+
+			// We don't want the existing attachment status to be passed into preserveOrphanedAttachmentStatus()
+			// because that would be misleading because that attachment could be marked as attached, but that is
+			// for the prior PVC. Of course there is a window where after the ClaimName is changed but before
+			// Volume reconciliation that a user could get stale data.
+			// Changing the ClaimName should be a rare condition.
+			for i := range orphanedAttachments {
+				if orphanedAttachments[i].Name == attachment.Name {
+					orphanedAttachments = slices.Delete(orphanedAttachments, i, i+1)
+					break
+				}
+			}
 		}
 
 		// If we're allowing only one pending attachment, we cannot create the next CnsNodeVmAttachment
@@ -805,12 +821,12 @@ func (r *Reconciler) attachmentsToDelete(
 	ctx *context.VolumeContextA2,
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment) []cnsv1alpha1.CnsNodeVmAttachment {
 
-	expectedAttachments := make(map[string]bool, len(ctx.VM.Spec.Volumes))
+	expectedAttachments := make(map[string]string, len(ctx.VM.Spec.Volumes))
 	for _, volume := range ctx.VM.Spec.Volumes {
 		// Only process CNS volumes here.
 		if volume.PersistentVolumeClaim != nil {
 			attachmentName := util.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
-			expectedAttachments[attachmentName] = true
+			expectedAttachments[attachmentName] = volume.PersistentVolumeClaim.ClaimName
 		}
 	}
 
@@ -818,7 +834,7 @@ func (r *Reconciler) attachmentsToDelete(
 	// the volumes Spec.
 	var attachmentsToDelete []cnsv1alpha1.CnsNodeVmAttachment
 	for _, attachment := range attachments {
-		if exists := expectedAttachments[attachment.Name]; !exists {
+		if claimName, exists := expectedAttachments[attachment.Name]; !exists || claimName != attachment.Spec.VolumeName {
 			attachmentsToDelete = append(attachmentsToDelete, attachment)
 		}
 	}

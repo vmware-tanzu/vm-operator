@@ -7,10 +7,44 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apimachinery/pkg/labels"
 	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 )
+
+// NewLabelSelectorCacheForObject creates a new cache that watches the specified
+// object type selected by the label selector in all namespaces . The cache is
+// added to the manager and starts alongside the other leader-election runnables.
+func NewLabelSelectorCacheForObject(
+	mgr ctrlmgr.Manager,
+	resync *time.Duration,
+	object ctrlclient.Object,
+	selector labels.Selector) (ctrlcache.Cache, error) {
+
+	cache, err := ctrlcache.New(mgr.GetConfig(),
+		ctrlcache.Options{
+			Scheme:     mgr.GetScheme(),
+			Mapper:     mgr.GetRESTMapper(),
+			SyncPeriod: resync,
+			ByObject: map[ctrlclient.Object]ctrlcache.ByObject{
+				object: {
+					Label: selector,
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create label selector cache for %T for namespaces: %w", object, err)
+	}
+
+	if err := mgr.Add(cache); err != nil {
+		return nil, fmt.Errorf("failed to add label selector cache for %T: %w", object, err)
+	}
+
+	return cache, nil
+}
 
 // NewNamespacedCacheForObject creates a new cache that watches the specified
 // object type only for the specified namespaces. The cache is added to the

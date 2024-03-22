@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -18,6 +19,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -31,6 +33,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -95,15 +98,61 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		return err
 	}
 
-	// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is the owner of PersistentVolumeClaim.
-	err = c.Watch(source.Kind(mgr.GetCache(), &corev1.PersistentVolumeClaim{}),
-		handler.EnqueueRequestForOwner(
-			mgr.GetScheme(),
-			mgr.GetRESTMapper(),
-			&vmopv1.VirtualMachine{},
-			handler.OnlyControllerOwner()))
-	if err != nil {
-		return err
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
+		// Instance storage isn't enabled in all envs and is not that commonly used. Avoid the
+		// memory and CPU cost of watching PVCs until we encounter a VM with instance storage.
+
+		r.GetInstanceStoragePVCClient = func() (client.Reader, error) {
+			r.isPVCWatchStartedLock.Lock()
+			defer r.isPVCWatchStartedLock.Unlock()
+
+			if r.isPVCWatchStarted {
+				return r.isPVCCache, nil
+			}
+
+			if r.isPVCCache == nil {
+				// PVC label we set in createInstanceStoragePVC().
+				isPVCLabels := metav1.LabelSelector{
+					MatchLabels: map[string]string{constants.InstanceStorageLabelKey: "true"},
+				}
+				labelSelector, err := metav1.LabelSelectorAsSelector(&isPVCLabels)
+				if err != nil {
+					return nil, err
+				}
+
+				// This cache will only contain instance storage PVCs because of the label selector.
+				pvcCache, err := pkgmgr.NewLabelSelectorCacheForObject(
+					mgr,
+					&ctx.SyncPeriod,
+					&corev1.PersistentVolumeClaim{},
+					labelSelector)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create PVC cache: %w", err)
+				}
+
+				r.isPVCCache = pvcCache
+			}
+
+			// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is the owner
+			// of PersistentVolumeClaim.
+			if err := c.Watch(
+				source.Kind(r.isPVCCache, &corev1.PersistentVolumeClaim{}),
+				handler.EnqueueRequestForOwner(
+					mgr.GetScheme(),
+					mgr.GetRESTMapper(),
+					&vmopv1.VirtualMachine{},
+					handler.OnlyControllerOwner())); err != nil {
+				return nil, fmt.Errorf("failed to start VirtualMachine watch: %w", err)
+			}
+
+			r.logger.Info("Started deferred PVC cache and watch for instance storage")
+			r.isPVCWatchStarted = true
+			return r.isPVCCache, nil
+		}
+	} else {
+		r.GetInstanceStoragePVCClient = func() (client.Reader, error) {
+			return nil, fmt.Errorf("GetInstanceStoragePVCClient() should only be called when the feature is enabled")
+		}
 	}
 
 	return nil
@@ -132,6 +181,12 @@ type Reconciler struct {
 	logger     logr.Logger
 	recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterfaceA2
+
+	// The instance storage PVC cache and watch are deferred until actually required.
+	GetInstanceStoragePVCClient func() (client.Reader, error)
+	isPVCWatchStarted           bool
+	isPVCWatchStartedLock       sync.Mutex
+	isPVCCache                  ctrlcache.Cache
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
@@ -156,10 +211,9 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 	}
 
 	volCtx := &context.VolumeContextA2{
-		Context:                   ctx,
-		Logger:                    ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
-		VM:                        vm,
-		InstanceStorageFSSEnabled: pkgconfig.FromContext(ctx).Features.InstanceStorage,
+		Context: ctx,
+		Logger:  ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
+		VM:      vm,
 	}
 
 	// If the VM has a pause reconcile annotation, it is being restored on vCenter. Return here so our reconcile
@@ -195,10 +249,10 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 }
 
 func (r *Reconciler) reconcileResult(ctx *context.VolumeContextA2) ctrl.Result {
-	if ctx.InstanceStorageFSSEnabled {
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
 		// Requeue the request if all instance storage PVCs are not bound.
 		_, pvcsBound := ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]
-		if instancestorage.IsPresent(ctx.VM) && !pvcsBound {
+		if !pvcsBound && instancestorage.IsPresent(ctx.VM) {
 			return ctrl.Result{RequeueAfter: wait.Jitter(
 				pkgconfig.FromContext(ctx).InstanceStorage.SeedRequeueDuration,
 				pkgconfig.FromContext(ctx).InstanceStorage.JitterMaxFactor,
@@ -223,7 +277,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VolumeContextA2) error {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine for processing volumes")
 	}()
 
-	if ctx.InstanceStorageFSSEnabled {
+	if pkgconfig.FromContext(ctx).Features.InstanceStorage {
 		ready, err := r.reconcileInstanceStoragePVCs(ctx)
 		if err != nil || !ready {
 			return err
@@ -274,7 +328,13 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *context.VolumeContextA2) 
 		return true, nil
 	}
 
-	pvcList, getErrs := r.getInstanceStoragePVCs(ctx, isVolumes)
+	isPVCReader, err := r.GetInstanceStoragePVCClient()
+	if err != nil {
+		ctx.Logger.Error(err, "Failed to get deferred PVC client for instance storage")
+		return false, err
+	}
+
+	pvcList, getErrs := r.getInstanceStoragePVCs(ctx, isPVCReader, isVolumes)
 	if getErrs != nil {
 		return false, k8serrors.NewAggregate(getErrs)
 	}
@@ -463,6 +523,7 @@ func (r *Reconciler) createInstanceStoragePVC(
 
 func (r *Reconciler) getInstanceStoragePVCs(
 	ctx *context.VolumeContextA2,
+	pvcReader client.Reader,
 	volumes []vmopv1.VirtualMachineVolume) ([]corev1.PersistentVolumeClaim, []error) {
 
 	var errs []error
@@ -474,10 +535,13 @@ func (r *Reconciler) getInstanceStoragePVCs(
 			Name:      vol.PersistentVolumeClaim.ClaimName,
 		}
 		pvc := &corev1.PersistentVolumeClaim{}
-		if err := r.Get(ctx, objKey, pvc); client.IgnoreNotFound(err) != nil {
-			errs = append(errs, err)
+		if err := pvcReader.Get(ctx, objKey, pvc); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				errs = append(errs, err)
+			}
 			continue
 		}
+
 		pvcList = append(pvcList, *pvc)
 	}
 

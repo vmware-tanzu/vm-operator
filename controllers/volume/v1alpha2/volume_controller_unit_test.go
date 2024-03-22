@@ -44,6 +44,24 @@ func (f *testFailClient) Create(ctx goctx.Context, obj client.Object, opts ...cl
 	return k8sapierrors.NewForbidden(schema.GroupResource{}, "", errors.New("insufficient quota for creating PVC"))
 }
 
+type noPVCReader struct {
+	client.Client
+}
+
+func (c *noPVCReader) Get(ctx goctx.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+		panic("Don't Get() PersistentVolumeClaim with this Client!")
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+func (c *noPVCReader) List(ctx goctx.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*corev1.PersistentVolumeClaimList); ok {
+		panic("Don't List() PersistentVolumeClaim with this Client!")
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
 func unitTests() {
 	Describe(
 		"Reconcile",
@@ -63,8 +81,9 @@ func unitTestsReconcile() {
 	)
 
 	var (
-		initObjects []client.Object
-		ctx         *builder.UnitTestContextForController
+		initObjects         []client.Object
+		ctx                 *builder.UnitTestContextForController
+		instanceStorageTest bool
 
 		reconciler     *volume.Reconciler
 		fakeVMProvider *providerfake.VMProviderA2
@@ -144,14 +163,26 @@ func unitTestsReconcile() {
 				}).
 			Build()
 
+		// Any PVC Get/List should not use this client so we don't start an informer.
+		noPVCClient := &noPVCReader{ctx.Client}
+
 		reconciler = volume.NewReconciler(
 			ctx,
-			ctx.Client,
+			noPVCClient,
 			ctx.Logger,
 			ctx.Recorder,
 			ctx.VMProviderA2,
 		)
 		fakeVMProvider = ctx.VMProviderA2.(*providerfake.VMProviderA2)
+
+		if instanceStorageTest {
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.InstanceStorage = true
+			})
+			reconciler.GetInstanceStoragePVCClient = func() (client.Reader, error) {
+				return ctx.Client, nil
+			}
+		}
 
 		volCtx = &volContext.VolumeContextA2{
 			Context: ctx,
@@ -166,6 +197,7 @@ func unitTestsReconcile() {
 		initObjects = nil
 		volCtx = nil
 		reconciler = nil
+		instanceStorageTest = false
 	})
 
 	getCNSAttachmentForVolumeName := func(vm *vmopv1.VirtualMachine, volumeName string) *cnsv1alpha1.CnsNodeVmAttachment {
@@ -196,8 +228,8 @@ func unitTestsReconcile() {
 				vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = "host-88"
 			})
 
-			JustBeforeEach(func() {
-				volCtx.InstanceStorageFSSEnabled = true
+			BeforeEach(func() {
+				instanceStorageTest = true
 			})
 
 			It("selected-node annotation not set - no PVCs created", func() {

@@ -706,6 +706,56 @@ func unitTestsReconcile() {
 			})
 		})
 
+		When("VM Spec.Volumes has CNS volume with existing CnsNodeVmAttachment for a different PVC", func() {
+
+			BeforeEach(func() {
+				vmVol = *vmVolumeWithPVC1
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+
+				attachment := cnsAttachmentForVMVolume(vm, vmVol)
+				attachment.UID = "1d2b1552-8294-4a72-91c7-7cf52b2e0990"
+				attachment.Status.Attached = true
+				attachment.Status.AttachmentMetadata = map[string]string{
+					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+				}
+				initObjects = append(initObjects, attachment)
+			})
+
+			It("returns success", func() {
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Expected VM Status.Volumes", func() {
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+					Expect(attachment).ToNot(BeNil())
+					Expect(attachment.UID).ToNot(BeEmpty())
+					Expect(attachment.Status.Attached).To(BeTrue())
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+				})
+
+				By("change volume claim name", func() {
+					vmVol.PersistentVolumeClaim.ClaimName = "my-new-claim-name"
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{vmVol}
+
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				By("new CnsNodeVmAttachment is created with new claim name", func() {
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+					Expect(attachment).ToNot(BeNil())
+					Expect(attachment.UID).To(BeEmpty())
+					Expect(attachment.Status.Attached).To(BeFalse())
+					Expect(attachment.Status.AttachmentMetadata).To(BeEmpty())
+					assertAttachmentSpecFromVMVol(vm, vmVol, attachment)
+
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+				})
+			})
+		})
+
 		When("VM Spec.Volumes has CNS volume with a SOAP error", func() {
 			awfulErrMsg := `failed to attach cns volume: \"88854b48-2b1c-43f8-8889-de4b5ca2cab5\" to node vm: \"VirtualMachine:vm-42
 [VirtualCenterHost: vc.vmware.com, UUID: 42080725-d6b0-c045-b24e-29c4dadca6f2, Datacenter: Datacenter

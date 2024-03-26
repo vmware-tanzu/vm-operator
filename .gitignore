@@ -3,6 +3,7 @@
 
 # Mkdocs
 /.site/
+/.venv/mkdocs
 
 # Test output
 cover.out

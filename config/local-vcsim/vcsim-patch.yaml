@@ -14,5 +14,3 @@ spec:
         - name: "JSON_EXTRA_CONFIG"
           value: |
             {"RUN.container":"[\"--privileged\", \"-v=/lib/modules:/lib/modules:ro\", \"{{.ImageName}}\"]"}
-        - name: "LB_PROVIDER"
-          value: "simple-lb"

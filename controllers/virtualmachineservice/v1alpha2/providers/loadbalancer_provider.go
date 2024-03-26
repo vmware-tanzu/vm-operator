@@ -11,13 +11,11 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2/providers/simplelb"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2/utils"
 )
 
 const (
-	NSXTLoadBalancer   = "nsx-t-lb"
-	SimpleLoadBalancer = "simple-lb"
+	NSXTLoadBalancer = "nsx-t-lb"
 
 	ServiceLoadBalancerHealthCheckNodePortTagKey = "ncp/healthCheckNodePort"
 	NSXTServiceProxy                             = "nsx-t"
@@ -69,9 +67,6 @@ type LoadbalancerProvider interface {
 func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (LoadbalancerProvider, error) {
 	if providerType == NSXTLoadBalancer {
 		return NsxtLoadBalancerProvider(), nil
-	}
-	if providerType == SimpleLoadBalancer {
-		return simplelb.New(mgr), nil
 	}
 	return NoopLoadbalancerProvider{}, nil
 }

@@ -6,6 +6,7 @@ package vsphere
 import (
 	goctx "context"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"text/template"
@@ -942,23 +943,24 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
 	vmCtx context.VirtualMachineContextA2,
 	createArgs *VMCreateArgs) error {
 
-	ecMap := make(map[string]string, len(vs.globalExtraConfig))
+	ecMap := maps.Clone(vs.globalExtraConfig)
 
-	// The only use of this template is for the JSON_EXTRA_CONFIG that is set in gce2e env
-	// to populate {{.ImageName }} so vcsim will create a container for the VM.
-	// BMV: This should be removable now that vcsim gce2e is gone.
-	renderTemplateFn := func(name, text string) string {
-		t, err := template.New(name).Parse(text)
-		if err != nil {
-			return text
+	if v, exists := ecMap[constants.ExtraConfigRunContainerKey]; exists {
+		// The local-vcsim config sets the JSON_EXTRA_CONFIG with RUN.container so vcsim
+		// creates a container for the VM. The only current use of this template function
+		// is to fill in the {{.Name}} from the images status.
+		renderTemplateFn := func(name, text string) string {
+			t, err := template.New(name).Parse(text)
+			if err != nil {
+				return text
+			}
+			b := strings.Builder{}
+			if err := t.Execute(&b, createArgs.ImageStatus); err != nil {
+				return text
+			}
+			return b.String()
 		}
-		b := strings.Builder{}
-		if err := t.Execute(&b, createArgs.ImageStatus); err != nil {
-			return text
-		}
-		return b.String()
-	}
-	for k, v := range vs.globalExtraConfig {
+		k := constants.ExtraConfigRunContainerKey
 		ecMap[k] = renderTemplateFn(k, v)
 	}
 
@@ -1087,6 +1089,13 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	updateArgs.ResourcePolicy = resourcePolicy
 	updateArgs.BootstrapData = bsData
 
+	ecMap := maps.Clone(vs.globalExtraConfig)
+	maps.DeleteFunc(ecMap, func(k string, v string) bool {
+		// Remove keys that we only want set on create.
+		return k == constants.ExtraConfigRunContainerKey
+	})
+	updateArgs.ExtraConfig = ecMap
+
 	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
 		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
 		if err != nil {
@@ -1104,56 +1113,12 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		}
 	}
 
-	var vmImageStatus *vmopv1.VirtualMachineImageStatus
-	// Only get VM image when this is the VM first boot.
-	if isVMFirstBoot(vmCtx) {
-		var err error
-		_, _, vmImageStatus, err = GetVirtualMachineImageSpecAndStatus(vmCtx, vs.k8sClient)
-		if err != nil {
-			return nil, err
-		}
-
-		// The only use of this is for the global JSON_EXTRA_CONFIG to set the image name.
-		// The global extra config should only be set during first boot.
-		// TODO: We can just finally kill this with the demise of old gce2e?
-		renderTemplateFn := func(name, text string) string {
-			t, err := template.New(name).Parse(text)
-			if err != nil {
-				return text
-			}
-			b := strings.Builder{}
-			if err := t.Execute(&b, vmImageStatus); err != nil {
-				return text
-			}
-			return b.String()
-		}
-		extraConfig := make(map[string]string, len(vs.globalExtraConfig))
-		for k, v := range vs.globalExtraConfig {
-			extraConfig[k] = renderTemplateFn(k, v)
-		}
-		updateArgs.ExtraConfig = extraConfig
-
-		// Enabling the defer-cloud-init extraConfig key for V1Alpha1Compatible images defers cloud-init from running on first boot
-		// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
-		// when the vmMetadata is nil or when the transport requested is not CloudInit.
-		updateArgs.VirtualMachineImageV1Alpha1Compatible =
-			conditions.IsTrueFromConditions(vmImageStatus.Conditions, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
-	}
-
 	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx,
 		vmClassConfigSpec,
 		&updateArgs.VMClass.Spec,
-		vmImageStatus,
+		nil,
 		updateArgs.MinCPUFreq)
 
 	return updateArgs, nil
-}
-
-func isVMFirstBoot(vmCtx context.VirtualMachineContextA2) bool {
-	if _, ok := vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation]; ok {
-		return false
-	}
-
-	return true
 }

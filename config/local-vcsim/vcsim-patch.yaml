@@ -13,4 +13,4 @@ spec:
         # Add extraConfig to the VirtualMachines to tell vcsim to run a container per VM
         - name: "JSON_EXTRA_CONFIG"
           value: |
-            {"RUN.container":"[\"--privileged\", \"-v=/lib/modules:/lib/modules:ro\", \"{{.ImageName}}\"]"}
+            {"RUN.container":"[\"--privileged\", \"-v=/lib/modules:/lib/modules:ro\", \"{{.Name}}\"]"}

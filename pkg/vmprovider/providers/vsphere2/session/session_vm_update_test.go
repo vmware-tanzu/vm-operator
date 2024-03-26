@@ -261,7 +261,6 @@ var _ = Describe("Update ConfigSpec", func() {
 		var vm *vmopv1.VirtualMachine
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
-		var imageV1Alpha1Compatible bool
 
 		BeforeEach(func() {
 			vmClassSpec = &vmopv1.VirtualMachineClassSpec{}
@@ -282,8 +281,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				classConfigSpec,
 				vmClassSpec,
 				vm,
-				globalExtraConfig,
-				imageV1Alpha1Compatible)
+				globalExtraConfig)
 
 			ecMap = util.ExtraConfigToMap(configSpec.ExtraConfig)
 		})
@@ -312,7 +310,6 @@ var _ = Describe("Update ConfigSpec", func() {
 					Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigReady})
 				globalExtraConfig["guestinfo.test"] = "test"
 				globalExtraConfig["global"] = "test"
-				imageV1Alpha1Compatible = true
 			})
 
 			When("VM uses LinuxPrep with vAppConfig bootstrap", func() {

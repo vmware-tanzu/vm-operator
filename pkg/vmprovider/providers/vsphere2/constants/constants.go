@@ -14,6 +14,7 @@ const (
 	ExtraConfigFalse           = "FALSE"
 	ExtraConfigUnset           = ""
 	ExtraConfigGuestInfoPrefix = "guestinfo."
+	ExtraConfigRunContainerKey = "RUN.container"
 
 	// VCVMAnnotation Annotation placed on the VM.
 	VCVMAnnotation = "Virtual Machine managed by the vSphere Virtual Machine service"

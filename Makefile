@@ -536,8 +536,10 @@ deploy-local-vcsim: prereqs kustomize-local-vcsim  ## Deploy controller in the c
 ## Documentation
 ## --------------------------------------
 
+MKDOCS_VENV := .venv/mkdocs
+
 ifeq (,$(strip $(GITHUB_RUN_ID)))
-MKDOCS := $$(python3 -m site --user-base)/bin/mkdocs
+MKDOCS := $(MKDOCS_VENV)/bin/mkdocs
 else
 MKDOCS := mkdocs
 endif
@@ -545,7 +547,8 @@ endif
 .PHONY: docs-build-python
 docs-build-python: ## Build docs w python
 ifeq (,$(strip $(GITHUB_RUN_ID)))
-	pip3 install --user -r ./docs/requirements.txt
+	@[ -d "$(MKDOCS_VENV)" ] || python3 -m venv $(MKDOCS_VENV)
+	$(MKDOCS_VENV)/bin/pip3 install -r ./docs/requirements.txt
 endif
 	$(MKDOCS) build --clean --config-file mkdocs.yml
 
@@ -558,7 +561,8 @@ docs-build-docker: ## Build docs w Docker
 .PHONY: docs-serve-python
 docs-serve-python: ## Serve docs w python
 ifeq (,$(strip $(GITHUB_RUN_ID)))
-	pip3 install --user -r ./docs/requirements.txt
+	@[ -d "$(MKDOCS_VENV)" ] || python3 -m venv $(MKDOCS_VENV)
+	$(MKDOCS_VENV)/bin/pip3 install -r ./docs/requirements.txt
 endif
 	$(MKDOCS) serve
 

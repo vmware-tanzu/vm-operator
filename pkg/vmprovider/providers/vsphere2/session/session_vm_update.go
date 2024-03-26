@@ -44,10 +44,6 @@ type VMUpdateArgs struct {
 	ConfigSpec *vimTypes.VirtualMachineConfigSpec
 
 	NetworkResults network2.NetworkInterfaceResults
-
-	// hack. Remove after VMSVC-1261.
-	// indicating if this VM image used is VM service v1alpha1 compatible.
-	VirtualMachineImageV1Alpha1Compatible bool
 }
 
 func ethCardMatch(ctx goctx.Context, newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
@@ -299,8 +295,7 @@ func UpdateConfigSpecExtraConfig(
 	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	vm *vmopv1.VirtualMachine,
-	globalExtraConfig map[string]string,
-	imageV1Alpha1Compatible bool) {
+	globalExtraConfig map[string]string) {
 
 	extraConfig := maps.Clone(globalExtraConfig)
 
@@ -329,7 +324,7 @@ func UpdateConfigSpecExtraConfig(
 		}
 	}
 
-	if bootstrap := vm.Spec.Bootstrap; imageV1Alpha1Compatible && bootstrap != nil {
+	if bootstrap := vm.Spec.Bootstrap; bootstrap != nil {
 		// For our special V1Alpha1Compatible images, set the VMOperatorV1Alpha1ExtraConfigKey to"Ready"
 		// to fix configuration races between cloud-init, vApp & GOSC, by deferring cloud-init from
 		// running on first boot and disables networking configurations by cloud-init. This only matters
@@ -461,7 +456,7 @@ func updateConfigSpec(
 	UpdateConfigSpecAnnotation(config, configSpec)
 	UpdateConfigSpecManagedBy(config, configSpec)
 	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, updateArgs.ConfigSpec, &vmClassSpec,
-		vmCtx.VM, updateArgs.ExtraConfig, updateArgs.VirtualMachineImageV1Alpha1Compatible)
+		vmCtx.VM, updateArgs.ExtraConfig)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 

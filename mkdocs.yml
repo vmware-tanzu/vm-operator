@@ -133,6 +133,7 @@ nav:
   - Workloads:
     - concepts/workloads/README.md
     - VirtualMachine: concepts/workloads/vm.md
+    - VirtualMachine Controller: concepts/workloads/vm-controller.md
     - VirtualMachineClass: concepts/workloads/vm-class.md
     - WebConsoleRequest: concepts/workloads/vm-web-console.md
     - Guest Customization: concepts/workloads/guest.md

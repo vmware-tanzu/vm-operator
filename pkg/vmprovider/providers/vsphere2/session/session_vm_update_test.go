@@ -461,83 +461,76 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("when VM_Class_as_Config_DaynDate FSS is enabled", func() {
-			const dummyKey = "dummy-key"
-			const dummyVal = "dummy-val"
+		const (
+			dummyKey = "dummy-key"
+			dummyVal = "dummy-val"
+		)
 
+		When("classConfigSpec extra config is not nil", func() {
 			BeforeEach(func() {
-				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-					config.Features.VMClassAsConfigDayNDate = true
-				})
+				classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   dummyKey + "-1",
+							Value: dummyVal + "-1",
+						},
+						&vimTypes.OptionValue{
+							Key:   dummyKey + "-2",
+							Value: dummyVal + "-2",
+						},
+					},
+				}
+				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{Key: "hello", Value: "world"})
+			})
+			It("vm extra config overlaps with global extra config", func() {
+				globalExtraConfig["hello"] = "world"
+				Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-1", dummyVal+"-1"))
+				Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-2", dummyVal+"-2"))
+				Expect(ecMap).ToNot(HaveKeyWithValue("hello", "world"))
 			})
 
-			Context("classConfigSpec extra config is not nil", func() {
+			It("global extra config overlaps with class config spec - class config spec takes precedence", func() {
+				globalExtraConfig[dummyKey+"-1"] = dummyVal + "-3"
+				Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-1", dummyVal+"-1"))
+				Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-2", dummyVal+"-2"))
+			})
+
+			Context("class config spec has vGPU and DDPIO devices", func() {
 				BeforeEach(func() {
-					classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
-						ExtraConfig: []vimTypes.BaseOptionValue{
-							&vimTypes.OptionValue{
-								Key:   dummyKey + "-1",
-								Value: dummyVal + "-1",
+					classConfigSpec.DeviceChange = []vimTypes.BaseVirtualDeviceConfigSpec{
+						&vimTypes.VirtualDeviceConfigSpec{
+							Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimTypes.VirtualPCIPassthrough{
+								VirtualDevice: vimTypes.VirtualDevice{
+									Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+										Vgpu: "SampleProfile2",
+									},
+								},
 							},
-							&vimTypes.OptionValue{
-								Key:   dummyKey + "-2",
-								Value: dummyVal + "-2",
+						},
+						&vimTypes.VirtualDeviceConfigSpec{
+							Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimTypes.VirtualPCIPassthrough{
+								VirtualDevice: vimTypes.VirtualDevice{
+									Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+										AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
+											{
+												VendorId: 52,
+												DeviceId: 53,
+											},
+										},
+										CustomLabel: "SampleLabel2",
+									},
+								},
 							},
 						},
 					}
-					config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{Key: "hello", Value: "world"})
-				})
-				It("vm extra config overlaps with global extra config", func() {
-					globalExtraConfig["hello"] = "world"
 
-					Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-1", dummyVal+"-1"))
-					Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-2", dummyVal+"-2"))
-					Expect(ecMap).ToNot(HaveKeyWithValue("hello", "world"))
 				})
 
-				It("global extra config overlaps with class config spec - class config spec takes precedence", func() {
-					globalExtraConfig[dummyKey+"-1"] = dummyVal + "-3"
-					Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-1", dummyVal+"-1"))
-					Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-2", dummyVal+"-2"))
-				})
-
-				Context("class config spec has vGPU and DDPIO devices", func() {
-					BeforeEach(func() {
-						classConfigSpec.DeviceChange = []vimTypes.BaseVirtualDeviceConfigSpec{
-							&vimTypes.VirtualDeviceConfigSpec{
-								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-								Device: &vimTypes.VirtualPCIPassthrough{
-									VirtualDevice: vimTypes.VirtualDevice{
-										Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
-											Vgpu: "SampleProfile2",
-										},
-									},
-								},
-							},
-							&vimTypes.VirtualDeviceConfigSpec{
-								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-								Device: &vimTypes.VirtualPCIPassthrough{
-									VirtualDevice: vimTypes.VirtualDevice{
-										Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
-											AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
-												{
-													VendorId: 52,
-													DeviceId: 53,
-												},
-											},
-											CustomLabel: "SampleLabel2",
-										},
-									},
-								},
-							},
-						}
-
-					})
-
-					It("extraConfig Map has MMIO keys added", func() {
-						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
-						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, constants.PCIPassthruMMIOSizeDefault))
-					})
+				It("extraConfig Map has MMIO keys added", func() {
+					Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
+					Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, constants.PCIPassthruMMIOSizeDefault))
 				})
 			})
 		})
@@ -602,25 +595,8 @@ var _ = Describe("Update ConfigSpec", func() {
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
-		It("classConfigSpec not nil and is ignored", func() {
-			config.ChangeTrackingEnabled = ptr.To(false)
-			vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-				ChangeBlockTracking: true,
-			}
-			classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
-				ChangeTrackingEnabled: ptr.To(false),
-			}
-
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
-			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
-			Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
-		})
-
-		Context("VM_Class_as_Config_DaynDate FSS is enabled", func() {
+		Context("configSpec.cbt is false and spec.cbt is true", func() {
 			BeforeEach(func() {
-				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-					config.Features.VMClassAsConfigDayNDate = true
-				})
 				config.ChangeTrackingEnabled = ptr.To(false)
 				vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
 					ChangeBlockTracking: true,
@@ -833,16 +809,13 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("When WCP_VMClass_as_Config is enabled, Add and remove device when card type is different", func() {
+		Context("Add and remove device when card type is different", func() {
 			var card1 vimTypes.BaseVirtualDevice
 			var key1 int32 = 100
 			var card2 vimTypes.BaseVirtualDevice
 			var key2 int32 = 200
 
 			BeforeEach(func() {
-				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-					config.Features.VMClassAsConfigDayNDate = true
-				})
 				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
 				Expect(err).ToNot(HaveOccurred())
 				card1.GetVirtualDevice().Key = key1

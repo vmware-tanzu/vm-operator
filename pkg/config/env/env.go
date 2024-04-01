@@ -43,8 +43,6 @@ const (
 	FSSVMOpV1Alpha2
 	FSSInstanceStorage
 	FSSUnifiedTKG
-	FSSVMClassAsConfig
-	FSSVMClassAsConfigDaynDate
 	FSSImageRegistry
 	FSSNamespacedVMClass
 	FSSWindowsSysprep
@@ -139,10 +137,6 @@ func (n VarName) String() string {
 		return "FSS_WCP_INSTANCE_STORAGE"
 	case FSSUnifiedTKG:
 		return "FSS_WCP_Unified_TKG"
-	case FSSVMClassAsConfig:
-		return "FSS_WCP_VM_CLASS_AS_CONFIG"
-	case FSSVMClassAsConfigDaynDate:
-		return "FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE"
 	case FSSImageRegistry:
 		return "FSS_WCP_VM_IMAGE_REGISTRY"
 	case FSSNamespacedVMClass:

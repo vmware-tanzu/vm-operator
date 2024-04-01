@@ -17,10 +17,6 @@ spec:
           value: "false"
         - name: FSS_WCP_INSTANCE_STORAGE
           value: "true"
-        - name: FSS_WCP_VM_CLASS_AS_CONFIG
-          value: "true"
-        - name: FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
-          value: "true"
         - name: FSS_WCP_VM_IMAGE_REGISTRY
           value: "true"
         - name: NETWORK_PROVIDER

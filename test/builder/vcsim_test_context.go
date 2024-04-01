@@ -91,12 +91,6 @@ type VCSimTestConfig struct {
 	// limitations of gce2e.
 	WithDefaultNetwork string
 
-	// WithVMClassAsConfig enables the WCP_VM_CLASS_AS_CONFIG FSS.
-	WithVMClassAsConfig bool
-
-	// WithVMClassAsConfigDaynDate enables the WCP_VM_CLASS_AS_CONFIG_DAYNDATE FSS.
-	WithVMClassAsConfigDaynDate bool
-
 	// WithNetworkEnv is the network environment type.
 	WithNetworkEnv NetworkEnv
 
@@ -306,8 +300,6 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 
 		cc.Features.VMOpV1Alpha2 = true
 		cc.Features.InstanceStorage = config.WithInstanceStorage
-		cc.Features.VMClassAsConfig = config.WithVMClassAsConfig
-		cc.Features.VMClassAsConfigDayNDate = config.WithVMClassAsConfigDaynDate
 		cc.Features.AutoVADPBackupRestore = config.WithAutoVADPBackupRestore
 	})
 }

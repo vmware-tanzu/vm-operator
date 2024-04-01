@@ -11,8 +11,6 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
-
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 // MarshalConfigSpecToXML returns a byte slice of the provided ConfigSpec
@@ -145,13 +143,8 @@ func SanitizeVMClassConfigSpec(
 	// Empty VmProfiles as storage profiles are disk specific
 	configSpec.VmProfile = []vimTypes.BaseVirtualMachineProfileSpec{}
 
-	if pkgconfig.FromContext(ctx).Features.VMClassAsConfig {
-		// Remove all virtual disks except disks with raw device mapping backings.
-		RemoveDevicesFromConfigSpec(configSpec, isNonRDMDisk)
-	} else {
-		// Remove all virtual disks and disk controllers
-		RemoveDevicesFromConfigSpec(configSpec, isDiskOrDiskController)
-	}
+	// Remove all virtual disks except disks with raw device mapping backings.
+	RemoveDevicesFromConfigSpec(configSpec, isNonRDMDisk)
 }
 
 // RemoveDevicesFromConfigSpec removes devices from config spec device changes based on the matcher function.

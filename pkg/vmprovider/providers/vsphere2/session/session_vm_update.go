@@ -43,10 +43,6 @@ type VMUpdateArgs struct {
 	ConfigSpec *vimTypes.VirtualMachineConfigSpec
 
 	NetworkResults network2.NetworkInterfaceResults
-
-	// hack. Remove after VMSVC-1261.
-	// indicating if this VM image used is VM service v1alpha1 compatible.
-	VirtualMachineImageV1Alpha1Compatible bool
 }
 
 func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
@@ -296,8 +292,7 @@ func UpdateConfigSpecExtraConfig(
 	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	vm *vmopv1.VirtualMachine,
-	globalExtraConfig map[string]string,
-	imgV1A1Compat bool) {
+	globalExtraConfig map[string]string) {
 
 	// Either initialize extraConfig to an empty map or from a copy of
 	// globalExtraConfig.
@@ -308,7 +303,7 @@ func UpdateConfigSpecExtraConfig(
 		extraConfig = maps.Clone(globalExtraConfig)
 	}
 
-	// Ensure a VM with vGPUs or dynamic direct path I/O devices has the the
+	// Ensure a VM with vGPUs or dynamic direct path I/O devices has the
 	// correct flags in ExtraConfig for memory mapped I/O. Please see
 	// https://kb.vmware.com/s/article/2142307 for more information about these
 	// flags.
@@ -350,7 +345,7 @@ func UpdateConfigSpecExtraConfig(
 			// OvfEnv transport converts to in v1a2 bootstrap. The v1a1
 			// ExtraConfig transport is deprecated.
 			case constants.VMOperatorV1Alpha1ExtraConfigKey:
-				if imgV1A1Compat && linuxPrepAndVAppConfig {
+				if linuxPrepAndVAppConfig {
 					if o.Value == constants.VMOperatorV1Alpha1ConfigReady {
 						extraConfig[o.Key] = constants.VMOperatorV1Alpha1ConfigEnabled
 					}
@@ -519,8 +514,7 @@ func updateConfigSpec(
 	UpdateConfigSpecManagedBy(config, configSpec)
 	UpdateConfigSpecExtraConfig(
 		vmCtx, config, configSpec, updateArgs.ConfigSpec,
-		&vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig,
-		updateArgs.VirtualMachineImageV1Alpha1Compatible)
+		&vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
 	UpdateConfigSpecChangeBlockTracking(
 		vmCtx, config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
@@ -796,7 +790,7 @@ func (s *Session) poweredOnVMReconfigure(
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
 
-	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, nil, nil, false)
+	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, nil, nil)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
 	var refetchProps bool

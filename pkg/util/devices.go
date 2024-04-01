@@ -192,15 +192,6 @@ func IsEthernetCard(dev vimTypes.BaseVirtualDevice) bool {
 	return ok
 }
 
-func isDiskOrDiskController(dev vimTypes.BaseVirtualDevice) bool {
-	switch dev.(type) {
-	case *vimTypes.VirtualDisk, *vimTypes.VirtualIDEController, *vimTypes.VirtualNVMEController, *vimTypes.VirtualSATAController, *vimTypes.VirtualSCSIController:
-		return true
-	default:
-		return false
-	}
-}
-
 // isNonRDMDisk returns true for all virtual disk devices excluding disks with a raw device mapping backing.
 func isNonRDMDisk(dev vimTypes.BaseVirtualDevice) bool {
 	if dev, ok := dev.(*vimTypes.VirtualDisk); ok {

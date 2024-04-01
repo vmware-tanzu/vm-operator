@@ -29,8 +29,6 @@ func Default() Config {
 			NamespacedVMClass:          true,
 			WindowsSysprep:             true,
 			UnifiedTKG:                 true,
-			VMClassAsConfig:            true,
-			VMClassAsConfigDayNDate:    true,
 			VMOpV1Alpha2:               true,
 			PodVMOnStretchedSupervisor: false,
 			TKGMultipleCL:              false,

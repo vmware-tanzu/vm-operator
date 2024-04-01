@@ -20,7 +20,6 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
@@ -50,11 +49,9 @@ type VMUpdateArgs struct {
 	VirtualMachineImageV1Alpha1Compatible bool
 }
 
-func ethCardMatch(ctx goctx.Context, newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
-	if pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate {
-		if reflect.TypeOf(curBaseEthCard) != reflect.TypeOf(newBaseEthCard) {
-			return false
-		}
+func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
+	if reflect.TypeOf(curBaseEthCard) != reflect.TypeOf(newBaseEthCard) {
+		return false
 	}
 
 	curEthCard := curBaseEthCard.GetVirtualEthernetCard()
@@ -106,7 +103,7 @@ func UpdateEthCardDeviceChanges(
 			// This assumes we don't have multiple NICs in the same backing network. This is kind of, sort
 			// of enforced by the webhook, but we lack a guaranteed way to match up the NICs.
 
-			if !ethCardMatch(ctx, expectedNic, nic) {
+			if !ethCardMatch(expectedNic, nic) {
 				continue
 			}
 
@@ -319,7 +316,7 @@ func UpdateConfigSpecExtraConfig(
 		setMemoryMappedIOFlagsInExtraConfig(vm, extraConfig)
 	}
 
-	if classConfigSpec != nil && pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate {
+	if classConfigSpec != nil {
 		// Merge non-intersecting keys from the desired config spec extra config
 		// with the class config spec extra config (ie) class config spec extra
 		// config keys takes precedence over the desired config spec extra
@@ -443,17 +440,14 @@ func UpdateConfigSpecChangeBlockTracking(
 	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
 	vmSpec vmopv1.VirtualMachineSpec) {
 
-	// When VM_Class_as_Config_DaynDate is enabled, class config spec cbt if
-	// set overrides the VM spec advanced options cbt.
-	// BMV: I don't think this is correct: the class shouldn't dictate this for backup purposes. There is a
-	// webhook out there that changes this in the VM spec.
-	if pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate && classConfigSpec != nil {
-		if classConfigSpec.ChangeTrackingEnabled != nil {
-			if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
-				configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
-			}
-			return
+	// BMV: I don't think this is correct: the class shouldn't dictate this for
+	// backup purposes. There is a webhook out there that changes this in the VM
+	// spec.
+	if classConfigSpec != nil && classConfigSpec.ChangeTrackingEnabled != nil {
+		if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
+			configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
 		}
+		return
 	}
 
 	if adv := vmSpec.Advanced; adv != nil && adv.ChangeBlockTracking {
@@ -521,17 +515,6 @@ func updateConfigSpec(
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
 	vmClassSpec := updateArgs.VMClass.Spec
 
-	// Before VM Class as Config, VMs were deployed from the OVA, and are then
-	// reconfigured to match the desired CPU and memory reservation.  Maintain that
-	// behavior.  With the FSS enabled, VMs will be _created_ with desired HW spec, and we
-	// will not modify the hardware of the VM post creation.  So, don't populate the
-	// Hardware config and CPU/Memory reservation.
-	if !pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
-		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
-		UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, updateArgs.MinCPUFreq)
-		UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
-	}
-
 	UpdateConfigSpecAnnotation(config, configSpec)
 	UpdateConfigSpecManagedBy(config, configSpec)
 	UpdateConfigSpecExtraConfig(
@@ -575,13 +558,9 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	var expectedPCIDevices []vimTypes.BaseVirtualDevice
-	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
-		if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
-			pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(configSpecDevs)
-			expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
-		}
-	} else {
-		expectedPCIDevices = virtualmachine.CreatePCIDevicesFromVMClass(updateArgs.VMClass.Spec.Hardware.Devices)
+	if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
+		pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(configSpecDevs)
+		expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
 	}
 
 	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPCIDevices, currentPciDevices)
@@ -629,7 +608,7 @@ func (s *Session) ensureNetworkInterfaces(
 	deviceKey := int32(-100)
 
 	var networkDevices []vimTypes.BaseVirtualDevice
-	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate && configSpec != nil {
+	if configSpec != nil {
 		networkDevices = util.SelectDevices[vimTypes.BaseVirtualDevice](
 			util.DevicesFromConfigSpec(configSpec),
 			util.IsEthernetCard,
@@ -660,26 +639,23 @@ func (s *Session) ensureNetworkInterfaces(
 			return network2.NetworkInterfaceResults{}, err
 		}
 
-		if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
-			// If VM Class-as-a-Config is supported, we use the network device from the Class.
-			// If the VM class doesn't specify enough number of network devices, we fall back to default behavior.
-			if idx < len(networkDevices) {
-				ethCardFromNetProvider := dev.(vimTypes.BaseVirtualEthernetCard)
+		// Use network devices from the class.
+		if idx < len(networkDevices) {
+			ethCardFromNetProvider := dev.(vimTypes.BaseVirtualEthernetCard)
 
-				if mac := ethCardFromNetProvider.GetVirtualEthernetCard().MacAddress; mac != "" {
-					networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = mac
-					networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
-				}
-
-				networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId =
-					ethCardFromNetProvider.GetVirtualEthernetCard().ExternalId
-				// If the device from VM class has a DVX backing, this should still work if the backing as well
-				// as the DVX backing are set. VPXD checks for DVX backing before checking for normal device backings.
-				networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing =
-					ethCardFromNetProvider.GetVirtualEthernetCard().Backing
-
-				dev = networkDevices[idx]
+			if mac := ethCardFromNetProvider.GetVirtualEthernetCard().MacAddress; mac != "" {
+				networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = mac
+				networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
 			}
+
+			networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId =
+				ethCardFromNetProvider.GetVirtualEthernetCard().ExternalId
+			// If the device from VM class has a DVX backing, this should still work if the backing as well
+			// as the DVX backing are set. VPXD checks for DVX backing before checking for normal device backings.
+			networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing =
+				ethCardFromNetProvider.GetVirtualEthernetCard().Backing
+
+			dev = networkDevices[idx]
 		}
 
 		// govmomi assigns a random device key. Fix that up here.

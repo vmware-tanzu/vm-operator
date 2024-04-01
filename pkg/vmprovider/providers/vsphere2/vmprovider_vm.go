@@ -894,7 +894,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	// tired of trying to keep that in sync so we get to live with a frankenstein thing longer.
 
 	var vmClassConfigSpec *types.VirtualMachineConfigSpec
-	if rawConfigSpec := createArgs.VMClass.Spec.ConfigSpec; pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate && len(rawConfigSpec) > 0 {
+	if rawConfigSpec := createArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
 		configSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
 		if err != nil {
 			return err
@@ -1096,13 +1096,11 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	}
 
 	var vmClassConfigSpec *types.VirtualMachineConfigSpec
-	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
-		if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
-			var err error
-			vmClassConfigSpec, err = GetVMClassConfigSpec(vmCtx, cs)
-			if err != nil {
-				return nil, err
-			}
+	if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
+		var err error
+		vmClassConfigSpec, err = GetVMClassConfigSpec(vmCtx, cs)
+		if err != nil {
+			return nil, err
 		}
 	}
 

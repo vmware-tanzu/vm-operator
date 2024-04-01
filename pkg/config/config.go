@@ -103,8 +103,6 @@ type FeatureStates struct {
 	NamespacedVMClass          bool // FSS_WCP_NAMESPACED_VM_CLASS
 	WindowsSysprep             bool // FSS_WCP_WINDOWS_SYSPREP
 	UnifiedTKG                 bool // FSS_WCP_Unified_TKG
-	VMClassAsConfig            bool // FSS_WCP_VM_CLASS_AS_CONFIG
-	VMClassAsConfigDayNDate    bool // FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
 	VMOpV1Alpha2               bool // FSS_WCP_VMSERVICE_V1ALPHA2
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR
 	TKGMultipleCL              bool // FSS_WCP_TKG_Multiple_CL

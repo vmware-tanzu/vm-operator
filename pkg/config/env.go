@@ -50,8 +50,6 @@ func FromEnv() Config {
 	setBool(env.FSSVMOpV1Alpha2, &config.Features.VMOpV1Alpha2)
 	setBool(env.FSSInstanceStorage, &config.Features.InstanceStorage)
 	setBool(env.FSSUnifiedTKG, &config.Features.UnifiedTKG)
-	setBool(env.FSSVMClassAsConfig, &config.Features.VMClassAsConfig)
-	setBool(env.FSSVMClassAsConfigDaynDate, &config.Features.VMClassAsConfigDayNDate)
 	setBool(env.FSSImageRegistry, &config.Features.ImageRegistry)
 	setBool(env.FSSNamespacedVMClass, &config.Features.NamespacedVMClass)
 	setBool(env.FSSWindowsSysprep, &config.Features.WindowsSysprep)

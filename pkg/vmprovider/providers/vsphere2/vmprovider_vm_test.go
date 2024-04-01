@@ -148,7 +148,7 @@ func vmTests() {
 			return vcVM, nil
 		}
 
-		Context("VMClassAsConfigDaynDate FSS is enabled", func() {
+		Context("VM Class and ConfigSpec", func() {
 
 			var (
 				vcVM       *object.VirtualMachine
@@ -158,7 +158,6 @@ func vmTests() {
 
 			BeforeEach(func() {
 				testConfig.WithNetworkEnv = builder.NetworkEnvNamed
-				testConfig.WithVMClassAsConfigDaynDate = true
 
 				ethCard = vimTypes.VirtualEthernetCard{
 					VirtualDevice: vimTypes.VirtualDevice{
@@ -693,7 +692,7 @@ func vmTests() {
 				})
 
 				// FIXME: vcsim behavior needs to be closer to real VC here so there aren't dupes
-				It("Reconfigures the VM with all misc devices in ConfigSpec except disk and disk controllers", func() {
+				It("Reconfigures the VM with all misc devices in ConfigSpec, including SCSI disk controller", func() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
@@ -728,10 +727,9 @@ func vmTests() {
 					Expect(dev.Key).To(Equal(int32(500)))
 					Expect(dev.ControllerKey).To(Equal(int32(100)))
 
-					// Disk and disk controllers from config spec should not get added, since we
-					// filter them out in our ConfigSpec
+					// SCSI disk controllers may remain due to CNS and RDM.
 					diskControllers := devList.SelectByType(&vimTypes.VirtualSCSIController{})
-					Expect(diskControllers).To(BeEmpty())
+					Expect(diskControllers).To(HaveLen(1))
 
 					// Only preexisting disk should be present on VM -- len: 1
 					disks := devList.SelectByType(&vimTypes.VirtualDisk{})
@@ -910,89 +908,82 @@ func vmTests() {
 				})
 			})
 
-			Context("VMClassAsConfig FSS is Enabled", func() {
-
+			When("configSpec has disk and disk controllers", func() {
 				BeforeEach(func() {
-					testConfig.WithVMClassAsConfig = true
-				})
-
-				When("configSpec has disk and disk controllers", func() {
-					BeforeEach(func() {
-						configSpec = &vimTypes.VirtualMachineConfigSpec{
-							Name: "dummy-VM",
-							DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
-								&vimTypes.VirtualDeviceConfigSpec{
-									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-									Device: &vimTypes.VirtualSATAController{
-										VirtualController: vimTypes.VirtualController{
-											VirtualDevice: vimTypes.VirtualDevice{
-												Key: 101,
-											},
-										},
-									},
-								},
-								&vimTypes.VirtualDeviceConfigSpec{
-									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-									Device: &vimTypes.VirtualSCSIController{
-										VirtualController: vimTypes.VirtualController{
-											VirtualDevice: vimTypes.VirtualDevice{
-												Key: 103,
-											},
-										},
-									},
-								},
-								&vimTypes.VirtualDeviceConfigSpec{
-									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-									Device: &vimTypes.VirtualNVMEController{
-										VirtualController: vimTypes.VirtualController{
-											VirtualDevice: vimTypes.VirtualDevice{
-												Key: 104,
-											},
-										},
-									},
-								},
-								&vimTypes.VirtualDeviceConfigSpec{
-									Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-									Device: &vimTypes.VirtualDisk{
-										CapacityInBytes: 1024,
+					configSpec = &vimTypes.VirtualMachineConfigSpec{
+						Name: "dummy-VM",
+						DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualSATAController{
+									VirtualController: vimTypes.VirtualController{
 										VirtualDevice: vimTypes.VirtualDevice{
-											Key: -42,
-											Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-												ThinProvisioned: ptr.To(true),
-											},
+											Key: 101,
 										},
 									},
 								},
 							},
-						}
-					})
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualSCSIController{
+									VirtualController: vimTypes.VirtualController{
+										VirtualDevice: vimTypes.VirtualDevice{
+											Key: 103,
+										},
+									},
+								},
+							},
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualNVMEController{
+									VirtualController: vimTypes.VirtualController{
+										VirtualDevice: vimTypes.VirtualDevice{
+											Key: 104,
+										},
+									},
+								},
+							},
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualDisk{
+									CapacityInBytes: 1024,
+									VirtualDevice: vimTypes.VirtualDevice{
+										Key: -42,
+										Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
+											ThinProvisioned: ptr.To(true),
+										},
+									},
+								},
+							},
+						},
+					}
+				})
 
-					It("creates a VM with disk controllers", func() {
-						var o mo.VirtualMachine
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				It("creates a VM with disk controllers", func() {
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
-						devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-						satacont := devList.SelectByType(&vimTypes.VirtualSATAController{})
-						Expect(satacont).To(HaveLen(1))
-						dev := satacont[0].GetVirtualDevice()
-						Expect(dev.Key).To(Equal(int32(101)))
+					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
+					satacont := devList.SelectByType(&vimTypes.VirtualSATAController{})
+					Expect(satacont).To(HaveLen(1))
+					dev := satacont[0].GetVirtualDevice()
+					Expect(dev.Key).To(Equal(int32(101)))
 
-						scsicont := devList.SelectByType(&vimTypes.VirtualSCSIController{})
-						Expect(scsicont).To(HaveLen(1))
-						dev = scsicont[0].GetVirtualDevice()
-						Expect(dev.Key).To(Equal(int32(103)))
+					scsicont := devList.SelectByType(&vimTypes.VirtualSCSIController{})
+					Expect(scsicont).To(HaveLen(1))
+					dev = scsicont[0].GetVirtualDevice()
+					Expect(dev.Key).To(Equal(int32(103)))
 
-						nvmecont := devList.SelectByType(&vimTypes.VirtualNVMEController{})
-						Expect(nvmecont).To(HaveLen(1))
-						dev = nvmecont[0].GetVirtualDevice()
-						Expect(dev.Key).To(Equal(int32(104)))
+					nvmecont := devList.SelectByType(&vimTypes.VirtualNVMEController{})
+					Expect(nvmecont).To(HaveLen(1))
+					dev = nvmecont[0].GetVirtualDevice()
+					Expect(dev.Key).To(Equal(int32(104)))
 
-						// only preexisting disk should be present on VM -- len: 1
-						disks := devList.SelectByType(&vimTypes.VirtualDisk{})
-						Expect(disks).To(HaveLen(1))
-						dev1 := disks[0].GetVirtualDevice()
-						Expect(dev1.Key).ToNot(Equal(int32(-42)))
-					})
+					// only preexisting disk should be present on VM -- len: 1
+					disks := devList.SelectByType(&vimTypes.VirtualDisk{})
+					Expect(disks).To(HaveLen(1))
+					dev1 := disks[0].GetVirtualDevice()
+					Expect(dev1.Key).ToNot(Equal(int32(-42)))
 				})
 			})
 		})
@@ -1139,7 +1130,7 @@ func vmTests() {
 					}
 				})
 
-				It("VM should have expected PCI devices from VM Class", func() {
+				It("VM should not have PCI devices from VM Class", func() {
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 					Expect(err).ToNot(HaveOccurred())
 
@@ -1148,20 +1139,7 @@ func vmTests() {
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 					p := devList.SelectByType(&vimTypes.VirtualPCIPassthrough{})
-					Expect(p).To(HaveLen(2))
-
-					pciDev1 := p[0].GetVirtualDevice()
-					pciBacking1, ok1 := pciDev1.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
-					Expect(ok1).Should(BeTrue())
-					Expect(pciBacking1.Vgpu).To(Equal("profile-from-class-without-class-as-config-fss"))
-
-					pciDev2 := p[1].GetVirtualDevice()
-					pciBacking2, ok2 := pciDev2.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
-					Expect(ok2).Should(BeTrue())
-					Expect(pciBacking2.AllowedDevice).To(HaveLen(1))
-					Expect(pciBacking2.AllowedDevice[0].VendorId).To(Equal(int32(59)))
-					Expect(pciBacking2.AllowedDevice[0].DeviceId).To(Equal(int32(60)))
-					Expect(pciBacking2.CustomLabel).To(Equal("label-from-class-without-class-as-config-fss"))
+					Expect(p).To(BeEmpty())
 				})
 			})
 
@@ -1247,8 +1225,14 @@ func vmTests() {
 						// TODO: Fix vcsim behavior: NumCPU is correct "2" in the CloneSpec.Config but ends up
 						// with 1 CPU from source VM. Ditto for MemorySize. These assertions are only working
 						// because the state is on so we reconfigure the VM after it is created.
-						Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-						Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+
+						// TODO: These assertions are excluded right now because
+						// of the aforementioned vcsim behavior. The referenced
+						// loophole is no longer in place because the FSS for
+						// VM Class as Config was removed, and we now rely on
+						// the deploy call to set the correct CPU/memory.
+						// Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+						// Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 					})
 
 					// TODO: More assertions!

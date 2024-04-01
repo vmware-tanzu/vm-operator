@@ -300,59 +300,133 @@ func UpdateConfigSpecExtraConfig(
 	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	vm *vmopv1.VirtualMachine,
 	globalExtraConfig map[string]string,
-	imageV1Alpha1Compatible bool) {
+	imgV1A1Compat bool) {
 
-	extraConfig := maps.Clone(globalExtraConfig)
+	// Either initialize extraConfig to an empty map or from a copy of
+	// globalExtraConfig.
+	var extraConfig map[string]string
+	if globalExtraConfig == nil {
+		extraConfig = map[string]string{}
+	} else {
+		extraConfig = maps.Clone(globalExtraConfig)
+	}
 
-	virtualDevices := vmClassSpec.Hardware.Devices
-	if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 ||
-		(classConfigSpec != nil && util.HasVirtualPCIPassthroughDeviceChange(classConfigSpec.DeviceChange)) {
-		setMMIOExtraConfig(vm, extraConfig)
+	// Ensure a VM with vGPUs or dynamic direct path I/O devices has the the
+	// correct flags in ExtraConfig for memory mapped I/O. Please see
+	// https://kb.vmware.com/s/article/2142307 for more information about these
+	// flags.
+	if hasvGPUOrDDPIODevices(config, classConfigSpec, vmClassSpec) {
+		setMemoryMappedIOFlagsInExtraConfig(vm, extraConfig)
 	}
 
 	if classConfigSpec != nil && pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate {
-		// Merge non-intersecting keys from the desired config spec extra config with the class config spec
-		// extra config (ie) class config spec extra config keys takes precedence over the desired config
-		// spec extra config keys.
+		// Merge non-intersecting keys from the desired config spec extra config
+		// with the class config spec extra config (ie) class config spec extra
+		// config keys takes precedence over the desired config spec extra
+		// config keys.
 		combinedExtraConfig := util.AppendNewExtraConfigValues(classConfigSpec.ExtraConfig, extraConfig)
 		extraConfig = util.ExtraConfigToMap(combinedExtraConfig)
 	}
 
-	// Ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig as
-	// setting it to an empty value removes it.
+	// Note if the VM uses both LinuxPrep and vAppConfig. This is used in the
+	// loop below.
+	linuxPrepAndVAppConfig := isLinuxPrepAndVAppConfig(vm)
+
 	for i := range config.ExtraConfig {
 		if o := config.ExtraConfig[i].GetOptionValue(); o != nil {
-			if o.Key == constants.MMPowerOffVMExtraConfigKey && o.Value != "" {
-				extraConfig[constants.MMPowerOffVMExtraConfigKey] = ""
-				break
-			}
-		}
-	}
 
-	if bootstrap := vm.Spec.Bootstrap; imageV1Alpha1Compatible && bootstrap != nil {
-		// For our special V1Alpha1Compatible images, set the VMOperatorV1Alpha1ExtraConfigKey to"Ready"
-		// to fix configuration races between cloud-init, vApp & GOSC, by deferring cloud-init from
-		// running on first boot and disables networking configurations by cloud-init. This only matters
-		// for 2 legacy marketplace images. The check below is what the v1a1 OvfEnv transport converts to
-		// in v1a2 bootstrap. The v1a1 ExtraConfig transport isn't really supported anymore.
-		if bootstrap.LinuxPrep != nil && bootstrap.VAppConfig != nil {
-			for i := range config.ExtraConfig {
-				if o := config.ExtraConfig[i].GetOptionValue(); o != nil {
-					if o.Key == constants.VMOperatorV1Alpha1ExtraConfigKey {
-						if val, _ := o.Value.(string); val == constants.VMOperatorV1Alpha1ConfigReady {
-							extraConfig[o.Key] = constants.VMOperatorV1Alpha1ConfigEnabled
-							break
-						}
+			switch o.Key {
+
+			// Ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig as
+			// setting it to an empty value removes it.
+			case constants.MMPowerOffVMExtraConfigKey:
+				if o.Value != "" {
+					extraConfig[o.Key] = ""
+				}
+
+			// For the special V1Alpha1Compatible images, set the
+			// VMOperatorV1Alpha1ExtraConfigKey to "Ready" to fix configuration
+			// races between cloud-init, vApp, and GOSC. This is addressed by
+			// by deferring cloud-init to run on second boot and preventing
+			// cloud-init from configuring the network. This only matters for
+			// two, legacy marketplace images. The check below is what the v1a1
+			// OvfEnv transport converts to in v1a2 bootstrap. The v1a1
+			// ExtraConfig transport is deprecated.
+			case constants.VMOperatorV1Alpha1ExtraConfigKey:
+				if imgV1A1Compat && linuxPrepAndVAppConfig {
+					if o.Value == constants.VMOperatorV1Alpha1ConfigReady {
+						extraConfig[o.Key] = constants.VMOperatorV1Alpha1ConfigEnabled
 					}
 				}
 			}
 		}
 	}
 
+	// Update the ConfigSpec's ExtraConfig property with the results from
+	// above. Please note this *may* include keys with empty values. This
+	// indicates to vSphere that a key/value pair should be removed.
 	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
 }
 
-func setMMIOExtraConfig(vm *vmopv1.VirtualMachine, extraConfig map[string]string) {
+func isLinuxPrepAndVAppConfig(vm *vmopv1.VirtualMachine) bool {
+	if vm == nil {
+		return false
+	}
+	if vm.Spec.Bootstrap == nil {
+		return false
+	}
+	return vm.Spec.Bootstrap.LinuxPrep != nil && vm.Spec.Bootstrap.VAppConfig != nil
+}
+
+func hasvGPUOrDDPIODevices(
+	config *vimTypes.VirtualMachineConfigInfo,
+	configSpec *vimTypes.VirtualMachineConfigSpec,
+	vmClassSpec *vmopv1.VirtualMachineClassSpec) bool {
+
+	return hasvGPUOrDDPIODevicesInVM(config) ||
+		hasvGPUOrDDPIODevicesInVMClass(configSpec, vmClassSpec)
+}
+
+func hasvGPUOrDDPIODevicesInVM(config *vimTypes.VirtualMachineConfigInfo) bool {
+	if config == nil {
+		return false
+	}
+	if len(util.SelectNvidiaVgpu(config.Hardware.Device)) > 0 {
+		return true
+	}
+	if len(util.SelectDynamicDirectPathIO(config.Hardware.Device)) > 0 {
+		return true
+	}
+	return false
+}
+
+func hasvGPUOrDDPIODevicesInVMClass(
+	configSpec *vimTypes.VirtualMachineConfigSpec,
+	vmClassSpec *vmopv1.VirtualMachineClassSpec) bool {
+
+	if vmClassSpec != nil {
+		if len(vmClassSpec.Hardware.Devices.VGPUDevices) > 0 {
+			return true
+		}
+		if len(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices) > 0 {
+			return true
+		}
+	}
+
+	if configSpec != nil {
+		return util.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange)
+	}
+
+	return false
+}
+
+// setMemoryMappedIOFlagsInExtraConfig sets flags in ExtraConfig that can
+// improve the performance of VMs with vGPUs and dynamic direct path I/O
+// devices. Please see https://kb.vmware.com/s/article/2142307 for more
+// information about these flags.
+func setMemoryMappedIOFlagsInExtraConfig(
+	vm *vmopv1.VirtualMachine, extraConfig map[string]string) {
+
 	mmioSize := vm.Annotations[constants.PCIPassthruMMIOOverrideAnnotation]
 	if mmioSize == "" {
 		mmioSize = constants.PCIPassthruMMIOSizeDefault
@@ -460,9 +534,12 @@ func updateConfigSpec(
 
 	UpdateConfigSpecAnnotation(config, configSpec)
 	UpdateConfigSpecManagedBy(config, configSpec)
-	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, updateArgs.ConfigSpec, &vmClassSpec,
-		vmCtx.VM, updateArgs.ExtraConfig, updateArgs.VirtualMachineImageV1Alpha1Compatible)
-	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
+	UpdateConfigSpecExtraConfig(
+		vmCtx, config, configSpec, updateArgs.ConfigSpec,
+		&vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig,
+		updateArgs.VirtualMachineImageV1Alpha1Compatible)
+	UpdateConfigSpecChangeBlockTracking(
+		vmCtx, config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 
 	return configSpec
@@ -742,6 +819,8 @@ func (s *Session) poweredOnVMReconfigure(
 	config *vimTypes.VirtualMachineConfigInfo) (bool, error) {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
+
+	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, nil, nil, false)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
 	var refetchProps bool

@@ -210,6 +210,8 @@ func ExtraConfigToMap(input []vimTypes.BaseOptionValue) (output map[string]strin
 // MergeExtraConfig adds the key/value to the ExtraConfig if the key is not
 // present or the new value is different than the existing value.
 // It returns the newly added ExtraConfig.
+// Please note the result *may* include keys with empty values. This indicates
+// to vSphere to remove the key/value pair.
 func MergeExtraConfig(
 	existingExtraConfig []vimTypes.BaseOptionValue,
 	newKeyValuePairs map[string]string) []vimTypes.BaseOptionValue {

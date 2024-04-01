@@ -289,7 +289,19 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		Context("Empty input", func() {
-			It("No changes", func() {
+			Specify("no changes", func() {
+				Expect(ecMap).To(BeEmpty())
+			})
+		})
+
+		When("classConfigSpec, vmClassSpec, vm, and globalExtraConfig params are nil", func() {
+			BeforeEach(func() {
+				classConfigSpec = nil
+				vmClassSpec = nil
+				vm = nil
+				globalExtraConfig = nil
+			})
+			Specify("no changes", func() {
 				Expect(ecMap).To(BeEmpty())
 			})
 		})
@@ -303,7 +315,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				imageV1Alpha1Compatible = true
 			})
 
-			Context("When VM uses LinuxPrep with vAppConfig bootstrap", func() {
+			When("VM uses LinuxPrep with vAppConfig bootstrap", func() {
 				BeforeEach(func() {
 					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 						LinuxPrep:  &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
@@ -354,6 +366,24 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 			It("Should be set to an empty value", func() {
 				Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, ""))
+			})
+			When("classConfigSpec, vmClassSpec, and vm params are nil", func() {
+				BeforeEach(func() {
+					classConfigSpec = nil
+					vmClassSpec = nil
+					vm = nil
+				})
+				It("Should be set to an empty value", func() {
+					Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, ""))
+				})
+				When("globalExtraConfig is nil", func() {
+					BeforeEach(func() {
+						globalExtraConfig = nil
+					})
+					It("Should be set to an empty value", func() {
+						Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, ""))
+					})
+				})
 			})
 		})
 

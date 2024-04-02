@@ -40,6 +40,7 @@ const (
 	dummyFirstBootDoneVal          = "dummy-first-boot-done"
 	dummyCreatedAtBuildVersionVal  = "dummy-created-at-build-version"
 	dummyCreatedAtSchemaVersionVal = "dummy-created-at-schema-version"
+	dummyPausedVMLabelVal          = "dummy-devops"
 )
 
 type testParams struct {
@@ -143,8 +144,6 @@ func unitTestsValidateCreate() {
 		isEmptyAvailabilityZone    bool
 		powerState                 vmopv1.VirtualMachinePowerState
 		nextRestartTime            string
-		adminOnlyAnnotations       bool
-		isPrivilegedUser           bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -194,25 +193,6 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
-		if args.adminOnlyAnnotations {
-			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = updateSuffix
-			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = updateSuffix
-		}
-
-		if args.isPrivilegedUser {
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.Features.AutoVADPBackupRestore = true
-			})
-
-			fakeWCPUser := "sso:wcp-12345-fake-machineid-67890@vsphere.local"
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.PrivilegedUsers = fakeWCPUser
-			})
-
-			ctx.UserInfo.Username = fakeWCPUser
-			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
-		}
-
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
@@ -242,7 +222,6 @@ func unitTestsValidateCreate() {
 	volPath := specPath.Child("volumes")
 	nextRestartTimePath := specPath.Child("nextRestartTime")
 	now := time.Now().UTC()
-	annotationPath := field.NewPath("metadata", "annotations")
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
@@ -286,15 +265,6 @@ func unitTestsValidateCreate() {
 		Entry("should disallow creating VM with non-empty, invalid nextRestartTime value",
 			createArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
-
-		Entry("should disallow creating VM with admin-only annotations set by SSO user", createArgs{adminOnlyAnnotations: true}, false,
-			strings.Join([]string{
-				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-			}, ", "), nil),
-		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
-
-		Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled", createArgs{adminOnlyAnnotations: true, isPrivilegedUser: true}, true, nil, nil),
 	)
 
 	doTest := func(args testParams) {
@@ -311,6 +281,82 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	Context("Annotations", func() {
+		annotationPath := field.NewPath("metadata", "annotations")
+
+		DescribeTable("create", doTest,
+			Entry("should disallow creating VM with admin-only annotations set by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should allow creating VM with admin-only annotations set by service user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+
+						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.AutoVADPBackupRestore = true
+						})
+
+						fakeWCPUser := "sso:wcp-12345-fake-machineid-67890@vsphere.local"
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.PrivilegedUsers = fakeWCPUser
+						})
+
+						ctx.UserInfo.Username = fakeWCPUser
+						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
+
+						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("Label", func() {
+		labelPath := field.NewPath("metadata", "labels")
+
+		DescribeTable("create", doTest,
+			Entry("should disallow creating VM with admin-only labels set by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(labelPath.Child(vmopv1.PausedVMLabelKey), "modifying this label is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should allow creating VM with admin-only label set by service user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
 	Context("Readiness Probe", func() {
 
 		DescribeTable("create", doTest,
@@ -1349,10 +1395,6 @@ func unitTestsValidateUpdate() {
 		newPowerStateEmptyAllowed   bool
 		nextRestartTime             string
 		lastRestartTime             string
-		addAdminOnlyAnnotations     bool
-		updateAdminOnlyAnnotations  bool
-		removeAdminOnlyAnnotations  bool
-		isPrivilegedUser            bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -1418,45 +1460,6 @@ func unitTestsValidateUpdate() {
 			ctx.vm.Spec.PowerState = args.newPowerState
 		}
 
-		if args.addAdminOnlyAnnotations {
-			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-			ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-			ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-		}
-		if args.updateAdminOnlyAnnotations {
-			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-			ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-			ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
-			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
-			ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
-			ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
-		}
-		if args.removeAdminOnlyAnnotations {
-			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-			ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-			ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-		}
-
-		if args.isPrivilegedUser {
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.Features.AutoVADPBackupRestore = true
-			})
-
-			privilegedUsersEnvList := "  , foo ,bar , test,  "
-			privilegedUser := "bar"
-
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.PrivilegedUsers = privilegedUsersEnvList
-			})
-
-			ctx.UserInfo.Username = privilegedUser
-			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
-		}
-
 		ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
@@ -1488,7 +1491,6 @@ func unitTestsValidateUpdate() {
 	volumesPath := field.NewPath("spec", "volumes")
 	powerStatePath := field.NewPath("spec", "powerState")
 	nextRestartTimePath := field.NewPath("spec", "nextRestartTime")
-	annotationPath := field.NewPath("metadata", "annotations")
 
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),
@@ -1529,35 +1531,6 @@ func unitTestsValidateUpdate() {
 		Entry("should disallow updating VM with non-empty, invalid nextRestartTime value ",
 			updateArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "must be formatted as RFC3339Nano").Error(), nil),
-
-		Entry("should disallow adding admin-only annotations by SSO user", updateArgs{addAdminOnlyAnnotations: true}, false,
-			strings.Join([]string{
-				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-			}, ", "), nil),
-		Entry("should disallow updating admin-only annotations by SSO user", updateArgs{updateAdminOnlyAnnotations: true}, false,
-			strings.Join([]string{
-				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-			}, ", "), nil),
-		Entry("should disallow removing admin-only annotations by SSO user", updateArgs{removeAdminOnlyAnnotations: true}, false,
-			strings.Join([]string{
-				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-			}, ", "), nil),
-		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, addAdminOnlyAnnotations: true}, true, nil, nil),
-		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, updateAdminOnlyAnnotations: true}, true, nil, nil),
-		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, removeAdminOnlyAnnotations: true}, true, nil, nil),
-
-		Entry("should allow adding admin-only annotations by privileged users", updateArgs{isPrivilegedUser: true, addAdminOnlyAnnotations: true}, true, nil, nil),
-		Entry("should allow updating admin-only annotations by privileged users", updateArgs{isPrivilegedUser: true, updateAdminOnlyAnnotations: true}, true, nil, nil),
-		Entry("should allow removing admin-only annotations by privileged users", updateArgs{isPrivilegedUser: true, removeAdminOnlyAnnotations: true}, true, nil, nil),
 	)
 
 	doTest := func(args testParams) {
@@ -1576,6 +1549,176 @@ func unitTestsValidateUpdate() {
 			args.validate(response)
 		}
 	}
+
+	Context("Annotations", func() {
+		annotationPath := field.NewPath("metadata", "annotations")
+
+		DescribeTable("update", doTest,
+			Entry("should disallow updating admin-only annotations by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
+						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
+						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should disallow removing admin-only annotations by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should allow updating admin-only annotations by service user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+
+						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
+						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
+						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow removing admin-only annotations by service user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+
+						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow updating admin-only annotations by privileged user when the Backup/Restore FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.AutoVADPBackupRestore = true
+						})
+
+						privilegedUsersEnvList := "  , foo ,bar , test,  "
+						privilegedUser := "bar"
+
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.PrivilegedUsers = privilegedUsersEnvList
+						})
+
+						ctx.UserInfo.Username = privilegedUser
+						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
+
+						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
+						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
+						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow removing admin-only annotations by privileged user when the Backup/Restore FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.AutoVADPBackupRestore = true
+						})
+
+						privilegedUsersEnvList := "  , foo ,bar , test,  "
+						privilegedUser := "bar"
+
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.PrivilegedUsers = privilegedUsersEnvList
+						})
+
+						ctx.UserInfo.Username = privilegedUser
+						ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
+
+						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("Label", func() {
+		labelPath := field.NewPath("metadata", "labels")
+
+		DescribeTable("update", doTest,
+			Entry("should disallow updating VM with admin-only labels set by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+						ctx.vm.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal + updateSuffix
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(labelPath.Child(vmopv1.PausedVMLabelKey), "modifying this label is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should disallow removing admin-only labels set by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(labelPath.Child(vmopv1.PausedVMLabelKey), "modifying this label is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should allow updating VM with admin-only label by service user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+						ctx.vm.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal + updateSuffix
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow removing admin-only label by service user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
 
 	Context("Network", func() {
 
@@ -1654,40 +1797,6 @@ func unitTestsValidateUpdate() {
 	})
 
 	Context("HardwareVersion", func() {
-
-		type testParams struct {
-			setup         func(ctx *unitValidatingWebhookContext)
-			validate      func(response admission.Response)
-			expectAllowed bool
-		}
-
-		doTest := func(args testParams) {
-			args.setup(ctx)
-
-			var err error
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
-			Expect(err).ToNot(HaveOccurred())
-			ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
-			Expect(err).ToNot(HaveOccurred())
-
-			response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-			Expect(response.Allowed).To(Equal(args.expectAllowed))
-
-			if args.validate != nil {
-				args.validate(response)
-			}
-		}
-
-		doValidateWithMsg := func(msgs ...string) func(admission.Response) {
-			return func(response admission.Response) {
-				reasons := strings.Split(string(response.Result.Reason), ", ")
-				for _, m := range msgs {
-					Expect(reasons).To(ContainElement(m))
-				}
-				// This may be overly strict in some cases but catches missed assertions.
-				Expect(reasons).To(HaveLen(len(msgs)))
-			}
-		}
 
 		DescribeTable("MinHardwareVersion", doTest,
 			Entry("allow same version",

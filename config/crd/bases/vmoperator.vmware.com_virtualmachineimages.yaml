@@ -15,7 +15,7 @@ spec:
     - vmi
     - vmimage
     singular: virtualmachineimage
-  scope: Cluster
+  scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.imageName

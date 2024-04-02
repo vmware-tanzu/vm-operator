@@ -37,12 +37,6 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_WCP_VM_IMAGE_REGISTRY
-    value: "<FSS_WCP_VM_IMAGE_REGISTRY_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
     name: NETWORK_PROVIDER
     value: "<NETWORK_PROVIDER_VALUE>"
 

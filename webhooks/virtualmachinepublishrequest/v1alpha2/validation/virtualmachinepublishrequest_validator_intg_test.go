@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -66,48 +65,21 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 
 func intgTestsValidateCreate() {
 	var (
-		err error
 		ctx *intgValidatingWebhookContext
 	)
 
 	BeforeEach(func() {
-		pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-			config.Features.ImageRegistry = true
-		})
 		ctx = newIntgValidatingWebhookContext()
 	})
 
 	AfterEach(func() {
-		pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-			config.Features.ImageRegistry = false
-		})
-		err = nil
 		ctx = nil
 	})
 
-	When("WCP_VM_Image_Registry is enabled: create is performed", func() {
-		It("should allow the request", func() {
-			Eventually(func() error {
-				return ctx.Client.Create(ctx, ctx.vmPub)
-			}).Should(Succeed())
-		})
-	})
-
-	When("WCP_VM_Image_Registry is not enabled", func() {
-		BeforeEach(func() {
-			pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-				config.Features.ImageRegistry = false
-			})
-			err = ctx.Client.Create(ctx, ctx.vmPub)
-		})
-		It("should deny the request", func() {
-			Eventually(func() string {
-				if err = ctx.Client.Create(ctx, ctx.vmPub); err != nil {
-					return err.Error()
-				}
-				return ""
-			}).Should(ContainSubstring("WCP_VM_Image_Registry feature not enabled"))
-		})
+	It("should allow the request", func() {
+		Eventually(func() error {
+			return ctx.Client.Create(ctx, ctx.vmPub)
+		}).Should(Succeed())
 	})
 }
 
@@ -119,10 +91,6 @@ func intgTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
-		pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-			config.Features.ImageRegistry = true
-		})
-
 		Expect(ctx.Client.Create(ctx, ctx.vmPub)).To(Succeed())
 	})
 
@@ -132,10 +100,6 @@ func intgTestsValidateUpdate() {
 
 	AfterEach(func() {
 		Expect(ctx.Client.Delete(ctx, ctx.vmPub)).To(Succeed())
-		pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-			config.Features.ImageRegistry = false
-		})
-
 		err = nil
 		ctx = nil
 	})
@@ -167,18 +131,11 @@ func intgTestsValidateDelete() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
-		pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-			config.Features.ImageRegistry = true
-		})
-
 		Expect(ctx.Client.Create(ctx, ctx.vmPub)).To(Succeed())
 	})
 
 	JustBeforeEach(func() {
 		err = ctx.Client.Delete(suite, ctx.vmPub)
-		pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-			config.Features.ImageRegistry = false
-		})
 	})
 
 	AfterEach(func() {

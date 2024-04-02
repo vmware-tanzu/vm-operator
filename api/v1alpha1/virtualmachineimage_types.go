@@ -158,7 +158,7 @@ func (vmImage *VirtualMachineImage) SetConditions(conditions Conditions) {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster,shortName=vmi;vmimage
+// +kubebuilder:resource:scope=Namespaced,shortName=vmi;vmimage
 // +kubebuilder:storageversion:false
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Display-Name",type="string",JSONPath=".status.imageName"

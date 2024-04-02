@@ -100,128 +100,120 @@ func vmUtilTests() {
 
 	Context("GetVirtualMachineImageSpecAndStatus", func() {
 
-		// NOTE: As we currently have it, v1a2 must have this enabled.
-		When("WCPVMImageRegistry FSS is enabled", func() {
+		var (
+			nsVMImage      *vmopv1.VirtualMachineImage
+			clusterVMImage *vmopv1.ClusterVirtualMachineImage
+		)
 
-			var (
-				nsVMImage      *vmopv1.VirtualMachineImage
-				clusterVMImage *vmopv1.ClusterVirtualMachineImage
-			)
+		BeforeEach(func() {
+			nsVMImage = builder.DummyVirtualMachineImageA2("dummy-ns-vm-image")
+			nsVMImage.Namespace = vmCtx.VM.Namespace
+			conditions.MarkTrue(nsVMImage, vmopv1.ReadyConditionType)
+			clusterVMImage = builder.DummyClusterVirtualMachineImageA2("dummy-cluster-vm-image")
+			conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
+		})
 
-			BeforeEach(func() {
-				nsVMImage = builder.DummyVirtualMachineImageA2("dummy-ns-vm-image")
-				nsVMImage.Namespace = vmCtx.VM.Namespace
-				conditions.MarkTrue(nsVMImage, vmopv1.ReadyConditionType)
-				clusterVMImage = builder.DummyClusterVirtualMachineImageA2("dummy-cluster-vm-image")
-				conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
+		When("Neither cluster or namespace scoped VM image exists", func() {
 
-				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
-					config.Features.ImageRegistry = true
-				})
+			It("returns error and sets condition", func() {
+				_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+				Expect(err).To(HaveOccurred())
+				expectedErrMsg := fmt.Sprintf("Failed to get the VM's image: %s", vmCtx.VM.Spec.ImageName)
+				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+				expectedCondition := []metav1.Condition{
+					*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, "NotFound", expectedErrMsg),
+				}
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 			})
+		})
 
-			When("Neither cluster or namespace scoped VM image exists", func() {
+		When("VM image exists but the image is not ready", func() {
 
-				It("returns error and sets condition", func() {
+			const expectedErrMsg = "VirtualMachineImage is not ready"
+
+			Context("VM image has the Ready condition set to False", func() {
+				reason := vmopv1.VirtualMachineImageProviderNotReadyReason
+				errMsg := "Provider item is not in ready condition"
+
+				BeforeEach(func() {
+					conditions.MarkFalse(nsVMImage,
+						vmopv1.ReadyConditionType,
+						reason,
+						errMsg)
+					initObjects = append(initObjects, nsVMImage)
+					vmCtx.VM.Spec.ImageName = nsVMImage.Name
+				})
+
+				It("returns error and sets VM condition with reason and message from the image", func() {
 					_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
 					Expect(err).To(HaveOccurred())
-					expectedErrMsg := fmt.Sprintf("Failed to get the VM's image: %s", vmCtx.VM.Spec.ImageName)
+
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 					expectedCondition := []metav1.Condition{
-						*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, "NotFound", expectedErrMsg),
+						*conditions.FalseCondition(
+							vmopv1.VirtualMachineConditionImageReady, reason, errMsg),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
 			})
 
-			When("VM image exists but the image is not ready", func() {
+			Context("VM image does not have the Ready condition", func() {
+				reason := "NotReady"
 
-				const expectedErrMsg = "VirtualMachineImage is not ready"
-
-				Context("VM image has the Ready condition set to False", func() {
-					reason := vmopv1.VirtualMachineImageProviderNotReadyReason
-					errMsg := "Provider item is not in ready condition"
-
-					BeforeEach(func() {
-						conditions.MarkFalse(nsVMImage,
-							vmopv1.ReadyConditionType,
-							reason,
-							errMsg)
-						initObjects = append(initObjects, nsVMImage)
-						vmCtx.VM.Spec.ImageName = nsVMImage.Name
-					})
-
-					It("returns error and sets VM condition with reason and message from the image", func() {
-						_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
-						Expect(err).To(HaveOccurred())
-
-						Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
-
-						expectedCondition := []metav1.Condition{
-							*conditions.FalseCondition(
-								vmopv1.VirtualMachineConditionImageReady, reason, errMsg),
-						}
-						Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
-					})
-				})
-
-				Context("VM image does not have the Ready condition", func() {
-					reason := "NotReady"
-
-					BeforeEach(func() {
-						conditions.Delete(nsVMImage, vmopv1.ReadyConditionType)
-						initObjects = append(initObjects, nsVMImage)
-						vmCtx.VM.Spec.ImageName = nsVMImage.Name
-					})
-
-					It("returns error and sets VM condition with reason and message from the image", func() {
-						_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
-						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
-
-						expectedCondition := []metav1.Condition{
-							*conditions.FalseCondition(
-								vmopv1.VirtualMachineConditionImageReady, reason, expectedErrMsg),
-						}
-						Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
-					})
-				})
-
-			})
-
-			When("Namespace scoped VirtualMachineImage exists and ready", func() {
 				BeforeEach(func() {
+					conditions.Delete(nsVMImage, vmopv1.ReadyConditionType)
 					initObjects = append(initObjects, nsVMImage)
 					vmCtx.VM.Spec.ImageName = nsVMImage.Name
 				})
 
-				It("returns success", func() {
-					imgObj, spec, status, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(imgObj).ToNot(BeNil())
-					Expect(imgObj.GetObjectKind().GroupVersionKind().Kind).To(Equal("VirtualMachineImage"))
-					Expect(spec).ToNot(BeNil())
-					Expect(status).ToNot(BeNil())
-					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
+				It("returns error and sets VM condition with reason and message from the image", func() {
+					_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+					expectedCondition := []metav1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.VirtualMachineConditionImageReady, reason, expectedErrMsg),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
 			})
 
-			When("ClusterVirtualMachineImage exists and ready", func() {
-				BeforeEach(func() {
-					initObjects = append(initObjects, clusterVMImage)
-					vmCtx.VM.Spec.ImageName = clusterVMImage.Name
-				})
+		})
 
-				It("returns success", func() {
-					imgObj, spec, status, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(imgObj).ToNot(BeNil())
-					Expect(imgObj.GetObjectKind().GroupVersionKind().Kind).To(Equal("ClusterVirtualMachineImage"))
-					Expect(spec).ToNot(BeNil())
-					Expect(status).ToNot(BeNil())
-					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
-				})
+		When("Namespace scoped VirtualMachineImage exists and ready", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, nsVMImage)
+				vmCtx.VM.Spec.ImageName = nsVMImage.Name
+			})
+
+			It("returns success", func() {
+				imgObj, spec, status, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(imgObj).ToNot(BeNil())
+				Expect(imgObj.GetObjectKind().GroupVersionKind().Kind).To(Equal("VirtualMachineImage"))
+				Expect(spec).ToNot(BeNil())
+				Expect(status).ToNot(BeNil())
+				Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
+			})
+		})
+
+		When("ClusterVirtualMachineImage exists and ready", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, clusterVMImage)
+				vmCtx.VM.Spec.ImageName = clusterVMImage.Name
+			})
+
+			It("returns success", func() {
+				imgObj, spec, status, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(imgObj).ToNot(BeNil())
+				Expect(imgObj.GetObjectKind().GroupVersionKind().Kind).To(Equal("ClusterVirtualMachineImage"))
+				Expect(spec).ToNot(BeNil())
+				Expect(status).ToNot(BeNil())
+				Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
 			})
 		})
 	})

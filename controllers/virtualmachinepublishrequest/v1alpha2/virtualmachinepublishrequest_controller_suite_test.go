@@ -23,7 +23,6 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 	pkgconfig.UpdateContext(
 		pkgconfig.NewContextWithDefaultConfig(),
 		func(config *pkgconfig.Config) {
-			config.Features.ImageRegistry = true
 			config.Features.VMOpV1Alpha2 = true
 		}),
 	virtualmachinepublishrequest.AddToManager,

@@ -213,7 +213,7 @@ type VirtualMachineImageStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster,shortName=vmi;vmimage
+// +kubebuilder:resource:scope=Namespaced,shortName=vmi;vmimage
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Display Name",type="string",JSONPath=".status.name"

@@ -52,14 +52,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
-const (
-	scopeCluster   = "Cluster"
-	scopeNamespace = "Namespaced"
-
-	virtualMachineImageResourceName = "virtualmachineimages.vmoperator.vmware.com"
-	virtualMachineClassResourceName = "virtualmachineclasses.vmoperator.vmware.com"
-)
-
 // Reconciler is a base type for builder's reconcilers.
 type Reconciler interface{}
 
@@ -465,20 +457,6 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 		s.config, err = s.envTest.Start()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(s.config).ToNot(BeNil())
-	})
-
-	By("updating CRD scope", func() {
-		By("updating vm class scope", func() {
-			enabled := pkgconfig.FromContext(s).Features.NamespacedVMClass
-			crd := s.GetInstalledCRD(virtualMachineClassResourceName)
-			Expect(crd).ToNot(BeNil())
-			scope := string(crd.Spec.Scope)
-			if enabled && scope == scopeCluster {
-				s.UpdateCRDScope(crd, scopeNamespace)
-			} else if !enabled && scope == scopeNamespace {
-				s.UpdateCRDScope(crd, scopeCluster)
-			}
-		})
 	})
 
 	// If one or more webhooks are being tested then go ahead and generate a

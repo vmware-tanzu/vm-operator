@@ -54,46 +54,40 @@ func vmUtilTests() {
 	})
 
 	Context("GetVirtualMachineClass", func() {
-		// NOTE: As we currently have it, v1a2 must have this enabled.
-		When("WCP_Namespaced_VM_Class FSS is enabled", func() {
-			var (
-				vmClass *vmopv1.VirtualMachineClass
-			)
+		var (
+			vmClass *vmopv1.VirtualMachineClass
+		)
 
+		BeforeEach(func() {
+			vmClass = builder.DummyVirtualMachineClass2A2("dummy-vm-class")
+			vmClass.Namespace = vmCtx.VM.Namespace
+			vmCtx.VM.Spec.ClassName = vmClass.Name
+		})
+
+		Context("VirtualMachineClass custom resource doesn't exist", func() {
+			It("Returns error and sets condition when VM Class does not exist", func() {
+				expectedErrMsg := fmt.Sprintf("virtualmachineclasses.vmoperator.vmware.com %q not found", vmCtx.VM.Spec.ClassName)
+
+				_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+				expectedCondition := []metav1.Condition{
+					*conditions.FalseCondition(vmopv1.VirtualMachineConditionClassReady, "NotFound", expectedErrMsg),
+				}
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			})
+		})
+
+		Context("VirtualMachineClass custom resource exists", func() {
 			BeforeEach(func() {
-				vmClass = builder.DummyVirtualMachineClass2A2("dummy-vm-class")
-				vmClass.Namespace = vmCtx.VM.Namespace
-				vmCtx.VM.Spec.ClassName = vmClass.Name
-				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
-					config.Features.NamespacedVMClass = true
-				})
+				initObjects = append(initObjects, vmClass)
 			})
 
-			Context("VirtualMachineClass custom resource doesn't exist", func() {
-				It("Returns error and sets condition when VM Class does not exist", func() {
-					expectedErrMsg := fmt.Sprintf("virtualmachineclasses.vmoperator.vmware.com %q not found", vmCtx.VM.Spec.ClassName)
-
-					_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
-
-					expectedCondition := []metav1.Condition{
-						*conditions.FalseCondition(vmopv1.VirtualMachineConditionClassReady, "NotFound", expectedErrMsg),
-					}
-					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
-				})
-			})
-
-			Context("VirtualMachineClass custom resource exists", func() {
-				BeforeEach(func() {
-					initObjects = append(initObjects, vmClass)
-				})
-
-				It("returns success", func() {
-					class, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(class).ToNot(BeNil())
-				})
+			It("returns success", func() {
+				class, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(class).ToNot(BeNil())
 			})
 		})
 	})

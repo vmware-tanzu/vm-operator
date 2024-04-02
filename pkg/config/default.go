@@ -25,7 +25,6 @@ func Default() Config {
 		Features: FeatureStates{
 			AutoVADPBackupRestore:      false,
 			InstanceStorage:            true,
-			NamespacedVMClass:          true,
 			VMOpV1Alpha2:               true,
 			PodVMOnStretchedSupervisor: false,
 			TKGMultipleCL:              false,

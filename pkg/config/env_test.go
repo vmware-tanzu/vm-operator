@@ -127,7 +127,6 @@ var _ = Describe(
 						Features: pkgconfig.FeatureStates{
 							VMOpV1Alpha2:          false,
 							InstanceStorage:       false,
-							NamespacedVMClass:     false,
 							AutoVADPBackupRestore: true,
 						},
 					}))

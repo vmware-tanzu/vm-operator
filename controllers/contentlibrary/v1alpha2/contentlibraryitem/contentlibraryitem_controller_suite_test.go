@@ -19,11 +19,7 @@ import (
 var intgFakeVMProvider = providerfake.NewVMProviderA2()
 
 var suite = builder.NewTestSuiteForControllerWithContext(
-	pkgconfig.UpdateContext(
-		pkgconfig.NewContextWithDefaultConfig(),
-		func(config *pkgconfig.Config) {
-			config.Features.VMOpV1Alpha2 = true
-		}),
+	pkgconfig.NewContextWithDefaultConfig(),
 	contentlibraryitem.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProviderA2 = intgFakeVMProvider

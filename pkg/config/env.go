@@ -47,7 +47,6 @@ func FromEnv() Config {
 	setString(env.WebhookSecretName, &config.WebhookSecretName)
 	setString(env.WebhookSecretNamespace, &config.WebhookSecretNamespace)
 
-	setBool(env.FSSVMOpV1Alpha2, &config.Features.VMOpV1Alpha2)
 	setBool(env.FSSInstanceStorage, &config.Features.InstanceStorage)
 	setBool(env.FSSVMServiceBackupRestore, &config.Features.AutoVADPBackupRestore)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)

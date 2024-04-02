@@ -15,7 +15,7 @@ import (
 
 // suite is used for unit and integration testing this webhook.
 var suite = builder.NewTestSuiteForMutatingWebhookWithContext(
-	pkgconfig.WithConfig(pkgconfig.Config{Features: pkgconfig.FeatureStates{VMOpV1Alpha2: true}}),
+	pkgconfig.NewContext(),
 	mutation.AddToManager,
 	mutation.NewMutator,
 	"default.mutating.virtualmachineservice.v1alpha2.vmoperator.vmware.com")

@@ -298,7 +298,6 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.ContentAPIWait = 1 * time.Second
 		cc.JSONExtraConfig = config.WithJSONExtraConfig
 
-		cc.Features.VMOpV1Alpha2 = true
 		cc.Features.InstanceStorage = config.WithInstanceStorage
 		cc.Features.AutoVADPBackupRestore = config.WithAutoVADPBackupRestore
 	})

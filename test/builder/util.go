@@ -32,7 +32,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 const (
@@ -223,42 +222,11 @@ func applyFeatureStateFnsToCRD(
 	return crd
 }
 
-func applyV1Alpha2FSSToCRD(
-	ctx context.Context,
-	crd apiextensionsv1.CustomResourceDefinition) apiextensionsv1.CustomResourceDefinition {
-
-	idxV1a1 := indexOfVersion(crd, "v1alpha1")
-	idxV1a2 := indexOfVersion(crd, "v1alpha2")
-
-	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
-		// Whether the v1a2 version of this CRD is the storage version
-		// depends on existence of the v1a2 version of this CRD.
-		if idxV1a1 >= 0 {
-			crd.Spec.Versions[idxV1a1].Storage = !(idxV1a2 >= 0)
-			crd.Spec.Versions[idxV1a1].Served = true
-		}
-
-		// If there is a v1a2 version of this CRD, it is the storage version.
-		if idxV1a2 >= 0 {
-			crd.Spec.Versions[idxV1a2].Storage = true
-			crd.Spec.Versions[idxV1a2].Served = true
-		}
-	} else if idxV1a1 >= 0 {
-		crd.Spec.Versions[idxV1a1].Storage = true
-		crd.Spec.Versions[idxV1a1].Served = true
-
-		// If there is a v1a2 version of this CRD, remove it.
-		if idxV1a2 >= 0 {
-			copy(crd.Spec.Versions[idxV1a2:], crd.Spec.Versions[idxV1a2+1:])
-			var zeroVal apiextensionsv1.CustomResourceDefinitionVersion
-			crd.Spec.Versions[len(crd.Spec.Versions)-1] = zeroVal
-			crd.Spec.Versions = crd.Spec.Versions[:len(crd.Spec.Versions)-1]
-		}
-	}
-
-	return crd
-}
-
+// indexOfVersion returns the index of the specified schema version for a given
+// CRD. This function is useful for writing the functions that are passed into
+// the applyFeatureStateFnsToCRD function.
+//
+//nolint:unused
 func indexOfVersion(
 	crd apiextensionsv1.CustomResourceDefinition,
 	version string) int {

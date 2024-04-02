@@ -200,10 +200,8 @@ func main() {
 			return err
 		}
 
-		if defaultConfig.Features.VMOpV1Alpha2 {
-			if err := addConversionWebhooksToManager(ctx, mgr); err != nil {
-				return err
-			}
+		if err := addConversionWebhooksToManager(ctx, mgr); err != nil {
+			return err
 		}
 
 		return webhooks.AddToManager(ctx, mgr)

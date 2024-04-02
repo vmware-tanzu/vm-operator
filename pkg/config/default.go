@@ -26,7 +26,6 @@ func Default() Config {
 			AutoVADPBackupRestore:      false,
 			InstanceStorage:            true,
 			NamespacedVMClass:          true,
-			UnifiedTKG:                 true,
 			VMOpV1Alpha2:               true,
 			PodVMOnStretchedSupervisor: false,
 			TKGMultipleCL:              false,

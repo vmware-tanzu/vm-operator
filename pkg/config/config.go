@@ -100,7 +100,6 @@ type FeatureStates struct {
 	AutoVADPBackupRestore      bool // FSS_WCP_VMSERVICE_BACKUPRESTORE
 	InstanceStorage            bool // FSS_WCP_INSTANCE_STORAGE
 	NamespacedVMClass          bool // FSS_WCP_NAMESPACED_VM_CLASS
-	UnifiedTKG                 bool // FSS_WCP_Unified_TKG
 	VMOpV1Alpha2               bool // FSS_WCP_VMSERVICE_V1ALPHA2
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR
 	TKGMultipleCL              bool // FSS_WCP_TKG_Multiple_CL

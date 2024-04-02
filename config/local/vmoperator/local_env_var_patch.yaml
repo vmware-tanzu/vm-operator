@@ -9,8 +9,6 @@ spec:
       containers:
       - name: manager
         env:
-        - name: FSS_WCP_Unified_TKG
-          value: "true"
         - name: FSS_WCP_VMSERVICE_V1ALPHA2
           value: "true"
         - name: VSPHERE_NETWORKING

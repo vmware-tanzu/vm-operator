@@ -98,7 +98,6 @@ func (c Config) GetMaxDeployThreadsOnProvider() int {
 
 type FeatureStates struct {
 	AutoVADPBackupRestore      bool // FSS_WCP_VMSERVICE_BACKUPRESTORE
-	ImageRegistry              bool // FSS_WCP_INSTANCE_STORAGE
 	InstanceStorage            bool // FSS_WCP_INSTANCE_STORAGE
 	NamespacedVMClass          bool // FSS_WCP_NAMESPACED_VM_CLASS
 	UnifiedTKG                 bool // FSS_WCP_Unified_TKG

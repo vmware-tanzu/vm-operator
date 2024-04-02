@@ -468,17 +468,6 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 	})
 
 	By("updating CRD scope", func() {
-		By("updating vm image scope", func() {
-			enabled := pkgconfig.FromContext(s).Features.ImageRegistry
-			crd := s.GetInstalledCRD(virtualMachineImageResourceName)
-			Expect(crd).ToNot(BeNil())
-			scope := string(crd.Spec.Scope)
-			if enabled && scope == scopeCluster {
-				s.UpdateCRDScope(crd, scopeNamespace)
-			} else if !enabled && scope == scopeNamespace {
-				s.UpdateCRDScope(crd, scopeCluster)
-			}
-		})
 		By("updating vm class scope", func() {
 			enabled := pkgconfig.FromContext(s).Features.NamespacedVMClass
 			crd := s.GetInstalledCRD(virtualMachineClassResourceName)

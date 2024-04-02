@@ -55,13 +55,22 @@ func newIntgMutatingWebhookContext() *intgMutatingWebhookContext {
 func intgTestsMutating() {
 	var (
 		ctx *intgMutatingWebhookContext
+		img *vmopv1.VirtualMachineImage
 	)
 
 	BeforeEach(func() {
 		ctx = newIntgMutatingWebhookContext()
+
+		img = builder.DummyVirtualMachineImageA2(builder.DummyVMIID)
+		img.Namespace = ctx.vm.Namespace
+		Expect(ctx.Client.Create(ctx, img)).To(Succeed())
+		img.Status.Name = ctx.vm.Spec.ImageName
+		Expect(ctx.Client.Status().Update(ctx, img)).To(Succeed())
 	})
 
 	AfterEach(func() {
+		Expect(ctx.Client.Delete(ctx, img)).To(Succeed())
+		img = nil
 		ctx = nil
 	})
 
@@ -169,18 +178,6 @@ func intgTestsMutating() {
 	})
 
 	Context("ResolveImageName", func() {
-
-		BeforeEach(func() {
-			pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-				config.Features.ImageRegistry = true
-			})
-		})
-		AfterEach(func() {
-			pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-				config.Features.ImageRegistry = false
-			})
-		})
-
 		When("Creating VirtualMachine", func() {
 			When("VM ImageName is already a vmi resource name", func() {
 

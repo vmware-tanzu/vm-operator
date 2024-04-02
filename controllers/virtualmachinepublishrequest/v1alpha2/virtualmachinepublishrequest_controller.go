@@ -90,10 +90,9 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		Complete(r)
 }
 
-// vmiToVMPubMapperFn returns a mapper function that can be used to queue reconcile request
-// for the VirtualMachinePublishRequests in response to an event on the VirtualMachineImage resource.
-// Note: Only when WCP_VM_Image_Registry FSS is enabled, this controller will be added to the controller manager.
-// In this case, the VirtualMachineImage is a namespace scoped resource.
+// vmiToVMPubMapperFn returns a mapper function that can be used to queue a
+// reconcile request for the VirtualMachinePublishRequests in response to an
+// event on the VirtualMachineImage resource.
 func vmiToVMPubMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(_ goctx.Context, o client.Object) []reconcile.Request {
 	// For a given VirtualMachineImage, return reconcile requests
 	// for those VirtualMachinePublishRequests with corresponding VirtualMachinesImage as the target item.

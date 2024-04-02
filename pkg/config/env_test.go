@@ -89,7 +89,6 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_V1ALPHA2", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_INSTANCE_STORAGE", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_Unified_TKG", "false")).To(Succeed())
-					Expect(os.Setenv("FSS_WCP_VM_IMAGE_REGISTRY", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_NAMESPACED_VM_CLASS", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_BACKUPRESTORE", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_TKG_Multiple_CL", "false")).To(Succeed())
@@ -130,7 +129,6 @@ var _ = Describe(
 							VMOpV1Alpha2:          false,
 							InstanceStorage:       false,
 							UnifiedTKG:            false,
-							ImageRegistry:         false,
 							NamespacedVMClass:     false,
 							AutoVADPBackupRestore: true,
 						},

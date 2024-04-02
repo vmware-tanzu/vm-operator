@@ -286,9 +286,6 @@ func unitTestsMutating() {
 						image := rawObj.(*vmopv1.ClusterVirtualMachineImage)
 						return []string{image.Status.Name}
 					}).Build()
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.Features.ImageRegistry = true
-			})
 		})
 
 		Context("When VM ImageName is set to vmi resource name", func() {

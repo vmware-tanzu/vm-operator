@@ -303,8 +303,7 @@ func ResolveImageName(
 	vm *vmopv1.VirtualMachine) (bool, error) {
 	// Return early if the VM image name is empty or already set to a vmi name.
 	imageName := vm.Spec.ImageName
-	if imageName == "" || !pkgconfig.FromContext(ctx).Features.ImageRegistry ||
-		strings.HasPrefix(imageName, "vmi-") {
+	if imageName == "" || strings.HasPrefix(imageName, "vmi-") {
 		return false, nil
 	}
 

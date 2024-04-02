@@ -36,6 +36,7 @@ import (
 )
 
 const (
+	DummyVMIID                = "vmi-0123456789"
 	DummyImageName            = "dummy-image-name"
 	DummyClassName            = "dummyClassName"
 	DummyVolumeName           = "dummy-volume-name"

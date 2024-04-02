@@ -15,7 +15,7 @@ import (
 
 // suite is used for unit and integration testing this webhook.
 var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
-	pkgconfig.WithConfig(pkgconfig.Config{Features: pkgconfig.FeatureStates{VMOpV1Alpha2: true}}),
+	pkgconfig.NewContext(),
 	validation.AddToManager,
 	validation.NewValidator,
 	"default.validating.virtualmachinesetresourcepolicy.v1alpha2.vmoperator.vmware.com")

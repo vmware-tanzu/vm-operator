@@ -15,11 +15,7 @@ import (
 )
 
 var suite = builder.NewTestSuiteForControllerWithContext(
-	pkgconfig.UpdateContext(
-		pkgconfig.NewContextWithDefaultConfig(),
-		func(config *pkgconfig.Config) {
-			config.Features.VMOpV1Alpha2 = true
-		}),
+	pkgconfig.NewContextWithDefaultConfig(),
 	virtualmachineservice.AddToManager,
 	manager.InitializeProvidersNoopFn)
 

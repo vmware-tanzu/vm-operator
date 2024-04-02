@@ -343,10 +343,8 @@ func (s *TestSuite) createManager() {
 		NewCache:            s.newCacheFn,
 	}
 
-	if pkgconfig.FromContext(s).Features.VMOpV1Alpha2 {
-		opts.Scheme = runtime.NewScheme()
-		_ = vmopv1alpha2.AddToScheme(opts.Scheme)
-	}
+	opts.Scheme = runtime.NewScheme()
+	_ = vmopv1alpha2.AddToScheme(opts.Scheme)
 
 	s.manager, err = pkgmgr.New(s, opts)
 
@@ -534,8 +532,7 @@ func (s *TestSuite) applyFeatureStatesToCRDs(
 	for i := range in {
 		crd := applyFeatureStateFnsToCRD(
 			s,
-			*in[i],
-			applyV1Alpha2FSSToCRD)
+			*in[i])
 		out = append(out, &crd)
 	}
 	return out

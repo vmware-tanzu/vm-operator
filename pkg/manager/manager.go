@@ -55,9 +55,7 @@ func New(ctx goctx.Context, opts Options) (Manager, error) {
 	_ = topologyv1.AddToScheme(opts.Scheme)
 	_ = imgregv1a1.AddToScheme(opts.Scheme)
 
-	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
-		_ = vmopv1alpha2.AddToScheme(opts.Scheme)
-	}
+	_ = vmopv1alpha2.AddToScheme(opts.Scheme)
 
 	if pkgconfig.FromContext(ctx).NetworkProviderType == pkgconfig.NetworkProviderTypeVPC {
 		_ = vpcv1alpha1.AddToScheme(opts.Scheme)

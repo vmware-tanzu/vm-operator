@@ -18,7 +18,6 @@ var suite = builder.NewTestSuiteForMutatingWebhookWithContext(
 	pkgconfig.WithConfig(
 		pkgconfig.Config{
 			BuildVersion: "v1",
-			Features:     pkgconfig.FeatureStates{VMOpV1Alpha2: true},
 		}),
 	mutation.AddToManager,
 	mutation.NewMutator,

@@ -18,7 +18,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -137,34 +136,20 @@ func intgTestsReconcile() {
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 		})
 
-		When("VM Service v1a2 FSS enabled", func() {
-			BeforeEach(func() {
-				pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-					config.Features.VMOpV1Alpha2 = true
-				})
-			})
+		It("resource successfully created", func() {
+			objKey := types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace}
 
-			AfterEach(func() {
-				pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-					config.Features.VMOpV1Alpha2 = false
-				})
-			})
+			Eventually(func(g Gomega) {
+				wcr = getWebConsoleRequest(ctx, objKey)
+				g.Expect(wcr).ToNot(BeNil())
+				g.Expect(wcr.Status.Response).ToNot(BeEmpty())
+			}).Should(Succeed(), "waiting response to be set")
 
-			It("resource successfully created", func() {
-				objKey := types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace}
-
-				Eventually(func(g Gomega) {
-					wcr = getWebConsoleRequest(ctx, objKey)
-					g.Expect(wcr).ToNot(BeNil())
-					g.Expect(wcr.Status.Response).ToNot(BeEmpty())
-				}).Should(Succeed(), "waiting response to be set")
-
-				Expect(v1a2ProviderCalled).Should(BeTrue())
-				Expect(wcr.Status.ProxyAddr).To(Equal("192.168.0.1"))
-				Expect(wcr.Status.Response).To(Equal(v1a2Ticket))
-				Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
-				Expect(wcr.Labels).To(HaveKeyWithValue(webconsolerequest.UUIDLabelKey, string(wcr.UID)))
-			})
+			Expect(v1a2ProviderCalled).Should(BeTrue())
+			Expect(wcr.Status.ProxyAddr).To(Equal("192.168.0.1"))
+			Expect(wcr.Status.Response).To(Equal(v1a2Ticket))
+			Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
+			Expect(wcr.Labels).To(HaveKeyWithValue(webconsolerequest.UUIDLabelKey, string(wcr.UID)))
 		})
 	})
 }

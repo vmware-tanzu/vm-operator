@@ -9,8 +9,6 @@ spec:
       containers:
       - name: manager
         env:
-        - name: FSS_WCP_VMSERVICE_V1ALPHA2
-          value: "true"
         - name: VSPHERE_NETWORKING
           value: "false"
         - name: FSS_WCP_INSTANCE_STORAGE

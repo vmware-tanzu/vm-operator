@@ -17,7 +17,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
@@ -131,24 +130,16 @@ func unitTestsReconcile() {
 			v1a2ProviderCalled = false
 		})
 
-		When("VM Service v1alpha2 FSS is enabled", func() {
-			JustBeforeEach(func() {
-				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-					config.Features.VMOpV1Alpha2 = true
-				})
-			})
+		It("returns success", func() {
+			err := reconciler.ReconcileNormal(wcrCtx)
+			Expect(err).ToNot(HaveOccurred())
 
-			It("returns success", func() {
-				err := reconciler.ReconcileNormal(wcrCtx)
-				Expect(err).ToNot(HaveOccurred())
-
-				Expect(v1a2ProviderCalled).Should(BeTrue())
-				Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("dummy-proxy-ip"))
-				Expect(wcrCtx.WebConsoleRequest.Status.Response).To(Equal(v1a2Ticket))
-				Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
-				// Checking the label key only because UID will not be set to a resource during unit test.
-				Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(webconsolerequest.UUIDLabelKey))
-			})
+			Expect(v1a2ProviderCalled).Should(BeTrue())
+			Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("dummy-proxy-ip"))
+			Expect(wcrCtx.WebConsoleRequest.Status.Response).To(Equal(v1a2Ticket))
+			Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
+			// Checking the label key only because UID will not be set to a resource during unit test.
+			Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(webconsolerequest.UUIDLabelKey))
 		})
 	})
 }

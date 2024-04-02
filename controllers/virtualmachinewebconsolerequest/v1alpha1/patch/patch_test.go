@@ -247,6 +247,8 @@ func intgTestsPatch() {
 				})
 
 				Specify("should recover if there is a resolvable conflict, incl. patch spec and status", func() {
+					Skip("TODO: This test requires v1a1, so conversion webhooks running")
+
 					obj := obj.DeepCopy()
 
 					By("Creating the object")

@@ -51,21 +51,6 @@ if [ "$NODE_COUNT" -eq 1 ]; then
   rm -f "$YAML-e"
 fi
 
-FSS_V1A2=$(yq '.spec.template.spec.containers[]| select(.name == "manager") | .env[] | select(.name == "FSS_WCP_VMSERVICE_V1ALPHA2") | .value' "$YAML")
-if [ "${FSS_V1A2}" = "false" ]; then \
-  # remove conversion webhooks from CRDs
-  yq -i 'del(select(.kind == "CustomResourceDefinition") | .spec.conversion | select(.strategy == "Webhook"))' "$YAML"
-  # set storage version to v1alpha1
-  yq -i '(select(.kind == "CustomResourceDefinition") | .spec.versions[] | select(.name == "v1alpha1")).storage = true' "$YAML"
-  # remove v1alpha2 versions from CRDs
-  yq -i 'del(select(.kind == "CustomResourceDefinition") | .spec.versions[] | select(.name == "v1alpha2"))' "$YAML"
-  # remove CRDs with empty spec.versions
-  yq -i 'del(select(.kind == "CustomResourceDefinition") | select(.spec.versions | length == 0))' "$YAML"
-  # remove all v1alpha2 webhooks
-  yq -i 'del(.webhooks[] | select(.name == "*v1alpha2*"))' "$YAML"
-fi;
-
-
 $KUBECTL apply -f "$YAML"
 
 if [[ -n $DEPLOYMENT_EXISTS ]]; then

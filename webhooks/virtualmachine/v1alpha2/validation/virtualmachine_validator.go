@@ -243,20 +243,16 @@ func (v validator) validateBootstrap(
 				"Sysprep may not be used with either CloudInit or LinuxPrep bootstrap providers"))
 		}
 
-		if pkgconfig.FromContext(ctx).Features.WindowsSysprep {
-			if sysPrep.Sysprep != nil && sysPrep.RawSysprep != nil {
-				allErrs = append(allErrs, field.Invalid(p, "sysPrep",
-					"sysprep and rawSysprep are mutually exclusive"))
-			} else if sysPrep.Sysprep == nil && sysPrep.RawSysprep == nil {
-				allErrs = append(allErrs, field.Invalid(p, "sysPrep",
-					"either sysprep or rawSysprep must be provided"))
-			}
+		if sysPrep.Sysprep != nil && sysPrep.RawSysprep != nil {
+			allErrs = append(allErrs, field.Invalid(p, "sysPrep",
+				"sysprep and rawSysprep are mutually exclusive"))
+		} else if sysPrep.Sysprep == nil && sysPrep.RawSysprep == nil {
+			allErrs = append(allErrs, field.Invalid(p, "sysPrep",
+				"either sysprep or rawSysprep must be provided"))
+		}
 
-			if sysPrep.Sysprep != nil {
-				allErrs = append(allErrs, v.validateInlineSysprep(p, sysPrep.Sysprep)...)
-			}
-		} else {
-			allErrs = append(allErrs, field.Invalid(p, "Sysprep", fmt.Sprintf(featureNotEnabled, "Sysprep")))
+		if sysPrep.Sysprep != nil {
+			allErrs = append(allErrs, v.validateInlineSysprep(p, sysPrep.Sysprep)...)
 		}
 	}
 

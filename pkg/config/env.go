@@ -52,7 +52,6 @@ func FromEnv() Config {
 	setBool(env.FSSUnifiedTKG, &config.Features.UnifiedTKG)
 	setBool(env.FSSImageRegistry, &config.Features.ImageRegistry)
 	setBool(env.FSSNamespacedVMClass, &config.Features.NamespacedVMClass)
-	setBool(env.FSSWindowsSysprep, &config.Features.WindowsSysprep)
 	setBool(env.FSSVMServiceBackupRestore, &config.Features.AutoVADPBackupRestore)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
 	setBool(env.FSSTKGMultipleCL, &config.Features.TKGMultipleCL)

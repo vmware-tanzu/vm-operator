@@ -27,7 +27,6 @@ func Default() Config {
 			ImageRegistry:              true,
 			InstanceStorage:            true,
 			NamespacedVMClass:          true,
-			WindowsSysprep:             true,
 			UnifiedTKG:                 true,
 			VMOpV1Alpha2:               true,
 			PodVMOnStretchedSupervisor: false,

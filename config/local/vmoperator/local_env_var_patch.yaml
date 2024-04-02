@@ -23,8 +23,6 @@ spec:
           value: "NAMED"
         - name: FSS_WCP_NAMESPACED_VM_CLASS
           value: "true"
-        - name: FSS_WCP_WINDOWS_SYSPREP
-          value: "true"
         - name: FSS_WCP_VMSERVICE_BACKUPRESTORE
           value: "false"
         - name: FSS_PODVMONSTRETCHEDSUPERVISOR

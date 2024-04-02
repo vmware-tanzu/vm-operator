@@ -39,6 +39,7 @@ func newIntgMutatingWebhookContext() *intgMutatingWebhookContext {
 	}
 
 	ctx.vmClass = builder.DummyVirtualMachineClassA2()
+	ctx.vmClass.Namespace = ctx.Namespace
 
 	return ctx
 }

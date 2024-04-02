@@ -42,7 +42,6 @@ const (
 	WebhookSecretNamespace
 	FSSVMOpV1Alpha2
 	FSSInstanceStorage
-	FSSNamespacedVMClass
 	FSSVMServiceBackupRestore
 	FSSPodVMOnStretchedSupervisor
 	FSSTKGMultipleCL
@@ -132,8 +131,6 @@ func (n VarName) String() string {
 		return "FSS_WCP_VMSERVICE_V1ALPHA2"
 	case FSSInstanceStorage:
 		return "FSS_WCP_INSTANCE_STORAGE"
-	case FSSNamespacedVMClass:
-		return "FSS_WCP_NAMESPACED_VM_CLASS"
 	case FSSVMServiceBackupRestore:
 		return "FSS_WCP_VMSERVICE_BACKUPRESTORE"
 	case FSSPodVMOnStretchedSupervisor:

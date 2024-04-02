@@ -45,7 +45,6 @@ const (
 	FSSUnifiedTKG
 	FSSImageRegistry
 	FSSNamespacedVMClass
-	FSSWindowsSysprep
 	FSSVMServiceBackupRestore
 	FSSPodVMOnStretchedSupervisor
 	FSSTKGMultipleCL
@@ -141,8 +140,6 @@ func (n VarName) String() string {
 		return "FSS_WCP_VM_IMAGE_REGISTRY"
 	case FSSNamespacedVMClass:
 		return "FSS_WCP_NAMESPACED_VM_CLASS"
-	case FSSWindowsSysprep:
-		return "FSS_WCP_WINDOWS_SYSPREP"
 	case FSSVMServiceBackupRestore:
 		return "FSS_WCP_VMSERVICE_BACKUPRESTORE"
 	case FSSPodVMOnStretchedSupervisor:

@@ -584,12 +584,9 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("allow Sysprep bootstrap when WCP_Windows_Sysprep FSS is enabled",
+			Entry("allow Sysprep bootstrap",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								RawSysprep: &common.SecretKeySelector{},
@@ -599,27 +596,9 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("disallow Sysprep bootstrap when WCP_Windows_Sysprep FSS is disabled",
+			Entry("disallow empty Sysprep bootstrap",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = false
-						})
-						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.bootstrap.sysprep: Invalid value: "Sysprep": the Sysprep feature is not enabled`,
-					),
-				},
-			),
-			Entry("disallow empty Sysprep bootstrap when WCP_Windows_Sysprep FSS is enabled",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 						}
@@ -645,9 +624,6 @@ func unitTestsValidateCreate() {
 			Entry("disallow CloudInit and Sysprep specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
@@ -678,9 +654,6 @@ func unitTestsValidateCreate() {
 			Entry("disallow LinuxPrep and Sysprep specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
@@ -705,12 +678,9 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("allow Sysprep and vAppConfig specified at the same time when WCP_Windows_Sysprep FSS is enabled",
+			Entry("allow Sysprep and vAppConfig specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								RawSysprep: &common.SecretKeySelector{},
@@ -736,12 +706,9 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
-			Entry("disallow Sysprep mixing inline Sysprep and RawSysprep when FSS is enabled",
+			Entry("disallow Sysprep mixing inline Sysprep and RawSysprep",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep:    &sysprep.Sysprep{},
@@ -754,12 +721,9 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
-			Entry("disallow Sysprep mixing inline Sysprep identification when FSS is enabled",
+			Entry("disallow Sysprep mixing inline Sysprep identification",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &sysprep.Sysprep{
@@ -777,12 +741,9 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
-			Entry("disallow Sysprep mixing inline Sysprep identification when FSS is enabled",
+			Entry("disallow Sysprep mixing inline Sysprep identification",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &sysprep.Sysprep{
@@ -869,9 +830,6 @@ func unitTestsValidateCreate() {
 			Entry("disallow inline sysPrep autoLogon with missing autoLogonCount and password",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &sysprep.Sysprep{
@@ -937,10 +895,6 @@ func unitTestsValidateCreate() {
 			Entry("allow global nameservers and search domains with Sysprep",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
-
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								RawSysprep: &common.SecretKeySelector{},
@@ -1245,9 +1199,6 @@ func unitTestsValidateCreate() {
 			Entry("allows nameservers with Sysprep",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								RawSysprep: &common.SecretKeySelector{},
@@ -1266,9 +1217,6 @@ func unitTestsValidateCreate() {
 			Entry("validate routes when bootstrap doesn't support routes",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								RawSysprep: &common.SecretKeySelector{},
@@ -1393,7 +1341,6 @@ func unitTestsValidateUpdate() {
 		changeResourcePolicy        bool
 		assignZoneName              bool
 		changeZoneName              bool
-		isSysprepFeatureEnabled     bool
 		isSysprepTransportUsed      bool
 		withInstanceStorageVolumes  bool
 		changeInstanceStorageVolume bool
@@ -1454,11 +1401,6 @@ func unitTestsValidateUpdate() {
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
 		}
 
-		if args.isSysprepFeatureEnabled {
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.Features.WindowsSysprep = true
-			})
-		}
 		if args.isSysprepTransportUsed {
 			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 			if ctx.vm.Spec.Bootstrap == nil {
@@ -1565,10 +1507,7 @@ func unitTestsValidateUpdate() {
 		Entry("should allow adding new instance storage volume, when user type is service user", updateArgs{withInstanceStorageVolumes: true, isServiceUser: true}, true, nil, nil),
 		Entry("should allow instance storage volume name change, when user type is service user", updateArgs{changeInstanceStorageVolume: true, isServiceUser: true}, true, nil, nil),
 
-		Entry("should allow sysprep when FSS is enabled", updateArgs{isSysprepFeatureEnabled: true, isSysprepTransportUsed: true}, true, nil, nil),
-		Entry("should disallow sysprep when FSS is disabled", updateArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: true}, false,
-			field.Invalid(field.NewPath("spec", "bootstrap", "sysprep"), "Sysprep", "the Sysprep feature is not enabled").Error(), nil),
-		Entry("should not error if sysprep FSS is disabled when sysprep is not used", updateArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: false}, true, nil, nil),
+		Entry("should allow sysprep", updateArgs{isSysprepTransportUsed: true}, true, nil, nil),
 
 		Entry("should allow updating suspended VM to powered on", updateArgs{oldPowerState: vmopv1.VirtualMachinePowerStateSuspended, newPowerState: vmopv1.VirtualMachinePowerStateOn}, true,
 			nil, nil),

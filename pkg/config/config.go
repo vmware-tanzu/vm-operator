@@ -101,7 +101,6 @@ type FeatureStates struct {
 	ImageRegistry              bool // FSS_WCP_INSTANCE_STORAGE
 	InstanceStorage            bool // FSS_WCP_INSTANCE_STORAGE
 	NamespacedVMClass          bool // FSS_WCP_NAMESPACED_VM_CLASS
-	WindowsSysprep             bool // FSS_WCP_WINDOWS_SYSPREP
 	UnifiedTKG                 bool // FSS_WCP_Unified_TKG
 	VMOpV1Alpha2               bool // FSS_WCP_VMSERVICE_V1ALPHA2
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR

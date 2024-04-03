@@ -246,6 +246,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						},
 					}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
 					Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
@@ -335,6 +336,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
 						Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
 						netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
@@ -436,6 +438,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						},
 					}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
 					Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
 
 					netInterface.Status.InterfaceID = interfaceID

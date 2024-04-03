@@ -28,6 +28,7 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
@@ -72,6 +73,9 @@ type NetworkInterfaceRoute struct {
 const (
 	retryInterval           = 100 * time.Millisecond
 	defaultEthernetCardType = "vmxnet3"
+
+	// VMNameLabel is the label put on a network interface CR that identifies its VM by name.
+	VMNameLabel = pkg.VMOperatorKey + "/vm-name"
 )
 
 var (
@@ -297,6 +301,11 @@ func createNetOPNetworkInterface(
 			return err
 		}
 
+		if netIf.Labels == nil {
+			netIf.Labels = map[string]string{}
+		}
+		netIf.Labels[VMNameLabel] = vmCtx.VM.Name
+
 		netIf.Spec.NetworkName = networkName
 		// NetOP only defines a VMXNet3 type, but it doesn't really matter for our purposes.
 		netIf.Spec.Type = netopv1alpha1.NetworkInterfaceTypeVMXNet3
@@ -450,6 +459,11 @@ func createNCPNetworkInterface(
 			return err
 		}
 
+		if vnetIf.Labels == nil {
+			vnetIf.Labels = map[string]string{}
+		}
+		vnetIf.Labels[VMNameLabel] = vmCtx.VM.Name
+
 		vnetIf.Spec.VirtualNetwork = networkName
 		return nil
 	})
@@ -571,6 +585,10 @@ func createVPCNetworkInterface(
 		if err := controllerutil.SetOwnerReference(vmCtx.VM, vpcSubnetPort, client.Scheme()); err != nil {
 			return err
 		}
+		if vpcSubnetPort.Labels == nil {
+			vpcSubnetPort.Labels = map[string]string{}
+		}
+		vpcSubnetPort.Labels[VMNameLabel] = vmCtx.VM.Name
 		if vpcSubnetPort.Annotations == nil {
 			vpcSubnetPort.Annotations = make(map[string]string)
 		}

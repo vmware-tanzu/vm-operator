@@ -894,6 +894,74 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 	})
 })
 
+var _ = Describe("VirtualMachineRecocileReady Status to VM Status Condition", func() {
+	Context("MarkReconciliationCondition", func() {
+		var (
+			vm *vmopv1.VirtualMachine
+		)
+
+		BeforeEach(func() {
+			vm = &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{},
+				},
+			}
+		})
+
+		JustBeforeEach(func() {
+			vmlifecycle.MarkReconciliationCondition(vm)
+		})
+
+		Context("PausedVMLabel is non-existent", func() {
+			It("sets condition true", func() {
+				expectedConditions := []metav1.Condition{
+					*conditions.TrueCondition(vmopv1.VirtualMachineReconcileReady),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+
+			})
+		})
+		Context("PausedVMLabel exists", func() {
+			When("PausedVMLabel value is devops", func() {
+				BeforeEach(func() {
+					vm.Labels[vmopv1.PausedVMLabelKey] = "devops"
+				})
+				It("sets condition false", func() {
+					expectedConditions := []metav1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.VirtualMachineReconcileReady, vmopv1.VirtualMachineReconcilePausedReason, "Virtual Machine reconciliation paused by DevOps"),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("PausedVMLabel value is admin", func() {
+				BeforeEach(func() {
+					vm.Labels[vmopv1.PausedVMLabelKey] = "admin"
+				})
+				It("sets condition false", func() {
+					expectedConditions := []metav1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.VirtualMachineReconcileReady, vmopv1.VirtualMachineReconcilePausedReason, "Virtual Machine reconciliation paused by Admin"),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("PausedVMLabel value is both", func() {
+				BeforeEach(func() {
+					vm.Labels[vmopv1.PausedVMLabelKey] = "both"
+				})
+				It("sets condition false", func() {
+					expectedConditions := []metav1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.VirtualMachineReconcileReady, vmopv1.VirtualMachineReconcilePausedReason, "Virtual Machine reconciliation paused by Admin, DevOps"),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+		})
+	})
+})
+
 var _ = Describe("UpdateNetworkStatusConfig", func() {
 	var (
 		vm   *vmopv1.VirtualMachine

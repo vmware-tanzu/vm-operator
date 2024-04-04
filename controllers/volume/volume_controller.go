@@ -217,12 +217,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 		VM:      vm,
 	}
 
-	// If the VM has a pause reconcile annotation, it is being restored on vCenter. Return here so our reconcile
-	// does not replace the VM being restored on the vCenter inventory.
-	//
-	// Do not requeue the reconcile here since removing the pause annotation will trigger a reconcile anyway.
-	if _, ok := volCtx.VM.Annotations[vmopv1.PauseAnnotation]; ok {
-		volCtx.Logger.Info("Skipping reconcile since Pause annotation is set on the VM")
+	// If the VM has a pause reconcile label key, Skip volume reconciliation.
+	// Do not requeue the reconcile here since removing the pause label will trigger a reconcile anyway.
+	if val, ok := vm.Labels[vmopv1.PausedVMLabelKey]; ok {
+		volCtx.Logger.Info("Skipping reconcile since pause operation is made on the VM", "paused by", val)
 		return ctrl.Result{}, nil
 	}
 

@@ -403,6 +403,32 @@ var _ = Describe("Update ConfigSpec", func() {
 				})
 			})
 
+			Context("when vGPU and DDPIO devices are present but classConfigSpec, vmClassSpec, and vm params are nil", func() {
+				BeforeEach(func() {
+					config.Hardware.Device = []vimTypes.BaseVirtualDevice{
+						&vimTypes.VirtualPCIPassthrough{
+							VirtualDevice: vimTypes.VirtualDevice{
+								Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "SampleProfile",
+								},
+							},
+						},
+						&vimTypes.VirtualPCIPassthrough{
+							VirtualDevice: vimTypes.VirtualDevice{
+								Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{},
+							},
+						},
+					}
+					classConfigSpec = nil
+					vmClassSpec = nil
+					vm = nil
+				})
+
+				Specify("No Changes", func() {
+					Expect(ecMap).To(BeEmpty())
+				})
+			})
+
 			Context("when vGPU device is available", func() {
 				BeforeEach(func() {
 					vmClassSpec.Hardware.Devices = vmopv1.VirtualDevices{VGPUDevices: []vmopv1.VGPUDevice{

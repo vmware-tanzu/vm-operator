@@ -286,6 +286,9 @@ func UpdateConfigSpecMemoryAllocation(
 	}
 }
 
+// UpdateConfigSpecExtraConfig updates the ExtraConfig of the given ConfigSpec.
+// At a minimum, config and configSpec must be non-nil, in which case it will
+// just ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig.
 func UpdateConfigSpecExtraConfig(
 	ctx goctx.Context,
 	config *vimTypes.VirtualMachineConfigInfo,
@@ -418,6 +421,9 @@ func hasvGPUOrDDPIODevicesInVMClass(
 // information about these flags.
 func setMemoryMappedIOFlagsInExtraConfig(
 	vm *vmopv1.VirtualMachine, extraConfig map[string]string) {
+	if vm == nil {
+		return
+	}
 
 	mmioSize := vm.Annotations[constants.PCIPassthruMMIOOverrideAnnotation]
 	if mmioSize == "" {

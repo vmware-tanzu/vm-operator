@@ -111,11 +111,11 @@ func CloneVMRelocateSpec(
 func PlaceVMForCreate(
 	ctx goctx.Context,
 	cluster *object.ClusterComputeResource,
-	configSpec *types.VirtualMachineConfigSpec) ([]Recommendation, error) {
+	configSpec types.VirtualMachineConfigSpec) ([]Recommendation, error) {
 
 	placementSpec := types.PlacementSpec{
 		PlacementType: string(types.PlacementSpecPlacementTypeCreate),
-		ConfigSpec:    configSpec,
+		ConfigSpec:    &configSpec,
 	}
 
 	resp, err := cluster.PlaceVm(ctx, placementSpec)
@@ -147,18 +147,17 @@ func ClusterPlaceVMForCreate(
 	vmCtx context.VirtualMachineContextA2,
 	vcClient *vim25.Client,
 	resourcePoolsMoRefs []types.ManagedObjectReference,
-	configSpec *types.VirtualMachineConfigSpec,
+	configSpec types.VirtualMachineConfigSpec,
 	needsHost bool) ([]Recommendation, error) {
 
 	// Work around PlaceVmsXCluster bug that crashes vpxd when ConfigSpec.Files is nil.
-	cs := *configSpec
-	cs.Files = new(types.VirtualMachineFileInfo)
+	configSpec.Files = new(types.VirtualMachineFileInfo)
 
 	placementSpec := types.PlaceVmsXClusterSpec{
 		ResourcePools: resourcePoolsMoRefs,
 		VmPlacementSpecs: []types.PlaceVmsXClusterSpecVmPlacementSpec{
 			{
-				ConfigSpec: cs,
+				ConfigSpec: configSpec,
 			},
 		},
 		HostRecommRequired: &needsHost,

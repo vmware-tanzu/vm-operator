@@ -22,19 +22,10 @@ import (
 // the config we build here.
 func CreateConfigSpec(
 	vmCtx context.VirtualMachineContextA2,
-	vmClassConfigSpec *types.VirtualMachineConfigSpec,
+	configSpec types.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	vmImageStatus *vmopv1.VirtualMachineImageStatus,
-	minFreq uint64) *types.VirtualMachineConfigSpec {
-
-	configSpec := types.VirtualMachineConfigSpec{}
-
-	// If there is a class ConfigSpec, then that is our initial ConfigSpec. Note that our caller
-	// will synthesize a class ConfigSpec from the class's Hardware.Devices if the class doesn't
-	// have a ConfigSpec.
-	if vmClassConfigSpec != nil {
-		configSpec = *vmClassConfigSpec
-	}
+	minFreq uint64) types.VirtualMachineConfigSpec {
 
 	configSpec.Name = vmCtx.VM.Name
 	if configSpec.Annotation == "" {
@@ -111,7 +102,7 @@ func CreateConfigSpec(
 		}
 	}
 
-	return &configSpec
+	return configSpec
 }
 
 func determineHardwareVersion(
@@ -156,15 +147,16 @@ func determineHardwareVersion(
 	return max(vmMinVersion, minVerFromDevs)
 }
 
-// CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for Placement.
-// baseConfigSpec will likely be - or at least derived from - the ConfigSpec returned by CreateConfigSpec above.
+// CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for
+// Placement. configSpec will likely be - or at least derived from - the
+// ConfigSpec returned by CreateConfigSpec above.
 func CreateConfigSpecForPlacement(
 	vmCtx context.VirtualMachineContextA2,
-	baseConfigSpec *types.VirtualMachineConfigSpec,
-	storageClassesToIDs map[string]string) *types.VirtualMachineConfigSpec {
+	configSpec types.VirtualMachineConfigSpec,
+	storageClassesToIDs map[string]string) types.VirtualMachineConfigSpec {
 
-	deviceChangeCopy := make([]types.BaseVirtualDeviceConfigSpec, 0, len(baseConfigSpec.DeviceChange))
-	for _, devChange := range baseConfigSpec.DeviceChange {
+	deviceChangeCopy := make([]types.BaseVirtualDeviceConfigSpec, 0, len(configSpec.DeviceChange))
+	for _, devChange := range configSpec.DeviceChange {
 		if spec := devChange.GetVirtualDeviceConfigSpec(); spec != nil {
 			// VC PlaceVmsXCluster() has issues when the ConfigSpec has EthCards so return to the
 			// prior status quo until those issues get sorted out.
@@ -175,7 +167,6 @@ func CreateConfigSpecForPlacement(
 		deviceChangeCopy = append(deviceChangeCopy, devChange)
 	}
 
-	configSpec := *baseConfigSpec
 	configSpec.DeviceChange = deviceChangeCopy
 
 	// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
@@ -228,19 +219,19 @@ func CreateConfigSpecForPlacement(
 	//  - any way to do the cluster modules for anti-affinity?
 	//  - whatever else I'm forgetting
 
-	return &configSpec
+	return configSpec
 }
 
 // ConfigSpecFromVMClassDevices creates a ConfigSpec that adds the standalone hardware devices from
 // the VMClass if any. This ConfigSpec will be used as the class ConfigSpec to CreateConfigSpec, with
 // the rest of the class fields - like CPU count - applied on top.
-func ConfigSpecFromVMClassDevices(vmClassSpec *vmopv1.VirtualMachineClassSpec) *types.VirtualMachineConfigSpec {
+func ConfigSpecFromVMClassDevices(vmClassSpec *vmopv1.VirtualMachineClassSpec) types.VirtualMachineConfigSpec {
 	devsFromClass := CreatePCIDevicesFromVMClass(vmClassSpec.Hardware.Devices)
 	if len(devsFromClass) == 0 {
-		return nil
+		return types.VirtualMachineConfigSpec{}
 	}
 
-	configSpec := &types.VirtualMachineConfigSpec{}
+	var configSpec types.VirtualMachineConfigSpec
 	for _, dev := range devsFromClass {
 		configSpec.DeviceChange = append(configSpec.DeviceChange, &types.VirtualDeviceConfigSpec{
 			Operation: types.VirtualDeviceConfigSpecOperationAdd,

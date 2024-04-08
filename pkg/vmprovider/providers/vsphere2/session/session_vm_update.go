@@ -40,7 +40,7 @@ type VMUpdateArgs struct {
 
 	BootstrapData vmlifecycle.BootstrapData
 
-	ConfigSpec *vimTypes.VirtualMachineConfigSpec
+	ConfigSpec vimTypes.VirtualMachineConfigSpec
 
 	NetworkResults network2.NetworkInterfaceResults
 }
@@ -513,10 +513,10 @@ func updateConfigSpec(
 	UpdateConfigSpecAnnotation(config, configSpec)
 	UpdateConfigSpecManagedBy(config, configSpec)
 	UpdateConfigSpecExtraConfig(
-		vmCtx, config, configSpec, updateArgs.ConfigSpec,
+		vmCtx, config, configSpec, &updateArgs.ConfigSpec,
 		&vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
 	UpdateConfigSpecChangeBlockTracking(
-		vmCtx, config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
+		vmCtx, config, configSpec, &updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 
 	return configSpec
@@ -552,7 +552,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	var expectedPCIDevices []vimTypes.BaseVirtualDevice
-	if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
+	if configSpecDevs := util.DevicesFromConfigSpec(&updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
 		pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(configSpecDevs)
 		expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
 	}
@@ -740,7 +740,7 @@ func (s *Session) prepareVMForPowerOn(
 	cfg *vimTypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) error {
 
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx, updateArgs.ConfigSpec)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx, &updateArgs.ConfigSpec)
 	if err != nil {
 		return err
 	}

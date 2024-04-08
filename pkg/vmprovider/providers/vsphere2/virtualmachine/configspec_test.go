@@ -30,8 +30,8 @@ var _ = Describe("CreateConfigSpec", func() {
 		vmClassSpec     *vmopv1.VirtualMachineClassSpec
 		vmImageStatus   *vmopv1.VirtualMachineImageStatus
 		minCPUFreq      uint64
-		configSpec      *vimTypes.VirtualMachineConfigSpec
-		classConfigSpec *vimTypes.VirtualMachineConfigSpec
+		configSpec      vimTypes.VirtualMachineConfigSpec
+		classConfigSpec vimTypes.VirtualMachineConfigSpec
 		pvcVolume       = vmopv1.VirtualMachineVolume{
 			Name: "vmware",
 			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -75,7 +75,7 @@ var _ = Describe("CreateConfigSpec", func() {
 
 	Context("No VM Class ConfigSpec", func() {
 		BeforeEach(func() {
-			classConfigSpec = nil
+			classConfigSpec = vimTypes.VirtualMachineConfigSpec{}
 		})
 
 		When("Basic ConfigSpec assertions", func() {
@@ -118,7 +118,7 @@ var _ = Describe("CreateConfigSpec", func() {
 
 	Context("VM Class ConfigSpec", func() {
 		BeforeEach(func() {
-			classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+			classConfigSpec = vimTypes.VirtualMachineConfigSpec{
 				Name:       "dont-use-this-dummy-VM",
 				Annotation: "test-annotation",
 				DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
@@ -319,12 +319,12 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 	var (
 		vmCtx               context.VirtualMachineContextA2
 		storageClassesToIDs map[string]string
-		baseConfigSpec      *vimTypes.VirtualMachineConfigSpec
-		configSpec          *vimTypes.VirtualMachineConfigSpec
+		baseConfigSpec      vimTypes.VirtualMachineConfigSpec
+		configSpec          vimTypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
-		baseConfigSpec = &vimTypes.VirtualMachineConfigSpec{}
+		baseConfigSpec = vimTypes.VirtualMachineConfigSpec{}
 		storageClassesToIDs = map[string]string{}
 
 		vm := builder.DummyVirtualMachineA2()
@@ -345,7 +345,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 	Context("Returns expected ConfigSpec", func() {
 		BeforeEach(func() {
-			baseConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+			baseConfigSpec = vimTypes.VirtualMachineConfigSpec{
 				Name:       "dummy-VM",
 				Annotation: "test-annotation",
 				NumCPUs:    42,
@@ -422,7 +422,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 	Context("Removes VirtualEthernetCards without a backing", func() {
 		BeforeEach(func() {
-			baseConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+			baseConfigSpec = vimTypes.VirtualMachineConfigSpec{
 				Name: "dummy-VM",
 				DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
 					&vimTypes.VirtualDeviceConfigSpec{
@@ -447,7 +447,7 @@ var _ = Describe("ConfigSpecFromVMClassDevices", func() {
 
 	var (
 		vmClassSpec *vmopv1.VirtualMachineClassSpec
-		configSpec  *vimTypes.VirtualMachineConfigSpec
+		configSpec  vimTypes.VirtualMachineConfigSpec
 	)
 
 	Context("when Class specifies GPU/DDPIO in Hardware", func() {

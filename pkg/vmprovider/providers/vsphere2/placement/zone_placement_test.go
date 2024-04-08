@@ -72,7 +72,7 @@ func vcSimPlacement() {
 
 		vm         *vmopv1.VirtualMachine
 		vmCtx      context.VirtualMachineContextA2
-		configSpec *types.VirtualMachineConfigSpec
+		configSpec types.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
@@ -82,7 +82,7 @@ func vcSimPlacement() {
 		vm.Name = "placement-test"
 
 		// Other than the name ConfigSpec contents don't matter for vcsim.
-		configSpec = &types.VirtualMachineConfigSpec{
+		configSpec = types.VirtualMachineConfigSpec{
 			Name: vm.Name,
 		}
 	})

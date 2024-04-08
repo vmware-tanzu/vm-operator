@@ -377,14 +377,17 @@ func AddInstanceStorageVolumes(
 	return true
 }
 
-func GetVMClassConfigSpec(ctx goctx.Context, raw json.RawMessage) (*types.VirtualMachineConfigSpec, error) {
-	classConfigSpec, err := util.UnmarshalConfigSpecFromJSON(raw)
-	if err != nil {
-		return nil, err
-	}
-	util.SanitizeVMClassConfigSpec(ctx, classConfigSpec)
+func GetVMClassConfigSpec(
+	ctx goctx.Context,
+	raw json.RawMessage) (types.VirtualMachineConfigSpec, error) {
 
-	return classConfigSpec, nil
+	configSpec, err := util.UnmarshalConfigSpecFromJSON(raw)
+	if err != nil {
+		return types.VirtualMachineConfigSpec{}, err
+	}
+	util.SanitizeVMClassConfigSpec(ctx, &configSpec)
+
+	return configSpec, nil
 }
 
 // GetAttachedDiskUUIDToPVC returns a map of disk UUID to PVC object for all

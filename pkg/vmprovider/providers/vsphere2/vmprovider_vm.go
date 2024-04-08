@@ -894,15 +894,15 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	// TODO: This is a partial dupe of what's done in the update path in the remaining Session code. I got
 	// tired of trying to keep that in sync so we get to live with a frankenstein thing longer.
 
-	var vmClassConfigSpec *types.VirtualMachineConfigSpec
+	var configSpec types.VirtualMachineConfigSpec
 	if rawConfigSpec := createArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
-		configSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
+		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
 		if err != nil {
 			return err
 		}
-		vmClassConfigSpec = configSpec
+		configSpec = vmClassConfigSpec
 	} else {
-		vmClassConfigSpec = virtualmachine.ConfigSpecFromVMClassDevices(&createArgs.VMClass.Spec)
+		configSpec = virtualmachine.ConfigSpecFromVMClassDevices(&createArgs.VMClass.Spec)
 	}
 
 	var minCPUFreq uint64
@@ -916,7 +916,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	createArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx,
-		vmClassConfigSpec,
+		configSpec,
 		&createArgs.VMClass.Spec,
 		createArgs.ImageStatus,
 		minCPUFreq)
@@ -1004,7 +1004,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 	createArgs *VMCreateArgs) error {
 
 	if vmCtx.VM.Spec.Network == nil || vmCtx.VM.Spec.Network.Disabled {
-		util.RemoveDevicesFromConfigSpec(createArgs.ConfigSpec, util.IsEthernetCard)
+		util.RemoveDevicesFromConfigSpec(&createArgs.ConfigSpec, util.IsEthernetCard)
 		return nil
 	}
 
@@ -1104,18 +1104,18 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		updateArgs.MinCPUFreq = freq
 	}
 
-	var vmClassConfigSpec *types.VirtualMachineConfigSpec
-	if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
-		var err error
-		vmClassConfigSpec, err = GetVMClassConfigSpec(vmCtx, cs)
+	var configSpec types.VirtualMachineConfigSpec
+	if rawConfigSpec := updateArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
+		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
 		if err != nil {
 			return nil, err
 		}
+		configSpec = vmClassConfigSpec
 	}
 
 	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx,
-		vmClassConfigSpec,
+		configSpec,
 		&updateArgs.VMClass.Spec,
 		nil,
 		updateArgs.MinCPUFreq)

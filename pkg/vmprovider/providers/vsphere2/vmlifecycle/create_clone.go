@@ -59,7 +59,7 @@ func createCloneSpec(
 	srcVM *object.VirtualMachine) (*vimtypes.VirtualMachineCloneSpec, error) {
 
 	cloneSpec := &vimtypes.VirtualMachineCloneSpec{
-		Config: createArgs.ConfigSpec,
+		Config: &createArgs.ConfigSpec,
 		Memory: ptr.To(false), // No full memory clones.
 	}
 

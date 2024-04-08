@@ -9,8 +9,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -52,6 +54,8 @@ var _ = Describe("CreateConfigSpec", func() {
 
 		vm = builder.DummyVirtualMachineA2()
 		vm.Name = vmName
+		vm.UID = types.UID(uuid.New().String())
+		vm.Spec.BiosUUID = uuid.New().String()
 		// Explicitly set these in the tests.
 		vm.Spec.Volumes = nil
 		vm.Spec.MinHardwareVersion = 0
@@ -90,6 +94,25 @@ var _ = Describe("CreateConfigSpec", func() {
 				Expect(configSpec.CpuAllocation).ToNot(BeNil())
 				Expect(configSpec.MemoryAllocation).ToNot(BeNil())
 				Expect(configSpec.Firmware).To(Equal(vmImageStatus.Firmware))
+			})
+		})
+
+		When("VM has no bios uuid", func() {
+			BeforeEach(func() {
+				vm.Spec.BiosUUID = ""
+			})
+
+			It("config spec has empty uuids", func() {
+				Expect(configSpec.Uuid).To(BeEmpty())
+				Expect(configSpec.InstanceUuid).To(BeEmpty())
+			})
+		})
+
+		When("VM has bios uuid", func() {
+			It("config spec has expected uuids", func() {
+				Expect(configSpec.Uuid).ToNot(BeEmpty())
+				Expect(configSpec.Uuid).To(Equal(vm.Spec.BiosUUID))
+				Expect(configSpec.InstanceUuid).To(BeEquivalentTo(vm.UID))
 			})
 		})
 

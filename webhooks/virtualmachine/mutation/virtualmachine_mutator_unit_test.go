@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -268,6 +269,64 @@ func unitTestsMutating() {
 				oldVM := ctx.vm.DeepCopy()
 				Expect(mutation.SetDefaultPowerState(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
 				Expect(ctx.vm.Spec.PowerState).Should(Equal(oldVM.Spec.PowerState))
+			})
+		})
+	})
+
+	Describe("SetDefaultBiosUUID", func() {
+
+		Context("When VM BiosUUID is empty", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.BiosUUID = ""
+			})
+
+			It("Should set BiosUUID", func() {
+				Expect(mutation.SetDefaultBiosUUID(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+				Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+			})
+
+		})
+
+		Context("When VM BiosUUID is not empty", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.BiosUUID = uuid.New().String()
+			})
+
+			It("Should not mutate BiosUUID", func() {
+				oldVM := ctx.vm.DeepCopy()
+				Expect(mutation.SetDefaultBiosUUID(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
+				Expect(ctx.vm.Spec.BiosUUID).Should(Equal(oldVM.Spec.BiosUUID))
+			})
+		})
+
+		Context("When CloudInit is not empty", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.BiosUUID = uuid.New().String()
+				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+				}
+			})
+
+			It("Should set default CloudInit InstanceID", func() {
+				Expect(mutation.SetDefaultBiosUUID(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+				Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(ctx.vm.Spec.BiosUUID))
+			})
+		})
+
+		Context("When CloudInit instanceID is not empty", func() {
+			instanceID := uuid.New().String()
+			BeforeEach(func() {
+				ctx.vm.Spec.BiosUUID = uuid.New().String()
+				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						InstanceID: instanceID,
+					},
+				}
+			})
+
+			It("Should set specified CloudInit InstanceID", func() {
+				Expect(mutation.SetDefaultBiosUUID(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
+				Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(instanceID))
 			})
 		})
 	})

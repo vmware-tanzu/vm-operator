@@ -49,9 +49,12 @@ func BootStrapCloudInit(
 		sshPublicKeys = strings.Join(cloudInitSpec.SSHAuthorizedKeys, "\n")
 	}
 
-	uid := string(vmCtx.VM.UID)
-	// Use the existing instance ID if it is already set on the VM.
-	// This ensures cloud-init uses the same instance ID across B/R.
+	uid := cloudInitSpec.InstanceID
+	if uid == "" {
+		// InstanceID will be set to the VM bios uuid when creating new VMs.
+		// Use VM.UID for backward compatibility when InstanceID is not set.
+		uid = string(vmCtx.VM.UID)
+	}
 	if value, ok := vmCtx.VM.Annotations[vmopv1.InstanceIDAnnotation]; ok {
 		uid = value
 	}

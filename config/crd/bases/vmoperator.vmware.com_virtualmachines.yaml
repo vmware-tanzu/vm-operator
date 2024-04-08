@@ -3187,6 +3187,14 @@ spec:
                     - ThickEagerZero
                     type: string
                 type: object
+              biosUUID:
+                description: |-
+                  BiosUUID describes the desired BIOS UUID for a VM.
+                  If omitted, this field defaults to a random UUID.
+                  When the bootstrap provider is Cloud-Init, this value is
+                  used as the Cloud-Init instance ID.
+                format: uuid4
+                type: string
               bootstrap:
                 description: |-
                   Bootstrap describes the desired state of the guest's bootstrap
@@ -3552,6 +3560,11 @@ spec:
                             - path
                             x-kubernetes-list-type: map
                         type: object
+                      instanceID:
+                        description: |-
+                          InstanceID is the cloud-init metadata instance ID.
+                          If omitted, this field defaults to the VM's BiosUUID.
+                        type: string
                       rawCloudConfig:
                         description: |-
                           RawCloudConfig describes a key in a Secret resource that contains the

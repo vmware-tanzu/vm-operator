@@ -930,6 +930,12 @@ func restore_v1alpha3_VirtualMachineReadinessProbeSpec(
 	}
 }
 
+func restore_v1alpha3_VirtualMachineBiosUUID(
+	dst, src *vmopv1.VirtualMachine) {
+
+	dst.Spec.BiosUUID = src.Spec.BiosUUID
+}
+
 func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha3_Conditions(
 	dst *vmopv1.VirtualMachine) []metav1.Condition {
 
@@ -1118,6 +1124,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha3_VirtualMachineBootstrapSpec(dst, restored)
 	restore_v1alpha3_VirtualMachineNetworkSpec(dst, restored)
 	restore_v1alpha3_VirtualMachineReadinessProbeSpec(dst, restored)
+	restore_v1alpha3_VirtualMachineBiosUUID(dst, restored)
 
 	// END RESTORE
 

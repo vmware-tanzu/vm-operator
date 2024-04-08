@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -109,6 +110,55 @@ func intgTestsMutating() {
 					Expect(modified.Spec.Network.Interfaces[0].Name).To(Equal("eth0"))
 					Expect(modified.Spec.Network.Interfaces[0].Network.Kind).To(Equal("Network"))
 				})
+			})
+		})
+	})
+
+	Context("SetDefaultBiosUUID", func() {
+		When("Creating VirtualMachine", func() {
+			When("When VM BiosUUID is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.BiosUUID = ""
+				})
+
+				It("Should set BiosUUID", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					Expect(vm.Spec.BiosUUID).ToNot(BeEmpty())
+				})
+			})
+			When("When VM BiosUUID is not empty", func() {
+				var id = uuid.New().String()
+
+				BeforeEach(func() {
+					ctx.vm.Spec.BiosUUID = id
+				})
+
+				It("Should not mutate BiosUUID", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					Expect(vm.Spec.BiosUUID).To(Equal(id))
+				})
+			})
+		})
+
+		When("Updating VirtualMachine", func() {
+			var id = uuid.New().String()
+
+			BeforeEach(func() {
+				ctx.vm.Spec.BiosUUID = id
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			})
+
+			It("Should not mutate BiosUUID", func() {
+				vm := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				Expect(vm.Spec.BiosUUID).To(Equal(id))
 			})
 		})
 	})

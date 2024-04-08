@@ -91,6 +91,12 @@ func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 	return nil
 }
 
+func restore_v1alpha3_VirtualMachineBiosUUID(
+	dst, src *vmopv1.VirtualMachine) {
+
+	dst.Spec.BiosUUID = src.Spec.BiosUUID
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -107,6 +113,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	// BEGIN RESTORE
 
 	restore_v1alpha3_VirtualMachineImage(dst, restored)
+	restore_v1alpha3_VirtualMachineBiosUUID(dst, restored)
 
 	// END RESTORE
 

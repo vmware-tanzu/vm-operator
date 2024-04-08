@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -118,6 +119,7 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		SetCreatedAtAnnotations(ctx, modified)
 		AddDefaultNetworkInterface(ctx, m.client, modified)
 		SetDefaultPowerState(ctx, m.client, modified)
+		SetDefaultBiosUUID(ctx, m.client, modified)
 		if _, err := ResolveImageNameOnCreate(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
 		}
@@ -309,6 +311,35 @@ func SetDefaultPowerState(
 		return true
 	}
 	return false
+}
+
+// SetDefaultBiosUUID sets a default bios uuid for a new VM.
+// If CloudInit is the Bootstrap method, CloudInit InstanceID is also set to BiosUUID.
+// Return true if a default bios uuid was set, otherwise false.
+func SetDefaultBiosUUID(
+	ctx *pkgctx.WebhookRequestContext,
+	client client.Client,
+	vm *vmopv1.VirtualMachine) bool {
+
+	var wasMutated bool
+
+	if vm.Spec.BiosUUID == "" {
+		// Default to a Random (Version 4) UUID.
+		// This is the same UUID flavor/version used by Kubernetes and preferred by vSphere.
+		vm.Spec.BiosUUID = uuid.New().String()
+		wasMutated = true
+	}
+
+	if vm.Spec.Bootstrap != nil {
+		if ci := vm.Spec.Bootstrap.CloudInit; ci != nil {
+			if ci.InstanceID == "" {
+				ci.InstanceID = vm.Spec.BiosUUID
+				wasMutated = true
+			}
+		}
+	}
+
+	return wasMutated
 }
 
 const (

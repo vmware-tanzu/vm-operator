@@ -153,6 +153,7 @@ func unitTestsValidateCreate() {
 		isEmptyAvailabilityZone    bool
 		powerState                 vmopv1.VirtualMachinePowerState
 		nextRestartTime            string
+		biosUUID                   string
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -210,6 +211,7 @@ func unitTestsValidateCreate() {
 
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
+		ctx.vm.Spec.BiosUUID = args.biosUUID
 
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -284,6 +286,8 @@ func unitTestsValidateCreate() {
 		Entry("should disallow creating VM with non-empty, invalid nextRestartTime value",
 			createArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
+		Entry("should allow creating VM with biosUUID set by admin user", createArgs{biosUUID: "uuid", isServiceUser: true}, true, nil, nil),
+		Entry("should disallow creating VM with biosUUID set by SSO user", createArgs{biosUUID: "uuid"}, false, nil, nil),
 	)
 
 	doTest := func(args testParams) {
@@ -1400,6 +1404,7 @@ func unitTestsValidateUpdate() {
 
 	type updateArgs struct {
 		isServiceUser               bool
+		changeBiosUUID              bool
 		changeClassName             bool
 		changeImageRef              bool
 		changeImageName             bool
@@ -1410,6 +1415,7 @@ func unitTestsValidateUpdate() {
 		isSysprepTransportUsed      bool
 		withInstanceStorageVolumes  bool
 		changeInstanceStorageVolume bool
+		oldBiosUUID                 string
 		oldPowerState               vmopv1.VirtualMachinePowerState
 		newPowerState               vmopv1.VirtualMachinePowerState
 		newPowerStateEmptyAllowed   bool
@@ -1423,6 +1429,7 @@ func unitTestsValidateUpdate() {
 			ctx.oldVM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
 		}
 		ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
+		ctx.oldVM.Spec.BiosUUID = args.oldBiosUUID
 
 		if args.isServiceUser {
 			ctx.IsPrivilegedAccount = true
@@ -1436,6 +1443,9 @@ func unitTestsValidateUpdate() {
 		}
 		if args.changeImageName {
 			ctx.vm.Spec.ImageName += updateSuffix
+		}
+		if args.changeBiosUUID {
+			ctx.vm.Spec.BiosUUID += updateSuffix
 		}
 		if args.changeClassName {
 			ctx.vm.Spec.ClassName += updateSuffix
@@ -1523,10 +1533,12 @@ func unitTestsValidateUpdate() {
 
 		Entry("should deny image ref change", updateArgs{changeImageRef: true}, false, msg, nil),
 		Entry("should deny image name change", updateArgs{changeImageName: true}, false, msg, nil),
+		Entry("should deny bios uuid change", updateArgs{changeBiosUUID: true, oldBiosUUID: "uuid"}, false, msg, nil),
 		Entry("should deny class name change", updateArgs{changeClassName: true}, false, msg, nil),
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 
+		Entry("should allow empty bios uuid change", updateArgs{changeBiosUUID: true}, true, nil, nil),
 		Entry("should allow initial zone assignment", updateArgs{assignZoneName: true}, true, nil, nil),
 
 		Entry("should deny instance storage volume name change, when user is SSO user", updateArgs{changeInstanceStorageVolume: true}, false,

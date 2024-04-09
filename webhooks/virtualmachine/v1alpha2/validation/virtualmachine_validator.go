@@ -448,6 +448,11 @@ func (v validator) validateNetworkInterfaceSpec(
 		networkIfCRName = fmt.Sprintf("%s-%s", vmName, interfaceSpec.Name)
 	}
 
+	// Sanitize named network names so it is possible to use network names like vcsim's default 'VM Network'.
+	// IMPORTANT! this is only for testing purposes; in a real environment network names are derived from K8s resources,
+	// so they are valid DNS subdomain by default.
+	networkIfCRName = strings.ToLower(strings.ReplaceAll(networkIfCRName, " ", "-"))
+
 	for _, msg := range validation.NameIsDNSSubdomain(networkIfCRName, false) {
 		allErrs = append(allErrs, field.Invalid(interfacePath.Child("name"), networkIfCRName, "is the resulting network interface name: "+msg))
 	}

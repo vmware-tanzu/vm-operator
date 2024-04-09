@@ -1296,7 +1296,25 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("disallow creating VM with network interfaces resulting in a non-DNS1123 combined network interface CR name/label (`vmName-networkName-interfaceName`)",
+			Entry("sanitize network names for test purposes (e.g. vcsim's default 'VM Network')",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: common.PartialObjectRef{
+										Name: "VM Network",
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow creating VM with network interfaces resulting in a non-DNS1123 combined network interface CR name/label (`vmName-networkName$-interfaceName`)",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
@@ -1318,7 +1336,7 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						fmt.Sprintf(`spec.network.interfaces[0].name: Invalid value: "dummy-vm-for-webhook-validation-dummy-nw-%x": is the resulting network interface name: must be no more than 253 characters`, make([]byte, validation.DNS1123SubdomainMaxLength)),
-						`spec.network.interfaces[1].name: Invalid value: "dummy-vm-for-webhook-validation-dummy-nw-dummy_If": is the resulting network interface name: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters`,
+						`spec.network.interfaces[1].name: Invalid value: "dummy-vm-for-webhook-validation-dummy-nw-dummy_if": is the resulting network interface name: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters`,
 						`'-' or '.'`,
 						`and must start and end with an alphanumeric character (e.g. 'example.com'`,
 						"regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"),

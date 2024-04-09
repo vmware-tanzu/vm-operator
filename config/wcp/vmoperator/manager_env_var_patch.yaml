@@ -31,12 +31,6 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_WCP_NAMESPACED_VM_CLASS
-    value: "<FSS_WCP_NAMESPACED_VM_CLASS_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
     name: FSS_WCP_VMSERVICE_BACKUPRESTORE
     value: "<FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE>"
 

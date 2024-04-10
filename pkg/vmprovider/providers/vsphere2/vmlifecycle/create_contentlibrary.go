@@ -37,16 +37,14 @@ func deployOVF(
 		deploymentSpec.DefaultDatastoreID = createArgs.DatastoreMoID
 	}
 
-	if createArgs.ConfigSpec != nil {
-		configSpecXML, err := util.MarshalConfigSpecToXML(createArgs.ConfigSpec)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal ConfigSpec to XML: %w", err)
-		}
+	configSpecXML, err := util.MarshalConfigSpecToXML(createArgs.ConfigSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ConfigSpec to XML: %w", err)
+	}
 
-		deploymentSpec.VmConfigSpec = &vcenter.VmConfigSpec{
-			Provider: constants.ConfigSpecProviderXML,
-			XML:      base64.StdEncoding.EncodeToString(configSpecXML),
-		}
+	deploymentSpec.VmConfigSpec = &vcenter.VmConfigSpec{
+		Provider: constants.ConfigSpecProviderXML,
+		XML:      base64.StdEncoding.EncodeToString(configSpecXML),
 	}
 
 	deploy := vcenter.Deploy{

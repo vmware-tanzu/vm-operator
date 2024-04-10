@@ -17,7 +17,7 @@ type CreateArgs struct {
 	UseContentLibrary bool
 	ProviderItemID    string
 
-	ConfigSpec          *types.VirtualMachineConfigSpec
+	ConfigSpec          types.VirtualMachineConfigSpec
 	StorageProvisioning string
 	FolderMoID          string
 	ResourcePoolMoID    string

@@ -162,7 +162,7 @@ func getPlacementRecommendations(
 	vmCtx context.VirtualMachineContextA2,
 	vcClient *vim25.Client,
 	candidates map[string][]string,
-	configSpec *types.VirtualMachineConfigSpec) map[string][]Recommendation {
+	configSpec types.VirtualMachineConfigSpec) map[string][]Recommendation {
 
 	recommendations := map[string][]Recommendation{}
 
@@ -211,7 +211,7 @@ func getZonalPlacementRecommendations(
 	vmCtx context.VirtualMachineContextA2,
 	vcClient *vim25.Client,
 	candidates map[string][]string,
-	configSpec *types.VirtualMachineConfigSpec,
+	configSpec types.VirtualMachineConfigSpec,
 	needsHost bool) map[string][]Recommendation {
 
 	rpMOToZone := map[types.ManagedObjectReference]string{}
@@ -286,7 +286,7 @@ func Placement(
 	vmCtx context.VirtualMachineContextA2,
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
-	configSpec *types.VirtualMachineConfigSpec,
+	configSpec types.VirtualMachineConfigSpec,
 	childRPName string) (*Result, error) {
 
 	existingRes, zonePlacement, instanceStoragePlacement := doesVMNeedPlacement(vmCtx)

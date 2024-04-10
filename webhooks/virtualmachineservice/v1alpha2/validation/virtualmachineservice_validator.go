@@ -131,7 +131,7 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmServic
 	mdPath := field.NewPath("metadata")
 
 	var allErrs field.ErrorList
-	allErrs = append(allErrs, ValidateDNS1123Label(vmService.Name, mdPath.Child("name"))...)
+	allErrs = append(allErrs, ValidateDNS1035Label(vmService.Name, mdPath.Child("name"))...)
 
 	return allErrs
 }
@@ -292,6 +292,14 @@ func isHeadlessVMService(vmService *vmopv1.VirtualMachineService) bool {
 func ValidateDNS1123Label(value string, fldPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 	for _, msg := range validation.IsDNS1123Label(value) {
+		allErrs = append(allErrs, field.Invalid(fldPath, value, msg))
+	}
+	return allErrs
+}
+
+func ValidateDNS1035Label(value string, fldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	for _, msg := range validation.IsDNS1035Label(value) {
 		allErrs = append(allErrs, field.Invalid(fldPath, value, msg))
 	}
 	return allErrs

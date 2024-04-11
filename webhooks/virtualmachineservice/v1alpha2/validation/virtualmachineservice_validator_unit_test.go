@@ -96,8 +96,8 @@ func unitTestsValidateCreate() {
 		var err error
 
 		if args.invalidDNSName {
-			// Name that doesn't conform to DNS Label format "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
-			ctx.vmService.Name = "MyVMService"
+			// Name that doesn't conform to DNS 1035 Label format "[a-z]([-a-z0-9]*[a-z0-9])?""
+			ctx.vmService.Name = "9-MyVMService"
 		}
 		if args.emptyType {
 			ctx.vmService.Spec.Type = ""
@@ -145,7 +145,7 @@ func unitTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-		Entry("should deny invalid name", createArgs{invalidDNSName: true}, false, "metadata.name: Invalid value: \"MyVMService\": a lowercase RFC 1123 label must consist of lower case alphanumeric character", nil),
+		Entry("should deny invalid name", createArgs{invalidDNSName: true}, false, "metadata.name: Invalid value: \"9-MyVMService\": a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character", nil),
 		Entry("should deny no type", createArgs{emptyType: true}, false, "spec.type: Required value", nil),
 		Entry("should deny invalid type", createArgs{invalidType: true}, false, "spec.type: Unsupported value: \"InvalidLB\":", nil),
 		Entry("should deny invalid ports", createArgs{invalidPorts: true}, false, "spec.ports: Required value", nil),

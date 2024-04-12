@@ -65,6 +65,7 @@ const (
 	invalidNextRestartTimeOnUpdate           = "must be formatted as RFC3339Nano"
 	invalidNextRestartTimeOnUpdateNow        = "mutation webhooks are required to restart VM"
 	modifyAnnotationNotAllowedForNonAdmin    = "modifying this annotation is not allowed for non-admin users"
+	modifyLabelNotAllowedForNonAdmin         = "modifying this label is not allowed for non-admin users"
 	invalidMinHardwareVersionDowngrade       = "cannot downgrade hardware version"
 	invalidMinHardwareVersionPowerState      = "cannot upgrade hardware version unless powered off"
 )
@@ -123,6 +124,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validatePowerStateOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, nil)...)
+	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -178,6 +180,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1112,6 +1115,27 @@ func (v validator) validateMinHardwareVersion(ctx *context.WebhookRequestContext
 				vm.Spec.MinHardwareVersion,
 				invalidMinHardwareVersionPowerState))
 		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateLabel(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if ctx.IsPrivilegedAccount {
+		return allErrs
+	}
+
+	// Use an empty VM if the oldVM is nil to validate a creation request.
+	if oldVM == nil {
+		oldVM = &vmopv1.VirtualMachine{}
+	}
+
+	labelPath := field.NewPath("metadata", "labels")
+
+	if vm.Labels[vmopv1.PausedVMLabelKey] != oldVM.Labels[vmopv1.PausedVMLabelKey] {
+		allErrs = append(allErrs, field.Forbidden(labelPath.Child(vmopv1.PausedVMLabelKey), modifyLabelNotAllowedForNonAdmin))
 	}
 
 	return allErrs

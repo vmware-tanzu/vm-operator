@@ -35,8 +35,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
 const (
@@ -134,7 +134,7 @@ func NewReconciler(
 	apiReader client.Reader,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
+	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
 	return &Reconciler{
 		Context:    ctx,
@@ -154,7 +154,7 @@ type Reconciler struct {
 	apiReader  client.Reader
 	Logger     logr.Logger
 	Recorder   record.Recorder
-	VMProvider vmprovider.VirtualMachineProviderInterface
+	VMProvider providers.VirtualMachineProviderInterface
 	Metrics    *metrics.VMPublishMetrics
 }
 

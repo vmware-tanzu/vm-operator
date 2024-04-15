@@ -31,9 +31,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
 const (
@@ -160,7 +160,7 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmProvider vmprovider.VirtualMachineProviderInterface,
+	vmProvider providers.VirtualMachineProviderInterface,
 	prober prober.Manager) *Reconciler {
 
 	return &Reconciler{
@@ -180,7 +180,7 @@ type Reconciler struct {
 	Context    goctx.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
-	VMProvider vmprovider.VirtualMachineProviderInterface
+	VMProvider providers.VirtualMachineProviderInterface
 	Prober     prober.Manager
 	vmMetrics  *metrics.VMMetrics
 }

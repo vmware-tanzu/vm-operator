@@ -125,7 +125,7 @@ type VirtualMachineImageSpec struct {
 	// this image's information.
 	//
 	// +optional
-	ProviderRef common.LocalObjectRef `json:"providerRef,omitempty"`
+	ProviderRef *common.LocalObjectRef `json:"providerRef,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage.
@@ -214,7 +214,6 @@ type VirtualMachineImageStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmi;vmimage
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Display Name",type="string",JSONPath=".status.name"
 // +kubebuilder:printcolumn:name="Image Version",type="string",JSONPath=".status.productInfo.version"
@@ -251,7 +250,6 @@ type VirtualMachineImageList struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=cvmi;cvmimage;clustervmi;clustervmimage
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Display Name",type="string",JSONPath=".status.name"
 // +kubebuilder:printcolumn:name="Image Version",type="string",JSONPath=".status.productInfo.version"

@@ -18,7 +18,7 @@ var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
 	pkgconfig.NewContext(),
 	validation.AddToManager,
 	validation.NewValidator,
-	"default.validating.virtualmachinewebconsolerequest.v1alpha2.vmoperator.vmware.com")
+	"default.validating.virtualmachinewebconsolerequest.v1alpha3.vmoperator.vmware.com")
 
 func TestWebhook(t *testing.T) {
 	suite.Register(t, "Validation webhook suite", intgTests, unitTests)

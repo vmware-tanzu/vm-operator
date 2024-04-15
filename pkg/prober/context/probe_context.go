@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 )
 

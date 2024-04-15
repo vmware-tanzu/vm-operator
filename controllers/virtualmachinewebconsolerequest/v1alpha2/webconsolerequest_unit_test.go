@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -35,10 +35,10 @@ func unitTestsReconcile() {
 	var (
 		initObjects    []client.Object
 		ctx            *builder.UnitTestContextForController
-		fakeVMProvider *providerfake.VMProviderA2
+		fakeVMProvider *providerfake.VMProvider
 
 		reconciler *webconsolerequest.Reconciler
-		wcrCtx     *vmopContext.WebConsoleRequestContextA2
+		wcrCtx     *vmopContext.WebConsoleRequestContextV1
 		wcr        *vmopv1.VirtualMachineWebConsoleRequest
 		vm         *vmopv1.VirtualMachine
 		proxySvc   *corev1.Service
@@ -85,11 +85,11 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			ctx.VMProviderA2,
+			ctx.VMProvider,
 		)
-		fakeVMProvider = ctx.VMProviderA2.(*providerfake.VMProviderA2)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 
-		wcrCtx = &vmopContext.WebConsoleRequestContextA2{
+		wcrCtx = &vmopContext.WebConsoleRequestContextV1{
 			Context:           ctx,
 			Logger:            ctx.Logger.WithName(wcr.Name),
 			WebConsoleRequest: wcr,

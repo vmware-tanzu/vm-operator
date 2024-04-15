@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -161,13 +161,13 @@ func intgTestsPatch() {
 			})
 
 			Describe("on a vmopv1.VirtualMachine object", func() {
-				obj := &vmopv1.VirtualMachine{
+				obj := &vmopv1a1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						GenerateName: "test-",
 						Namespace:    "default",
 					},
-					Spec: vmopv1.VirtualMachineSpec{
-						PowerState: vmopv1.VirtualMachinePoweredOn,
+					Spec: vmopv1a1.VirtualMachineSpec{
+						PowerState: vmopv1a1.VirtualMachinePoweredOn,
 					},
 				}
 
@@ -186,7 +186,7 @@ func intgTestsPatch() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyCondition)
+					conditions.MarkTrue(obj, vmopv1a1.ReadyCondition)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj)).To(Succeed())
@@ -213,7 +213,7 @@ func intgTestsPatch() {
 					objCopy := obj.DeepCopy()
 
 					By("Marking a custom condition to be false")
-					conditions.MarkFalse(objCopy, vmopv1.ConditionType("TestCondition"), "reason", vmopv1.ConditionSeverityInfo, "message")
+					conditions.MarkFalse(objCopy, vmopv1a1.ConditionType("TestCondition"), "reason", vmopv1a1.ConditionSeverityInfo, "message")
 					Expect(ctx.Client.Status().Update(ctx, objCopy)).To(Succeed())
 
 					By("Validating that the local object's resource version is behind")
@@ -224,7 +224,7 @@ func intgTestsPatch() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyCondition)
+					conditions.MarkTrue(obj, vmopv1a1.ReadyCondition)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj)).To(Succeed())
@@ -239,8 +239,8 @@ func intgTestsPatch() {
 						testConditionCopy := conditions.Get(objCopy, "TestCondition")
 						testConditionAfter := conditions.Get(objAfter, "TestCondition")
 
-						readyBefore := conditions.Get(obj, vmopv1.ReadyCondition)
-						readyAfter := conditions.Get(objAfter, vmopv1.ReadyCondition)
+						readyBefore := conditions.Get(obj, vmopv1a1.ReadyCondition)
+						readyAfter := conditions.Get(objAfter, vmopv1a1.ReadyCondition)
 
 						return cmp.Equal(testConditionCopy, testConditionAfter) && cmp.Equal(readyBefore, readyAfter)
 					}, timeout).Should(BeTrue())
@@ -260,7 +260,7 @@ func intgTestsPatch() {
 					objCopy := obj.DeepCopy()
 
 					By("Marking a custom condition to be false")
-					conditions.MarkFalse(objCopy, vmopv1.ConditionType("TestCondition"), "reason", vmopv1.ConditionSeverityInfo, "message")
+					conditions.MarkFalse(objCopy, vmopv1a1.ConditionType("TestCondition"), "reason", vmopv1a1.ConditionSeverityInfo, "message")
 					Expect(ctx.Client.Status().Update(ctx, objCopy)).To(Succeed())
 
 					By("Validating that the local object's resource version is behind")
@@ -273,7 +273,7 @@ func intgTestsPatch() {
 					By("Changing the object spec, status, and adding Ready=True condition")
 					obj.Spec.ImageName = "foo-image"
 					obj.Status.Phase = "custom-phase"
-					conditions.MarkTrue(obj, vmopv1.ReadyCondition)
+					conditions.MarkTrue(obj, vmopv1a1.ReadyCondition)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj)).To(Succeed())
@@ -288,8 +288,8 @@ func intgTestsPatch() {
 						testConditionCopy := conditions.Get(objCopy, "TestCondition")
 						testConditionAfter := conditions.Get(objAfter, "TestCondition")
 
-						readyBefore := conditions.Get(obj, vmopv1.ReadyCondition)
-						readyAfter := conditions.Get(objAfter, vmopv1.ReadyCondition)
+						readyBefore := conditions.Get(obj, vmopv1a1.ReadyCondition)
+						readyAfter := conditions.Get(objAfter, vmopv1a1.ReadyCondition)
 
 						return cmp.Equal(testConditionCopy, testConditionAfter) && cmp.Equal(readyBefore, readyAfter) &&
 							obj.Spec.ImageName == objAfter.Spec.ImageName &&
@@ -309,7 +309,7 @@ func intgTestsPatch() {
 					objCopy := obj.DeepCopy()
 
 					By("Marking a custom condition to be false")
-					conditions.MarkFalse(objCopy, vmopv1.ReadyCondition, "reason", vmopv1.ConditionSeverityInfo, "message")
+					conditions.MarkFalse(objCopy, vmopv1a1.ReadyCondition, "reason", vmopv1a1.ConditionSeverityInfo, "message")
 					Expect(ctx.Client.Status().Update(ctx, objCopy)).To(Succeed())
 
 					By("Validating that the local object's resource version is behind")
@@ -320,7 +320,7 @@ func intgTestsPatch() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyCondition)
+					conditions.MarkTrue(obj, vmopv1a1.ReadyCondition)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj)).ToNot(Succeed())
@@ -348,7 +348,7 @@ func intgTestsPatch() {
 					objCopy := obj.DeepCopy()
 
 					By("Marking a custom condition to be false")
-					conditions.MarkFalse(objCopy, vmopv1.ReadyCondition, "reason", vmopv1.ConditionSeverityInfo, "message")
+					conditions.MarkFalse(objCopy, vmopv1a1.ReadyCondition, "reason", vmopv1a1.ConditionSeverityInfo, "message")
 					Expect(ctx.Client.Status().Update(ctx, objCopy)).To(Succeed())
 
 					By("Validating that the local object's resource version is behind")
@@ -359,10 +359,10 @@ func intgTestsPatch() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyCondition)
+					conditions.MarkTrue(obj, vmopv1a1.ReadyCondition)
 
 					By("Patching the object")
-					Expect(patcher.Patch(ctx, obj, WithOwnedConditions{Conditions: []vmopv1.ConditionType{vmopv1.ReadyCondition}})).To(Succeed())
+					Expect(patcher.Patch(ctx, obj, WithOwnedConditions{Conditions: []vmopv1a1.ConditionType{vmopv1a1.ReadyCondition}})).To(Succeed())
 
 					By("Validating the object has been updated")
 					Eventually(func() bool {
@@ -371,8 +371,8 @@ func intgTestsPatch() {
 							return false
 						}
 
-						readyBefore := conditions.Get(obj, vmopv1.ReadyCondition)
-						readyAfter := conditions.Get(objAfter, vmopv1.ReadyCondition)
+						readyBefore := conditions.Get(obj, vmopv1a1.ReadyCondition)
+						readyAfter := conditions.Get(objAfter, vmopv1a1.ReadyCondition)
 
 						return cmp.Equal(readyBefore, readyAfter)
 					}, timeout).Should(BeTrue())
@@ -390,7 +390,7 @@ func intgTestsPatch() {
 					objCopy := obj.DeepCopy()
 
 					By("Marking a custom condition to be false")
-					conditions.MarkFalse(objCopy, vmopv1.ReadyCondition, "reason", vmopv1.ConditionSeverityInfo, "message")
+					conditions.MarkFalse(objCopy, vmopv1a1.ReadyCondition, "reason", vmopv1a1.ConditionSeverityInfo, "message")
 					Expect(ctx.Client.Status().Update(ctx, objCopy)).To(Succeed())
 
 					By("Validating that the local object's resource version is behind")
@@ -401,7 +401,7 @@ func intgTestsPatch() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyCondition)
+					conditions.MarkTrue(obj, vmopv1a1.ReadyCondition)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj, WithForceOverwriteConditions{})).To(Succeed())
@@ -413,8 +413,8 @@ func intgTestsPatch() {
 							return false
 						}
 
-						readyBefore := conditions.Get(obj, vmopv1.ReadyCondition)
-						readyAfter := conditions.Get(objAfter, vmopv1.ReadyCondition)
+						readyBefore := conditions.Get(obj, vmopv1a1.ReadyCondition)
+						readyAfter := conditions.Get(objAfter, vmopv1a1.ReadyCondition)
 
 						return cmp.Equal(readyBefore, readyAfter)
 					}, timeout).Should(BeTrue())
@@ -423,18 +423,18 @@ func intgTestsPatch() {
 		})
 
 		Describe("Should patch a vmopv1.VirtualMachine", func() {
-			var obj *vmopv1.VirtualMachine
+			var obj *vmopv1a1.VirtualMachine
 
 			BeforeEach(func() {
-				obj = &vmopv1.VirtualMachine{
+				obj = &vmopv1a1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						GenerateName: "test-",
 						Namespace:    ctx.Namespace,
 					},
-					Spec: vmopv1.VirtualMachineSpec{
-						PowerState: vmopv1.VirtualMachinePoweredOn,
+					Spec: vmopv1a1.VirtualMachineSpec{
+						PowerState: vmopv1a1.VirtualMachinePoweredOn,
 					},
-					Status: vmopv1.VirtualMachineStatus{
+					Status: vmopv1a1.VirtualMachineStatus{
 						BiosUUID:     "bios-uuid-foo",
 						InstanceUUID: "instance-uuid-foo",
 						UniqueID:     "unique-id",
@@ -592,7 +592,7 @@ func intgTestsPatch() {
 				obj.Status.Host = "vm-host"
 
 				By("Setting Ready condition")
-				conditions.MarkTrue(obj, vmopv1.ReadyCondition)
+				conditions.MarkTrue(obj, vmopv1a1.ReadyCondition)
 
 				By("Patching the object")
 				Expect(patcher.Patch(ctx, obj)).To(Succeed())
@@ -605,7 +605,7 @@ func intgTestsPatch() {
 					}
 
 					return obj.Status.Host == objAfter.Status.Host &&
-						conditions.IsTrue(objAfter, vmopv1.ReadyCondition) &&
+						conditions.IsTrue(objAfter, vmopv1a1.ReadyCondition) &&
 						reflect.DeepEqual(obj.Spec, objAfter.Spec)
 				}, timeout).Should(BeTrue())
 			})

@@ -12,7 +12,7 @@ import (
 )
 
 func unitTests() {
-	Describe("WCP Config", Label(testlabels.V1Alpha2), unitTestsWcpConfig)
+	Describe("WCP Config", Label(testlabels.V1Alpha3), unitTestsWcpConfig)
 }
 
 func unitTestsWcpConfig() {

@@ -20,8 +20,9 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
@@ -40,18 +41,14 @@ func NewFakeClient(objs ...client.Object) client.Client {
 // resource type.
 func KnownObjectTypes() []client.Object {
 	return []client.Object{
-		&v1alpha1.VirtualMachine{},
-		&v1alpha2.VirtualMachine{},
-		&v1alpha1.VirtualMachineService{},
-		&v1alpha2.VirtualMachineService{},
-		&v1alpha1.VirtualMachineClass{},
-		&v1alpha2.VirtualMachineClass{},
-		&v1alpha1.VirtualMachinePublishRequest{},
-		&v1alpha2.VirtualMachinePublishRequest{},
-		&v1alpha1.ClusterVirtualMachineImage{},
-		&v1alpha2.ClusterVirtualMachineImage{},
-		&v1alpha1.VirtualMachineImage{},
-		&v1alpha2.VirtualMachineImage{},
+		&vmopv1.VirtualMachine{},
+		&vmopv1.VirtualMachineService{},
+		&vmopv1.VirtualMachineClass{},
+		&vmopv1.VirtualMachinePublishRequest{},
+		&vmopv1.ClusterVirtualMachineImage{},
+		&vmopv1.VirtualMachineImage{},
+		&vmopv1.VirtualMachineWebConsoleRequest{},
+		&vmopv1a1.WebConsoleRequest{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
 		&cnsstoragev1.StoragePolicyQuota{},
 		&ncpv1alpha1.VirtualNetworkInterface{},
@@ -71,8 +68,9 @@ func NewFakeRecorder() (record.Recorder, chan string) {
 func NewScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = v1alpha1.AddToScheme(scheme)
-	_ = v1alpha2.AddToScheme(scheme)
+	_ = vmopv1a1.AddToScheme(scheme)
+	_ = vmopv1a2.AddToScheme(scheme)
+	_ = vmopv1.AddToScheme(scheme)
 	_ = ncpv1alpha1.AddToScheme(scheme)
 	_ = cnsapis.AddToScheme(scheme)
 	_ = netopv1alpha1.AddToScheme(scheme)

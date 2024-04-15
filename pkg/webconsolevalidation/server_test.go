@@ -12,7 +12,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/webconsolevalidation"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -55,7 +55,7 @@ func serverUnitTests() {
 		Context("requests with a uuid param set", func() {
 
 			BeforeEach(func() {
-				wcr := &vmopv1.WebConsoleRequest{}
+				wcr := &vmopv1a1.WebConsoleRequest{}
 				wcr.Namespace = "dummy-namespace"
 				wcr.Labels = map[string]string{
 					v1alpha1.UUIDLabelKey: "dummy-uuid-1234",

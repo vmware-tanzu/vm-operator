@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -52,7 +52,7 @@ func intgTests() {
 
 type intgValidatingWebhookContext struct {
 	builder.IntegrationTestContext
-	wcr        *vmopv1.WebConsoleRequest
+	wcr        *vmopv1a1.WebConsoleRequest
 	privateKey *rsa.PrivateKey
 }
 

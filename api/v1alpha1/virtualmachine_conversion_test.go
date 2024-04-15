@@ -19,10 +19,10 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	nextver_cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
-	nextver_common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	nextver_sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
+	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	nextver_cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
+	nextver_common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	nextver_sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
 )
 
 func TestVirtualMachineConversion(t *testing.T) {
@@ -83,7 +83,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Interfaces: []nextver.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name: "vds-interface",
-							Network: nextver_common.PartialObjectRef{
+							Network: &nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "Network",
 									APIVersion: "netoperator.vmware.com/v1alpha1",
@@ -94,7 +94,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						},
 						{
 							Name: "ncp-interface",
-							Network: nextver_common.PartialObjectRef{
+							Network: &nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "VirtualNetwork",
 									APIVersion: "vmware.com/v1alpha1",
@@ -105,7 +105,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						},
 						{
 							Name: "nsx-vpc-subnet-interface",
-							Network: nextver_common.PartialObjectRef{
+							Network: &nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "Subnet",
 									APIVersion: "nsx.vmware.com/v1alpha1",
@@ -116,7 +116,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						},
 						{
 							Name: "nsx-vpc-subnetset-interface",
-							Network: nextver_common.PartialObjectRef{
+							Network: &nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "SubnetSet",
 									APIVersion: "nsx.vmware.com/v1alpha1",
@@ -126,7 +126,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						},
 						{
 							Name: "my-interface",
-							Network: nextver_common.PartialObjectRef{
+							Network: &nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "Network",
 									APIVersion: "netoperator.vmware.com/v1alpha1",
@@ -795,7 +795,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 		})
 
 		t.Run("Converts PrereqReady Condition", func(t *testing.T) {
-			t.Run("PrereqReady is True with no prior v1a2 conditions", func(t *testing.T) {
+			t.Run("PrereqReady is True with no prior nextver conditions", func(t *testing.T) {
 				g := NewWithT(t)
 
 				now := metav1.Now()
@@ -1266,7 +1266,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				g.Expect(c.LastTransitionTime).To(Equal(now))
 			})
 
-			t.Run("PrereqReady Condition is True with prior v1a2 conditions", func(t *testing.T) {
+			t.Run("PrereqReady Condition is True with prior nextver conditions", func(t *testing.T) {
 				g := NewWithT(t)
 
 				now := metav1.Now()
@@ -1333,7 +1333,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				g.Expect(c.LastTransitionTime).To(Equal(now))
 			})
 
-			t.Run("PrereqReady Condition is False with prior v1a2 conditions", func(t *testing.T) {
+			t.Run("PrereqReady Condition is False with prior nextver conditions", func(t *testing.T) {
 				g := NewWithT(t)
 
 				now := metav1.Now()

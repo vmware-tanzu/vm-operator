@@ -11,14 +11,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /default-mutate-vmoperator-vmware-com-v1alpha2-virtualmachine
+      path: /default-mutate-vmoperator-vmware-com-v1alpha3-virtualmachine
   failurePolicy: Fail
-  name: default.mutating.virtualmachine.v1alpha2.vmoperator.vmware.com
+  name: default.mutating.virtualmachine.v1alpha3.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha2
+    - v1alpha3
     operations:
     - CREATE
     - UPDATE
@@ -59,14 +59,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachine
+      path: /default-validate-vmoperator-vmware-com-v1alpha3-virtualmachine
   failurePolicy: Fail
-  name: default.validating.virtualmachine.v1alpha2.vmoperator.vmware.com
+  name: default.validating.virtualmachine.v1alpha3.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha2
+    - v1alpha3
     operations:
     - CREATE
     - UPDATE
@@ -80,14 +80,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachineclass
+      path: /default-validate-vmoperator-vmware-com-v1alpha3-virtualmachineclass
   failurePolicy: Fail
-  name: default.validating.virtualmachineclass.v1alpha2.vmoperator.vmware.com
+  name: default.validating.virtualmachineclass.v1alpha3.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha2
+    - v1alpha3
     operations:
     - CREATE
     - UPDATE
@@ -101,14 +101,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachinepublishrequest
+      path: /default-validate-vmoperator-vmware-com-v1alpha3-virtualmachinepublishrequest
   failurePolicy: Fail
-  name: default.validating.virtualmachinepublishrequest.v1alpha2.vmoperator.vmware.com
+  name: default.validating.virtualmachinepublishrequest.v1alpha3.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha2
+    - v1alpha3
     operations:
     - CREATE
     - UPDATE
@@ -122,14 +122,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachineservice
+      path: /default-validate-vmoperator-vmware-com-v1alpha3-virtualmachineservice
   failurePolicy: Fail
-  name: default.validating.virtualmachineservice.v1alpha2.vmoperator.vmware.com
+  name: default.validating.virtualmachineservice.v1alpha3.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha2
+    - v1alpha3
     operations:
     - CREATE
     - UPDATE
@@ -143,14 +143,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachinesetresourcepolicy
+      path: /default-validate-vmoperator-vmware-com-v1alpha3-virtualmachinesetresourcepolicy
   failurePolicy: Fail
-  name: default.validating.virtualmachinesetresourcepolicy.v1alpha2.vmoperator.vmware.com
+  name: default.validating.virtualmachinesetresourcepolicy.v1alpha3.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha2
+    - v1alpha3
     operations:
     - CREATE
     - UPDATE
@@ -185,14 +185,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachinewebconsolerequest
+      path: /default-validate-vmoperator-vmware-com-v1alpha3-virtualmachinewebconsolerequest
   failurePolicy: Fail
-  name: default.validating.virtualmachinewebconsolerequest.v1alpha2.vmoperator.vmware.com
+  name: default.validating.virtualmachinewebconsolerequest.v1alpha3.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha2
+    - v1alpha3
     operations:
     - CREATE
     - UPDATE

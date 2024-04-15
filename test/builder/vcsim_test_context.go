@@ -45,7 +45,8 @@ import (
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
@@ -424,10 +425,12 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 
 	// The image isn't quite as prod but sufficient for what we need here ATM.
 	clusterVMImage := DummyClusterVirtualMachineImageA2(c.ContentLibraryImageName)
-	clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
+	clusterVMImage.Spec.ProviderRef = &common.LocalObjectRef{
+		Kind: "ClusterContentLibraryItem",
+	}
 	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
 	clusterVMImage.Status.ProviderItemID = itemID
-	conditions.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
+	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 }
 
@@ -462,7 +465,7 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 	clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
 	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
 	clusterVMImage.Status.ProviderItemID = itemID
-	conditions.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
+	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 }
 
@@ -646,7 +649,7 @@ func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.Clus
 
 func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicyA2(
 	name string,
-	nsInfo WorkloadNamespaceInfo) (*v1alpha2.VirtualMachineSetResourcePolicy, *object.Folder) {
+	nsInfo WorkloadNamespaceInfo) (*vmopv1.VirtualMachineSetResourcePolicy, *object.Folder) {
 
 	resourcePolicy := DummyVirtualMachineSetResourcePolicy2A2(name, nsInfo.Namespace)
 	Expect(c.Client.Create(c, resourcePolicy)).To(Succeed())

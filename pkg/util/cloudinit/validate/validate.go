@@ -9,8 +9,8 @@ import (
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	cloudinitschema "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/schema"
 )
 

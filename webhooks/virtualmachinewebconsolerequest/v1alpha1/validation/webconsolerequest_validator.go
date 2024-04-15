@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -56,7 +56,7 @@ type validator struct {
 }
 
 func (v validator) For() schema.GroupVersionKind {
-	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.WebConsoleRequest{}).Name())
+	return vmopv1a1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1a1.WebConsoleRequest{}).Name())
 }
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
@@ -104,12 +104,12 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validateMetadata(ctx *context.WebhookRequestContext, wcr *vmopv1.WebConsoleRequest) field.ErrorList {
+func (v validator) validateMetadata(ctx *context.WebhookRequestContext, wcr *vmopv1a1.WebConsoleRequest) field.ErrorList {
 	var fieldErrs field.ErrorList
 	return fieldErrs
 }
 
-func (v validator) validateSpec(ctx *context.WebhookRequestContext, wcr *vmopv1.WebConsoleRequest) field.ErrorList {
+func (v validator) validateSpec(ctx *context.WebhookRequestContext, wcr *vmopv1a1.WebConsoleRequest) field.ErrorList {
 	var fieldErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
@@ -119,7 +119,7 @@ func (v validator) validateSpec(ctx *context.WebhookRequestContext, wcr *vmopv1.
 	return fieldErrs
 }
 
-func (v validator) validateVirtualMachineName(path *field.Path, wcr *vmopv1.WebConsoleRequest) field.ErrorList {
+func (v validator) validateVirtualMachineName(path *field.Path, wcr *vmopv1a1.WebConsoleRequest) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if wcr.Spec.VirtualMachineName == "" {
@@ -154,7 +154,7 @@ func (v validator) validatePublicKey(path *field.Path, publicKey string) field.E
 	return allErrs
 }
 
-func (v validator) validateImmutableFields(wcr, oldwcr *vmopv1.WebConsoleRequest) field.ErrorList {
+func (v validator) validateImmutableFields(wcr, oldwcr *vmopv1a1.WebConsoleRequest) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
@@ -165,15 +165,15 @@ func (v validator) validateImmutableFields(wcr, oldwcr *vmopv1.WebConsoleRequest
 }
 
 // webConsoleRequestFromUnstructured returns the wcr from the unstructured object.
-func (v validator) webConsoleRequestFromUnstructured(obj runtime.Unstructured) (*vmopv1.WebConsoleRequest, error) {
-	wcr := &vmopv1.WebConsoleRequest{}
+func (v validator) webConsoleRequestFromUnstructured(obj runtime.Unstructured) (*vmopv1a1.WebConsoleRequest, error) {
+	wcr := &vmopv1a1.WebConsoleRequest{}
 	if err := v.converter.FromUnstructured(obj.UnstructuredContent(), wcr); err != nil {
 		return nil, err
 	}
 	return wcr, nil
 }
 
-func (v validator) validateUUIDLabel(wcr, oldwcr *vmopv1.WebConsoleRequest) field.ErrorList {
+func (v validator) validateUUIDLabel(wcr, oldwcr *vmopv1a1.WebConsoleRequest) field.ErrorList {
 	var allErrs field.ErrorList
 
 	oldUUIDLabelVal := oldwcr.Labels[webconsolerequest.UUIDLabelKey]

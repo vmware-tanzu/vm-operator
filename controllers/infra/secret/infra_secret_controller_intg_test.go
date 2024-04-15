@@ -25,7 +25,7 @@ func intgTests() {
 		Label(
 			testlabels.Controller,
 			testlabels.EnvTest,
-			testlabels.V1Alpha2,
+			testlabels.V1Alpha3,
 		),
 		intgTestsReconcile,
 	)

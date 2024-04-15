@@ -10,7 +10,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	vsphere2 "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2"
+	vsphere2 "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
 func InitializeProviders(
@@ -19,6 +19,6 @@ func InitializeProviders(
 
 	vmProviderName := fmt.Sprintf("%s/%s/vmProvider", ctx.Namespace, ctx.Name)
 	recorder := record.New(mgr.GetEventRecorderFor(vmProviderName))
-	ctx.VMProviderA2 = vsphere2.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), recorder)
+	ctx.VMProvider = vsphere2.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), recorder)
 	return nil
 }

@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -57,8 +57,8 @@ func unitTests() {
 
 type unitValidatingWebhookContext struct {
 	builder.UnitTestContextForValidatingWebhook
-	wcr        *vmopv1.WebConsoleRequest
-	oldWcr     *vmopv1.WebConsoleRequest
+	wcr        *vmopv1a1.WebConsoleRequest
+	oldWcr     *vmopv1a1.WebConsoleRequest
 	privateKey *rsa.PrivateKey
 }
 
@@ -72,7 +72,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	obj, err := builder.ToUnstructured(wcr)
 	Expect(err).ToNot(HaveOccurred())
 
-	var oldWcr *vmopv1.WebConsoleRequest
+	var oldWcr *vmopv1a1.WebConsoleRequest
 	var oldObj *unstructured.Unstructured
 
 	if isUpdate {

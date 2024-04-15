@@ -39,7 +39,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		ctx.VMProviderA2,
+		ctx.VMProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).

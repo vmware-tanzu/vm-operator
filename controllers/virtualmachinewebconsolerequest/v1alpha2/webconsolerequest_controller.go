@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -51,7 +51,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		ctx.VMProviderA2,
+		ctx.VMProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -65,7 +65,7 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmProvider vmprovider.VirtualMachineProviderInterfaceA2) *Reconciler {
+	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
 		Context:    ctx,
 		Client:     client,
@@ -81,7 +81,7 @@ type Reconciler struct {
 	Context    goctx.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
-	VMProvider vmprovider.VirtualMachineProviderInterfaceA2
+	VMProvider vmprovider.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinewebconsolerequests,verbs=get;list;watch;create;update;patch;delete
@@ -99,7 +99,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	webConsoleRequestCtx := &context.WebConsoleRequestContextA2{
+	webConsoleRequestCtx := &context.WebConsoleRequestContextV1{
 		Context:           ctx,
 		Logger:            ctrl.Log.WithName("WebConsoleRequest").WithValues("name", req.NamespacedName),
 		WebConsoleRequest: webconsolerequest,
@@ -143,7 +143,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	return ctrl.Result{Requeue: true, RequeueAfter: DefaultExpiryTime}, nil
 }
 
-func (r *Reconciler) ReconcileEarlyNormal(ctx *context.WebConsoleRequestContextA2) (bool, error) {
+func (r *Reconciler) ReconcileEarlyNormal(ctx *context.WebConsoleRequestContextV1) (bool, error) {
 	expiryTime := ctx.WebConsoleRequest.Status.ExpiryTime
 	nowTime := metav1.Now()
 	if !expiryTime.IsZero() && !nowTime.Before(&expiryTime) {
@@ -165,7 +165,7 @@ func (r *Reconciler) ReconcileEarlyNormal(ctx *context.WebConsoleRequestContextA
 	return false, nil
 }
 
-func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContextA2) error {
+func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContextV1) error {
 	ctx.Logger.Info("Reconciling WebConsoleRequest")
 	defer func() {
 		ctx.Logger.Info("Finished reconciling WebConsoleRequest")
@@ -208,7 +208,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContextA2) er
 	return nil
 }
 
-func (r *Reconciler) ReconcileOwnerReferences(ctx *context.WebConsoleRequestContextA2) error {
+func (r *Reconciler) ReconcileOwnerReferences(ctx *context.WebConsoleRequestContextV1) error {
 	isController := true
 	ownerRef := metav1.OwnerReference{
 		APIVersion: ctx.VM.APIVersion,

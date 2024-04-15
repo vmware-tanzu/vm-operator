@@ -20,8 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1/patch"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -40,7 +40,7 @@ const (
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vmopv1.WebConsoleRequest{}
+		controlledType     = &vmopv1a1.WebConsoleRequest{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -52,7 +52,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		ctx.VMProviderA2,
+		ctx.VMProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -66,23 +66,24 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmProviderA2 vmprovider.VirtualMachineProviderInterfaceA2) *Reconciler {
+	provider vmprovider.VirtualMachineProviderInterface) *Reconciler {
+
 	return &Reconciler{
-		Context:      ctx,
-		Client:       client,
-		Logger:       logger,
-		Recorder:     recorder,
-		VMProviderA2: vmProviderA2,
+		Context:    ctx,
+		Client:     client,
+		Logger:     logger,
+		Recorder:   recorder,
+		VMProvider: provider,
 	}
 }
 
 // Reconciler reconciles a WebConsoleRequest object.
 type Reconciler struct {
 	client.Client
-	Context      goctx.Context
-	Logger       logr.Logger
-	Recorder     record.Recorder
-	VMProviderA2 vmprovider.VirtualMachineProviderInterfaceA2
+	Context    goctx.Context
+	Logger     logr.Logger
+	Recorder   record.Recorder
+	VMProvider vmprovider.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=webconsolerequests,verbs=get;list;watch;create;update;patch;delete
@@ -94,7 +95,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgconfig.JoinContext(ctx, r.Context)
 
-	webconsolerequest := &vmopv1.WebConsoleRequest{}
+	webconsolerequest := &vmopv1a1.WebConsoleRequest{}
 	err := r.Get(ctx, req.NamespacedName, webconsolerequest)
 	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -104,7 +105,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 		Context:           ctx,
 		Logger:            ctrl.Log.WithName("WebConsoleRequest").WithValues("name", req.NamespacedName),
 		WebConsoleRequest: webconsolerequest,
-		VM:                &vmopv1.VirtualMachine{},
+		VM:                &vmopv1a1.VirtualMachine{},
 	}
 
 	done, err := r.ReconcileEarlyNormal(webConsoleRequestCtx)
@@ -172,12 +173,12 @@ func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContext) erro
 		ctx.Logger.Info("Finished reconciling WebConsoleRequest")
 	}()
 
-	v1a2VM := &vmopv1alpha2.VirtualMachine{}
-	if err := ctx.VM.ConvertTo(v1a2VM); err != nil {
+	v1a3VM := &vmopv1.VirtualMachine{}
+	if err := ctx.VM.ConvertTo(v1a3VM); err != nil {
 		return errors.Wrapf(err, "failed to convert VM to v1a2")
 	}
 
-	ticket, err := r.VMProviderA2.GetVirtualMachineWebMKSTicket(ctx, v1a2VM, ctx.WebConsoleRequest.Spec.PublicKey)
+	ticket, err := r.VMProvider.GetVirtualMachineWebMKSTicket(ctx, v1a3VM, ctx.WebConsoleRequest.Spec.PublicKey)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get webmksticket")
 	}

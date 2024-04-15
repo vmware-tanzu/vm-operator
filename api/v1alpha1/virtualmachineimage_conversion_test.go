@@ -15,8 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	nextver_common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	nextver_common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 )
 
 func TestVirtualMachineImageConversion(t *testing.T) {
@@ -32,7 +32,7 @@ func TestVirtualMachineImageConversion(t *testing.T) {
 				},
 			},
 			Spec: nextver.VirtualMachineImageSpec{
-				ProviderRef: nextver_common.LocalObjectRef{
+				ProviderRef: &nextver_common.LocalObjectRef{
 					APIVersion: "vmware.com/v1",
 					Kind:       "ImageProvider",
 					Name:       "my-image",
@@ -261,7 +261,7 @@ func Test_Status_ContentLibraryRef(t *testing.T) {
 	t.Run("CVMI hub-spoke sets up content library ref in status", func(t *testing.T) {
 		g := NewWithT(t)
 
-		// setting up the annotation is performed by the v1a2 controllers
+		// setting up the annotation is performed by the nextver controllers
 		nextVerCVMI := nextver.ClusterVirtualMachineImage{ObjectMeta: metav1.ObjectMeta{
 			Name:        "foo",
 			Annotations: annotations,
@@ -291,7 +291,7 @@ func Test_Status_ContentLibraryRef(t *testing.T) {
 	t.Run("VMI hub-spoke sets up content library ref in status", func(t *testing.T) {
 		g := NewWithT(t)
 
-		// setting up the annotation is performed by the v1a2 controllers
+		// setting up the annotation is performed by the nextver controllers
 		nextVerVMI := nextver.VirtualMachineImage{ObjectMeta: metav1.ObjectMeta{
 			Name:        "foo",
 			Namespace:   "default",

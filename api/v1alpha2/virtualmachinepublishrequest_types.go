@@ -334,7 +334,6 @@ type VirtualMachinePublishRequestStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmpub
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // VirtualMachinePublishRequest defines the information necessary to publish a

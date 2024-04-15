@@ -18,7 +18,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
@@ -67,7 +67,7 @@ type manager struct {
 func NewManager(
 	client client.Client,
 	record vmoprecord.Recorder,
-	vmProvider vmprovider.VirtualMachineProviderInterfaceA2) Manager {
+	vmProvider vmprovider.VirtualMachineProviderInterface) Manager {
 
 	probeManager := &manager{
 		client:               client,
@@ -81,7 +81,7 @@ func NewManager(
 }
 
 // AddToManager adds the probe manager controller manager.
-func AddToManager(mgr ctrlmgr.Manager, vmProvider vmprovider.VirtualMachineProviderInterfaceA2) (Manager, error) {
+func AddToManager(mgr ctrlmgr.Manager, vmProvider vmprovider.VirtualMachineProviderInterface) (Manager, error) {
 	probeRecorder := vmoprecord.New(mgr.GetEventRecorderFor(proberManagerName))
 
 	// Add the probe manager explicitly as runnable in order to receive a Start() event.

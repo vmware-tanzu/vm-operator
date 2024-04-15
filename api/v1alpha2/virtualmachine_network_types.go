@@ -42,7 +42,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Namespace's default network.
 	//
 	// +optional
-	Network common.PartialObjectRef `json:"network,omitempty"`
+	Network *common.PartialObjectRef `json:"network,omitempty"`
 
 	// GuestDeviceName is used to rename the device inside the guest when the
 	// bootstrap provider is Cloud-Init. Please note it is up to the user to

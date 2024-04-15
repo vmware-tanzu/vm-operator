@@ -10,7 +10,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 // WebConsoleRequestContext is the context used for WebConsoleRequestControllers.
@@ -25,14 +25,14 @@ func (v *WebConsoleRequestContext) String() string {
 	return fmt.Sprintf("%s %s/%s", v.WebConsoleRequest.GroupVersionKind(), v.WebConsoleRequest.Namespace, v.WebConsoleRequest.Name)
 }
 
-// WebConsoleRequestContextA2 is the context used for WebConsoleRequestControllers.
-type WebConsoleRequestContextA2 struct {
+// WebConsoleRequestContextV1 is the context used for WebConsoleRequestControllers.
+type WebConsoleRequestContextV1 struct {
 	context.Context
 	Logger            logr.Logger
 	WebConsoleRequest *vmopv1.VirtualMachineWebConsoleRequest
 	VM                *vmopv1.VirtualMachine
 }
 
-func (v *WebConsoleRequestContextA2) String() string {
+func (v *WebConsoleRequestContextV1) String() string {
 	return fmt.Sprintf("%s %s/%s", v.WebConsoleRequest.GroupVersionKind(), v.WebConsoleRequest.Namespace, v.WebConsoleRequest.Name)
 }

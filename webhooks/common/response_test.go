@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -24,13 +24,13 @@ var _ = Describe(
 	"Validation Response",
 	Label(
 		testlabels.EnvTest,
-		testlabels.V1Alpha2,
+		testlabels.V1Alpha3,
 		testlabels.Webhook,
 	),
 	func() {
 
 		var (
-			gr  = schema.GroupResource{Group: vmopv1.SchemeGroupVersion.Group, Resource: "VirtualMachine"}
+			gr  = schema.GroupResource{Group: vmopv1a1.SchemeGroupVersion.Group, Resource: "VirtualMachine"}
 			ctx *context.WebhookRequestContext
 		)
 

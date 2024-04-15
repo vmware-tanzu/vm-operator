@@ -17,7 +17,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func() {
@@ -199,7 +199,7 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 
 			var volumes []v1alpha1.VirtualMachineVolume
 			for _, vol := range vmSpec.Volumes {
-				// vSphere volumes are gone in v1a2 so skip those.
+				// vSphere volumes are gone in nextver so skip those.
 				if vol.VsphereVolume == nil {
 					volumes = append(volumes, vol)
 				}
@@ -229,7 +229,7 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			c.Fuzz(vmStatus)
 			overrideConditionsSeverity(vmStatus.Conditions)
 
-			// Do not exist in v1a2.
+			// Do not exist in nextver.
 			vmStatus.Phase = v1alpha1.Unknown
 		},
 		func(vmStatus *nextver.VirtualMachineStatus, c fuzz.Continue) {
@@ -272,7 +272,7 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 				for k, v := range imageSpec.OVFEnv {
 					// In practice, the value key always will be the map key.
 					v.Key = k
-					// Do not exist in v1a2.
+					// Do not exist in nextver.
 					v.Description = ""
 					v.Label = ""
 
@@ -281,7 +281,7 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 				imageSpec.OVFEnv = m
 			}
 
-			// Do not exist in v1a2.
+			// Do not exist in nextver.
 			imageSpec.Type = ""
 			imageSpec.ImageSourceType = ""
 			imageSpec.ProviderRef.Namespace = ""
@@ -290,7 +290,7 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			c.Fuzz(imageStatus)
 			overrideConditionsSeverity(imageStatus.Conditions)
 
-			// Do not exist in v1a2.
+			// Do not exist in nextver.
 			//imageStatus.ContentLibraryRef = nil
 			imageStatus.ImageSupported = nil
 
@@ -309,6 +309,14 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			overrideConditionsObservedGeneration(imageStatus.Conditions)
 			// TODO: Need to save serialized object to support lossless conversions.
 			imageStatus.Capabilities = nil
+		},
+		func(imageSpec *nextver.VirtualMachineImageSpec, c fuzz.Continue) {
+			c.Fuzz(imageSpec)
+			if pr := imageSpec.ProviderRef; pr != nil {
+				if pr.APIVersion == "" && pr.Kind == "" && pr.Name == "" {
+					imageSpec.ProviderRef = nil
+				}
+			}
 		},
 	}
 }

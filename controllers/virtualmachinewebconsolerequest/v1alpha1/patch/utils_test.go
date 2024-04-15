@@ -23,19 +23,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 func TestToUnstructured(t *testing.T) {
 	t.Run("with a typed object", func(t *testing.T) {
 		g := NewWithT(t)
 		// Test with a typed object.
-		obj := &vmopv1.VirtualMachine{
+		obj := &vmopv1a1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "cluster-1",
 				Namespace: "namespace-1",
 			},
-			Spec: vmopv1.VirtualMachineSpec{
+			Spec: vmopv1a1.VirtualMachineSpec{
 				ImageName: "foo",
 			},
 		}

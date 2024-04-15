@@ -29,7 +29,7 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 )
@@ -93,13 +93,13 @@ func DummyNamedAvailabilityZone(name string) *topologyv1.AvailabilityZone {
 	}
 }
 
-func DummyWebConsoleRequest(namespace, wcrName, vmName, pubKey string) *vmopv1.WebConsoleRequest {
-	return &vmopv1.WebConsoleRequest{
+func DummyWebConsoleRequest(namespace, wcrName, vmName, pubKey string) *vmopv1a1.WebConsoleRequest {
+	return &vmopv1a1.WebConsoleRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      wcrName,
 			Namespace: namespace,
 		},
-		Spec: vmopv1.WebConsoleRequestSpec{
+		Spec: vmopv1a1.WebConsoleRequestSpec{
 			VirtualMachineName: vmName,
 			PublicKey:          pubKey,
 		},

@@ -15,8 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -39,14 +39,14 @@ func intgTestsReconcile() {
 
 	var (
 		ctx                *builder.IntegrationTestContext
-		wcr                *vmopv1.WebConsoleRequest
-		vm                 *vmopv1.VirtualMachine
+		wcr                *vmopv1a1.WebConsoleRequest
+		vm                 *vmopv1a1.VirtualMachine
 		proxySvc           *corev1.Service
 		v1a2ProviderCalled bool
 	)
 
-	getWebConsoleRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1.WebConsoleRequest {
-		wcr := &vmopv1.WebConsoleRequest{}
+	getWebConsoleRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1a1.WebConsoleRequest {
+		wcr := &vmopv1a1.WebConsoleRequest{}
 		if err := ctx.Client.Get(ctx, objKey, wcr); err != nil {
 			return nil
 		}
@@ -56,25 +56,25 @@ func intgTestsReconcile() {
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
-		vm = &vmopv1.VirtualMachine{
+		vm = &vmopv1a1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: ctx.Namespace,
 			},
-			Spec: vmopv1.VirtualMachineSpec{
+			Spec: vmopv1a1.VirtualMachineSpec{
 				ImageName:  "dummy-image",
-				PowerState: vmopv1.VirtualMachinePoweredOn,
+				PowerState: vmopv1a1.VirtualMachinePoweredOn,
 			},
 		}
 
 		_, publicKeyPem := builder.WebConsoleRequestKeyPair()
 
-		wcr = &vmopv1.WebConsoleRequest{
+		wcr = &vmopv1a1.WebConsoleRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-wcr",
 				Namespace: ctx.Namespace,
 			},
-			Spec: vmopv1.WebConsoleRequestSpec{
+			Spec: vmopv1a1.WebConsoleRequestSpec{
 				VirtualMachineName: vm.Name,
 				PublicKey:          publicKeyPem,
 			},
@@ -95,18 +95,18 @@ func intgTestsReconcile() {
 			},
 		}
 
-		intgFakeVMProviderA2.Lock()
-		intgFakeVMProviderA2.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1alpha2.VirtualMachine, pubKey string) (string, error) {
+		intgFakeVMProvider.Lock()
+		intgFakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
 			v1a2ProviderCalled = true
 			return v1a2Ticket, nil
 		}
-		intgFakeVMProviderA2.Unlock()
+		intgFakeVMProvider.Unlock()
 	})
 
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		intgFakeVMProviderA2.Reset()
+		intgFakeVMProvider.Reset()
 		v1a2ProviderCalled = false
 	})
 

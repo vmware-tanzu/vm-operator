@@ -328,7 +328,7 @@ endif
 
 generate-go-conversions:
 	$(CONVERSION_GEN) \
-		--input-dirs=./api/v1alpha1 \
+		--input-dirs='./api/v1alpha1,./api/v1alpha2' \
 		--output-file-base=zz_generated.conversion \
 		--go-header-file=./hack/boilerplate/boilerplate.generatego.txt
 

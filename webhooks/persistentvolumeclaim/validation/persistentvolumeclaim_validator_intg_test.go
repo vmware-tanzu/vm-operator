@@ -19,7 +19,7 @@ func intgTests() {
 		Label(
 			testlabels.Create,
 			testlabels.EnvTest,
-			testlabels.V1Alpha2,
+			testlabels.V1Alpha3,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -30,7 +30,7 @@ func intgTests() {
 		Label(
 			testlabels.Update,
 			testlabels.EnvTest,
-			testlabels.V1Alpha2,
+			testlabels.V1Alpha3,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -41,7 +41,7 @@ func intgTests() {
 		Label(
 			testlabels.Delete,
 			testlabels.EnvTest,
-			testlabels.V1Alpha2,
+			testlabels.V1Alpha3,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),

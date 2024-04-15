@@ -16,7 +16,7 @@ import (
 	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	fakeworker "github.com/vmware-tanzu/vm-operator/pkg/prober/fake/worker"
@@ -71,7 +71,7 @@ var _ = Describe("VirtualMachine probes", func() {
 		fakeClient = builder.NewFakeClient(initObjects...)
 		eventRecorder := clientgorecord.NewFakeRecorder(1024)
 		fakeRecorder = record.New(eventRecorder)
-		fakeVMProvider := &fake.VMProviderA2{}
+		fakeVMProvider := &fake.VMProvider{}
 		testManagerIf := NewManager(fakeClient, fakeRecorder, fakeVMProvider)
 		testManager = testManagerIf.(*manager)
 		fakeWorkerIf = fakeworker.NewFakeWorker(testManager.readinessQueue)

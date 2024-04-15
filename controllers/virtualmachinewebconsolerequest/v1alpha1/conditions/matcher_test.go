@@ -24,39 +24,39 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 func TestMatchConditions(t *testing.T) {
 	testCases := []struct {
 		name        string
 		actual      interface{}
-		expected    vmopv1.Conditions
+		expected    vmopv1a1.Conditions
 		expectMatch bool
 	}{
 		{
 			name:        "with an empty conditions",
-			actual:      vmopv1.Conditions{},
-			expected:    vmopv1.Conditions{},
+			actual:      vmopv1a1.Conditions{},
+			expected:    vmopv1a1.Conditions{},
 			expectMatch: true,
 		},
 		{
 			name: "with matching conditions",
-			actual: vmopv1.Conditions{
+			actual: vmopv1a1.Conditions{
 				{
-					Type:               vmopv1.ConditionType("type"),
+					Type:               vmopv1a1.ConditionType("type"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "reason",
 					Message:            "message",
 				},
 			},
-			expected: vmopv1.Conditions{
+			expected: vmopv1a1.Conditions{
 				{
-					Type:               vmopv1.ConditionType("type"),
+					Type:               vmopv1a1.ConditionType("type"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "reason",
 					Message:            "message",
@@ -66,37 +66,37 @@ func TestMatchConditions(t *testing.T) {
 		},
 		{
 			name: "with non-matching conditions",
-			actual: vmopv1.Conditions{
+			actual: vmopv1a1.Conditions{
 				{
-					Type:               vmopv1.ConditionType("type"),
+					Type:               vmopv1a1.ConditionType("type"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "reason",
 					Message:            "message",
 				},
 				{
-					Type:               vmopv1.ConditionType("type"),
+					Type:               vmopv1a1.ConditionType("type"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "reason",
 					Message:            "message",
 				},
 			},
-			expected: vmopv1.Conditions{
+			expected: vmopv1a1.Conditions{
 				{
-					Type:               vmopv1.ConditionType("type"),
+					Type:               vmopv1a1.ConditionType("type"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "reason",
 					Message:            "message",
 				},
 				{
-					Type:               vmopv1.ConditionType("different"),
+					Type:               vmopv1a1.ConditionType("different"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "different",
 					Message:            "different",
@@ -106,29 +106,29 @@ func TestMatchConditions(t *testing.T) {
 		},
 		{
 			name: "with a different number of conditions",
-			actual: vmopv1.Conditions{
+			actual: vmopv1a1.Conditions{
 				{
-					Type:               vmopv1.ConditionType("type"),
+					Type:               vmopv1a1.ConditionType("type"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "reason",
 					Message:            "message",
 				},
 				{
-					Type:               vmopv1.ConditionType("type"),
+					Type:               vmopv1a1.ConditionType("type"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "reason",
 					Message:            "message",
 				},
 			},
-			expected: vmopv1.Conditions{
+			expected: vmopv1a1.Conditions{
 				{
-					Type:               vmopv1.ConditionType("type"),
+					Type:               vmopv1a1.ConditionType("type"),
 					Status:             corev1.ConditionTrue,
-					Severity:           vmopv1.ConditionSeverityNone,
+					Severity:           vmopv1a1.ConditionSeverityNone,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "reason",
 					Message:            "message",
@@ -154,29 +154,29 @@ func TestMatchCondition(t *testing.T) {
 	testCases := []struct {
 		name        string
 		actual      interface{}
-		expected    vmopv1.Condition
+		expected    vmopv1a1.Condition
 		expectMatch bool
 	}{
 		{
 			name:        "with an empty condition",
-			actual:      vmopv1.Condition{},
-			expected:    vmopv1.Condition{},
+			actual:      vmopv1a1.Condition{},
+			expected:    vmopv1a1.Condition{},
 			expectMatch: true,
 		},
 		{
 			name: "with a matching condition",
-			actual: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			actual: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
 			},
-			expected: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			expected: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
@@ -185,18 +185,18 @@ func TestMatchCondition(t *testing.T) {
 		},
 		{
 			name: "with a different time",
-			actual: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			actual: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
 			},
-			expected: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			expected: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Time{},
 				Reason:             "reason",
 				Message:            "message",
@@ -205,18 +205,18 @@ func TestMatchCondition(t *testing.T) {
 		},
 		{
 			name: "with a different type",
-			actual: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			actual: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
 			},
-			expected: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("different"),
+			expected: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("different"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
@@ -225,18 +225,18 @@ func TestMatchCondition(t *testing.T) {
 		},
 		{
 			name: "with a different status",
-			actual: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			actual: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
 			},
-			expected: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			expected: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionFalse,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
@@ -245,18 +245,18 @@ func TestMatchCondition(t *testing.T) {
 		},
 		{
 			name: "with a different severity",
-			actual: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			actual: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
 			},
-			expected: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			expected: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityInfo,
+				Severity:           vmopv1a1.ConditionSeverityInfo,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
@@ -265,18 +265,18 @@ func TestMatchCondition(t *testing.T) {
 		},
 		{
 			name: "with a different reason",
-			actual: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			actual: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
 			},
-			expected: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			expected: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "different",
 				Message:            "message",
@@ -285,18 +285,18 @@ func TestMatchCondition(t *testing.T) {
 		},
 		{
 			name: "with a different message",
-			actual: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			actual: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "message",
 			},
-			expected: vmopv1.Condition{
-				Type:               vmopv1.ConditionType("type"),
+			expected: vmopv1a1.Condition{
+				Type:               vmopv1a1.ConditionType("type"),
 				Status:             corev1.ConditionTrue,
-				Severity:           vmopv1.ConditionSeverityNone,
+				Severity:           vmopv1a1.ConditionSeverityNone,
 				LastTransitionTime: metav1.Now(),
 				Reason:             "reason",
 				Message:            "different",

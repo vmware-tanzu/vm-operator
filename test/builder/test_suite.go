@@ -41,7 +41,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/yaml"
 
-	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/controllers/util/remote"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -344,8 +343,6 @@ func (s *TestSuite) createManager() {
 	}
 
 	opts.Scheme = runtime.NewScheme()
-	_ = vmopv1alpha2.AddToScheme(opts.Scheme)
-
 	s.manager, err = pkgmgr.New(s, opts)
 
 	Expect(err).NotTo(HaveOccurred())

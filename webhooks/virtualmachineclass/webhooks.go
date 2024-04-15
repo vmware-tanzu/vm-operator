@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineclass
@@ -7,9 +7,13 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/mutation"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/validation"
 )
 
 func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	return v1alpha2.AddToManager(ctx, mgr)
+	if err := mutation.AddToManager(ctx, mgr); err != nil {
+		return err
+	}
+	return validation.AddToManager(ctx, mgr)
 }

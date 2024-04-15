@@ -25,12 +25,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 func TestNewPatch(t *testing.T) {
 	fooTrue := TrueCondition("foo")
-	fooFalse := FalseCondition("foo", "reason foo", vmopv1.ConditionSeverityInfo, "message foo")
+	fooFalse := FalseCondition("foo", "reason foo", vmopv1a1.ConditionSeverityInfo, "message foo")
 
 	tests := []struct {
 		name   string
@@ -101,8 +101,8 @@ func TestNewPatch(t *testing.T) {
 
 func TestApply(t *testing.T) {
 	fooTrue := TrueCondition("foo")
-	fooFalse := FalseCondition("foo", "reason foo", vmopv1.ConditionSeverityInfo, "message foo")
-	fooWarning := FalseCondition("foo", "reason foo", vmopv1.ConditionSeverityWarning, "message foo")
+	fooFalse := FalseCondition("foo", "reason foo", vmopv1a1.ConditionSeverityInfo, "message foo")
+	fooWarning := FalseCondition("foo", "reason foo", vmopv1a1.ConditionSeverityWarning, "message foo")
 
 	tests := []struct {
 		name    string
@@ -110,7 +110,7 @@ func TestApply(t *testing.T) {
 		after   Getter
 		latest  Setter
 		options []ApplyOption
-		want    vmopv1.Conditions
+		want    vmopv1a1.Conditions
 		wantErr bool
 	}{
 		{
@@ -260,11 +260,11 @@ func TestApply(t *testing.T) {
 func TestApplyDoesNotAlterLastTransitionTime(t *testing.T) {
 	g := NewWithT(t)
 
-	before := &vmopv1.VirtualMachine{}
-	after := &vmopv1.VirtualMachine{
-		Status: vmopv1.VirtualMachineStatus{
-			Conditions: vmopv1.Conditions{
-				vmopv1.Condition{
+	before := &vmopv1a1.VirtualMachine{}
+	after := &vmopv1a1.VirtualMachine{
+		Status: vmopv1a1.VirtualMachineStatus{
+			Conditions: vmopv1a1.Conditions{
+				vmopv1a1.Condition{
 					Type:               "foo",
 					Status:             corev1.ConditionTrue,
 					LastTransitionTime: metav1.NewTime(time.Now().UTC().Truncate(time.Second)),
@@ -272,7 +272,7 @@ func TestApplyDoesNotAlterLastTransitionTime(t *testing.T) {
 			},
 		},
 	}
-	latest := &vmopv1.VirtualMachine{}
+	latest := &vmopv1a1.VirtualMachine{}
 
 	// latest has no conditions, so we are actually adding the condition but in this case we should not set the LastTransition Time
 	// but we should preserve the LastTransition set in after

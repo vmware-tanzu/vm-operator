@@ -14,8 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -38,29 +38,29 @@ func unitTestsReconcile() {
 	const v1a2Ticket = "some-fake-webmksticket-v1a2"
 
 	var (
-		initObjects      []client.Object
-		ctx              *builder.UnitTestContextForController
-		fakeVMProviderA2 *providerfake.VMProviderA2
+		initObjects    []client.Object
+		ctx            *builder.UnitTestContextForController
+		fakeVMProvider *providerfake.VMProvider
 
 		reconciler *webconsolerequest.Reconciler
 		wcrCtx     *vmopContext.WebConsoleRequestContext
-		wcr        *vmopv1.WebConsoleRequest
-		vm         *vmopv1.VirtualMachine
+		wcr        *vmopv1a1.WebConsoleRequest
+		vm         *vmopv1a1.VirtualMachine
 		proxySvc   *corev1.Service
 	)
 
 	BeforeEach(func() {
-		vm = &vmopv1.VirtualMachine{
+		vm = &vmopv1a1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-vm",
 			},
 		}
 
-		wcr = &vmopv1.WebConsoleRequest{
+		wcr = &vmopv1a1.WebConsoleRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-wcr",
 			},
-			Spec: vmopv1.WebConsoleRequestSpec{
+			Spec: vmopv1a1.WebConsoleRequestSpec{
 				VirtualMachineName: vm.Name,
 				PublicKey:          "",
 			},
@@ -90,9 +90,9 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			ctx.VMProviderA2,
+			ctx.VMProvider,
 		)
-		fakeVMProviderA2 = ctx.VMProviderA2.(*providerfake.VMProviderA2)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 
 		wcrCtx = &vmopContext.WebConsoleRequestContext{
 			Context:           ctx,
@@ -119,14 +119,14 @@ func unitTestsReconcile() {
 		})
 
 		JustBeforeEach(func() {
-			fakeVMProviderA2.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1alpha2.VirtualMachine, pubKey string) (string, error) {
+			fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
 				v1a2ProviderCalled = true
 				return v1a2Ticket, nil
 			}
 		})
 
 		AfterEach(func() {
-			fakeVMProviderA2.Reset()
+			fakeVMProvider.Reset()
 			v1a2ProviderCalled = false
 		})
 

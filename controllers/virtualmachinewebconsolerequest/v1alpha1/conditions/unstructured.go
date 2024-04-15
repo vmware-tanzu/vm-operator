@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 // UnstructuredGetter return a Getter object that can read conditions from an Unstructured object.
@@ -49,8 +49,8 @@ type unstructuredWrapper struct {
 //     in both cases the operation returns an empty slice is returned.
 //   - If the object doesn't implement conditions on under status as defined in Cluster API,
 //     JSON-unmarshal matches incoming object keys to the keys; this can lead to to conditions values partially set.
-func (c *unstructuredWrapper) GetConditions() vmopv1.Conditions {
-	conditions := vmopv1.Conditions{}
+func (c *unstructuredWrapper) GetConditions() vmopv1a1.Conditions {
+	conditions := vmopv1a1.Conditions{}
 	if err := UnstructuredUnmarshalField(c.Unstructured, &conditions, "status", "conditions"); err != nil {
 		return nil
 	}
@@ -64,7 +64,7 @@ func (c *unstructuredWrapper) GetConditions() vmopv1.Conditions {
 //   - Errors during JSON-unmarshal are ignored and a empty collection list is returned.
 //   - It's not possible to detect if the object has an empty condition list or if it does not implement conditions;
 //     in both cases the operation returns an empty slice is returned.
-func (c *unstructuredWrapper) SetConditions(conditions vmopv1.Conditions) {
+func (c *unstructuredWrapper) SetConditions(conditions vmopv1a1.Conditions) {
 	v := make([]interface{}, 0, len(conditions))
 	for i := range conditions {
 		m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&conditions[i])

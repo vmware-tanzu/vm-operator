@@ -9,8 +9,8 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	vsphere2 "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	vsphere2 "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
 func InitializeProviders(

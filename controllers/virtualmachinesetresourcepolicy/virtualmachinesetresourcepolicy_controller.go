@@ -19,7 +19,7 @@ import (
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 )
 
 const (
@@ -49,7 +49,7 @@ func NewReconciler(
 	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
-	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
+	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
 		Context:    ctx,
 		Client:     client,
@@ -63,7 +63,7 @@ type Reconciler struct {
 	Context goctx.Context
 	client.Client
 	Logger     logr.Logger
-	VMProvider vmprovider.VirtualMachineProviderInterface
+	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // ReconcileNormal reconciles a VirtualMachineSetResourcePolicy.

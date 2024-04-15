@@ -27,9 +27,9 @@ import (
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	imgutil "github.com/vmware-tanzu/vm-operator/pkg/util/image"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -63,7 +63,7 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
+	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
 	return &Reconciler{
 		Context:    ctx,
@@ -82,7 +82,7 @@ type Reconciler struct {
 	Context    goctx.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
-	VMProvider vmprovider.VirtualMachineProviderInterface
+	VMProvider providers.VirtualMachineProviderInterface
 	Metrics    *metrics.ContentLibraryItemMetrics
 }
 

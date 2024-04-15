@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
 // ControllerManagerContext is the context of the controller that owns the
@@ -73,7 +73,7 @@ type ControllerManagerContext struct {
 	SyncPeriod time.Duration
 
 	// VMProvider is the controller manager's VM Provider.
-	VMProvider vmprovider.VirtualMachineProviderInterface
+	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // String returns ControllerManagerName.

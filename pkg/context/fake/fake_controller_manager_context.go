@@ -9,8 +9,8 @@ import (
 
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 )
 
 // NewControllerManagerContext returns a fake ControllerManagerContext for unit

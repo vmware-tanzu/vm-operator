@@ -12,7 +12,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentlibraryitem"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 

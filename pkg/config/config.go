@@ -82,6 +82,10 @@ type Config struct {
 	WebhookSecretName            string
 	WebhookSecretNamespace       string
 	WebhookSecretVolumeMountPath string
+
+	// LogSensitiveData means that logs will potentially contain sensitive data
+	// such as passwords. Defaults to false.
+	LogSensitiveData bool
 }
 
 // GetMaxDeployThreadsOnProvider returns MaxDeployThreadsOnProvider if it is >0

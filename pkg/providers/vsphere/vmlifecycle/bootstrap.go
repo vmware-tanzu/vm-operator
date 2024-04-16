@@ -5,6 +5,7 @@ package vmlifecycle
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/vmware/govmomi/object"
@@ -14,9 +15,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
@@ -28,6 +31,8 @@ const (
 	// OvfEnvironmentTransportGuestInfo is the OVF transport type that uses
 	// GuestInfo. The other valid type is "iso".
 	OvfEnvironmentTransportGuestInfo = "com.vmware.guestInfo"
+
+	redacted = "***"
 )
 
 type BootstrapData struct {
@@ -225,7 +230,7 @@ func doReconfigure(
 
 	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
-		vmCtx.Logger.Info("Customization Reconfigure", "configSpec", configSpec)
+		logConfigSpec(vmCtx, *configSpec)
 
 		if err := resources.NewVMFromObject(vcVM).Reconfigure(vmCtx, configSpec); err != nil {
 			vmCtx.Logger.Error(err, "customization reconfigure failed")
@@ -255,7 +260,8 @@ func doCustomize(
 		return nil
 	}
 
-	vmCtx.Logger.Info("Customizing VM", "customizationSpec", *customSpec)
+	logCustomizationSpec(vmCtx, *customSpec)
+
 	if err := resources.NewVMFromObject(vcVM).Customize(vmCtx, *customSpec); err != nil {
 		// isCustomizationPendingExtraConfig() above is supposed to prevent this error, but
 		// handle it explicitly here just in case so VM reconciliation can proceed.
@@ -318,4 +324,97 @@ func isLinuxGuest(guestID string) bool {
 	}
 
 	return strings.Contains(guestID, "Linux") || strings.Contains(guestID, "linux")
+}
+
+func logConfigSpec(
+	vmCtx context.VirtualMachineContext,
+	configSpec vimTypes.VirtualMachineConfigSpec) {
+
+	if !pkgconfig.FromContext(vmCtx).LogSensitiveData {
+		configSpec = SanitizeConfigSpec(configSpec)
+	}
+
+	vmCtx.Logger.Info("Customization Reconfigure", "configSpec", configSpec)
+}
+
+func SanitizeConfigSpec(cs vimTypes.VirtualMachineConfigSpec) vimTypes.VirtualMachineConfigSpec {
+
+	cs.ExtraConfig = slices.Clone(cs.ExtraConfig)
+	for i, ec := range cs.ExtraConfig {
+		optVal := ec.GetOptionValue()
+		if optVal == nil {
+			continue
+		}
+
+		// This is what is likely to contain any sensitive. We can expand this to vendor
+		// and metadata later if needed.
+		if optVal.Key == constants.CloudInitGuestInfoUserdata {
+			optValCopy := *optVal
+			optValCopy.Value = redacted
+			cs.ExtraConfig[i] = &optValCopy
+			break
+		}
+	}
+
+	if vAppConfig := cs.VAppConfig; vAppConfig != nil && vAppConfig.GetVmConfigSpec() != nil {
+		vmConfigSpec := *vAppConfig.GetVmConfigSpec()
+
+		vmConfigSpec.Property = slices.Clone(vmConfigSpec.Property)
+		for i, vmProp := range vmConfigSpec.Property {
+			if vmProp.Info == nil || vmProp.Info.UserConfigurable == nil || !*vmProp.Info.UserConfigurable {
+				continue
+			}
+
+			info := *vmProp.Info
+			info.Value = redacted
+			vmConfigSpec.Property[i].Info = &info
+		}
+
+		cs.VAppConfig = &vmConfigSpec
+	}
+
+	return cs
+}
+
+func logCustomizationSpec(
+	vmCtx context.VirtualMachineContext,
+	customizationSpec vimTypes.CustomizationSpec) {
+
+	if !pkgconfig.FromContext(vmCtx).LogSensitiveData {
+		customizationSpec = SanitizeCustomizationSpec(customizationSpec)
+	}
+
+	vmCtx.Logger.Info("Customizing VM", "customizationSpec", customizationSpec)
+}
+
+func SanitizeCustomizationSpec(cs vimTypes.CustomizationSpec) vimTypes.CustomizationSpec {
+	switch identity := cs.Identity.(type) {
+	case *internal.CustomizationCloudinitPrep:
+		cloudInitPrep := *identity
+		cloudInitPrep.Userdata = redacted
+		cs.Identity = &cloudInitPrep
+	case *vimTypes.CustomizationSysprepText:
+		sysPrepText := *identity
+		sysPrepText.Value = redacted
+		cs.Identity = &sysPrepText
+	case *vimTypes.CustomizationSysprep:
+		sysPrep := *identity
+		if sysPrep.GuiUnattended.Password != nil {
+			password := *sysPrep.GuiUnattended.Password
+			if password.Value != "" {
+				password.Value = redacted
+			}
+			sysPrep.GuiUnattended.Password = &password
+		}
+		if sysPrep.Identification.DomainAdminPassword != nil {
+			password := *sysPrep.Identification.DomainAdminPassword
+			if password.Value != "" {
+				password.Value = redacted
+			}
+			sysPrep.Identification.DomainAdminPassword = &password
+		}
+		cs.Identity = &sysPrep
+	}
+
+	return cs
 }

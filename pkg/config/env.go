@@ -24,6 +24,7 @@ func FromEnv() Config {
 	setString(env.LoadBalancerProvider, &config.LoadBalancerProvider)
 	setBool(env.VSphereNetworking, &config.VSphereNetworking)
 	setStringSlice(env.PrivilegedUsers, &config.PrivilegedUsers)
+	setBool(env.LogSensitiveData, &config.LogSensitiveData)
 
 	setDuration(env.InstanceStoragePVPlacementFailedTTL, &config.InstanceStorage.PVPlacementFailedTTL)
 	setFloat64(env.InstanceStorageJitterMaxFactor, &config.InstanceStorage.JitterMaxFactor)

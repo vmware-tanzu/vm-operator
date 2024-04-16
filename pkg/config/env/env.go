@@ -21,6 +21,7 @@ const (
 	VSphereNetworking
 	ContentAPIWaitDuration
 	JSONExtraConfig
+	LogSensitiveData
 	InstanceStoragePVPlacementFailedTTL
 	InstanceStorageJitterMaxFactor
 	InstanceStorageSeedRequeueDuration
@@ -88,6 +89,8 @@ func (n VarName) String() string {
 		return "CONTENT_API_WAIT_SECS"
 	case JSONExtraConfig:
 		return "JSON_EXTRA_CONFIG"
+	case LogSensitiveData:
+		return "LOG_SENSITIVE_DATA"
 	case InstanceStoragePVPlacementFailedTTL:
 		return "INSTANCE_STORAGE_PV_PLACEMENT_FAILED_TTL"
 	case InstanceStorageJitterMaxFactor:

@@ -143,36 +143,24 @@ help: ## Display this help
 
 .PHONY: test-nocover
 test-nocover: | $(GINKGO)
-test-nocover: ## Run Tests (without code coverage)
-	LABEL_FILTER='!envtest' hack/test.sh
+test-nocover: ## Run tests sans coverage
+	hack/test.sh
 
 .PHONY: test
-test: | $(GINKGO)
+test: | $(GINKGO) $(ETCD) $(KUBE_APISERVER)
 test: ## Run tests
 	@rm -f $(COVERAGE_FILE)
-	LABEL_FILTER='!envtest' hack/test.sh $(COVERAGE_FILE)
+	hack/test.sh $(COVERAGE_FILE)
 
-.PHONY: test-integration
-test-integration: | $(GINKGO) $(ETCD) $(KUBE_APISERVER)
-test-integration: ## Run integration tests
-	@rm -f $(INT_COV_FILE)
-	LABEL_FILTER='envtest' hack/test.sh $(INT_COV_FILE)
-
-.PHONY: coverage
-coverage-merge: $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
-coverage-merge: ## Merge the coverage from unit and integration tests
-	$(GOCOVMERGE) $(COVERAGE_FILE) $(INT_COV_FILE) >$(FULL_COV_FILE)
-	gocov convert "$(FULL_COV_FILE)" | gocov-xml >"$(FULL_COV_FILE:.out=.xml)"
+.PHONY: coverage-xml
+coverage-xml: $(GOCOV) $(GOCOV_XML)
+coverage-xml:
+	gocov convert "$(COVERAGE_FILE)" | gocov-xml >"$(COVERAGE_FILE:.out=.xml)"
 
 .PHONY: coverage
-coverage: test ## Show unit test code coverage (opens a browser)
+coverage: ## Show test coverage in browser
 	go tool cover -html=$(COVERAGE_FILE)
 
-.PHONY: coverage-full
-coverage-full: test test-integration
-coverage-full: ## Show combined code coverage for unit and integration tests (opens a browser)
-	$(MAKE) coverage-merge
-	go tool cover -html=$(FULL_COV_FILE)
 
 ## --------------------------------------
 ## Binaries

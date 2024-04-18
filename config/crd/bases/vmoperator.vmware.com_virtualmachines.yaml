@@ -107,10 +107,10 @@ spec:
 
                   This field may be used to specify the name of a VirtualMachineImage
                   or ClusterVirtualMachineImage resource. The resolver first checks to see
-                  if there is a VirtualMachineImage with the specified name. If no
-                  such resource exists, the resolver then checks to see if there is a
-                  ClusterVirtualMachineImage resource with the specified name in the same
-                  Namespace as the VM being deployed.
+                  if there is a VirtualMachineImage with the specified name in the
+                  same namespace as the VM being deployed. If no such resource exists, the
+                  resolver then checks to see if there is a ClusterVirtualMachineImage
+                  resource with the specified name.
 
 
                   This field may also be used to specify the display name (vSphere name) of
@@ -1580,10 +1580,10 @@ spec:
 
                   This field may be used to specify the name of a VirtualMachineImage
                   or ClusterVirtualMachineImage resource. The resolver first checks to see
-                  if there is a VirtualMachineImage with the specified name. If no
-                  such resource exists, the resolver then checks to see if there is a
-                  ClusterVirtualMachineImage resource with the specified name in the same
-                  Namespace as the VM being deployed.
+                  if there is a VirtualMachineImage with the specified name in the
+                  same namespace as the VM being deployed. If no such resource exists, the
+                  resolver then checks to see if there is a ClusterVirtualMachineImage
+                  resource with the specified name.
 
 
                   This field may also be used to specify the display name (vSphere name) of
@@ -3113,7 +3113,7 @@ spec:
       name: Class
       priority: 1
       type: string
-    - jsonPath: .spec.imageName
+    - jsonPath: .spec.image.name
       name: Image
       priority: 1
       type: string
@@ -3971,6 +3971,34 @@ spec:
                   ClassName describes the name of the VirtualMachineClass resource used to
                   deploy this VM.
                 type: string
+              image:
+                description: |-
+                  Image describes the reference to the VirtualMachineImage or
+                  ClusterVirtualMachineImage resource used to deploy this VM.
+
+
+                  Please note, unlike the field spec.imageName, the value of
+                  spec.image.name MUST be a Kubernetes object name.
+
+
+                  Please also note, when creating a new VirtualMachine, if this field and
+                  spec.imageName are both non-empty, then they must refer to the same
+                  resource or an error is returned.
+                properties:
+                  kind:
+                    description: |-
+                      Kind describes the type of image, either a namespace-scoped
+                      VirtualMachineImage or cluster-scoped ClusterVirtualMachineImage.
+                    type: string
+                  name:
+                    description: |-
+                      Name refers to the name of a VirtualMachineImage resource in the same
+                      namespace as this VM or a cluster-scoped ClusterVirtualMachineImage.
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
               imageName:
                 description: |-
                   ImageName describes the name of the image resource used to deploy this
@@ -3979,20 +4007,25 @@ spec:
 
                   This field may be used to specify the name of a VirtualMachineImage
                   or ClusterVirtualMachineImage resource. The resolver first checks to see
-                  if there is a VirtualMachineImage with the specified name. If no
-                  such resource exists, the resolver then checks to see if there is a
-                  ClusterVirtualMachineImage resource with the specified name in the same
-                  Namespace as the VM being deployed.
+                  if there is a VirtualMachineImage with the specified name in the
+                  same namespace as the VM being deployed. If no such resource exists, the
+                  resolver then checks to see if there is a ClusterVirtualMachineImage
+                  resource with the specified name.
 
 
                   This field may also be used to specify the display name (vSphere name) of
                   a VirtualMachineImage or ClusterVirtualMachineImage resource. If the
                   display name unambiguously resolves to a distinct VM image (among all
                   existing VirtualMachineImages in the VM's namespace and all existing
-                  ClusterVirtualMachineImages), then a mutation webhook updates this field
-                  with the VM image resource name. If the display name resolves to multiple
-                  or no VM images, then the mutation webhook denies the request and outputs
-                  an error message accordingly.
+                  ClusterVirtualMachineImages), then a mutation webhook updates the
+                  spec.image field with the reference to the resolved VM image. If the
+                  display name resolves to multiple or no VM images, then the mutation
+                  webhook denies the request and returns an error.
+
+
+                  Please also note, when creating a new VirtualMachine, if this field and
+                  spec.image are both non-empty, then they must refer to the same
+                  resource or an error is returned.
                 type: string
               minHardwareVersion:
                 description: |-
@@ -4767,35 +4800,6 @@ spec:
                   Host describes the hostname or IP address of the infrastructure host
                   where the VM is executed.
                 type: string
-              image:
-                description: |-
-                  Image is a reference to the VirtualMachineImage resource used to deploy
-                  this VM.
-                properties:
-                  apiVersion:
-                    description: |-
-                      APIVersion defines the versioned schema of this representation of an
-                      object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
-                    type: string
-                  kind:
-                    description: |-
-                      Kind is a string value representing the REST resource this object
-                      represents.
-                      Servers may infer this from the endpoint the client submits requests to.
-                      Cannot be updated.
-                      In CamelCase.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
-                    description: |-
-                      Name refers to a unique resource in the current namespace.
-                      More info: http://kubernetes.io/docs/user-guide/identifiers#names
-                    type: string
-                required:
-                - apiVersion
-                - kind
-                - name
-                type: object
               instanceUUID:
                 description: |-
                   InstanceUUID describes the unique instance UUID provided by the

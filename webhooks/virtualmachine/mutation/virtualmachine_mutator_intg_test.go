@@ -178,20 +178,73 @@ func intgTestsMutating() {
 	})
 
 	Context("ResolveImageName", func() {
+
+		const (
+			vmiKind  = "VirtualMachineImage"
+			cvmiKind = "Cluster" + vmiKind
+		)
+
+		shouldMutateImageButNotImageName := func() {
+			ExpectWithOffset(1, ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			modified := &vmopv1.VirtualMachine{}
+			ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+			ExpectWithOffset(1, modified.Spec.Image).ToNot(BeNil())
+			ExpectWithOffset(1, modified.Spec.Image.Kind).To(Equal(vmiKind))
+			ExpectWithOffset(1, modified.Spec.Image.Name).To(Equal(builder.DummyVMIID))
+			ExpectWithOffset(1, modified.Spec.ImageName).To(Equal(ctx.vm.Spec.ImageName))
+		}
+
+		shouldNotMutateImageOrImageName := func() {
+			ExpectWithOffset(1, ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			modified := &vmopv1.VirtualMachine{}
+			ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+			ExpectWithOffset(1, modified.Spec.Image).To(Equal(ctx.vm.Spec.Image))
+			ExpectWithOffset(1, modified.Spec.ImageName).To(Equal(ctx.vm.Spec.ImageName))
+		}
+
 		When("Creating VirtualMachine", func() {
-			When("VM ImageName is already a vmi resource name", func() {
-
+			When("spec.image is empty", func() {
 				BeforeEach(func() {
-					ctx.vm.Spec.ImageName = "vmi-123"
+					ctx.vm.Spec.Image = nil
 				})
-
-				It("Should not mutate ImageName", func() {
-					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
-					modified := &vmopv1.VirtualMachine{}
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
-					Expect(modified.Spec.ImageName).To(Equal("vmi-123"))
+				When("spec.imageName is vmi", func() {
+					BeforeEach(func() {
+						ctx.vm.Spec.ImageName = builder.DummyVMIID
+					})
+					It("Should mutate Image but not ImageName", func() {
+						shouldMutateImageButNotImageName()
+					})
+				})
+				When("spec.imageName is display name", func() {
+					BeforeEach(func() {
+						ctx.vm.Spec.ImageName = img.Status.Name
+					})
+					It("Should mutate Image but not ImageName", func() {
+						shouldMutateImageButNotImageName()
+					})
+				})
+				When("spec.imageName is empty", func() {
+					BeforeEach(func() {
+						ctx.vm.Spec.ImageName = ""
+					})
+					It("Should not mutate Image or ImageName", func() {
+						shouldNotMutateImageOrImageName()
+					})
 				})
 			})
+
+			When("spec.image is non-empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+						Name: builder.DummyVMIID,
+						Kind: vmiKind,
+					}
+				})
+				It("Should mutate Image but not ImageName", func() {
+					shouldNotMutateImageOrImageName()
+				})
+			})
+
 		})
 	})
 

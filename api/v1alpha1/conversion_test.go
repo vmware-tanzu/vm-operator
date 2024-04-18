@@ -236,7 +236,6 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			c.Fuzz(vmStatus)
 			overrideConditionsObservedGeneration(vmStatus.Conditions)
 
-			vmStatus.Image = nil
 			vmStatus.Class = nil
 			vmStatus.Network = nil
 		},

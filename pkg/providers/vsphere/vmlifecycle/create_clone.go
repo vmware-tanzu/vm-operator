@@ -24,7 +24,7 @@ func cloneVMFromInventory(
 	finder *find.Finder,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
-	srcVMName := createArgs.ProviderItemID // AKA: vmCtx.VM.Spec.ImageName
+	srcVMName := createArgs.ProviderItemID // AKA: vmCtx.VM.Spec.Image.Name
 
 	srcVM, err := finder.VirtualMachine(vmCtx, srcVMName)
 	if err != nil {

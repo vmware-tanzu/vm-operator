@@ -50,6 +50,9 @@ const (
 	isRestrictedNetworkKey               = "IsRestrictedNetwork"
 	allowedRestrictedNetworkTCPProbePort = 6443
 
+	vmiKind  = "VirtualMachineImage"
+	cvmiKind = "ClusterVirtualMachineImage"
+
 	readinessProbeOnlyOneAction              = "only one action can be specified"
 	tcpReadinessProbeNotAllowedVPC           = "VPC networking doesn't allow TCP readiness probe to be specified"
 	updatesNotAllowedWhenPowerOn             = "updates to this field is not allowed when VM power is on"
@@ -68,6 +71,7 @@ const (
 	modifyLabelNotAllowedForNonAdmin         = "modifying this label is not allowed for non-admin users"
 	invalidMinHardwareVersionDowngrade       = "cannot downgrade hardware version"
 	invalidMinHardwareVersionPowerState      = "cannot upgrade hardware version unless powered off"
+	invalidImageKind                         = "supported: " + vmiKind + ", " + cvmiKind
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha3-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha3,name=default.validating.virtualmachine.v1alpha3.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -112,7 +116,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	var fieldErrs field.ErrorList
 
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
-	fieldErrs = append(fieldErrs, v.validateImage(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateImageOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateClass(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateStorageClass(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
@@ -140,6 +144,7 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 
 // ValidateUpdate validates if the given VirtualMachineSpec update is valid.
 // Changes to following fields are not allowed:
+//   - Image
 //   - ImageName
 //   - ClassName
 //   - StorageClass
@@ -330,11 +335,15 @@ func (v validator) validateInlineSysprep(p *field.Path, sysprep *sysprep.Sysprep
 	return allErrs
 }
 
-func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImageOnCreate(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	if vm.Spec.ImageName == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec", "imageName"), ""))
+	if vm.Spec.Image == nil {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "image"), ""))
+	} else if k := vm.Spec.Image.Kind; k == "" {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "image", "kind"), invalidImageKind))
+	} else if k != vmiKind && k != cvmiKind {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "image", "kind"), vm.Spec.Image.Kind, invalidImageKind))
 	}
 
 	return allErrs
@@ -959,6 +968,7 @@ func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, v
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
+	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.Image, oldVM.Spec.Image, specPath.Child("image"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, specPath.Child("imageName"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, specPath.Child("className"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)

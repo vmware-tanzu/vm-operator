@@ -125,6 +125,10 @@ func DummyBasicVirtualMachineA2(name, namespace string) *vmopv1.VirtualMachine {
 			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
+			Image: &vmopv1.VirtualMachineImageRef{
+				Kind: "VirtualMachineImage",
+				Name: DummyVMIID,
+			},
 			ImageName:    DummyImageName,
 			ClassName:    DummyClassName,
 			PowerState:   vmopv1.VirtualMachinePowerStateOn,
@@ -145,6 +149,10 @@ func DummyVirtualMachineA2() *vmopv1.VirtualMachine {
 			Annotations:  map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
+			Image: &vmopv1.VirtualMachineImageRef{
+				Kind: "VirtualMachineImage",
+				Name: DummyVMIID,
+			},
 			ImageName:          DummyImageName,
 			ClassName:          DummyClassName,
 			PowerState:         vmopv1.VirtualMachinePowerStateOn,

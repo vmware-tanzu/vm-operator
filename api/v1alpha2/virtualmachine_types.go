@@ -100,7 +100,6 @@ const (
 	// VirtualMachineReconcilePausedReason indicates that VirtualMachine
 	// reconciliation is being paused.
 	VirtualMachineReconcilePausedReason = "VirtualMachineReconcilePaused"
-
 )
 
 const (
@@ -216,10 +215,10 @@ type VirtualMachineSpec struct {
 	//
 	// This field may be used to specify the name of a VirtualMachineImage
 	// or ClusterVirtualMachineImage resource. The resolver first checks to see
-	// if there is a VirtualMachineImage with the specified name. If no
-	// such resource exists, the resolver then checks to see if there is a
-	// ClusterVirtualMachineImage resource with the specified name in the same
-	// Namespace as the VM being deployed.
+	// if there is a VirtualMachineImage with the specified name in the
+	// same namespace as the VM being deployed. If no such resource exists, the
+	// resolver then checks to see if there is a ClusterVirtualMachineImage
+	// resource with the specified name.
 	//
 	// This field may also be used to specify the display name (vSphere name) of
 	// a VirtualMachineImage or ClusterVirtualMachineImage resource. If the

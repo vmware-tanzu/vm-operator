@@ -332,11 +332,6 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 	}
 
 	vmCtx.VM.Status.UniqueID = moRef.Reference().Value
-	vmCtx.VM.Status.Image = &common.LocalObjectRef{
-		APIVersion: vmopv1.SchemeGroupVersion.String(),
-		Kind:       createArgs.ImageObj.GetObjectKind().GroupVersionKind().Kind,
-		Name:       createArgs.ImageObj.GetName(),
-	}
 	vmCtx.VM.Status.Class = &common.LocalObjectRef{
 		APIVersion: vmopv1.SchemeGroupVersion.String(),
 		Kind:       createArgs.VMClass.Kind,
@@ -687,14 +682,6 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		return nil, k8serrors.NewAggregate(prereqErrs)
 	}
 
-	// Note that once the VM is created, it is hard for us to later resolve what image was used,
-	// since a NS or cluster scoped image could have been created or deleted.
-	vmCtx.VM.Status.Image = &common.LocalObjectRef{
-		APIVersion: createArgs.ImageObj.GetObjectKind().GroupVersionKind().Version,
-		Kind:       createArgs.ImageObj.GetObjectKind().GroupVersionKind().Kind,
-		Name:       createArgs.ImageObj.GetName(),
-	}
-
 	vmCtx.VM.Status.Class = &common.LocalObjectRef{
 		APIVersion: createArgs.VMClass.APIVersion,
 		Kind:       createArgs.VMClass.Kind,
@@ -750,7 +737,7 @@ func (vs *vSphereVMProvider) vmCreateGetVirtualMachineImage(
 		}
 		// Testing only: we'll clone the source VM found in the Inventory.
 		createArgs.UseContentLibrary = false
-		createArgs.ProviderItemID = vmCtx.VM.Spec.ImageName
+		createArgs.ProviderItemID = vmCtx.VM.Spec.Image.Name
 	}
 
 	return nil

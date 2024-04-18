@@ -24,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 // TODO: This mostly just a placeholder until we spend time on something better. Individual types
@@ -64,52 +65,104 @@ func GetVirtualMachineImageSpecAndStatus(
 	vmCtx context.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (ctrlclient.Object, *vmopv1.VirtualMachineImageSpec, *vmopv1.VirtualMachineImageStatus, error) {
 
-	var obj conditions.Getter
-	var spec *vmopv1.VirtualMachineImageSpec
-	var status *vmopv1.VirtualMachineImageStatus
+	if vmCtx.VM.Spec.Image == nil {
+		// This should never be possible in production as this function is
+		// only called in the create workflow, where spec.image is never nil.
+		// Still, it's better to test for this and set a condition in case the
+		// call stack for this function changes.
+		reason := "NotSet"
+		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, "")
+		return nil, nil, nil, fmt.Errorf(reason)
+	}
 
-	key := ctrlclient.ObjectKey{Name: vmCtx.VM.Spec.ImageName, Namespace: vmCtx.VM.Namespace}
-	vmImage := &vmopv1.VirtualMachineImage{}
-	if err := k8sClient.Get(vmCtx, key, vmImage); err != nil {
-		clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
+	var (
+		obj    conditions.Getter
+		objErr error
+		spec   *vmopv1.VirtualMachineImageSpec
+		status *vmopv1.VirtualMachineImageStatus
+		key    = ctrlclient.ObjectKey{
+			Name:      vmCtx.VM.Spec.Image.Name,
+			Namespace: vmCtx.VM.Namespace,
+		}
+	)
 
-		if apierrors.IsNotFound(err) {
-			key.Namespace = ""
-			err = k8sClient.Get(vmCtx, key, clusterVMImage)
+	switch vmCtx.VM.Spec.Image.Kind {
+	case "VirtualMachineImage":
+		var img vmopv1.VirtualMachineImage
+		if objErr = k8sClient.Get(vmCtx, key, &img); objErr == nil {
+			obj, spec, status = &img, &img.Spec, &img.Status
 		}
 
-		if err != nil {
-			// Don't use the k8s error as-is as we don't know to prefer the NS or cluster scoped error message.
-			// This is the same error/message that the prior code used.
-			reason, msg := "NotFound", fmt.Sprintf("Failed to get the VM's image: %s", key.Name)
-			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, msg)
-			return nil, nil, nil, fmt.Errorf("%s: %w", msg, err)
+	case "ClusterVirtualMachineImage":
+		key.Namespace = ""
+		var img vmopv1.ClusterVirtualMachineImage
+		if objErr = k8sClient.Get(vmCtx, key, &img); objErr == nil {
+			obj, spec, status = &img, &img.Spec, &img.Status
 		}
+	case "":
+		// This is only possible IFF VirtualMachine API resources created at a
+		// schema version prior to spec.image were not yet deployed when VM Op
+		// as upgraded to the schema version with spec.image. This means the
+		// create webhook did not run for those resources, populating their
+		// spec.image from spec.imageName. Therefore, to be safe, this case
+		// does what the webhook does -- looks up the image by both vmi and
+		// friendly name.
+		if img, err := vmopv1util.ResolveImageName(
+			vmCtx,
+			k8sClient,
+			vmCtx.VM.Namespace,
+			vmCtx.VM.Spec.Image.Name); err != nil {
 
-		// Ensure the GVK for the object is synced back into the object since
-		// the object's APIVersion and Kind fields may be used later.
-		if err := kube.SyncGVKToObject(clusterVMImage, k8sClient.Scheme()); err != nil {
-			return nil, nil, nil, err
+			objErr = err
+		} else {
+			switch timg := img.(type) {
+			case *vmopv1.VirtualMachineImage:
+				vmCtx.VM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+					Kind: "VirtualMachineImage",
+					Name: timg.Name,
+				}
+				obj, spec, status = timg, &timg.Spec, &timg.Status
+			case *vmopv1.ClusterVirtualMachineImage:
+				vmCtx.VM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+					Kind: "ClusterVirtualMachineImage",
+					Name: timg.Name,
+				}
+				obj, spec, status = timg, &timg.Spec, &timg.Status
+			}
 		}
+	default:
+		// This should never be possible in production as this function is
+		// only called in the create workflow, where spec.image is never nil.
+		// Still, it's better to test for this and set a condition in case the
+		// call stack for this function changes.
+		reason := "UnknownKind"
+		msg := vmCtx.VM.Spec.Image.Kind
+		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, msg)
+		return nil, nil, nil, fmt.Errorf("%s: %s", reason, msg)
+	}
 
-		obj, spec, status = clusterVMImage, &clusterVMImage.Spec, &clusterVMImage.Status
-	} else {
-		// Ensure the GVK for the object is synced back into the object since
-		// the object's APIVersion and Kind fields may be used later.
-		if err := kube.SyncGVKToObject(vmImage, k8sClient.Scheme()); err != nil {
-			return nil, nil, nil, err
+	if objErr != nil {
+		reason := "Unknown"
+		if apierrors.IsNotFound(objErr) {
+			reason = "NotFound"
 		}
+		msg := objErr.Error()
+		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, msg)
+		return nil, nil, nil, fmt.Errorf("%s: %w", msg, objErr)
+	}
 
-		obj, spec, status = vmImage, &vmImage.Spec, &vmImage.Status
+	// Ensure the GVK for the object is synced back into the object since
+	// the object's APIVersion and Kind fields may be used later.
+	if err := kube.SyncGVKToObject(obj, k8sClient.Scheme()); err != nil {
+		return nil, nil, nil, err
 	}
 
 	vmiNotReadyMessage := "VirtualMachineImage is not ready"
-
-	conditions.SetMirror(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, obj,
-		conditions.WithFallbackValue(false,
-			"NotReady",
-			vmiNotReadyMessage),
-	)
+	conditions.SetMirror(
+		vmCtx.VM,
+		vmopv1.VirtualMachineConditionImageReady,
+		obj,
+		conditions.WithFallbackValue(false, "NotReady", vmiNotReadyMessage))
 	if conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady) {
 		return nil, nil, nil, fmt.Errorf(vmiNotReadyMessage)
 	}

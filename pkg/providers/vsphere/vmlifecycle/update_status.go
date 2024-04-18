@@ -51,13 +51,6 @@ func UpdateStatus(
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
 	// TODO: Might set other "prereq" conditions too for version conversion but we'd have to fib a little.
 
-	if vm.Status.Image == nil {
-		// If unset, we don't know if this was a cluster or namespace scoped image at create time.
-		vm.Status.Image = &common.LocalObjectRef{
-			Name:       vm.Spec.ImageName,
-			APIVersion: vmopv1.SchemeGroupVersion.String(),
-		}
-	}
 	if vm.Status.Class == nil {
 		// In v1a2 we know this will always be the namespace scoped class since v1a2 doesn't have
 		// the bindings. Our handling of this field will be more complicated once we really

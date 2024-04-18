@@ -69,17 +69,33 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 }
 
 func intgTestsValidateCreate() {
+
+	const (
+		invalid          = "invalid"
+		vmiKind          = "VirtualMachineImage"
+		cvmiKind         = "Cluster" + vmiKind
+		invalidImageKind = "supported: " + vmiKind + ", " + cvmiKind
+	)
+
 	var (
 		ctx *intgValidatingWebhookContext
 	)
 
 	type createArgs struct {
-		invalidImageName bool
+		emptyImage       bool
+		emptyImageKind   bool
+		invalidImageKind bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
-		if args.invalidImageName {
-			ctx.vm.Spec.ImageName = ""
+		if args.emptyImage {
+			ctx.vm.Spec.Image = nil
+		}
+		if args.emptyImageKind {
+			ctx.vm.Spec.Image.Kind = ""
+		}
+		if args.invalidImageKind {
+			ctx.vm.Spec.Image.Kind = invalid
 		}
 
 		err := ctx.Client.Create(ctx, ctx.vm)
@@ -106,8 +122,12 @@ func intgTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should work", createArgs{}, true, "", nil),
-		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false,
-			field.Required(specPath.Child("imageName"), "").Error(), nil),
+		Entry("should not work for empty image", createArgs{emptyImage: true}, false,
+			field.Required(specPath.Child("image"), "").Error(), nil),
+		Entry("should not work for empty image kind", createArgs{emptyImageKind: true}, false,
+			field.Required(specPath.Child("image").Child("kind"), invalidImageKind).Error(), nil),
+		Entry("should not work for invalid image kind", createArgs{invalidImageKind: true}, false,
+			field.Invalid(specPath.Child("image").Child("kind"), invalid, invalidImageKind).Error(), nil),
 	)
 }
 
@@ -135,6 +155,18 @@ func intgTestsValidateUpdate() {
 		ctx = nil
 	})
 
+	When("update is performed with changed image", func() {
+		BeforeEach(func() {
+			ctx.vm.Spec.Image.Kind += "-2"
+		})
+
+		It("should deny the request", func() {
+			Expect(err).To(HaveOccurred())
+			expectedPathStr := field.NewPath("spec", "image").String()
+			Expect(err.Error()).To(ContainSubstring(expectedPathStr))
+			Expect(err.Error()).To(ContainSubstring(immutableFieldMsg))
+		})
+	})
 	When("update is performed with changed image name", func() {
 		BeforeEach(func() {
 			ctx.vm.Spec.ImageName += "-2"
@@ -147,6 +179,7 @@ func intgTestsValidateUpdate() {
 			Expect(err.Error()).To(ContainSubstring(immutableFieldMsg))
 		})
 	})
+
 	When("update is performed with changed storageClass name", func() {
 		BeforeEach(func() {
 			ctx.vm.Spec.StorageClass += "-2"

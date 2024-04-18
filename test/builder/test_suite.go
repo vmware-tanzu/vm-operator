@@ -123,6 +123,16 @@ func NewTestSuite() *TestSuite {
 	)
 }
 
+// NewTestSuiteWithContext returns a new test suite used for unit and/or
+// integration test.
+func NewTestSuiteWithContext(ctx context.Context) *TestSuite {
+	return NewTestSuiteForControllerWithContext(
+		ctx,
+		pkgmgr.AddToManagerNoopFn,
+		pkgmgr.InitializeProvidersNoopFn,
+	)
+}
+
 // NewFunctionalTestSuite returns a new test suite used for functional tests.
 // The functional test starts all the controllers, and creates all the providers
 // so it is a more fully functioning env than an integration test with a single

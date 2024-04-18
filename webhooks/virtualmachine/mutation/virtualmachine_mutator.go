@@ -35,6 +35,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -117,7 +118,7 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 		SetCreatedAtAnnotations(ctx, modified)
 		AddDefaultNetworkInterface(ctx, m.client, modified)
 		SetDefaultPowerState(ctx, m.client, modified)
-		if _, err := ResolveImageName(ctx, m.client, modified); err != nil {
+		if _, err := ResolveImageNameOnCreate(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
 		}
 	case admissionv1.Update:
@@ -310,62 +311,60 @@ func SetDefaultPowerState(
 	return false
 }
 
-// ResolveImageName mutates the vm.spec.imageName if it's not set to a vmi name
-// and there is a single namespace or cluster scope image with that status name.
-func ResolveImageName(
+const (
+	vmiKind            = "VirtualMachineImage"
+	cvmiKind           = "Cluster" + vmiKind
+	imgNotFoundFormat  = "no VM image exists for %q in namespace or cluster scope"
+	imgNameNotMatchRef = "must refer to the same resource as spec.image"
+)
+
+// ResolveImageNameOnCreate ensures vm.spec.image is set to a non-empty value if
+// vm.spec.imageName is also non-empty.
+func ResolveImageNameOnCreate(
 	ctx *context.WebhookRequestContext,
 	c client.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
-	// Return early if the VM image name is empty or already set to a vmi name.
-	imageName := vm.Spec.ImageName
-	if imageName == "" || strings.HasPrefix(imageName, "vmi-") {
+
+	// Return early if the VM image name is empty.
+	imgName := vm.Spec.ImageName
+	if imgName == "" {
 		return false, nil
 	}
 
-	var determinedImageName string
-	// Check if a single namespace scope image exists by the status name.
-	vmiList := &vmopv1.VirtualMachineImageList{}
-	if err := c.List(ctx, vmiList, client.InNamespace(vm.Namespace),
-		client.MatchingFields{
-			"status.name": imageName,
-		},
-	); err != nil {
+	img, err := vmopv1util.ResolveImageName(ctx, c, vm.Namespace, imgName)
+	if err != nil {
 		return false, err
-	}
-	switch len(vmiList.Items) {
-	case 0:
-		break
-	case 1:
-		determinedImageName = vmiList.Items[0].Name
-	default:
-		return false, errors.Errorf("multiple VM images exist for %q in namespace scope", imageName)
 	}
 
-	// Check if a single cluster scope image exists by the status name.
-	cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
-	if err := c.List(ctx, cvmiList, client.MatchingFields{
-		"status.name": imageName,
-	}); err != nil {
-		return false, err
+	var (
+		resolvedKind string
+		resolvedName string
+	)
+
+	switch timg := img.(type) {
+	case *vmopv1.VirtualMachineImage:
+		resolvedKind = vmiKind
+		resolvedName = timg.Name
+	case *vmopv1.ClusterVirtualMachineImage:
+		resolvedKind = cvmiKind
+		resolvedName = timg.Name
 	}
-	switch len(cvmiList.Items) {
-	case 0:
-		break
-	case 1:
-		if determinedImageName != "" {
-			return false, errors.Errorf("multiple VM images exist for %q in namespace and cluster scope", imageName)
+
+	// If no image spec was provided then update it.
+	if vm.Spec.Image == nil {
+		vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+			Kind: resolvedKind,
+			Name: resolvedName,
 		}
-		determinedImageName = cvmiList.Items[0].Name
-	default:
-		return false, errors.Errorf("multiple VM images exist for %q in cluster scope", imageName)
+		return true, nil
 	}
 
-	if determinedImageName == "" {
-		return false, errors.Errorf("no VM image exists for %q in namespace or cluster scope", imageName)
+	// Verify that the resolved image name matches the value in spec.image.
+	if resolvedKind != vm.Spec.Image.Kind || resolvedName != vm.Spec.Image.Name {
+		return false, field.Invalid(field.NewPath("spec", "imageName"), vm.Spec.ImageName, imgNameNotMatchRef)
 	}
 
-	vm.Spec.ImageName = determinedImageName
-	return true, nil
+	return false, nil
 }
 
 func SetCreatedAtAnnotations(ctx goctx.Context, vm *vmopv1.VirtualMachine) {

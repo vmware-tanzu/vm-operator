@@ -24,6 +24,8 @@ linters-settings:
         alias: vmopv1a2
       - pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3
         alias: vmopv1
+      - pkg: "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+        alias: vmopv1util
       - pkg: "github.com/vmware-tanzu/vm-operator/pkg/config"
         alias: pkgconfig
 

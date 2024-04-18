@@ -29,6 +29,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+const (
+	cvmiKind = "ClusterVirtualMachineImage"
+)
+
 // vmE2ETests() tries to close the gap in the existing vmTests() have in the sense that we don't do e2e-like
 // tests of the typical VM create/update workflow. This somewhat of a super-set of the vmTests() but those
 // tests are already kind of unwieldy and in places, and until we switch over to v1a2, I don't want
@@ -77,6 +81,8 @@ func vmE2ETests() {
 		vm.Namespace = nsInfo.Namespace
 		vm.Spec.ClassName = vmClass.Name
 		vm.Spec.ImageName = ctx.ContentLibraryImageName
+		vm.Spec.Image.Kind = cvmiKind
+		vm.Spec.Image.Name = ctx.ContentLibraryImageName
 		vm.Spec.StorageClass = ctx.StorageClassName
 		if vm.Spec.Network != nil {
 			vm.Spec.Network.Interfaces[0].Nameservers = []string{"1.1.1.1", "8.8.8.8"}

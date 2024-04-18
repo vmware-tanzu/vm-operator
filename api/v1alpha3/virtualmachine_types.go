@@ -208,28 +208,56 @@ const (
 	VirtualMachinePowerOpModeTrySoft VirtualMachinePowerOpMode = "TrySoft"
 )
 
+type VirtualMachineImageRef struct {
+	// Kind describes the type of image, either a namespace-scoped
+	// VirtualMachineImage or cluster-scoped ClusterVirtualMachineImage.
+	Kind string `json:"kind"`
+
+	// Name refers to the name of a VirtualMachineImage resource in the same
+	// namespace as this VM or a cluster-scoped ClusterVirtualMachineImage.
+	Name string `json:"name"`
+}
+
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
+
+	// +optional
+
+	// Image describes the reference to the VirtualMachineImage or
+	// ClusterVirtualMachineImage resource used to deploy this VM.
+	//
+	// Please note, unlike the field spec.imageName, the value of
+	// spec.image.name MUST be a Kubernetes object name.
+	//
+	// Please also note, when creating a new VirtualMachine, if this field and
+	// spec.imageName are both non-empty, then they must refer to the same
+	// resource or an error is returned.
+	Image *VirtualMachineImageRef `json:"image,omitempty"`
+
+	// +optional
+
 	// ImageName describes the name of the image resource used to deploy this
 	// VM.
 	//
 	// This field may be used to specify the name of a VirtualMachineImage
 	// or ClusterVirtualMachineImage resource. The resolver first checks to see
-	// if there is a VirtualMachineImage with the specified name. If no
-	// such resource exists, the resolver then checks to see if there is a
-	// ClusterVirtualMachineImage resource with the specified name in the same
-	// Namespace as the VM being deployed.
+	// if there is a VirtualMachineImage with the specified name in the
+	// same namespace as the VM being deployed. If no such resource exists, the
+	// resolver then checks to see if there is a ClusterVirtualMachineImage
+	// resource with the specified name.
 	//
 	// This field may also be used to specify the display name (vSphere name) of
 	// a VirtualMachineImage or ClusterVirtualMachineImage resource. If the
 	// display name unambiguously resolves to a distinct VM image (among all
 	// existing VirtualMachineImages in the VM's namespace and all existing
-	// ClusterVirtualMachineImages), then a mutation webhook updates this field
-	// with the VM image resource name. If the display name resolves to multiple
-	// or no VM images, then the mutation webhook denies the request and outputs
-	// an error message accordingly.
+	// ClusterVirtualMachineImages), then a mutation webhook updates the
+	// spec.image field with the reference to the resolved VM image. If the
+	// display name resolves to multiple or no VM images, then the mutation
+	// webhook denies the request and returns an error.
 	//
-	// +optional
+	// Please also note, when creating a new VirtualMachine, if this field and
+	// spec.image are both non-empty, then they must refer to the same
+	// resource or an error is returned.
 	ImageName string `json:"imageName,omitempty"`
 
 	// ClassName describes the name of the VirtualMachineClass resource used to
@@ -451,12 +479,6 @@ type VirtualMachineAdvancedSpec struct {
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
 type VirtualMachineStatus struct {
-	// Image is a reference to the VirtualMachineImage resource used to deploy
-	// this VM.
-	//
-	// +optional
-	Image *common.LocalObjectRef `json:"image,omitempty"`
-
 	// Class is a reference to the VirtualMachineClass resource used to deploy
 	// this VM.
 	//
@@ -543,7 +565,7 @@ type VirtualMachineStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Power-State",type="string",JSONPath=".status.powerState"
 // +kubebuilder:printcolumn:name="Class",type="string",priority=1,JSONPath=".spec.className"
-// +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".spec.imageName"
+// +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".spec.image.name"
 // +kubebuilder:printcolumn:name="Primary-IP4",type="string",priority=1,JSONPath=".status.network.primaryIP4"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 

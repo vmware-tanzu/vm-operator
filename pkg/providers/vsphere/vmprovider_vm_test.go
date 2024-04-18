@@ -126,6 +126,8 @@ func vmTests() {
 			vm.Namespace = nsInfo.Namespace
 			vm.Spec.ClassName = vmClass.Name
 			vm.Spec.ImageName = clusterVMImage.Name
+			vm.Spec.Image.Kind = cvmiKind
+			vm.Spec.Image.Name = clusterVMImage.Name
 			vm.Spec.StorageClass = ctx.StorageClassName
 		})
 
@@ -1011,10 +1013,6 @@ func vmTests() {
 					Expect(vm.Status.InstanceUUID).To(And(Not(BeEmpty()), Equal(o.Config.InstanceUuid)))
 					Expect(vm.Status.BiosUUID).To(And(Not(BeEmpty()), Equal(o.Config.Uuid)))
 
-					Expect(vm.Status.Image).ToNot(BeNil())
-					Expect(vm.Status.Image.Name).To(Equal(vm.Spec.ImageName))
-					Expect(vm.Status.Image.Kind).To(Equal("ClusterVirtualMachineImage"))
-					Expect(vm.Status.Image.APIVersion).To(Equal(vmopv1.SchemeGroupVersion.String()))
 					Expect(vm.Status.Class).ToNot(BeNil())
 					Expect(vm.Status.Class.Name).To(Equal(vm.Spec.ClassName))
 					Expect(vm.Status.Class.APIVersion).To(Equal(vmopv1.SchemeGroupVersion.String()))

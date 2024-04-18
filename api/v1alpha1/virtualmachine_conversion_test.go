@@ -63,6 +63,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 
 		hub := nextver.VirtualMachine{
 			Spec: nextver.VirtualMachineSpec{
+				Image: &nextver.VirtualMachineImageRef{
+					Name: "my-name",
+				},
 				ImageName:    "my-name",
 				ClassName:    "my-class",
 				StorageClass: "my-storage-class",
@@ -1469,5 +1472,73 @@ func TestVirtualMachineConversion(t *testing.T) {
 		}
 
 		spokeHubSpoke(g, &spoke, &nextver.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine hub-spoke-hub with spec.image", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := nextver.VirtualMachine{
+			Spec: nextver.VirtualMachineSpec{
+				Image: &nextver.VirtualMachineImageRef{
+					Kind: "VirtualMachineImage",
+					Name: "vmi-123",
+				},
+				ClassName:    "my-class",
+				StorageClass: "my-storage-class",
+			},
+		}
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine spoke-hub with image name", func(t *testing.T) {
+
+		t.Run("generation == 0", func(t *testing.T) {
+			g := NewWithT(t)
+
+			spoke := v1alpha1.VirtualMachine{
+				Spec: v1alpha1.VirtualMachineSpec{
+					ImageName: "vmi-123",
+				},
+			}
+
+			var hub nextver.VirtualMachine
+			g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
+			g.Expect(hub.Spec.Image).To(BeNil())
+			g.Expect(hub.Spec.ImageName).To(Equal(spoke.Spec.ImageName))
+		})
+
+		t.Run("generation > 0", func(t *testing.T) {
+			g := NewWithT(t)
+
+			spoke := v1alpha1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 1,
+				},
+				Spec: v1alpha1.VirtualMachineSpec{
+					ImageName: "vmi-123",
+				},
+			}
+
+			var hub nextver.VirtualMachine
+			g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
+			g.Expect(hub.Spec.Image).ToNot(BeNil())
+			g.Expect(hub.Spec.Image.Kind).To(BeEmpty())
+			g.Expect(hub.Spec.Image.Name).To(Equal(spoke.Spec.ImageName))
+			g.Expect(hub.Spec.ImageName).To(Equal(spoke.Spec.ImageName))
+		})
+	})
+
+	t.Run("VirtualMachine hub-spoke with empty image name", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := nextver.VirtualMachine{
+			Spec: nextver.VirtualMachineSpec{
+				Image: &nextver.VirtualMachineImageRef{
+					Kind: "VirtualMachineImage",
+					Name: "vmi-123",
+				},
+			},
+		}
+		var spoke v1alpha1.VirtualMachine
+		g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+		g.Expect(spoke.Spec.ImageName).To(Equal("vmi-123"))
 	})
 }

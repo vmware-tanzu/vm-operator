@@ -4,6 +4,7 @@
 package mutation_test
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -273,11 +274,67 @@ func unitTestsMutating() {
 
 	Describe("ResolveImageName", func() {
 		const (
-			dupImageStatusName    = "dup-status-name"
-			uniqueImageStatusName = "unique-status-name"
+			vmiKind  = "VirtualMachineImage"
+			cvmiKind = "Cluster" + vmiKind
+
+			nsImg1ID   = "vmi-1"
+			nsImg1Name = "image-a"
+
+			nsImg2ID   = "vmi-2"
+			nsImg2Name = "image-b"
+
+			nsImg3ID   = "vmi-3"
+			nsImg3Name = "image-b"
+
+			nsImg4ID   = "vmi-4"
+			nsImg4Name = "image-c"
+
+			clImg1ID   = "vmi-5"
+			clImg1Name = "image-d"
+
+			clImg2ID   = "vmi-6"
+			clImg2Name = "image-e"
+
+			clImg3ID   = "vmi-7"
+			clImg3Name = "image-e"
+
+			clImg4ID   = "vmi-8"
+			clImg4Name = "image-c"
 		)
 
+		var (
+			mutatedErr  error
+			wasMutated  bool
+			initObjects []client.Object
+		)
+
+		newNsImgFn := func(id, name string) *vmopv1.VirtualMachineImage {
+			img := builder.DummyVirtualMachineImageA2(id)
+			img.Namespace = ctx.vm.Namespace
+			img.Status.Name = name
+			return img
+		}
+
+		newClImgFn := func(id, name string) *vmopv1.ClusterVirtualMachineImage {
+			img := builder.DummyClusterVirtualMachineImageA2(id)
+			img.Status.Name = name
+			return img
+		}
+
 		BeforeEach(func() {
+			initObjects = []client.Object{
+				newNsImgFn(nsImg1ID, nsImg1Name),
+				newNsImgFn(nsImg2ID, nsImg2Name),
+				newNsImgFn(nsImg3ID, nsImg3Name),
+				newNsImgFn(nsImg4ID, nsImg4Name),
+				newClImgFn(clImg1ID, clImg1Name),
+				newClImgFn(clImg2ID, clImg2Name),
+				newClImgFn(clImg3ID, clImg3Name),
+				newClImgFn(clImg4ID, clImg4Name),
+			}
+		})
+
+		JustBeforeEach(func() {
 			// Replace the client with a fake client that has the index of VM images.
 			ctx.Client = fake.NewClientBuilder().WithScheme(builder.NewScheme()).
 				WithIndex(
@@ -292,111 +349,228 @@ func unitTestsMutating() {
 					func(rawObj client.Object) []string {
 						image := rawObj.(*vmopv1.ClusterVirtualMachineImage)
 						return []string{image.Status.Name}
-					}).Build()
+					}).
+				WithObjects(initObjects...).
+				Build()
+			wasMutated, mutatedErr = mutation.ResolveImageNameOnCreate(
+				&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
 		})
 
-		Context("When VM ImageName is set to vmi resource name", func() {
-
+		When("spec.image is empty", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.ImageName = "vmi-xxx"
+				ctx.vm.Spec.Image = nil
+			})
+			When("spec.imageName is vmi", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = nsImg1ID
+				})
+				It("Should mutate Image but not ImageName", func() {
+					Expect(mutatedErr).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.Image).ToNot(BeNil())
+					Expect(ctx.vm.Spec.Image.Kind).To(Equal(vmiKind))
+					Expect(ctx.vm.Spec.Image.Name).To(Equal(nsImg1ID))
+					Expect(ctx.vm.Spec.ImageName).To(Equal(nsImg1ID))
+				})
+				When("no image exists", func() {
+					const missingVmi = "vmi-9999999"
+					BeforeEach(func() {
+						ctx.vm.Spec.ImageName = missingVmi
+					})
+					It("Should return an error", func() {
+						Expect(mutatedErr).To(HaveOccurred())
+						Expect(mutatedErr.Error()).To(Equal(fmt.Sprintf("no VM image exists for %q in namespace or cluster scope", missingVmi)))
+						Expect(wasMutated).To(BeFalse())
+						Expect(ctx.vm.Spec.Image).To(BeNil())
+						Expect(ctx.vm.Spec.ImageName).To(Equal(missingVmi))
+					})
+				})
+			})
+			When("spec.imageName is display name", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = nsImg1Name
+				})
+				It("Should mutate Image but not ImageName", func() {
+					Expect(mutatedErr).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.Image).ToNot(BeNil())
+					Expect(ctx.vm.Spec.Image.Kind).To(Equal(vmiKind))
+					Expect(ctx.vm.Spec.Image.Name).To(Equal(nsImg1ID))
+					Expect(ctx.vm.Spec.ImageName).To(Equal(nsImg1Name))
+				})
+			})
+			When("spec.imageName is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = ""
+				})
+				It("Should not mutate Image or ImageName", func() {
+					Expect(mutatedErr).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.Image).To(BeNil())
+					Expect(ctx.vm.Spec.ImageName).To(BeEmpty())
+				})
 			})
 
-			It("Should not mutate ImageName", func() {
-				mutated, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(mutated).To(BeFalse())
-				Expect(ctx.vm.Spec.ImageName).Should(Equal("vmi-xxx"))
+			When("spec.imageName matches multiple, namespaced-scoped images", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = nsImg2Name
+				})
+				It("Should return an error", func() {
+					Expect(mutatedErr).To(HaveOccurred())
+					Expect(mutatedErr.Error()).To(Equal(fmt.Sprintf("multiple VM images exist for %q in namespace scope", nsImg2Name)))
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.Image).To(BeNil())
+					Expect(ctx.vm.Spec.ImageName).To(Equal(nsImg2Name))
+				})
+			})
+
+			When("spec.imageName matches multiple, cluster-scoped images", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = clImg2Name
+				})
+				It("Should return an error", func() {
+					Expect(mutatedErr).To(HaveOccurred())
+					Expect(mutatedErr.Error()).To(Equal(fmt.Sprintf("multiple VM images exist for %q in cluster scope", clImg2Name)))
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.Image).To(BeNil())
+					Expect(ctx.vm.Spec.ImageName).To(Equal(clImg2Name))
+				})
+			})
+
+			When("spec.imageName matches both namespace and cluster-scoped images", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = clImg4Name
+				})
+				It("Should return an error", func() {
+					Expect(mutatedErr).To(HaveOccurred())
+					Expect(mutatedErr.Error()).To(Equal(fmt.Sprintf("multiple VM images exist for %q in namespace and cluster scope", clImg4Name)))
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.Image).To(BeNil())
+					Expect(ctx.vm.Spec.ImageName).To(Equal(clImg4Name))
+				})
+			})
+
+			When("spec.imageName does not match any namespace or cluster-scoped images", func() {
+				const invalidImageID = "invalid"
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = invalidImageID
+				})
+				It("Should return an error", func() {
+					Expect(mutatedErr).To(HaveOccurred())
+					Expect(mutatedErr.Error()).To(Equal(fmt.Sprintf("no VM image exists for %q in namespace or cluster scope", invalidImageID)))
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.Image).To(BeNil())
+					Expect(ctx.vm.Spec.ImageName).To(Equal(invalidImageID))
+				})
+			})
+
+			When("spec.imageName matches a single namespace-scoped image", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = nsImg1Name
+				})
+				It("Should mutate Image but not ImageName", func() {
+					Expect(mutatedErr).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.Image).ToNot(BeNil())
+					Expect(ctx.vm.Spec.Image.Kind).To(Equal(vmiKind))
+					Expect(ctx.vm.Spec.Image.Name).To(Equal(nsImg1ID))
+					Expect(ctx.vm.Spec.ImageName).To(Equal(nsImg1Name))
+				})
+			})
+
+			When("spec.imageName matches a single cluster-scoped image", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = clImg1Name
+				})
+				It("Should mutate Image but not ImageName", func() {
+					Expect(mutatedErr).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.Image).ToNot(BeNil())
+					Expect(ctx.vm.Spec.Image.Kind).To(Equal(cvmiKind))
+					Expect(ctx.vm.Spec.Image.Name).To(Equal(clImg1ID))
+					Expect(ctx.vm.Spec.ImageName).To(Equal(clImg1Name))
+				})
 			})
 		})
 
-		Context("When VM ImageName is set to a status name matching multiple namespace scope images", func() {
-
+		When("spec.image is non-empty", func() {
 			BeforeEach(func() {
-				vmi1 := builder.DummyVirtualMachineImageA2("vmi-1")
-				vmi1.Status.Name = dupImageStatusName
-				vmi2 := builder.DummyVirtualMachineImageA2("vmi-2")
-				vmi2.Status.Name = dupImageStatusName
-				Expect(ctx.Client.Create(ctx, vmi1)).To(Succeed())
-				Expect(ctx.Client.Create(ctx, vmi2)).To(Succeed())
-				ctx.vm.Spec.ImageName = dupImageStatusName
+				ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+					Kind: vmiKind,
+					Name: nsImg1ID,
+				}
 			})
-
-			It("Should return an error", func() {
-				_, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("multiple VM images exist for \"dup-status-name\" in namespace scope"))
+			When("spec.imageName is vmi", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = nsImg1ID
+				})
+				It("Should not mutate anything", func() {
+					Expect(mutatedErr).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.Image).ToNot(BeNil())
+					Expect(ctx.vm.Spec.Image.Kind).To(Equal(vmiKind))
+					Expect(ctx.vm.Spec.Image.Name).To(Equal(nsImg1ID))
+					Expect(ctx.vm.Spec.ImageName).To(Equal(nsImg1ID))
+				})
 			})
-		})
-
-		Context("When VM ImageName is set to a status name matching multiple cluster scope images", func() {
-
-			BeforeEach(func() {
-				cvmi1 := builder.DummyClusterVirtualMachineImageA2("cvmi-1")
-				cvmi1.Status.Name = dupImageStatusName
-				cvmi2 := builder.DummyClusterVirtualMachineImageA2("cvmi-2")
-				cvmi2.Status.Name = dupImageStatusName
-				Expect(ctx.Client.Create(ctx, cvmi1)).To(Succeed())
-				Expect(ctx.Client.Create(ctx, cvmi2)).To(Succeed())
-				ctx.vm.Spec.ImageName = dupImageStatusName
+			When("spec.imageName is display name", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = nsImg1Name
+				})
+				It("Should not mutate anything", func() {
+					Expect(mutatedErr).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.Image).ToNot(BeNil())
+					Expect(ctx.vm.Spec.Image.Kind).To(Equal(vmiKind))
+					Expect(ctx.vm.Spec.Image.Name).To(Equal(nsImg1ID))
+					Expect(ctx.vm.Spec.ImageName).To(Equal(nsImg1Name))
+				})
 			})
-
-			It("Should return an error", func() {
-				_, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("multiple VM images exist for \"dup-status-name\" in cluster scope"))
+			When("spec.imageName is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = ""
+				})
+				It("Should not mutate anything", func() {
+					Expect(mutatedErr).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.Image).ToNot(BeNil())
+					Expect(ctx.vm.Spec.Image.Kind).To(Equal(vmiKind))
+					Expect(ctx.vm.Spec.Image.Name).To(Equal(nsImg1ID))
+					Expect(ctx.vm.Spec.ImageName).To(BeEmpty())
+				})
 			})
-		})
-
-		Context("When VM ImageName is set to a status name matching one namespace and one cluster scope images", func() {
-
-			BeforeEach(func() {
-				vmi := builder.DummyVirtualMachineImageA2("vmi-123")
-				vmi.Status.Name = dupImageStatusName
-				cvmi := builder.DummyClusterVirtualMachineImageA2("cvmi-123")
-				cvmi.Status.Name = dupImageStatusName
-				Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
-				Expect(ctx.Client.Create(ctx, cvmi)).To(Succeed())
-				ctx.vm.Spec.ImageName = dupImageStatusName
+			When("spec.imageName points to a different image", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = clImg1ID
+				})
+				It("Should not mutate anything", func() {
+					Expect(mutatedErr).To(HaveOccurred())
+					Expect(mutatedErr.Error()).To(Equal(field.Invalid(
+						field.NewPath("spec", "imageName"),
+						clImg1ID,
+						"must refer to the same resource as spec.image").Error()))
+					Expect(wasMutated).To(BeFalse())
+				})
 			})
-
-			It("Should return an error", func() {
-				_, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("multiple VM images exist for \"dup-status-name\" in namespace and cluster scope"))
-			})
-		})
-
-		Context("When VM ImageName is set to a status name matching a single namespace scope image", func() {
-
-			BeforeEach(func() {
-				vmi := builder.DummyVirtualMachineImageA2("vmi-123")
-				vmi.Status.Name = uniqueImageStatusName
-				Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
-				ctx.vm.Spec.ImageName = uniqueImageStatusName
-			})
-
-			It("Should mutate ImageName to the resource name of the namespace scope image", func() {
-				mutated, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(mutated).To(BeTrue())
-				Expect(ctx.vm.Spec.ImageName).Should(Equal("vmi-123"))
-			})
-		})
-
-		Context("When VM ImageName is set to a status name matching a single cluster scope image", func() {
-
-			BeforeEach(func() {
-				cvmi := builder.DummyClusterVirtualMachineImageA2("vmi-123")
-				cvmi.Status.Name = uniqueImageStatusName
-				Expect(ctx.Client.Create(ctx, cvmi)).To(Succeed())
-				ctx.vm.Spec.ImageName = uniqueImageStatusName
-			})
-
-			It("Should mutate ImageName to the resource name of the cluster scope image", func() {
-				mutated, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(mutated).To(BeTrue())
-				Expect(ctx.vm.Spec.ImageName).Should(Equal("vmi-123"))
+			When("spec.imageName points to the same image ID but different scope", func() {
+				const (
+					clImg0ID   = "vmi-1"
+					clImg0Name = "image-a"
+				)
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = nsImg1ID
+					ctx.vm.Spec.Image.Name = clImg0ID
+					ctx.vm.Spec.Image.Kind = cvmiKind
+					initObjects = append(initObjects, newClImgFn(clImg0ID, clImg0Name))
+				})
+				It("Should not mutate anything", func() {
+					Expect(mutatedErr).To(HaveOccurred())
+					Expect(mutatedErr.Error()).To(Equal(field.Invalid(
+						field.NewPath("spec", "imageName"),
+						nsImg1ID,
+						"must refer to the same resource as spec.image").Error()))
+					Expect(wasMutated).To(BeFalse())
+				})
 			})
 		})
 	})

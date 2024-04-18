@@ -125,13 +125,22 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 }
 
 func unitTestsValidateCreate() {
+
+	const (
+		vmiKind          = "VirtualMachineImage"
+		cvmiKind         = "Cluster" + vmiKind
+		invalidImageKind = "supported: " + vmiKind + ", " + cvmiKind
+	)
+
 	var (
 		ctx *unitValidatingWebhookContext
 	)
 
 	type createArgs struct {
 		isServiceUser              bool
-		invalidImageName           bool
+		emptyImage                 bool
+		emptyImageKind             bool
+		invalidImageKind           bool
 		invalidClassName           bool
 		invalidVolumeName          bool
 		dupVolumeName              bool
@@ -151,8 +160,14 @@ func unitTestsValidateCreate() {
 			ctx.IsPrivilegedAccount = true
 		}
 
-		if args.invalidImageName {
-			ctx.vm.Spec.ImageName = ""
+		if args.emptyImage {
+			ctx.vm.Spec.Image = nil
+		}
+		if args.emptyImageKind {
+			ctx.vm.Spec.Image.Kind = ""
+		}
+		if args.invalidImageKind {
+			ctx.vm.Spec.Image.Kind = "invalid"
 		}
 		if args.invalidClassName {
 			ctx.vm.Spec.ClassName = ""
@@ -228,8 +243,12 @@ func unitTestsValidateCreate() {
 
 		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false,
 			field.Required(specPath.Child("className"), "").Error(), nil),
-		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false,
-			field.Required(specPath.Child("imageName"), "").Error(), nil),
+		Entry("should deny empty image", createArgs{emptyImage: true}, false,
+			field.Required(specPath.Child("image"), "").Error(), nil),
+		Entry("should deny empty image kind", createArgs{emptyImageKind: true}, false,
+			field.Required(specPath.Child("image").Child("kind"), invalidImageKind).Error(), nil),
+		Entry("should deny invalid image kind", createArgs{invalidImageKind: true}, false,
+			field.Invalid(specPath.Child("image").Child("kind"), "invalid", invalidImageKind).Error(), nil),
 
 		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false,
 			field.Invalid(volPath.Index(0).Child("name"), "underscore_not_valid", validation.IsDNS1123Subdomain("underscore_not_valid")[0]).Error(), nil),
@@ -1382,6 +1401,7 @@ func unitTestsValidateUpdate() {
 	type updateArgs struct {
 		isServiceUser               bool
 		changeClassName             bool
+		changeImageRef              bool
 		changeImageName             bool
 		changeStorageClass          bool
 		changeResourcePolicy        bool
@@ -1408,6 +1428,12 @@ func unitTestsValidateUpdate() {
 			ctx.IsPrivilegedAccount = true
 		}
 
+		if args.changeImageRef {
+			if ctx.vm.Spec.Image == nil {
+				ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+			}
+			ctx.vm.Spec.Image.Name += updateSuffix
+		}
 		if args.changeImageName {
 			ctx.vm.Spec.ImageName += updateSuffix
 		}
@@ -1495,6 +1521,7 @@ func unitTestsValidateUpdate() {
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),
 
+		Entry("should deny image ref change", updateArgs{changeImageRef: true}, false, msg, nil),
 		Entry("should deny image name change", updateArgs{changeImageName: true}, false, msg, nil),
 		Entry("should deny class name change", updateArgs{changeClassName: true}, false, msg, nil),
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),

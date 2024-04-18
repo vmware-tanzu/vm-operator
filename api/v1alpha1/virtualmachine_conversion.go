@@ -657,6 +657,12 @@ func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 		}
 	}
 
+	// If out.imageName is empty but in.image.name is non-empty, then on down-
+	// convert, copy in.image.name to out.imageName.
+	if out.ImageName == "" && in.Image != nil {
+		out.ImageName = in.Image.Name
+	}
+
 	// TODO = in.ReadinessGates
 
 	// Deprecated:
@@ -795,6 +801,11 @@ func Convert_v1alpha3_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type
 
 	return nil
+}
+
+func restore_v1alpha3_VirtualMachineImage(dst, src *v1alpha3.VirtualMachine) {
+	dst.Spec.Image = src.Spec.Image
+	dst.Spec.ImageName = src.Spec.ImageName
 }
 
 func restore_v1alpha3_VirtualMachineBootstrapSpec(
@@ -1057,6 +1068,34 @@ func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha3_Conditions(
 	return append(dst.Status.Conditions, conditions...)
 }
 
+func Convert_v1alpha1_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachine, out *v1alpha3.VirtualMachine, s apiconversion.Scope) error {
+	if err := autoConvert_v1alpha1_VirtualMachine_To_v1alpha3_VirtualMachine(in, out, s); err != nil {
+		return err
+	}
+
+	// For existing VMs, we want to ensure out.spec.image is only updated if
+	// this conversion is not part of a create operation. We can determine that
+	// by looking at the object's generation. Any generation value > 0 means the
+	// resource has been written to etcd. The only time generation is 0 is the
+	// initial application of the resource before it has been written to etcd.
+	//
+	// For VMs being created, this behavior prevents spec.image from being set,
+	// causing the VM's mutation webhook to resolve spec.image from the value of
+	// spec.imageName.
+	//
+	// For existing VMs, out.spec.image can be set to ensure the printer column
+	// for spec.image.name is non-empty whenever possible.
+	if in.Generation > 0 {
+		if in.Spec.ImageName != "" {
+			out.Spec.Image = &v1alpha3.VirtualMachineImageRef{
+				Name: in.Spec.ImageName,
+			}
+		}
+	}
+
+	return nil
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 	dst := dstRaw.(*v1alpha3.VirtualMachine)
@@ -1073,9 +1112,14 @@ func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 		return err
 	}
 
+	// BEGIN RESTORE
+
+	restore_v1alpha3_VirtualMachineImage(dst, restored)
 	restore_v1alpha3_VirtualMachineBootstrapSpec(dst, restored)
 	restore_v1alpha3_VirtualMachineNetworkSpec(dst, restored)
 	restore_v1alpha3_VirtualMachineReadinessProbeSpec(dst, restored)
+
+	// END RESTORE
 
 	dst.Status = restored.Status
 

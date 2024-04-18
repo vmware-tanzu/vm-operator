@@ -100,11 +100,106 @@ func vmUtilTests() {
 		)
 
 		BeforeEach(func() {
-			nsVMImage = builder.DummyVirtualMachineImageA2("dummy-ns-vm-image")
+			nsVMImage = builder.DummyVirtualMachineImageA2(builder.DummyVMIID)
 			nsVMImage.Namespace = vmCtx.VM.Namespace
 			conditions.MarkTrue(nsVMImage, vmopv1.ReadyConditionType)
-			clusterVMImage = builder.DummyClusterVirtualMachineImageA2("dummy-cluster-vm-image")
+			clusterVMImage = builder.DummyClusterVirtualMachineImageA2(builder.DummyVMIID)
 			conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
+		})
+
+		When("spec.image is nil", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Image = nil
+			})
+
+			It("returns error and sets condition", func() {
+				_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+				Expect(err).To(HaveOccurred())
+				expectedReason := "NotSet"
+				Expect(err.Error()).To(ContainSubstring(expectedReason))
+
+				expectedCondition := []metav1.Condition{
+					*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, expectedReason, ""),
+				}
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			})
+		})
+
+		When("spec.image.kind is empty", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Image.Kind = ""
+			})
+
+			When("Neither cluster or namespace scoped VM image exists", func() {
+
+				It("returns error and sets condition", func() {
+					_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+					Expect(err).To(HaveOccurred())
+					expectedErrMsg := fmt.Sprintf("no VM image exists for %q in namespace or cluster scope", vmCtx.VM.Spec.Image.Name)
+					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+					expectedCondition := []metav1.Condition{
+						*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, "NotFound", expectedErrMsg),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+				})
+			})
+
+			When("Namespace scoped VirtualMachineImage exists and ready", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, nsVMImage)
+					vmCtx.VM.Spec.Image.Name = nsVMImage.Name
+				})
+
+				It("returns success", func() {
+					imgObj, spec, status, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(imgObj).ToNot(BeNil())
+					Expect(imgObj.GetObjectKind().GroupVersionKind().Kind).To(Equal("VirtualMachineImage"))
+					Expect(spec).ToNot(BeNil())
+					Expect(status).ToNot(BeNil())
+					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
+				})
+			})
+
+			When("ClusterVirtualMachineImage exists and ready", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, clusterVMImage)
+					vmCtx.VM.Spec.Image.Kind = "ClusterVirtualMachineImage"
+					vmCtx.VM.Spec.Image.Name = clusterVMImage.Name
+				})
+
+				It("returns success", func() {
+					imgObj, spec, status, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(imgObj).ToNot(BeNil())
+					Expect(imgObj.GetObjectKind().GroupVersionKind().Kind).To(Equal("ClusterVirtualMachineImage"))
+					Expect(spec).ToNot(BeNil())
+					Expect(status).ToNot(BeNil())
+					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
+				})
+			})
+		})
+
+		When("spec.image.kind is invalid", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Image.Kind = "invalid"
+			})
+
+			It("returns error and sets condition", func() {
+				_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+				Expect(err).To(HaveOccurred())
+				expectedReason := "UnknownKind"
+				expectedErrMsg := fmt.Sprintf("%s: %s", expectedReason, vmCtx.VM.Spec.Image.Kind)
+				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+				expectedCondition := []metav1.Condition{
+					*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, expectedReason, vmCtx.VM.Spec.Image.Kind),
+				}
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			})
 		})
 
 		When("Neither cluster or namespace scoped VM image exists", func() {
@@ -112,7 +207,7 @@ func vmUtilTests() {
 			It("returns error and sets condition", func() {
 				_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
 				Expect(err).To(HaveOccurred())
-				expectedErrMsg := fmt.Sprintf("Failed to get the VM's image: %s", vmCtx.VM.Spec.ImageName)
+				expectedErrMsg := fmt.Sprintf("virtualmachineimages.vmoperator.vmware.com %q not found", vmCtx.VM.Spec.Image.Name)
 				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 				expectedCondition := []metav1.Condition{
@@ -136,7 +231,7 @@ func vmUtilTests() {
 						reason,
 						errMsg)
 					initObjects = append(initObjects, nsVMImage)
-					vmCtx.VM.Spec.ImageName = nsVMImage.Name
+					vmCtx.VM.Spec.Image.Name = nsVMImage.Name
 				})
 
 				It("returns error and sets VM condition with reason and message from the image", func() {
@@ -159,7 +254,7 @@ func vmUtilTests() {
 				BeforeEach(func() {
 					conditions.Delete(nsVMImage, vmopv1.ReadyConditionType)
 					initObjects = append(initObjects, nsVMImage)
-					vmCtx.VM.Spec.ImageName = nsVMImage.Name
+					vmCtx.VM.Spec.Image.Name = nsVMImage.Name
 				})
 
 				It("returns error and sets VM condition with reason and message from the image", func() {
@@ -180,7 +275,7 @@ func vmUtilTests() {
 		When("Namespace scoped VirtualMachineImage exists and ready", func() {
 			BeforeEach(func() {
 				initObjects = append(initObjects, nsVMImage)
-				vmCtx.VM.Spec.ImageName = nsVMImage.Name
+				vmCtx.VM.Spec.Image.Name = nsVMImage.Name
 			})
 
 			It("returns success", func() {
@@ -197,7 +292,8 @@ func vmUtilTests() {
 		When("ClusterVirtualMachineImage exists and ready", func() {
 			BeforeEach(func() {
 				initObjects = append(initObjects, clusterVMImage)
-				vmCtx.VM.Spec.ImageName = clusterVMImage.Name
+				vmCtx.VM.Spec.Image.Kind = "ClusterVirtualMachineImage"
+				vmCtx.VM.Spec.Image.Name = clusterVMImage.Name
 			})
 
 			It("returns success", func() {

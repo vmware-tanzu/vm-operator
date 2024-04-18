@@ -913,7 +913,7 @@ var _ = Describe("VirtualMachineRecocileReady Status to VM Status Condition", fu
 		})
 
 		Context("PausedVMLabel is non-existent", func() {
-			It("sets condition true", func() {
+			It("sets VirtualMachineReconcileReady condition to true", func() {
 				expectedConditions := []metav1.Condition{
 					*conditions.TrueCondition(vmopv1.VirtualMachineReconcileReady),
 				}
@@ -926,7 +926,7 @@ var _ = Describe("VirtualMachineRecocileReady Status to VM Status Condition", fu
 				BeforeEach(func() {
 					vm.Labels[vmopv1.PausedVMLabelKey] = "devops"
 				})
-				It("sets condition false", func() {
+				It("sets VirtualMachineReconcileReady condition to false", func() {
 					expectedConditions := []metav1.Condition{
 						*conditions.FalseCondition(
 							vmopv1.VirtualMachineReconcileReady, vmopv1.VirtualMachineReconcilePausedReason, "Virtual Machine reconciliation paused by DevOps"),
@@ -938,7 +938,7 @@ var _ = Describe("VirtualMachineRecocileReady Status to VM Status Condition", fu
 				BeforeEach(func() {
 					vm.Labels[vmopv1.PausedVMLabelKey] = "admin"
 				})
-				It("sets condition false", func() {
+				It("sets VirtualMachineReconcileReady condition to false", func() {
 					expectedConditions := []metav1.Condition{
 						*conditions.FalseCondition(
 							vmopv1.VirtualMachineReconcileReady, vmopv1.VirtualMachineReconcilePausedReason, "Virtual Machine reconciliation paused by Admin"),
@@ -950,7 +950,7 @@ var _ = Describe("VirtualMachineRecocileReady Status to VM Status Condition", fu
 				BeforeEach(func() {
 					vm.Labels[vmopv1.PausedVMLabelKey] = "both"
 				})
-				It("sets condition false", func() {
+				It("sets VirtualMachineReconcileReady condition to false", func() {
 					expectedConditions := []metav1.Condition{
 						*conditions.FalseCondition(
 							vmopv1.VirtualMachineReconcileReady, vmopv1.VirtualMachineReconcilePausedReason, "Virtual Machine reconciliation paused by Admin, DevOps"),

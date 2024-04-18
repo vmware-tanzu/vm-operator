@@ -220,7 +220,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 	// If the VM has a pause reconcile label key, Skip volume reconciliation.
 	// Do not requeue the reconcile here since removing the pause label will trigger a reconcile anyway.
 	if val, ok := vm.Labels[vmopv1.PausedVMLabelKey]; ok {
-		volCtx.Logger.Info("Skipping reconcile since pause operation is made on the VM", "paused by", val)
+		volCtx.Logger.Info("Skipping reconciliation because a pause operation has been initiated on this VirtualMachine.", "paused by", val)
 		return ctrl.Result{}, nil
 	}
 

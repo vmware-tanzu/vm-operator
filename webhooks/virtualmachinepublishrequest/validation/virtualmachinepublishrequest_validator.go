@@ -23,7 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -37,7 +37,7 @@ const (
 // +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=contentlibraries,verbs=get;list;
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create VirtualMachinePublishRequest validation webhook")
@@ -64,7 +64,7 @@ func (v validator) For() schema.GroupVersionKind {
 	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachinePublishRequest{}).Name())
 }
 
-func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vmpub, err := v.vmPublishRequestFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -83,11 +83,11 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
 	return admission.Allowed("")
 }
 
-func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vmpub, err := v.vmPublishRequestFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -111,7 +111,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validateSource(ctx *context.WebhookRequestContext, vmpub *vmopv1.VirtualMachinePublishRequest) field.ErrorList {
+func (v validator) validateSource(ctx *pkgctx.WebhookRequestContext, vmpub *vmopv1.VirtualMachinePublishRequest) field.ErrorList {
 	var allErrs field.ErrorList
 
 	sourcePath := field.NewPath("spec").Child("source")
@@ -133,7 +133,7 @@ func (v validator) validateSource(ctx *context.WebhookRequestContext, vmpub *vmo
 	return allErrs
 }
 
-func (v validator) validateTargetLocation(ctx *context.WebhookRequestContext, vmpub *vmopv1.VirtualMachinePublishRequest) field.ErrorList {
+func (v validator) validateTargetLocation(ctx *pkgctx.WebhookRequestContext, vmpub *vmopv1.VirtualMachinePublishRequest) field.ErrorList {
 	var allErrs field.ErrorList
 
 	targetLocationPath := field.NewPath("spec").Child("target").

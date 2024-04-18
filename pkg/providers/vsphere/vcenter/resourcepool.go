@@ -4,24 +4,24 @@
 package vcenter
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 // GetResourcePoolByMoID returns the ResourcePool for the MoID.
 func GetResourcePoolByMoID(
-	ctx goctx.Context,
+	ctx context.Context,
 	finder *find.Finder,
 	rpMoID string) (*object.ResourcePool, error) {
 
-	o, err := finder.ObjectReference(ctx, types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
+	o, err := finder.ObjectReference(ctx, vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
 	if err != nil {
 		return nil, err
 	}
@@ -31,16 +31,16 @@ func GetResourcePoolByMoID(
 
 // GetResourcePoolOwnerMoRef returns the ClusterComputeResource MoID that owns the ResourcePool.
 func GetResourcePoolOwnerMoRef(
-	ctx goctx.Context,
+	ctx context.Context,
 	vimClient *vim25.Client,
-	rpMoID string) (types.ManagedObjectReference, error) {
+	rpMoID string) (vimtypes.ManagedObjectReference, error) {
 
 	rp := object.NewResourcePool(vimClient,
-		types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
+		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
 
 	objRef, err := rp.Owner(ctx)
 	if err != nil {
-		return types.ManagedObjectReference{}, err
+		return vimtypes.ManagedObjectReference{}, err
 	}
 
 	return objRef.Reference(), nil
@@ -48,7 +48,7 @@ func GetResourcePoolOwnerMoRef(
 
 // GetChildResourcePool gets the named child ResourcePool from the parent ResourcePool.
 func GetChildResourcePool(
-	ctx goctx.Context,
+	ctx context.Context,
 	parentRP *object.ResourcePool,
 	childName string) (*object.ResourcePool, error) {
 
@@ -65,12 +65,12 @@ func GetChildResourcePool(
 
 // DoesChildResourcePoolExist returns if the named child ResourcePool exists under the parent ResourcePool.
 func DoesChildResourcePoolExist(
-	ctx goctx.Context,
+	ctx context.Context,
 	vimClient *vim25.Client,
 	parentRPMoID, childName string) (bool, error) {
 
 	parentRP := object.NewResourcePool(vimClient,
-		types.ManagedObjectReference{Type: "ResourcePool", Value: parentRPMoID})
+		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: parentRPMoID})
 
 	childRP, err := findChildRP(ctx, parentRP, childName)
 	if err != nil {
@@ -82,20 +82,20 @@ func DoesChildResourcePoolExist(
 
 // CreateOrUpdateChildResourcePool creates or updates the child ResourcePool under the parent ResourcePool.
 func CreateOrUpdateChildResourcePool(
-	ctx goctx.Context,
+	ctx context.Context,
 	vimClient *vim25.Client,
 	parentRPMoID string,
 	rpSpec *vmopv1.ResourcePoolSpec) (string, error) {
 
 	parentRP := object.NewResourcePool(vimClient,
-		types.ManagedObjectReference{Type: "ResourcePool", Value: parentRPMoID})
+		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: parentRPMoID})
 
 	childRP, err := findChildRP(ctx, parentRP, rpSpec.Name)
 	if err != nil {
 		return "", err
 	}
 
-	spec := types.DefaultResourceConfigSpec() // TODO Set reservations & limits from rpSpec
+	spec := vimtypes.DefaultResourceConfigSpec() // TODO Set reservations & limits from rpSpec
 
 	if childRP == nil {
 		rp, err := parentRP.Create(ctx, rpSpec.Name, spec)
@@ -113,12 +113,12 @@ func CreateOrUpdateChildResourcePool(
 
 // DeleteChildResourcePool deletes the child ResourcePool under the parent ResourcePool.
 func DeleteChildResourcePool(
-	ctx goctx.Context,
+	ctx context.Context,
 	vimClient *vim25.Client,
 	parentRPMoID, childName string) error {
 
 	parentRP := object.NewResourcePool(vimClient,
-		types.ManagedObjectReference{Type: "ResourcePool", Value: parentRPMoID})
+		vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: parentRPMoID})
 
 	childRP, err := findChildRP(ctx, parentRP, childName)
 	if err != nil || childRP == nil {
@@ -142,7 +142,7 @@ func DeleteChildResourcePool(
 }
 
 func findChildRP(
-	ctx goctx.Context,
+	ctx context.Context,
 	parentRP *object.ResourcePool,
 	childName string) (*object.ResourcePool, error) {
 

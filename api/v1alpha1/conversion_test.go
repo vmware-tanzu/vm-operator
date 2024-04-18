@@ -14,10 +14,9 @@ import (
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	nextver "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func() {
@@ -29,8 +28,8 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 
 	BeforeEach(func() {
 		scheme = runtime.NewScheme()
-		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
-		Expect(nextver.AddToScheme(scheme)).To(Succeed())
+		Expect(vmopv1a1.AddToScheme(scheme)).To(Succeed())
+		Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -41,8 +40,8 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 		BeforeEach(func() {
 			input = utilconversion.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &nextver.VirtualMachine{},
-				Spoke:  &v1alpha1.VirtualMachine{},
+				Hub:    &vmopv1.VirtualMachine{},
+				Spoke:  &vmopv1a1.VirtualMachine{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineFieldsFuncs,
 				},
@@ -64,8 +63,8 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 		BeforeEach(func() {
 			input = utilconversion.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &nextver.VirtualMachineClass{},
-				Spoke:  &v1alpha1.VirtualMachineClass{},
+				Hub:    &vmopv1.VirtualMachineClass{},
+				Spoke:  &vmopv1a1.VirtualMachineClass{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineClassFieldsFuncs,
 				},
@@ -87,8 +86,8 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 		BeforeEach(func() {
 			input = utilconversion.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &nextver.VirtualMachineImage{},
-				Spoke:  &v1alpha1.VirtualMachineImage{},
+				Hub:    &vmopv1.VirtualMachineImage{},
+				Spoke:  &vmopv1a1.VirtualMachineImage{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineImageFieldsFuncs,
 				},
@@ -110,8 +109,8 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 		BeforeEach(func() {
 			input = utilconversion.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &nextver.ClusterVirtualMachineImage{},
-				Spoke:  &v1alpha1.ClusterVirtualMachineImage{},
+				Hub:    &vmopv1.ClusterVirtualMachineImage{},
+				Spoke:  &vmopv1a1.ClusterVirtualMachineImage{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineImageFieldsFuncs,
 				},
@@ -133,8 +132,8 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 		BeforeEach(func() {
 			input = utilconversion.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &nextver.VirtualMachinePublishRequest{},
-				Spoke:  &v1alpha1.VirtualMachinePublishRequest{},
+				Hub:    &vmopv1.VirtualMachinePublishRequest{},
+				Spoke:  &vmopv1a1.VirtualMachinePublishRequest{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachinePublishRequestFieldsFuncs,
 				},
@@ -156,8 +155,8 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 		BeforeEach(func() {
 			input = utilconversion.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &nextver.VirtualMachineService{},
-				Spoke:  &v1alpha1.VirtualMachineService{},
+				Hub:    &vmopv1.VirtualMachineService{},
+				Spoke:  &vmopv1a1.VirtualMachineService{},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -175,8 +174,8 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 		BeforeEach(func() {
 			input = utilconversion.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &nextver.VirtualMachineSetResourcePolicy{},
-				Spoke:  &v1alpha1.VirtualMachineSetResourcePolicy{},
+				Hub:    &vmopv1.VirtualMachineSetResourcePolicy{},
+				Spoke:  &vmopv1a1.VirtualMachineSetResourcePolicy{},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -194,10 +193,10 @@ var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func
 
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(vmSpec *v1alpha1.VirtualMachineSpec, c fuzz.Continue) {
+		func(vmSpec *vmopv1a1.VirtualMachineSpec, c fuzz.Continue) {
 			c.Fuzz(vmSpec)
 
-			var volumes []v1alpha1.VirtualMachineVolume
+			var volumes []vmopv1a1.VirtualMachineVolume
 			for _, vol := range vmSpec.Volumes {
 				// vSphere volumes are gone in nextver so skip those.
 				if vol.VsphereVolume == nil {
@@ -222,17 +221,17 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			// This is effectively deprecated.
 			vmSpec.Ports = nil
 		},
-		func(vmSpec *nextver.VirtualMachineSpec, c fuzz.Continue) {
+		func(vmSpec *vmopv1.VirtualMachineSpec, c fuzz.Continue) {
 			c.Fuzz(vmSpec)
 		},
-		func(vmStatus *v1alpha1.VirtualMachineStatus, c fuzz.Continue) {
+		func(vmStatus *vmopv1a1.VirtualMachineStatus, c fuzz.Continue) {
 			c.Fuzz(vmStatus)
 			overrideConditionsSeverity(vmStatus.Conditions)
 
 			// Do not exist in nextver.
-			vmStatus.Phase = v1alpha1.Unknown
+			vmStatus.Phase = vmopv1a1.Unknown
 		},
-		func(vmStatus *nextver.VirtualMachineStatus, c fuzz.Continue) {
+		func(vmStatus *vmopv1.VirtualMachineStatus, c fuzz.Continue) {
 			c.Fuzz(vmStatus)
 			overrideConditionsObservedGeneration(vmStatus.Conditions)
 
@@ -244,14 +243,14 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 
 func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(classSpec *nextver.VirtualMachineClassSpec, c fuzz.Continue) {
+		func(classSpec *vmopv1.VirtualMachineClassSpec, c fuzz.Continue) {
 			c.Fuzz(classSpec)
 
 			// Since all random byte arrays are not valid JSON
 			// Passing an empty string as a valid input
 			classSpec.ConfigSpec = []byte("")
 		},
-		func(classSpec *v1alpha1.VirtualMachineClassSpec, c fuzz.Continue) {
+		func(classSpec *vmopv1a1.VirtualMachineClassSpec, c fuzz.Continue) {
 			c.Fuzz(classSpec)
 
 			// Since all random byte arrays are not valid JSON
@@ -263,11 +262,11 @@ func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactor
 
 func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(imageSpec *v1alpha1.VirtualMachineImageSpec, c fuzz.Continue) {
+		func(imageSpec *vmopv1a1.VirtualMachineImageSpec, c fuzz.Continue) {
 			c.Fuzz(imageSpec)
 
 			if imageSpec.OVFEnv != nil {
-				m := make(map[string]v1alpha1.OvfProperty, len(imageSpec.OVFEnv))
+				m := make(map[string]vmopv1a1.OvfProperty, len(imageSpec.OVFEnv))
 				for k, v := range imageSpec.OVFEnv {
 					// In practice, the value key always will be the map key.
 					v.Key = k
@@ -285,7 +284,7 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageSpec.ImageSourceType = ""
 			imageSpec.ProviderRef.Namespace = ""
 		},
-		func(imageStatus *v1alpha1.VirtualMachineImageStatus, c fuzz.Continue) {
+		func(imageStatus *vmopv1a1.VirtualMachineImageStatus, c fuzz.Continue) {
 			c.Fuzz(imageStatus)
 			overrideConditionsSeverity(imageStatus.Conditions)
 
@@ -298,18 +297,18 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageStatus.InternalId = ""
 			imageStatus.PowerState = ""
 		},
-		func(osInfo *nextver.VirtualMachineImageOSInfo, c fuzz.Continue) {
+		func(osInfo *vmopv1.VirtualMachineImageOSInfo, c fuzz.Continue) {
 			c.Fuzz(osInfo)
 			// TODO: Need to save serialized object to support lossless conversions.
 			osInfo.ID = ""
 		},
-		func(imageStatus *nextver.VirtualMachineImageStatus, c fuzz.Continue) {
+		func(imageStatus *vmopv1.VirtualMachineImageStatus, c fuzz.Continue) {
 			c.Fuzz(imageStatus)
 			overrideConditionsObservedGeneration(imageStatus.Conditions)
 			// TODO: Need to save serialized object to support lossless conversions.
 			imageStatus.Capabilities = nil
 		},
-		func(imageSpec *nextver.VirtualMachineImageSpec, c fuzz.Continue) {
+		func(imageSpec *vmopv1.VirtualMachineImageSpec, c fuzz.Continue) {
 			c.Fuzz(imageSpec)
 			if pr := imageSpec.ProviderRef; pr != nil {
 				if pr.APIVersion == "" && pr.Kind == "" && pr.Name == "" {
@@ -322,18 +321,18 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 
 func overrideVirtualMachinePublishRequestFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(publishStatus *v1alpha1.VirtualMachinePublishRequestStatus, c fuzz.Continue) {
+		func(publishStatus *vmopv1a1.VirtualMachinePublishRequestStatus, c fuzz.Continue) {
 			c.Fuzz(publishStatus)
 			overrideConditionsSeverity(publishStatus.Conditions)
 		},
-		func(publishStatus *nextver.VirtualMachinePublishRequestStatus, c fuzz.Continue) {
+		func(publishStatus *vmopv1.VirtualMachinePublishRequestStatus, c fuzz.Continue) {
 			c.Fuzz(publishStatus)
 			overrideConditionsObservedGeneration(publishStatus.Conditions)
 		},
 	}
 }
 
-func overrideConditionsSeverity(conditions []v1alpha1.Condition) {
+func overrideConditionsSeverity(conditions []vmopv1a1.Condition) {
 	// metav1.Conditions do not have this field, so on down conversions it will always be empty.
 	for i := range conditions {
 		conditions[i].Severity = ""

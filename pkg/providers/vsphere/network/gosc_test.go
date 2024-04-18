@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 )
@@ -32,7 +32,7 @@ var _ = Describe("GOSC", func() {
 
 		var (
 			results         network.NetworkInterfaceResults
-			adapterMappings []types.CustomizationAdapterMapping
+			adapterMappings []vimtypes.CustomizationAdapterMapping
 			err             error
 		)
 
@@ -81,16 +81,16 @@ var _ = Describe("GOSC", func() {
 				Expect(adapter.Gateway).To(Equal([]string{ipv4Gateway}))
 				Expect(adapter.SubnetMask).To(Equal("255.255.255.0"))
 				Expect(adapter.DnsServerList).To(Equal([]string{dnsServer1}))
-				Expect(adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationFixedIp{}))
-				fixedIP := adapter.Ip.(*types.CustomizationFixedIp)
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIp{}))
+				fixedIP := adapter.Ip.(*vimtypes.CustomizationFixedIp)
 				Expect(fixedIP.IpAddress).To(Equal(ipv4))
 
 				ipv6Spec := adapter.IpV6Spec
 				Expect(ipv6Spec).ToNot(BeNil())
 				Expect(ipv6Spec.Gateway).To(Equal([]string{ipv6Gateway}))
 				Expect(ipv6Spec.Ip).To(HaveLen(1))
-				Expect(ipv6Spec.Ip[0]).To(BeAssignableToTypeOf(&types.CustomizationFixedIpV6{}))
-				addressSpec := ipv6Spec.Ip[0].(*types.CustomizationFixedIpV6)
+				Expect(ipv6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIpV6{}))
+				addressSpec := ipv6Spec.Ip[0].(*vimtypes.CustomizationFixedIpV6)
 				Expect(addressSpec.IpAddress).To(Equal(ipv6))
 				Expect(addressSpec.SubnetMask).To(BeEquivalentTo(ipv6Subnet))
 			})
@@ -121,11 +121,11 @@ var _ = Describe("GOSC", func() {
 				Expect(adapter.Gateway).To(BeEmpty())
 				Expect(adapter.SubnetMask).To(BeEmpty())
 
-				Expect(adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+				Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationDhcpIpGenerator{}))
 				ipv6Spec := adapter.IpV6Spec
 				Expect(ipv6Spec).ToNot(BeNil())
 				Expect(ipv6Spec.Ip).To(HaveLen(1))
-				Expect(ipv6Spec.Ip[0]).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpV6Generator{}))
+				Expect(ipv6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationDhcpIpV6Generator{}))
 			})
 		})
 	})

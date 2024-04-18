@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
@@ -25,8 +25,8 @@ func cmTests() {
 			moduleGroup  string
 			moduleSpec   *vmopv1a1.ClusterModuleSpec
 			moduleStatus *vmopv1a1.ClusterModuleStatus
-			clusterRef   types.ManagedObjectReference
-			vmRef        types.ManagedObjectReference
+			clusterRef   vimtypes.ManagedObjectReference
+			vmRef        vimtypes.ManagedObjectReference
 		)
 
 		BeforeEach(func() {

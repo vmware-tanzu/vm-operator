@@ -5,7 +5,7 @@
 package network
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/nsx.vmware.com/v1alpha1"
@@ -29,8 +29,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 )
 
@@ -108,14 +108,14 @@ var (
 //   - Instead of CreateOrUpdate, use CreateOrPatch to lessen the odds of blowing away
 //     any new fields.
 func CreateAndWaitForNetworkInterfaces(
-	vmCtx context.VirtualMachineContext,
-	client ctrlruntime.Client,
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
 	vimClient *vim25.Client,
 	finder *find.Finder,
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaces []vmopv1.VirtualMachineNetworkInterfaceSpec) (NetworkInterfaceResults, error) {
 
-	networkType := pkgconfig.FromContext(vmCtx).NetworkProviderType
+	networkType := pkgcfg.FromContext(vmCtx).NetworkProviderType
 	if networkType == "" {
 		return NetworkInterfaceResults{}, fmt.Errorf("no network provider set")
 	}
@@ -129,13 +129,13 @@ func CreateAndWaitForNetworkInterfaces(
 		var err error
 
 		switch networkType {
-		case pkgconfig.NetworkProviderTypeVDS:
+		case pkgcfg.NetworkProviderTypeVDS:
 			result, err = createNetOPNetworkInterface(vmCtx, client, vimClient, interfaceSpec)
-		case pkgconfig.NetworkProviderTypeNSXT:
+		case pkgcfg.NetworkProviderTypeNSXT:
 			result, err = createNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-		case pkgconfig.NetworkProviderTypeVPC:
+		case pkgcfg.NetworkProviderTypeVPC:
 			result, err = createVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-		case pkgconfig.NetworkProviderTypeNamed:
+		case pkgcfg.NetworkProviderTypeNamed:
 			result, err = createNamedNetworkInterface(vmCtx, finder, interfaceSpec)
 		default:
 			err = fmt.Errorf("unsupported network provider envvar value: %q", networkType)
@@ -218,7 +218,7 @@ func applyInterfaceSpecToResult(
 }
 
 func createNamedNetworkInterface(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	finder *find.Finder,
 	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec) (*NetworkInterfaceResult, error) {
 
@@ -273,8 +273,8 @@ func NetOPCRName(vmName, networkName, interfaceName string, isV1A1 bool) string 
 }
 
 func createNetOPNetworkInterface(
-	vmCtx context.VirtualMachineContext,
-	client ctrlruntime.Client,
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
 	vimClient *vim25.Client,
 	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec) (*NetworkInterfaceResult, error) {
 
@@ -381,17 +381,17 @@ func findNetOPCondition(
 }
 
 func waitForReadyNetworkInterface(
-	vmCtx context.VirtualMachineContext,
-	client ctrlruntime.Client,
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
 	name string) (*netopv1alpha1.NetworkInterface, error) {
 
 	netIf := &netopv1alpha1.NetworkInterface{}
 	netIfKey := types.NamespacedName{Namespace: vmCtx.VM.Namespace, Name: name}
 
 	// TODO: Watch() this type instead.
-	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, RetryTimeout, true, func(_ goctx.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, RetryTimeout, true, func(_ context.Context) (bool, error) {
 		if err := client.Get(vmCtx, netIfKey, netIf); err != nil {
-			return false, ctrlruntime.IgnoreNotFound(err)
+			return false, ctrlclient.IgnoreNotFound(err)
 		}
 
 		cond := findNetOPCondition(netIf, netopv1alpha1.NetworkInterfaceReady)
@@ -438,8 +438,8 @@ func NCPCRName(vmName, networkName, interfaceName string, isV1A1 bool) string {
 }
 
 func createNCPNetworkInterface(
-	vmCtx context.VirtualMachineContext,
-	client ctrlruntime.Client,
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec) (*NetworkInterfaceResult, error) {
@@ -505,7 +505,7 @@ func createNCPNetworkInterface(
 }
 
 func ncpNetIfToResult(
-	ctx goctx.Context,
+	ctx context.Context,
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	vnetIf *ncpv1alpha1.VirtualNetworkInterface) (*NetworkInterfaceResult, error) {
@@ -580,8 +580,8 @@ func VPCCRName(vmName, networkName, interfaceName string) string {
 }
 
 func createVPCNetworkInterface(
-	vmCtx context.VirtualMachineContext,
-	client ctrlruntime.Client,
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec) (*NetworkInterfaceResult, error) {
@@ -641,7 +641,7 @@ func createVPCNetworkInterface(
 }
 
 func vpcSubnetPortToResult(
-	ctx goctx.Context,
+	ctx context.Context,
 	vimClient *vim25.Client,
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	subnetPort *vpcv1alpha1.SubnetPort) (*NetworkInterfaceResult, error) {
@@ -690,17 +690,17 @@ func vpcSubnetPortToResult(
 }
 
 func waitForReadyVPCSubnetPort(
-	vmCtx context.VirtualMachineContext,
-	client ctrlruntime.Client,
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
 	name string) (*vpcv1alpha1.SubnetPort, error) {
 
 	subnetPort := &vpcv1alpha1.SubnetPort{}
 	subnetPortKey := types.NamespacedName{Namespace: vmCtx.VM.Namespace, Name: name}
 
 	// TODO: Watch() this type instead.
-	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, RetryTimeout, true, func(_ goctx.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, RetryTimeout, true, func(_ context.Context) (bool, error) {
 		if err := client.Get(vmCtx, subnetPortKey, subnetPort); err != nil {
-			return false, ctrlruntime.IgnoreNotFound(err)
+			return false, ctrlclient.IgnoreNotFound(err)
 		}
 
 		for _, condition := range subnetPort.Status.Conditions {
@@ -730,17 +730,17 @@ func waitForReadyVPCSubnetPort(
 }
 
 func waitForReadyNCPNetworkInterface(
-	vmCtx context.VirtualMachineContext,
-	client ctrlruntime.Client,
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
 	name string) (*ncpv1alpha1.VirtualNetworkInterface, error) {
 
 	vnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
 	vnetIfKey := types.NamespacedName{Namespace: vmCtx.VM.Namespace, Name: name}
 
 	// TODO: Watch() this type instead.
-	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, RetryTimeout, true, func(_ goctx.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, RetryTimeout, true, func(_ context.Context) (bool, error) {
 		if err := client.Get(vmCtx, vnetIfKey, vnetIf); err != nil {
-			return false, ctrlruntime.IgnoreNotFound(err)
+			return false, ctrlclient.IgnoreNotFound(err)
 		}
 
 		for _, condition := range vnetIf.Status.Conditions {
@@ -798,7 +798,7 @@ func ipCIDRNotation(ip string, mask string, isIPv4 bool) string {
 // when the VM Class ConfigSpec does not have a device entry for a VM Spec network interface,
 // so we need a new device.
 func CreateDefaultEthCard(
-	ctx goctx.Context,
+	ctx context.Context,
 	result *NetworkInterfaceResult) (vimtypes.BaseVirtualDevice, error) {
 
 	// We may not have the backing yet if this is NSX-T. The backing will be resolved after placement
@@ -832,7 +832,7 @@ func CreateDefaultEthCard(
 // ApplyInterfaceResultToVirtualEthCard applies the interface result from the NetOP/NCP
 // provider to an existing Ethernet device from the class ConfigSpec.
 func ApplyInterfaceResultToVirtualEthCard(
-	ctx goctx.Context,
+	ctx context.Context,
 	ethCard *vimtypes.VirtualEthernetCard,
 	result *NetworkInterfaceResult) error {
 

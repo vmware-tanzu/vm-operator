@@ -10,11 +10,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/node"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/secret"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 // AddToManager adds the controllers to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	if err := configmap.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize infra configmap controller")
 	}

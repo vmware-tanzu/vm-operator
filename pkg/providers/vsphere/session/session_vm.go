@@ -7,14 +7,14 @@ import (
 	"fmt"
 
 	"github.com/vmware/govmomi/object"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 func updateVirtualDiskDeviceChanges(
-	vmCtx context.VirtualMachineContext,
-	virtualDisks object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	vmCtx pkgctx.VirtualMachineContext,
+	virtualDisks object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 
 	advanced := vmCtx.VM.Spec.Advanced
 	if advanced == nil {
@@ -26,10 +26,10 @@ func updateVirtualDiskDeviceChanges(
 		return nil, nil
 	}
 
-	var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 	found := false
 	for _, vmDevice := range virtualDisks {
-		vmDisk, ok := vmDevice.(*vimTypes.VirtualDisk)
+		vmDisk, ok := vmDevice.(*vimtypes.VirtualDisk)
 		if !ok {
 			continue
 		}
@@ -47,8 +47,8 @@ func updateVirtualDiskDeviceChanges(
 
 		if vmDisk.CapacityInBytes < newCapacityInBytes {
 			vmDisk.CapacityInBytes = newCapacityInBytes
-			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
-				Operation: vimTypes.VirtualDeviceConfigSpecOperationEdit,
+			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
 				Device:    vmDisk,
 			})
 		}

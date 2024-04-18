@@ -6,19 +6,19 @@ package util_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
-func newPCIPassthroughDevice(profile string) *vimTypes.VirtualPCIPassthrough {
-	var dev vimTypes.VirtualPCIPassthrough
+func newPCIPassthroughDevice(profile string) *vimtypes.VirtualPCIPassthrough {
+	var dev vimtypes.VirtualPCIPassthrough
 	if profile != "" {
-		dev.Backing = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+		dev.Backing = &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
 			Vgpu: profile,
 		}
 	} else {
-		dev.Backing = &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{}
+		dev.Backing = &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{}
 	}
 	return &dev
 }
@@ -26,9 +26,9 @@ func newPCIPassthroughDevice(profile string) *vimTypes.VirtualPCIPassthrough {
 var _ = Describe("SelectDevices", func() {
 
 	var (
-		devIn       []vimTypes.BaseVirtualDevice
-		devOut      []vimTypes.BaseVirtualDevice
-		selectorFns []util.SelectDeviceFn[vimTypes.BaseVirtualDevice]
+		devIn       []vimtypes.BaseVirtualDevice
+		devOut      []vimtypes.BaseVirtualDevice
+		selectorFns []util.SelectDeviceFn[vimtypes.BaseVirtualDevice]
 	)
 
 	JustBeforeEach(func() {
@@ -37,22 +37,22 @@ var _ = Describe("SelectDevices", func() {
 	})
 
 	When("selecting Vmxnet3 NICs with UPTv2 enabled", func() {
-		newUptv2EnabledNIC := func() *vimTypes.VirtualVmxnet3 {
+		newUptv2EnabledNIC := func() *vimtypes.VirtualVmxnet3 {
 			uptv2Enabled := true
-			return &vimTypes.VirtualVmxnet3{Uptv2Enabled: &uptv2Enabled}
+			return &vimtypes.VirtualVmxnet3{Uptv2Enabled: &uptv2Enabled}
 		}
 
 		BeforeEach(func() {
-			devIn = []vimTypes.BaseVirtualDevice{
-				&vimTypes.VirtualPCIPassthrough{},
+			devIn = []vimtypes.BaseVirtualDevice{
+				&vimtypes.VirtualPCIPassthrough{},
 				newUptv2EnabledNIC(),
-				&vimTypes.VirtualSriovEthernetCard{},
-				&vimTypes.VirtualVmxnet3{},
+				&vimtypes.VirtualSriovEthernetCard{},
+				&vimtypes.VirtualVmxnet3{},
 				newUptv2EnabledNIC(),
 			}
-			selectorFns = []util.SelectDeviceFn[vimTypes.BaseVirtualDevice]{
-				func(dev vimTypes.BaseVirtualDevice) bool {
-					nic, ok := dev.(*vimTypes.VirtualVmxnet3)
+			selectorFns = []util.SelectDeviceFn[vimtypes.BaseVirtualDevice]{
+				func(dev vimtypes.BaseVirtualDevice) bool {
+					nic, ok := dev.(*vimtypes.VirtualVmxnet3)
 					return ok && nic.Uptv2Enabled != nil && *nic.Uptv2Enabled
 				},
 			}
@@ -68,16 +68,16 @@ var _ = Describe("SelectDevices", func() {
 var _ = Describe("SelectDevicesByType", func() {
 	Context("selecting a VirtualPCIPassthrough", func() {
 		It("will return only the selected device type", func() {
-			devOut := util.SelectDevicesByType[*vimTypes.VirtualPCIPassthrough](
-				[]vimTypes.BaseVirtualDevice{
-					&vimTypes.VirtualVmxnet3{},
-					&vimTypes.VirtualPCIPassthrough{},
-					&vimTypes.VirtualSriovEthernetCard{},
+			devOut := util.SelectDevicesByType[*vimtypes.VirtualPCIPassthrough](
+				[]vimtypes.BaseVirtualDevice{
+					&vimtypes.VirtualVmxnet3{},
+					&vimtypes.VirtualPCIPassthrough{},
+					&vimtypes.VirtualSriovEthernetCard{},
 				},
 			)
-			Expect(devOut).To(BeAssignableToTypeOf([]*vimTypes.VirtualPCIPassthrough{}))
+			Expect(devOut).To(BeAssignableToTypeOf([]*vimtypes.VirtualPCIPassthrough{}))
 			Expect(devOut).To(HaveLen(1))
-			Expect(devOut[0]).To(BeEquivalentTo(&vimTypes.VirtualPCIPassthrough{}))
+			Expect(devOut[0]).To(BeEquivalentTo(&vimtypes.VirtualPCIPassthrough{}))
 		})
 	})
 })
@@ -95,7 +95,7 @@ var _ = Describe("IsDeviceNvidiaVgpu", func() {
 	})
 	Context("a virtual CD-ROM", func() {
 		It("will return false", func() {
-			Expect(util.IsDeviceNvidiaVgpu(&vimTypes.VirtualCdrom{})).To(BeFalse())
+			Expect(util.IsDeviceNvidiaVgpu(&vimtypes.VirtualCdrom{})).To(BeFalse())
 		})
 	})
 })
@@ -113,7 +113,7 @@ var _ = Describe("IsDeviceDynamicDirectPathIO", func() {
 	})
 	Context("a virtual CD-ROM", func() {
 		It("will return false", func() {
-			Expect(util.IsDeviceDynamicDirectPathIO(&vimTypes.VirtualCdrom{})).To(BeFalse())
+			Expect(util.IsDeviceDynamicDirectPathIO(&vimtypes.VirtualCdrom{})).To(BeFalse())
 		})
 	})
 })
@@ -122,20 +122,20 @@ var _ = Describe("SelectDynamicDirectPathIO", func() {
 	Context("selecting a dynamic direct path I/O device", func() {
 		It("will return only the selected device type", func() {
 			devOut := util.SelectDynamicDirectPathIO(
-				[]vimTypes.BaseVirtualDevice{
+				[]vimtypes.BaseVirtualDevice{
 					newPCIPassthroughDevice(""),
-					&vimTypes.VirtualVmxnet3{},
+					&vimtypes.VirtualVmxnet3{},
 					newPCIPassthroughDevice("profile1"),
-					&vimTypes.VirtualSriovEthernetCard{},
+					&vimtypes.VirtualSriovEthernetCard{},
 					newPCIPassthroughDevice(""),
 					newPCIPassthroughDevice("profile2"),
 				},
 			)
-			Expect(devOut).To(BeAssignableToTypeOf([]*vimTypes.VirtualPCIPassthrough{}))
+			Expect(devOut).To(BeAssignableToTypeOf([]*vimtypes.VirtualPCIPassthrough{}))
 			Expect(devOut).To(HaveLen(2))
-			Expect(devOut[0].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughDynamicBackingInfo{}))
+			Expect(devOut[0].Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{}))
 			Expect(devOut[0]).To(BeEquivalentTo(newPCIPassthroughDevice("")))
-			Expect(devOut[1].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughDynamicBackingInfo{}))
+			Expect(devOut[1].Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{}))
 			Expect(devOut[1]).To(BeEquivalentTo(newPCIPassthroughDevice("")))
 		})
 	})
@@ -144,7 +144,7 @@ var _ = Describe("SelectDynamicDirectPathIO", func() {
 var _ = Describe("HasVirtualPCIPassthroughDeviceChange", func() {
 
 	var (
-		devices []vimTypes.BaseVirtualDeviceConfigSpec
+		devices []vimtypes.BaseVirtualDeviceConfigSpec
 		has     bool
 	)
 
@@ -164,8 +164,8 @@ var _ = Describe("HasVirtualPCIPassthroughDeviceChange", func() {
 
 	Context("non passthrough device", func() {
 		BeforeEach(func() {
-			devices = append(devices, &vimTypes.VirtualDeviceConfigSpec{
-				Device: &vimTypes.VirtualVmxnet3{},
+			devices = append(devices, &vimtypes.VirtualDeviceConfigSpec{
+				Device: &vimtypes.VirtualVmxnet3{},
 			})
 		})
 
@@ -177,10 +177,10 @@ var _ = Describe("HasVirtualPCIPassthroughDeviceChange", func() {
 	Context("vGPU device", func() {
 		BeforeEach(func() {
 			devices = append(devices,
-				&vimTypes.VirtualDeviceConfigSpec{
-					Device: &vimTypes.VirtualVmxnet3{},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Device: &vimtypes.VirtualVmxnet3{},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
 					Device: newPCIPassthroughDevice(""),
 				},
 			)
@@ -194,10 +194,10 @@ var _ = Describe("HasVirtualPCIPassthroughDeviceChange", func() {
 	Context("DDPIO device", func() {
 		BeforeEach(func() {
 			devices = append(devices,
-				&vimTypes.VirtualDeviceConfigSpec{
-					Device: &vimTypes.VirtualVmxnet3{},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Device: &vimtypes.VirtualVmxnet3{},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
 					Device: newPCIPassthroughDevice("profile1"),
 				},
 			)
@@ -214,20 +214,20 @@ var _ = Describe("SelectNvidiaVgpu", func() {
 	Context("selecting Nvidia vGPU devices", func() {
 		It("will return only the selected device type", func() {
 			devOut := util.SelectNvidiaVgpu(
-				[]vimTypes.BaseVirtualDevice{
+				[]vimtypes.BaseVirtualDevice{
 					newPCIPassthroughDevice(""),
-					&vimTypes.VirtualVmxnet3{},
+					&vimtypes.VirtualVmxnet3{},
 					newPCIPassthroughDevice("profile1"),
-					&vimTypes.VirtualSriovEthernetCard{},
+					&vimtypes.VirtualSriovEthernetCard{},
 					newPCIPassthroughDevice(""),
 					newPCIPassthroughDevice("profile2"),
 				},
 			)
-			Expect(devOut).To(BeAssignableToTypeOf([]*vimTypes.VirtualPCIPassthrough{}))
+			Expect(devOut).To(BeAssignableToTypeOf([]*vimtypes.VirtualPCIPassthrough{}))
 			Expect(devOut).To(HaveLen(2))
-			Expect(devOut[0].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
+			Expect(devOut[0].Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthroughVmiopBackingInfo{}))
 			Expect(devOut[0]).To(BeEquivalentTo(newPCIPassthroughDevice("profile1")))
-			Expect(devOut[1].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
+			Expect(devOut[1].Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthroughVmiopBackingInfo{}))
 			Expect(devOut[1]).To(BeEquivalentTo(newPCIPassthroughDevice("profile2")))
 		})
 	})
@@ -236,16 +236,16 @@ var _ = Describe("SelectNvidiaVgpu", func() {
 var _ = Describe("SelectDevicesByTypes", func() {
 
 	var (
-		devIn  []vimTypes.BaseVirtualDevice
-		devOut []vimTypes.BaseVirtualDevice
-		devT2S []vimTypes.BaseVirtualDevice
+		devIn  []vimtypes.BaseVirtualDevice
+		devOut []vimtypes.BaseVirtualDevice
+		devT2S []vimtypes.BaseVirtualDevice
 	)
 
 	BeforeEach(func() {
-		devIn = []vimTypes.BaseVirtualDevice{
-			&vimTypes.VirtualPCIPassthrough{},
-			&vimTypes.VirtualSriovEthernetCard{},
-			&vimTypes.VirtualVmxnet3{},
+		devIn = []vimtypes.BaseVirtualDevice{
+			&vimtypes.VirtualPCIPassthrough{},
+			&vimtypes.VirtualSriovEthernetCard{},
+			&vimtypes.VirtualVmxnet3{},
 		}
 	})
 
@@ -255,34 +255,34 @@ var _ = Describe("SelectDevicesByTypes", func() {
 
 	Context("selecting a VirtualPCIPassthrough", func() {
 		BeforeEach(func() {
-			devT2S = []vimTypes.BaseVirtualDevice{
-				&vimTypes.VirtualPCIPassthrough{},
+			devT2S = []vimtypes.BaseVirtualDevice{
+				&vimtypes.VirtualPCIPassthrough{},
 			}
 		})
 		It("will return only the selected device type(s)", func() {
 			Expect(devOut).To(HaveLen(1))
-			Expect(devOut[0]).To(BeEquivalentTo(&vimTypes.VirtualPCIPassthrough{}))
+			Expect(devOut[0]).To(BeEquivalentTo(&vimtypes.VirtualPCIPassthrough{}))
 		})
 	})
 
 	Context("selecting a VirtualSriovEthernetCard and VirtualVmxnet3", func() {
 		BeforeEach(func() {
-			devT2S = []vimTypes.BaseVirtualDevice{
-				&vimTypes.VirtualSriovEthernetCard{},
-				&vimTypes.VirtualVmxnet3{},
+			devT2S = []vimtypes.BaseVirtualDevice{
+				&vimtypes.VirtualSriovEthernetCard{},
+				&vimtypes.VirtualVmxnet3{},
 			}
 		})
 		It("will return only the selected device type(s)", func() {
 			Expect(devOut).To(HaveLen(2))
-			Expect(devOut[0]).To(BeEquivalentTo(&vimTypes.VirtualSriovEthernetCard{}))
-			Expect(devOut[1]).To(BeEquivalentTo(&vimTypes.VirtualVmxnet3{}))
+			Expect(devOut[0]).To(BeEquivalentTo(&vimtypes.VirtualSriovEthernetCard{}))
+			Expect(devOut[1]).To(BeEquivalentTo(&vimtypes.VirtualVmxnet3{}))
 		})
 	})
 
 	Context("selecting a type of device not in the ConfigSpec", func() {
 		BeforeEach(func() {
-			devT2S = []vimTypes.BaseVirtualDevice{
-				&vimTypes.VirtualDisk{},
+			devT2S = []vimtypes.BaseVirtualDevice{
+				&vimtypes.VirtualDisk{},
 			}
 		})
 		It("will not return any devices", func() {

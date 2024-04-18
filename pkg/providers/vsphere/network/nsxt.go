@@ -4,7 +4,7 @@
 package network
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
 	"github.com/vmware/govmomi/object"
@@ -13,14 +13,14 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 // ResolveBackingPostPlacement fixes up the backings where we did not know the CCR until after
 // placement. This should be called if CreateAndWaitForNetworkInterfaces() was called with a nil
 // clusterMoRef. Returns true if a backing was resolved, so the ConfigSpec needs to be updated.
 func ResolveBackingPostPlacement(
-	ctx goctx.Context,
+	ctx context.Context,
 	vimClient *vim25.Client,
 	clusterMoRef vimtypes.ManagedObjectReference,
 	results *NetworkInterfaceResults) (bool, error) {
@@ -29,7 +29,7 @@ func ResolveBackingPostPlacement(
 		return false, nil
 	}
 
-	networkType := pkgconfig.FromContext(ctx).NetworkProviderType
+	networkType := pkgcfg.FromContext(ctx).NetworkProviderType
 	if networkType == "" {
 		return false, fmt.Errorf("no network provider set")
 	}
@@ -46,13 +46,13 @@ func ResolveBackingPostPlacement(
 		var err error
 
 		switch networkType {
-		case pkgconfig.NetworkProviderTypeNSXT:
+		case pkgcfg.NetworkProviderTypeNSXT:
 			backing, err = searchNsxtNetworkReference(ctx, ccr, results.Results[idx].NetworkID)
 			if err != nil {
 				err = fmt.Errorf("post placement NSX-T backing fixup failed: %w", err)
 			}
 		// VPC is an NSX-T construct that is attached to an NSX-T Project.
-		case pkgconfig.NetworkProviderTypeVPC:
+		case pkgcfg.NetworkProviderTypeVPC:
 			backing, err = searchNsxtNetworkReference(ctx, ccr, results.Results[idx].NetworkID)
 			if err != nil {
 				err = fmt.Errorf("post placement NSX-T-VPC backing fixup failed: %w", err)
@@ -74,7 +74,7 @@ func ResolveBackingPostPlacement(
 
 // searchNsxtNetworkReference takes in NSX-T LogicalSwitchUUID and returns the reference of the network.
 func searchNsxtNetworkReference(
-	ctx goctx.Context,
+	ctx context.Context,
 	ccr *object.ClusterComputeResource,
 	networkID string) (object.NetworkReference, error) {
 

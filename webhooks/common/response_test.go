@@ -16,7 +16,7 @@ import (
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -31,11 +31,11 @@ var _ = Describe(
 
 		var (
 			gr  = schema.GroupResource{Group: vmopv1a1.SchemeGroupVersion.Group, Resource: "VirtualMachine"}
-			ctx *context.WebhookRequestContext
+			ctx *pkgctx.WebhookRequestContext
 		)
 
 		BeforeEach(func() {
-			ctx = &context.WebhookRequestContext{
+			ctx = &pkgctx.WebhookRequestContext{
 				Logger: ctrllog.Log.WithName("validate-response"),
 			}
 		})

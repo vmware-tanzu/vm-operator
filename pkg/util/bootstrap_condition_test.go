@@ -7,14 +7,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	var (
-		configInfo *vimTypes.VirtualMachineConfigInfo
+		configInfo *vimtypes.VirtualMachineConfigInfo
 		status     bool
 		reason     string
 		msg        string
@@ -43,7 +43,7 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("extraConfig is zero-length", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{}
+			configInfo = &vimtypes.VirtualMachineConfigInfo{}
 		})
 		It("should return status=false, reason=\"\", msg=\"\", ok=false", func() {
 			assertResult(false, "", "", false)
@@ -51,9 +51,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("extraConfig is missing guestinfo key", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   "key1",
 						Value: "val1",
 					},
@@ -66,13 +66,13 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("guestinfo val is empty", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   "key1",
 						Value: "val1",
 					},
-					&vimTypes.OptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "",
 					},
@@ -85,9 +85,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is 1", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "1",
 					},
@@ -100,9 +100,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is TRUE", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "TRUE",
 					},
@@ -115,9 +115,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is true", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "true",
 					},
@@ -130,9 +130,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is true with a reason", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "true,my-reason",
 					},
@@ -145,9 +145,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is true with a reason and message", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "true,my-reason,my,comma,delimited,message",
 					},
@@ -160,9 +160,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is true with a reason and message with leading or trailing whitespace", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "  true ,  my-reason ,   my,comma,delimited,message ",
 					},
@@ -175,9 +175,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is empty with empty reason and message", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "  ,,  ",
 					},
@@ -190,9 +190,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is 0", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "0",
 					},
@@ -205,9 +205,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is FALSE", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "FALSE",
 					},
@@ -220,9 +220,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is false", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "false",
 					},
@@ -235,9 +235,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is false with a reason", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "false,my-reason",
 					},
@@ -250,9 +250,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is empty with a reason", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "  ,my-reason",
 					},
@@ -265,9 +265,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is false with a reason and message", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "false,my-reason,my,comma,delimited,message",
 					},
@@ -280,9 +280,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is false with a reason and message with leading or trailing whitespace", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "  false ,  my-reason ,   my,comma,delimited,message ",
 					},
@@ -295,9 +295,9 @@ var _ = Describe("GetBootstrapConditionValuesTest", func() {
 	})
 	When("status is empty with a reason and message with leading or trailing whitespace", func() {
 		BeforeEach(func() {
-			configInfo = &vimTypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimTypes.BaseOptionValue{
-					&vimTypes.OptionValue{
+			configInfo = &vimtypes.VirtualMachineConfigInfo{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   util.GuestInfoBootstrapCondition,
 						Value: "   ,  my-reason ,   my,comma,delimited,message ",
 					},

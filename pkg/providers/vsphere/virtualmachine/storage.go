@@ -4,17 +4,17 @@
 package virtualmachine
 
 import (
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"
 )
 
 // GetDefaultDiskProvisioningType gets the default disk provisioning type specified for the VM.
 func GetDefaultDiskProvisioningType(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	storageProfileID string) (string, error) {
 
@@ -25,11 +25,11 @@ func GetDefaultDiskProvisioningType(
 
 	switch defaultProvMode {
 	case vmopv1.VirtualMachineVolumeProvisioningModeThin:
-		return string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
+		return string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
 	case vmopv1.VirtualMachineVolumeProvisioningModeThick:
-		return string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThick), nil
+		return string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick), nil
 	case vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero:
-		return string(types.OvfCreateImportSpecParamsDiskProvisioningTypeEagerZeroedThick), nil
+		return string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeEagerZeroedThick), nil
 	}
 
 	if storageProfileID != "" {
@@ -42,5 +42,5 @@ func GetDefaultDiskProvisioningType(
 		}
 	}
 
-	return string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
+	return string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
 }

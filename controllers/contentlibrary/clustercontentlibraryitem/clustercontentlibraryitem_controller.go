@@ -4,7 +4,7 @@
 package clustercontentlibraryitem
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -24,8 +24,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -33,7 +33,7 @@ import (
 )
 
 // AddToManager adds this package's controller to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		cclItemType     = &imgregv1a1.ClusterContentLibraryItem{}
 		cclItemTypeName = reflect.TypeOf(cclItemType).Elem().Name()
@@ -59,7 +59,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
-	ctx goctx.Context,
+	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
@@ -79,7 +79,7 @@ func NewReconciler(
 // by creating/updating the corresponding VM-Service's ClusterVirtualMachineImage resource.
 type Reconciler struct {
 	client.Client
-	Context    goctx.Context
+	Context    context.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
@@ -91,8 +91,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages/status,verbs=get;update;patch
 
-func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	ctx = pkgconfig.JoinContext(ctx, r.Context)
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	logger := r.Logger.WithValues("cclItemName", req.Name)
 	logger.Info("Reconciling ClusterContentLibraryItem")
@@ -109,7 +109,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	}
 	logger = logger.WithValues("cvmiName", cvmiName)
 
-	cclItemCtx := &context.ClusterContentLibraryItemContext{
+	cclItemCtx := &pkgctx.ClusterContentLibraryItemContext{
 		Context:      ctx,
 		Logger:       logger,
 		CCLItem:      cclItem,
@@ -127,7 +127,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 }
 
 // ReconcileDelete reconciles a deletion for a ClusterContentLibraryItem resource.
-func (r *Reconciler) ReconcileDelete(ctx *context.ClusterContentLibraryItemContext) error {
+func (r *Reconciler) ReconcileDelete(ctx *pkgctx.ClusterContentLibraryItemContext) error {
 	if controllerutil.ContainsFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer) {
 		r.Metrics.DeleteMetrics(ctx.Logger, ctx.ImageObjName, "")
 		controllerutil.RemoveFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer)
@@ -139,7 +139,7 @@ func (r *Reconciler) ReconcileDelete(ctx *context.ClusterContentLibraryItemConte
 
 // ReconcileNormal reconciles a ClusterContentLibraryItem resource by creating or
 // updating the corresponding ClusterVirtualMachineImage resource.
-func (r *Reconciler) ReconcileNormal(ctx *context.ClusterContentLibraryItemContext) error {
+func (r *Reconciler) ReconcileNormal(ctx *pkgctx.ClusterContentLibraryItemContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer) {
 		// The finalizer must be present before proceeding in order to ensure ReconcileDelete() will be called.
 		// Return immediately after here to update the object and then we'll proceed on the next reconciliation.
@@ -238,7 +238,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.ClusterContentLibraryItemConte
 
 // setUpCVMIFromCCLItem sets up the ClusterVirtualMachineImage fields that
 // are retrievable from the given ClusterContentLibraryItem resource.
-func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItemContext) error {
+func (r *Reconciler) setUpCVMIFromCCLItem(ctx *pkgctx.ClusterContentLibraryItemContext) error {
 	cclItem := ctx.CCLItem
 	cvmi := ctx.CVMI
 
@@ -254,7 +254,7 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItem
 	}
 
 	labelKeyPrefix := utils.TKGServiceTypeLabelKeyPrefix
-	if pkgconfig.FromContext(ctx).Features.TKGMultipleCL {
+	if pkgcfg.FromContext(ctx).Features.TKGMultipleCL {
 		labelKeyPrefix = utils.MultipleCLServiceTypeLabelKeyPrefix
 
 		// Reconcile the labels between CCLItem and CVMI
@@ -290,7 +290,7 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItem
 
 // syncImageContent syncs the ClusterVirtualMachineImage content from the provider.
 // It skips syncing if the image content is already up-to-date.
-func (r *Reconciler) syncImageContent(ctx *context.ClusterContentLibraryItemContext) error {
+func (r *Reconciler) syncImageContent(ctx *pkgctx.ClusterContentLibraryItemContext) error {
 	cclItem := ctx.CCLItem
 	cvmi := ctx.CVMI
 	latestVersion := cclItem.Status.ContentVersion

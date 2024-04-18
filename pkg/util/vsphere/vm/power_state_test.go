@@ -16,7 +16,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	vmutilInternal "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm/internal"
@@ -70,27 +70,27 @@ func powerStateTests() {
 
 	Context("ParsePowerState", func() {
 		It("should return empty string for unknown power state", func() {
-			Expect(vmutil.ParsePowerState("")).To(Equal(types.VirtualMachinePowerState("")))
-			Expect(vmutil.ParsePowerState("fake")).To(Equal(types.VirtualMachinePowerState("")))
+			Expect(vmutil.ParsePowerState("")).To(Equal(vimtypes.VirtualMachinePowerState("")))
+			Expect(vmutil.ParsePowerState("fake")).To(Equal(vimtypes.VirtualMachinePowerState("")))
 		})
 		It("should parse variants of poweredOn", func() {
-			Expect(vmutil.ParsePowerState("poweredOn")).To(Equal(types.VirtualMachinePowerStatePoweredOn))
-			Expect(vmutil.ParsePowerState("PoweredOn")).To(Equal(types.VirtualMachinePowerStatePoweredOn))
-			Expect(vmutil.ParsePowerState("Poweredon")).To(Equal(types.VirtualMachinePowerStatePoweredOn))
-			Expect(vmutil.ParsePowerState("poweredon")).To(Equal(types.VirtualMachinePowerStatePoweredOn))
-			Expect(vmutil.ParsePowerState("POWEREDON")).To(Equal(types.VirtualMachinePowerStatePoweredOn))
+			Expect(vmutil.ParsePowerState("poweredOn")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+			Expect(vmutil.ParsePowerState("PoweredOn")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+			Expect(vmutil.ParsePowerState("Poweredon")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+			Expect(vmutil.ParsePowerState("poweredon")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+			Expect(vmutil.ParsePowerState("POWEREDON")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 		})
 		It("should parse variants of poweredOff", func() {
-			Expect(vmutil.ParsePowerState("poweredOff")).To(Equal(types.VirtualMachinePowerStatePoweredOff))
-			Expect(vmutil.ParsePowerState("PoweredOff")).To(Equal(types.VirtualMachinePowerStatePoweredOff))
-			Expect(vmutil.ParsePowerState("Poweredoff")).To(Equal(types.VirtualMachinePowerStatePoweredOff))
-			Expect(vmutil.ParsePowerState("poweredoff")).To(Equal(types.VirtualMachinePowerStatePoweredOff))
-			Expect(vmutil.ParsePowerState("POWEREDOFF")).To(Equal(types.VirtualMachinePowerStatePoweredOff))
+			Expect(vmutil.ParsePowerState("poweredOff")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+			Expect(vmutil.ParsePowerState("PoweredOff")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+			Expect(vmutil.ParsePowerState("Poweredoff")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+			Expect(vmutil.ParsePowerState("poweredoff")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+			Expect(vmutil.ParsePowerState("POWEREDOFF")).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 		})
 		It("should parse variants of suspended", func() {
-			Expect(vmutil.ParsePowerState("suspended")).To(Equal(types.VirtualMachinePowerStateSuspended))
-			Expect(vmutil.ParsePowerState("Suspended")).To(Equal(types.VirtualMachinePowerStateSuspended))
-			Expect(vmutil.ParsePowerState("SUSPENDED")).To(Equal(types.VirtualMachinePowerStateSuspended))
+			Expect(vmutil.ParsePowerState("suspended")).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
+			Expect(vmutil.ParsePowerState("Suspended")).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
+			Expect(vmutil.ParsePowerState("SUSPENDED")).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
 		})
 	})
 
@@ -103,8 +103,8 @@ func powerStateTests() {
 			expectedResult                    vmutil.PowerOpResult
 			fetchProperties                   bool
 			powerOpBehavior                   vmutil.PowerOpBehavior
-			initialPowerState                 types.VirtualMachinePowerState
-			desiredPowerState                 types.VirtualMachinePowerState
+			initialPowerState                 vimtypes.VirtualMachinePowerState
+			desiredPowerState                 vimtypes.VirtualMachinePowerState
 			skipPostSetPowerStateVerification bool
 		)
 
@@ -116,17 +116,17 @@ func powerStateTests() {
 			mgdObj = vmutil.ManagedObjectFromMoRef(vmList[0].Reference())
 			simulator.TaskDelay.MethodDelay = map[string]int{}
 			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)
-			expectedResult = 0                                          // default
-			expectedErr = nil                                           // default
-			fetchProperties = true                                      // default
-			initialPowerState = types.VirtualMachinePowerStatePoweredOn // default
+			expectedResult = 0                                             // default
+			expectedErr = nil                                              // default
+			fetchProperties = true                                         // default
+			initialPowerState = vimtypes.VirtualMachinePowerStatePoweredOn // default
 		})
 
 		JustBeforeEach(func() {
 			var (
 				err                error
 				result             vmutil.PowerOpResult
-				observedPowerState types.VirtualMachinePowerState
+				observedPowerState vimtypes.VirtualMachinePowerState
 			)
 
 			if obj != nil && initialPowerState != "" {
@@ -134,11 +134,11 @@ func powerStateTests() {
 				Expect(err).ToNot(HaveOccurred())
 				if observedPowerState != initialPowerState {
 					switch initialPowerState {
-					case types.VirtualMachinePowerStatePoweredOff:
+					case vimtypes.VirtualMachinePowerStatePoweredOff:
 						_, err = obj.PowerOff(ctx)
-					case types.VirtualMachinePowerStatePoweredOn:
+					case vimtypes.VirtualMachinePowerStatePoweredOn:
 						_, err = obj.PowerOn(ctx)
-					case types.VirtualMachinePowerStateSuspended:
+					case vimtypes.VirtualMachinePowerStateSuspended:
 						_, err = obj.Suspend(ctx)
 					}
 					Expect(err).ToNot(HaveOccurred())
@@ -181,7 +181,7 @@ func powerStateTests() {
 
 		When("The VM does not exist", func() {
 			BeforeEach(func() {
-				desiredPowerState = types.VirtualMachinePowerStatePoweredOff
+				desiredPowerState = vimtypes.VirtualMachinePowerStatePoweredOff
 				powerOpBehavior = vmutil.PowerOpBehaviorHard
 				mgdObj.Self.Value = doesNotExist
 				initialPowerState = ""
@@ -189,7 +189,7 @@ func powerStateTests() {
 			})
 			Context("and the current power state is cached in the managed object", func() {
 				BeforeEach(func() {
-					mgdObj.Summary.Runtime.PowerState = types.VirtualMachinePowerStatePoweredOn
+					mgdObj.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
 				})
 				Context("and fetchProperties is true", func() {
 					It("a power op should return an error", func() {})
@@ -220,12 +220,12 @@ func powerStateTests() {
 
 		When("Powering on a VM", func() {
 			BeforeEach(func() {
-				desiredPowerState = types.VirtualMachinePowerStatePoweredOn
+				desiredPowerState = vimtypes.VirtualMachinePowerStatePoweredOn
 				expectedResult = vmutil.PowerOpResultChanged
 			})
 			Context("that is powered off", func() {
 				BeforeEach(func() {
-					initialPowerState = types.VirtualMachinePowerStatePoweredOff
+					initialPowerState = vimtypes.VirtualMachinePowerStatePoweredOff
 				})
 				Context("and the correct power state is cached in the managed object", func() {
 					BeforeEach(func() {
@@ -266,7 +266,7 @@ func powerStateTests() {
 			})
 			Context("that is suspended", func() {
 				BeforeEach(func() {
-					initialPowerState = types.VirtualMachinePowerStateSuspended
+					initialPowerState = vimtypes.VirtualMachinePowerStateSuspended
 				})
 				Context("and the correct power state is cached in the managed object", func() {
 					BeforeEach(func() {
@@ -309,11 +309,11 @@ func powerStateTests() {
 
 		When("Powering off a VM", func() {
 			BeforeEach(func() {
-				desiredPowerState = types.VirtualMachinePowerStatePoweredOff
+				desiredPowerState = vimtypes.VirtualMachinePowerStatePoweredOff
 			})
 			Context("that is powered on", func() {
 				BeforeEach(func() {
-					initialPowerState = types.VirtualMachinePowerStatePoweredOn
+					initialPowerState = vimtypes.VirtualMachinePowerStatePoweredOn
 				})
 				Context("using hard off", func() {
 					BeforeEach(func() {
@@ -453,7 +453,7 @@ func powerStateTests() {
 			})
 			Context("that is suspended", func() {
 				BeforeEach(func() {
-					initialPowerState = types.VirtualMachinePowerStateSuspended
+					initialPowerState = vimtypes.VirtualMachinePowerStateSuspended
 				})
 				Context("using hard off", func() {
 					BeforeEach(func() {
@@ -544,7 +544,7 @@ func powerStateTests() {
 
 		When("Suspending a VM", func() {
 			BeforeEach(func() {
-				desiredPowerState = types.VirtualMachinePowerStateSuspended
+				desiredPowerState = vimtypes.VirtualMachinePowerStateSuspended
 			})
 			Context("using hard standby", func() {
 				BeforeEach(func() {
@@ -691,11 +691,11 @@ func powerStateTests() {
 			obj                    *object.VirtualMachine
 			expectedErr            error
 			expectedResult         vmutil.PowerOpResult
-			expectedPowerState     types.VirtualMachinePowerState
+			expectedPowerState     vimtypes.VirtualMachinePowerState
 			fetchProperties        bool
 			desiredLastRestartTime time.Time
 			powerOpBehavior        vmutil.PowerOpBehavior
-			initialPowerState      types.VirtualMachinePowerState
+			initialPowerState      vimtypes.VirtualMachinePowerState
 			initialLastRestartTime *time.Time
 			mutateContextFn        func(context.Context) context.Context
 		)
@@ -720,9 +720,9 @@ func powerStateTests() {
 			obj *object.VirtualMachine,
 			lastRestartTime time.Time) {
 
-			task, err := obj.Reconfigure(ctx, types.VirtualMachineConfigSpec{
-				ExtraConfig: []types.BaseOptionValue{
-					&types.OptionValue{
+			task, err := obj.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+				ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
 						Key:   vmutil.ExtraConfigKeyLastRestartTime,
 						Value: strconv.FormatInt(lastRestartTime.UnixNano(), 10),
 					},
@@ -742,12 +742,12 @@ func powerStateTests() {
 			mgdObj = vmutil.ManagedObjectFromMoRef(vmList[0].Reference())
 			simulator.TaskDelay.MethodDelay = map[string]int{}
 			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)
-			expectedPowerState = types.VirtualMachinePowerStatePoweredOn // default
-			expectedResult = 0                                           // default
-			expectedErr = nil                                            // default
-			fetchProperties = true                                       // default
-			initialPowerState = types.VirtualMachinePowerStatePoweredOn  // default
-			initialLastRestartTime = nil                                 // default
+			expectedPowerState = vimtypes.VirtualMachinePowerStatePoweredOn // default
+			expectedResult = 0                                              // default
+			expectedErr = nil                                               // default
+			fetchProperties = true                                          // default
+			initialPowerState = vimtypes.VirtualMachinePowerStatePoweredOn  // default
+			initialLastRestartTime = nil                                    // default
 			mutateContextFn = func(ctx context.Context) context.Context {
 				return ctx
 			}
@@ -757,7 +757,7 @@ func powerStateTests() {
 			var (
 				err                error
 				result             vmutil.PowerOpResult
-				observedPowerState types.VirtualMachinePowerState
+				observedPowerState vimtypes.VirtualMachinePowerState
 			)
 
 			if obj != nil && initialLastRestartTime != nil {
@@ -771,11 +771,11 @@ func powerStateTests() {
 				Expect(err).ToNot(HaveOccurred())
 				if observedPowerState != initialPowerState {
 					switch initialPowerState {
-					case types.VirtualMachinePowerStatePoweredOff:
+					case vimtypes.VirtualMachinePowerStatePoweredOff:
 						_, err = obj.PowerOff(ctx)
-					case types.VirtualMachinePowerStatePoweredOn:
+					case vimtypes.VirtualMachinePowerStatePoweredOn:
 						_, err = obj.PowerOn(ctx)
-					case types.VirtualMachinePowerStateSuspended:
+					case vimtypes.VirtualMachinePowerStateSuspended:
 						_, err = obj.Suspend(ctx)
 					}
 					Expect(err).ToNot(HaveOccurred())
@@ -837,7 +837,7 @@ func powerStateTests() {
 			})
 			Context("and the current power state is cached in the managed object", func() {
 				BeforeEach(func() {
-					mgdObj.Summary.Runtime.PowerState = types.VirtualMachinePowerStatePoweredOn
+					mgdObj.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
 				})
 				Context("and fetchProperties is true", func() {
 					It("a power op should return an error", func() {})
@@ -865,9 +865,9 @@ func powerStateTests() {
 			})
 			Context("and the lastRestartTime is cached in the managed object", func() {
 				BeforeEach(func() {
-					mgdObj.Config = &types.VirtualMachineConfigInfo{
-						ExtraConfig: []types.BaseOptionValue{
-							&types.OptionValue{
+					mgdObj.Config = &vimtypes.VirtualMachineConfigInfo{
+						ExtraConfig: []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
 								Key:   vmutil.ExtraConfigKeyLastRestartTime,
 								Value: strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
 							},
@@ -900,10 +900,10 @@ func powerStateTests() {
 			})
 			Context("and the current power state and lastRestartTime are both cached in the managed object", func() {
 				BeforeEach(func() {
-					mgdObj.Summary.Runtime.PowerState = types.VirtualMachinePowerStatePoweredOn
-					mgdObj.Config = &types.VirtualMachineConfigInfo{
-						ExtraConfig: []types.BaseOptionValue{
-							&types.OptionValue{
+					mgdObj.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+					mgdObj.Config = &vimtypes.VirtualMachineConfigInfo{
+						ExtraConfig: []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
 								Key:   vmutil.ExtraConfigKeyLastRestartTime,
 								Value: strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
 							},
@@ -984,11 +984,11 @@ func powerStateTests() {
 				Context("with tools running", func() {
 					BeforeEach(func() {
 						expectedResult = vmutil.PowerOpResultChangedSoft
-						task, err := obj.Reconfigure(ctx, types.VirtualMachineConfigSpec{
-							ExtraConfig: []types.BaseOptionValue{
-								&types.OptionValue{
+						task, err := obj.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+							ExtraConfig: []vimtypes.BaseOptionValue{
+								&vimtypes.OptionValue{
 									Key:   "SET.guest.toolsRunningStatus",
-									Value: types.VirtualMachineToolsRunningStatusGuestToolsRunning,
+									Value: vimtypes.VirtualMachineToolsRunningStatusGuestToolsRunning,
 								},
 							},
 						})
@@ -1011,11 +1011,11 @@ func powerStateTests() {
 				Context("with tools running", func() {
 					BeforeEach(func() {
 						expectedResult = vmutil.PowerOpResultChangedSoft
-						task, err := obj.Reconfigure(ctx, types.VirtualMachineConfigSpec{
-							ExtraConfig: []types.BaseOptionValue{
-								&types.OptionValue{
+						task, err := obj.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+							ExtraConfig: []vimtypes.BaseOptionValue{
+								&vimtypes.OptionValue{
 									Key:   "SET.guest.toolsRunningStatus",
-									Value: types.VirtualMachineToolsRunningStatusGuestToolsRunning,
+									Value: vimtypes.VirtualMachineToolsRunningStatusGuestToolsRunning,
 								},
 							},
 						})

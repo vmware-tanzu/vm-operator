@@ -4,7 +4,7 @@
 package contentlibraryitem_test
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -23,7 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -49,7 +49,7 @@ func unitTestsReconcile() {
 		fakeVMProvider *providerfake.VMProvider
 
 		clItem    *imgregv1a1.ContentLibraryItem
-		clItemCtx *context.ContentLibraryItemContext
+		clItemCtx *pkgctx.ContentLibraryItemContext
 	)
 
 	BeforeEach(func() {
@@ -65,7 +65,7 @@ func unitTestsReconcile() {
 
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 
-		fakeVMProvider.SyncVirtualMachineImageFn = func(_ goctx.Context, _, vmiObj client.Object) error {
+		fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmiObj client.Object) error {
 			vmi := vmiObj.(*vmopv1.VirtualMachineImage)
 
 			// Use Firmware field to verify the provider function is called.
@@ -83,7 +83,7 @@ func unitTestsReconcile() {
 		imageName, err := utils.GetImageFieldNameFromItem(clItem.Name)
 		Expect(err).ToNot(HaveOccurred())
 
-		clItemCtx = &context.ContentLibraryItemContext{
+		clItemCtx = &pkgctx.ContentLibraryItemContext{
 			Context:      ctx,
 			Logger:       ctx.Logger,
 			CLItem:       clItem,
@@ -154,7 +154,7 @@ func unitTestsReconcile() {
 		When("SyncVirtualMachineImage returns an error", func() {
 
 			BeforeEach(func() {
-				fakeVMProvider.SyncVirtualMachineImageFn = func(_ goctx.Context, _, _ client.Object) error {
+				fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, _ client.Object) error {
 					return fmt.Errorf("sync-error")
 				}
 			})
@@ -248,7 +248,7 @@ func unitTestsReconcile() {
 				})
 
 				It("should skip updating the VirtualMachineImage with library item", func() {
-					fakeVMProvider.SyncVirtualMachineImageFn = func(_ goctx.Context, _, _ client.Object) error {
+					fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, _ client.Object) error {
 						// Should not be called since the content versions match.
 						return fmt.Errorf("sync-error")
 					}
@@ -275,7 +275,7 @@ func unitTestsReconcile() {
 
 func getVMI(
 	ctx *builder.UnitTestContextForController,
-	clItemCtx *context.ContentLibraryItemContext) *vmopv1.VirtualMachineImage {
+	clItemCtx *pkgctx.ContentLibraryItemContext) *vmopv1.VirtualMachineImage {
 
 	vmi := &vmopv1.VirtualMachineImage{}
 	Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: clItemCtx.ImageObjName, Namespace: clItemCtx.CLItem.Namespace}, vmi)).To(Succeed())

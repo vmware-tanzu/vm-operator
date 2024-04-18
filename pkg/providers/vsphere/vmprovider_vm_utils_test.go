@@ -18,8 +18,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -31,14 +31,14 @@ func vmUtilTests() {
 		k8sClient   client.Client
 		initObjects []client.Object
 
-		vmCtx context.VirtualMachineContext
+		vmCtx pkgctx.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
 		vm := builder.DummyBasicVirtualMachineA2("test-vm", "dummy-ns")
 
-		vmCtx = context.VirtualMachineContext{
-			Context: pkgconfig.WithConfig(pkgconfig.Config{MaxDeployThreadsOnProvider: 16}),
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: pkgcfg.WithConfig(pkgcfg.Config{MaxDeployThreadsOnProvider: 16}),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,
 		}

@@ -4,7 +4,7 @@
 package worker
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"testing"
 
@@ -20,7 +20,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	fakeprobe "github.com/vmware-tanzu/vm-operator/pkg/prober/fake/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -33,7 +33,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 		vm    *vmopv1.VirtualMachine
 		vmKey client.ObjectKey
-		ctx   *context.ProbeContext
+		ctx   *proberctx.ProbeContext
 
 		fakeClient         client.Client
 		fakeRecorder       record.Recorder
@@ -84,8 +84,8 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 		BeforeEach(func() {
 			vm.Spec.ReadinessProbe = getVirtualMachineReadinessTCPProbe(10001)
-			Expect(fakeClient.Create(goctx.Background(), vm)).Should(Succeed())
-			Expect(fakeClient.Get(goctx.Background(), vmKey, vm)).Should(Succeed())
+			Expect(fakeClient.Create(context.Background(), vm)).Should(Succeed())
+			Expect(fakeClient.Get(context.Background(), vmKey, vm)).Should(Succeed())
 		})
 
 		JustBeforeEach(func() {
@@ -97,7 +97,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 		When("new ReadyCondition is in a transition", func() {
 			It("Should update ReadyCondition when probe succeeds", func() {
-				fakeTCPProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
+				fakeTCPProbe.ProbeFn = func(ctx *proberctx.ProbeContext) (probe.Result, error) {
 					return probe.Success, nil
 				}
 
@@ -115,7 +115,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 			})
 
 			It("Should update ReadyCondition when probe fails", func() {
-				fakeTCPProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
+				fakeTCPProbe.ProbeFn = func(ctx *proberctx.ProbeContext) (probe.Result, error) {
 					return probe.Failure, nil
 				}
 
@@ -144,7 +144,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 				It("Shouldn't update the Condition in status", func() {
 
-					fakeTCPProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
+					fakeTCPProbe.ProbeFn = func(ctx *proberctx.ProbeContext) (probe.Result, error) {
 						return probe.Success, nil
 					}
 
@@ -164,8 +164,8 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 		BeforeEach(func() {
 			vm.Spec.ReadinessProbe = getVirtualMachineHeartbeatProbe()
-			Expect(fakeClient.Create(goctx.Background(), vm)).Should(Succeed())
-			Expect(fakeClient.Get(goctx.Background(), vmKey, vm)).Should(Succeed())
+			Expect(fakeClient.Create(context.Background(), vm)).Should(Succeed())
+			Expect(fakeClient.Get(context.Background(), vmKey, vm)).Should(Succeed())
 			var err error
 			ctx, err = testWorker.CreateProbeContext(vm)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -173,7 +173,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 		// Just need to test for probe selection.
 		It("Should update ReadyCondition when probe fails", func() {
-			fakeHeartbeatProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
+			fakeHeartbeatProbe.ProbeFn = func(ctx *proberctx.ProbeContext) (probe.Result, error) {
 				return probe.Failure, fmt.Errorf("heartbeat error")
 			}
 

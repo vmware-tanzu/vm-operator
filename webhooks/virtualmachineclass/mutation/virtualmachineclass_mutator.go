@@ -18,7 +18,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 // -kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclass/status,verbs=get
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewMutatingWebhook(ctx, mgr, webHookName, NewMutator(nil))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create mutation webhook")
@@ -51,7 +51,7 @@ type mutator struct {
 	converter runtime.UnstructuredConverter
 }
 
-func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
+func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	modified, err := m.vmClassFromUnstructured(ctx.Obj)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)

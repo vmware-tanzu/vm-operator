@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // VSphereVMProviderCredentials wraps the data needed to login to vCenter.
@@ -19,7 +19,7 @@ type VSphereVMProviderCredentials struct {
 	Password string
 }
 
-func GetProviderCredentials(client ctrlruntime.Client, namespace, secretName string) (*VSphereVMProviderCredentials, error) {
+func GetProviderCredentials(client ctrlclient.Client, namespace, secretName string) (*VSphereVMProviderCredentials, error) {
 	secret := &corev1.Secret{}
 	secretKey := types.NamespacedName{Namespace: namespace, Name: secretName}
 	if err := client.Get(context.Background(), secretKey, secret); err != nil {

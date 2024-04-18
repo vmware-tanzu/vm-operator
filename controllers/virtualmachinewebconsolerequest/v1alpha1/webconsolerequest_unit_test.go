@@ -18,7 +18,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -43,7 +43,7 @@ func unitTestsReconcile() {
 		fakeVMProvider *providerfake.VMProvider
 
 		reconciler *webconsolerequest.Reconciler
-		wcrCtx     *vmopContext.WebConsoleRequestContext
+		wcrCtx     *pkgctx.WebConsoleRequestContext
 		wcr        *vmopv1a1.WebConsoleRequest
 		vm         *vmopv1a1.VirtualMachine
 		proxySvc   *corev1.Service
@@ -94,7 +94,7 @@ func unitTestsReconcile() {
 		)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 
-		wcrCtx = &vmopContext.WebConsoleRequestContext{
+		wcrCtx = &pkgctx.WebConsoleRequestContext{
 			Context:           ctx,
 			Logger:            ctx.Logger.WithName(wcr.Name),
 			WebConsoleRequest: wcr,

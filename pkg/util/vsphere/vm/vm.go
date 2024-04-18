@@ -6,10 +6,10 @@ package vm
 import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
-func ManagedObjectFromMoRef(moRef types.ManagedObjectReference) mo.VirtualMachine {
+func ManagedObjectFromMoRef(moRef vimtypes.ManagedObjectReference) mo.VirtualMachine {
 	return mo.VirtualMachine{
 		ManagedEntity: mo.ManagedEntity{
 			ExtensibleManagedObject: mo.ExtensibleManagedObject{

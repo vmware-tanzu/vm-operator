@@ -10,12 +10,12 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 // getStoragePolicyID returns Storage Policy ID from Storage Class Name.
 func getStoragePolicyID(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
 	storageClassName string) (string, error) {
 
@@ -35,7 +35,7 @@ func getStoragePolicyID(
 
 // GetVMStoragePoliciesIDs returns a map of storage class names to their storage policy IDs.
 func GetVMStoragePoliciesIDs(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client) (map[string]string, error) {
 
 	storageClassNames := getVMStorageClassNames(vmCtx.VM)

@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -74,7 +74,7 @@ func intgTestsReconcile() {
 
 		AfterEach(func() {
 			err := ctx.Client.Delete(ctx, vmClass)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
 		It("noop", func() {

@@ -6,8 +6,8 @@ package clustermodules
 import (
 	"context"
 
-	"github.com/vmware/govmomi/vim25/types"
-	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
@@ -17,7 +17,7 @@ import (
 func FindClusterModuleUUID(
 	ctx context.Context,
 	groupName string,
-	clusterRef types.ManagedObjectReference,
+	clusterRef vimtypes.ManagedObjectReference,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (int, string) {
 
 	for i, modStatus := range resourcePolicy.Status.ClusterModules {
@@ -36,7 +36,7 @@ func ClaimClusterModuleUUID(
 	ctx context.Context,
 	clusterModProvider Provider,
 	groupName string,
-	clusterRef types.ManagedObjectReference,
+	clusterRef vimtypes.ManagedObjectReference,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (int, string, error) {
 
 	var errs []error
@@ -52,5 +52,5 @@ func ClaimClusterModuleUUID(
 		}
 	}
 
-	return -1, "", k8serrors.NewAggregate(errs)
+	return -1, "", apierrorsutil.NewAggregate(errs)
 }

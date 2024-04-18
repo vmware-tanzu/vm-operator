@@ -4,7 +4,7 @@
 package session
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"maps"
 	"reflect"
@@ -13,14 +13,14 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	network2 "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -40,19 +40,19 @@ type VMUpdateArgs struct {
 
 	BootstrapData vmlifecycle.BootstrapData
 
-	ConfigSpec vimTypes.VirtualMachineConfigSpec
+	ConfigSpec vimtypes.VirtualMachineConfigSpec
 
 	NetworkResults network2.NetworkInterfaceResults
 }
 
-func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
+func ethCardMatch(newBaseEthCard, curBaseEthCard vimtypes.BaseVirtualEthernetCard) bool {
 	if reflect.TypeOf(curBaseEthCard) != reflect.TypeOf(newBaseEthCard) {
 		return false
 	}
 
 	curEthCard := curBaseEthCard.GetVirtualEthernetCard()
 	newEthCard := newBaseEthCard.GetVirtualEthernetCard()
-	if newEthCard.AddressType == string(vimTypes.VirtualEthernetCardMacTypeManual) {
+	if newEthCard.AddressType == string(vimtypes.VirtualEthernetCardMacTypeManual) {
 		// If the new card has an assigned MAC address, then it should match with
 		// the current card. Note only NCP sets the MAC address.
 		if newEthCard.MacAddress != curEthCard.MacAddress {
@@ -72,13 +72,13 @@ func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCar
 }
 
 func UpdateEthCardDeviceChanges(
-	ctx goctx.Context,
+	ctx context.Context,
 	expectedEthCards object.VirtualDeviceList,
-	currentEthCards object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	currentEthCards object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 
-	var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 	for _, expectedDev := range expectedEthCards {
-		expectedNic := expectedDev.(vimTypes.BaseVirtualEthernetCard)
+		expectedNic := expectedDev.(vimtypes.BaseVirtualEthernetCard)
 		expectedBacking := expectedNic.GetVirtualEthernetCard().Backing
 		expectedBackingType := reflect.TypeOf(expectedBacking)
 
@@ -94,7 +94,7 @@ func UpdateEthCardDeviceChanges(
 		// that could lead to spurious removals. Or reorder the NetIfList to not be that of the
 		// Spec, but in VM device order.
 		for idx, curDev := range currentEthCards {
-			nic := curDev.(vimTypes.BaseVirtualEthernetCard)
+			nic := curDev.(vimtypes.BaseVirtualEthernetCard)
 
 			// This assumes we don't have multiple NICs in the same backing network. This is kind of, sort
 			// of enforced by the webhook, but we lack a guaranteed way to match up the NICs.
@@ -112,15 +112,15 @@ func UpdateEthCardDeviceChanges(
 
 			// Cribbed from VirtualDeviceList.SelectByBackingInfo().
 			switch a := db.(type) {
-			case *vimTypes.VirtualEthernetCardNetworkBackingInfo:
+			case *vimtypes.VirtualEthernetCardNetworkBackingInfo:
 				// This backing is only used in testing.
-				b := expectedBacking.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
+				b := expectedBacking.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
 				backingMatch = a.DeviceName == b.DeviceName
-			case *vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo:
-				b := expectedBacking.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+			case *vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo:
+				b := expectedBacking.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 				backingMatch = a.Port.SwitchUuid == b.Port.SwitchUuid && a.Port.PortgroupKey == b.Port.PortgroupKey
-			case *vimTypes.VirtualEthernetCardOpaqueNetworkBackingInfo:
-				b := expectedBacking.(*vimTypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
+			case *vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo:
+				b := expectedBacking.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
 				backingMatch = a.OpaqueNetworkId == b.OpaqueNetworkId
 			}
 
@@ -132,9 +132,9 @@ func UpdateEthCardDeviceChanges(
 
 		if matchingIdx == -1 {
 			// No matching backing found so add new card.
-			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
+			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 				Device:    expectedDev,
-				Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 			})
 		} else {
 			// Matching backing found so keep this card (don't remove it below after this loop).
@@ -143,11 +143,11 @@ func UpdateEthCardDeviceChanges(
 	}
 
 	// Remove any unmatched existing interfaces.
-	removeDeviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(currentEthCards))
+	removeDeviceChanges := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(currentEthCards))
 	for _, dev := range currentEthCards {
-		removeDeviceChanges = append(removeDeviceChanges, &vimTypes.VirtualDeviceConfigSpec{
+		removeDeviceChanges = append(removeDeviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 			Device:    dev,
-			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
 		})
 	}
 
@@ -159,11 +159,11 @@ func UpdateEthCardDeviceChanges(
 // processed here and in case of cloning a VM, devices listed in VMClass are considered as source of truth.
 func UpdatePCIDeviceChanges(
 	expectedPciDevices object.VirtualDeviceList,
-	currentPciDevices object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	currentPciDevices object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 
-	var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 	for _, expectedDev := range expectedPciDevices {
-		expectedPci := expectedDev.(*vimTypes.VirtualPCIPassthrough)
+		expectedPci := expectedDev.(*vimtypes.VirtualPCIPassthrough)
 		expectedBacking := expectedPci.Backing
 		expectedBackingType := reflect.TypeOf(expectedBacking)
 
@@ -176,13 +176,13 @@ func UpdatePCIDeviceChanges(
 
 			var backingMatch bool
 			switch a := curBacking.(type) {
-			case *vimTypes.VirtualPCIPassthroughVmiopBackingInfo:
-				b := expectedBacking.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
+			case *vimtypes.VirtualPCIPassthroughVmiopBackingInfo:
+				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
 				backingMatch = a.Vgpu == b.Vgpu
 
-			case *vimTypes.VirtualPCIPassthroughDynamicBackingInfo:
+			case *vimtypes.VirtualPCIPassthroughDynamicBackingInfo:
 				currAllowedDevs := a.AllowedDevice
-				b := expectedBacking.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
+				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
 				if a.CustomLabel == b.CustomLabel {
 					// b.AllowedDevice has only one element because CreatePCIDevices() adds only one device based
 					// on the devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
@@ -201,8 +201,8 @@ func UpdatePCIDeviceChanges(
 		}
 
 		if matchingIdx == -1 {
-			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
-				Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 				Device:    expectedPci,
 			})
 		} else {
@@ -211,11 +211,11 @@ func UpdatePCIDeviceChanges(
 		}
 	}
 	// Remove any unmatched existing devices.
-	removeDeviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(currentPciDevices))
+	removeDeviceChanges := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(currentPciDevices))
 	for _, dev := range currentPciDevices {
-		removeDeviceChanges = append(removeDeviceChanges, &vimTypes.VirtualDeviceConfigSpec{
+		removeDeviceChanges = append(removeDeviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 			Device:    dev,
-			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
 		})
 	}
 
@@ -224,8 +224,8 @@ func UpdatePCIDeviceChanges(
 }
 
 func UpdateConfigSpecCPUAllocation(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	minCPUFreq uint64) {
 
@@ -248,7 +248,7 @@ func UpdateConfigSpecCPUAllocation(
 	}
 
 	if cpuReservation != nil || cpuLimit != nil {
-		configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 			Reservation: cpuReservation,
 			Limit:       cpuLimit,
 		}
@@ -256,8 +256,8 @@ func UpdateConfigSpecCPUAllocation(
 }
 
 func UpdateConfigSpecMemoryAllocation(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec) {
 
 	memAllocation := config.MemoryAllocation
@@ -279,7 +279,7 @@ func UpdateConfigSpecMemoryAllocation(
 	}
 
 	if memoryReservation != nil || memoryLimit != nil {
-		configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 			Reservation: memoryReservation,
 			Limit:       memoryLimit,
 		}
@@ -290,9 +290,9 @@ func UpdateConfigSpecMemoryAllocation(
 // At a minimum, config and configSpec must be non-nil, in which case it will
 // just ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig.
 func UpdateConfigSpecExtraConfig(
-	ctx goctx.Context,
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
+	ctx context.Context,
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec, classConfigSpec *vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	vm *vmopv1.VirtualMachine,
 	globalExtraConfig map[string]string) {
@@ -374,15 +374,15 @@ func isLinuxPrepAndVAppConfig(vm *vmopv1.VirtualMachine) bool {
 }
 
 func hasvGPUOrDDPIODevices(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec) bool {
 
 	return hasvGPUOrDDPIODevicesInVM(config) ||
 		hasvGPUOrDDPIODevicesInVMClass(configSpec, vmClassSpec)
 }
 
-func hasvGPUOrDDPIODevicesInVM(config *vimTypes.VirtualMachineConfigInfo) bool {
+func hasvGPUOrDDPIODevicesInVM(config *vimtypes.VirtualMachineConfigInfo) bool {
 	if config == nil {
 		return false
 	}
@@ -396,7 +396,7 @@ func hasvGPUOrDDPIODevicesInVM(config *vimTypes.VirtualMachineConfigInfo) bool {
 }
 
 func hasvGPUOrDDPIODevicesInVMClass(
-	configSpec *vimTypes.VirtualMachineConfigSpec,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec) bool {
 
 	if vmClassSpec != nil {
@@ -436,9 +436,9 @@ func setMemoryMappedIOFlagsInExtraConfig(
 }
 
 func UpdateConfigSpecChangeBlockTracking(
-	ctx goctx.Context,
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
+	ctx context.Context,
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec, classConfigSpec *vimtypes.VirtualMachineConfigSpec,
 	vmSpec vmopv1.VirtualMachineSpec) {
 
 	// BMV: I don't think this is correct: the class shouldn't dictate this for
@@ -463,8 +463,8 @@ func UpdateConfigSpecChangeBlockTracking(
 }
 
 func UpdateHardwareConfigSpec(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec) {
 
 	if nCPUs := int32(vmClassSpec.Hardware.Cpus); config.Hardware.NumCPU != nCPUs {
@@ -476,18 +476,18 @@ func UpdateHardwareConfigSpec(
 }
 
 func UpdateConfigSpecAnnotation(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec) {
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec) {
 	if config.Annotation == "" {
 		configSpec.Annotation = constants.VCVMAnnotation
 	}
 }
 
 func UpdateConfigSpecManagedBy(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec) {
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec) {
 	if config.ManagedBy == nil {
-		configSpec.ManagedBy = &vimTypes.ManagedByInfo{
+		configSpec.ManagedBy = &vimtypes.ManagedByInfo{
 			ExtensionKey: vmopv1.ManagedByExtensionKey,
 			Type:         vmopv1.ManagedByExtensionType,
 		}
@@ -495,8 +495,8 @@ func UpdateConfigSpecManagedBy(
 }
 
 func UpdateConfigSpecFirmware(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vm *vmopv1.VirtualMachine) {
 
 	if val, ok := vm.Annotations[constants.FirmwareOverrideAnnotation]; ok {
@@ -509,11 +509,11 @@ func UpdateConfigSpecFirmware(
 // updateConfigSpec overlays the VM Class spec with the provided ConfigSpec to form a desired
 // ConfigSpec that will be used to reconfigure the VM.
 func updateConfigSpec(
-	vmCtx context.VirtualMachineContext,
-	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) *vimTypes.VirtualMachineConfigSpec {
+	vmCtx pkgctx.VirtualMachineContext,
+	config *vimtypes.VirtualMachineConfigInfo,
+	updateArgs *VMUpdateArgs) *vimtypes.VirtualMachineConfigSpec {
 
-	configSpec := &vimTypes.VirtualMachineConfigSpec{}
+	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 	vmClassSpec := updateArgs.VMClass.Spec
 
 	UpdateConfigSpecAnnotation(config, configSpec)
@@ -529,16 +529,16 @@ func updateConfigSpec(
 }
 
 func (s *Session) prePowerOnVMConfigSpec(
-	vmCtx context.VirtualMachineContext,
-	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, error) {
+	vmCtx pkgctx.VirtualMachineContext,
+	config *vimtypes.VirtualMachineConfigInfo,
+	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
 
 	configSpec := updateConfigSpec(vmCtx, config, updateArgs)
 
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
-	currentDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
-	currentEthCards := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
-	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
+	currentDisks := virtualDevices.SelectByType((*vimtypes.VirtualDisk)(nil))
+	currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+	currentPciDevices := virtualDevices.SelectByType((*vimtypes.VirtualPCIPassthrough)(nil))
 
 	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, currentDisks)
 	if err != nil {
@@ -557,7 +557,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
-	var expectedPCIDevices []vimTypes.BaseVirtualDevice
+	var expectedPCIDevices []vimtypes.BaseVirtualDevice
 	if configSpecDevs := util.DevicesFromConfigSpec(&updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
 		pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(configSpecDevs)
 		expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
@@ -573,9 +573,9 @@ func (s *Session) prePowerOnVMConfigSpec(
 }
 
 func (s *Session) prePowerOnVMReconfigure(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	resVM *res.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo,
+	config *vimtypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) error {
 
 	configSpec, err := s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
@@ -583,7 +583,7 @@ func (s *Session) prePowerOnVMReconfigure(
 		return err
 	}
 
-	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
+	defaultConfigSpec := &vimtypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
 		vmCtx.Logger.Info("Pre PowerOn Reconfigure", "configSpec", configSpec)
 		if err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
@@ -596,8 +596,8 @@ func (s *Session) prePowerOnVMReconfigure(
 }
 
 func (s *Session) ensureNetworkInterfaces(
-	vmCtx context.VirtualMachineContext,
-	configSpec *vimTypes.VirtualMachineConfigSpec) (network2.NetworkInterfaceResults, error) {
+	vmCtx pkgctx.VirtualMachineContext,
+	configSpec *vimtypes.VirtualMachineConfigSpec) (network2.NetworkInterfaceResults, error) {
 
 	networkSpec := vmCtx.VM.Spec.Network
 	if networkSpec == nil || networkSpec.Disabled {
@@ -607,9 +607,9 @@ func (s *Session) ensureNetworkInterfaces(
 	// This negative device key is the traditional range used for network interfaces.
 	deviceKey := int32(-100)
 
-	var networkDevices []vimTypes.BaseVirtualDevice
+	var networkDevices []vimtypes.BaseVirtualDevice
 	if configSpec != nil {
-		networkDevices = util.SelectDevices[vimTypes.BaseVirtualDevice](
+		networkDevices = util.SelectDevices[vimtypes.BaseVirtualDevice](
 			util.DevicesFromConfigSpec(configSpec),
 			util.IsEthernetCard,
 		)
@@ -641,18 +641,18 @@ func (s *Session) ensureNetworkInterfaces(
 
 		// Use network devices from the class.
 		if idx < len(networkDevices) {
-			ethCardFromNetProvider := dev.(vimTypes.BaseVirtualEthernetCard)
+			ethCardFromNetProvider := dev.(vimtypes.BaseVirtualEthernetCard)
 
 			if mac := ethCardFromNetProvider.GetVirtualEthernetCard().MacAddress; mac != "" {
-				networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = mac
-				networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
+				networkDevices[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = mac
+				networkDevices[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
 			}
 
-			networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId =
+			networkDevices[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId =
 				ethCardFromNetProvider.GetVirtualEthernetCard().ExternalId
 			// If the device from VM class has a DVX backing, this should still work if the backing as well
 			// as the DVX backing are set. VPXD checks for DVX backing before checking for normal device backings.
-			networkDevices[idx].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing =
+			networkDevices[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing =
 				ethCardFromNetProvider.GetVirtualEthernetCard().Backing
 
 			dev = networkDevices[idx]
@@ -668,7 +668,7 @@ func (s *Session) ensureNetworkInterfaces(
 	return results, nil
 }
 
-func (s *Session) ensureCNSVolumes(vmCtx context.VirtualMachineContext) error {
+func (s *Session) ensureCNSVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 	// If VM spec has a PVC, check if the volume is attached before powering on
 	for _, volume := range vmCtx.VM.Spec.Volumes {
 		if volume.PersistentVolumeClaim == nil {
@@ -697,7 +697,7 @@ func (s *Session) ensureCNSVolumes(vmCtx context.VirtualMachineContext) error {
 }
 
 func (s *Session) fixupMacAddresses(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	updateArgs *VMUpdateArgs) error {
 
@@ -723,7 +723,7 @@ func (s *Session) fixupMacAddresses(
 		result := &updateArgs.NetworkResults.Results[i]
 
 		if result.MacAddress == "" {
-			ethCard := networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+			ethCard := networkDevices[i].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 			result.MacAddress = ethCard.MacAddress
 		}
 	}
@@ -732,18 +732,18 @@ func (s *Session) fixupMacAddresses(
 }
 
 func (s *Session) customize(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	resVM *res.VirtualMachine,
-	cfg *vimTypes.VirtualMachineConfigInfo,
+	cfg *vimtypes.VirtualMachineConfigInfo,
 	bootstrapArgs vmlifecycle.BootstrapArgs) error {
 
 	return vmlifecycle.DoBootstrap(vmCtx, resVM.VcVM(), cfg, bootstrapArgs)
 }
 
 func (s *Session) prepareVMForPowerOn(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	resVM *res.VirtualMachine,
-	cfg *vimTypes.VirtualMachineConfigInfo,
+	cfg *vimtypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) error {
 
 	netIfList, err := s.ensureNetworkInterfaces(vmCtx, &updateArgs.ConfigSpec)
@@ -790,18 +790,18 @@ func (s *Session) prepareVMForPowerOn(
 }
 
 func (s *Session) poweredOnVMReconfigure(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	resVM *res.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo) (bool, error) {
+	config *vimtypes.VirtualMachineConfigInfo) (bool, error) {
 
-	configSpec := &vimTypes.VirtualMachineConfigSpec{}
+	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 
 	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, nil, nil)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
 	var refetchProps bool
 
-	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
+	defaultConfigSpec := &vimtypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
 		vmCtx.Logger.Info("PoweredOn Reconfigure", "configSpec", configSpec)
 		if err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
@@ -826,7 +826,7 @@ func (s *Session) poweredOnVMReconfigure(
 }
 
 func (s *Session) attachClusterModule(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
@@ -846,7 +846,7 @@ func (s *Session) attachClusterModule(
 }
 
 func (s *Session) updateVMDesiredPowerStateOff(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	moVM *mo.VirtualMachine,
 	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
@@ -890,7 +890,7 @@ func (s *Session) updateVMDesiredPowerStateOff(
 }
 
 func (s *Session) updateVMDesiredPowerStateSuspended(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
 
@@ -911,7 +911,7 @@ func (s *Session) updateVMDesiredPowerStateSuspended(
 }
 
 func (s *Session) updateVMDesiredPowerStateOn(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	moVM *mo.VirtualMachine,
 	getUpdateArgsFn func() (*VMUpdateArgs, error),
@@ -1037,7 +1037,7 @@ var VMUpdatePropertiesSelector = []string{
 }
 
 func (s *Session) UpdateVirtualMachine(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	getUpdateArgsFn func() (*VMUpdateArgs, error)) error {
 
@@ -1049,11 +1049,11 @@ func (s *Session) UpdateVirtualMachine(
 	// Translate the VM's current power state into the VM Op power state value.
 	var existingPowerState vmopv1.VirtualMachinePowerState
 	switch moVM.Summary.Runtime.PowerState {
-	case vimTypes.VirtualMachinePowerStatePoweredOn:
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
 		existingPowerState = vmopv1.VirtualMachinePowerStateOn
-	case vimTypes.VirtualMachinePowerStatePoweredOff:
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
 		existingPowerState = vmopv1.VirtualMachinePowerStateOff
-	case vimTypes.VirtualMachinePowerStateSuspended:
+	case vimtypes.VirtualMachinePowerStateSuspended:
 		existingPowerState = vmopv1.VirtualMachinePowerStateSuspended
 	}
 

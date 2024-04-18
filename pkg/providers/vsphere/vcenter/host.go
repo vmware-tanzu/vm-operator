@@ -11,7 +11,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
 // GetESXHostFQDN returns the ESX host's FQDN.
@@ -20,7 +20,7 @@ func GetESXHostFQDN(
 	vimClient *vim25.Client,
 	hostMoID string) (string, error) {
 
-	hostMoRef := types.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
+	hostMoRef := vimtypes.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
 	networkSys, err := object.NewHostSystem(vimClient, hostMoRef).ConfigManager().NetworkSystem(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get HostNetworkSystem for hostMoID %s: %w", hostMoID, err)

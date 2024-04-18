@@ -19,7 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
@@ -88,8 +88,8 @@ func unitTestsMutating() {
 			// Just any network is OK here - just checking that we don't NPE.
 			When("VDS network", func() {
 				BeforeEach(func() {
-					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-						config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
 					})
 				})
 
@@ -111,8 +111,8 @@ func unitTestsMutating() {
 
 			When("VDS network", func() {
 				BeforeEach(func() {
-					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-						config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
 					})
 				})
 
@@ -128,8 +128,8 @@ func unitTestsMutating() {
 
 			When("NSX-T network", func() {
 				BeforeEach(func() {
-					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-						config.NetworkProviderType = pkgconfig.NetworkProviderTypeNSXT
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeNSXT
 					})
 				})
 
@@ -145,8 +145,8 @@ func unitTestsMutating() {
 
 			When("VPC network", func() {
 				BeforeEach(func() {
-					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-						config.NetworkProviderType = pkgconfig.NetworkProviderTypeVPC
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
 					})
 				})
 
@@ -164,8 +164,8 @@ func unitTestsMutating() {
 				const networkName = "VM Network"
 
 				BeforeEach(func() {
-					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-						config.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeNamed
 					})
 				})
 
@@ -190,8 +190,8 @@ func unitTestsMutating() {
 
 			When("NoNetwork annotation is set", func() {
 				BeforeEach(func() {
-					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-						config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
 					})
 				})
 
@@ -206,8 +206,8 @@ func unitTestsMutating() {
 
 		Context("VM Network.Interfaces is not empty", func() {
 			BeforeEach(func() {
-				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-					config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
 				})
 			})
 
@@ -752,7 +752,7 @@ func unitTestsMutating() {
 				Expect(vm.Annotations).ToNot(HaveKey(constants.CreatedAtBuildVersionAnnotationKey))
 				Expect(vm.Annotations).ToNot(HaveKey(constants.CreatedAtSchemaVersionAnnotationKey))
 				mutation.SetCreatedAtAnnotations(
-					pkgconfig.UpdateContext(ctx, func(config *pkgconfig.Config) {
+					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
 						config.BuildVersion = "v1"
 					}), vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
@@ -764,7 +764,7 @@ func unitTestsMutating() {
 			It("should add the created-at annotations", func() {
 				vm.Annotations = map[string]string{"k1": "v1", "k2": "v2"}
 				mutation.SetCreatedAtAnnotations(
-					pkgconfig.UpdateContext(ctx, func(config *pkgconfig.Config) {
+					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
 						config.BuildVersion = "v1"
 					}), vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
@@ -779,7 +779,7 @@ func unitTestsMutating() {
 					constants.CreatedAtSchemaVersionAnnotationKey: "fake-schema-version",
 				}
 				mutation.SetCreatedAtAnnotations(
-					pkgconfig.UpdateContext(ctx, func(config *pkgconfig.Config) {
+					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
 						config.BuildVersion = "v1"
 					}), vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))

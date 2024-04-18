@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -129,11 +129,11 @@ func intgTestsReconcile() {
 
 		JustAfterEach(func() {
 			err := ctx.Client.Delete(ctx, wcr)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 			err = ctx.Client.Delete(ctx, vm)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 			err = ctx.Client.Delete(ctx, proxySvc)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
 		It("resource successfully created", func() {

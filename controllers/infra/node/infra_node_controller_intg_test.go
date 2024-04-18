@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -67,7 +67,7 @@ func intgTestsReconcile() {
 
 		AfterEach(func() {
 			err := ctx.Client.Delete(ctx, obj)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
 		It("Verify that provider is called to update CPU frequency", func() {

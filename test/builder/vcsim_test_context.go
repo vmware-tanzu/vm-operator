@@ -5,7 +5,7 @@
 package builder
 
 import (
-	goctx "context"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -31,7 +31,7 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25/soap"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -48,7 +48,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -232,7 +232,7 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 			rp, err := ccr.ResourcePool(c)
 			Expect(err).ToNot(HaveOccurred())
 
-			nsRP, err := rp.Create(c, ns.Name, types.DefaultResourceConfigSpec())
+			nsRP, err := rp.Create(c, ns.Name, vimtypes.DefaultResourceConfigSpec())
 			Expect(err).ToNot(HaveOccurred())
 
 			nsRPs = append(nsRPs, nsRP)
@@ -279,18 +279,18 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 
 func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 
-	pkgconfig.SetContext(c, func(cc *pkgconfig.Config) {
+	pkgcfg.SetContext(c, func(cc *pkgcfg.Config) {
 		cc.PodNamespace = c.PodNamespace
 
 		switch config.WithNetworkEnv {
 		case NetworkEnvVDS:
-			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+			cc.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
 		case NetworkEnvNSXT:
-			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeNSXT
+			cc.NetworkProviderType = pkgcfg.NetworkProviderTypeNSXT
 		case NetworkEnvVPC:
-			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeVPC
+			cc.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
 		case NetworkEnvNamed:
-			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+			cc.NetworkProviderType = pkgcfg.NetworkProviderTypeNamed
 		default:
 			cc.NetworkProviderType = ""
 		}
@@ -361,7 +361,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 			Expect(ok).To(BeTrue())
 			Expect(hns.Host).ToNot(BeNil())
 
-			hns.DnsConfig = &types.HostDnsConfig{
+			hns.DnsConfig = &vimtypes.HostDnsConfig{
 				HostName:   hns.Host.Reference().Value,
 				DomainName: "vmop.vmware.com",
 			}
@@ -475,7 +475,7 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 }
 
 func createContentLibraryItem(
-	ctx goctx.Context,
+	ctx context.Context,
 	libMgr *library.Manager,
 	libraryItem library.Item,
 	itemPath string) string {
@@ -689,7 +689,7 @@ func (c *TestContextForVCSim) createVirtualMachineSetResourcePolicyCommon(
 		nsRP, ok := objRef.(*object.ResourcePool)
 		Expect(ok).To(BeTrue())
 
-		_, err = nsRP.Create(c, rpName, types.DefaultResourceConfigSpec())
+		_, err = nsRP.Create(c, rpName, vimtypes.DefaultResourceConfigSpec())
 		Expect(err).ToNot(HaveOccurred())
 	}
 
@@ -700,7 +700,7 @@ func (c *TestContextForVCSim) createVirtualMachineSetResourcePolicyCommon(
 }
 
 func (c *TestContextForVCSim) GetVMFromMoID(moID string) *object.VirtualMachine {
-	objRef, err := c.Finder.ObjectReference(c, types.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
+	objRef, err := c.Finder.ObjectReference(c, vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
 	if err != nil {
 		return nil
 	}

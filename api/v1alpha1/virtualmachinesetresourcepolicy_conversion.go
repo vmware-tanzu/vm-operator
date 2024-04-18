@@ -5,13 +5,13 @@ package v1alpha1
 
 import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 func Convert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_v1alpha3_VirtualMachineSetResourcePolicySpec(
-	in *VirtualMachineSetResourcePolicySpec, out *v1alpha3.VirtualMachineSetResourcePolicySpec, s apiconversion.Scope) error {
+	in *VirtualMachineSetResourcePolicySpec, out *vmopv1.VirtualMachineSetResourcePolicySpec, s apiconversion.Scope) error {
 
 	out.Folder = in.Folder.Name
 	for _, mod := range in.ClusterModules {
@@ -22,7 +22,7 @@ func Convert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_v1alpha3_VirtualMac
 }
 
 func Convert_v1alpha3_VirtualMachineSetResourcePolicySpec_To_v1alpha1_VirtualMachineSetResourcePolicySpec(
-	in *v1alpha3.VirtualMachineSetResourcePolicySpec, out *VirtualMachineSetResourcePolicySpec, s apiconversion.Scope) error {
+	in *vmopv1.VirtualMachineSetResourcePolicySpec, out *VirtualMachineSetResourcePolicySpec, s apiconversion.Scope) error {
 
 	out.Folder.Name = in.Folder
 	for _, name := range in.ClusterModuleGroups {
@@ -33,25 +33,25 @@ func Convert_v1alpha3_VirtualMachineSetResourcePolicySpec_To_v1alpha1_VirtualMac
 }
 
 // ConvertTo converts this VirtualMachineSetResourcePolicy to the Hub version.
-func (src *VirtualMachineSetResourcePolicy) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachineSetResourcePolicy)
+func (src *VirtualMachineSetResourcePolicy) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineSetResourcePolicy)
 	return Convert_v1alpha1_VirtualMachineSetResourcePolicy_To_v1alpha3_VirtualMachineSetResourcePolicy(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineSetResourcePolicy.
-func (dst *VirtualMachineSetResourcePolicy) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachineSetResourcePolicy)
+func (dst *VirtualMachineSetResourcePolicy) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineSetResourcePolicy)
 	return Convert_v1alpha3_VirtualMachineSetResourcePolicy_To_v1alpha1_VirtualMachineSetResourcePolicy(src, dst, nil)
 }
 
 // ConvertTo converts this VirtualMachineSetResourcePolicyList to the Hub version.
-func (src *VirtualMachineSetResourcePolicyList) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachineSetResourcePolicyList)
+func (src *VirtualMachineSetResourcePolicyList) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineSetResourcePolicyList)
 	return Convert_v1alpha1_VirtualMachineSetResourcePolicyList_To_v1alpha3_VirtualMachineSetResourcePolicyList(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineSetResourcePolicyList.
-func (dst *VirtualMachineSetResourcePolicyList) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachineSetResourcePolicyList)
+func (dst *VirtualMachineSetResourcePolicyList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineSetResourcePolicyList)
 	return Convert_v1alpha3_VirtualMachineSetResourcePolicyList_To_v1alpha1_VirtualMachineSetResourcePolicyList(src, dst, nil)
 }

@@ -6,7 +6,7 @@ package v1alpha2
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 )
 
 const (
@@ -125,7 +125,7 @@ type VirtualMachineImageSpec struct {
 	// this image's information.
 	//
 	// +optional
-	ProviderRef *common.LocalObjectRef `json:"providerRef,omitempty"`
+	ProviderRef *vmopv1a2common.LocalObjectRef `json:"providerRef,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage.
@@ -186,7 +186,7 @@ type VirtualMachineImageStatus struct {
 	// this image.
 	//
 	// +optional
-	VMwareSystemProperties []common.KeyValuePair `json:"vmwareSystemProperties,omitempty"`
+	VMwareSystemProperties []vmopv1a2common.KeyValuePair `json:"vmwareSystemProperties,omitempty"`
 
 	// ProductInfo describes the observed product information for this image.
 	// +optional

@@ -13,14 +13,14 @@ import (
 	"github.com/vmware/govmomi/vapi/vcenter"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 func deployOVF(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	restClient *rest.Client,
 	item *library.Item,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
@@ -62,7 +62,7 @@ func deployOVF(
 }
 
 func deployVMTX(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	restClient *rest.Client,
 	item *library.Item,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
@@ -79,7 +79,7 @@ func deployVMTX(
 }
 
 func deployFromContentLibrary(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	clClient contentlibrary.Provider,
 	restClient *rest.Client,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {

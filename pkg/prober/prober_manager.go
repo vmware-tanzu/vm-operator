@@ -4,7 +4,7 @@
 package prober
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -19,7 +19,7 @@ import (
 	"github.com/go-logr/logr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
@@ -128,7 +128,7 @@ func (m *manager) RemoveFromProberManager(vm *vmopv1.VirtualMachine) {
 }
 
 // Start starts the probe manager.
-func (m *manager) Start(ctx goctx.Context) error {
+func (m *manager) Start(ctx context.Context) error {
 	m.log.Info("Start VirtualMachine Probe Manager")
 	defer m.log.Info("Stop VirtualMachine Probe Manager")
 
@@ -172,7 +172,7 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 	item := itemIf.(client.ObjectKey)
 
 	vm := &vmopv1.VirtualMachine{}
-	if err := m.client.Get(goctx.Background(), item, vm); err != nil {
+	if err := m.client.Get(context.Background(), item, vm); err != nil {
 		if !apierrors.IsNotFound(err) {
 			// Get VM error, immediately re-queue the VM.
 			queue.Add(item)
@@ -198,7 +198,7 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 }
 
 // processVMProbe processes the Probe specified in VM spec.
-func (m *manager) processVMProbe(w worker.Worker, ctx *context.ProbeContext) error {
+func (m *manager) processVMProbe(w worker.Worker, ctx *proberctx.ProbeContext) error {
 	if ctx.VM.Status.PowerState != vmopv1.VirtualMachinePowerStateOn {
 		// If a vm is not powered on, we don't run probes against it and translate probe result to failure.
 		// Populate the Condition and update the VM status.
@@ -210,7 +210,7 @@ func (m *manager) processVMProbe(w worker.Worker, ctx *context.ProbeContext) err
 
 // addItemToQueue adds the vm to the queue. If immediate is true, immediately add the item.
 // Otherwise, add to queue after a time period.
-func (m *manager) addItemToQueue(queue workqueue.DelayingInterface, ctx *context.ProbeContext, item client.ObjectKey, immediate bool) {
+func (m *manager) addItemToQueue(queue workqueue.DelayingInterface, ctx *proberctx.ProbeContext, item client.ObjectKey, immediate bool) {
 	if immediate {
 		queue.Add(item)
 	} else {

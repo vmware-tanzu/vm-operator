@@ -4,30 +4,31 @@
 package v1alpha1
 
 import (
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
+
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 // ConvertTo converts this VirtualMachinePublishRequest to the Hub version.
-func (src *VirtualMachinePublishRequest) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachinePublishRequest)
+func (src *VirtualMachinePublishRequest) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachinePublishRequest)
 	return Convert_v1alpha1_VirtualMachinePublishRequest_To_v1alpha3_VirtualMachinePublishRequest(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachinePublishRequest.
-func (dst *VirtualMachinePublishRequest) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachinePublishRequest)
+func (dst *VirtualMachinePublishRequest) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachinePublishRequest)
 	return Convert_v1alpha3_VirtualMachinePublishRequest_To_v1alpha1_VirtualMachinePublishRequest(src, dst, nil)
 }
 
 // ConvertTo converts this VirtualMachinePublishRequestList to the Hub version.
-func (src *VirtualMachinePublishRequestList) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachinePublishRequestList)
+func (src *VirtualMachinePublishRequestList) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachinePublishRequestList)
 	return Convert_v1alpha1_VirtualMachinePublishRequestList_To_v1alpha3_VirtualMachinePublishRequestList(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachinePublishRequestList.
-func (dst *VirtualMachinePublishRequestList) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachinePublishRequestList)
+func (dst *VirtualMachinePublishRequestList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachinePublishRequestList)
 	return Convert_v1alpha3_VirtualMachinePublishRequestList_To_v1alpha1_VirtualMachinePublishRequestList(src, dst, nil)
 }

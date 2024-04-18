@@ -10,7 +10,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
@@ -18,7 +18,7 @@ import (
 )
 
 // K8sClient is used to get the webconsolerequest resource from UUID and namespace.
-var K8sClient ctrlruntime.Client
+var K8sClient ctrlclient.Client
 
 // InitServer initializes a K8sClient used by the web-console validation server.
 func InitServer() error {
@@ -32,7 +32,7 @@ func InitServer() error {
 		return err
 	}
 
-	ctrlruntimeClient, err := ctrlruntime.New(restConfig, ctrlruntime.Options{Scheme: scheme})
+	ctrlruntimeClient, err := ctrlclient.New(restConfig, ctrlclient.Options{Scheme: scheme})
 	if err != nil {
 		return err
 	}
@@ -88,13 +88,13 @@ func HandleWebConsoleValidation(w http.ResponseWriter, r *http.Request) {
 }
 
 func isResourceFound(goCtx context.Context, uuid, namespace string) (bool, error) {
-	labelSelector := ctrlruntime.MatchingLabels{
+	labelSelector := ctrlclient.MatchingLabels{
 		v1alpha1.UUIDLabelKey: uuid,
 	}
 
 	// TODO: Use an Informer to avoid hitting the API server for every request.
 	wcrObjectList := &vmopv1a1.WebConsoleRequestList{}
-	if err := K8sClient.List(goCtx, wcrObjectList, ctrlruntime.InNamespace(namespace), labelSelector); err != nil {
+	if err := K8sClient.List(goCtx, wcrObjectList, ctrlclient.InNamespace(namespace), labelSelector); err != nil {
 		return false, err
 	}
 

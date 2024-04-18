@@ -4,7 +4,7 @@
 package virtualmachine
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -26,8 +26,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
@@ -47,7 +47,7 @@ const (
 )
 
 // AddToManager adds this package's controller to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controlledType     = &vmopv1.VirtualMachine{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
@@ -104,10 +104,10 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 // classToVMMapperFn returns a mapper function that can be used to queue reconcile request
 // for the VirtualMachines in response to an event on the VirtualMachineClass resource when
 // WCP_Namespaced_VM_Class FSS is enabled.
-func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client, isDefaultVMClassController bool) func(_ goctx.Context, o client.Object) []reconcile.Request {
+func classToVMMapperFn(ctx *pkgctx.ControllerManagerContext, c client.Client, isDefaultVMClassController bool) func(_ context.Context, o client.Object) []reconcile.Request {
 	// For a given VirtualMachineClass, return reconcile requests
 	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
-	return func(_ goctx.Context, o client.Object) []reconcile.Request {
+	return func(_ context.Context, o client.Object) []reconcile.Request {
 		class := o.(*vmopv1.VirtualMachineClass)
 		logger := ctx.Logger.WithValues("name", class.Name, "namespace", class.Namespace)
 
@@ -119,7 +119,7 @@ func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client, i
 			// Log at a high-level so the logs are not over-run.
 			logger.V(8).Info(
 				"Skipping class with empty controller name & not default VM Class controller",
-				"defaultVMClassController", pkgconfig.FromContext(ctx).DefaultVMClassControllerName,
+				"defaultVMClassController", pkgcfg.FromContext(ctx).DefaultVMClassControllerName,
 				"expectedControllerName", vmClassControllerName)
 			return nil
 		}
@@ -156,7 +156,7 @@ func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client, i
 }
 
 func NewReconciler(
-	ctx goctx.Context,
+	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
@@ -177,7 +177,7 @@ func NewReconciler(
 // Reconciler reconciles a VirtualMachine object.
 type Reconciler struct {
 	client.Client
-	Context    goctx.Context
+	Context    context.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
@@ -197,15 +197,15 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=events;configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
 
-func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	ctx = pkgconfig.JoinContext(ctx, r.Context)
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	vmCtx := &context.VirtualMachineContext{
+	vmCtx := &pkgctx.VirtualMachineContext{
 		Context: ctx,
 		Logger:  ctrl.Log.WithName("VirtualMachine").WithValues("name", vm.NamespacedName()),
 		VM:      vm,
@@ -254,7 +254,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 // TODO: It would be much preferable to determine that a non-error resync is required at the source of the determination that
 // TODO: the VM IP isn't available rather than up here in the reconcile loop.  However, in the interest of time, we are making
 // TODO: this determination here and will have to refactor at some later date.
-func requeueDelay(ctx *context.VirtualMachineContext) time.Duration {
+func requeueDelay(ctx *pkgctx.VirtualMachineContext) time.Duration {
 	// If the VM is in Creating phase, the reconciler has run out of threads to Create VMs on the provider. Do not queue
 	// immediately to avoid exponential backoff.
 	if conditions.IsFalse(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
@@ -271,7 +271,7 @@ func requeueDelay(ctx *context.VirtualMachineContext) time.Duration {
 	return 0
 }
 
-func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) (reterr error) {
+func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr error) {
 	ctx.Logger.Info("Reconciling VirtualMachine Deletion")
 
 	if controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
@@ -297,7 +297,7 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) (reterr
 }
 
 // ReconcileNormal processes a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
-func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr error) {
+func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr error) {
 	if !controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
 		// The finalizer must be present before proceeding in order to ensure that the VM will
 		// be cleaned up. Return immediately after here to let the patcher helper update the
@@ -341,8 +341,8 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 	return nil
 }
 
-func getIsDefaultVMClassController(ctx goctx.Context) bool {
-	if v := pkgconfig.FromContext(ctx).DefaultVMClassControllerName; v == "" || v == vmClassControllerName {
+func getIsDefaultVMClassController(ctx context.Context) bool {
+	if v := pkgcfg.FromContext(ctx).DefaultVMClassControllerName; v == "" || v == vmClassControllerName {
 		return true
 	}
 	return false

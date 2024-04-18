@@ -23,7 +23,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -36,7 +36,7 @@ const (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies/status,verbs=get
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create VirtualMachineSetResourcePolicy validation webhook")
@@ -61,7 +61,7 @@ func (v validator) For() schema.GroupVersionKind {
 	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineSetResourcePolicy{}).Name())
 }
 
-func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vmRP, err := v.vmRPFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -78,11 +78,11 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
 	return admission.Allowed("")
 }
 
-func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vmRP, err := v.vmRPFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -104,7 +104,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validateSpec(ctx *context.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
+func (v validator) validateSpec(ctx *pkgctx.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
 	var fieldErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
@@ -115,7 +115,7 @@ func (v validator) validateSpec(ctx *context.WebhookRequestContext, vmRP *vmopv1
 	return fieldErrs
 }
 
-func (v validator) validateResourcePool(ctx *context.WebhookRequestContext, fldPath *field.Path, rp vmopv1.ResourcePoolSpec) field.ErrorList {
+func (v validator) validateResourcePool(ctx *pkgctx.WebhookRequestContext, fldPath *field.Path, rp vmopv1.ResourcePoolSpec) field.ErrorList {
 	var fieldErrs field.ErrorList
 
 	reservation, limits := rp.Reservations, rp.Limits
@@ -127,12 +127,12 @@ func (v validator) validateResourcePool(ctx *context.WebhookRequestContext, fldP
 	return fieldErrs
 }
 
-func (v validator) validateFolder(ctx *context.WebhookRequestContext, specPath *field.Path, folder string) field.ErrorList {
+func (v validator) validateFolder(ctx *pkgctx.WebhookRequestContext, specPath *field.Path, folder string) field.ErrorList {
 	var fieldErrs field.ErrorList
 	return fieldErrs
 }
 
-func (v validator) validateClusterModules(ctx *context.WebhookRequestContext, fldPath *field.Path, clusterModuleGroups []string) field.ErrorList {
+func (v validator) validateClusterModules(ctx *pkgctx.WebhookRequestContext, fldPath *field.Path, clusterModuleGroups []string) field.ErrorList {
 	var fieldErrs field.ErrorList
 
 	groupNames := map[string]struct{}{}
@@ -148,7 +148,7 @@ func (v validator) validateClusterModules(ctx *context.WebhookRequestContext, fl
 }
 
 // validateAllowedChanges returns true only if immutable fields have not been modified.
-func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vmRP, oldVMRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
+func (v validator) validateAllowedChanges(ctx *pkgctx.WebhookRequestContext, vmRP, oldVMRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 

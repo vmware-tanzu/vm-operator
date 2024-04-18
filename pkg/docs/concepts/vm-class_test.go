@@ -11,14 +11,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"sigs.k8s.io/yaml"
 )
 
 var _ = Describe("VirtualMachineClass", func() {
 	Context("ConfigSpec", func() {
 		var (
-			obj vimTypes.VirtualMachineConfigSpec
+			obj vimtypes.VirtualMachineConfigSpec
 		)
 		Context("JSON", func() {
 			var (
@@ -26,7 +26,7 @@ var _ = Describe("VirtualMachineClass", func() {
 			)
 			JustBeforeEach(func() {
 				var w bytes.Buffer
-				enc := vimTypes.NewJSONEncoder(&w)
+				enc := vimtypes.NewJSONEncoder(&w)
 				ExpectWithOffset(1, enc.Encode(obj)).To(Succeed())
 				act = w.String()
 			})
@@ -45,7 +45,7 @@ var _ = Describe("VirtualMachineClass", func() {
 
 			Context("Basic", func() {
 				BeforeEach(func() {
-					obj = vimTypes.VirtualMachineConfigSpec{
+					obj = vimtypes.VirtualMachineConfigSpec{
 						NumCPUs:  2,
 						MemoryMB: 2048,
 					}
@@ -63,15 +63,15 @@ var _ = Describe("VirtualMachineClass", func() {
 
 			Context("ExtraConfig", func() {
 				BeforeEach(func() {
-					obj = vimTypes.VirtualMachineConfigSpec{
+					obj = vimtypes.VirtualMachineConfigSpec{
 						NumCPUs:  2,
 						MemoryMB: 2048,
-						ExtraConfig: []vimTypes.BaseOptionValue{
-							&vimTypes.OptionValue{
+						ExtraConfig: []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
 								Key:   "my-key-1",
 								Value: "my-value-1",
 							},
-							&vimTypes.OptionValue{
+							&vimtypes.OptionValue{
 								Key:   "my-key-2",
 								Value: "my-value-2",
 							},
@@ -109,13 +109,13 @@ var _ = Describe("VirtualMachineClass", func() {
 
 			Context("vGPU", func() {
 				BeforeEach(func() {
-					obj = vimTypes.VirtualMachineConfigSpec{
-						DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
-							&vimTypes.VirtualDeviceConfigSpec{
-								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-								Device: &vimTypes.VirtualPCIPassthrough{
-									VirtualDevice: vimTypes.VirtualDevice{
-										Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+					obj = vimtypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+							&vimtypes.VirtualDeviceConfigSpec{
+								Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimtypes.VirtualPCIPassthrough{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
 											Vgpu: "my-vgpu-profile",
 										},
 									},
@@ -149,14 +149,14 @@ var _ = Describe("VirtualMachineClass", func() {
 
 			Context("Dynamic Direct Path I/O", func() {
 				BeforeEach(func() {
-					obj = vimTypes.VirtualMachineConfigSpec{
-						DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
-							&vimTypes.VirtualDeviceConfigSpec{
-								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-								Device: &vimTypes.VirtualPCIPassthrough{
-									VirtualDevice: vimTypes.VirtualDevice{
-										Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
-											AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
+					obj = vimtypes.VirtualMachineConfigSpec{
+						DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+							&vimtypes.VirtualDeviceConfigSpec{
+								Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimtypes.VirtualPCIPassthrough{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+											AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
 												{
 													DeviceId: -999,
 													VendorId: -999,

@@ -9,11 +9,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 )
 
@@ -26,11 +26,11 @@ var _ = Describe("FindClusterModuleUUID", func() {
 	var (
 		ctx                      context.Context
 		resourcePolicy           *vmopv1.VirtualMachineSetResourcePolicy
-		clusterRef1, clusterRef2 types.ManagedObjectReference
+		clusterRef1, clusterRef2 vimtypes.ManagedObjectReference
 	)
 
 	BeforeEach(func() {
-		ctx = pkgconfig.NewContext()
+		ctx = pkgcfg.NewContext()
 
 		resourcePolicy = &vmopv1.VirtualMachineSetResourcePolicy{
 			Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
@@ -38,8 +38,8 @@ var _ = Describe("FindClusterModuleUUID", func() {
 			},
 		}
 
-		clusterRef1 = types.ManagedObjectReference{Value: "dummy-cluster1"}
-		clusterRef2 = types.ManagedObjectReference{Value: "dummy-cluster2"}
+		clusterRef1 = vimtypes.ManagedObjectReference{Value: "dummy-cluster1"}
+		clusterRef2 = vimtypes.ManagedObjectReference{Value: "dummy-cluster2"}
 	})
 
 	AfterEach(func() {

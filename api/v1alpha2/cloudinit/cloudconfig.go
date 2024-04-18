@@ -8,7 +8,7 @@ package cloudinit
 import (
 	"encoding/json"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 )
 
 // CloudConfig is the VM Operator API subset of a Cloud-Init CloudConfig and
@@ -100,7 +100,7 @@ type User struct {
 	// if the specified user already exists.
 	//
 	// +optional
-	HashedPasswd *common.SecretKeySelector `json:"hashed_passwd,omitempty"`
+	HashedPasswd *vmopv1a2common.SecretKeySelector `json:"hashed_passwd,omitempty"`
 
 	// Homedir is the optional home directory for the user.
 	//
@@ -156,7 +156,7 @@ type User struct {
 	// please use HashedPasswd instead.
 	//
 	// +optional
-	Passwd *common.SecretKeySelector `json:"passwd,omitempty"`
+	Passwd *vmopv1a2common.SecretKeySelector `json:"passwd,omitempty"`
 
 	// PrimaryGroup is the primary group for the user.
 	//

@@ -9,17 +9,17 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 )
 
 // GetVirtualMachine gets the VM from VC, either by the MoID, UUID, or the inventory path.
 func GetVirtualMachine(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	vimClient *vim25.Client,
 	datacenter *object.Datacenter,
@@ -44,11 +44,11 @@ func GetVirtualMachine(
 }
 
 func findVMByMoID(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	finder *find.Finder,
 	moID string) (*object.VirtualMachine, error) {
 
-	ref, err := finder.ObjectReference(vmCtx, types.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
+	ref, err := finder.ObjectReference(vmCtx, vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func findVMByMoID(
 
 //nolint:unused
 func findVMByUUID(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vimClient *vim25.Client,
 	datacenter *object.Datacenter,
 	uuid string,
@@ -87,7 +87,7 @@ func findVMByUUID(
 }
 
 func findVMByInventory(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	vimClient *vim25.Client,
 	finder *find.Finder) (*object.VirtualMachine, error) {

@@ -11,12 +11,12 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -27,7 +27,7 @@ var _ = Describe("UpdateStatus", func() {
 
 	var (
 		ctx   *builder.TestContextForVCSim
-		vmCtx context.VirtualMachineContext
+		vmCtx pkgctx.VirtualMachineContext
 		vcVM  *object.VirtualMachine
 		moVM  *mo.VirtualMachine
 	)
@@ -38,7 +38,7 @@ var _ = Describe("UpdateStatus", func() {
 		vm := builder.DummyVirtualMachineA2()
 		vm.Name = "update-status-test"
 
-		vmCtx = context.VirtualMachineContext{
+		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,
@@ -70,7 +70,7 @@ var _ = Describe("UpdateStatus", func() {
 				validIP6 = "FD00:F53B:82E4::54"
 			)
 			BeforeEach(func() {
-				moVM.Guest = &types.GuestInfo{}
+				moVM.Guest = &vimtypes.GuestInfo{}
 				vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: "eth0",
@@ -209,8 +209,8 @@ var _ = Describe("UpdateStatus", func() {
 		Context("Interfaces", func() {
 			Context("VM has pseudo devices", func() {
 				BeforeEach(func() {
-					moVM.Guest = &types.GuestInfo{
-						Net: []types.GuestNicInfo{
+					moVM.Guest = &vimtypes.GuestInfo{
+						Net: []vimtypes.GuestNicInfo{
 							{
 								DeviceConfigId: -1,
 								MacAddress:     "mac-1",
@@ -242,8 +242,8 @@ var _ = Describe("UpdateStatus", func() {
 
 			Context("VM has more interfaces than expected", func() {
 				BeforeEach(func() {
-					moVM.Guest = &types.GuestInfo{
-						Net: []types.GuestNicInfo{
+					moVM.Guest = &vimtypes.GuestInfo{
+						Net: []vimtypes.GuestNicInfo{
 							{
 								DeviceConfigId: 4000,
 								MacAddress:     "mac-4000",
@@ -279,11 +279,11 @@ var _ = Describe("UpdateStatus", func() {
 
 		Context("IPRoutes", func() {
 			BeforeEach(func() {
-				moVM.Guest = &types.GuestInfo{
-					IpStack: []types.GuestStackInfo{
+				moVM.Guest = &vimtypes.GuestInfo{
+					IpStack: []vimtypes.GuestStackInfo{
 						{
-							IpRouteConfig: &types.NetIpRouteConfigInfo{
-								IpRoute: []types.NetIpRouteConfigInfoIpRoute{
+							IpRouteConfig: &vimtypes.NetIpRouteConfigInfo{
+								IpRoute: []vimtypes.NetIpRouteConfigInfoIpRoute{
 									{
 										Network:      "192.168.1.0",
 										PrefixLength: 24,
@@ -336,7 +336,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			When("Guest property is empty", func() {
 				BeforeEach(func() {
-					moVM.Guest = &types.GuestInfo{}
+					moVM.Guest = &vimtypes.GuestInfo{}
 					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
 				})
 
@@ -347,7 +347,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			When("Empty guest property but has existing status.network.config", func() {
 				BeforeEach(func() {
-					moVM.Guest = &types.GuestInfo{}
+					moVM.Guest = &vimtypes.GuestInfo{}
 					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
 						PrimaryIP4: "my-ipv4",
 						PrimaryIP6: "my-ipv6",
@@ -386,8 +386,8 @@ var _ = Describe("UpdateStatus", func() {
 	Context("Copies values to the VM status", func() {
 		biosUUID, instanceUUID := "f7c371d6-2003-5a48-9859-3bc9a8b0890", "6132d223-1566-5921-bc3b-df91ece09a4d"
 		BeforeEach(func() {
-			moVM.Summary = types.VirtualMachineSummary{
-				Config: types.VirtualMachineConfigSummary{
+			moVM.Summary = vimtypes.VirtualMachineSummary{
+				Config: vimtypes.VirtualMachineConfigSummary{
 					Uuid:         biosUUID,
 					InstanceUuid: instanceUUID,
 					HwVersion:    "vmx-19",
@@ -409,12 +409,12 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 	Context("markVMToolsRunningStatusCondition", func() {
 		var (
 			vm        *vmopv1.VirtualMachine
-			guestInfo *types.GuestInfo
+			guestInfo *vimtypes.GuestInfo
 		)
 
 		BeforeEach(func() {
 			vm = &vmopv1.VirtualMachine{}
-			guestInfo = &types.GuestInfo{
+			guestInfo = &vimtypes.GuestInfo{
 				ToolsRunningStatus: "",
 			}
 		})
@@ -444,7 +444,7 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 		})
 		Context("vmtools is not running", func() {
 			BeforeEach(func() {
-				guestInfo.ToolsRunningStatus = string(types.VirtualMachineToolsRunningStatusGuestToolsNotRunning)
+				guestInfo.ToolsRunningStatus = string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsNotRunning)
 			})
 			It("sets condition to false", func() {
 				expectedConditions := []metav1.Condition{
@@ -455,7 +455,7 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 		})
 		Context("vmtools is running", func() {
 			BeforeEach(func() {
-				guestInfo.ToolsRunningStatus = string(types.VirtualMachineToolsRunningStatusGuestToolsRunning)
+				guestInfo.ToolsRunningStatus = string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsRunning)
 			})
 			It("sets condition true", func() {
 				expectedConditions := []metav1.Condition{
@@ -466,7 +466,7 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 		})
 		Context("vmtools is starting", func() {
 			BeforeEach(func() {
-				guestInfo.ToolsRunningStatus = string(types.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts)
+				guestInfo.ToolsRunningStatus = string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts)
 			})
 			It("sets condition true", func() {
 				expectedConditions := []metav1.Condition{
@@ -493,13 +493,13 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 	Context("markCustomizationInfoCondition", func() {
 		var (
 			vm        *vmopv1.VirtualMachine
-			guestInfo *types.GuestInfo
+			guestInfo *vimtypes.GuestInfo
 		)
 
 		BeforeEach(func() {
 			vm = &vmopv1.VirtualMachine{}
-			guestInfo = &types.GuestInfo{
-				CustomizationInfo: &types.GuestInfoCustomizationInfo{},
+			guestInfo = &vimtypes.GuestInfo{
+				CustomizationInfo: &vimtypes.GuestInfoCustomizationInfo{},
 			}
 		})
 
@@ -531,7 +531,7 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 		})
 		Context("customizationInfo idle", func() {
 			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE)
+				guestInfo.CustomizationInfo.CustomizationStatus = string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE)
 			})
 			It("sets condition true", func() {
 				expectedConditions := []metav1.Condition{
@@ -542,7 +542,7 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 		})
 		Context("customizationInfo pending", func() {
 			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING)
+				guestInfo.CustomizationInfo.CustomizationStatus = string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING)
 			})
 			It("sets condition false", func() {
 				expectedConditions := []metav1.Condition{
@@ -553,7 +553,7 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 		})
 		Context("customizationInfo running", func() {
 			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING)
+				guestInfo.CustomizationInfo.CustomizationStatus = string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING)
 			})
 			It("sets condition false", func() {
 				expectedConditions := []metav1.Condition{
@@ -564,7 +564,7 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 		})
 		Context("customizationInfo succeeded", func() {
 			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED)
+				guestInfo.CustomizationInfo.CustomizationStatus = string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED)
 			})
 			It("sets condition true", func() {
 				expectedConditions := []metav1.Condition{
@@ -575,7 +575,7 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 		})
 		Context("customizationInfo failed", func() {
 			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED)
+				guestInfo.CustomizationInfo.CustomizationStatus = string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED)
 				guestInfo.CustomizationInfo.ErrorMsg = "some error message"
 			})
 			It("sets condition false", func() {
@@ -604,12 +604,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 	Context("MarkBootstrapCondition", func() {
 		var (
 			vm         *vmopv1.VirtualMachine
-			configInfo *types.VirtualMachineConfigInfo
+			configInfo *vimtypes.VirtualMachineConfigInfo
 		)
 
 		BeforeEach(func() {
 			vm = &vmopv1.VirtualMachine{}
-			configInfo = &types.VirtualMachineConfigInfo{}
+			configInfo = &vimtypes.VirtualMachineConfigInfo{}
 		})
 
 		JustBeforeEach(func() {
@@ -641,8 +641,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("no bootstrap status", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
@@ -659,12 +659,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 		Context("successful condition", func() {
 			When("status is 1", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "1",
 						},
@@ -679,12 +679,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is TRUE", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "TRUE",
 						},
@@ -699,12 +699,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is true", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "true",
 						},
@@ -719,12 +719,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is true and there is a reason", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "true,my-reason",
 						},
@@ -740,12 +740,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is true and there is a reason and message", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "true,my-reason,my,comma,delimited,message",
 						},
@@ -764,12 +764,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 		Context("failed condition", func() {
 			When("status is 0", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "0",
 						},
@@ -785,12 +785,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is FALSE", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "FALSE",
 						},
@@ -806,12 +806,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is false", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "false",
 						},
@@ -827,12 +827,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is non-truthy", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "not a boolean value",
 						},
@@ -848,12 +848,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is false and there is a reason", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "false,my-reason",
 						},
@@ -869,12 +869,12 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is false and there is a reason and message", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []types.BaseOptionValue{
-						&types.OptionValue{
+					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   "key1",
 							Value: "val1",
 						},
-						&types.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   util.GuestInfoBootstrapCondition,
 							Value: "false,my-reason,my,comma,delimited,message",
 						},

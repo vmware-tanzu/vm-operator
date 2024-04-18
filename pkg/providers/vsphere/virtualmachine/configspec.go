@@ -4,12 +4,12 @@
 package virtualmachine
 
 import (
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -21,11 +21,11 @@ import (
 // in the "update" pre-power on path. That operates on a ConfigInfo so we'd need to populate that from
 // the config we build here.
 func CreateConfigSpec(
-	vmCtx context.VirtualMachineContext,
-	configSpec types.VirtualMachineConfigSpec,
+	vmCtx pkgctx.VirtualMachineContext,
+	configSpec vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	vmImageStatus *vmopv1.VirtualMachineImageStatus,
-	minFreq uint64) types.VirtualMachineConfigSpec {
+	minFreq uint64) vimtypes.VirtualMachineConfigSpec {
 
 	configSpec.Name = vmCtx.VM.Name
 	if configSpec.Annotation == "" {
@@ -36,7 +36,7 @@ func CreateConfigSpec(
 	// precedence over values in the config spec
 	configSpec.NumCPUs = int32(vmClassSpec.Hardware.Cpus)
 	configSpec.MemoryMB = MemoryQuantityToMb(vmClassSpec.Hardware.Memory)
-	configSpec.ManagedBy = &types.ManagedByInfo{
+	configSpec.ManagedBy = &vimtypes.ManagedByInfo{
 		ExtensionKey: vmopv1.ManagedByExtensionKey,
 		Type:         vmopv1.ManagedByExtensionType,
 	}
@@ -66,9 +66,9 @@ func CreateConfigSpec(
 	// TODO: Remove limits: issues/56
 	if res := vmClassSpec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
 		// TODO: Always override?
-		configSpec.CpuAllocation = &types.ResourceAllocationInfo{
-			Shares: &types.SharesInfo{
-				Level: types.SharesLevelNormal,
+		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+			Shares: &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
 			},
 		}
 
@@ -86,9 +86,9 @@ func CreateConfigSpec(
 	// TODO: Remove limits: issues/56
 	if res := vmClassSpec.Policies.Resources; !res.Requests.Memory.IsZero() || !res.Limits.Memory.IsZero() {
 		// TODO: Always override?
-		configSpec.MemoryAllocation = &types.ResourceAllocationInfo{
-			Shares: &types.SharesInfo{
-				Level: types.SharesLevelNormal,
+		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+			Shares: &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
 			},
 		}
 
@@ -107,14 +107,14 @@ func CreateConfigSpec(
 
 func determineHardwareVersion(
 	vm *vmopv1.VirtualMachine,
-	configSpec *types.VirtualMachineConfigSpec,
-	vmImageStatus *vmopv1.VirtualMachineImageStatus) types.HardwareVersion {
+	configSpec *vimtypes.VirtualMachineConfigSpec,
+	vmImageStatus *vmopv1.VirtualMachineImageStatus) vimtypes.HardwareVersion {
 
-	vmMinVersion := types.HardwareVersion(vm.Spec.MinHardwareVersion)
+	vmMinVersion := vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion)
 
-	var configSpecVersion types.HardwareVersion
+	var configSpecVersion vimtypes.HardwareVersion
 	if configSpec.Version != "" {
-		configSpecVersion, _ = types.ParseHardwareVersion(configSpec.Version)
+		configSpecVersion, _ = vimtypes.ParseHardwareVersion(configSpec.Version)
 	}
 
 	if configSpecVersion.IsValid() {
@@ -130,12 +130,12 @@ func determineHardwareVersion(
 	// this is a ConfigSpec we created from the HW devices in the class. If the
 	// image's version is too old to support passthrough devices or PVCs if
 	// configured, bump the version so those devices will work.
-	var imageVersion types.HardwareVersion
+	var imageVersion vimtypes.HardwareVersion
 	if vmImageStatus != nil && vmImageStatus.HardwareVersion != nil {
-		imageVersion = types.HardwareVersion(*vmImageStatus.HardwareVersion)
+		imageVersion = vimtypes.HardwareVersion(*vmImageStatus.HardwareVersion)
 	}
 
-	var minVerFromDevs types.HardwareVersion
+	var minVerFromDevs vimtypes.HardwareVersion
 	if util.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange) {
 		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPCIPassthruDevices)
 	} else if hasPVC(vm) {
@@ -151,11 +151,11 @@ func determineHardwareVersion(
 // Placement. configSpec will likely be - or at least derived from - the
 // ConfigSpec returned by CreateConfigSpec above.
 func CreateConfigSpecForPlacement(
-	vmCtx context.VirtualMachineContext,
-	configSpec types.VirtualMachineConfigSpec,
-	storageClassesToIDs map[string]string) types.VirtualMachineConfigSpec {
+	vmCtx pkgctx.VirtualMachineContext,
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	storageClassesToIDs map[string]string) vimtypes.VirtualMachineConfigSpec {
 
-	deviceChangeCopy := make([]types.BaseVirtualDeviceConfigSpec, 0, len(configSpec.DeviceChange))
+	deviceChangeCopy := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(configSpec.DeviceChange))
 	for _, devChange := range configSpec.DeviceChange {
 		if spec := devChange.GetVirtualDeviceConfigSpec(); spec != nil {
 			// VC PlaceVmsXCluster() has issues when the ConfigSpec has EthCards so return to the
@@ -171,37 +171,37 @@ func CreateConfigSpecForPlacement(
 
 	// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
 	// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.
-	configSpec.DeviceChange = append(configSpec.DeviceChange, &types.VirtualDeviceConfigSpec{
-		Operation:     types.VirtualDeviceConfigSpecOperationAdd,
-		FileOperation: types.VirtualDeviceConfigSpecFileOperationCreate,
-		Device: &types.VirtualDisk{
+	configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+		Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+		FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+		Device: &vimtypes.VirtualDisk{
 			CapacityInBytes: 1024 * 1024,
-			VirtualDevice: types.VirtualDevice{
+			VirtualDevice: vimtypes.VirtualDevice{
 				Key: -42,
-				Backing: &types.VirtualDiskFlatVer2BackingInfo{
+				Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
 					ThinProvisioned: ptr.To(true),
 				},
 			},
 		},
-		Profile: []types.BaseVirtualMachineProfileSpec{
-			&types.VirtualMachineDefinedProfileSpec{
+		Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+			&vimtypes.VirtualMachineDefinedProfileSpec{
 				ProfileId: storageClassesToIDs[vmCtx.VM.Spec.StorageClass],
 			},
 		},
 	})
 
-	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {
+	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
 		isVolumes := instancestorage.FilterVolumes(vmCtx.VM)
 
 		for idx, dev := range CreateInstanceStorageDiskDevices(isVolumes) {
-			configSpec.DeviceChange = append(configSpec.DeviceChange, &types.VirtualDeviceConfigSpec{
-				Operation:     types.VirtualDeviceConfigSpecOperationAdd,
-				FileOperation: types.VirtualDeviceConfigSpecFileOperationCreate,
+			configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+				Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
 				Device:        dev,
-				Profile: []types.BaseVirtualMachineProfileSpec{
-					&types.VirtualMachineDefinedProfileSpec{
+				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+					&vimtypes.VirtualMachineDefinedProfileSpec{
 						ProfileId: storageClassesToIDs[isVolumes[idx].PersistentVolumeClaim.InstanceVolumeClaim.StorageClass],
-						ProfileData: &types.VirtualMachineProfileRawData{
+						ProfileData: &vimtypes.VirtualMachineProfileRawData{
 							ExtensionKey: "com.vmware.vim.sps",
 						},
 					},
@@ -225,16 +225,16 @@ func CreateConfigSpecForPlacement(
 // ConfigSpecFromVMClassDevices creates a ConfigSpec that adds the standalone hardware devices from
 // the VMClass if any. This ConfigSpec will be used as the class ConfigSpec to CreateConfigSpec, with
 // the rest of the class fields - like CPU count - applied on top.
-func ConfigSpecFromVMClassDevices(vmClassSpec *vmopv1.VirtualMachineClassSpec) types.VirtualMachineConfigSpec {
+func ConfigSpecFromVMClassDevices(vmClassSpec *vmopv1.VirtualMachineClassSpec) vimtypes.VirtualMachineConfigSpec {
 	devsFromClass := CreatePCIDevicesFromVMClass(vmClassSpec.Hardware.Devices)
 	if len(devsFromClass) == 0 {
-		return types.VirtualMachineConfigSpec{}
+		return vimtypes.VirtualMachineConfigSpec{}
 	}
 
-	var configSpec types.VirtualMachineConfigSpec
+	var configSpec vimtypes.VirtualMachineConfigSpec
 	for _, dev := range devsFromClass {
-		configSpec.DeviceChange = append(configSpec.DeviceChange, &types.VirtualDeviceConfigSpec{
-			Operation: types.VirtualDeviceConfigSpecOperationAdd,
+		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 			Device:    dev,
 		})
 	}

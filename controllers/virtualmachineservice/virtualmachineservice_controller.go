@@ -4,7 +4,7 @@
 package virtualmachineservice
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -29,8 +29,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -43,7 +43,7 @@ const (
 	OpUpdate = "UpdateK8sService"
 )
 
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controlledType     = &vmopv1.VirtualMachineService{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
@@ -52,9 +52,9 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	lbProviderType := pkgconfig.FromContext(ctx).LoadBalancerProvider
+	lbProviderType := pkgcfg.FromContext(ctx).LoadBalancerProvider
 	if lbProviderType == "" {
-		if pkgconfig.FromContext(ctx).NetworkProviderType == pkgconfig.NetworkProviderTypeNSXT {
+		if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeNSXT {
 			lbProviderType = providers.NSXTLoadBalancer
 		}
 	}
@@ -85,7 +85,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
-	ctx goctx.Context,
+	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
@@ -104,7 +104,7 @@ var _ reconcile.Reconciler = &ReconcileVirtualMachineService{}
 
 // ReconcileVirtualMachineService reconciles a VirtualMachineService object.
 type ReconcileVirtualMachineService struct {
-	Context goctx.Context
+	Context context.Context
 	client.Client
 	log                  logr.Logger
 	recorder             record.Recorder
@@ -119,15 +119,15 @@ type ReconcileVirtualMachineService struct {
 // +kubebuilder:rbac:groups="",resources=services/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 
-func (r *ReconcileVirtualMachineService) Reconcile(ctx goctx.Context, request reconcile.Request) (_ reconcile.Result, reterr error) {
-	ctx = pkgconfig.JoinContext(ctx, r.Context)
+func (r *ReconcileVirtualMachineService) Reconcile(ctx context.Context, request reconcile.Request) (_ reconcile.Result, reterr error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	vmService := &vmopv1.VirtualMachineService{}
 	if err := r.Get(ctx, request.NamespacedName, vmService); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	vmServiceCtx := &context.VirtualMachineServiceContext{
+	vmServiceCtx := &pkgctx.VirtualMachineServiceContext{
 		Context:   ctx,
 		Logger:    ctrl.Log.WithName("VirtualMachineService").WithValues("name", vmService.NamespacedName()),
 		VMService: vmService,
@@ -153,7 +153,7 @@ func (r *ReconcileVirtualMachineService) Reconcile(ctx goctx.Context, request re
 	return reconcile.Result{}, r.ReconcileNormal(vmServiceCtx)
 }
 
-func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *context.VirtualMachineServiceContext) error {
+func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *pkgctx.VirtualMachineServiceContext) error {
 	if controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) {
 		objectMeta := metav1.ObjectMeta{
 			Name:      ctx.VMService.Name,
@@ -180,7 +180,7 @@ func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *context.VirtualMac
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx *context.VirtualMachineServiceContext) error {
+func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx *pkgctx.VirtualMachineServiceContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) {
 		controllerutil.AddFinalizer(ctx.VMService, finalizerName)
 		// NOTE: The VirtualMachineService is set as the OwnerReference of the Service and Endpoints.
@@ -198,7 +198,7 @@ func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx *context.VirtualMac
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.VirtualMachineServiceContext) error {
+func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *pkgctx.VirtualMachineServiceContext) error {
 	ctx.Logger.Info("Reconcile VirtualMachineService")
 	defer ctx.Logger.Info("Finished Reconcile VirtualMachineService")
 
@@ -278,11 +278,11 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.Virtual
 // VirtualMachineServices that select a given VM via label selectors.
 // TODO: The VM's labels could have been changed so this should also return VirtualMachineServices that the
 // VM is currently an Endpoint for, because otherwise the VM won't be removed in a timely manner.
-func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper() func(_ goctx.Context, o client.Object) []reconcile.Request {
-	return func(_ goctx.Context, o client.Object) []reconcile.Request {
+func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper() func(_ context.Context, o client.Object) []reconcile.Request {
+	return func(_ context.Context, o client.Object) []reconcile.Request {
 		vm := o.(*vmopv1.VirtualMachine)
 
-		reconcileRequests, err := r.getVirtualMachineServicesSelectingVirtualMachine(goctx.Background(), vm)
+		reconcileRequests, err := r.getVirtualMachineServicesSelectingVirtualMachine(context.Background(), vm)
 		if err != nil {
 			return nil
 		}
@@ -301,7 +301,7 @@ func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMa
 // Set labels and annotations on the Service from the VirtualMachineService. Some loadbalancer providers (currently
 // only NCP) need to filter or translate labels and annotations too.
 func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
-	ctx *context.VirtualMachineServiceContext,
+	ctx *pkgctx.VirtualMachineServiceContext,
 	service *corev1.Service) error {
 	vmService := ctx.VMService
 
@@ -372,7 +372,7 @@ func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *context.VirtualMachineServiceContext) (*corev1.Service, error) {
+func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.VirtualMachineServiceContext) (*corev1.Service, error) {
 	ctx.Logger.V(5).Info("Reconciling k8s Service")
 	defer ctx.Logger.V(5).Info("Finished reconciling k8s Service")
 
@@ -467,7 +467,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *context.Virt
 }
 
 func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVMService(
-	ctx *context.VirtualMachineServiceContext) (*vmopv1.VirtualMachineList, error) {
+	ctx *pkgctx.VirtualMachineServiceContext) (*vmopv1.VirtualMachineList, error) {
 
 	if len(ctx.VMService.Spec.Selector) == 0 {
 		return nil, nil
@@ -480,7 +480,7 @@ func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVMService(
 
 // getVMsReferencedByServiceEndpoints gets all VMs that are referenced by service endpoints.
 func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(
-	ctx *context.VirtualMachineServiceContext,
+	ctx *pkgctx.VirtualMachineServiceContext,
 	service *corev1.Service) map[types.UID]struct{} {
 	endpoints := &corev1.Endpoints{}
 	if err := r.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, endpoints); err != nil {
@@ -500,7 +500,7 @@ func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(
 }
 
 func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(
-	ctx goctx.Context,
+	ctx context.Context,
 	lookupVM *vmopv1.VirtualMachine) ([]reconcile.Request, error) {
 
 	if len(lookupVM.Labels) == 0 {
@@ -531,7 +531,7 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 }
 
 // createOrUpdateEndpoints updates the Endpoints for VirtualMachineService.
-func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *context.VirtualMachineServiceContext, service *corev1.Service) error {
+func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *pkgctx.VirtualMachineServiceContext, service *corev1.Service) error {
 	ctx.Logger.V(5).Info("Updating VirtualMachineService Endpoints")
 	defer ctx.Logger.V(5).Info("Finished updating VirtualMachineService Endpoints")
 
@@ -593,7 +593,7 @@ func findVMPortNum(_ *vmopv1.VirtualMachine, port intstr.IntOrString, _ corev1.P
 
 // generateSubsetsForService generates Endpoints subsets for a given Service.
 func (r *ReconcileVirtualMachineService) generateSubsetsForService(
-	ctx *context.VirtualMachineServiceContext,
+	ctx *pkgctx.VirtualMachineServiceContext,
 	service *corev1.Service) ([]corev1.EndpointSubset, error) {
 
 	vmList, err := r.getVirtualMachinesSelectedByVMService(ctx)
@@ -701,7 +701,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 }
 
 // updateVMService syncs the VirtualMachineService Status from the Service status.
-func (r *ReconcileVirtualMachineService) updateVMService(ctx *context.VirtualMachineServiceContext, service *corev1.Service) error {
+func (r *ReconcileVirtualMachineService) updateVMService(ctx *pkgctx.VirtualMachineServiceContext, service *corev1.Service) error {
 	vmService := ctx.VMService
 
 	if vmService.Spec.Type == vmopv1.VirtualMachineServiceTypeLoadBalancer {

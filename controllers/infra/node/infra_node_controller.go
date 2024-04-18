@@ -4,7 +4,7 @@
 package node
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -16,17 +16,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 type provider interface {
-	ComputeCPUMinFrequency(ctx goctx.Context) error
+	ComputeCPUMinFrequency(ctx context.Context) error
 }
 
 // AddToManager adds this package's controller to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controllerName      = "infra-node"
 		controlledType      = &corev1.Node{}
@@ -68,7 +68,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
-	ctx goctx.Context,
+	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
@@ -84,7 +84,7 @@ func NewReconciler(
 
 type Reconciler struct {
 	client.Client
-	Context  goctx.Context
+	Context  context.Context
 	Logger   logr.Logger
 	Recorder record.Recorder
 	provider provider
@@ -92,8 +92,8 @@ type Reconciler struct {
 
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 
-func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
-	ctx = pkgconfig.JoinContext(ctx, r.Context)
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	r.Logger.Info("Received reconcile request", "namespace", req.Namespace, "name", req.Name)
 

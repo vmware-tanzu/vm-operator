@@ -16,24 +16,24 @@ import (
 
 	// +kubebuilder:scaffold:imports
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 // AddToManagerFunc is a function that can be optionally specified with
 // the manager's Options in order to explicitly decide what controllers and
 // webhooks to add to the manager.
-type AddToManagerFunc func(*context.ControllerManagerContext, ctrlmgr.Manager) error
+type AddToManagerFunc func(*pkgctx.ControllerManagerContext, ctrlmgr.Manager) error
 
-var AddToManagerNoopFn AddToManagerFunc = func(_ *context.ControllerManagerContext, _ ctrlmgr.Manager) error {
+var AddToManagerNoopFn AddToManagerFunc = func(_ *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 	return nil
 }
 
 // InitializeProvidersFunc is a function that can be optionally specified with
 // the manager's Options in order to explicitly decide what providers in the
 // context are initialized.
-type InitializeProvidersFunc func(*context.ControllerManagerContext, ctrlmgr.Manager) error
+type InitializeProvidersFunc func(*pkgctx.ControllerManagerContext, ctrlmgr.Manager) error
 
-var InitializeProvidersNoopFn InitializeProvidersFunc = func(_ *context.ControllerManagerContext, _ ctrlmgr.Manager) error {
+var InitializeProvidersNoopFn InitializeProvidersFunc = func(_ *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 	return nil
 }
 

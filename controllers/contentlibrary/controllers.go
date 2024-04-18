@@ -8,11 +8,11 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/clustercontentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentlibraryitem"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 // AddToManager adds the controller to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	if err := clustercontentlibraryitem.AddToManager(ctx, mgr); err != nil {
 		return err
 	}

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -18,14 +18,14 @@ import (
 	k8syaml "sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // BackupVirtualMachineOptions contains the options for BackupVirtualMachine.
 type BackupVirtualMachineOptions struct {
-	VMCtx               context.VirtualMachineContext
+	VMCtx               pkgctx.VirtualMachineContext
 	VcVM                *object.VirtualMachine
 	DiskUUIDToPVC       map[string]corev1.PersistentVolumeClaim
 	AdditionalResources []client.Object
@@ -55,7 +55,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	}
 
 	curEcMap := util.ExtraConfigToMap(moVM.Config.ExtraConfig)
-	ecToUpdate := []types.BaseOptionValue{}
+	ecToUpdate := []vimtypes.BaseOptionValue{}
 
 	vmYAML, err := getDesiredVMResourceYAMLForBackup(opts.VMCtx.VM, curEcMap)
 	if err != nil {
@@ -65,7 +65,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	if vmYAML == "" {
 		opts.VMCtx.Logger.V(4).Info("Skipping VM resource yaml backup as unchanged")
 	} else {
-		ecToUpdate = append(ecToUpdate, &types.OptionValue{
+		ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
 			Key:   vmopv1.VMResourceYAMLExtraConfigKey,
 			Value: vmYAML,
 		})
@@ -83,7 +83,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	if additionalYAML == "" {
 		opts.VMCtx.Logger.V(4).Info("Skipping additional resources yaml backup as unchanged")
 	} else {
-		ecToUpdate = append(ecToUpdate, &types.OptionValue{
+		ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
 			Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
 			Value: additionalYAML,
 		})
@@ -98,7 +98,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	if pvcDiskData == "" {
 		opts.VMCtx.Logger.V(4).Info("Skipping PVC disk data backup as unchanged")
 	} else {
-		ecToUpdate = append(ecToUpdate, &types.OptionValue{
+		ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
 			Key:   vmopv1.PVCDiskDataExtraConfigKey,
 			Value: pvcDiskData,
 		})
@@ -107,7 +107,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	if len(ecToUpdate) != 0 {
 		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with latest backup data",
 			"ExtraConfigToUpdate", ecToUpdate)
-		configSpec := &types.VirtualMachineConfigSpec{
+		configSpec := &vimtypes.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
 		}
 		if err := resVM.Reconfigure(opts.VMCtx, configSpec); err != nil {
@@ -252,9 +252,9 @@ func getDesiredPVCDiskDataForBackup(
 	}
 
 	var diskData []PVCDiskData
-	for _, device := range deviceList.SelectByType((*types.VirtualDisk)(nil)) {
-		if disk, ok := device.(*types.VirtualDisk); ok {
-			if b, ok := disk.Backing.(*types.VirtualDiskFlatVer2BackingInfo); ok {
+	for _, device := range deviceList.SelectByType((*vimtypes.VirtualDisk)(nil)) {
+		if disk, ok := device.(*vimtypes.VirtualDisk); ok {
+			if b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
 				if pvc, ok := opts.DiskUUIDToPVC[b.Uuid]; ok {
 					diskData = append(diskData, PVCDiskData{
 						FileName:    b.FileName,

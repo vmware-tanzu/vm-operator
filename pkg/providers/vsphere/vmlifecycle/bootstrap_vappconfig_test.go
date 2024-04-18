@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/utils/ptr"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
@@ -21,16 +21,16 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 	const key, value = "fooKey", "fooValue"
 
 	var (
-		configInfo       *types.VirtualMachineConfigInfo
+		configInfo       *vimtypes.VirtualMachineConfigInfo
 		vAppConfigSpec   *vmopv1.VirtualMachineBootstrapVAppConfigSpec
 		bsArgs           vmlifecycle.BootstrapArgs
-		baseVMConfigSpec types.BaseVmConfigSpec
+		baseVMConfigSpec vimtypes.BaseVmConfigSpec
 	)
 
 	BeforeEach(func() {
-		configInfo = &types.VirtualMachineConfigInfo{}
-		configInfo.VAppConfig = &types.VmConfigInfo{
-			Property: []types.VAppPropertyInfo{
+		configInfo = &vimtypes.VirtualMachineConfigInfo{}
+		configInfo.VAppConfig = &vimtypes.VmConfigInfo{
+			Property: []vimtypes.VAppPropertyInfo{
 				{
 					Id:               key,
 					Value:            "should-change",
@@ -203,7 +203,7 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 var _ = Describe("GetMergedvAppConfigSpec", func() {
 
 	DescribeTable("returns expected props",
-		func(inProps map[string]string, vmProps []types.VAppPropertyInfo, expected *types.VmConfigSpec) {
+		func(inProps map[string]string, vmProps []vimtypes.VAppPropertyInfo, expected *vimtypes.VmConfigSpec) {
 			vAppConfigSpec := vmlifecycle.GetMergedvAppConfigSpec(inProps, vmProps)
 			if expected == nil {
 				Expect(vAppConfigSpec).To(BeNil())
@@ -213,7 +213,7 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 					Expect(vAppConfigSpec.Property[i].Info.Key).To(Equal(expected.Property[i].Info.Key))
 					Expect(vAppConfigSpec.Property[i].Info.Id).To(Equal(expected.Property[i].Info.Id))
 					Expect(vAppConfigSpec.Property[i].Info.Value).To(Equal(expected.Property[i].Info.Value))
-					Expect(vAppConfigSpec.Property[i].ArrayUpdateSpec.Operation).To(Equal(types.ArrayUpdateOperationEdit))
+					Expect(vAppConfigSpec.Property[i].ArrayUpdateSpec.Operation).To(Equal(vimtypes.ArrayUpdateOperationEdit))
 				}
 				Expect(vAppConfigSpec.OvfEnvironmentTransport).To(HaveLen(1))
 				Expect(vAppConfigSpec.OvfEnvironmentTransport[0]).To(Equal(vmlifecycle.OvfEnvironmentTransportGuestInfo))
@@ -221,7 +221,7 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 		},
 		Entry("return nil for absent vm and input props",
 			map[string]string{},
-			[]types.VAppPropertyInfo{},
+			[]vimtypes.VAppPropertyInfo{},
 			nil,
 		),
 		Entry("return nil for non UserConfigurable vm props",
@@ -229,7 +229,7 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 				"one-id": "one-override-value",
 				"two-id": "two-override-value",
 			},
-			[]types.VAppPropertyInfo{
+			[]vimtypes.VAppPropertyInfo{
 				{Key: 1, Id: "one-id", Value: "one-value"},
 				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: ptr.To(false)},
 			},
@@ -237,7 +237,7 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 		),
 		Entry("return nil for UserConfigurable vm props but no input props",
 			map[string]string{},
-			[]types.VAppPropertyInfo{
+			[]vimtypes.VAppPropertyInfo{
 				{Key: 1, Id: "one-id", Value: "one-value"},
 				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: ptr.To(true)},
 			},
@@ -249,14 +249,14 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 				"two-id":   "two-override-value",
 				"three-id": "three-override-value",
 			},
-			[]types.VAppPropertyInfo{
+			[]vimtypes.VAppPropertyInfo{
 				{Key: 1, Id: "one-id", Value: "one-value", UserConfigurable: nil},
 				{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: ptr.To(true)},
 				{Key: 3, Id: "three-id", Value: "three-value", UserConfigurable: ptr.To(false)},
 			},
-			&types.VmConfigSpec{
-				Property: []types.VAppPropertySpec{
-					{Info: &types.VAppPropertyInfo{Key: 2, Id: "two-id", Value: "two-override-value"}},
+			&vimtypes.VmConfigSpec{
+				Property: []vimtypes.VAppPropertySpec{
+					{Info: &vimtypes.VAppPropertyInfo{Key: 2, Id: "two-id", Value: "two-override-value"}},
 				},
 			},
 		),

@@ -26,7 +26,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -53,7 +53,7 @@ var (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineservices/status,verbs=get
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create VirtualMachineService validation webhook")
@@ -82,7 +82,7 @@ func (v validator) For() schema.GroupVersionKind {
 	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineService{}).Name())
 }
 
-func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vmService, err := v.vmServiceFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -100,11 +100,11 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
 	return admission.Allowed("")
 }
 
-func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vmService, err := v.vmServiceFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -127,7 +127,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmService *vmopv1.VirtualMachineService) field.ErrorList {
+func (v validator) validateMetadata(ctx *pkgctx.WebhookRequestContext, vmService *vmopv1.VirtualMachineService) field.ErrorList {
 	mdPath := field.NewPath("metadata")
 
 	var allErrs field.ErrorList
@@ -136,7 +136,7 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmServic
 	return allErrs
 }
 
-func (v validator) validateSpec(ctx *context.WebhookRequestContext, vmService *vmopv1.VirtualMachineService) field.ErrorList {
+func (v validator) validateSpec(ctx *pkgctx.WebhookRequestContext, vmService *vmopv1.VirtualMachineService) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
@@ -260,7 +260,7 @@ func validateServicePort(sp *vmopv1.VirtualMachineServicePort, requireName bool,
 
 // There is much more nuance to this for a Service - like changing the Type - but let this be
 // pretty simple for now.
-func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vmService, oldVMService *vmopv1.VirtualMachineService) field.ErrorList {
+func (v validator) validateAllowedChanges(ctx *pkgctx.WebhookRequestContext, vmService, oldVMService *vmopv1.VirtualMachineService) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 

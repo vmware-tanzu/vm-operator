@@ -15,7 +15,7 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vim25/mo"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -26,7 +26,7 @@ func hardwareVersionTests() {
 		var (
 			ctx          *builder.TestContextForVCSim
 			mgdObj       mo.VirtualMachine
-			moRef        vimTypes.ManagedObjectReference
+			moRef        vimtypes.ManagedObjectReference
 			obj          *object.VirtualMachine
 			propsToFetch = []string{vmutil.HardwareVersionProperty}
 		)
@@ -38,14 +38,14 @@ func hardwareVersionTests() {
 			Expect(vmList).ToNot(BeEmpty())
 			moRef = vmList[0].Reference()
 			mgdObj = vmutil.ManagedObjectFromMoRef(moRef)
-			mgdObj.Config = &vimTypes.VirtualMachineConfigInfo{}
+			mgdObj.Config = &vimtypes.VirtualMachineConfigInfo{}
 			simulator.TaskDelay.MethodDelay = map[string]int{}
 			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)
 
 			// If the VM is not powered off, then power it off.
 			powerState, err := obj.PowerState(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			if powerState == vimTypes.VirtualMachinePowerStatePoweredOn {
+			if powerState == vimtypes.VirtualMachinePowerStatePoweredOn {
 				tsk, err := obj.PowerOff(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(tsk.WaitEx(ctx)).To(Succeed())
@@ -59,14 +59,14 @@ func hardwareVersionTests() {
 
 		type testArgs struct {
 			cachedHardwareVersion  string
-			cachedPowerState       vimTypes.VirtualMachinePowerState
+			cachedPowerState       vimtypes.VirtualMachinePowerState
 			cachedSelfValue        string
 			expectedErrFn          func(err error)
 			expectedResult         vmutil.ReconcileMinHardwareVersionResult
 			expectedVersion        string
 			fetchProperties        bool
 			initialHardwareVersion string
-			initialPowerState      vimTypes.VirtualMachinePowerState
+			initialPowerState      vimtypes.VirtualMachinePowerState
 			minHardwareVersion     int32
 			nilClient              bool
 			nilCtx                 bool
@@ -78,10 +78,10 @@ func hardwareVersionTests() {
 			ExpectWithOffset(1, err).To(HaveOccurred())
 			ExpectWithOffset(1, err).To(BeAssignableToTypeOf(task.Error{}))
 			ExpectWithOffset(1, err.(task.Error).Fault()).ToNot(BeNil())
-			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimTypes.InvalidPowerStateFault{}))
-			fault := err.(task.Error).Fault().(*vimTypes.InvalidPowerStateFault)
-			ExpectWithOffset(1, fault.ExistingState).To(Equal(vimTypes.VirtualMachinePowerStatePoweredOn))
-			ExpectWithOffset(1, fault.RequestedState).To(Equal(vimTypes.VirtualMachinePowerStatePoweredOff))
+			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimtypes.InvalidPowerStateFault{}))
+			fault := err.(task.Error).Fault().(*vimtypes.InvalidPowerStateFault)
+			ExpectWithOffset(1, fault.ExistingState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+			ExpectWithOffset(1, fault.RequestedState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 		}
 
 		assertInvalidPowerStateFaultSuspended := func(err error) {
@@ -90,10 +90,10 @@ func hardwareVersionTests() {
 			ExpectWithOffset(1, err).To(HaveOccurred())
 			ExpectWithOffset(1, err).To(BeAssignableToTypeOf(task.Error{}))
 			ExpectWithOffset(1, err.(task.Error).Fault()).ToNot(BeNil())
-			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimTypes.InvalidPowerStateFault{}))
-			fault := err.(task.Error).Fault().(*vimTypes.InvalidPowerStateFault)
-			ExpectWithOffset(1, fault.ExistingState).To(Equal(vimTypes.VirtualMachinePowerStateSuspended))
-			ExpectWithOffset(1, fault.RequestedState).To(Equal(vimTypes.VirtualMachinePowerStatePoweredOff))
+			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimtypes.InvalidPowerStateFault{}))
+			fault := err.(task.Error).Fault().(*vimtypes.InvalidPowerStateFault)
+			ExpectWithOffset(1, fault.ExistingState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
+			ExpectWithOffset(1, fault.RequestedState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 		}
 
 		assertAlreadyUpgradedFault := func(err error) {
@@ -102,7 +102,7 @@ func hardwareVersionTests() {
 			ExpectWithOffset(1, err).To(HaveOccurred())
 			ExpectWithOffset(1, err).To(BeAssignableToTypeOf(task.Error{}))
 			ExpectWithOffset(1, err.(task.Error).Fault()).ToNot(BeNil())
-			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimTypes.AlreadyUpgradedFault{}))
+			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimtypes.AlreadyUpgradedFault{}))
 		}
 
 		assertFailedToRetrievePropsNotFound := func(err error) {
@@ -120,7 +120,7 @@ func hardwareVersionTests() {
 			if args.initialHardwareVersion != "" {
 				tsk, err := obj.Reconfigure(
 					ctx,
-					vimTypes.VirtualMachineConfigSpec{
+					vimtypes.VirtualMachineConfigSpec{
 						Version: args.initialHardwareVersion,
 					})
 				ExpectWithOffset(1, err).ToNot(HaveOccurred())
@@ -130,15 +130,15 @@ func hardwareVersionTests() {
 			// Configure the VM's initial power state.
 			switch args.initialPowerState {
 
-			case "", vimTypes.VirtualMachinePowerStatePoweredOff:
+			case "", vimtypes.VirtualMachinePowerStatePoweredOff:
 				// No-op
 
-			case vimTypes.VirtualMachinePowerStatePoweredOn:
+			case vimtypes.VirtualMachinePowerStatePoweredOn:
 				tsk, err := obj.PowerOn(ctx)
 				ExpectWithOffset(1, err).ToNot(HaveOccurred())
 				ExpectWithOffset(1, tsk.WaitEx(ctx)).To(Succeed())
 
-			case vimTypes.VirtualMachinePowerStateSuspended:
+			case vimtypes.VirtualMachinePowerStateSuspended:
 				tsk, err := obj.PowerOn(ctx)
 				ExpectWithOffset(1, err).ToNot(HaveOccurred())
 				ExpectWithOffset(1, tsk.WaitEx(ctx)).To(Succeed())
@@ -218,9 +218,9 @@ func hardwareVersionTests() {
 						ExpectWithOffset(1, err).To(HaveOccurred())
 						ExpectWithOffset(1, err.Error()).To(Equal(
 							fmt.Sprintf("invalid minHardwareVersion: %d",
-								int32(vimTypes.MinValidHardwareVersion)-1)))
+								int32(vimtypes.MinValidHardwareVersion)-1)))
 					},
-					minHardwareVersion: int32(vimTypes.MinValidHardwareVersion) - 1,
+					minHardwareVersion: int32(vimtypes.MinValidHardwareVersion) - 1,
 				},
 			),
 			Entry(
@@ -230,9 +230,9 @@ func hardwareVersionTests() {
 						ExpectWithOffset(1, err).To(HaveOccurred())
 						ExpectWithOffset(1, err.Error()).To(Equal(
 							fmt.Sprintf("invalid minHardwareVersion: %d",
-								int32(vimTypes.MaxValidHardwareVersion)+1)))
+								int32(vimtypes.MaxValidHardwareVersion)+1)))
 					},
-					minHardwareVersion: int32(vimTypes.MaxValidHardwareVersion) + 1,
+					minHardwareVersion: int32(vimtypes.MaxValidHardwareVersion) + 1,
 				},
 			),
 		)
@@ -246,10 +246,10 @@ func hardwareVersionTests() {
 				testArgs{
 					cachedSelfValue:        doesNotExist,
 					expectedErrFn:          assertFailedToRetrievePropsNotFound,
-					expectedVersion:        vimTypes.VMX15.String(),
+					expectedVersion:        vimtypes.VMX15.String(),
 					fetchProperties:        true,
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
@@ -258,34 +258,34 @@ func hardwareVersionTests() {
 				testArgs{
 					cachedSelfValue:        doesNotExist,
 					expectedErrFn:          assertFailedToRetrievePropsNotFound,
-					expectedVersion:        vimTypes.VMX15.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX15.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should fail to upgrade vm with NotFound error from RetrieveProperties when fetchProperties is false, hardware version is cached, and power state is not cached",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX15.String(),
+					cachedHardwareVersion:  vimtypes.VMX15.String(),
 					cachedSelfValue:        doesNotExist,
 					expectedErrFn:          assertFailedToRetrievePropsNotFound,
-					expectedVersion:        vimTypes.VMX15.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX15.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should fail to upgrade vm with NotFound error from UpgradeVm when fetchProperties is false, hardware version is cached, and power state is cached",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX15.String(),
-					cachedPowerState:       vimTypes.VirtualMachinePowerStatePoweredOff,
+					cachedHardwareVersion:  vimtypes.VMX15.String(),
+					cachedPowerState:       vimtypes.VirtualMachinePowerStatePoweredOff,
 					cachedSelfValue:        doesNotExist,
 					expectedErrFn:          assertFailedToUpgradeNotFound,
-					expectedVersion:        vimTypes.VMX15.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX15.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
@@ -299,10 +299,10 @@ func hardwareVersionTests() {
 				"should upgrade vm when fetchProperties is true",
 				testArgs{
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultUpgraded,
-					expectedVersion:        vimTypes.VMX17.String(),
+					expectedVersion:        vimtypes.VMX17.String(),
 					fetchProperties:        true,
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
@@ -310,31 +310,31 @@ func hardwareVersionTests() {
 				"should upgrade vm when fetchProperties is false, hardware version is not cached, and power state is not cached",
 				testArgs{
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultUpgraded,
-					expectedVersion:        vimTypes.VMX17.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX17.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should upgrade vm when fetchProperties is false, hardware version is cached, and power state is not cached",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX15.String(),
+					cachedHardwareVersion:  vimtypes.VMX15.String(),
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultUpgraded,
-					expectedVersion:        vimTypes.VMX17.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX17.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should upgrade vm when fetchProperties is false, hardware version is not cached, and power state is cached",
 				testArgs{
-					cachedPowerState:       vimTypes.VirtualMachinePowerStatePoweredOff,
+					cachedPowerState:       vimtypes.VirtualMachinePowerStatePoweredOff,
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultUpgraded,
-					expectedVersion:        vimTypes.VMX17.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX17.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
@@ -347,85 +347,85 @@ func hardwareVersionTests() {
 			Entry(
 				"should upgrade vm when fetchProperties is true, incorrect hardware version is cached, and incorrect power state is cached",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX17.String(),
-					cachedPowerState:       vimTypes.VirtualMachinePowerStatePoweredOn,
+					cachedHardwareVersion:  vimtypes.VMX17.String(),
+					cachedPowerState:       vimtypes.VirtualMachinePowerStatePoweredOn,
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultUpgraded,
-					expectedVersion:        vimTypes.VMX17.String(),
+					expectedVersion:        vimtypes.VMX17.String(),
 					fetchProperties:        true,
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should skip upgrade vm when fetchProperties is false, correct hardware version is cached, and power state is cached as powered on",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX15.String(),
-					cachedPowerState:       vimTypes.VirtualMachinePowerStatePoweredOn,
+					cachedHardwareVersion:  vimtypes.VMX15.String(),
+					cachedPowerState:       vimtypes.VirtualMachinePowerStatePoweredOn,
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultNotPoweredOff,
-					expectedVersion:        vimTypes.VMX15.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX15.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should skip upgrade vm when fetchProperties is false, correct hardware version is cached, and power state is cached as suspended",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX15.String(),
-					cachedPowerState:       vimTypes.VirtualMachinePowerStateSuspended,
+					cachedHardwareVersion:  vimtypes.VMX15.String(),
+					cachedPowerState:       vimtypes.VirtualMachinePowerStateSuspended,
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultNotPoweredOff,
-					expectedVersion:        vimTypes.VMX15.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX15.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should skip upgrade vm when fetchProperties is false, hardware version is cached as if already upgraded, and correct power state is cached",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX17.String(),
-					cachedPowerState:       vimTypes.VirtualMachinePowerStatePoweredOff,
+					cachedHardwareVersion:  vimtypes.VMX17.String(),
+					cachedPowerState:       vimtypes.VirtualMachinePowerStatePoweredOff,
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultAlreadyUpgraded,
-					expectedVersion:        vimTypes.VMX15.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX15.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should fail to upgrade vm with InvalidPowerStateFault when fetchProperties is false, correct hardware version is cached, and power state is cached as powered off when vm is powered on",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX15.String(),
-					cachedPowerState:       vimTypes.VirtualMachinePowerStatePoweredOff,
+					cachedHardwareVersion:  vimtypes.VMX15.String(),
+					cachedPowerState:       vimtypes.VirtualMachinePowerStatePoweredOff,
 					expectedErrFn:          assertInvalidPowerStateFaultPoweredOn,
-					expectedVersion:        vimTypes.VMX15.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOn,
+					expectedVersion:        vimtypes.VMX15.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOn,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should fail to upgrade vm with InvalidPowerStateFault when fetchProperties is false, correct hardware version is cached, and power state is cached as powered off when vm is suspended",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX15.String(),
-					cachedPowerState:       vimTypes.VirtualMachinePowerStatePoweredOff,
+					cachedHardwareVersion:  vimtypes.VMX15.String(),
+					cachedPowerState:       vimtypes.VirtualMachinePowerStatePoweredOff,
 					expectedErrFn:          assertInvalidPowerStateFaultSuspended,
-					expectedVersion:        vimTypes.VMX15.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStateSuspended,
+					expectedVersion:        vimtypes.VMX15.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStateSuspended,
 					minHardwareVersion:     17,
 				},
 			),
 			Entry(
 				"should fail to upgrade vm with AlreadyUpgradedFault when fetchProperties is false, hardware version is cached as if not upgraded, and correct power state is cached",
 				testArgs{
-					cachedHardwareVersion:  vimTypes.VMX15.String(),
-					cachedPowerState:       vimTypes.VirtualMachinePowerStatePoweredOff,
+					cachedHardwareVersion:  vimtypes.VMX15.String(),
+					cachedPowerState:       vimtypes.VirtualMachinePowerStatePoweredOff,
 					expectedErrFn:          assertAlreadyUpgradedFault,
-					expectedVersion:        vimTypes.VMX17.String(),
-					initialHardwareVersion: vimTypes.VMX17.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX17.String(),
+					initialHardwareVersion: vimtypes.VMX17.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
@@ -446,9 +446,9 @@ func hardwareVersionTests() {
 				"should skip upgrade vm when current version is same as minHardwareVersion",
 				testArgs{
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultAlreadyUpgraded,
-					expectedVersion:        vimTypes.VMX17.String(),
-					initialHardwareVersion: vimTypes.VMX17.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX17.String(),
+					initialHardwareVersion: vimtypes.VMX17.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
@@ -456,9 +456,9 @@ func hardwareVersionTests() {
 				"should skip upgrade vm when current version is greater than minHardwareVersion",
 				testArgs{
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultAlreadyUpgraded,
-					expectedVersion:        vimTypes.VMX20.String(),
-					initialHardwareVersion: vimTypes.VMX20.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX20.String(),
+					initialHardwareVersion: vimtypes.VMX20.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),
@@ -472,9 +472,9 @@ func hardwareVersionTests() {
 				"should upgrade vm when current version is less than minHardwareVersion",
 				testArgs{
 					expectedResult:         vmutil.ReconcileMinHardwareVersionResultUpgraded,
-					expectedVersion:        vimTypes.VMX17.String(),
-					initialHardwareVersion: vimTypes.VMX15.String(),
-					initialPowerState:      vimTypes.VirtualMachinePowerStatePoweredOff,
+					expectedVersion:        vimtypes.VMX17.String(),
+					initialHardwareVersion: vimtypes.VMX15.String(),
+					initialPowerState:      vimtypes.VirtualMachinePowerStatePoweredOff,
 					minHardwareVersion:     17,
 				},
 			),

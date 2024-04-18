@@ -12,7 +12,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/ptr"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
 )
 
@@ -20,7 +20,7 @@ import (
 // in production because we only really support deploying an OVF via content library.
 // Maybe someday we'll use clone to speed up VM deployment so keep this code around and unit tested.
 func cloneVMFromInventory(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	finder *find.Finder,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
@@ -54,7 +54,7 @@ func cloneVMFromInventory(
 }
 
 func createCloneSpec(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *CreateArgs,
 	srcVM *object.VirtualMachine) (*vimtypes.VirtualMachineCloneSpec, error) {
 
@@ -156,7 +156,7 @@ func cloneVMDiskLocators(
 }
 
 func resizeBootDiskDeviceChange(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	virtualDisks object.VirtualDeviceList) []vimtypes.BaseVirtualDeviceConfigSpec {
 
 	advanced := vmCtx.VM.Spec.Advanced

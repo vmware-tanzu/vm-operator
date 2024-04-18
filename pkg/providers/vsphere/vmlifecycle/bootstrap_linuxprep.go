@@ -4,45 +4,45 @@
 package vmlifecycle
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 )
 
 func BootStrapLinuxPrep(
-	ctx goctx.Context,
-	config *vimTypes.VirtualMachineConfigInfo,
+	ctx context.Context,
+	config *vimtypes.VirtualMachineConfigInfo,
 	linuxPrepSpec *vmopv1.VirtualMachineBootstrapLinuxPrepSpec,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
-	bsArgs *BootstrapArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, error) {
+	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
 	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create GOSC NIC mappings: %w", err)
 	}
 
-	customSpec := &vimTypes.CustomizationSpec{
-		Identity: &vimTypes.CustomizationLinuxPrep{
-			HostName: &vimTypes.CustomizationFixedName{
+	customSpec := &vimtypes.CustomizationSpec{
+		Identity: &vimtypes.CustomizationLinuxPrep{
+			HostName: &vimtypes.CustomizationFixedName{
 				Name: bsArgs.Hostname,
 			},
 			TimeZone:   linuxPrepSpec.TimeZone,
-			HwClockUTC: vimTypes.NewBool(linuxPrepSpec.HardwareClockIsUTC),
+			HwClockUTC: vimtypes.NewBool(linuxPrepSpec.HardwareClockIsUTC),
 		},
-		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{
+		GlobalIPSettings: vimtypes.CustomizationGlobalIPSettings{
 			DnsSuffixList: bsArgs.SearchSuffixes,
 			DnsServerList: bsArgs.DNSServers,
 		},
 		NicSettingMap: nicSettingMap,
 	}
 
-	var configSpec *vimTypes.VirtualMachineConfigSpec
+	var configSpec *vimtypes.VirtualMachineConfigSpec
 	if vAppConfigSpec != nil {
-		configSpec = &vimTypes.VirtualMachineConfigSpec{}
+		configSpec = &vimtypes.VirtualMachineConfigSpec{}
 		configSpec.VAppConfig = GetOVFVAppConfigForConfigSpec(
 			config,
 			vAppConfigSpec,

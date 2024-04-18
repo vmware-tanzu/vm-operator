@@ -4,7 +4,7 @@
 package virtualmachinesetresourcepolicy
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"reflect"
 
@@ -16,8 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 )
@@ -27,7 +27,7 @@ const (
 )
 
 // AddToManager adds this package's controller to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controlledType     = &vmopv1.VirtualMachineSetResourcePolicy{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
@@ -46,7 +46,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
-	ctx goctx.Context,
+	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
@@ -60,14 +60,14 @@ func NewReconciler(
 
 // Reconciler reconciles a VirtualMachineSetResourcePolicy object.
 type Reconciler struct {
-	Context goctx.Context
+	Context context.Context
 	client.Client
 	Logger     logr.Logger
 	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // ReconcileNormal reconciles a VirtualMachineSetResourcePolicy.
-func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineSetResourcePolicyContext) error {
+func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSetResourcePolicyContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.ResourcePolicy, finalizerName) {
 		// Return here so the VirtualMachineSetResourcePolicy can be patched immediately. This ensures that
 		// the resource policies are cleaned up properly when they are deleted.
@@ -89,7 +89,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineSetResourcePolic
 }
 
 // deleteResourcePolicy deletes a VirtualMachineSetResourcePolicy resource.
-func (r *Reconciler) deleteResourcePolicy(ctx *context.VirtualMachineSetResourcePolicyContext) error {
+func (r *Reconciler) deleteResourcePolicy(ctx *pkgctx.VirtualMachineSetResourcePolicyContext) error {
 	resourcePolicy := ctx.ResourcePolicy
 
 	// Skip deleting a VirtualMachineSetResourcePolicy if it is referenced by a VirtualMachine.
@@ -116,7 +116,7 @@ func (r *Reconciler) deleteResourcePolicy(ctx *context.VirtualMachineSetResource
 	return nil
 }
 
-func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineSetResourcePolicyContext) error {
+func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSetResourcePolicyContext) error {
 	ctx.Logger.Info("Reconciling VirtualMachineSetResourcePolicy Deletion")
 	defer func() {
 		ctx.Logger.Info("Finished Reconciling VirtualMachineSetResourcePolicy Deletion")
@@ -136,15 +136,15 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineSetResourcePolic
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies/status,verbs=get;update;patch
 
-func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	ctx = pkgconfig.JoinContext(ctx, r.Context)
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	rp := &vmopv1.VirtualMachineSetResourcePolicy{}
 	if err := r.Get(ctx, req.NamespacedName, rp); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	rpCtx := &context.VirtualMachineSetResourcePolicyContext{
+	rpCtx := &pkgctx.VirtualMachineSetResourcePolicyContext{
 		Context:        ctx,
 		Logger:         r.Logger.WithName("VirtualMachineSetResourcePolicy").WithValues("name", rp.NamespacedName()),
 		ResourcePolicy: rp,

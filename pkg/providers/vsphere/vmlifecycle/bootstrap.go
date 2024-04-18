@@ -10,13 +10,13 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/task"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
-	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
@@ -57,9 +57,9 @@ type BootstrapArgs struct {
 }
 
 func DoBootstrap(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo,
+	config *vimtypes.VirtualMachineConfigInfo,
 	bootstrapArgs BootstrapArgs) error {
 
 	bootstrap := vmCtx.VM.Spec.Bootstrap
@@ -88,8 +88,8 @@ func DoBootstrap(
 	}
 
 	var err error
-	var configSpec *vimTypes.VirtualMachineConfigSpec
-	var customSpec *vimTypes.CustomizationSpec
+	var configSpec *vimtypes.VirtualMachineConfigSpec
+	var customSpec *vimtypes.CustomizationSpec
 
 	switch {
 	case cloudInit != nil:
@@ -126,8 +126,8 @@ func DoBootstrap(
 // GetBootstrapArgs returns the information used to bootstrap the VM via
 // one of the many, possible bootstrap engines.
 func GetBootstrapArgs(
-	ctx context.VirtualMachineContext,
-	k8sClient ctrl.Client,
+	ctx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
 	networkResults network.NetworkInterfaceResults,
 	bootstrapData BootstrapData) (BootstrapArgs, error) {
 
@@ -182,7 +182,7 @@ func GetBootstrapArgs(
 
 	if getDNSInformationFromConfigMap {
 		ns, ss, err := config.GetDNSInformationFromConfigMap(ctx, k8sClient)
-		if err != nil && ctrl.IgnoreNotFound(err) != nil {
+		if err != nil && ctrlclient.IgnoreNotFound(err) != nil {
 			// This ConfigMap doesn't exist in certain test envs.
 			return BootstrapArgs{}, err
 		}
@@ -224,11 +224,11 @@ func GetBootstrapArgs(
 }
 
 func doReconfigure(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	configSpec *vimTypes.VirtualMachineConfigSpec) error {
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
-	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
+	defaultConfigSpec := &vimtypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
 		logConfigSpec(vmCtx, *configSpec)
 
@@ -242,10 +242,10 @@ func doReconfigure(
 }
 
 func doCustomize(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo,
-	customSpec *vimTypes.CustomizationSpec) error {
+	config *vimtypes.VirtualMachineConfigInfo,
+	customSpec *vimtypes.CustomizationSpec) error {
 
 	if vmCtx.VM.Annotations[constants.VSphereCustomizationBypassKey] == constants.VSphereCustomizationBypassDisable {
 		vmCtx.Logger.Info("Skipping vsphere customization because of vsphere-customization bypass annotation")
@@ -273,7 +273,7 @@ func doCustomize(
 	return nil
 }
 
-func IsCustomizationPendingExtraConfig(extraConfig []vimTypes.BaseOptionValue) bool {
+func IsCustomizationPendingExtraConfig(extraConfig []vimtypes.BaseOptionValue) bool {
 	for _, opt := range extraConfig {
 		if optValue := opt.GetOptionValue(); optValue != nil {
 			if optValue.Key == constants.GOSCPendingExtraConfigKey {
@@ -286,14 +286,14 @@ func IsCustomizationPendingExtraConfig(extraConfig []vimTypes.BaseOptionValue) b
 
 func isCustomizationPendingError(err error) bool {
 	if te, ok := err.(task.Error); ok {
-		if _, ok := te.Fault().(*vimTypes.CustomizationPending); ok {
+		if _, ok := te.Fault().(*vimtypes.CustomizationPending); ok {
 			return true
 		}
 	}
 	return false
 }
 
-// linuxGuestIDPrefixes is derived from the vimTypes.VirtualMachineGuestOsIdentifier values.
+// linuxGuestIDPrefixes is derived from the vimtypes.VirtualMachineGuestOsIdentifier values.
 var linuxGuestIDPrefixes = [...]string{
 	"redhat",
 	"rhel",
@@ -327,17 +327,17 @@ func isLinuxGuest(guestID string) bool {
 }
 
 func logConfigSpec(
-	vmCtx context.VirtualMachineContext,
-	configSpec vimTypes.VirtualMachineConfigSpec) {
+	vmCtx pkgctx.VirtualMachineContext,
+	configSpec vimtypes.VirtualMachineConfigSpec) {
 
-	if !pkgconfig.FromContext(vmCtx).LogSensitiveData {
+	if !pkgcfg.FromContext(vmCtx).LogSensitiveData {
 		configSpec = SanitizeConfigSpec(configSpec)
 	}
 
 	vmCtx.Logger.Info("Customization Reconfigure", "configSpec", configSpec)
 }
 
-func SanitizeConfigSpec(cs vimTypes.VirtualMachineConfigSpec) vimTypes.VirtualMachineConfigSpec {
+func SanitizeConfigSpec(cs vimtypes.VirtualMachineConfigSpec) vimtypes.VirtualMachineConfigSpec {
 
 	cs.ExtraConfig = slices.Clone(cs.ExtraConfig)
 	for i, ec := range cs.ExtraConfig {
@@ -377,27 +377,27 @@ func SanitizeConfigSpec(cs vimTypes.VirtualMachineConfigSpec) vimTypes.VirtualMa
 }
 
 func logCustomizationSpec(
-	vmCtx context.VirtualMachineContext,
-	customizationSpec vimTypes.CustomizationSpec) {
+	vmCtx pkgctx.VirtualMachineContext,
+	customizationSpec vimtypes.CustomizationSpec) {
 
-	if !pkgconfig.FromContext(vmCtx).LogSensitiveData {
+	if !pkgcfg.FromContext(vmCtx).LogSensitiveData {
 		customizationSpec = SanitizeCustomizationSpec(customizationSpec)
 	}
 
 	vmCtx.Logger.Info("Customizing VM", "customizationSpec", customizationSpec)
 }
 
-func SanitizeCustomizationSpec(cs vimTypes.CustomizationSpec) vimTypes.CustomizationSpec {
+func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.CustomizationSpec {
 	switch identity := cs.Identity.(type) {
 	case *internal.CustomizationCloudinitPrep:
 		cloudInitPrep := *identity
 		cloudInitPrep.Userdata = redacted
 		cs.Identity = &cloudInitPrep
-	case *vimTypes.CustomizationSysprepText:
+	case *vimtypes.CustomizationSysprepText:
 		sysPrepText := *identity
 		sysPrepText.Value = redacted
 		cs.Identity = &sysPrepText
-	case *vimTypes.CustomizationSysprep:
+	case *vimtypes.CustomizationSysprep:
 		sysPrep := *identity
 		if sysPrep.GuiUnattended.Password != nil {
 			password := *sysPrep.GuiUnattended.Password

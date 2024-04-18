@@ -6,7 +6,7 @@ package v1alpha3
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 )
 
 // VirtualMachineNetworkRouteSpec defines a static route for a guest.
@@ -42,7 +42,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Namespace's default network.
 	//
 	// +optional
-	Network *common.PartialObjectRef `json:"network,omitempty"`
+	Network *vmopv1common.PartialObjectRef `json:"network,omitempty"`
 
 	// GuestDeviceName is used to rename the device inside the guest when the
 	// bootstrap provider is Cloud-Init. Please note it is up to the user to
@@ -316,7 +316,7 @@ type VirtualMachineNetworkDHCPOptionsStatus struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=key
-	Config []common.KeyValuePair `json:"config,omitempty"`
+	Config []vmopv1common.KeyValuePair `json:"config,omitempty"`
 
 	// Enabled reports the status of the DHCP client services.
 	// +omitempty
@@ -580,7 +580,7 @@ type VirtualMachineNetworkIPStackStatus struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=key
-	KernelConfig []common.KeyValuePair `json:"kernelConfig,omitempty"`
+	KernelConfig []vmopv1common.KeyValuePair `json:"kernelConfig,omitempty"`
 }
 
 // VirtualMachineNetworkStatus defines the observed state of a VM's

@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -104,7 +104,7 @@ func createDeleteExistsFolder() {
 			childFolderMoID, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
 			Expect(err).ToNot(HaveOccurred())
 
-			parentFolder := object.NewFolder(ctx.VCClient.Client, types.ManagedObjectReference{
+			parentFolder := object.NewFolder(ctx.VCClient.Client, vimtypes.ManagedObjectReference{
 				Type:  "Folder",
 				Value: parentFolderMoID,
 			})
@@ -116,7 +116,7 @@ func createDeleteExistsFolder() {
 		})
 
 		It("returns error when child Folder does not exists", func() {
-			parentFolder := object.NewFolder(ctx.VCClient.Client, types.ManagedObjectReference{
+			parentFolder := object.NewFolder(ctx.VCClient.Client, vimtypes.ManagedObjectReference{
 				Type:  "Folder",
 				Value: parentFolderMoID,
 			})

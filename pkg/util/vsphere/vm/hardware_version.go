@@ -11,7 +11,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
 const (
@@ -46,7 +46,7 @@ func ReconcileMinHardwareVersion(
 	if minHardwareVersion == 0 {
 		return ReconcileMinHardwareVersionResultMinHardwareVersionZero, nil
 	}
-	targetHardwareVersion := vimTypes.HardwareVersion(minHardwareVersion)
+	targetHardwareVersion := vimtypes.HardwareVersion(minHardwareVersion)
 	if !targetHardwareVersion.IsValid() {
 		return 0, fmt.Errorf("invalid minHardwareVersion: %d", minHardwareVersion)
 	}
@@ -87,7 +87,7 @@ func ReconcileMinHardwareVersion(
 		log.Info("Fetched hardware version and power state")
 	}
 
-	currentHardwareVersion := vimTypes.MustParseHardwareVersion(configVersion)
+	currentHardwareVersion := vimtypes.MustParseHardwareVersion(configVersion)
 	log = log.WithValues("currentHardwareVersion", currentHardwareVersion)
 
 	// If the current hardware version is already the same or newer than the
@@ -97,7 +97,7 @@ func ReconcileMinHardwareVersion(
 	}
 
 	// If the VM is not powered off, then there is nothing to do.
-	if mo.Runtime.PowerState != vimTypes.VirtualMachinePowerStatePoweredOff {
+	if mo.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOff {
 		log.Info("Skipping upgrade because VM is not powered off")
 		return ReconcileMinHardwareVersionResultNotPoweredOff, nil
 	}

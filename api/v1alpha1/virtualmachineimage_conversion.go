@@ -10,15 +10,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
-	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 )
 
 func Convert_v1alpha3_VirtualMachineImageOSInfo_To_v1alpha1_VirtualMachineImageOSInfo(
-	in *v1alpha3.VirtualMachineImageOSInfo, out *VirtualMachineImageOSInfo, s apiconversion.Scope) error {
+	in *vmopv1.VirtualMachineImageOSInfo, out *VirtualMachineImageOSInfo, s apiconversion.Scope) error {
 
 	// = in.ID
 	out.Type = in.Type
@@ -28,7 +28,7 @@ func Convert_v1alpha3_VirtualMachineImageOSInfo_To_v1alpha1_VirtualMachineImageO
 }
 
 func convert_v1alpha1_VirtualMachineImageOSInfo_To_v1alpha3_VirtualMachineImageOSInfo(
-	in *VirtualMachineImageOSInfo, out *v1alpha3.VirtualMachineImageOSInfo, s apiconversion.Scope) error {
+	in *VirtualMachineImageOSInfo, out *vmopv1.VirtualMachineImageOSInfo, s apiconversion.Scope) error {
 
 	out.Type = in.Type
 	out.Version = in.Version
@@ -37,7 +37,7 @@ func convert_v1alpha1_VirtualMachineImageOSInfo_To_v1alpha3_VirtualMachineImageO
 }
 
 func convert_v1alpha3_VirtualMachineImage_OVFProperties_To_v1alpha1_VirtualMachineImage_OVFEnv(
-	in []v1alpha3.OVFProperty, out *map[string]OvfProperty, s apiconversion.Scope) error {
+	in []vmopv1.OVFProperty, out *map[string]OvfProperty, s apiconversion.Scope) error {
 
 	if in != nil {
 		*out = map[string]OvfProperty{}
@@ -56,12 +56,12 @@ func convert_v1alpha3_VirtualMachineImage_OVFProperties_To_v1alpha1_VirtualMachi
 }
 
 func convert_v1alpha1_VirtualMachineImage_OVFEnv_To_v1alpha3_VirtualMachineImage_OVFProperties(
-	in map[string]OvfProperty, out *[]v1alpha3.OVFProperty, s apiconversion.Scope) error {
+	in map[string]OvfProperty, out *[]vmopv1.OVFProperty, s apiconversion.Scope) error {
 
 	if in != nil {
-		*out = make([]v1alpha3.OVFProperty, 0, len(in))
+		*out = make([]vmopv1.OVFProperty, 0, len(in))
 		for _, v := range in {
-			*out = append(*out, v1alpha3.OVFProperty{
+			*out = append(*out, vmopv1.OVFProperty{
 				Key:     v.Key,
 				Type:    v.Type,
 				Default: v.Default,
@@ -86,7 +86,7 @@ func convert_v1alpha3_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 
 	for i := range conditions {
 		c := conditions[i]
-		if c.Type == v1alpha3.ReadyConditionType {
+		if c.Type == vmopv1.ReadyConditionType {
 			readyCondition = c
 			break
 		}
@@ -111,12 +111,12 @@ func convert_v1alpha3_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 	}
 
 	switch readyCondition.Reason {
-	case v1alpha3.VirtualMachineImageProviderSecurityNotCompliantReason:
+	case vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason:
 		securityCompliantCondition = falseConditionWithReason(VirtualMachineImageProviderSecurityComplianceCondition)
-	case v1alpha3.VirtualMachineImageProviderNotReadyReason:
+	case vmopv1.VirtualMachineImageProviderNotReadyReason:
 		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
 		imageProviderReadyCondition = falseConditionWithReason(VirtualMachineImageProviderReadyCondition)
-	case v1alpha3.VirtualMachineImageNotSyncedReason:
+	case vmopv1.VirtualMachineImageNotSyncedReason:
 		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
 		imageProviderReadyCondition = trueCondition(VirtualMachineImageProviderReadyCondition)
 		imageSyncedCondition = falseConditionWithReason(VirtualMachineImageSyncedCondition)
@@ -164,7 +164,7 @@ func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha3_VirtualMac
 	for _, condition := range conditions {
 		if _, ok := oldConditionTypes[condition.Type]; ok && condition.Status == corev1.ConditionFalse {
 			readyCondition = &metav1.Condition{
-				Type:               v1alpha3.ReadyConditionType,
+				Type:               vmopv1.ReadyConditionType,
 				Status:             metav1.ConditionFalse,
 				LastTransitionTime: condition.LastTransitionTime,
 				Reason:             condition.Reason,
@@ -179,7 +179,7 @@ func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha3_VirtualMac
 
 	if readyCondition == nil {
 		readyCondition = &metav1.Condition{
-			Type:               v1alpha3.ReadyConditionType,
+			Type:               vmopv1.ReadyConditionType,
 			Status:             metav1.ConditionTrue,
 			LastTransitionTime: latestTransitionTime,
 		}
@@ -196,7 +196,7 @@ func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha3_VirtualMac
 }
 
 func Convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha3_VirtualMachineImageSpec(
-	in *VirtualMachineImageSpec, out *v1alpha3.VirtualMachineImageSpec, s apiconversion.Scope) error {
+	in *VirtualMachineImageSpec, out *vmopv1.VirtualMachineImageSpec, s apiconversion.Scope) error {
 
 	// in.Type
 	// in.ImageSourceType
@@ -207,7 +207,7 @@ func Convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha3_VirtualMachineImageSpe
 	// in.HardwareVersion
 
 	if in.ProviderRef.APIVersion != "" || in.ProviderRef.Kind != "" || in.ProviderRef.Name != "" {
-		out.ProviderRef = &common.LocalObjectRef{
+		out.ProviderRef = &vmopv1common.LocalObjectRef{
 			APIVersion: in.ProviderRef.APIVersion,
 			Kind:       in.ProviderRef.Kind,
 			Name:       in.ProviderRef.Name,
@@ -218,7 +218,7 @@ func Convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha3_VirtualMachineImageSpe
 }
 
 func Convert_v1alpha1_VirtualMachineImageStatus_To_v1alpha3_VirtualMachineImageStatus(
-	in *VirtualMachineImageStatus, out *v1alpha3.VirtualMachineImageStatus, s apiconversion.Scope) error {
+	in *VirtualMachineImageStatus, out *vmopv1.VirtualMachineImageStatus, s apiconversion.Scope) error {
 
 	if err := autoConvert_v1alpha1_VirtualMachineImageStatus_To_v1alpha3_VirtualMachineImageStatus(in, out, s); err != nil {
 		return err
@@ -239,7 +239,7 @@ func Convert_v1alpha1_VirtualMachineImageStatus_To_v1alpha3_VirtualMachineImageS
 }
 
 func Convert_v1alpha3_VirtualMachineImageSpec_To_v1alpha1_VirtualMachineImageSpec(
-	in *v1alpha3.VirtualMachineImageSpec, out *VirtualMachineImageSpec, s apiconversion.Scope) error {
+	in *vmopv1.VirtualMachineImageSpec, out *VirtualMachineImageSpec, s apiconversion.Scope) error {
 
 	if err := autoConvert_v1alpha3_VirtualMachineImageSpec_To_v1alpha1_VirtualMachineImageSpec(in, out, s); err != nil {
 		return err
@@ -257,7 +257,7 @@ func Convert_v1alpha3_VirtualMachineImageSpec_To_v1alpha1_VirtualMachineImageSpe
 }
 
 func Convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(
-	in *v1alpha3.VirtualMachineImageStatus, out *VirtualMachineImageStatus, s apiconversion.Scope) error {
+	in *vmopv1.VirtualMachineImageStatus, out *VirtualMachineImageStatus, s apiconversion.Scope) error {
 
 	if err := autoConvert_v1alpha3_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(in, out, s); err != nil {
 		return err
@@ -280,7 +280,7 @@ func Convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageS
 }
 
 func convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha3_VirtualMachineImageStatus(
-	in *VirtualMachineImageSpec, out *v1alpha3.VirtualMachineImageStatus, s apiconversion.Scope) error {
+	in *VirtualMachineImageSpec, out *vmopv1.VirtualMachineImageStatus, s apiconversion.Scope) error {
 
 	// Some fields of the v1a1 ImageSpec moved into the nextver ImageStatus.
 	// conversion-gen doesn't handle that so do those here.
@@ -306,7 +306,7 @@ func convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha3_VirtualMachineImageSta
 }
 
 func convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageSpec(
-	in *v1alpha3.VirtualMachineImageStatus, out *VirtualMachineImageSpec, s apiconversion.Scope) error {
+	in *vmopv1.VirtualMachineImageStatus, out *VirtualMachineImageSpec, s apiconversion.Scope) error {
 
 	// Some fields of the v1a1 ImageSpec moved into the nextver ImageStatus.
 	// conversion-gen doesn't handle that so do those here.
@@ -332,7 +332,7 @@ func convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageS
 }
 
 func convert_v1alpha3_VirtualMachineImage_VMwareSystemProperties_To_v1alpha1_VirtualMachineImageAnnotations(
-	in *[]common.KeyValuePair, out *map[string]string) error {
+	in *[]vmopv1common.KeyValuePair, out *map[string]string) error {
 
 	if in != nil && len(*in) > 0 {
 		if *out == nil {
@@ -348,7 +348,7 @@ func convert_v1alpha3_VirtualMachineImage_VMwareSystemProperties_To_v1alpha1_Vir
 }
 
 func convert_v1alpha1_VirtualMachineImageAnnotations_To_v1alpha3_VirtualMachineImage_VMwareSystemProperties(
-	in *map[string]string, dstAnnotations *map[string]string, dstSystemProperties *[]common.KeyValuePair) error {
+	in *map[string]string, dstAnnotations *map[string]string, dstSystemProperties *[]vmopv1common.KeyValuePair) error {
 	if *in == nil {
 		return nil
 	}
@@ -356,7 +356,7 @@ func convert_v1alpha1_VirtualMachineImageAnnotations_To_v1alpha3_VirtualMachineI
 	// copy v1a1 system annotations to nextver system properties status field
 	for k, v := range *in {
 		if strings.HasPrefix(k, "vmware-system") {
-			*dstSystemProperties = append(*dstSystemProperties, common.KeyValuePair{
+			*dstSystemProperties = append(*dstSystemProperties, vmopv1common.KeyValuePair{
 				Key:   k,
 				Value: v,
 			})
@@ -376,8 +376,8 @@ func convert_v1alpha1_VirtualMachineImageAnnotations_To_v1alpha3_VirtualMachineI
 }
 
 // ConvertTo converts this VirtualMachineImage to the Hub version.
-func (src *VirtualMachineImage) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachineImage)
+func (src *VirtualMachineImage) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineImage)
 	if err := Convert_v1alpha1_VirtualMachineImage_To_v1alpha3_VirtualMachineImage(src, dst, nil); err != nil {
 		return err
 	}
@@ -395,8 +395,8 @@ func (src *VirtualMachineImage) ConvertTo(dstRaw conversion.Hub) error {
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineImage.
-func (dst *VirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachineImage)
+func (dst *VirtualMachineImage) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineImage)
 
 	if err := Convert_v1alpha3_VirtualMachineImage_To_v1alpha1_VirtualMachineImage(src, dst, nil); err != nil {
 		return err
@@ -422,20 +422,20 @@ func (dst *VirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error {
 }
 
 // ConvertTo converts this VirtualMachineImageList to the Hub version.
-func (src *VirtualMachineImageList) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachineImageList)
+func (src *VirtualMachineImageList) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineImageList)
 	return Convert_v1alpha1_VirtualMachineImageList_To_v1alpha3_VirtualMachineImageList(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineImageList.
-func (dst *VirtualMachineImageList) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachineImageList)
+func (dst *VirtualMachineImageList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineImageList)
 	return Convert_v1alpha3_VirtualMachineImageList_To_v1alpha1_VirtualMachineImageList(src, dst, nil)
 }
 
 // ConvertTo converts this ClusterVirtualMachineImage to the Hub version.
-func (src *ClusterVirtualMachineImage) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.ClusterVirtualMachineImage)
+func (src *ClusterVirtualMachineImage) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.ClusterVirtualMachineImage)
 	if err := Convert_v1alpha1_ClusterVirtualMachineImage_To_v1alpha3_ClusterVirtualMachineImage(src, dst, nil); err != nil {
 		return err
 	}
@@ -453,8 +453,8 @@ func (src *ClusterVirtualMachineImage) ConvertTo(dstRaw conversion.Hub) error {
 }
 
 // ConvertFrom converts the hub version to this ClusterVirtualMachineImage.
-func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.ClusterVirtualMachineImage)
+func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.ClusterVirtualMachineImage)
 	if err := Convert_v1alpha3_ClusterVirtualMachineImage_To_v1alpha1_ClusterVirtualMachineImage(src, dst, nil); err != nil {
 		return err
 	}
@@ -473,8 +473,8 @@ func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error 
 	return nil
 }
 
-func readContentLibRefConversionAnnotation(from ctrl.Object) (objRef *corev1.TypedLocalObjectReference) {
-	if data, ok := from.GetAnnotations()[v1alpha3.VMIContentLibRefAnnotation]; ok {
+func readContentLibRefConversionAnnotation(from ctrlclient.Object) (objRef *corev1.TypedLocalObjectReference) {
+	if data, ok := from.GetAnnotations()[vmopv1.VMIContentLibRefAnnotation]; ok {
 		objRef = &corev1.TypedLocalObjectReference{}
 		_ = json.Unmarshal([]byte(data), objRef)
 	}
@@ -482,13 +482,13 @@ func readContentLibRefConversionAnnotation(from ctrl.Object) (objRef *corev1.Typ
 }
 
 // ConvertTo converts this ClusterVirtualMachineImageList to the Hub version.
-func (src *ClusterVirtualMachineImageList) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.ClusterVirtualMachineImageList)
+func (src *ClusterVirtualMachineImageList) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.ClusterVirtualMachineImageList)
 	return Convert_v1alpha1_ClusterVirtualMachineImageList_To_v1alpha3_ClusterVirtualMachineImageList(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this ClusterVirtualMachineImageList.
-func (dst *ClusterVirtualMachineImageList) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.ClusterVirtualMachineImageList)
+func (dst *ClusterVirtualMachineImageList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.ClusterVirtualMachineImageList)
 	return Convert_v1alpha3_ClusterVirtualMachineImageList_To_v1alpha1_ClusterVirtualMachineImageList(src, dst, nil)
 }

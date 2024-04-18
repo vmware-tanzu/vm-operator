@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -75,7 +75,7 @@ func intgTestsReconcile() {
 
 		AfterEach(func() {
 			err := ctx.Client.Delete(ctx, obj)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 
 			provider.Lock()
 			savedPnid, savedPort = "", ""

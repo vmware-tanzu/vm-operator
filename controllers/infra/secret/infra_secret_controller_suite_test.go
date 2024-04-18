@@ -11,7 +11,7 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/secret"
-	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -20,7 +20,7 @@ var provider = providerfake.NewVMProvider()
 
 var suite = builder.NewTestSuiteForController(
 	secret.AddToManager,
-	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
+	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = provider
 		return nil
 	},

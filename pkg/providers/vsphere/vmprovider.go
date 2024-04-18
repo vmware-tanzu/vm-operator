@@ -4,7 +4,7 @@
 package vsphere
 
 import (
-	goctx "context"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -18,16 +18,16 @@ import (
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vim25/types"
-	k8serrors "k8s.io/apimachinery/pkg/util/errors"
-	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
@@ -58,7 +58,7 @@ type VersionedOVFEnvelope struct {
 }
 
 type vSphereVMProvider struct {
-	k8sClient         ctrlruntime.Client
+	k8sClient         ctrlclient.Client
 	eventRecorder     record.Recorder
 	globalExtraConfig map[string]string
 	minCPUFreq        uint64
@@ -70,8 +70,8 @@ type vSphereVMProvider struct {
 }
 
 func NewVSphereVMProviderFromClient(
-	ctx goctx.Context,
-	client ctrlruntime.Client,
+	ctx context.Context,
+	client ctrlclient.Client,
 	recorder record.Recorder) providers.VirtualMachineProviderInterface {
 
 	ovfCache, ovfLockPool := InitOvfCacheAndLockPool(
@@ -109,13 +109,13 @@ func InitOvfCacheAndLockPool(expireAfter, checkExpireInterval time.Duration, max
 	return ovfCache, ovfLockPool
 }
 
-func getExtraConfig(ctx goctx.Context) map[string]string {
+func getExtraConfig(ctx context.Context) map[string]string {
 	ec := map[string]string{
 		constants.EnableDiskUUIDExtraConfigKey:       constants.ExtraConfigTrue,
 		constants.GOSCIgnoreToolsCheckExtraConfigKey: constants.ExtraConfigTrue,
 	}
 
-	if jsonEC := pkgconfig.FromContext(ctx).JSONExtraConfig; jsonEC != "" {
+	if jsonEC := pkgcfg.FromContext(ctx).JSONExtraConfig; jsonEC != "" {
 		extraConfig := make(map[string]string)
 
 		if err := json.Unmarshal([]byte(jsonEC), &extraConfig); err != nil {
@@ -131,7 +131,7 @@ func getExtraConfig(ctx goctx.Context) map[string]string {
 	return ec
 }
 
-func (vs *vSphereVMProvider) getVcClient(ctx goctx.Context) (*vcclient.Client, error) {
+func (vs *vSphereVMProvider) getVcClient(ctx context.Context) (*vcclient.Client, error) {
 	vs.vcClientLock.Lock()
 	defer vs.vcClientLock.Unlock()
 
@@ -153,7 +153,7 @@ func (vs *vSphereVMProvider) getVcClient(ctx goctx.Context) (*vcclient.Client, e
 	return vcClient, nil
 }
 
-func (vs *vSphereVMProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {
+func (vs *vSphereVMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
 	updated, err := vcconfig.UpdateVcInConfigMap(ctx, vs.k8sClient, vcPNID, vcPort)
 	if err != nil || !updated {
 		return err
@@ -165,11 +165,11 @@ func (vs *vSphereVMProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort stri
 	return nil
 }
 
-func (vs *vSphereVMProvider) ResetVcClient(ctx goctx.Context) {
+func (vs *vSphereVMProvider) ResetVcClient(ctx context.Context) {
 	vs.clearAndLogoutVcClient(ctx)
 }
 
-func (vs *vSphereVMProvider) clearAndLogoutVcClient(ctx goctx.Context) {
+func (vs *vSphereVMProvider) clearAndLogoutVcClient(ctx context.Context) {
 	vs.vcClientLock.Lock()
 	vcClient := vs.vcClient
 	vs.vcClient = nil
@@ -181,7 +181,7 @@ func (vs *vSphereVMProvider) clearAndLogoutVcClient(ctx goctx.Context) {
 }
 
 // SyncVirtualMachineImage syncs the vmi object with the OVF Envelope retrieved from the cli object.
-func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx goctx.Context, cli, vmi ctrlruntime.Object) error {
+func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx context.Context, cli, vmi ctrlclient.Object) error {
 	var itemID, contentVersion string
 	switch cli := cli.(type) {
 	case *imgregv1a1.ContentLibraryItem:
@@ -212,7 +212,7 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx goctx.Context, cli, vmi
 // getOvfEnvelope gets the OVF envelope from the cache if it exists and matches version.
 // If not, it downloads the OVF envelope from vCenter and stores it in the cache.
 func (vs *vSphereVMProvider) getOvfEnvelope(
-	ctx goctx.Context, itemID, contentVersion string) (*ovf.Envelope, error) {
+	ctx context.Context, itemID, contentVersion string) (*ovf.Envelope, error) {
 	logger := log.V(4).WithValues("itemID", itemID, "contentVersion", contentVersion)
 
 	// Lock the current item to prevent concurrent downloads of the same OVF.
@@ -252,7 +252,7 @@ func (vs *vSphereVMProvider) getOvfEnvelope(
 
 // GetItemFromLibraryByName get the library item from specified content library by its name.
 // Do not return error if the item doesn't exist in the content library.
-func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx goctx.Context,
+func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx context.Context,
 	contentLibrary, itemName string) (*library.Item, error) {
 	log.V(4).Info("Get item from ContentLibrary",
 		"UUID", contentLibrary, "item name", itemName)
@@ -265,7 +265,7 @@ func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx goctx.Context,
 	return client.ContentLibClient().GetLibraryItem(ctx, contentLibrary, itemName, false)
 }
 
-func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx goctx.Context, itemID, newName string, newDescription *string) error {
+func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
 	log.V(4).Info("Update Content Library Item", "itemID", itemID)
 
 	client, err := vs.getVcClient(ctx)
@@ -289,7 +289,7 @@ func (vs *vSphereVMProvider) getOpID(vm *vmopv1.VirtualMachine, operation string
 }
 
 func (vs *vSphereVMProvider) getVM(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	client *vcclient.Client,
 	notFoundReturnErr bool) (*object.VirtualMachine, error) {
 
@@ -305,7 +305,7 @@ func (vs *vSphereVMProvider) getVM(
 	return vcVM, nil
 }
 
-func (vs *vSphereVMProvider) getOrComputeCPUMinFrequency(ctx goctx.Context) (uint64, error) {
+func (vs *vSphereVMProvider) getOrComputeCPUMinFrequency(ctx context.Context) (uint64, error) {
 	minFreq := atomic.LoadUint64(&vs.minCPUFreq)
 	if minFreq == 0 {
 		// The infra controller hasn't finished ComputeCPUMinFrequency() yet, so try to
@@ -324,7 +324,7 @@ func (vs *vSphereVMProvider) getOrComputeCPUMinFrequency(ctx goctx.Context) (uin
 	return minFreq, nil
 }
 
-func (vs *vSphereVMProvider) ComputeCPUMinFrequency(ctx goctx.Context) error {
+func (vs *vSphereVMProvider) ComputeCPUMinFrequency(ctx context.Context) error {
 	minFreq, err := vs.computeCPUMinFrequency(ctx)
 	if err != nil {
 		// Might have a partial success (non-zero freq): store that if we haven't updated
@@ -338,7 +338,7 @@ func (vs *vSphereVMProvider) ComputeCPUMinFrequency(ctx goctx.Context) error {
 	return nil
 }
 
-func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx goctx.Context) (uint64, error) {
+func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx context.Context) (uint64, error) {
 	// Get all the availability zones in order to calculate the minimum
 	// CPU frequencies for each of the zones' vSphere clusters.
 	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.k8sClient)
@@ -362,7 +362,7 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx goctx.Context) (uint64, 
 
 		for _, moID := range moIDs {
 			ccr := object.NewClusterComputeResource(client.VimClient(),
-				types.ManagedObjectReference{Type: "ClusterComputeResource", Value: moID})
+				vimtypes.ManagedObjectReference{Type: "ClusterComputeResource", Value: moID})
 
 			freq, err := vcenter.ClusterMinCPUFreq(ctx, ccr)
 			if err != nil {
@@ -373,17 +373,17 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx goctx.Context) (uint64, 
 		}
 	}
 
-	return minFreq, k8serrors.NewAggregate(errs)
+	return minFreq, apierrorsutil.NewAggregate(errs)
 }
 
-func (vs *vSphereVMProvider) GetTasksByActID(ctx goctx.Context, actID string) (_ []types.TaskInfo, retErr error) {
+func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) (_ []vimtypes.TaskInfo, retErr error) {
 	vcClient, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	taskManager := task.NewManager(vcClient.VimClient())
-	filterSpec := types.TaskFilterSpec{
+	filterSpec := vimtypes.TaskFilterSpec{
 		ActivationId: []string{actID},
 	}
 
@@ -398,7 +398,7 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx goctx.Context, actID string) (_
 		}
 	}()
 
-	taskList := make([]types.TaskInfo, 0)
+	taskList := make([]vimtypes.TaskInfo, 0)
 	for {
 		nextTasks, err := collector.ReadNextTasks(ctx, taskHistoryCollectorPageSize)
 		if err != nil {

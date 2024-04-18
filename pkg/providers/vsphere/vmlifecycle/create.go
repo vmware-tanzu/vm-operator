@@ -6,9 +6,9 @@ package vmlifecycle
 import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vapi/rest"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
 )
 
@@ -17,7 +17,7 @@ type CreateArgs struct {
 	UseContentLibrary bool
 	ProviderItemID    string
 
-	ConfigSpec          types.VirtualMachineConfigSpec
+	ConfigSpec          vimtypes.VirtualMachineConfigSpec
 	StorageProvisioning string
 	FolderMoID          string
 	ResourcePoolMoID    string
@@ -27,11 +27,11 @@ type CreateArgs struct {
 }
 
 func CreateVirtualMachine(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	clClient contentlibrary.Provider,
 	restClient *rest.Client,
 	finder *find.Finder,
-	createArgs *CreateArgs) (*types.ManagedObjectReference, error) {
+	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
 	if createArgs.UseContentLibrary {
 		return deployFromContentLibrary(vmCtx, clClient, restClient, createArgs)

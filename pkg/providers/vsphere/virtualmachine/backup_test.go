@@ -15,10 +15,10 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -36,7 +36,7 @@ func backupTests() {
 	var (
 		ctx   *builder.TestContextForVCSim
 		vcVM  *object.VirtualMachine
-		vmCtx context.VirtualMachineContext
+		vmCtx pkgctx.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
@@ -46,7 +46,7 @@ func backupTests() {
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).NotTo(HaveOccurred())
 
-		vmCtx = context.VirtualMachineContext{
+		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vcVM.Name()),
 			VM:      &vmopv1.VirtualMachine{},
@@ -89,9 +89,9 @@ func backupTests() {
 				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
 				Expect(err).NotTo(HaveOccurred())
 
-				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{
+				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   vmopv1.VMResourceYAMLExtraConfigKey,
 							Value: vmYAMLEncoded,
 						},
@@ -125,9 +125,9 @@ func backupTests() {
 				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
 				Expect(err).NotTo(HaveOccurred())
 
-				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{
+				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   vmopv1.VMResourceYAMLExtraConfigKey,
 							Value: vmYAMLEncoded,
 						},
@@ -160,9 +160,9 @@ func backupTests() {
 				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
 				Expect(err).NotTo(HaveOccurred())
 
-				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{
+				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   vmopv1.VMResourceYAMLExtraConfigKey,
 							Value: vmYAMLEncoded,
 						},
@@ -197,9 +197,9 @@ func backupTests() {
 				vmYAMLEncoded, err := util.EncodeGzipBase64(vmBackupStr)
 				Expect(err).NotTo(HaveOccurred())
 
-				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{
+				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   vmopv1.VMResourceYAMLExtraConfigKey,
 							Value: vmYAMLEncoded,
 						},
@@ -269,9 +269,9 @@ func backupTests() {
 				yamlEncoded, err := util.EncodeGzipBase64(string(oldResYAML))
 				Expect(err).NotTo(HaveOccurred())
 
-				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{
+				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
 							Value: yamlEncoded,
 						},
@@ -307,9 +307,9 @@ func backupTests() {
 				yamlEncoded, err := util.EncodeGzipBase64(backupStr)
 				Expect(err).NotTo(HaveOccurred())
 
-				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{
+				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
 							Value: yamlEncoded,
 						},

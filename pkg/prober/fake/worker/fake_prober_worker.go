@@ -4,7 +4,7 @@
 package worker
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"sync"
 
@@ -13,14 +13,14 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
 )
 
 type funcs struct {
-	DoProbeFn            func(ctx *context.ProbeContext) error
-	ProcessProbeResultFn func(ctx *context.ProbeContext, res probe.Result, err error) error
+	DoProbeFn            func(ctx *proberctx.ProbeContext) error
+	ProcessProbeResultFn func(ctx *proberctx.ProbeContext, res probe.Result, err error) error
 }
 
 type FakeWorker struct {
@@ -46,13 +46,13 @@ func (w *FakeWorker) GetQueue() workqueue.DelayingInterface {
 	return w.queue
 }
 
-func (w *FakeWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*context.ProbeContext, error) {
+func (w *FakeWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*proberctx.ProbeContext, error) {
 	if vm.Spec.ReadinessProbe.TCPSocket == nil {
 		return nil, nil
 	}
 
-	return &context.ProbeContext{
-		Context:       goctx.Background(),
+	return &proberctx.ProbeContext{
+		Context:       context.Background(),
 		Logger:        ctrl.Log.WithName("fake-probe").WithValues("vmName", vm.NamespacedName()),
 		VM:            vm,
 		ProbeType:     "fake-probe",
@@ -60,7 +60,7 @@ func (w *FakeWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*context.Pro
 	}, nil
 }
 
-func (w *FakeWorker) DoProbe(ctx *context.ProbeContext) error {
+func (w *FakeWorker) DoProbe(ctx *proberctx.ProbeContext) error {
 	w.Lock()
 	defer w.Unlock()
 
@@ -70,7 +70,7 @@ func (w *FakeWorker) DoProbe(ctx *context.ProbeContext) error {
 	return fmt.Errorf("unexpected method call: DoProbe")
 }
 
-func (w *FakeWorker) ProcessProbeResult(ctx *context.ProbeContext, res probe.Result, err error) error {
+func (w *FakeWorker) ProcessProbeResult(ctx *proberctx.ProbeContext, res probe.Result, err error) error {
 	w.Lock()
 	defer w.Unlock()
 

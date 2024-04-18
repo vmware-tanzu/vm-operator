@@ -5,12 +5,12 @@ import (
 
 	authv1 "k8s.io/api/authentication/v1"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 func IsPrivilegedAccount(
-	ctx *context.WebhookContext, userInfo authv1.UserInfo) bool {
+	ctx *pkgctx.WebhookContext, userInfo authv1.UserInfo) bool {
 
 	username := userInfo.Username
 
@@ -20,8 +20,8 @@ func IsPrivilegedAccount(
 
 	// Users specified by Pod's environment variable "PRIVILEGED_USERS" are
 	// considered privileged.
-	if c := pkgconfig.FromContext(ctx); c.Features.AutoVADPBackupRestore {
-		if _, ok := pkgconfig.StringToSet(c.PrivilegedUsers)[username]; ok {
+	if c := pkgcfg.FromContext(ctx); c.Features.AutoVADPBackupRestore {
+		if _, ok := pkgcfg.StringToSet(c.PrivilegedUsers)[username]; ok {
 			return true
 		}
 	}

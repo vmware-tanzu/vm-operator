@@ -101,7 +101,7 @@ const (
 	VirtualMachineImageOSTypeSupportedCondition ConditionType = "VirtualMachineImageOSTypeSupported"
 
 	// VirtualMachineImageV1Alpha1CompatibleCondition denotes image compatibility with VMService. VMService expects
-	// VirtualMachineImage to be prepared by VMware specifically for VMService v1alpha1.
+	// VirtualMachineImage to be prepared by VMware specifically for VMService vmopv1a1.
 	VirtualMachineImageV1Alpha1CompatibleCondition ConditionType = "VirtualMachineImageV1Alpha1Compatible"
 
 	// VirtualMachineImageSyncedCondition denotes that the image is synced with the vSphere content library item

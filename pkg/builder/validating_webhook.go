@@ -4,7 +4,7 @@
 package builder
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
@@ -41,20 +41,20 @@ type Validator interface {
 	For() schema.GroupVersionKind
 
 	// ValidateCreate returns nil if the request is valid.
-	ValidateCreate(*context.WebhookRequestContext) admission.Response
+	ValidateCreate(*pkgctx.WebhookRequestContext) admission.Response
 
 	// ValidateDelete returns nil if the request is valid.
-	ValidateDelete(*context.WebhookRequestContext) admission.Response
+	ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response
 
 	// ValidateUpdate returns nil if the request is valid.
-	ValidateUpdate(*context.WebhookRequestContext) admission.Response
+	ValidateUpdate(*pkgctx.WebhookRequestContext) admission.Response
 }
 
 type ValidatorFunc func(client client.Client) Validator
 
 // NewValidatingWebhook returns a new admissions webhook for validating requests.
 func NewValidatingWebhook(
-	ctx *context.ControllerManagerContext,
+	ctx *pkgctx.ControllerManagerContext,
 	mgr ctrlmgr.Manager,
 	webhookName string,
 	validator Validator) (*ValidatingWebhook, error) {
@@ -73,7 +73,7 @@ func NewValidatingWebhook(
 	)
 
 	// Build the webhookContext.
-	webhookContext := &context.WebhookContext{
+	webhookContext := &pkgctx.WebhookContext{
 		Context:            ctx,
 		Name:               webhookNameShort,
 		Namespace:          ctx.Namespace,
@@ -102,12 +102,12 @@ func NewValidatingWebhook(
 var _ admission.Handler = &validatingWebhookHandler{}
 
 type validatingWebhookHandler struct {
-	*context.WebhookContext
+	*pkgctx.WebhookContext
 	*admission.Decoder
 	Validator
 }
 
-func (h *validatingWebhookHandler) Handle(_ goctx.Context, req admission.Request) admission.Response {
+func (h *validatingWebhookHandler) Handle(_ context.Context, req admission.Request) admission.Response {
 	if h.Validator == nil {
 		panic("validator should never be nil")
 	}
@@ -146,8 +146,8 @@ func (h *validatingWebhookHandler) Handle(_ goctx.Context, req admission.Request
 		return admission.Allowed(string(req.Operation))
 	}
 
-	// Create the webhook request context.
-	webhookRequestContext := &context.WebhookRequestContext{
+	// Create the webhook request pkgctx.
+	webhookRequestContext := &pkgctx.WebhookRequestContext{
 		WebhookContext:      h.WebhookContext,
 		Op:                  req.Operation,
 		Obj:                 obj,
@@ -160,7 +160,7 @@ func (h *validatingWebhookHandler) Handle(_ goctx.Context, req admission.Request
 	return h.HandleValidate(req, webhookRequestContext)
 }
 
-func (h *validatingWebhookHandler) HandleValidate(req admission.Request, ctx *context.WebhookRequestContext) admission.Response {
+func (h *validatingWebhookHandler) HandleValidate(req admission.Request, ctx *pkgctx.WebhookRequestContext) admission.Response {
 	switch req.Operation {
 	case admissionv1.Create:
 		return h.ValidateCreate(ctx)

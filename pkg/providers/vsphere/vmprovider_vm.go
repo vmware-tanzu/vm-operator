@@ -4,7 +4,7 @@
 package vsphere
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"maps"
 	"strings"
@@ -14,8 +14,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
-	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -23,8 +23,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -54,7 +54,7 @@ type VMCreateArgs struct {
 	HasInstanceStorage    bool
 	ChildResourcePoolName string
 	ChildFolderName       string
-	ClusterMoRef          types.ManagedObjectReference
+	ClusterMoRef          vimtypes.ManagedObjectReference
 
 	NetworkResults network.NetworkInterfaceResults
 }
@@ -73,11 +73,11 @@ var (
 )
 
 func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
-	ctx goctx.Context,
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine) error {
 
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "createOrUpdateVM")),
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "createOrUpdateVM")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -113,11 +113,11 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 }
 
 func (vs *vSphereVMProvider) DeleteVirtualMachine(
-	ctx goctx.Context,
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine) error {
 
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "deleteVM")),
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteVM")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -139,13 +139,13 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 }
 
 func (vs *vSphereVMProvider) PublishVirtualMachine(
-	ctx goctx.Context,
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	vmPub *vmopv1.VirtualMachinePublishRequest,
 	cl *imgregv1a1.ContentLibrary,
 	actID string) (string, error) {
 
-	vmCtx := context.VirtualMachineContext{
+	vmCtx := pkgctx.VirtualMachineContext{
 		Context: ctx,
 		// Update logger info
 		Logger: log.WithValues("vmName", vm.NamespacedName()).
@@ -168,11 +168,11 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
-	ctx goctx.Context,
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "heartbeat")),
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "heartbeat")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -196,11 +196,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineGuestInfo(
-	ctx goctx.Context,
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine) (map[string]string, error) {
 
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "guestInfo")),
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "guestInfo")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -224,12 +224,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestInfo(
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
-	ctx goctx.Context,
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	pubKey string) (string, error) {
 
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "webconsole")),
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "webconsole")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -253,11 +253,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
-	ctx goctx.Context,
-	vm *vmopv1.VirtualMachine) (types.HardwareVersion, error) {
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error) {
 
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "hardware-version")),
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "hardware-version")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -278,11 +278,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 		return 0, err
 	}
 
-	return types.ParseHardwareVersion(o.Config.Version)
+	return vimtypes.ParseHardwareVersion(o.Config.Version)
 }
 
 func (vs *vSphereVMProvider) createVirtualMachine(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (*object.VirtualMachine, *VMCreateArgs, error) {
 
 	createArgs, err := vs.vmCreateGetArgs(vmCtx, vcClient)
@@ -343,7 +343,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 }
 
 func (vs *vSphereVMProvider) createdVirtualMachineFallthroughUpdate(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
@@ -355,7 +355,7 @@ func (vs *vSphereVMProvider) createdVirtualMachineFallthroughUpdate(
 }
 
 func (vs *vSphereVMProvider) updateVirtualMachine(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
@@ -391,7 +391,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 	// Back up the VM at the end after a successful update.
 	// Skip TKG VMs since they are backed up differently than VM Service VMs.
-	if pkgconfig.FromContext(vmCtx).Features.AutoVADPBackupRestore &&
+	if pkgcfg.FromContext(vmCtx).Features.AutoVADPBackupRestore &&
 		!kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
 		vmCtx.Logger.V(4).Info("Backing up VM Service managed VM")
 
@@ -424,7 +424,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 // vmCreateDoPlacement determines placement of the VM prior to creating the VM on VC.
 func (vs *vSphereVMProvider) vmCreateDoPlacement(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
@@ -488,7 +488,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 
 // vmCreateGetFolderAndRPMoIDs gets the MoIDs of the Folder and Resource Pool the VM will be created under.
 func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
@@ -505,7 +505,7 @@ func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
 		// namespace/zone's root ResourcePool. This will be the VM's ResourcePool.
 		if createArgs.ChildResourcePoolName != "" {
 			parentRP := object.NewResourcePool(vcClient.VimClient(),
-				types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
+				vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
 
 			childRP, err := vcenter.GetChildResourcePool(vmCtx, parentRP, createArgs.ChildResourcePoolName)
 			if err != nil {
@@ -532,7 +532,7 @@ func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
 	// This will be the VM's parent Folder in the VC inventory.
 	if createArgs.ChildFolderName != "" {
 		parentFolder := object.NewFolder(vcClient.VimClient(),
-			types.ManagedObjectReference{Type: "Folder", Value: createArgs.FolderMoID})
+			vimtypes.ManagedObjectReference{Type: "Folder", Value: createArgs.FolderMoID})
 
 		childFolder, err := vcenter.GetChildFolder(vmCtx, parentFolder, createArgs.ChildFolderName)
 		if err != nil {
@@ -553,7 +553,7 @@ func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
 }
 
 func (vs *vSphereVMProvider) vmCreateFixupConfigSpec(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
@@ -578,7 +578,7 @@ func (vs *vSphereVMProvider) vmCreateFixupConfigSpec(
 }
 
 func (vs *vSphereVMProvider) vmCreateIsReady(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
@@ -601,8 +601,8 @@ func (vs *vSphereVMProvider) vmCreateIsReady(
 	return nil
 }
 
-func (vs *vSphereVMProvider) vmCreateConcurrentAllowed(vmCtx context.VirtualMachineContext) (bool, func()) {
-	maxDeployThreads := pkgconfig.FromContext(vmCtx).GetMaxDeployThreadsOnProvider()
+func (vs *vSphereVMProvider) vmCreateConcurrentAllowed(vmCtx pkgctx.VirtualMachineContext) (bool, func()) {
+	maxDeployThreads := pkgcfg.FromContext(vmCtx).GetMaxDeployThreadsOnProvider()
 
 	createCountLock.Lock()
 	if concurrentCreateCount >= maxDeployThreads {
@@ -624,7 +624,7 @@ func (vs *vSphereVMProvider) vmCreateConcurrentAllowed(vmCtx context.VirtualMach
 }
 
 func (vs *vSphereVMProvider) vmCreateGetArgs(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (*VMCreateArgs, error) {
 
 	createArgs, err := vs.vmCreateGetPrereqs(vmCtx, vcClient)
@@ -648,7 +648,7 @@ func (vs *vSphereVMProvider) vmCreateGetArgs(
 // vmCreateGetPrereqs returns the VMCreateArgs populated with the k8s objects required to
 // create the VM on VC.
 func (vs *vSphereVMProvider) vmCreateGetPrereqs(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (*VMCreateArgs, error) {
 
 	createArgs := &VMCreateArgs{}
@@ -679,7 +679,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	// is no point in continuing if the above checks aren't met since we are missing data
 	// required to create the VM.
 	if len(prereqErrs) > 0 {
-		return nil, k8serrors.NewAggregate(prereqErrs)
+		return nil, apierrorsutil.NewAggregate(prereqErrs)
 	}
 
 	vmCtx.VM.Status.Class = &common.LocalObjectRef{
@@ -692,7 +692,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 }
 
 func (vs *vSphereVMProvider) vmCreateGetVirtualMachineClass(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
 	vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
@@ -706,7 +706,7 @@ func (vs *vSphereVMProvider) vmCreateGetVirtualMachineClass(
 }
 
 func (vs *vSphereVMProvider) vmCreateGetVirtualMachineImage(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
 	imageObj, imageSpec, imageStatus, err := GetVirtualMachineImageSpecAndStatus(vmCtx, vs.k8sClient)
@@ -744,7 +744,7 @@ func (vs *vSphereVMProvider) vmCreateGetVirtualMachineImage(
 }
 
 func (vs *vSphereVMProvider) vmCreateGetSetResourcePolicy(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
 	resourcePolicy, err := GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
@@ -763,7 +763,7 @@ func (vs *vSphereVMProvider) vmCreateGetSetResourcePolicy(
 }
 
 func (vs *vSphereVMProvider) vmCreateGetBootstrap(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
 	bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
@@ -781,11 +781,11 @@ func (vs *vSphereVMProvider) vmCreateGetBootstrap(
 }
 
 func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
-	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {
+	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
 		// To determine all the storage profiles, we need the class because of the possibility of
 		// InstanceStorage volumes. If we weren't able to get the class earlier, still check & set
 		// the storage condition because instance storage usage is rare, it is helpful to report
@@ -850,7 +850,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 }
 
 func (vs *vSphereVMProvider) vmCreateDoNetworking(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
@@ -879,13 +879,13 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
 	// TODO: This is a partial dupe of what's done in the update path in the remaining Session code. I got
 	// tired of trying to keep that in sync so we get to live with a frankenstein thing longer.
 
-	var configSpec types.VirtualMachineConfigSpec
+	var configSpec vimtypes.VirtualMachineConfigSpec
 	if rawConfigSpec := createArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
 		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
 		if err != nil {
@@ -931,7 +931,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
 	ecMap := maps.Clone(vs.globalExtraConfig)
@@ -975,7 +975,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecChangeBootDiskSize(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	_ *VMCreateArgs) error {
 
 	advanced := vmCtx.VM.Spec.Advanced
@@ -991,7 +991,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecChangeBootDiskSize(
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
 	if vmCtx.VM.Spec.Network == nil || vmCtx.VM.Spec.Network.Disabled {
@@ -1009,7 +1009,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 		}
 
 		device := spec.Device
-		ethCard := device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+		ethCard := device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 
 		if resultsIdx < len(createArgs.NetworkResults.Results) {
 			err := network.ApplyInterfaceResultToVirtualEthCard(vmCtx, ethCard, &createArgs.NetworkResults.Results[resultsIdx])
@@ -1047,8 +1047,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 		// May not have the backing yet (NSX-T). We come back through here after placement once we
 		// know the backing.
 		if ethCardDev != nil {
-			createArgs.ConfigSpec.DeviceChange = append(createArgs.ConfigSpec.DeviceChange, &types.VirtualDeviceConfigSpec{
-				Operation: types.VirtualDeviceConfigSpecOperationAdd,
+			createArgs.ConfigSpec.DeviceChange = append(createArgs.ConfigSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 				Device:    ethCardDev,
 			})
 		}
@@ -1058,7 +1058,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 }
 
 func (vs *vSphereVMProvider) vmUpdateGetArgs(
-	vmCtx context.VirtualMachineContext) (*vmUpdateArgs, error) {
+	vmCtx pkgctx.VirtualMachineContext) (*vmUpdateArgs, error) {
 
 	vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
 	if err != nil {
@@ -1095,7 +1095,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		updateArgs.MinCPUFreq = freq
 	}
 
-	var configSpec types.VirtualMachineConfigSpec
+	var configSpec vimtypes.VirtualMachineConfigSpec
 	if rawConfigSpec := updateArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
 		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
 		if err != nil {

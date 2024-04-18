@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
@@ -16,8 +16,8 @@ import (
 const doesNotExist = "does-not-exist"
 
 func managedObjectTests() {
-	getVMMoRef := func() types.ManagedObjectReference {
-		return types.ManagedObjectReference{
+	getVMMoRef := func() vimtypes.ManagedObjectReference {
+		return vimtypes.ManagedObjectReference{
 			Type:  "VirtualMachine",
 			Value: "vm-44",
 		}

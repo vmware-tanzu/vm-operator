@@ -13,7 +13,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 const (
@@ -26,7 +26,7 @@ const (
 )
 
 func CreateOVF(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	client *rest.Client,
 	vmPubReq *vmopv1.VirtualMachinePublishRequest,
 	cl *imgregv1a1.ContentLibrary,

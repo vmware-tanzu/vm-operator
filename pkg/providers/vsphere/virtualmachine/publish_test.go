@@ -8,12 +8,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -26,8 +26,8 @@ func publishTests() {
 		vm       *vmopv1.VirtualMachine
 		cl       *imgregv1a1.ContentLibrary
 		vmPub    *vmopv1.VirtualMachinePublishRequest
-		vmCtx    context.VirtualMachineContext
-		vmPubCtx context.VirtualMachinePublishRequestContext
+		vmCtx    pkgctx.VirtualMachineContext
+		vmPubCtx pkgctx.VirtualMachinePublishRequestContext
 	)
 
 	BeforeEach(func() {
@@ -44,7 +44,7 @@ func publishTests() {
 			vcVM.Name(), "dummy-item-name", "dummy-cl")
 		vmPub.Status.SourceRef = &vmPub.Spec.Source
 		vmPub.Status.TargetRef = &vmPub.Spec.Target
-		vmCtx = context.VirtualMachineContext{
+		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vcVM.Name()),
 			VM:      vm,
@@ -69,7 +69,7 @@ func publishTests() {
 	It("Publishes VM that is on", func() {
 		state, err := vcVM.PowerState(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(state).To(Equal(types.VirtualMachinePowerStatePoweredOn))
+		Expect(state).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 
 		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl, "")
 		Expect(err).ToNot(HaveOccurred())

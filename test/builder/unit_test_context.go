@@ -4,7 +4,7 @@
 package builder
 
 import (
-	goctx "context"
+	"context"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -12,14 +12,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/context/fake"
 )
 
 // UnitTestContext is used for general purpose unit testing.
 type UnitTestContext struct {
-	goctx.Context
+	context.Context
 	Client client.Client
 	Scheme *runtime.Scheme
 }
@@ -28,7 +28,7 @@ type UnitTestContext struct {
 func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
 	fakeClient := NewFakeClient(initObjects...)
 	return &UnitTestContext{
-		Context: pkgconfig.NewContext(),
+		Context: pkgcfg.NewContext(),
 		Client:  fakeClient,
 		Scheme:  fakeClient.Scheme(),
 	}
@@ -41,8 +41,8 @@ func (ctx *UnitTestContext) AfterEach() {
 
 // UnitTestContextForController is used for unit testing controllers.
 type UnitTestContextForController struct {
-	// context is the context.ControllerManagerContext for being tested.
-	context.ControllerManagerContext
+	// context is the pkgctx.ControllerManagerContext for being tested.
+	pkgctx.ControllerManagerContext
 
 	// Client is the k8s client to access resources.
 	Client client.Client
@@ -58,7 +58,7 @@ type UnitTestContextForController struct {
 type UnitTestContextForValidatingWebhook struct {
 	// WebhookRequestContext is initialized with fake.NewWebhookRequestContext
 	// and is used for unit testing.
-	context.WebhookRequestContext
+	pkgctx.WebhookRequestContext
 
 	// Client is the k8s client to access resources.
 	Client client.Client
@@ -116,7 +116,7 @@ func NewUnitTestContextForValidatingWebhook(
 type UnitTestContextForMutatingWebhook struct {
 	// WebhookRequestContext is initialized with fake.NewWebhookRequestContext
 	// and is used for unit testing.
-	context.WebhookRequestContext
+	pkgctx.WebhookRequestContext
 
 	// Client is the k8s client to access resources.
 	Client client.Client

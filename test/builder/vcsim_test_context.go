@@ -48,10 +48,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
-
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 type NetworkEnv string
@@ -420,8 +419,14 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	}
 	c.ContentLibraryImageName = libraryItem.Name
 
-	itemID := createContentLibraryItem(c, libMgr, libraryItem,
-		path.Join(testutil.GetRootDirOrDie(), "images", "ttylinux-pc_i486-16.1.ovf"))
+	itemID := createContentLibraryItem(
+		c,
+		libMgr,
+		libraryItem,
+		path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "ttylinux-pc_i486-16.1.ovf"))
 
 	// The image isn't quite as prod but sufficient for what we need here ATM.
 	clusterVMImage := DummyClusterVirtualMachineImageA2(c.ContentLibraryImageName)

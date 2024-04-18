@@ -4,20 +4,20 @@
 package vmlifecycle
 
 import (
-	goctx "context"
+	"context"
 
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 func BootstrapVAppConfig(
-	_ goctx.Context,
-	config *vimTypes.VirtualMachineConfigInfo,
+	_ context.Context,
+	config *vimtypes.VirtualMachineConfigInfo,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
-	bsArgs *BootstrapArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, error) {
+	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	configSpec := &vimTypes.VirtualMachineConfigSpec{}
+	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 	configSpec.VAppConfig = GetOVFVAppConfigForConfigSpec(
 		config,
 		vAppConfigSpec,
@@ -29,11 +29,11 @@ func BootstrapVAppConfig(
 }
 
 func GetOVFVAppConfigForConfigSpec(
-	config *vimTypes.VirtualMachineConfigInfo,
+	config *vimtypes.VirtualMachineConfigInfo,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	vAppData map[string]string,
 	vAppExData map[string]map[string]string,
-	templateRenderFn TemplateRenderFunc) vimTypes.BaseVmConfigSpec {
+	templateRenderFn TemplateRenderFunc) vimtypes.BaseVmConfigSpec {
 
 	if config.VAppConfig == nil {
 		// BMV: Should we really silently return here and below?
@@ -71,8 +71,8 @@ func GetOVFVAppConfigForConfigSpec(
 // GetMergedvAppConfigSpec prepares a vApp VmConfigSpec which will set the provided key/value fields.
 // Only fields marked userConfigurable and pre-existing on the VM (ie. originated from the OVF Image)
 // will be set, and all others will be ignored.
-func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppPropertyInfo) *vimTypes.VmConfigSpec {
-	outProps := make([]vimTypes.VAppPropertySpec, 0)
+func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimtypes.VAppPropertyInfo) *vimtypes.VmConfigSpec {
+	outProps := make([]vimtypes.VAppPropertySpec, 0)
 
 	for _, vmProp := range vmProps {
 		if vmProp.UserConfigurable == nil || !*vmProp.UserConfigurable {
@@ -86,9 +86,9 @@ func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppP
 
 		vmPropCopy := vmProp
 		vmPropCopy.Value = inPropValue
-		outProp := vimTypes.VAppPropertySpec{
-			ArrayUpdateSpec: vimTypes.ArrayUpdateSpec{
-				Operation: vimTypes.ArrayUpdateOperationEdit,
+		outProp := vimtypes.VAppPropertySpec{
+			ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
+				Operation: vimtypes.ArrayUpdateOperationEdit,
 			},
 			Info: &vmPropCopy,
 		}
@@ -99,7 +99,7 @@ func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppP
 		return nil
 	}
 
-	return &vimTypes.VmConfigSpec{
+	return &vimtypes.VmConfigSpec{
 		Property: outProps,
 		// Ensure the transport is guestInfo in case the VM does not have
 		// a CD-ROM device required to use the ISO transport.

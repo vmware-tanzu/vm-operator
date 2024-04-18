@@ -4,12 +4,11 @@
 package probe
 
 import (
-	goctx "context"
+	"context"
 	"time"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 type Result int
@@ -27,15 +26,15 @@ const (
 
 // Probe is the interface to execute VM probes.
 type Probe interface {
-	Probe(ctx *context.ProbeContext) (Result, error)
+	Probe(ctx *proberctx.ProbeContext) (Result, error)
 }
 
 // Probing related provider methods.
 type vmProviderGuestHeartbeatProber interface {
-	GetVirtualMachineGuestHeartbeat(ctx goctx.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
+	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
 }
 type vmProviderGuestInfoProber interface {
-	GetVirtualMachineGuestInfo(ctx goctx.Context, vm *vmopv1.VirtualMachine) (map[string]string, error)
+	GetVirtualMachineGuestInfo(ctx context.Context, vm *vmopv1.VirtualMachine) (map[string]string, error)
 }
 type vmProviderProber interface {
 	vmProviderGuestHeartbeatProber

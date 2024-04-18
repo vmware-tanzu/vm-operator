@@ -4,7 +4,7 @@
 package mutation
 
 import (
-	goctx "context"
+	"context"
 	"encoding/json"
 	"net/http"
 	"reflect"
@@ -31,9 +31,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -53,7 +53,7 @@ const (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages/status,verbs=get;list;watch
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	// Index the VirtualMachineImage and ClusterVirtualMachineImage objects by
 	// status.name field to allow efficient querying in ResolveImageName().
 	if err := mgr.GetFieldIndexer().IndexField(
@@ -99,7 +99,7 @@ type mutator struct {
 	converter runtime.UnstructuredConverter
 }
 
-func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
+func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	if ctx.Op == admissionv1.Delete {
 		return admission.Allowed("")
 	}
@@ -163,7 +163,7 @@ func (m mutator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.VirtualMa
 // current value is equal to "now" (case-insensitive).
 // Return true if set, otherwise false.
 func SetNextRestartTime(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	newVM, oldVM *vmopv1.VirtualMachine) (bool, error) {
 
 	if newVM.Spec.NextRestartTime == "" {
@@ -192,7 +192,7 @@ func SetNextRestartTime(
 // AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set
 // and no NetworkInterface is specified.
 // Return true if default NetworkInterface is added, otherwise return false.
-func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client client.Client, vm *vmopv1.VirtualMachine) bool {
+func AddDefaultNetworkInterface(ctx *pkgctx.WebhookRequestContext, client client.Client, vm *vmopv1.VirtualMachine) bool {
 	// Continue to support this ad-hoc v1a1 annotation. I don't think need or want to have this annotation
 	// in v1a2: Disabled mostly already covers it. We could map between the two for version conversion, but
 	// they do mean slightly different things, and kind of complicated to know what to do like if the annotation
@@ -206,17 +206,17 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 	}
 
 	kind, apiVersion, netName := "", "", ""
-	switch pkgconfig.FromContext(ctx).NetworkProviderType {
-	case pkgconfig.NetworkProviderTypeNSXT:
+	switch pkgcfg.FromContext(ctx).NetworkProviderType {
+	case pkgcfg.NetworkProviderTypeNSXT:
 		kind = "VirtualNetwork"
 		apiVersion = ncpv1alpha1.SchemeGroupVersion.String()
-	case pkgconfig.NetworkProviderTypeVDS:
+	case pkgcfg.NetworkProviderTypeVDS:
 		kind = "Network"
 		apiVersion = netopv1alpha1.SchemeGroupVersion.String()
-	case pkgconfig.NetworkProviderTypeVPC:
+	case pkgcfg.NetworkProviderTypeVPC:
 		kind = "SubnetSet"
 		apiVersion = vpcv1alpha1.SchemeGroupVersion.String()
-	case pkgconfig.NetworkProviderTypeNamed:
+	case pkgcfg.NetworkProviderTypeNamed:
 		netName, _ = getProviderConfigMap(ctx, client)
 		if netName == "" {
 			netName = defaultNamedNetwork
@@ -283,7 +283,7 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 }
 
 // getProviderConfigMap is used in e2e tests.
-func getProviderConfigMap(ctx *context.WebhookRequestContext, c client.Client) (string, error) {
+func getProviderConfigMap(ctx *pkgctx.WebhookRequestContext, c client.Client) (string, error) {
 	var obj corev1.ConfigMap
 	if err := c.Get(
 		ctx,
@@ -300,7 +300,7 @@ func getProviderConfigMap(ctx *context.WebhookRequestContext, c client.Client) (
 // SetDefaultPowerState sets the default power state for a new VM.
 // Return true if the default power state was set, otherwise false.
 func SetDefaultPowerState(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	client client.Client,
 	vm *vmopv1.VirtualMachine) bool {
 
@@ -321,7 +321,7 @@ const (
 // ResolveImageNameOnCreate ensures vm.spec.image is set to a non-empty value if
 // vm.spec.imageName is also non-empty.
 func ResolveImageNameOnCreate(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	c client.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
@@ -367,13 +367,13 @@ func ResolveImageNameOnCreate(
 	return false, nil
 }
 
-func SetCreatedAtAnnotations(ctx goctx.Context, vm *vmopv1.VirtualMachine) {
+func SetCreatedAtAnnotations(ctx context.Context, vm *vmopv1.VirtualMachine) {
 	// If this is the first time the VM has been create, then record the
 	// build version and storage schema version into the VM's annotations.
 	// This enables future work to know at what version a VM was "created."
 	if vm.Annotations == nil {
 		vm.Annotations = map[string]string{}
 	}
-	vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = pkgconfig.FromContext(ctx).BuildVersion
+	vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
 	vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = vmopv1.SchemeGroupVersion.Version
 }

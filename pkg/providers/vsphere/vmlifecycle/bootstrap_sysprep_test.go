@@ -4,19 +4,19 @@
 package vmlifecycle_test
 
 import (
-	goctx "context"
+	"context"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
@@ -29,11 +29,11 @@ var _ = Describe("SysPrep Bootstrap", func() {
 
 	var (
 		bsArgs     vmlifecycle.BootstrapArgs
-		configInfo *types.VirtualMachineConfigInfo
+		configInfo *vimtypes.VirtualMachineConfigInfo
 	)
 
 	BeforeEach(func() {
-		configInfo = &types.VirtualMachineConfigInfo{}
+		configInfo = &vimtypes.VirtualMachineConfigInfo{}
 		bsArgs.Data = map[string]string{}
 	})
 
@@ -45,11 +45,11 @@ var _ = Describe("SysPrep Bootstrap", func() {
 		const unattendXML = "dummy-unattend-xml"
 
 		var (
-			configSpec *types.VirtualMachineConfigSpec
-			custSpec   *types.CustomizationSpec
+			configSpec *vimtypes.VirtualMachineConfigSpec
+			custSpec   *vimtypes.CustomizationSpec
 			err        error
 
-			vmCtx          context.VirtualMachineContext
+			vmCtx          pkgctx.VirtualMachineContext
 			vm             *vmopv1.VirtualMachine
 			sysPrepSpec    *vmopv1.VirtualMachineBootstrapSysprepSpec
 			vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec
@@ -81,8 +81,8 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				},
 			}
 
-			vmCtx = context.VirtualMachineContext{
-				Context: goctx.Background(),
+			vmCtx = pkgctx.VirtualMachineContext{
+				Context: context.Background(),
 				Logger:  suite.GetLogger(),
 				VM:      vm,
 			}
@@ -154,7 +154,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(custSpec).ToNot(BeNil())
 
-				sysPrep, ok := custSpec.Identity.(*types.CustomizationSysprep)
+				sysPrep, ok := custSpec.Identity.(*vimtypes.CustomizationSysprep)
 				Expect(ok).To(BeTrue())
 
 				Expect(sysPrep.GuiUnattended.TimeZone).To(Equal(int32(4)))
@@ -165,7 +165,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				Expect(sysPrep.UserData.FullName).To(Equal("foo-bar"))
 				Expect(sysPrep.UserData.OrgName).To(Equal("foo-org"))
 				Expect(sysPrep.UserData.ProductId).To(Equal(productID))
-				name, ok := sysPrep.UserData.ComputerName.(*types.CustomizationFixedName)
+				name, ok := sysPrep.UserData.ComputerName.(*vimtypes.CustomizationFixedName)
 				Expect(ok).To(BeTrue())
 				Expect(name.Name).To(Equal(hostName))
 
@@ -176,7 +176,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				Expect(sysPrep.Identification.DomainAdminPassword.Value).To(Equal(domainPassword))
 				Expect(sysPrep.Identification.JoinWorkgroup).To(Equal("foo.local.wg"))
 
-				Expect(sysPrep.LicenseFilePrintData.AutoMode).To(Equal(types.CustomizationLicenseDataModePerServer))
+				Expect(sysPrep.LicenseFilePrintData.AutoMode).To(Equal(vimtypes.CustomizationLicenseDataModePerServer))
 				Expect(sysPrep.LicenseFilePrintData.AutoUsers).To(Equal(autoUsers))
 			})
 
@@ -192,10 +192,10 @@ var _ = Describe("SysPrep Bootstrap", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(custSpec).ToNot(BeNil())
 
-					sysPrep, ok := custSpec.Identity.(*types.CustomizationSysprep)
+					sysPrep, ok := custSpec.Identity.(*vimtypes.CustomizationSysprep)
 					Expect(ok).To(BeTrue())
 
-					name, ok := sysPrep.UserData.ComputerName.(*types.CustomizationFixedName)
+					name, ok := sysPrep.UserData.ComputerName.(*vimtypes.CustomizationFixedName)
 					Expect(ok).To(BeTrue())
 					Expect(name.Name).To(Equal(hostName))
 				})
@@ -217,7 +217,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				Expect(custSpec.GlobalIPSettings.DnsServerList).To(Equal(bsArgs.DNSServers))
 				Expect(custSpec.GlobalIPSettings.DnsSuffixList).To(Equal(bsArgs.SearchSuffixes))
 
-				sysPrepText := custSpec.Identity.(*types.CustomizationSysprepText)
+				sysPrepText := custSpec.Identity.(*vimtypes.CustomizationSysprepText)
 				Expect(sysPrepText.Value).To(Equal(unattendXML))
 
 				Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
@@ -228,8 +228,8 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				const key, value = "fooKey", "fooValue"
 
 				BeforeEach(func() {
-					configInfo.VAppConfig = &types.VmConfigInfo{
-						Property: []types.VAppPropertyInfo{
+					configInfo.VAppConfig = &vimtypes.VmConfigInfo{
+						Property: []vimtypes.VAppPropertyInfo{
 							{
 								Id:               key,
 								Value:            "should-change",

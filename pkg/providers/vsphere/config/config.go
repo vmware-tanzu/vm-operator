@@ -10,12 +10,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/pkg/errors"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
 )
 
@@ -135,7 +135,7 @@ func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about st
 }
 
 func configMapToProviderCredentials(
-	client ctrlruntime.Client,
+	client ctrlclient.Client,
 	configMap *corev1.ConfigMap) (*credentials.VSphereVMProviderCredentials, error) {
 
 	secretName := configMap.Data[vcCredsSecretNameKey]
@@ -146,11 +146,11 @@ func configMapToProviderCredentials(
 	return credentials.GetProviderCredentials(client, configMap.Namespace, secretName)
 }
 
-func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlruntime.Client) ([]string, []string, error) {
-	vmopNamespace := pkgconfig.FromContext(ctx).PodNamespace
+func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlclient.Client) ([]string, []string, error) {
+	vmopNamespace := pkgcfg.FromContext(ctx).PodNamespace
 
 	configMap := &corev1.ConfigMap{}
-	configMapKey := ctrlruntime.ObjectKey{Name: NetworkConfigMapName, Namespace: vmopNamespace}
+	configMapKey := ctrlclient.ObjectKey{Name: NetworkConfigMapName, Namespace: vmopNamespace}
 	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
 		return nil, nil, err
 	}
@@ -185,12 +185,12 @@ func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlruntime.Clie
 // getProviderConfigMap returns the provider ConfigMap.
 func getProviderConfigMap(
 	ctx context.Context,
-	client ctrlruntime.Client) (*corev1.ConfigMap, error) {
+	client ctrlclient.Client) (*corev1.ConfigMap, error) {
 
-	vmopNamespace := pkgconfig.FromContext(ctx).PodNamespace
+	vmopNamespace := pkgcfg.FromContext(ctx).PodNamespace
 
 	configMap := &corev1.ConfigMap{}
-	configMapKey := ctrlruntime.ObjectKey{Name: ProviderConfigMapName, Namespace: vmopNamespace}
+	configMapKey := ctrlclient.ObjectKey{Name: ProviderConfigMapName, Namespace: vmopNamespace}
 	if err := client.Get(ctx, configMapKey, configMap); err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
 		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %s", configMapKey)
@@ -202,7 +202,7 @@ func getProviderConfigMap(
 // GetProviderConfig returns a provider config constructed from vSphere Provider ConfigMap in the VM Operator namespace.
 func GetProviderConfig(
 	ctx context.Context,
-	client ctrlruntime.Client) (*VSphereVMProviderConfig, error) {
+	client ctrlclient.Client) (*VSphereVMProviderConfig, error) {
 
 	configMap, err := getProviderConfigMap(ctx, client)
 	if err != nil {
@@ -259,7 +259,7 @@ func ProviderConfigToConfigMap(
 }
 
 // UpdateVcInConfigMap updates the ConfigMap with the new vCenter PNID and Port. Returns false if no updated needed.
-func UpdateVcInConfigMap(ctx context.Context, client ctrlruntime.Client, vcPNID, vcPort string) (bool, error) {
+func UpdateVcInConfigMap(ctx context.Context, client ctrlclient.Client, vcPNID, vcPort string) (bool, error) {
 	configMap, err := getProviderConfigMap(ctx, client)
 	if err != nil {
 		return false, err
@@ -274,7 +274,7 @@ func UpdateVcInConfigMap(ctx context.Context, client ctrlruntime.Client, vcPNID,
 	configMap.Data[vcPNIDKey] = vcPNID
 	configMap.Data[vcPortKey] = vcPort
 
-	err = client.Patch(ctx, configMap, ctrlruntime.MergeFrom(origConfigMap))
+	err = client.Patch(ctx, configMap, ctrlclient.MergeFrom(origConfigMap))
 	if err != nil {
 		log.Error(err, "Failed to update provider ConfigMap", "configMapName", configMap.Name)
 		return false, err

@@ -14,7 +14,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -35,7 +35,7 @@ func unitTestsReconcile() {
 		ctx         *builder.UnitTestContextForController
 
 		reconciler *virtualmachineclass.Reconciler
-		vmClassCtx *vmopContext.VirtualMachineClassContext
+		vmClassCtx *pkgctx.VirtualMachineClassContext
 		vmClass    *vmopv1.VirtualMachineClass
 	)
 
@@ -56,7 +56,7 @@ func unitTestsReconcile() {
 			ctx.Recorder,
 		)
 
-		vmClassCtx = &vmopContext.VirtualMachineClassContext{
+		vmClassCtx = &pkgctx.VirtualMachineClassContext{
 			Context: ctx,
 			Logger:  ctx.Logger.WithName(vmClass.Name),
 			VMClass: vmClass,

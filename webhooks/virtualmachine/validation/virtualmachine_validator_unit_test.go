@@ -26,7 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
@@ -330,12 +330,12 @@ func unitTestsValidateCreate() {
 			Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.Features.AutoVADPBackupRestore = true
 						})
 
 						fakeWCPUser := "sso:wcp-12345-fake-machineid-67890@vsphere.local"
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.PrivilegedUsers = fakeWCPUser
 						})
 
@@ -422,8 +422,8 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
 							TCPSocket: &vmopv1.TCPSocketAction{},
 						}
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.NetworkProviderType = pkgconfig.NetworkProviderTypeVPC
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
 						})
 					},
 					validate: doValidateWithMsg(
@@ -436,8 +436,8 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
 							GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
 						}
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.NetworkProviderType = pkgconfig.NetworkProviderTypeVPC
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
 						})
 					},
 					expectAllowed: true,
@@ -561,7 +561,7 @@ func unitTestsValidateCreate() {
 		Context("PodVMOnStretchedSupervisor is enabled", func() {
 
 			BeforeEach(func() {
-				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 					config.Features.PodVMOnStretchedSupervisor = true
 				})
 			})
@@ -1648,14 +1648,14 @@ func unitTestsValidateUpdate() {
 			Entry("should allow updating admin-only annotations by privileged user when the Backup/Restore FSS is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.Features.AutoVADPBackupRestore = true
 						})
 
 						privilegedUsersEnvList := "  , foo ,bar , test,  "
 						privilegedUser := "bar"
 
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.PrivilegedUsers = privilegedUsersEnvList
 						})
 
@@ -1677,14 +1677,14 @@ func unitTestsValidateUpdate() {
 			Entry("should allow removing admin-only annotations by privileged user when the Backup/Restore FSS is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.Features.AutoVADPBackupRestore = true
 						})
 
 						privilegedUsersEnvList := "  , foo ,bar , test,  "
 						privilegedUser := "bar"
 
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.PrivilegedUsers = privilegedUsersEnvList
 						})
 

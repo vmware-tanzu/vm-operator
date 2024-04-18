@@ -7,20 +7,20 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 var _ = Describe("Config", func() {
 	Describe("GetMaxDeployThreadsOnProvider", func() {
 		When("MaxDeployThreadsOnProvider == 0", func() {
 			It("Should return MaxDeployThreadsOnProvider", func() {
-				config := pkgconfig.Config{MaxDeployThreadsOnProvider: 100}
+				config := pkgcfg.Config{MaxDeployThreadsOnProvider: 100}
 				Expect(config.GetMaxDeployThreadsOnProvider()).To(Equal(100))
 			})
 		})
 		When("MaxDeployThreadsOnProvider > 0", func() {
 			It("Should return percentage of MaxConcurrentReconciles / MaxCreateVMsOnProvider", func() {
-				config := pkgconfig.Config{
+				config := pkgcfg.Config{
 					MaxDeployThreadsOnProvider: 0,
 					MaxConcurrentReconciles:    20,
 					MaxCreateVMsOnProvider:     80,

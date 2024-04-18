@@ -22,7 +22,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -35,7 +35,7 @@ const (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinewebconsolerequests/status,verbs=get
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create virtualmachinewebconsolerequest validation webhook")
@@ -59,7 +59,7 @@ func (v validator) For() schema.GroupVersionKind {
 	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineWebConsoleRequest{}).Name())
 }
 
-func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 
 	wcr, err := v.webConsoleRequestFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -78,11 +78,11 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
 	return admission.Allowed("")
 }
 
-func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	wcr, err := v.webConsoleRequestFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -104,12 +104,12 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validateMetadata(ctx *context.WebhookRequestContext, wcr *vmopv1.VirtualMachineWebConsoleRequest) field.ErrorList {
+func (v validator) validateMetadata(ctx *pkgctx.WebhookRequestContext, wcr *vmopv1.VirtualMachineWebConsoleRequest) field.ErrorList {
 	var fieldErrs field.ErrorList
 	return fieldErrs
 }
 
-func (v validator) validateSpec(ctx *context.WebhookRequestContext, wcr *vmopv1.VirtualMachineWebConsoleRequest) field.ErrorList {
+func (v validator) validateSpec(ctx *pkgctx.WebhookRequestContext, wcr *vmopv1.VirtualMachineWebConsoleRequest) field.ErrorList {
 	var fieldErrs field.ErrorList
 	specPath := field.NewPath("spec")
 

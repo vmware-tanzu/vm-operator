@@ -8,11 +8,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -34,10 +34,10 @@ type CloudInitMetadata struct {
 var CloudInitUserDataSecretKeys = []string{"user-data", "value"}
 
 func BootStrapCloudInit(
-	vmCtx context.VirtualMachineContext,
-	config *types.VirtualMachineConfigInfo,
+	vmCtx pkgctx.VirtualMachineContext,
+	config *vimtypes.VirtualMachineConfigInfo,
 	cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec,
-	bsArgs *BootstrapArgs) (*types.VirtualMachineConfigSpec, *types.CustomizationSpec, error) {
+	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
 	netPlan, err := network.NetPlanCustomization(bsArgs.NetworkResults)
 	if err != nil {
@@ -82,8 +82,8 @@ func BootStrapCloudInit(
 		// NOTE: The old code didn't error out if userdata wasn't found, so keep going.
 	}
 
-	var configSpec *types.VirtualMachineConfigSpec
-	var customSpec *types.CustomizationSpec
+	var configSpec *vimtypes.VirtualMachineConfigSpec
+	var customSpec *vimtypes.CustomizationSpec
 
 	switch vmCtx.VM.Annotations[constants.CloudInitTypeAnnotation] {
 	case constants.CloudInitTypeValueCloudInitPrep:
@@ -124,8 +124,8 @@ func GetCloudInitMetadata(
 }
 
 func GetCloudInitPrepCustSpec(
-	config *types.VirtualMachineConfigInfo,
-	metadata, userdata string) (*types.VirtualMachineConfigSpec, *types.CustomizationSpec, error) {
+	config *vimtypes.VirtualMachineConfigInfo,
+	metadata, userdata string) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
 	if userdata != "" {
 		// Ensure the data is normalized first to plain-text.
@@ -137,14 +137,14 @@ func GetCloudInitPrepCustSpec(
 		userdata = plainText
 	}
 
-	var configSpec *types.VirtualMachineConfigSpec
+	var configSpec *vimtypes.VirtualMachineConfigSpec
 
 	// Set the ConfigSpec if the vAppConfig needs updating so a Reconfigure is only done if needed.
 	if vAppConfig := config.VAppConfig; vAppConfig == nil || vAppConfig.GetVmConfigInfo() == nil ||
 		!slices.Contains(vAppConfig.GetVmConfigInfo().OvfEnvironmentTransport, OvfEnvironmentTransportGuestInfo) {
 
-		configSpec = &types.VirtualMachineConfigSpec{
-			VAppConfig: &types.VmConfigSpec{
+		configSpec = &vimtypes.VirtualMachineConfigSpec{
+			VAppConfig: &vimtypes.VmConfigSpec{
 				// Ensure the transport is guestInfo in case the VM does not have
 				// a CD-ROM device required to use the ISO transport.
 				OvfEnvironmentTransport: []string{OvfEnvironmentTransportGuestInfo},
@@ -152,7 +152,7 @@ func GetCloudInitPrepCustSpec(
 		}
 	}
 
-	customSpec := &types.CustomizationSpec{
+	customSpec := &vimtypes.CustomizationSpec{
 		Identity: &internal.CustomizationCloudinitPrep{
 			Metadata: metadata,
 			Userdata: userdata,
@@ -163,8 +163,8 @@ func GetCloudInitPrepCustSpec(
 }
 
 func GetCloudInitGuestInfoCustSpec(
-	config *types.VirtualMachineConfigInfo,
-	metadata, userdata string) (*types.VirtualMachineConfigSpec, error) {
+	config *vimtypes.VirtualMachineConfigInfo,
+	metadata, userdata string) (*vimtypes.VirtualMachineConfigSpec, error) {
 
 	encodedMetadata, err := util.EncodeGzipBase64(metadata)
 	if err != nil {
@@ -192,13 +192,13 @@ func GetCloudInitGuestInfoCustSpec(
 		extraConfig[constants.CloudInitGuestInfoUserdataEncoding] = "gzip+base64"
 	}
 
-	configSpec := &types.VirtualMachineConfigSpec{}
+	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
 	if config.VAppConfig != nil && config.VAppConfig.GetVmConfigInfo() != nil {
 		// Remove the VAppConfig to ensure Cloud-Init inside the guest does not
 		// activate and prefer the OVF datasource over the VMware datasource.
 		// Only set this if needed so we don't do a needless Reconfigure.
-		configSpec.VAppConfigRemoved = types.NewBool(true)
+		configSpec.VAppConfigRemoved = vimtypes.NewBool(true)
 	}
 
 	return configSpec, nil

@@ -7,9 +7,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/pbm"
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 )
 
@@ -61,7 +61,7 @@ func getProfileProportionalCapacity(profile pbmTypes.BasePbmProfile) int32 {
 // GetDiskProvisioningForProfile returns the provisioning type for the storage profile if it has
 // one specified.
 func GetDiskProvisioningForProfile(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	storageProfileID string) (string, error) {
 
@@ -78,9 +78,9 @@ func GetDiskProvisioningForProfile(
 	for _, p := range profiles {
 		switch getProfileProportionalCapacity(p) {
 		case 0:
-			return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
+			return string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
 		case 100:
-			return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick), nil
+			return string(vimtypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick), nil
 		}
 	}
 

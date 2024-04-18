@@ -4,7 +4,7 @@
 package v1alpha1
 
 import (
-	goctx "context"
+	"context"
 
 	"fmt"
 	"reflect"
@@ -23,8 +23,8 @@ import (
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1/patch"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -38,7 +38,7 @@ const (
 )
 
 // AddToManager adds this package's controller to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controlledType     = &vmopv1a1.WebConsoleRequest{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
@@ -62,7 +62,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
-	ctx goctx.Context,
+	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
@@ -80,7 +80,7 @@ func NewReconciler(
 // Reconciler reconciles a WebConsoleRequest object.
 type Reconciler struct {
 	client.Client
-	Context    goctx.Context
+	Context    context.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
@@ -92,8 +92,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services/status,verbs=get
 
-func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	ctx = pkgconfig.JoinContext(ctx, r.Context)
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	webconsolerequest := &vmopv1a1.WebConsoleRequest{}
 	err := r.Get(ctx, req.NamespacedName, webconsolerequest)
@@ -101,7 +101,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	webConsoleRequestCtx := &context.WebConsoleRequestContext{
+	webConsoleRequestCtx := &pkgctx.WebConsoleRequestContext{
 		Context:           ctx,
 		Logger:            ctrl.Log.WithName("WebConsoleRequest").WithValues("name", req.NamespacedName),
 		WebConsoleRequest: webconsolerequest,
@@ -145,7 +145,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	return ctrl.Result{Requeue: true, RequeueAfter: DefaultExpiryTime}, nil
 }
 
-func (r *Reconciler) ReconcileEarlyNormal(ctx *context.WebConsoleRequestContext) (bool, error) {
+func (r *Reconciler) ReconcileEarlyNormal(ctx *pkgctx.WebConsoleRequestContext) (bool, error) {
 	expiryTime := ctx.WebConsoleRequest.Status.ExpiryTime
 	nowTime := metav1.Now()
 	if !expiryTime.IsZero() && !nowTime.Before(&expiryTime) {
@@ -167,7 +167,7 @@ func (r *Reconciler) ReconcileEarlyNormal(ctx *context.WebConsoleRequestContext)
 	return false, nil
 }
 
-func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContext) error {
+func (r *Reconciler) ReconcileNormal(ctx *pkgctx.WebConsoleRequestContext) error {
 	ctx.Logger.Info("Reconciling WebConsoleRequest")
 	defer func() {
 		ctx.Logger.Info("Finished reconciling WebConsoleRequest")
@@ -216,7 +216,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContext) erro
 	return nil
 }
 
-func (r *Reconciler) ReconcileOwnerReferences(ctx *context.WebConsoleRequestContext) error {
+func (r *Reconciler) ReconcileOwnerReferences(ctx *pkgctx.WebConsoleRequestContext) error {
 	isController := true
 	ownerRef := metav1.OwnerReference{
 		APIVersion: ctx.VM.APIVersion,

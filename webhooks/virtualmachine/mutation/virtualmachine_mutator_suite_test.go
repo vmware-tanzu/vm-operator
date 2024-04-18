@@ -8,15 +8,15 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
 )
 
 // suite is used for unit and integration testing this webhook.
 var suite = builder.NewTestSuiteForMutatingWebhookWithContext(
-	pkgconfig.WithConfig(
-		pkgconfig.Config{
+	pkgcfg.WithConfig(
+		pkgcfg.Config{
 			BuildVersion: "v1",
 		}),
 	mutation.AddToManager,

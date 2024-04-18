@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	apiErrors "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -17,7 +17,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -42,7 +42,7 @@ func unitTestsReconcile() {
 		ctx         *builder.UnitTestContextForController
 		reconciler  *virtualmachinesetresourcepolicy.Reconciler
 
-		resourcePolicyCtx *context.VirtualMachineSetResourcePolicyContext
+		resourcePolicyCtx *pkgctx.VirtualMachineSetResourcePolicyContext
 		resourcePolicy    *vmopv1.VirtualMachineSetResourcePolicy
 		vm, vmNoReserved  *vmopv1.VirtualMachine
 	)
@@ -83,7 +83,7 @@ func unitTestsReconcile() {
 			VMProvider: ctx.VMProvider,
 		}
 
-		resourcePolicyCtx = &context.VirtualMachineSetResourcePolicyContext{
+		resourcePolicyCtx = &pkgctx.VirtualMachineSetResourcePolicyContext{
 			Context:        ctx.Context,
 			Logger:         ctx.Logger.WithName(resourcePolicy.Namespace).WithName(resourcePolicy.Name),
 			ResourcePolicy: resourcePolicy,
@@ -122,7 +122,7 @@ func unitTestsReconcile() {
 
 			AfterEach(func() {
 				err := ctx.Client.Delete(ctx, vm)
-				Expect(err == nil || apiErrors.IsNotFound(err)).To(BeTrue())
+				Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 			})
 
 			It("will fail to delete the ResourcePolicy", func() {

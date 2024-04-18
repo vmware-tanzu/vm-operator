@@ -17,9 +17,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -51,7 +51,7 @@ func unitTestsReconcile() {
 		fakeVMProvider   *providerfake.VMProvider
 
 		vm    *vmopv1.VirtualMachine
-		vmCtx *vmopContext.VirtualMachineContext
+		vmCtx *pkgctx.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
@@ -71,7 +71,7 @@ func unitTestsReconcile() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
-		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.MaxDeployThreadsOnProvider = 16
 		})
 
@@ -87,7 +87,7 @@ func unitTestsReconcile() {
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		fakeProbeManager = fakeProbeManagerIf.(*proberfake.ProberManager)
 
-		vmCtx = &vmopContext.VirtualMachineContext{
+		vmCtx = &pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  ctx.Logger.WithName(vm.Name),
 			VM:      vm,

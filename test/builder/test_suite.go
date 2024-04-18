@@ -43,9 +43,9 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/util/remote"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	ctrlCtx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
@@ -137,7 +137,7 @@ func NewTestSuiteWithContext(ctx context.Context) *TestSuite {
 // The functional test starts all the controllers, and creates all the providers
 // so it is a more fully functioning env than an integration test with a single
 // controller running.
-func NewFunctionalTestSuite(addToManagerFunc func(ctx *ctrlCtx.ControllerManagerContext, mgr manager.Manager) error) *TestSuite {
+func NewFunctionalTestSuite(addToManagerFunc func(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error) *TestSuite {
 	return NewTestSuiteForController(
 		addToManagerFunc,
 		pkgmgrinit.InitializeProviders,
@@ -146,7 +146,7 @@ func NewFunctionalTestSuite(addToManagerFunc func(ctx *ctrlCtx.ControllerManager
 
 // NewTestSuiteForController returns a new test suite used for controller integration test.
 func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
-	return NewTestSuiteForControllerWithContext(pkgconfig.NewContext(), addToManagerFn, initProvidersFn)
+	return NewTestSuiteForControllerWithContext(pkgcfg.NewContext(), addToManagerFn, initProvidersFn)
 }
 
 // NewTestSuiteForControllerWithContext returns a new test suite used for
@@ -182,7 +182,7 @@ func NewTestSuiteForValidatingWebhook(
 	newValidatorFn builder.ValidatorFunc,
 	webhookName string) *TestSuite {
 
-	return newTestSuiteForWebhook(pkgconfig.NewContext(), addToManagerFn, newValidatorFn, nil, webhookName)
+	return newTestSuiteForWebhook(pkgcfg.NewContext(), addToManagerFn, newValidatorFn, nil, webhookName)
 }
 
 // NewTestSuiteForValidatingWebhookWithContext returns a new test suite used for unit and
@@ -205,7 +205,7 @@ func NewTestSuiteForMutatingWebhook(
 	newMutatorFn builder.MutatorFunc,
 	webhookName string) *TestSuite {
 
-	return newTestSuiteForWebhook(pkgconfig.NewContext(), addToManagerFn, nil, newMutatorFn, webhookName)
+	return newTestSuiteForWebhook(pkgcfg.NewContext(), addToManagerFn, nil, newMutatorFn, webhookName)
 }
 
 // NewTestSuiteForMutatingWebhookWithContext returns a new test suite used for unit and

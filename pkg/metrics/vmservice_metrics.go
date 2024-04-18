@@ -12,7 +12,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 var (
@@ -72,7 +72,7 @@ func NewVMMetrics() *VMMetrics {
 	return vmMetrics
 }
 
-func (vmm *VMMetrics) RegisterVMCreateOrUpdateMetrics(vmCtx *context.VirtualMachineContext) {
+func (vmm *VMMetrics) RegisterVMCreateOrUpdateMetrics(vmCtx *pkgctx.VirtualMachineContext) {
 	vmm.registerVMStatusConditions(vmCtx)
 	vmm.registerVMStatusCreationPhase(vmCtx)
 	vmm.registerVMPowerState(vmCtx)
@@ -81,7 +81,7 @@ func (vmm *VMMetrics) RegisterVMCreateOrUpdateMetrics(vmCtx *context.VirtualMach
 
 // DeleteMetrics deletes metrics for a specific VM post deletion reconcile.
 // It is critical to stop reporting metrics for a deleted VM resource.
-func (vmm *VMMetrics) DeleteMetrics(vmCtx *context.VirtualMachineContext) {
+func (vmm *VMMetrics) DeleteMetrics(vmCtx *pkgctx.VirtualMachineContext) {
 	vm := vmCtx.VM
 	vmCtx.Logger.V(5).Info("Deleting metrics for VM")
 
@@ -103,7 +103,7 @@ func (vmm *VMMetrics) DeleteMetrics(vmCtx *context.VirtualMachineContext) {
 	vmm.statusIP.DeletePartialMatch(labels)
 }
 
-func (vmm *VMMetrics) registerVMStatusConditions(vmCtx *context.VirtualMachineContext) {
+func (vmm *VMMetrics) registerVMStatusConditions(vmCtx *pkgctx.VirtualMachineContext) {
 	vm := vmCtx.VM
 	vmCtx.Logger.V(5).Info("Adding metrics for VM condition")
 
@@ -135,7 +135,7 @@ func (vmm *VMMetrics) registerVMStatusConditions(vmCtx *context.VirtualMachineCo
 	}
 }
 
-func (vmm *VMMetrics) registerVMStatusCreationPhase(vmCtx *context.VirtualMachineContext) {
+func (vmm *VMMetrics) registerVMStatusCreationPhase(vmCtx *pkgctx.VirtualMachineContext) {
 	vmCtx.Logger.V(5).Info("Adding metrics for VM status creation phase")
 	vm := vmCtx.VM
 
@@ -168,7 +168,7 @@ func (vmm *VMMetrics) registerVMStatusCreationPhase(vmCtx *context.VirtualMachin
 	vmm.statusPhase.With(newLabels).Set(1)
 }
 
-func (vmm *VMMetrics) registerVMPowerState(vmCtx *context.VirtualMachineContext) {
+func (vmm *VMMetrics) registerVMPowerState(vmCtx *pkgctx.VirtualMachineContext) {
 	vm := vmCtx.VM
 	vmCtx.Logger.V(5).Info("Adding metrics for VM power state")
 
@@ -188,7 +188,7 @@ func (vmm *VMMetrics) registerVMPowerState(vmCtx *context.VirtualMachineContext)
 	vmm.powerState.With(newLabels).Set(1)
 }
 
-func (vmm *VMMetrics) registerVMStatusIP(vmCtx *context.VirtualMachineContext) {
+func (vmm *VMMetrics) registerVMStatusIP(vmCtx *pkgctx.VirtualMachineContext) {
 	vm := vmCtx.VM
 	vmCtx.Logger.V(5).Info("Adding metrics for VM IP address assignment status")
 

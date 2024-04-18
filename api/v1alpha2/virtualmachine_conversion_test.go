@@ -11,20 +11,20 @@ import (
 	"github.com/google/go-cmp/cmp"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 func TestVirtualMachineConversion(t *testing.T) {
 
-	hubSpokeHub := func(g *WithT, hub, hubAfter conversion.Hub, spoke conversion.Convertible) {
-		hubBefore := hub.DeepCopyObject().(conversion.Hub)
+	hubSpokeHub := func(g *WithT, hub, hubAfter ctrlconversion.Hub, spoke ctrlconversion.Convertible) {
+		hubBefore := hub.DeepCopyObject().(ctrlconversion.Hub)
 
 		// First convert hub to spoke
-		dstCopy := spoke.DeepCopyObject().(conversion.Convertible)
+		dstCopy := spoke.DeepCopyObject().(ctrlconversion.Convertible)
 		g.Expect(dstCopy.ConvertFrom(hubBefore)).To(Succeed())
 
 		// Convert spoke back to hub and check if the resulting hub is equal to the hub before the round trip
@@ -55,7 +55,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 
 			spoke := vmopv1a2.VirtualMachine{
 				Status: vmopv1a2.VirtualMachineStatus{
-					Image: &common.LocalObjectRef{
+					Image: &vmopv1a2common.LocalObjectRef{
 						Kind: "VirtualMachineImage",
 						Name: "vmi-123",
 					},
@@ -75,7 +75,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Generation: 1,
 				},
 				Status: vmopv1a2.VirtualMachineStatus{
-					Image: &common.LocalObjectRef{
+					Image: &vmopv1a2common.LocalObjectRef{
 						Kind: "VirtualMachineImage",
 						Name: "vmi-123",
 					},

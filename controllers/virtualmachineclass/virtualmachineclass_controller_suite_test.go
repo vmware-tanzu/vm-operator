@@ -9,13 +9,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var suite = builder.NewTestSuiteForControllerWithContext(
-	pkgconfig.NewContextWithDefaultConfig(),
+	pkgcfg.NewContextWithDefaultConfig(),
 	virtualmachineclass.AddToManager,
 	manager.InitializeProvidersNoopFn)
 

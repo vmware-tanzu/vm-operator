@@ -4,7 +4,7 @@
 package vmlifecycle
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"net"
 	"reflect"
@@ -12,15 +12,15 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -40,7 +40,7 @@ var (
 )
 
 func UpdateStatus(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	vcVM *object.VirtualMachine,
 	moVM *mo.VirtualMachine) error {
@@ -82,7 +82,7 @@ func UpdateStatus(
 	vm.Status.UniqueID = vcVM.Reference().Value
 	vm.Status.BiosUUID = summary.Config.Uuid
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
-	hardwareVersion, _ := types.ParseHardwareVersion(summary.Config.HwVersion)
+	hardwareVersion, _ := vimtypes.ParseHardwareVersion(summary.Config.HwVersion)
 	vm.Status.HardwareVersion = int32(hardwareVersion)
 	updateGuestNetworkStatus(vmCtx.VM, moVM.Guest)
 
@@ -123,13 +123,13 @@ func UpdateStatus(
 		vm.Status.Zone = zoneName
 	}
 
-	return k8serrors.NewAggregate(errs)
+	return apierrorsutil.NewAggregate(errs)
 }
 
 func getRuntimeHostHostname(
-	ctx goctx.Context,
+	ctx context.Context,
 	vcVM *object.VirtualMachine,
-	host *types.ManagedObjectReference) (string, error) {
+	host *vimtypes.ManagedObjectReference) (string, error) {
 
 	if host != nil {
 		return object.NewHostSystem(vcVM.Client(), *host).ObjectName(ctx)
@@ -140,7 +140,7 @@ func getRuntimeHostHostname(
 func guestNicInfoToInterfaceStatus(
 	name string,
 	deviceKey int32,
-	guestNicInfo *types.GuestNicInfo) vmopv1.VirtualMachineNetworkInterfaceStatus {
+	guestNicInfo *vimtypes.GuestNicInfo) vmopv1.VirtualMachineNetworkInterfaceStatus {
 
 	status := vmopv1.VirtualMachineNetworkInterfaceStatus{
 		Name:      name,
@@ -173,7 +173,7 @@ func guestNicInfoToInterfaceStatus(
 	return status
 }
 
-func guestIPStackInfoToIPStackStatus(guestIPStack *types.GuestStackInfo) vmopv1.VirtualMachineNetworkIPStackStatus {
+func guestIPStackInfoToIPStackStatus(guestIPStack *vimtypes.GuestStackInfo) vmopv1.VirtualMachineNetworkIPStackStatus {
 	status := vmopv1.VirtualMachineNetworkIPStackStatus{}
 
 	if dhcpConfig := guestIPStack.DhcpConfig; dhcpConfig != nil {
@@ -193,19 +193,19 @@ func guestIPStackInfoToIPStackStatus(guestIPStack *types.GuestStackInfo) vmopv1.
 	return status
 }
 
-func convertPowerState(powerState types.VirtualMachinePowerState) vmopv1.VirtualMachinePowerState {
+func convertPowerState(powerState vimtypes.VirtualMachinePowerState) vmopv1.VirtualMachinePowerState {
 	switch powerState {
-	case types.VirtualMachinePowerStatePoweredOff:
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
 		return vmopv1.VirtualMachinePowerStateOff
-	case types.VirtualMachinePowerStatePoweredOn:
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
 		return vmopv1.VirtualMachinePowerStateOn
-	case types.VirtualMachinePowerStateSuspended:
+	case vimtypes.VirtualMachinePowerStateSuspended:
 		return vmopv1.VirtualMachinePowerStateSuspended
 	}
 	return ""
 }
 
-func convertNetIPConfigInfoIPAddresses(ipAddresses []types.NetIpConfigInfoIpAddress) []vmopv1.VirtualMachineNetworkInterfaceIPAddrStatus {
+func convertNetIPConfigInfoIPAddresses(ipAddresses []vimtypes.NetIpConfigInfoIpAddress) []vmopv1.VirtualMachineNetworkInterfaceIPAddrStatus {
 	if len(ipAddresses) == 0 {
 		return nil
 	}
@@ -226,7 +226,7 @@ func convertNetIPConfigInfoIPAddresses(ipAddresses []types.NetIpConfigInfoIpAddr
 	return out
 }
 
-func convertNetDNSConfigInfo(dnsConfig *types.NetDnsConfigInfo) *vmopv1.VirtualMachineNetworkDNSStatus {
+func convertNetDNSConfigInfo(dnsConfig *vimtypes.NetDnsConfigInfo) *vmopv1.VirtualMachineNetworkDNSStatus {
 	return &vmopv1.VirtualMachineNetworkDNSStatus{
 		DHCP:          dnsConfig.Dhcp,
 		DomainName:    dnsConfig.DomainName,
@@ -236,7 +236,7 @@ func convertNetDNSConfigInfo(dnsConfig *types.NetDnsConfigInfo) *vmopv1.VirtualM
 	}
 }
 
-func convertNetDhcpConfigInfo(dhcpConfig *types.NetDhcpConfigInfo) *vmopv1.VirtualMachineNetworkDHCPStatus {
+func convertNetDhcpConfigInfo(dhcpConfig *vimtypes.NetDhcpConfigInfo) *vmopv1.VirtualMachineNetworkDHCPStatus {
 	if ipv4, ipv6 := dhcpConfig.Ipv4, dhcpConfig.Ipv6; ipv4 != nil || ipv6 != nil {
 		status := &vmopv1.VirtualMachineNetworkDHCPStatus{}
 
@@ -255,14 +255,14 @@ func convertNetDhcpConfigInfo(dhcpConfig *types.NetDhcpConfigInfo) *vmopv1.Virtu
 	return nil
 }
 
-func convertNetIPRouteConfigInfo(routeConfig *types.NetIpRouteConfigInfo) []vmopv1.VirtualMachineNetworkIPRouteStatus {
+func convertNetIPRouteConfigInfo(routeConfig *vimtypes.NetIpRouteConfigInfo) []vmopv1.VirtualMachineNetworkIPRouteStatus {
 	if len(routeConfig.IpRoute) == 0 {
 		return nil
 	}
 
 	// Try to skip routes that are likely not interesting or useful to external users - especially on
 	// TKG nodes - that would otherwise just clutter the Status output.
-	skipRoute := func(ipRoute types.NetIpRouteConfigInfoIpRoute) bool {
+	skipRoute := func(ipRoute vimtypes.NetIpRouteConfigInfoIpRoute) bool {
 		network, prefix := ipRoute.Network, ipRoute.PrefixLength
 
 		ip := net.ParseIP(network)
@@ -298,7 +298,7 @@ func convertNetIPRouteConfigInfo(routeConfig *types.NetIpRouteConfigInfo) []vmop
 	return out
 }
 
-func convertKeyValueSlice(s []types.KeyValue) []common.KeyValuePair {
+func convertKeyValueSlice(s []vimtypes.KeyValue) []common.KeyValuePair {
 	if len(s) == 0 {
 		return nil
 	}
@@ -312,7 +312,7 @@ func convertKeyValueSlice(s []types.KeyValue) []common.KeyValuePair {
 
 func MarkVMToolsRunningStatusCondition(
 	vm *vmopv1.VirtualMachine,
-	guestInfo *types.GuestInfo) {
+	guestInfo *vimtypes.GuestInfo) {
 
 	if guestInfo == nil || guestInfo.ToolsRunningStatus == "" {
 		conditions.MarkUnknown(vm, vmopv1.VirtualMachineToolsCondition, "NoGuestInfo", "")
@@ -320,10 +320,10 @@ func MarkVMToolsRunningStatusCondition(
 	}
 
 	switch guestInfo.ToolsRunningStatus {
-	case string(types.VirtualMachineToolsRunningStatusGuestToolsNotRunning):
+	case string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsNotRunning):
 		msg := "VMware Tools is not running"
 		conditions.MarkFalse(vm, vmopv1.VirtualMachineToolsCondition, vmopv1.VirtualMachineToolsNotRunningReason, msg)
-	case string(types.VirtualMachineToolsRunningStatusGuestToolsRunning), string(types.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts):
+	case string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsRunning), string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts):
 		conditions.MarkTrue(vm, vmopv1.VirtualMachineToolsCondition)
 	default:
 		msg := "Unexpected VMware Tools running status"
@@ -331,22 +331,22 @@ func MarkVMToolsRunningStatusCondition(
 	}
 }
 
-func MarkCustomizationInfoCondition(vm *vmopv1.VirtualMachine, guestInfo *types.GuestInfo) {
+func MarkCustomizationInfoCondition(vm *vmopv1.VirtualMachine, guestInfo *vimtypes.GuestInfo) {
 	if guestInfo == nil || guestInfo.CustomizationInfo == nil {
 		conditions.MarkUnknown(vm, vmopv1.GuestCustomizationCondition, "NoGuestInfo", "")
 		return
 	}
 
 	switch guestInfo.CustomizationInfo.CustomizationStatus {
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE), "":
+	case string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE), "":
 		conditions.MarkTrue(vm, vmopv1.GuestCustomizationCondition)
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING):
+	case string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING):
 		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationPendingReason, "")
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING):
+	case string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING):
 		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationRunningReason, "")
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED):
+	case string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED):
 		conditions.MarkTrue(vm, vmopv1.GuestCustomizationCondition)
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED):
+	case string(vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED):
 		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
 		if errorMsg == "" {
 			errorMsg = "vSphere VM Customization failed due to an unknown error."
@@ -363,7 +363,7 @@ func MarkCustomizationInfoCondition(vm *vmopv1.VirtualMachine, guestInfo *types.
 
 func MarkBootstrapCondition(
 	vm *vmopv1.VirtualMachine,
-	configInfo *types.VirtualMachineConfigInfo) {
+	configInfo *vimtypes.VirtualMachineConfigInfo) {
 
 	if configInfo == nil {
 		conditions.MarkUnknown(
@@ -545,7 +545,7 @@ func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
 
 // updateGuestNetworkStatus updates the provided VM's status.network
 // field with information from the guestInfo.
-func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *types.GuestInfo) {
+func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *vimtypes.GuestInfo) {
 	var (
 		primaryIP4      string
 		primaryIP6      string
@@ -581,7 +581,7 @@ func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *types.GuestInfo) {
 				ifaceSpecs = vm.Spec.Network.Interfaces
 			}
 
-			slices.SortFunc(gi.Net, func(a, b types.GuestNicInfo) int {
+			slices.SortFunc(gi.Net, func(a, b vimtypes.GuestNicInfo) int {
 				// Sort by the DeviceKey (DeviceConfigId) to order the guest info
 				// list by the order in the initial ConfigSpec which is the order of
 				// the []ifaceSpecs since it is immutable.

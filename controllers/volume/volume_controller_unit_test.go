@@ -4,20 +4,20 @@
 package volume_test
 
 import (
-	goctx "context"
+	"context"
 	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
-	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -25,9 +25,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	volContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
@@ -40,22 +40,22 @@ type testFailClient struct {
 }
 
 // This is used for returning an error while unit testing.
-func (f *testFailClient) Create(ctx goctx.Context, obj client.Object, opts ...client.CreateOption) error {
-	return k8sapierrors.NewForbidden(schema.GroupResource{}, "", errors.New("insufficient quota for creating PVC"))
+func (f *testFailClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	return apierrors.NewForbidden(schema.GroupResource{}, "", errors.New("insufficient quota for creating PVC"))
 }
 
 type noPVCReader struct {
 	client.Client
 }
 
-func (c *noPVCReader) Get(ctx goctx.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+func (c *noPVCReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 	if _, ok := obj.(*corev1.PersistentVolumeClaim); ok {
 		panic("Don't Get() PersistentVolumeClaim with this Client!")
 	}
 	return c.Client.Get(ctx, key, obj, opts...)
 }
 
-func (c *noPVCReader) List(ctx goctx.Context, list client.ObjectList, opts ...client.ListOption) error {
+func (c *noPVCReader) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	if _, ok := list.(*corev1.PersistentVolumeClaimList); ok {
 		panic("Don't List() PersistentVolumeClaim with this Client!")
 	}
@@ -87,7 +87,7 @@ func unitTestsReconcile() {
 
 		reconciler     *volume.Reconciler
 		fakeVMProvider *providerfake.VMProvider
-		volCtx         *volContext.VolumeContext
+		volCtx         *pkgctx.VolumeContext
 		vm             *vmopv1.VirtualMachine
 
 		vmVol            vmopv1.VirtualMachineVolume
@@ -176,7 +176,7 @@ func unitTestsReconcile() {
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 
 		if instanceStorageTest {
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.InstanceStorage = true
 			})
 			reconciler.GetInstanceStoragePVCClient = func() (client.Reader, error) {
@@ -184,7 +184,7 @@ func unitTestsReconcile() {
 			}
 		}
 
-		volCtx = &volContext.VolumeContext{
+		volCtx = &pkgctx.VolumeContext{
 			Context: ctx,
 			Logger:  ctx.Logger,
 			VM:      vm,
@@ -209,7 +209,7 @@ func unitTestsReconcile() {
 			return attachment
 		}
 
-		if k8sapierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return nil
 		}
 
@@ -522,7 +522,7 @@ func unitTestsReconcile() {
 
 			It("returns error when failed to get VM hardware version", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (types.HardwareVersion, error) {
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ context.Context, _ *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error) {
 					return 0, errors.New("dummy-error")
 				}
 				fakeVMProvider.Unlock()
@@ -538,8 +538,8 @@ func unitTestsReconcile() {
 
 			It("returns error when VM hardware version is smaller than minimal requirement", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (types.HardwareVersion, error) {
-					return types.VMX11, nil
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ context.Context, _ *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error) {
+					return vimtypes.VMX11, nil
 				}
 				fakeVMProvider.Unlock()
 
@@ -554,7 +554,7 @@ func unitTestsReconcile() {
 
 			It("returns success when failed to parse VM hardware version", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (types.HardwareVersion, error) {
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ context.Context, _ *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error) {
 					return 0, nil
 				}
 				fakeVMProvider.Unlock()
@@ -760,10 +760,10 @@ func unitTestsReconcile() {
 			awfulErrMsg := `failed to attach cns volume: \"88854b48-2b1c-43f8-8889-de4b5ca2cab5\" to node vm: \"VirtualMachine:vm-42
 [VirtualCenterHost: vc.vmware.com, UUID: 42080725-d6b0-c045-b24e-29c4dadca6f2, Datacenter: Datacenter
 [Datacenter: Datacenter:datacenter, VirtualCenterHost: vc.vmware.com]]\".
-fault: \"(*types.LocalizedMethodFault)(0xc003d9b9a0)({\\n DynamicData: (types.DynamicData)
-{\\n },\\n Fault: (*types.ResourceInUse)(0xc002e69080)({\\n VimFault: (types.VimFault)
-{\\n MethodFault: (types.MethodFault) {\\n FaultCause: (*types.LocalizedMethodFault)(\u003cnil\u003e),\\n
-FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (string) \\\"\\\",\\n Name:
+fault: \"(*vimtypes.LocalizedMethodFault)(0xc003d9b9a0)({\\n DynamicData: (vimtypes.DynamicData)
+{\\n },\\n Fault: (*vimtypes.ResourceInUse)(0xc002e69080)({\\n VimFault: (vimtypes.VimFault)
+{\\n MethodFault: (vimtypes.MethodFault) {\\n FaultCause: (*vimtypes.LocalizedMethodFault)(\u003cnil\u003e),\\n
+FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (string) \\\"\\\",\\n Name:
 (string) (len=6) \\\"volume\\\"\\n }),\\n LocalizedMessage: (string) (len=32)
 \\\"The resource 'volume' is in use.\\\"\\n})\\n\". opId: \"67d69c68\""
 `
@@ -946,7 +946,7 @@ func cnsAttachmentForVMVolume(
 	}
 }
 
-func expectPVCsStatus(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController, selectedNodeSet, bound bool, pvcsCount int) {
+func expectPVCsStatus(ctx *pkgctx.VolumeContext, testCtx *builder.UnitTestContextForController, selectedNodeSet, bound bool, pvcsCount int) {
 	if selectedNodeSet {
 		Expect(ctx.VM.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
 		Expect(ctx.VM.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
@@ -966,18 +966,18 @@ func expectPVCsStatus(ctx *volContext.VolumeContext, testCtx *builder.UnitTestCo
 	Expect(pvcList).To(HaveLen(pvcsCount))
 }
 
-func adjustPVCCreationTimestamp(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController) {
+func adjustPVCCreationTimestamp(ctx *pkgctx.VolumeContext, testCtx *builder.UnitTestContextForController) {
 	pvcList, err := getInstanceStoragePVCs(ctx, testCtx)
 	Expect(err).ToNot(HaveOccurred())
 
 	for _, pvc := range pvcList {
 		pvc := pvc
-		pvc.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * pkgconfig.FromContext(ctx).InstanceStorage.PVPlacementFailedTTL))
+		pvc.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * pkgcfg.FromContext(ctx).InstanceStorage.PVPlacementFailedTTL))
 		Expect(testCtx.Client.Update(ctx, &pvc)).To(Succeed())
 	}
 }
 
-func getInstanceStoragePVCs(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController) ([]corev1.PersistentVolumeClaim, error) {
+func getInstanceStoragePVCs(ctx *pkgctx.VolumeContext, testCtx *builder.UnitTestContextForController) ([]corev1.PersistentVolumeClaim, error) {
 	var errs []error
 	pvcList := make([]corev1.PersistentVolumeClaim, 0)
 
@@ -1000,10 +1000,10 @@ func getInstanceStoragePVCs(ctx *volContext.VolumeContext, testCtx *builder.Unit
 		pvcList = append(pvcList, *pvc)
 	}
 
-	return pvcList, k8serrors.NewAggregate(errs)
+	return pvcList, apierrorsutil.NewAggregate(errs)
 }
 
-func patchInstanceStoragePVCs(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController, setStatusBound, setErrorAnnotation bool) {
+func patchInstanceStoragePVCs(ctx *pkgctx.VolumeContext, testCtx *builder.UnitTestContextForController, setStatusBound, setErrorAnnotation bool) {
 	pvcList, err := getInstanceStoragePVCs(ctx, testCtx)
 	Expect(err).ToNot(HaveOccurred())
 

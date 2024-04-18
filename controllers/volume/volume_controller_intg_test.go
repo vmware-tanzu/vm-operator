@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,7 +21,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -240,7 +240,7 @@ func intgTestsReconcile() {
 
 	Context("Reconcile Instance Storage", func() {
 		BeforeEach(func() {
-			pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+			pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
 				config.Features.InstanceStorage = true
 				config.InstanceStorage.PVPlacementFailedTTL = 0
 			})
@@ -257,12 +257,12 @@ func intgTestsReconcile() {
 		})
 
 		AfterEach(func() {
-			pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+			pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
 				config.Features.InstanceStorage = false
 			})
 
 			err := ctx.Client.Delete(ctx, vm)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
 		It("Reconcile instance storage PVCs - selected-node annotation not set", func() {
@@ -313,7 +313,7 @@ func intgTestsReconcile() {
 
 		AfterEach(func() {
 			err := ctx.Client.Delete(ctx, vm)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
 		It("Reconciles VirtualMachine Spec.Volumes", func() {

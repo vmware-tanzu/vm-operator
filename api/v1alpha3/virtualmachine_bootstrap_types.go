@@ -4,9 +4,9 @@
 package v1alpha3
 
 import (
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
+	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
 )
 
 // VirtualMachineBootstrapSpec defines the desired state of a VM's bootstrap
@@ -91,7 +91,7 @@ type VirtualMachineBootstrapCloudInitSpec struct {
 	// Please note this field and RawCloudConfig are mutually exclusive.
 	//
 	// +optional
-	CloudConfig *cloudinit.CloudConfig `json:"cloudConfig,omitempty"`
+	CloudConfig *vmopv1cloudinit.CloudConfig `json:"cloudConfig,omitempty"`
 
 	// RawCloudConfig describes a key in a Secret resource that contains the
 	// CloudConfig data used to bootstrap the VM.
@@ -102,7 +102,7 @@ type VirtualMachineBootstrapCloudInitSpec struct {
 	// Please note this field and CloudConfig are mutually exclusive.
 	//
 	// +optional
-	RawCloudConfig *common.SecretKeySelector `json:"rawCloudConfig,omitempty"`
+	RawCloudConfig *vmopv1common.SecretKeySelector `json:"rawCloudConfig,omitempty"`
 
 	// SSHAuthorizedKeys is a list of public keys that CloudInit will apply to
 	// the guest's default user.
@@ -147,7 +147,7 @@ type VirtualMachineBootstrapSysprepSpec struct {
 	// Please note this field and RawSysprep are mutually exclusive.
 	//
 	// +optional
-	Sysprep *sysprep.Sysprep `json:"sysprep,omitempty"`
+	Sysprep *vmopv1sysprep.Sysprep `json:"sysprep,omitempty"`
 
 	// RawSysprep describes a key in a Secret resource that contains an XML
 	// string of the Sysprep text used to bootstrap the VM.
@@ -158,7 +158,7 @@ type VirtualMachineBootstrapSysprepSpec struct {
 	// Please note this field and Sysprep are mutually exclusive.
 	//
 	// +optional
-	RawSysprep *common.SecretKeySelector `json:"rawSysprep,omitempty"`
+	RawSysprep *vmopv1common.SecretKeySelector `json:"rawSysprep,omitempty"`
 }
 
 // VirtualMachineBootstrapVAppConfigSpec describes the vApp configuration
@@ -171,7 +171,7 @@ type VirtualMachineBootstrapVAppConfigSpec struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=key
-	Properties []common.KeyValueOrSecretKeySelectorPair `json:"properties,omitempty"`
+	Properties []vmopv1common.KeyValueOrSecretKeySelectorPair `json:"properties,omitempty"`
 
 	// RawProperties is the name of a Secret resource in the same Namespace as
 	// this VM where each key/value pair from the Secret is used as a vApp

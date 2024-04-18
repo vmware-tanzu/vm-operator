@@ -18,7 +18,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/soap"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/go-logr/logr"
 )
@@ -223,7 +223,7 @@ func newFinder(
 
 	dcRef, err := finder.ObjectReference(
 		ctx,
-		types.ManagedObjectReference{
+		vimtypes.ManagedObjectReference{
 			Type:  "Datacenter",
 			Value: config.Datacenter,
 		})
@@ -241,7 +241,7 @@ func newFinder(
 func isNotAuthenticatedError(err error) bool {
 	if soap.IsSoapFault(err) {
 		vimFault := soap.ToSoapFault(err).VimFault()
-		if _, ok := vimFault.(types.NotAuthenticated); ok {
+		if _, ok := vimFault.(vimtypes.NotAuthenticated); ok {
 			return true
 		}
 	}
@@ -252,7 +252,7 @@ func isNotAuthenticatedError(err error) bool {
 func isInvalidLogin(err error) bool {
 	if soap.IsSoapFault(err) {
 		vimFault := soap.ToSoapFault(err).VimFault()
-		if _, ok := vimFault.(types.InvalidLogin); ok {
+		if _, ok := vimFault.(vimtypes.InvalidLogin); ok {
 			return true
 		}
 	}

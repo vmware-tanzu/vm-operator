@@ -22,7 +22,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -38,7 +38,7 @@ const (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses/status,verbs=get
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create VirtualMachineClass validation webhook")
@@ -63,7 +63,7 @@ func (v validator) For() schema.GroupVersionKind {
 	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineClass{}).Name())
 }
 
-func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vmClass, err := v.vmClassFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -81,11 +81,11 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
 	return admission.Allowed("")
 }
 
-func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	var fieldErrs field.ErrorList
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -95,7 +95,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validatePolicies(ctx *context.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass,
+func (v validator) validatePolicies(ctx *pkgctx.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass,
 	polPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 

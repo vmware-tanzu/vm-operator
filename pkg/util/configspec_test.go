@@ -14,31 +14,31 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 	"k8s.io/utils/ptr"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 var _ = Describe("DevicesFromConfigSpec", func() {
 	var (
-		devOut     []vimTypes.BaseVirtualDevice
-		configSpec *vimTypes.VirtualMachineConfigSpec
+		devOut     []vimtypes.BaseVirtualDevice
+		configSpec *vimtypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
-		configSpec = &vimTypes.VirtualMachineConfigSpec{
-			DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
-				&vimTypes.VirtualDeviceConfigSpec{
-					Device: &vimTypes.VirtualPCIPassthrough{},
+		configSpec = &vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Device: &vimtypes.VirtualPCIPassthrough{},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
-					Device: &vimTypes.VirtualSriovEthernetCard{},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Device: &vimtypes.VirtualSriovEthernetCard{},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
-					Device: &vimTypes.VirtualVmxnet3{},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Device: &vimtypes.VirtualVmxnet3{},
 				},
 			},
 		}
@@ -59,7 +59,7 @@ var _ = Describe("DevicesFromConfigSpec", func() {
 
 	When("a ConfigSpec has an empty DeviceChange property", func() {
 		BeforeEach(func() {
-			configSpec.DeviceChange = []vimTypes.BaseVirtualDeviceConfigSpec{}
+			configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{}
 		})
 		It("will not panic", func() {
 			Expect(devOut).To(HaveLen(0))
@@ -69,38 +69,38 @@ var _ = Describe("DevicesFromConfigSpec", func() {
 	When("a ConfigSpec has a VirtualPCIPassthrough device, SR-IOV NIC, and Vmxnet3 NIC", func() {
 		It("returns the devices in insertion order", func() {
 			Expect(devOut).To(HaveLen(3))
-			Expect(devOut[0]).To(BeEquivalentTo(&vimTypes.VirtualPCIPassthrough{}))
-			Expect(devOut[1]).To(BeEquivalentTo(&vimTypes.VirtualSriovEthernetCard{}))
-			Expect(devOut[2]).To(BeEquivalentTo(&vimTypes.VirtualVmxnet3{}))
+			Expect(devOut[0]).To(BeEquivalentTo(&vimtypes.VirtualPCIPassthrough{}))
+			Expect(devOut[1]).To(BeEquivalentTo(&vimtypes.VirtualSriovEthernetCard{}))
+			Expect(devOut[2]).To(BeEquivalentTo(&vimtypes.VirtualVmxnet3{}))
 		})
 	})
 
 	When("a ConfigSpec has one or more DeviceChanges with a nil Device", func() {
 		BeforeEach(func() {
-			configSpec = &vimTypes.VirtualMachineConfigSpec{
-				DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
-					&vimTypes.VirtualDeviceConfigSpec{},
-					&vimTypes.VirtualDeviceConfigSpec{
-						Device: &vimTypes.VirtualPCIPassthrough{},
+			configSpec = &vimtypes.VirtualMachineConfigSpec{
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Device: &vimtypes.VirtualPCIPassthrough{},
 					},
-					&vimTypes.VirtualDeviceConfigSpec{},
-					&vimTypes.VirtualDeviceConfigSpec{
-						Device: &vimTypes.VirtualSriovEthernetCard{},
+					&vimtypes.VirtualDeviceConfigSpec{},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Device: &vimtypes.VirtualSriovEthernetCard{},
 					},
-					&vimTypes.VirtualDeviceConfigSpec{
-						Device: &vimTypes.VirtualVmxnet3{},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Device: &vimtypes.VirtualVmxnet3{},
 					},
-					&vimTypes.VirtualDeviceConfigSpec{},
-					&vimTypes.VirtualDeviceConfigSpec{},
+					&vimtypes.VirtualDeviceConfigSpec{},
+					&vimtypes.VirtualDeviceConfigSpec{},
 				},
 			}
 		})
 
 		It("will still return only the expected device(s)", func() {
 			Expect(devOut).To(HaveLen(3))
-			Expect(devOut[0]).To(BeEquivalentTo(&vimTypes.VirtualPCIPassthrough{}))
-			Expect(devOut[1]).To(BeEquivalentTo(&vimTypes.VirtualSriovEthernetCard{}))
-			Expect(devOut[2]).To(BeEquivalentTo(&vimTypes.VirtualVmxnet3{}))
+			Expect(devOut[0]).To(BeEquivalentTo(&vimtypes.VirtualPCIPassthrough{}))
+			Expect(devOut[1]).To(BeEquivalentTo(&vimtypes.VirtualSriovEthernetCard{}))
+			Expect(devOut[2]).To(BeEquivalentTo(&vimtypes.VirtualVmxnet3{}))
 		})
 	})
 })
@@ -108,17 +108,17 @@ var _ = Describe("DevicesFromConfigSpec", func() {
 var _ = Describe("ConfigSpec Util", func() {
 	Context("MarshalConfigSpecToXML", func() {
 		It("marshals and unmarshal to the same spec", func() {
-			inputSpec := vimTypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
+			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
 			bytes, err := util.MarshalConfigSpecToXML(inputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
-			var outputSpec vimTypes.VirtualMachineConfigSpec
+			var outputSpec vimtypes.VirtualMachineConfigSpec
 			err = xml.Unmarshal(bytes, &outputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(reflect.DeepEqual(inputSpec, outputSpec)).To(BeTrue())
 		})
 
 		It("marshals spec correctly to expected base64 encoded XML", func() {
-			inputSpec := vimTypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
+			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
 			bytes, err := util.MarshalConfigSpecToXML(inputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(base64.StdEncoding.EncodeToString(bytes)).To(Equal("PG9iaiB4bWxuczp2aW0yNT0idXJuOnZpbTI1I" +
@@ -137,9 +137,9 @@ var _ = Describe("ConfigSpec Util", func() {
 				Expect(f.Close()).To(Succeed())
 			}()
 
-			dec1 := vimTypes.NewJSONDecoder(f)
+			dec1 := vimtypes.NewJSONDecoder(f)
 
-			var ci1 vimTypes.VirtualMachineConfigInfo
+			var ci1 vimtypes.VirtualMachineConfigInfo
 			Expect(dec1.Decode(&ci1)).To(Succeed())
 
 			cs1 := ci1.ToConfigSpec()
@@ -148,18 +148,18 @@ var _ = Describe("ConfigSpec Util", func() {
 			Expect(cmp.Diff(cs1, cs2)).To(BeEmpty())
 
 			var w bytes.Buffer
-			enc1 := vimTypes.NewJSONEncoder(&w)
+			enc1 := vimtypes.NewJSONEncoder(&w)
 			Expect(enc1.Encode(cs1)).To(Succeed())
 
-			dec2 := vimTypes.NewJSONDecoder(&w)
+			dec2 := vimtypes.NewJSONDecoder(&w)
 
-			var cs3 vimTypes.VirtualMachineConfigSpec
+			var cs3 vimtypes.VirtualMachineConfigSpec
 			Expect(dec2.Decode(&cs3)).To(Succeed())
 
 			// This is a quirk of the ToConfigSpec() function. When converting
 			// between a ConfigInfo and ConfigSpec, nillable fields are nil'd
 			// if there is no data present.
-			cs3.CpuFeatureMask = []vimTypes.VirtualMachineCpuIdInfoSpec{}
+			cs3.CpuFeatureMask = []vimtypes.VirtualMachineCpuIdInfoSpec{}
 
 			Expect(cmp.Diff(cs1, cs3)).To(BeEmpty())
 			Expect(cmp.Diff(cs2, cs3)).To(BeEmpty())
@@ -169,14 +169,14 @@ var _ = Describe("ConfigSpec Util", func() {
 	Context("EnsureMinHardwareVersionInConfigSpec", func() {
 		When("minimum hardware version is unset", func() {
 			It("does not change the existing value of the configSpec's version", func() {
-				configSpec := &vimTypes.VirtualMachineConfigSpec{Version: "vmx-15"}
+				configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "vmx-15"}
 				util.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
 
 				Expect(configSpec.Version).To(Equal("vmx-15"))
 			})
 
 			It("does not set the configSpec's version", func() {
-				configSpec := &vimTypes.VirtualMachineConfigSpec{}
+				configSpec := &vimtypes.VirtualMachineConfigSpec{}
 				util.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
 
 				Expect(configSpec.Version).To(BeEmpty())
@@ -184,21 +184,21 @@ var _ = Describe("ConfigSpec Util", func() {
 		})
 
 		It("overrides the hardware version if the existing version is lesser", func() {
-			configSpec := &vimTypes.VirtualMachineConfigSpec{Version: "vmx-15"}
+			configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "vmx-15"}
 			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
 
 			Expect(configSpec.Version).To(Equal("vmx-17"))
 		})
 
 		It("sets the hardware version if the existing version is unset", func() {
-			configSpec := &vimTypes.VirtualMachineConfigSpec{}
+			configSpec := &vimtypes.VirtualMachineConfigSpec{}
 			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 16)
 
 			Expect(configSpec.Version).To(Equal("vmx-16"))
 		})
 
 		It("overrides the hardware version if the existing version is set incorrectly", func() {
-			configSpec := &vimTypes.VirtualMachineConfigSpec{Version: "foo"}
+			configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "foo"}
 			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
 
 			Expect(configSpec.Version).To(Equal("vmx-17"))
@@ -208,27 +208,27 @@ var _ = Describe("ConfigSpec Util", func() {
 
 var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 	var (
-		configSpec *vimTypes.VirtualMachineConfigSpec
-		fn         func(vimTypes.BaseVirtualDevice) bool
+		configSpec *vimtypes.VirtualMachineConfigSpec
+		fn         func(vimtypes.BaseVirtualDevice) bool
 	)
 
 	BeforeEach(func() {
-		configSpec = &vimTypes.VirtualMachineConfigSpec{
+		configSpec = &vimtypes.VirtualMachineConfigSpec{
 			Name:         "dummy-VM",
-			DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{},
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{},
 		}
 	})
 
 	When("provided a config spec with a disk and func to remove VirtualDisk type", func() {
 		BeforeEach(func() {
-			configSpec.DeviceChange = []vimTypes.BaseVirtualDeviceConfigSpec{
-				&vimTypes.VirtualDeviceConfigSpec{
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-					Device: &vimTypes.VirtualDisk{
+			configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualDisk{
 						CapacityInBytes: 1024,
-						VirtualDevice: vimTypes.VirtualDevice{
+						VirtualDevice: vimtypes.VirtualDevice{
 							Key: -42,
-							Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
 								ThinProvisioned: ptr.To(true),
 							},
 						},
@@ -236,9 +236,9 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 				},
 			}
 
-			fn = func(dev vimTypes.BaseVirtualDevice) bool {
+			fn = func(dev vimtypes.BaseVirtualDevice) bool {
 				switch dev.(type) {
-				case *vimTypes.VirtualDisk:
+				case *vimtypes.VirtualDisk:
 					return true
 				default:
 					return false
@@ -256,8 +256,8 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 var _ = Describe("AppendNewExtraConfigValues", func() {
 
 	It("only adds new values not already in the ExtraConfig", func() {
-		ec := []vimTypes.BaseOptionValue{
-			&vimTypes.OptionValue{
+		ec := []vimtypes.BaseOptionValue{
+			&vimtypes.OptionValue{
 				Key:   "key1",
 				Value: "keep-me",
 			},
@@ -270,85 +270,85 @@ var _ = Describe("AppendNewExtraConfigValues", func() {
 
 		newExtraConfig := util.AppendNewExtraConfigValues(ec, newECMap)
 		Expect(newExtraConfig).To(HaveLen(2))
-		Expect(newExtraConfig).To(ContainElement(&vimTypes.OptionValue{Key: "key1", Value: "keep-me"}))
-		Expect(newExtraConfig).To(ContainElement(&vimTypes.OptionValue{Key: "key2", Value: "add-me"}))
+		Expect(newExtraConfig).To(ContainElement(&vimtypes.OptionValue{Key: "key1", Value: "keep-me"}))
+		Expect(newExtraConfig).To(ContainElement(&vimtypes.OptionValue{Key: "key2", Value: "add-me"}))
 	})
 })
 
 var _ = Describe("SanitizeVMClassConfigSpec", func() {
 	var (
 		ctx        context.Context
-		configSpec *vimTypes.VirtualMachineConfigSpec
+		configSpec *vimtypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
-		ctx = pkgconfig.NewContext()
+		ctx = pkgcfg.NewContext()
 
-		configSpec = &vimTypes.VirtualMachineConfigSpec{
+		configSpec = &vimtypes.VirtualMachineConfigSpec{
 			Name:         "dummy-VM",
 			Annotation:   "test-annotation",
 			Uuid:         "uuid",
 			InstanceUuid: "instanceUUID",
-			Files:        &vimTypes.VirtualMachineFileInfo{},
-			VmProfile: []vimTypes.BaseVirtualMachineProfileSpec{
-				&vimTypes.VirtualMachineDefinedProfileSpec{
+			Files:        &vimtypes.VirtualMachineFileInfo{},
+			VmProfile: []vimtypes.BaseVirtualMachineProfileSpec{
+				&vimtypes.VirtualMachineDefinedProfileSpec{
 					ProfileId: "dummy-id",
 				},
 			},
-			DeviceChange: []vimTypes.BaseVirtualDeviceConfigSpec{
-				&vimTypes.VirtualDeviceConfigSpec{
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-					Device: &vimTypes.VirtualSATAController{
-						VirtualController: vimTypes.VirtualController{},
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualSATAController{
+						VirtualController: vimtypes.VirtualController{},
 					},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-					Device: &vimTypes.VirtualIDEController{
-						VirtualController: vimTypes.VirtualController{},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualIDEController{
+						VirtualController: vimtypes.VirtualController{},
 					},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-					Device: &vimTypes.VirtualSCSIController{
-						VirtualController: vimTypes.VirtualController{},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualSCSIController{
+						VirtualController: vimtypes.VirtualController{},
 					},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-					Device: &vimTypes.VirtualNVMEController{
-						VirtualController: vimTypes.VirtualController{},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualNVMEController{
+						VirtualController: vimtypes.VirtualController{},
 					},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-					Device: &vimTypes.VirtualE1000{
-						VirtualEthernetCard: vimTypes.VirtualEthernetCard{
-							VirtualDevice: vimTypes.VirtualDevice{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualE1000{
+						VirtualEthernetCard: vimtypes.VirtualEthernetCard{
+							VirtualDevice: vimtypes.VirtualDevice{
 								Key: 4000,
 							},
 						},
 					},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-					Device: &vimTypes.VirtualDisk{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualDisk{
 						CapacityInBytes: 1024 * 1024,
-						VirtualDevice: vimTypes.VirtualDevice{
+						VirtualDevice: vimtypes.VirtualDevice{
 							Key: -42,
-							Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
 								ThinProvisioned: ptr.To(true),
 							},
 						},
 					},
 				},
-				&vimTypes.VirtualDeviceConfigSpec{
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-					Device: &vimTypes.VirtualDisk{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualDisk{
 						CapacityInBytes: 1024 * 1024,
-						VirtualDevice: vimTypes.VirtualDevice{
+						VirtualDevice: vimtypes.VirtualDevice{
 							Key: -32,
-							Backing: &vimTypes.VirtualDiskRawDiskMappingVer1BackingInfo{
+							Backing: &vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo{
 								LunUuid: "dummy-uuid",
 							},
 						},
@@ -371,25 +371,25 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 
 		Expect(configSpec.DeviceChange).To(HaveLen(6))
 		dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
-		_, ok := dSpec.Device.(*vimTypes.VirtualSATAController)
+		_, ok := dSpec.Device.(*vimtypes.VirtualSATAController)
 		Expect(ok).To(BeTrue())
 		dSpec = configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
-		_, ok = dSpec.Device.(*vimTypes.VirtualIDEController)
+		_, ok = dSpec.Device.(*vimtypes.VirtualIDEController)
 		Expect(ok).To(BeTrue())
 		dSpec = configSpec.DeviceChange[2].GetVirtualDeviceConfigSpec()
-		_, ok = dSpec.Device.(*vimTypes.VirtualSCSIController)
+		_, ok = dSpec.Device.(*vimtypes.VirtualSCSIController)
 		Expect(ok).To(BeTrue())
 		dSpec = configSpec.DeviceChange[3].GetVirtualDeviceConfigSpec()
-		_, ok = dSpec.Device.(*vimTypes.VirtualNVMEController)
+		_, ok = dSpec.Device.(*vimtypes.VirtualNVMEController)
 		Expect(ok).To(BeTrue())
 		dSpec = configSpec.DeviceChange[4].GetVirtualDeviceConfigSpec()
-		_, ok = dSpec.Device.(*vimTypes.VirtualE1000)
+		_, ok = dSpec.Device.(*vimtypes.VirtualE1000)
 		Expect(ok).To(BeTrue())
 		dSpec = configSpec.DeviceChange[5].GetVirtualDeviceConfigSpec()
-		_, ok = dSpec.Device.(*vimTypes.VirtualDisk)
+		_, ok = dSpec.Device.(*vimtypes.VirtualDisk)
 		Expect(ok).To(BeTrue())
 		dev := dSpec.Device.GetVirtualDevice()
-		backing, ok := dev.Backing.(*vimTypes.VirtualDiskRawDiskMappingVer1BackingInfo)
+		backing, ok := dev.Backing.(*vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo)
 		Expect(ok).To(BeTrue())
 		Expect(backing.LunUuid).To(Equal("dummy-uuid"))
 	})
@@ -397,11 +397,11 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 
 var _ = Describe("ExtraConfigToMap", func() {
 	var (
-		extraConfig    []vimTypes.BaseOptionValue
+		extraConfig    []vimtypes.BaseOptionValue
 		extraConfigMap map[string]string
 	)
 	BeforeEach(func() {
-		extraConfig = []vimTypes.BaseOptionValue{}
+		extraConfig = []vimtypes.BaseOptionValue{}
 	})
 	JustBeforeEach(func() {
 		extraConfigMap = util.ExtraConfigToMap(extraConfig)
@@ -415,8 +415,8 @@ var _ = Describe("ExtraConfigToMap", func() {
 
 	Context("With extraConfig", func() {
 		BeforeEach(func() {
-			extraConfig = append(extraConfig, &vimTypes.OptionValue{Key: "key1", Value: "value1"})
-			extraConfig = append(extraConfig, &vimTypes.OptionValue{Key: "key2", Value: "value2"})
+			extraConfig = append(extraConfig, &vimtypes.OptionValue{Key: "key1", Value: "value1"})
+			extraConfig = append(extraConfig, &vimtypes.OptionValue{Key: "key2", Value: "value2"})
 		})
 		It("Return valid map", func() {
 			Expect(extraConfigMap).To(HaveLen(2))
@@ -428,14 +428,14 @@ var _ = Describe("ExtraConfigToMap", func() {
 
 var _ = Describe("MergeExtraConfig", func() {
 	var (
-		extraConfig []vimTypes.BaseOptionValue
+		extraConfig []vimtypes.BaseOptionValue
 		newMap      map[string]string
-		merged      []vimTypes.BaseOptionValue
+		merged      []vimtypes.BaseOptionValue
 	)
 	BeforeEach(func() {
-		extraConfig = []vimTypes.BaseOptionValue{
-			&vimTypes.OptionValue{Key: "existingkey1", Value: "existingvalue1"},
-			&vimTypes.OptionValue{Key: "existingkey2", Value: "existingvalue2"},
+		extraConfig = []vimtypes.BaseOptionValue{
+			&vimtypes.OptionValue{Key: "existingkey1", Value: "existingvalue1"},
+			&vimtypes.OptionValue{Key: "existingkey2", Value: "existingvalue2"},
 		}
 		newMap = map[string]string{}
 	})
@@ -508,7 +508,7 @@ func addrOfInt64(v int64) *int64 {
 	return &v
 }
 
-var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimTypes.VirtualMachineConfigInfo{
+var virtualMachineConfigInfoForTests vimtypes.VirtualMachineConfigInfo = vimtypes.VirtualMachineConfigInfo{
 	ChangeVersion:         "2022-12-12T11:48:35.473645Z",
 	Modified:              mustParseTime(time.RFC3339, "1970-01-01T00:00:00Z"),
 	Name:                  "test",
@@ -523,13 +523,13 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 	GuestId:               "vmwarePhoton64Guest",
 	AlternateGuestName:    "",
 	Annotation:            "",
-	Files: vimTypes.VirtualMachineFileInfo{
+	Files: vimtypes.VirtualMachineFileInfo{
 		VmPathName:        "[datastore1] test/test.vmx",
 		SnapshotDirectory: "[datastore1] test/",
 		SuspendDirectory:  "[datastore1] test/",
 		LogDirectory:      "[datastore1] test/",
 	},
-	Tools: &vimTypes.ToolsConfigInfo{
+	Tools: &vimtypes.ToolsConfigInfo{
 		ToolsVersion:            0,
 		AfterPowerOn:            addrOfBool(true),
 		AfterResume:             addrOfBool(true),
@@ -539,11 +539,11 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 		ToolsUpgradePolicy:      "manual",
 		SyncTimeWithHostAllowed: addrOfBool(true),
 		SyncTimeWithHost:        addrOfBool(false),
-		LastInstallInfo: &vimTypes.ToolsConfigInfoToolsLastInstallInfo{
+		LastInstallInfo: &vimtypes.ToolsConfigInfoToolsLastInstallInfo{
 			Counter: 0,
 		},
 	},
-	Flags: vimTypes.VirtualMachineFlagInfo{
+	Flags: vimtypes.VirtualMachineFlagInfo{
 		EnableLogging:            addrOfBool(true),
 		UseToe:                   addrOfBool(false),
 		RunWithDebugInfo:         addrOfBool(false),
@@ -559,7 +559,7 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 		VvtdEnabled:              addrOfBool(false),
 		VbsEnabled:               addrOfBool(false),
 	},
-	DefaultPowerOps: vimTypes.VirtualMachineDefaultPowerOpInfo{
+	DefaultPowerOps: vimtypes.VirtualMachineDefaultPowerOpInfo{
 		PowerOffType:        "soft",
 		SuspendType:         "hard",
 		ResetType:           "soft",
@@ -569,19 +569,19 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 		StandbyAction:       "checkpoint",
 	},
 	RebootPowerOff: addrOfBool(false),
-	Hardware: vimTypes.VirtualHardware{
+	Hardware: vimtypes.VirtualHardware{
 		NumCPU:              1,
 		NumCoresPerSocket:   1,
 		AutoCoresPerSocket:  addrOfBool(true),
 		MemoryMB:            2048,
 		VirtualICH7MPresent: addrOfBool(false),
 		VirtualSMCPresent:   addrOfBool(false),
-		Device: []vimTypes.BaseVirtualDevice{
-			&vimTypes.VirtualIDEController{
-				VirtualController: vimTypes.VirtualController{
-					VirtualDevice: vimTypes.VirtualDevice{
+		Device: []vimtypes.BaseVirtualDevice{
+			&vimtypes.VirtualIDEController{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{
 						Key: 200,
-						DeviceInfo: &vimTypes.Description{
+						DeviceInfo: &vimtypes.Description{
 							Label:   "IDE 0",
 							Summary: "IDE 0",
 						},
@@ -589,11 +589,11 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					BusNumber: 0,
 				},
 			},
-			&vimTypes.VirtualIDEController{
-				VirtualController: vimTypes.VirtualController{
-					VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualIDEController{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{
 						Key: 201,
-						DeviceInfo: &vimTypes.Description{
+						DeviceInfo: &vimtypes.Description{
 							Label:   "IDE 1",
 							Summary: "IDE 1",
 						},
@@ -601,11 +601,11 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					BusNumber: 1,
 				},
 			},
-			&vimTypes.VirtualPS2Controller{
-				VirtualController: vimTypes.VirtualController{
-					VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualPS2Controller{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{
 						Key: 300,
-						DeviceInfo: &vimTypes.Description{
+						DeviceInfo: &vimtypes.Description{
 							Label:   "PS2 controller 0",
 							Summary: "PS2 controller 0",
 						},
@@ -614,11 +614,11 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					Device:    []int32{600, 700},
 				},
 			},
-			&vimTypes.VirtualPCIController{
-				VirtualController: vimTypes.VirtualController{
-					VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualPCIController{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{
 						Key: 100,
-						DeviceInfo: &vimTypes.Description{
+						DeviceInfo: &vimtypes.Description{
 							Label:   "PCI controller 0",
 							Summary: "PCI controller 0",
 						},
@@ -627,11 +627,11 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					Device:    []int32{500, 12000, 14000, 1000, 15000, 4000},
 				},
 			},
-			&vimTypes.VirtualSIOController{
-				VirtualController: vimTypes.VirtualController{
-					VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualSIOController{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{
 						Key: 400,
-						DeviceInfo: &vimTypes.Description{
+						DeviceInfo: &vimtypes.Description{
 							Label:   "SIO controller 0",
 							Summary: "SIO controller 0",
 						},
@@ -639,10 +639,10 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					BusNumber: 0,
 				},
 			},
-			&vimTypes.VirtualKeyboard{
-				VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualKeyboard{
+				VirtualDevice: vimtypes.VirtualDevice{
 					Key: 600,
-					DeviceInfo: &vimTypes.Description{
+					DeviceInfo: &vimtypes.Description{
 						Label:   "Keyboard",
 						Summary: "Keyboard",
 					},
@@ -650,12 +650,12 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					UnitNumber:    addrOfInt32(0),
 				},
 			},
-			&vimTypes.VirtualPointingDevice{
-				VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualPointingDevice{
+				VirtualDevice: vimtypes.VirtualDevice{
 					Key:        700,
-					DeviceInfo: &vimTypes.Description{Label: "Pointing device", Summary: "Pointing device; Device"},
-					Backing: &vimTypes.VirtualPointingDeviceDeviceBackingInfo{
-						VirtualDeviceDeviceBackingInfo: vimTypes.VirtualDeviceDeviceBackingInfo{
+					DeviceInfo: &vimtypes.Description{Label: "Pointing device", Summary: "Pointing device; Device"},
+					Backing: &vimtypes.VirtualPointingDeviceDeviceBackingInfo{
+						VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
 							UseAutoDetect: addrOfBool(false),
 						},
 						HostPointingDevice: "autodetect",
@@ -664,10 +664,10 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					UnitNumber:    addrOfInt32(1),
 				},
 			},
-			&vimTypes.VirtualMachineVideoCard{
-				VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualMachineVideoCard{
+				VirtualDevice: vimtypes.VirtualDevice{
 					Key:           500,
-					DeviceInfo:    &vimTypes.Description{Label: "Video card ", Summary: "Video card"},
+					DeviceInfo:    &vimtypes.Description{Label: "Video card ", Summary: "Video card"},
 					ControllerKey: 100,
 					UnitNumber:    addrOfInt32(0),
 				},
@@ -678,10 +678,10 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 				Use3dRenderer:          "automatic",
 				GraphicsMemorySizeInKB: 262144,
 			},
-			&vimTypes.VirtualMachineVMCIDevice{
-				VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualMachineVMCIDevice{
+				VirtualDevice: vimtypes.VirtualDevice{
 					Key: 12000,
-					DeviceInfo: &vimTypes.Description{
+					DeviceInfo: &vimtypes.Description{
 						Label: "VMCI device",
 						Summary: "Device on the virtual machine PCI " +
 							"bus that provides support for the " +
@@ -694,12 +694,12 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 				AllowUnrestrictedCommunication: addrOfBool(false),
 				FilterEnable:                   addrOfBool(true),
 			},
-			&vimTypes.ParaVirtualSCSIController{
-				VirtualSCSIController: vimTypes.VirtualSCSIController{
-					VirtualController: vimTypes.VirtualController{
-						VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.ParaVirtualSCSIController{
+				VirtualSCSIController: vimtypes.VirtualSCSIController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
 							Key: 1000,
-							DeviceInfo: &vimTypes.Description{
+							DeviceInfo: &vimtypes.Description{
 								Label:   "SCSI controller 0",
 								Summary: "VMware paravirtual SCSI",
 							},
@@ -713,12 +713,12 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					ScsiCtlrUnitNumber: 7,
 				},
 			},
-			&vimTypes.VirtualAHCIController{
-				VirtualSATAController: vimTypes.VirtualSATAController{
-					VirtualController: vimTypes.VirtualController{
-						VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualAHCIController{
+				VirtualSATAController: vimtypes.VirtualSATAController{
+					VirtualController: vimtypes.VirtualController{
+						VirtualDevice: vimtypes.VirtualDevice{
 							Key: 15000,
-							DeviceInfo: &vimTypes.Description{
+							DeviceInfo: &vimtypes.Description{
 								Label:   "SATA controller 0",
 								Summary: "AHCI",
 							},
@@ -729,34 +729,34 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 					},
 				},
 			},
-			&vimTypes.VirtualCdrom{
-				VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualCdrom{
+				VirtualDevice: vimtypes.VirtualDevice{
 					Key: 16000,
-					DeviceInfo: &vimTypes.Description{
+					DeviceInfo: &vimtypes.Description{
 						Label:   "CD/DVD drive 1",
 						Summary: "Remote device",
 					},
-					Backing: &vimTypes.VirtualCdromRemotePassthroughBackingInfo{
-						VirtualDeviceRemoteDeviceBackingInfo: vimTypes.VirtualDeviceRemoteDeviceBackingInfo{
+					Backing: &vimtypes.VirtualCdromRemotePassthroughBackingInfo{
+						VirtualDeviceRemoteDeviceBackingInfo: vimtypes.VirtualDeviceRemoteDeviceBackingInfo{
 							UseAutoDetect: addrOfBool(false),
 						},
 					},
-					Connectable:   &vimTypes.VirtualDeviceConnectInfo{AllowGuestControl: true, Status: "untried"},
+					Connectable:   &vimtypes.VirtualDeviceConnectInfo{AllowGuestControl: true, Status: "untried"},
 					ControllerKey: 15000,
 					UnitNumber:    addrOfInt32(0),
 				},
 			},
-			&vimTypes.VirtualDisk{
-				VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualDisk{
+				VirtualDevice: vimtypes.VirtualDevice{
 					Key: 2000,
-					DeviceInfo: &vimTypes.Description{
+					DeviceInfo: &vimtypes.Description{
 						Label:   "Hard disk 1",
 						Summary: "4,194,304 KB",
 					},
-					Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-						VirtualDeviceFileBackingInfo: vimTypes.VirtualDeviceFileBackingInfo{
+					Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 							FileName: "[datastore1] test/test.vmdk",
-							Datastore: &vimTypes.ManagedObjectReference{
+							Datastore: &vimtypes.ManagedObjectReference{
 								Type:  "Datastore",
 								Value: "datastore-21",
 							},
@@ -782,35 +782,35 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 				},
 				CapacityInKB:    4194304,
 				CapacityInBytes: 4294967296,
-				Shares:          &vimTypes.SharesInfo{Shares: 1000, Level: "normal"},
-				StorageIOAllocation: &vimTypes.StorageIOAllocationInfo{
+				Shares:          &vimtypes.SharesInfo{Shares: 1000, Level: "normal"},
+				StorageIOAllocation: &vimtypes.StorageIOAllocationInfo{
 					Limit:       addrOfInt64(-1),
-					Shares:      &vimTypes.SharesInfo{Shares: 1000, Level: "normal"},
+					Shares:      &vimtypes.SharesInfo{Shares: 1000, Level: "normal"},
 					Reservation: addrOfInt32(0),
 				},
 				DiskObjectId:               "1-2000",
 				NativeUnmanagedLinkedClone: addrOfBool(false),
 			},
-			&vimTypes.VirtualVmxnet3{
-				VirtualVmxnet: vimTypes.VirtualVmxnet{
-					VirtualEthernetCard: vimTypes.VirtualEthernetCard{
-						VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualVmxnet3{
+				VirtualVmxnet: vimtypes.VirtualVmxnet{
+					VirtualEthernetCard: vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
 							Key: 4000,
-							DeviceInfo: &vimTypes.Description{
+							DeviceInfo: &vimtypes.Description{
 								Label:   "Network adapter 1",
 								Summary: "VM Network",
 							},
-							Backing: &vimTypes.VirtualEthernetCardNetworkBackingInfo{
-								VirtualDeviceDeviceBackingInfo: vimTypes.VirtualDeviceDeviceBackingInfo{
+							Backing: &vimtypes.VirtualEthernetCardNetworkBackingInfo{
+								VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
 									DeviceName:    "VM Network",
 									UseAutoDetect: addrOfBool(false),
 								},
-								Network: &vimTypes.ManagedObjectReference{
+								Network: &vimtypes.ManagedObjectReference{
 									Type:  "Network",
 									Value: "network-27",
 								},
 							},
-							Connectable: &vimTypes.VirtualDeviceConnectInfo{
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
 								MigrateConnect: "unset",
 								StartConnected: true,
 								Status:         "untried",
@@ -821,9 +821,9 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 						AddressType:      "assigned",
 						MacAddress:       "00:50:56:ac:4d:ed",
 						WakeOnLanEnabled: addrOfBool(true),
-						ResourceAllocation: &vimTypes.VirtualEthernetCardResourceAllocation{
+						ResourceAllocation: &vimtypes.VirtualEthernetCardResourceAllocation{
 							Reservation: addrOfInt64(0),
-							Share: vimTypes.SharesInfo{
+							Share: vimtypes.SharesInfo{
 								Shares: 50,
 								Level:  "normal",
 							},
@@ -834,15 +834,15 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 				},
 				Uptv2Enabled: addrOfBool(false),
 			},
-			&vimTypes.VirtualUSBXHCIController{
-				VirtualController: vimTypes.VirtualController{
-					VirtualDevice: vimTypes.VirtualDevice{
+			&vimtypes.VirtualUSBXHCIController{
+				VirtualController: vimtypes.VirtualController{
+					VirtualDevice: vimtypes.VirtualDevice{
 						Key: 14000,
-						DeviceInfo: &vimTypes.Description{
+						DeviceInfo: &vimtypes.Description{
 							Label:   "USB xHCI controller ",
 							Summary: "USB xHCI controller",
 						},
-						SlotInfo: &vimTypes.VirtualDevicePciBusSlotInfo{
+						SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
 							PciSlotNumber: -1,
 						},
 						ControllerKey: 100,
@@ -856,67 +856,67 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 		MotherboardLayout:   "i440bxHostBridge",
 		SimultaneousThreads: 1,
 	},
-	CpuAllocation: &vimTypes.ResourceAllocationInfo{
+	CpuAllocation: &vimtypes.ResourceAllocationInfo{
 		Reservation:           addrOfInt64(0),
 		ExpandableReservation: addrOfBool(false),
 		Limit:                 addrOfInt64(-1),
-		Shares: &vimTypes.SharesInfo{
+		Shares: &vimtypes.SharesInfo{
 			Shares: 1000,
-			Level:  vimTypes.SharesLevelNormal,
+			Level:  vimtypes.SharesLevelNormal,
 		},
 	},
-	MemoryAllocation: &vimTypes.ResourceAllocationInfo{
+	MemoryAllocation: &vimtypes.ResourceAllocationInfo{
 		Reservation:           addrOfInt64(0),
 		ExpandableReservation: addrOfBool(false),
 		Limit:                 addrOfInt64(-1),
-		Shares: &vimTypes.SharesInfo{
+		Shares: &vimtypes.SharesInfo{
 			Shares: 20480,
-			Level:  vimTypes.SharesLevelNormal,
+			Level:  vimtypes.SharesLevelNormal,
 		},
 	},
-	LatencySensitivity: &vimTypes.LatencySensitivity{
-		Level: vimTypes.LatencySensitivitySensitivityLevelNormal,
+	LatencySensitivity: &vimtypes.LatencySensitivity{
+		Level: vimtypes.LatencySensitivitySensitivityLevelNormal,
 	},
 	MemoryHotAddEnabled: addrOfBool(false),
 	CpuHotAddEnabled:    addrOfBool(false),
 	CpuHotRemoveEnabled: addrOfBool(false),
-	ExtraConfig: []vimTypes.BaseOptionValue{
-		&vimTypes.OptionValue{Key: "nvram", Value: "test.nvram"},
-		&vimTypes.OptionValue{Key: "svga.present", Value: "TRUE"},
-		&vimTypes.OptionValue{Key: "pciBridge0.present", Value: "TRUE"},
-		&vimTypes.OptionValue{Key: "pciBridge4.present", Value: "TRUE"},
-		&vimTypes.OptionValue{Key: "pciBridge4.virtualDev", Value: "pcieRootPort"},
-		&vimTypes.OptionValue{Key: "pciBridge4.functions", Value: "8"},
-		&vimTypes.OptionValue{Key: "pciBridge5.present", Value: "TRUE"},
-		&vimTypes.OptionValue{Key: "pciBridge5.virtualDev", Value: "pcieRootPort"},
-		&vimTypes.OptionValue{Key: "pciBridge5.functions", Value: "8"},
-		&vimTypes.OptionValue{Key: "pciBridge6.present", Value: "TRUE"},
-		&vimTypes.OptionValue{Key: "pciBridge6.virtualDev", Value: "pcieRootPort"},
-		&vimTypes.OptionValue{Key: "pciBridge6.functions", Value: "8"},
-		&vimTypes.OptionValue{Key: "pciBridge7.present", Value: "TRUE"},
-		&vimTypes.OptionValue{Key: "pciBridge7.virtualDev", Value: "pcieRootPort"},
-		&vimTypes.OptionValue{Key: "pciBridge7.functions", Value: "8"},
-		&vimTypes.OptionValue{Key: "hpet0.present", Value: "TRUE"},
-		&vimTypes.OptionValue{Key: "RemoteDisplay.maxConnections", Value: "-1"},
-		&vimTypes.OptionValue{Key: "sched.cpu.latencySensitivity", Value: "normal"},
-		&vimTypes.OptionValue{Key: "vmware.tools.internalversion", Value: "0"},
-		&vimTypes.OptionValue{Key: "vmware.tools.requiredversion", Value: "12352"},
-		&vimTypes.OptionValue{Key: "migrate.hostLogState", Value: "none"},
-		&vimTypes.OptionValue{Key: "migrate.migrationId", Value: "0"},
-		&vimTypes.OptionValue{Key: "migrate.hostLog", Value: "test-36f94569.hlog"},
-		&vimTypes.OptionValue{
+	ExtraConfig: []vimtypes.BaseOptionValue{
+		&vimtypes.OptionValue{Key: "nvram", Value: "test.nvram"},
+		&vimtypes.OptionValue{Key: "svga.present", Value: "TRUE"},
+		&vimtypes.OptionValue{Key: "pciBridge0.present", Value: "TRUE"},
+		&vimtypes.OptionValue{Key: "pciBridge4.present", Value: "TRUE"},
+		&vimtypes.OptionValue{Key: "pciBridge4.virtualDev", Value: "pcieRootPort"},
+		&vimtypes.OptionValue{Key: "pciBridge4.functions", Value: "8"},
+		&vimtypes.OptionValue{Key: "pciBridge5.present", Value: "TRUE"},
+		&vimtypes.OptionValue{Key: "pciBridge5.virtualDev", Value: "pcieRootPort"},
+		&vimtypes.OptionValue{Key: "pciBridge5.functions", Value: "8"},
+		&vimtypes.OptionValue{Key: "pciBridge6.present", Value: "TRUE"},
+		&vimtypes.OptionValue{Key: "pciBridge6.virtualDev", Value: "pcieRootPort"},
+		&vimtypes.OptionValue{Key: "pciBridge6.functions", Value: "8"},
+		&vimtypes.OptionValue{Key: "pciBridge7.present", Value: "TRUE"},
+		&vimtypes.OptionValue{Key: "pciBridge7.virtualDev", Value: "pcieRootPort"},
+		&vimtypes.OptionValue{Key: "pciBridge7.functions", Value: "8"},
+		&vimtypes.OptionValue{Key: "hpet0.present", Value: "TRUE"},
+		&vimtypes.OptionValue{Key: "RemoteDisplay.maxConnections", Value: "-1"},
+		&vimtypes.OptionValue{Key: "sched.cpu.latencySensitivity", Value: "normal"},
+		&vimtypes.OptionValue{Key: "vmware.tools.internalversion", Value: "0"},
+		&vimtypes.OptionValue{Key: "vmware.tools.requiredversion", Value: "12352"},
+		&vimtypes.OptionValue{Key: "migrate.hostLogState", Value: "none"},
+		&vimtypes.OptionValue{Key: "migrate.migrationId", Value: "0"},
+		&vimtypes.OptionValue{Key: "migrate.hostLog", Value: "test-36f94569.hlog"},
+		&vimtypes.OptionValue{
 			Key:   "viv.moid",
 			Value: "c5b34aa9-d962-4a74-b7d2-b83ec683ba1b:vm-28:lIgQ2t7v24n2nl3N7K3m6IHW2OoPF4CFrJd5N+Tdfio=",
 		},
 	},
-	DatastoreUrl: []vimTypes.VirtualMachineConfigInfoDatastoreUrlPair{
+	DatastoreUrl: []vimtypes.VirtualMachineConfigInfoDatastoreUrlPair{
 		{
 			Name: "datastore1",
 			Url:  "/vmfs/volumes/63970ed8-4abddd2a-62d7-02003f49c37d",
 		},
 	},
 	SwapPlacement: "inherit",
-	BootOptions: &vimTypes.VirtualMachineBootOptions{
+	BootOptions: &vimtypes.VirtualMachineBootOptions{
 		EnterBIOSSetup:       addrOfBool(false),
 		EfiSecureBootEnabled: addrOfBool(false),
 		BootRetryEnabled:     addrOfBool(false),
@@ -933,13 +933,13 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 	GuestAutoLockEnabled:         addrOfBool(true),
 	ManagedBy:                    nil,
 	MemoryReservationLockedToMax: addrOfBool(false),
-	InitialOverhead: &vimTypes.VirtualMachineConfigInfoOverheadInfo{
+	InitialOverhead: &vimtypes.VirtualMachineConfigInfoOverheadInfo{
 		InitialMemoryReservation: 214446080,
 		InitialSwapReservation:   2541883392,
 	},
 	NestedHVEnabled: addrOfBool(false),
 	VPMCEnabled:     addrOfBool(false),
-	ScheduledHardwareUpgradeInfo: &vimTypes.ScheduledHardwareUpgradeInfo{
+	ScheduledHardwareUpgradeInfo: &vimtypes.ScheduledHardwareUpgradeInfo{
 		UpgradePolicy:                  "never",
 		ScheduledHardwareUpgradeStatus: "none",
 	},
@@ -953,19 +953,19 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 		0x17, 0x5d, 0xdd, 0xa3,
 	},
 	MessageBusTunnelEnabled: addrOfBool(false),
-	GuestIntegrityInfo: &vimTypes.VirtualMachineGuestIntegrityInfo{
+	GuestIntegrityInfo: &vimtypes.VirtualMachineGuestIntegrityInfo{
 		Enabled: addrOfBool(false),
 	},
 	MigrateEncryption: "opportunistic",
-	SgxInfo: &vimTypes.VirtualMachineSgxInfo{
+	SgxInfo: &vimtypes.VirtualMachineSgxInfo{
 		FlcMode:            "unlocked",
 		RequireAttestation: addrOfBool(false),
 	},
 	ContentLibItemInfo:      nil,
 	FtEncryptionMode:        "ftEncryptionOpportunistic",
-	GuestMonitoringModeInfo: &vimTypes.VirtualMachineGuestMonitoringModeInfo{},
+	GuestMonitoringModeInfo: &vimtypes.VirtualMachineGuestMonitoringModeInfo{},
 	SevEnabled:              addrOfBool(false),
-	NumaInfo: &vimTypes.VirtualMachineVirtualNumaInfo{
+	NumaInfo: &vimtypes.VirtualMachineVirtualNumaInfo{
 		AutoCoresPerNumaNode:    addrOfBool(true),
 		VnumaOnCpuHotaddExposed: addrOfBool(false),
 	},
@@ -973,13 +973,13 @@ var virtualMachineConfigInfoForTests vimTypes.VirtualMachineConfigInfo = vimType
 	VmxStatsCollectionEnabled:    addrOfBool(true),
 	VmOpNotificationToAppEnabled: addrOfBool(false),
 	VmOpNotificationTimeout:      -1,
-	DeviceSwap: &vimTypes.VirtualMachineVirtualDeviceSwap{
-		LsiToPvscsi: &vimTypes.VirtualMachineVirtualDeviceSwapDeviceSwapInfo{
+	DeviceSwap: &vimtypes.VirtualMachineVirtualDeviceSwap{
+		LsiToPvscsi: &vimtypes.VirtualMachineVirtualDeviceSwapDeviceSwapInfo{
 			Enabled:    addrOfBool(true),
 			Applicable: addrOfBool(false),
 			Status:     "none",
 		},
 	},
 	Pmem:         nil,
-	DeviceGroups: &vimTypes.VirtualMachineVirtualDeviceGroups{},
+	DeviceGroups: &vimtypes.VirtualMachineVirtualDeviceGroups{},
 }

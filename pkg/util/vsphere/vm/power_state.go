@@ -17,7 +17,7 @@ import (
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm/internal"
 )
@@ -75,7 +75,7 @@ func (e ErrInvalidPowerOpResult) Error() string {
 // ErrInvalidPowerState is returned if a power state does not map to
 // "poweredOff", "poweredOn", or "suspended".
 type ErrInvalidPowerState struct {
-	PowerState types.VirtualMachinePowerState
+	PowerState vimtypes.VirtualMachinePowerState
 }
 
 // Error enables this type to be returned as a Golang error object.
@@ -141,14 +141,14 @@ func ParsePowerOpMode(m string) PowerOpBehavior {
 
 // ParsePowerState parses a VM Op API PowerState and returns the corresponding
 // vim25 value.
-func ParsePowerState(m string) types.VirtualMachinePowerState {
+func ParsePowerState(m string) vimtypes.VirtualMachinePowerState {
 	switch strings.ToLower(m) {
-	case strings.ToLower(string(types.VirtualMachinePowerStatePoweredOff)):
-		return types.VirtualMachinePowerStatePoweredOff
-	case strings.ToLower(string(types.VirtualMachinePowerStatePoweredOn)):
-		return types.VirtualMachinePowerStatePoweredOn
-	case strings.ToLower(string(types.VirtualMachinePowerStateSuspended)):
-		return types.VirtualMachinePowerStateSuspended
+	case strings.ToLower(string(vimtypes.VirtualMachinePowerStatePoweredOff)):
+		return vimtypes.VirtualMachinePowerStatePoweredOff
+	case strings.ToLower(string(vimtypes.VirtualMachinePowerStatePoweredOn)):
+		return vimtypes.VirtualMachinePowerStatePoweredOn
+	case strings.ToLower(string(vimtypes.VirtualMachinePowerStateSuspended)):
+		return vimtypes.VirtualMachinePowerStateSuspended
 	default:
 		return ""
 	}
@@ -166,7 +166,7 @@ func SetPowerState(
 	client *vim25.Client,
 	mo mo.VirtualMachine,
 	fetchProperties bool,
-	desiredPowerState types.VirtualMachinePowerState,
+	desiredPowerState vimtypes.VirtualMachinePowerState,
 	powerOpBehavior PowerOpBehavior) <-chan any {
 
 	chanResult := make(chan any, 1)
@@ -197,7 +197,7 @@ func SetAndWaitOnPowerState(
 	client *vim25.Client,
 	mo mo.VirtualMachine,
 	fetchProperties bool,
-	desiredPowerState types.VirtualMachinePowerState,
+	desiredPowerState vimtypes.VirtualMachinePowerState,
 	powerOpBehavior PowerOpBehavior) (PowerOpResult, error) {
 
 	return setPowerState(
@@ -214,11 +214,11 @@ func setPowerState(
 	client *vim25.Client,
 	mo mo.VirtualMachine,
 	fetchProperties bool,
-	desiredPowerState types.VirtualMachinePowerState,
+	desiredPowerState vimtypes.VirtualMachinePowerState,
 	powerOpBehavior PowerOpBehavior) (PowerOpResult, error) {
 
 	var (
-		currentPowerState types.VirtualMachinePowerState
+		currentPowerState vimtypes.VirtualMachinePowerState
 		log               = logr.FromContextOrDiscard(ctx)
 		obj               = object.NewVirtualMachine(client, mo.Self)
 	)
@@ -253,10 +253,10 @@ func setPowerState(
 	)
 
 	switch desiredPowerState {
-	case types.VirtualMachinePowerStatePoweredOn:
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
 		powerOpHardFn = obj.PowerOn
 		log = log.WithValues("powerOpHardFn", "PowerOn")
-	case types.VirtualMachinePowerStatePoweredOff:
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
 		switch powerOpBehavior {
 		case PowerOpBehaviorHard:
 			powerOpHardFn = obj.PowerOff
@@ -273,7 +273,7 @@ func setPowerState(
 		default:
 			return 0, ErrInvalidPowerOpBehavior{PowerOpBehavior: powerOpBehavior}
 		}
-	case types.VirtualMachinePowerStateSuspended:
+	case vimtypes.VirtualMachinePowerStateSuspended:
 		switch powerOpBehavior {
 		case PowerOpBehaviorHard:
 			powerOpHardFn = obj.Suspend
@@ -318,7 +318,7 @@ func setPowerState(
 
 func doAndWaitOnHardPowerOp(
 	ctx context.Context,
-	desiredPowerState types.VirtualMachinePowerState,
+	desiredPowerState vimtypes.VirtualMachinePowerState,
 	powerOpFn func(context.Context) (*object.Task, error)) (PowerOpResult, error) {
 
 	log := logr.FromContextOrDiscard(ctx)
@@ -331,7 +331,7 @@ func doAndWaitOnHardPowerOp(
 	if ti, err := t.WaitForResult(ctx); err != nil {
 		if err, ok := err.(task.Error); ok {
 			// Ignore error if desired power state already set.
-			if ips, ok := err.Fault().(*types.InvalidPowerState); ok && ips.ExistingState == ips.RequestedState {
+			if ips, ok := err.Fault().(*vimtypes.InvalidPowerState); ok && ips.ExistingState == ips.RequestedState {
 				log.Info(
 					"Power state already set",
 					"desiredPowerState",
@@ -346,9 +346,9 @@ func doAndWaitOnHardPowerOp(
 	}
 
 	switch desiredPowerState {
-	case types.VirtualMachinePowerStatePoweredOn:
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
 		return PowerOpResultChanged, nil
-	case types.VirtualMachinePowerStatePoweredOff, types.VirtualMachinePowerStateSuspended:
+	case vimtypes.VirtualMachinePowerStatePoweredOff, vimtypes.VirtualMachinePowerStateSuspended:
 		return PowerOpResultChangedHard, nil
 	}
 
@@ -357,9 +357,9 @@ func doAndWaitOnHardPowerOp(
 
 func doAndWaitOnSoftPowerOp(
 	ctx context.Context,
-	desiredPowerState types.VirtualMachinePowerState,
+	desiredPowerState vimtypes.VirtualMachinePowerState,
 	powerOpFn func(context.Context) error,
-	waitForPowerStateFn func(context.Context, types.VirtualMachinePowerState) error) (PowerOpResult, error) {
+	waitForPowerStateFn func(context.Context, vimtypes.VirtualMachinePowerState) error) (PowerOpResult, error) {
 
 	if err := powerOpFn(ctx); err != nil {
 		return 0, fmt.Errorf("soft set power state to %s failed %w", desiredPowerState, err)
@@ -462,7 +462,7 @@ func restart(
 
 	var (
 		err                          error
-		currentPowerState            types.VirtualMachinePowerState
+		currentPowerState            vimtypes.VirtualMachinePowerState
 		currentLastRestartTime       *time.Time
 		currentLastRestartTimeString string
 		propsToFetch                 []string
@@ -499,7 +499,7 @@ func restart(
 		"desiredLastRestartTime", desiredLastRestartTimeString,
 		"desiredPowerOpBehavior", powerOpBehavior.String())
 
-	if currentPowerState != types.VirtualMachinePowerStatePoweredOn {
+	if currentPowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
 		return 0, ErrInvalidPowerState{PowerState: currentPowerState}
 	}
 
@@ -617,7 +617,7 @@ func doAndWaitOnSoftRestart(
 // is returned.
 func GetLastRestartTimeFromExtraConfig(
 	ctx context.Context,
-	extraConfig []types.BaseOptionValue) (*time.Time, error) {
+	extraConfig []vimtypes.BaseOptionValue) (*time.Time, error) {
 
 	log := logr.FromContextOrDiscard(ctx)
 
@@ -681,9 +681,9 @@ func setLastRestartTimeInExtraConfigAndWait(
 		"extraConfigKey", ExtraConfigKeyLastRestartTime,
 		"extraConfigValue", lastRestartTimeEpoch)
 
-	t, err := obj.Reconfigure(ctx, types.VirtualMachineConfigSpec{
-		ExtraConfig: []types.BaseOptionValue{
-			&types.OptionValue{
+	t, err := obj.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+		ExtraConfig: []vimtypes.BaseOptionValue{
+			&vimtypes.OptionValue{
 				Key:   ExtraConfigKeyLastRestartTime,
 				Value: strconv.FormatInt(lastRestartTimeEpoch, 10),
 			},

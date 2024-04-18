@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
@@ -99,7 +99,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 		}
 	}
 
-	return k8serrors.NewAggregate(errs)
+	return apierrorsutil.NewAggregate(errs)
 }
 
 // DeleteVirtualMachineSetResourcePolicy deletes the VirtualMachineSetPolicy.
@@ -133,7 +133,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 		errs = append(errs, err)
 	}
 
-	return k8serrors.NewAggregate(errs)
+	return apierrorsutil.NewAggregate(errs)
 }
 
 // doClusterModulesExist checks whether all the ClusterModules for the given VirtualMachineSetResourcePolicy
@@ -220,7 +220,7 @@ func (vs *vSphereVMProvider) createClusterModules(
 		}
 	}
 
-	return k8serrors.NewAggregate(errs)
+	return apierrorsutil.NewAggregate(errs)
 }
 
 // deleteClusterModules deletes all the ClusterModules associated with a given VirtualMachineSetResourcePolicy in VC.

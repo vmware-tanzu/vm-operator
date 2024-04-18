@@ -22,7 +22,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
@@ -52,7 +52,7 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 		)
 
 		BeforeEach(func() {
-			ctx = logr.NewContext(pkgconfig.NewContextWithDefaultConfig(), GinkgoLogr)
+			ctx = logr.NewContext(pkgcfg.NewContextWithDefaultConfig(), GinkgoLogr)
 			expectedUsername = valid
 			expectedPassword = valid
 			tlsConfig = &tls.Config{}

@@ -4,7 +4,7 @@
 package builder
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
@@ -41,14 +41,14 @@ type Mutator interface {
 	For() schema.GroupVersionKind
 
 	// Mutate will try modify invalid value.
-	Mutate(*context.WebhookRequestContext) admission.Response
+	Mutate(*pkgctx.WebhookRequestContext) admission.Response
 }
 
 type MutatorFunc func(client.Client) Mutator
 
 // NewMutatingWebhook returns a new admissions webhook for mutating requests.
 func NewMutatingWebhook(
-	ctx *context.ControllerManagerContext,
+	ctx *pkgctx.ControllerManagerContext,
 	mgr ctrlmgr.Manager,
 	webhookName string,
 	mutator Mutator) (*MutatingWebhook, error) {
@@ -65,7 +65,7 @@ func NewMutatingWebhook(
 	webhookNameLong := fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, webhookNameShort)
 
 	// Build the WebhookContext.
-	webhookContext := &context.WebhookContext{
+	webhookContext := &pkgctx.WebhookContext{
 		Context:            ctx,
 		Name:               webhookNameShort,
 		Namespace:          ctx.Namespace,
@@ -94,12 +94,12 @@ func NewMutatingWebhook(
 var _ admission.Handler = &mutatingWebhookHandler{}
 
 type mutatingWebhookHandler struct {
-	*context.WebhookContext
+	*pkgctx.WebhookContext
 	*admission.Decoder
 	Mutator
 }
 
-func (h *mutatingWebhookHandler) Handle(_ goctx.Context, req admission.Request) admission.Response {
+func (h *mutatingWebhookHandler) Handle(_ context.Context, req admission.Request) admission.Response {
 	if h.Mutator == nil {
 		panic("mutator should never be nil")
 	}
@@ -138,7 +138,7 @@ func (h *mutatingWebhookHandler) Handle(_ goctx.Context, req admission.Request) 
 		}
 	}
 
-	webhookRequestContext := &context.WebhookRequestContext{
+	webhookRequestContext := &pkgctx.WebhookRequestContext{
 		WebhookContext:      h.WebhookContext,
 		Op:                  req.Operation,
 		Obj:                 obj,

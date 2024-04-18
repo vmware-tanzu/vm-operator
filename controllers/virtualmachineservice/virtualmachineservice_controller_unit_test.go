@@ -23,7 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -55,7 +55,7 @@ func unitTestsReconcile() {
 		ctx         *builder.UnitTestContextForController
 
 		reconciler   *virtualmachineservice.ReconcileVirtualMachineService
-		vmServiceCtx *vmopContext.VirtualMachineServiceContext
+		vmServiceCtx *pkgctx.VirtualMachineServiceContext
 
 		vmService      *vmopv1.VirtualMachineService
 		vmServicePort1 vmopv1.VirtualMachineServicePort
@@ -126,7 +126,7 @@ func unitTestsReconcile() {
 			providers.NoopLoadbalancerProvider{},
 		)
 
-		vmServiceCtx = &vmopContext.VirtualMachineServiceContext{
+		vmServiceCtx = &pkgctx.VirtualMachineServiceContext{
 			Context:   ctx,
 			Logger:    ctx.Logger.WithName(vmService.Name),
 			VMService: vmService,
@@ -804,7 +804,7 @@ func nsxtLBProviderTestsReconcile() {
 
 		lbProvider   providers.LoadbalancerProvider
 		reconciler   *virtualmachineservice.ReconcileVirtualMachineService
-		vmServiceCtx *vmopContext.VirtualMachineServiceContext
+		vmServiceCtx *pkgctx.VirtualMachineServiceContext
 
 		vmServicePort1 vmopv1.VirtualMachineServicePort
 		vmService      *vmopv1.VirtualMachineService
@@ -859,7 +859,7 @@ func nsxtLBProviderTestsReconcile() {
 			lbProvider,
 		)
 
-		vmServiceCtx = &vmopContext.VirtualMachineServiceContext{
+		vmServiceCtx = &pkgctx.VirtualMachineServiceContext{
 			Context:   ctx,
 			Logger:    ctx.Logger.WithName(vmService.Name),
 			VMService: vmService,

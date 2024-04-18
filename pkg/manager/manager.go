@@ -4,7 +4,7 @@
 package manager
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -30,8 +30,8 @@ import (
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
@@ -39,12 +39,12 @@ import (
 type Manager interface {
 	ctrlmgr.Manager
 
-	// GetContext returns the controller manager's context.
-	GetContext() *context.ControllerManagerContext
+	// GetContext returns the controller manager's pkgctx.
+	GetContext() *pkgctx.ControllerManagerContext
 }
 
 // New returns a new VM Operator controller manager.
-func New(ctx goctx.Context, opts Options) (Manager, error) {
+func New(ctx context.Context, opts Options) (Manager, error) {
 	// Ensure the default options are set.
 	opts.defaults()
 
@@ -60,7 +60,7 @@ func New(ctx goctx.Context, opts Options) (Manager, error) {
 	_ = vmopv1a2.AddToScheme(opts.Scheme)
 	_ = vmopv1.AddToScheme(opts.Scheme)
 
-	if pkgconfig.FromContext(ctx).NetworkProviderType == pkgconfig.NetworkProviderTypeVPC {
+	if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
 		_ = vpcv1alpha1.AddToScheme(opts.Scheme)
 	}
 
@@ -101,8 +101,8 @@ func New(ctx goctx.Context, opts Options) (Manager, error) {
 		return nil, errors.Wrap(err, "unable to create manager")
 	}
 
-	// Build the controller manager context.
-	controllerManagerContext := &context.ControllerManagerContext{
+	// Build the controller manager pkgctx.
+	controllerManagerContext := &pkgctx.ControllerManagerContext{
 		Context:                 ctx,
 		Namespace:               opts.PodNamespace,
 		Name:                    opts.PodName,
@@ -133,9 +133,9 @@ func New(ctx goctx.Context, opts Options) (Manager, error) {
 
 type manager struct {
 	ctrlmgr.Manager
-	ctx *context.ControllerManagerContext
+	ctx *pkgctx.ControllerManagerContext
 }
 
-func (m *manager) GetContext() *context.ControllerManagerContext {
+func (m *manager) GetContext() *pkgctx.ControllerManagerContext {
 	return m.ctx
 }

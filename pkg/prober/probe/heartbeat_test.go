@@ -4,7 +4,7 @@
 package probe
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,8 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 type fakeGuestHeartbeatProvider struct {
@@ -23,7 +22,7 @@ type fakeGuestHeartbeatProvider struct {
 	err    error
 }
 
-func (tp fakeGuestHeartbeatProvider) GetVirtualMachineGuestHeartbeat(_ goctx.Context, _ *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
+func (tp fakeGuestHeartbeatProvider) GetVirtualMachineGuestHeartbeat(_ context.Context, _ *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 	return tp.status, tp.err
 }
 
@@ -54,7 +53,7 @@ var _ = Describe("Guest heartbeat probe", func() {
 	})
 
 	JustBeforeEach(func() {
-		probeCtx := &context.ProbeContext{
+		probeCtx := &proberctx.ProbeContext{
 			Logger: ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
 			VM:     vm,
 		}

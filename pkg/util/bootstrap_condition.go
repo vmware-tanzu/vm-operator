@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
 // GuestInfoBootstrapCondition is the ExtraConfig key at which possible info
@@ -17,7 +17,7 @@ const GuestInfoBootstrapCondition = "guestinfo.vmservice.bootstrap.condition"
 // GetBootstrapConditionValues returns the bootstrap condition values from a
 // VM if the data is present.
 func GetBootstrapConditionValues(
-	configInfo *vimTypes.VirtualMachineConfigInfo) (bool, string, string, bool) {
+	configInfo *vimtypes.VirtualMachineConfigInfo) (bool, string, string, bool) {
 
 	if configInfo == nil {
 		return false, "", "", false

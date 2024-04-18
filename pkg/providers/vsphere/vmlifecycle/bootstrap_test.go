@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
@@ -16,7 +16,7 @@ import (
 
 var _ = Describe("Customization utils", func() {
 	Context("IsPending", func() {
-		var extraConfig []vimTypes.BaseOptionValue
+		var extraConfig []vimtypes.BaseOptionValue
 		var pending bool
 
 		BeforeEach(func() {
@@ -35,7 +35,7 @@ var _ = Describe("Customization utils", func() {
 
 		Context("ExtraConfig with pending key", func() {
 			BeforeEach(func() {
-				extraConfig = append(extraConfig, &vimTypes.OptionValue{
+				extraConfig = append(extraConfig, &vimtypes.OptionValue{
 					Key:   constants.GOSCPendingExtraConfigKey,
 					Value: "/foo/bar",
 				})
@@ -50,11 +50,11 @@ var _ = Describe("Customization utils", func() {
 
 var _ = Describe("SanitizeConfigSpec", func() {
 	var (
-		inConfigSpec, outConfigSpec vimTypes.VirtualMachineConfigSpec
+		inConfigSpec, outConfigSpec vimtypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
-		inConfigSpec = vimTypes.VirtualMachineConfigSpec{}
+		inConfigSpec = vimtypes.VirtualMachineConfigSpec{}
 	})
 
 	JustBeforeEach(func() {
@@ -63,7 +63,7 @@ var _ = Describe("SanitizeConfigSpec", func() {
 
 	When("EC CloudInitGuestInfoUserdata", func() {
 		BeforeEach(func() {
-			inConfigSpec.ExtraConfig = append(inConfigSpec.ExtraConfig, &vimTypes.OptionValue{
+			inConfigSpec.ExtraConfig = append(inConfigSpec.ExtraConfig, &vimtypes.OptionValue{
 				Key:   constants.CloudInitGuestInfoUserdata,
 				Value: "value",
 			})
@@ -82,11 +82,11 @@ var _ = Describe("SanitizeConfigSpec", func() {
 
 	When("vAppConfig user property", func() {
 		BeforeEach(func() {
-			inConfigSpec.VAppConfig = &vimTypes.VmConfigSpec{
-				Property: []vimTypes.VAppPropertySpec{
+			inConfigSpec.VAppConfig = &vimtypes.VmConfigSpec{
+				Property: []vimtypes.VAppPropertySpec{
 					{
-						Info: &vimTypes.VAppPropertyInfo{
-							UserConfigurable: vimTypes.NewBool(true),
+						Info: &vimtypes.VAppPropertyInfo{
+							UserConfigurable: vimtypes.NewBool(true),
 							Value:            "value",
 						},
 					},
@@ -110,11 +110,11 @@ var _ = Describe("SanitizeConfigSpec", func() {
 
 var _ = Describe("SanitizeCustomizationSpec", func() {
 	var (
-		inCustSpec, outCustSpec vimTypes.CustomizationSpec
+		inCustSpec, outCustSpec vimtypes.CustomizationSpec
 	)
 
 	BeforeEach(func() {
-		inCustSpec = vimTypes.CustomizationSpec{}
+		inCustSpec = vimtypes.CustomizationSpec{}
 	})
 
 	JustBeforeEach(func() {
@@ -144,35 +144,35 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 
 	When("CustomizationSysprepText", func() {
 		BeforeEach(func() {
-			inCustSpec.Identity = &vimTypes.CustomizationSysprepText{
+			inCustSpec.Identity = &vimtypes.CustomizationSysprepText{
 				Value: "value",
 			}
 		})
 
 		It("redacts value", func() {
 			Expect(inCustSpec.Identity).ToNot(BeNil())
-			s := inCustSpec.Identity.(*vimTypes.CustomizationSysprepText)
+			s := inCustSpec.Identity.(*vimtypes.CustomizationSysprepText)
 			Expect(s.Value).To(Equal("value"))
 
 			Expect(outCustSpec.Identity).ToNot(BeNil())
-			s = outCustSpec.Identity.(*vimTypes.CustomizationSysprepText)
+			s = outCustSpec.Identity.(*vimtypes.CustomizationSysprepText)
 			Expect(s.Value).To(Equal("***"))
 		})
 	})
 
 	When("CustomizationSysprep", func() {
 		BeforeEach(func() {
-			inCustSpec.Identity = &vimTypes.CustomizationSysprep{
-				GuiUnattended: vimTypes.CustomizationGuiUnattended{
-					Password: &vimTypes.CustomizationPassword{
+			inCustSpec.Identity = &vimtypes.CustomizationSysprep{
+				GuiUnattended: vimtypes.CustomizationGuiUnattended{
+					Password: &vimtypes.CustomizationPassword{
 						Value: "value",
 					},
 					TimeZone: 42,
 				},
-				UserData: vimTypes.CustomizationUserData{},
-				Identification: vimTypes.CustomizationIdentification{
+				UserData: vimtypes.CustomizationUserData{},
+				Identification: vimtypes.CustomizationIdentification{
 					DomainAdmin: "admin",
-					DomainAdminPassword: &vimTypes.CustomizationPassword{
+					DomainAdminPassword: &vimtypes.CustomizationPassword{
 						Value: "value",
 					},
 				},
@@ -181,7 +181,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 
 		It("redacts fields", func() {
 			Expect(inCustSpec.Identity).ToNot(BeNil())
-			s := inCustSpec.Identity.(*vimTypes.CustomizationSysprep)
+			s := inCustSpec.Identity.(*vimtypes.CustomizationSysprep)
 			Expect(s.GuiUnattended.TimeZone).To(BeEquivalentTo(42))
 			Expect(s.GuiUnattended.Password).ToNot(BeNil())
 			Expect(s.GuiUnattended.Password.Value).To(Equal("value"))
@@ -190,7 +190,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("value"))
 
 			Expect(outCustSpec.Identity).ToNot(BeNil())
-			s = outCustSpec.Identity.(*vimTypes.CustomizationSysprep)
+			s = outCustSpec.Identity.(*vimtypes.CustomizationSysprep)
 			Expect(s.GuiUnattended.TimeZone).To(BeEquivalentTo(42))
 			Expect(s.GuiUnattended.Password).ToNot(BeNil())
 			Expect(s.GuiUnattended.Password.Value).To(Equal("***"))

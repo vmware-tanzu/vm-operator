@@ -11,7 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -38,7 +38,7 @@ func (vm *VirtualMachine) VcVM() *object.VirtualMachine {
 	return vm.vcVirtualMachine
 }
 
-func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *types.VirtualMachineConfigSpec) error {
+func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *vimtypes.VirtualMachineConfigSpec) error {
 	vm.logger.V(5).Info("Create VM")
 
 	if vm.vcVirtualMachine != nil {
@@ -55,11 +55,11 @@ func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, poo
 		return errors.Wrapf(err, "create VM %q task failed", vm.Name)
 	}
 
-	vm.vcVirtualMachine = object.NewVirtualMachine(folder.Client(), result.Result.(types.ManagedObjectReference))
+	vm.vcVirtualMachine = object.NewVirtualMachine(folder.Client(), result.Result.(vimtypes.ManagedObjectReference))
 	return nil
 }
 
-func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, cloneSpec *types.VirtualMachineCloneSpec) (*types.ManagedObjectReference, error) {
+func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, cloneSpec *vimtypes.VirtualMachineCloneSpec) (*vimtypes.ManagedObjectReference, error) {
 	vm.logger.V(5).Info("Clone VM")
 
 	cloneTask, err := vm.vcVirtualMachine.Clone(ctx, folder, cloneSpec.Config.Name, *cloneSpec)
@@ -72,11 +72,11 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 		return nil, errors.Wrapf(err, "clone VM task failed")
 	}
 
-	ref := result.Result.(types.ManagedObjectReference)
+	ref := result.Result.(vimtypes.ManagedObjectReference)
 	return &ref, nil
 }
 
-func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *types.VirtualMachineConfigSpec) error {
+func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *vimtypes.VirtualMachineConfigSpec) error {
 	vm.logger.V(5).Info("Reconfiguring VM", "configSpec", configSpec)
 
 	reconfigureTask, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
@@ -108,7 +108,7 @@ func (vm *VirtualMachine) ReferenceValue() string {
 	return vm.vcVirtualMachine.Reference().Value
 }
 
-func (vm *VirtualMachine) MoRef() types.ManagedObjectReference {
+func (vm *VirtualMachine) MoRef() vimtypes.ManagedObjectReference {
 	vm.logger.V(5).Info("Get MoRef")
 	return vm.vcVirtualMachine.Reference()
 }
@@ -153,8 +153,8 @@ func (vm *VirtualMachine) SetPowerState(
 					Self: vm.VcVM().Reference(),
 				},
 			},
-			Summary: types.VirtualMachineSummary{
-				Runtime: types.VirtualMachineRuntimeInfo{
+			Summary: vimtypes.VirtualMachineSummary{
+				Runtime: vimtypes.VirtualMachineRuntimeInfo{
 					PowerState: vmutil.ParsePowerState(string(currentPowerState)),
 				},
 			},
@@ -187,7 +187,7 @@ func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDe
 		return nil, err
 	}
 
-	return deviceList.SelectByType((*types.VirtualDisk)(nil)), nil
+	return deviceList.SelectByType((*vimtypes.VirtualDisk)(nil)), nil
 }
 
 func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.VirtualDeviceList, error) {
@@ -198,10 +198,10 @@ func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.Virtual
 		return nil, err
 	}
 
-	return devices.SelectByType((*types.VirtualEthernetCard)(nil)), nil
+	return devices.SelectByType((*vimtypes.VirtualEthernetCard)(nil)), nil
 }
 
-func (vm *VirtualMachine) Customize(ctx context.Context, spec types.CustomizationSpec) error {
+func (vm *VirtualMachine) Customize(ctx context.Context, spec vimtypes.CustomizationSpec) error {
 	vm.logger.V(5).Info("Customize", "spec", spec)
 
 	customizeTask, err := vm.vcVirtualMachine.Customize(ctx, spec)

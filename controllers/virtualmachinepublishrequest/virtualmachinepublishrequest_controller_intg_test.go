@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/uuid"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -134,12 +134,12 @@ func intgTestsReconcile() {
 
 				By("VM publish task is queued", func() {
 					intgFakeVMProvider.Lock()
-					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]types.TaskInfo, error) {
-						task := types.TaskInfo{
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
+						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
-							State:         types.TaskInfoStateQueued,
+							State:         vimtypes.TaskInfoStateQueued,
 						}
-						return []types.TaskInfo{task}, nil
+						return []vimtypes.TaskInfo{task}, nil
 					}
 					intgFakeVMProvider.Unlock()
 
@@ -164,12 +164,12 @@ func intgTestsReconcile() {
 
 				By("VM publish task is running", func() {
 					intgFakeVMProvider.Lock()
-					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]types.TaskInfo, error) {
-						task := types.TaskInfo{
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
+						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
-							State:         types.TaskInfoStateRunning,
+							State:         vimtypes.TaskInfoStateRunning,
 						}
-						return []types.TaskInfo{task}, nil
+						return []vimtypes.TaskInfo{task}, nil
 					}
 					intgFakeVMProvider.Unlock()
 
@@ -196,13 +196,13 @@ func intgTestsReconcile() {
 
 				By("VM publish task succeeded", func() {
 					intgFakeVMProvider.Lock()
-					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]types.TaskInfo, error) {
-						task := types.TaskInfo{
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
+						task := vimtypes.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
-							State:         types.TaskInfoStateSuccess,
-							Result:        types.ManagedObjectReference{Type: "ContentLibraryItem", Value: fmt.Sprintf("clibitem-%s", itemID)},
+							State:         vimtypes.TaskInfoStateSuccess,
+							Result:        vimtypes.ManagedObjectReference{Type: "ContentLibraryItem", Value: fmt.Sprintf("clibitem-%s", itemID)},
 						}
-						return []types.TaskInfo{task}, nil
+						return []vimtypes.TaskInfo{task}, nil
 					}
 					intgFakeVMProvider.Unlock()
 

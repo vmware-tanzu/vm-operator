@@ -4,7 +4,7 @@
 package prober
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"testing"
 
@@ -18,7 +18,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
+	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	fakeworker "github.com/vmware-tanzu/vm-operator/pkg/prober/fake/worker"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
@@ -30,7 +30,7 @@ import (
 var _ = Describe("VirtualMachine probes", func() {
 	var (
 		initObjects []client.Object
-		ctx         goctx.Context
+		ctx         context.Context
 
 		testManager   *manager
 		vm            *vmopv1.VirtualMachine
@@ -44,7 +44,7 @@ var _ = Describe("VirtualMachine probes", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = goctx.Background()
+		ctx = context.Background()
 		periodSeconds = 1
 
 		vm = &vmopv1.VirtualMachine{
@@ -129,7 +129,7 @@ var _ = Describe("VirtualMachine probes", func() {
 			It("Should set probe result as failed if the VM is powered off", func() {
 				vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
 				Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
-				fakeWorker.ProcessProbeResultFn = func(ctx *context.ProbeContext, res probe.Result, err error) error {
+				fakeWorker.ProcessProbeResultFn = func(ctx *proberctx.ProbeContext, res probe.Result, err error) error {
 					if res != probe.Failure {
 						return fmt.Errorf("dummy error")
 					}
@@ -150,7 +150,7 @@ var _ = Describe("VirtualMachine probes", func() {
 				})
 
 				It("Should immediately add to the queue if DoProbe returns error", func() {
-					fakeWorker.DoProbeFn = func(ctx *context.ProbeContext) error {
+					fakeWorker.DoProbeFn = func(ctx *proberctx.ProbeContext) error {
 						return fmt.Errorf("dummy error")
 					}
 					quit := testManager.processItemFromQueue(fakeWorker)
@@ -161,7 +161,7 @@ var _ = Describe("VirtualMachine probes", func() {
 
 				When("DoProbe succeeds", func() {
 					JustBeforeEach(func() {
-						fakeWorker.DoProbeFn = func(ctx *context.ProbeContext) error {
+						fakeWorker.DoProbeFn = func(ctx *proberctx.ProbeContext) error {
 							return nil
 						}
 					})
@@ -224,7 +224,7 @@ var _ = Describe("VirtualMachine probes", func() {
 				testManager.AddToProberManager(vm)
 				Expect(testManager.readinessQueue.Len()).To(Equal(1))
 
-				fakeWorker.DoProbeFn = func(ctx *context.ProbeContext) error {
+				fakeWorker.DoProbeFn = func(ctx *proberctx.ProbeContext) error {
 					return nil
 				}
 				Expect(testManager.processItemFromQueue(fakeWorker)).To(BeFalse())

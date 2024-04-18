@@ -9,13 +9,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var suite = builder.NewTestSuiteWithContext(
-	pkgconfig.WithConfig(
-		pkgconfig.Config{
+	pkgcfg.WithConfig(
+		pkgcfg.Config{
 			BuildVersion: "v1",
 		}))
 

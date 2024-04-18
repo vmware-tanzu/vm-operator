@@ -20,7 +20,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
@@ -46,7 +46,7 @@ var (
 // +kubebuilder:webhook:verbs=create;update;delete,path=/default-validate--v1-persistentvolumeclaim,mutating=false,failurePolicy=fail,groups="",resources=persistentvolumeclaims,versions=v1,name=default.validating.persistentvolumeclaim.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create PersistentVolumeClaim validation webhook")
@@ -76,7 +76,7 @@ func (v validator) For() schema.GroupVersionKind {
 
 /* NOTE: If the user is privileged user, the request will not be validated.*/
 
-func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	if isPrivilegedAccountForISPVC(ctx) {
 		return common.BuildValidationResponse(ctx, nil, nil, nil)
 	}
@@ -90,7 +90,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, convertToStringArray(fieldErrs), nil)
 }
 
-func (v validator) ValidateDelete(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateDelete(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	if isPrivilegedAccountForISPVC(ctx) {
 		return common.BuildValidationResponse(ctx, nil, nil, nil)
 	}
@@ -104,7 +104,7 @@ func (v validator) ValidateDelete(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, convertToStringArray(fieldErrs), nil)
 }
 
-func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	if isPrivilegedAccountForISPVC(ctx) {
 		return common.BuildValidationResponse(ctx, nil, nil, nil)
 	}
@@ -141,7 +141,7 @@ func convertToStringArray(fieldErrs field.ErrorList) []string {
 // kube-admin and vm-operator's pod service account to manage these PVCs
 // more info - https://kubernetes.io/docs/concepts/storage/persistent-volumes/#lifecycle-of-a-volume-and-claim
 // TODO: Dynamically get service accounts which manages PVC.
-func isPrivilegedAccountForISPVC(ctx *context.WebhookRequestContext) bool {
+func isPrivilegedAccountForISPVC(ctx *pkgctx.WebhookRequestContext) bool {
 	// ctx.IsPrivilegedAccount returns true is requested user is kube-admin or vm-operator's pods system account.
 	if ctx.IsPrivilegedAccount {
 		return true

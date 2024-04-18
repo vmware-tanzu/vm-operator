@@ -7,9 +7,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -19,7 +19,7 @@ func deleteTests() {
 	var (
 		ctx   *builder.TestContextForVCSim
 		vcVM  *object.VirtualMachine
-		vmCtx context.VirtualMachineContext
+		vmCtx pkgctx.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
@@ -29,7 +29,7 @@ func deleteTests() {
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).ToNot(HaveOccurred())
 
-		vmCtx = context.VirtualMachineContext{
+		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vcVM.Name()),
 			VM:      builder.DummyVirtualMachineA2(),
@@ -61,7 +61,7 @@ func deleteTests() {
 
 		state, err := vcVM.PowerState(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(state).To(Equal(types.VirtualMachinePowerStatePoweredOn))
+		Expect(state).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 
 		err = virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
 		Expect(err).ToNot(HaveOccurred())

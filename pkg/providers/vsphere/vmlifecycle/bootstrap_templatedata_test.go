@@ -4,7 +4,7 @@
 package vmlifecycle_test
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
@@ -34,7 +34,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 	)
 
 	var (
-		vmCtx  context.VirtualMachineContext
+		vmCtx  pkgctx.VirtualMachineContext
 		vm     *vmopv1.VirtualMachine
 		bsArgs *vmlifecycle.BootstrapArgs
 	)
@@ -47,8 +47,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 			},
 		}
 
-		vmCtx = context.VirtualMachineContext{
-			Context: goctx.Background(),
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: context.Background(),
 			Logger:  suite.GetLogger().WithName("bootstrap-template-tests"),
 			VM:      vm,
 		}

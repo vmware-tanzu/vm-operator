@@ -14,7 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -88,13 +88,13 @@ func intgTestsMutating() {
 
 		Context("Default network interface", func() {
 			BeforeEach(func() {
-				pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
-					config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+				pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
+					config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
 				})
 				ctx.vm.Spec.Network.Interfaces = nil
 			})
 			AfterEach(func() {
-				pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+				pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
 					config.NetworkProviderType = ""
 				})
 			})

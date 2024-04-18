@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -29,7 +29,7 @@ func getVM() {
 		ctx    *builder.TestContextForVCSim
 		nsInfo builder.WorkloadNamespaceInfo
 
-		vmCtx context.VirtualMachineContext
+		vmCtx pkgctx.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
@@ -40,7 +40,7 @@ func getVM() {
 		vm.Name = "getvm-test"
 		vm.Namespace = nsInfo.Namespace
 
-		vmCtx = context.VirtualMachineContext{
+		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,

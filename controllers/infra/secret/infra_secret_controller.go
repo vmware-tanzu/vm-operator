@@ -4,7 +4,7 @@
 package secret
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -19,8 +19,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -31,11 +31,11 @@ const (
 )
 
 type provider interface {
-	ResetVcClient(ctx goctx.Context)
+	ResetVcClient(ctx context.Context)
 }
 
 // AddToManager adds this package's controller to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controlledType      = &corev1.Secret{}
 		controllerName      = "infra-secret"
@@ -89,7 +89,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
-	ctx goctx.Context,
+	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
@@ -107,7 +107,7 @@ func NewReconciler(
 
 type Reconciler struct {
 	client.Client
-	Context       goctx.Context
+	Context       context.Context
 	Logger        logr.Logger
 	Recorder      record.Recorder
 	vmOpNamespace string
@@ -116,8 +116,8 @@ type Reconciler struct {
 
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
-func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
-	ctx = pkgconfig.JoinContext(ctx, r.Context)
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	if req.Name == VcCredsSecretName && req.Namespace == r.vmOpNamespace {
 		r.reconcileVcCreds(ctx, req)
@@ -128,7 +128,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) reconcileVcCreds(ctx goctx.Context, req ctrl.Request) {
+func (r *Reconciler) reconcileVcCreds(ctx context.Context, req ctrl.Request) {
 	r.Logger.Info("Reconciling updated VM Operator credentials", "secret", req.NamespacedName)
 	r.provider.ResetVcClient(ctx)
 }

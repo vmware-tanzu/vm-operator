@@ -4,7 +4,7 @@
 package validation
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -33,9 +33,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -79,7 +79,7 @@ const (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get
 
 // AddToManager adds the webhook to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrap(err, "failed to create VirtualMachine validation webhook")
@@ -107,7 +107,7 @@ func (v validator) For() schema.GroupVersionKind {
 	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachine{}).Name())
 }
 
-func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vm, err := v.vmFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -138,7 +138,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
 	return admission.Allowed("")
 }
 
@@ -153,7 +153,7 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 //
 // Following fields can only be changed when the VM is powered off.
 //   - Bootstrap
-func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
+func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vm, err := v.vmFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -196,7 +196,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 }
 
 func (v validator) validateBootstrap(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -335,7 +335,7 @@ func (v validator) validateInlineSysprep(p *field.Path, sysprep *sysprep.Sysprep
 	return allErrs
 }
 
-func (v validator) validateImageOnCreate(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if vm.Spec.Image == nil {
@@ -349,7 +349,7 @@ func (v validator) validateImageOnCreate(ctx *context.WebhookRequestContext, vm 
 	return allErrs
 }
 
-func (v validator) validateClass(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateClass(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if vm.Spec.ClassName == "" {
@@ -359,7 +359,7 @@ func (v validator) validateClass(ctx *context.WebhookRequestContext, vm *vmopv1.
 	return allErrs
 }
 
-func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateStorageClass(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if vm.Spec.StorageClass == "" {
@@ -378,7 +378,7 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 	}
 
 	// This is what enforces that the storage policy has been associated with this namespace.
-	if pkgconfig.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
+	if pkgcfg.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
 		storagePolicyQuotas := &cnsstoragev1.StoragePolicyQuotaList{}
 		if err := v.client.List(ctx, storagePolicyQuotas, client.InNamespace(vm.Namespace)); err != nil {
 			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
@@ -411,7 +411,7 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 	return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotAssignedFmt, vm.Namespace)))
 }
 
-func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateNetwork(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	networkSpec := vm.Spec.Network
@@ -567,7 +567,7 @@ func (v validator) validateNetworkInterfaceSpec(
 }
 
 func (v validator) validateNetworkSpecWithBootStrap(
-	ctx goctx.Context,
+	ctx context.Context,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -613,7 +613,7 @@ func (v validator) validateNetworkSpecWithBootStrap(
 // MTU, routes, and searchDomains are available only with CloudInit.
 // Nameservers is available only with CloudInit and Sysprep.
 func (v validator) validateNetworkInterfaceSpecWithBootstrap(
-	ctx goctx.Context,
+	ctx context.Context,
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
@@ -684,7 +684,7 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 	return allErrs
 }
 
-func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 	volumesPath := field.NewPath("spec", "volumes")
 	volumeNames := map[string]bool{}
@@ -720,7 +720,7 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 }
 
 func (v validator) validateVolumeWithPVC(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vol vmopv1.VirtualMachineVolume,
 	volPath *field.Path) field.ErrorList {
 
@@ -739,7 +739,7 @@ func (v validator) validateVolumeWithPVC(
 
 // validateInstanceStorageVolumes validates if instance storage volumes are added/modified.
 func (v validator) validateInstanceStorageVolumes(
-	ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
 
@@ -759,7 +759,7 @@ func (v validator) validateInstanceStorageVolumes(
 	return allErrs
 }
 
-func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateReadinessProbe(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	probe := vm.Spec.ReadinessProbe
@@ -787,7 +787,7 @@ func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm
 		tcpSocketPath := readinessProbePath.Child("tcpSocket")
 
 		// TCP readiness probe is not allowed under VPC Networking
-		if pkgconfig.FromContext(ctx).NetworkProviderType == pkgconfig.NetworkProviderTypeVPC {
+		if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
 			allErrs = append(allErrs, field.Forbidden(tcpSocketPath, tcpReadinessProbeNotAllowedVPC))
 		} else if probe.TCPSocket.Port.IntValue() != allowedRestrictedNetworkTCPProbePort {
 			// Validate port if environment is a restricted network environment between SV CP VMs and Workload VMs e.g. VMC.
@@ -807,7 +807,7 @@ func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm
 
 var megaByte = resource.MustParse("1Mi")
 
-func (v validator) validateAdvanced(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateAdvanced(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	advanced := vm.Spec.Advanced
@@ -828,7 +828,7 @@ func (v validator) validateAdvanced(ctx *context.WebhookRequestContext, vm *vmop
 }
 
 func (v validator) validateNextRestartTimeOnCreate(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -846,7 +846,7 @@ func (v validator) validateNextRestartTimeOnCreate(
 }
 
 func (v validator) validateNextRestartTimeOnUpdate(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	if newVM.Spec.NextRestartTime == oldVM.Spec.NextRestartTime {
@@ -877,7 +877,7 @@ func (v validator) validateNextRestartTimeOnUpdate(
 }
 
 func (v validator) validatePowerStateOnCreate(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	newVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
@@ -898,7 +898,7 @@ func (v validator) validatePowerStateOnCreate(
 }
 
 func (v validator) validatePowerStateOnUpdate(
-	ctx *context.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -951,7 +951,7 @@ func (v validator) validatePowerStateOnUpdate(
 	return allErrs
 }
 
-func (v validator) validateUpdatesWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateUpdatesWhenPoweredOn(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
@@ -964,7 +964,7 @@ func (v validator) validateUpdatesWhenPoweredOn(ctx *context.WebhookRequestConte
 	return allErrs
 }
 
-func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImmutableFields(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
@@ -978,7 +978,7 @@ func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, v
 	return allErrs
 }
 
-func (v validator) validateImmutableReserved(_ *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImmutableReserved(_ *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	var newResourcePolicyName, oldResourcePolicyName string
@@ -993,7 +993,7 @@ func (v validator) validateImmutableReserved(_ *context.WebhookRequestContext, v
 	return append(allErrs, validation.ValidateImmutableField(newResourcePolicyName, oldResourcePolicyName, p.Child("resourcePolicyName"))...)
 }
 
-func (v validator) validateImmutableNetwork(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImmutableNetwork(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	oldNetwork := oldVM.Spec.Network
@@ -1028,7 +1028,7 @@ func (v validator) validateImmutableNetwork(ctx *context.WebhookRequestContext, 
 	return allErrs
 }
 
-func (v validator) validateAvailabilityZone(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateAvailabilityZone(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	zoneLabelPath := field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey)
@@ -1060,7 +1060,7 @@ func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virtual
 	return vm, nil
 }
 
-func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequestContext) (bool, error) {
+func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookRequestContext) (bool, error) {
 	configMap := &corev1.ConfigMap{}
 	configMapKey := client.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
 	if err := v.client.Get(ctx, configMapKey, configMap); err != nil {
@@ -1070,7 +1070,7 @@ func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequ
 	return configMap.Data[isRestrictedNetworkKey] == "true", nil
 }
 
-func (v validator) validateAnnotation(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if ctx.IsPrivilegedAccount {
@@ -1106,7 +1106,7 @@ func (v validator) validateAnnotation(ctx *context.WebhookRequestContext, vm, ol
 	return allErrs
 }
 
-func (v validator) validateMinHardwareVersion(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateMinHardwareVersion(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 	fieldPath := field.NewPath("spec", "minHardwareVersion")
 
@@ -1134,7 +1134,7 @@ func (v validator) validateMinHardwareVersion(ctx *context.WebhookRequestContext
 	return allErrs
 }
 
-func (v validator) validateLabel(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateLabel(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if ctx.IsPrivilegedAccount {

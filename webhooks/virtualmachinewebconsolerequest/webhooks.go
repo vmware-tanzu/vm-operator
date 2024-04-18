@@ -6,12 +6,12 @@ package virtualmachinewebconsolerequest
 import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinewebconsolerequest/v1alpha2"
 )
 
-func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	if err := v1alpha2.AddToManager(ctx, mgr); err != nil {
 		return err
 	}

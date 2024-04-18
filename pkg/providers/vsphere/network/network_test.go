@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -22,7 +22,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -34,7 +34,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		testConfig builder.VCSimTestConfig
 		ctx        *builder.TestContextForVCSim
 
-		vmCtx          context.VirtualMachineContext
+		vmCtx          pkgctx.VirtualMachineContext
 		vm             *vmopv1.VirtualMachine
 		interfaceSpecs []vmopv1.VirtualMachineNetworkInterfaceSpec
 
@@ -59,7 +59,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
 
-		vmCtx = context.VirtualMachineContext{
+		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithName("network_test"),
 			VM:      vm,
@@ -108,7 +108,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(result.Backing).ToNot(BeNil())
 					backing, err := result.Backing.EthernetCardBackingInfo(ctx)
 					Expect(err).ToNot(HaveOccurred())
-					backingInfo, ok := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).To(BeTrue())
 					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
 				})
@@ -153,7 +153,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(result.Backing).ToNot(BeNil())
 						backing, err := result.Backing.EthernetCardBackingInfo(ctx)
 						Expect(err).ToNot(HaveOccurred())
-						backingInfo, ok := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+						backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 						Expect(ok).To(BeTrue())
 						Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
 					})

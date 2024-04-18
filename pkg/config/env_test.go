@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/env"
 )
 
@@ -25,20 +25,20 @@ var _ = Describe(
 
 		Describe("FromEnv", func() {
 			var (
-				config pkgconfig.Config
+				config pkgcfg.Config
 			)
 
 			JustBeforeEach(func() {
-				config = pkgconfig.FromEnv()
+				config = pkgcfg.FromEnv()
 			})
 
 			AfterEach(func() {
-				config = pkgconfig.Config{}
+				config = pkgcfg.Config{}
 			})
 
 			When("The environment is empty", func() {
 				It("Should return a default config", func() {
-					Expect(config).To(Equal(pkgconfig.Default()))
+					Expect(config).To(Equal(pkgcfg.Default()))
 				})
 			})
 			When("All environment variables are set", func() {
@@ -92,7 +92,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_TKG_Multiple_CL", "false")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
-					Expect(config).To(Equal(pkgconfig.Config{
+					Expect(config).To(Equal(pkgcfg.Config{
 						DefaultVMClassControllerName: "100",
 						MaxCreateVMsOnProvider:       101,
 						PrivilegedUsers:              "102",
@@ -101,7 +101,7 @@ var _ = Describe(
 						VSphereNetworking:            true,
 						ContentAPIWait:               105 * time.Second,
 						JSONExtraConfig:              "106",
-						InstanceStorage: pkgconfig.InstanceStorage{
+						InstanceStorage: pkgcfg.InstanceStorage{
 							PVPlacementFailedTTL: 107 * time.Hour,
 							JitterMaxFactor:      108.0,
 							SeedRequeueDuration:  109 * time.Hour,
@@ -122,8 +122,8 @@ var _ = Describe(
 						WebhookServiceNamespace:      "122",
 						WebhookSecretName:            "123",
 						WebhookSecretNamespace:       "124",
-						WebhookSecretVolumeMountPath: pkgconfig.Default().WebhookSecretVolumeMountPath,
-						Features: pkgconfig.FeatureStates{
+						WebhookSecretVolumeMountPath: pkgcfg.Default().WebhookSecretVolumeMountPath,
+						Features: pkgcfg.FeatureStates{
 							InstanceStorage:       false,
 							AutoVADPBackupRestore: true,
 						},

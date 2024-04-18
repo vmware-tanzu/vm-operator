@@ -4,7 +4,7 @@
 package vcenter
 
 import (
-	goctx "context"
+	"context"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
@@ -14,7 +14,7 @@ import (
 // ClusterMinCPUFreq returns the minimum frequency across all the hosts in the cluster. This is needed to
 // convert the CPU requirements specified in cores to MHz. vSphere core is assumed to be equivalent to the
 // value of min frequency. This function is adapted from wcp schedext.
-func ClusterMinCPUFreq(ctx goctx.Context, cluster *object.ClusterComputeResource) (uint64, error) {
+func ClusterMinCPUFreq(ctx context.Context, cluster *object.ClusterComputeResource) (uint64, error) {
 	var cr mo.ComputeResource
 	if err := cluster.Properties(ctx, cluster.Reference(), []string{"host"}, &cr); err != nil {
 		return 0, err

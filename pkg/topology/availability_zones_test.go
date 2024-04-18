@@ -15,7 +15,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -34,7 +34,7 @@ var _ = Describe("Availability Zones", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = pkgconfig.NewContextWithDefaultConfig()
+		ctx = pkgcfg.NewContextWithDefaultConfig()
 		client = builder.NewFakeClient()
 	})
 

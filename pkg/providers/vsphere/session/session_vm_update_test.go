@@ -12,13 +12,13 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
@@ -46,14 +46,14 @@ var _ = Describe("Update ConfigSpec", func() {
 
 	var (
 		ctx        context.Context
-		config     *vimTypes.VirtualMachineConfigInfo
-		configSpec *vimTypes.VirtualMachineConfigSpec
+		config     *vimtypes.VirtualMachineConfigInfo
+		configSpec *vimtypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
-		ctx = pkgconfig.NewContext()
-		config = &vimTypes.VirtualMachineConfigInfo{}
-		configSpec = &vimTypes.VirtualMachineConfigSpec{}
+		ctx = pkgcfg.NewContext()
+		config = &vimtypes.VirtualMachineConfigInfo{}
+		configSpec = &vimtypes.VirtualMachineConfigSpec{}
 	})
 
 	// Just a few examples for testing these things here. Need to think more about whether this
@@ -117,7 +117,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config matches class policy request", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
-				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+				config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 					Reservation: ptr.To(virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Cpu = r
@@ -131,7 +131,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config matches class policy limit", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
-				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+				config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 					Limit: ptr.To(virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Cpu = r
@@ -145,7 +145,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config matches is different from policy limit", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
-				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+				config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 					Limit: ptr.To(10 * virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Cpu = r
@@ -162,7 +162,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config matches is different from policy request", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
-				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+				config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 					Reservation: ptr.To(10 * virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Cpu = r
@@ -195,7 +195,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config matches class policy request", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
-				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+				config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 					Reservation: ptr.To(virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Memory = r
@@ -209,7 +209,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config matches class policy limit", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
-				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+				config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 					Limit: ptr.To(virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Memory = r
@@ -223,7 +223,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config matches is different from policy limit", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
-				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+				config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 					Limit: ptr.To(10 * virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Memory = r
@@ -240,7 +240,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config matches is different from policy request", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
-				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+				config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 					Reservation: ptr.To(10 * virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Memory = r
@@ -257,7 +257,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 	Context("ExtraConfig", func() {
 		var vmClassSpec *vmopv1.VirtualMachineClassSpec
-		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
+		var classConfigSpec *vimtypes.VirtualMachineConfigSpec
 		var vm *vmopv1.VirtualMachine
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
@@ -306,7 +306,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		Context("Updates configSpec.ExtraConfig", func() {
 			BeforeEach(func() {
-				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{
+				config.ExtraConfig = append(config.ExtraConfig, &vimtypes.OptionValue{
 					Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigReady})
 				globalExtraConfig["guestinfo.test"] = "test"
 				globalExtraConfig["global"] = "test"
@@ -356,7 +356,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				config.ExtraConfig = append(
 					config.ExtraConfig,
-					&vimTypes.OptionValue{
+					&vimtypes.OptionValue{
 						Key:   constants.MMPowerOffVMExtraConfigKey,
 						Value: "true",
 					})
@@ -386,7 +386,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		Context("ExtraConfig value already exists", func() {
 			BeforeEach(func() {
-				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{Key: "foo", Value: "bar"})
+				config.ExtraConfig = append(config.ExtraConfig, &vimtypes.OptionValue{Key: "foo", Value: "bar"})
 				globalExtraConfig["foo"] = "bar"
 			})
 
@@ -405,17 +405,17 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("when vGPU and DDPIO devices are present but classConfigSpec, vmClassSpec, and vm params are nil", func() {
 				BeforeEach(func() {
-					config.Hardware.Device = []vimTypes.BaseVirtualDevice{
-						&vimTypes.VirtualPCIPassthrough{
-							VirtualDevice: vimTypes.VirtualDevice{
-								Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+					config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+						&vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
 									Vgpu: "SampleProfile",
 								},
 							},
 						},
-						&vimTypes.VirtualPCIPassthrough{
-							VirtualDevice: vimTypes.VirtualDevice{
-								Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{},
+						&vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{},
 							},
 						},
 					}
@@ -491,19 +491,19 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		When("classConfigSpec extra config is not nil", func() {
 			BeforeEach(func() {
-				classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
-					ExtraConfig: []vimTypes.BaseOptionValue{
-						&vimTypes.OptionValue{
+				classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
 							Key:   dummyKey + "-1",
 							Value: dummyVal + "-1",
 						},
-						&vimTypes.OptionValue{
+						&vimtypes.OptionValue{
 							Key:   dummyKey + "-2",
 							Value: dummyVal + "-2",
 						},
 					},
 				}
-				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{Key: "hello", Value: "world"})
+				config.ExtraConfig = append(config.ExtraConfig, &vimtypes.OptionValue{Key: "hello", Value: "world"})
 			})
 			It("vm extra config overlaps with global extra config", func() {
 				globalExtraConfig["hello"] = "world"
@@ -520,23 +520,23 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("class config spec has vGPU and DDPIO devices", func() {
 				BeforeEach(func() {
-					classConfigSpec.DeviceChange = []vimTypes.BaseVirtualDeviceConfigSpec{
-						&vimTypes.VirtualDeviceConfigSpec{
-							Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-							Device: &vimTypes.VirtualPCIPassthrough{
-								VirtualDevice: vimTypes.VirtualDevice{
-									Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+					classConfigSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.VirtualPCIPassthrough{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
 										Vgpu: "SampleProfile2",
 									},
 								},
 							},
 						},
-						&vimTypes.VirtualDeviceConfigSpec{
-							Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-							Device: &vimTypes.VirtualPCIPassthrough{
-								VirtualDevice: vimTypes.VirtualDevice{
-									Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
-										AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.VirtualPCIPassthrough{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+										AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
 											{
 												VendorId: 52,
 												DeviceId: 53,
@@ -561,7 +561,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 	Context("ChangeBlockTracking", func() {
 		var vmSpec vmopv1.VirtualMachineSpec
-		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
+		var classConfigSpec *vimtypes.VirtualMachineConfigSpec
 
 		BeforeEach(func() {
 			config.ChangeTrackingEnabled = nil
@@ -627,7 +627,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 
 			It("classConfigSpec not nil and same as configInfo", func() {
-				classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+				classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
 					ChangeTrackingEnabled: ptr.To(false),
 				}
 
@@ -636,7 +636,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 
 			It("classConfigSpec not nil, different from configInfo, overrides vm spec cbt", func() {
-				classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+				classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
 					ChangeTrackingEnabled: ptr.To(true),
 				}
 
@@ -686,21 +686,21 @@ var _ = Describe("Update ConfigSpec", func() {
 	Context("Ethernet Card Changes", func() {
 		var expectedList object.VirtualDeviceList
 		var currentList object.VirtualDeviceList
-		var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
-		var dvpg1 *vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo
-		var dvpg2 *vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo
+		var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+		var dvpg1 *vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo
+		var dvpg2 *vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo
 		var err error
 
 		BeforeEach(func() {
-			dvpg1 = &vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
-				Port: vimTypes.DistributedVirtualSwitchPortConnection{
+			dvpg1 = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+				Port: vimtypes.DistributedVirtualSwitchPortConnection{
 					PortgroupKey: "key1",
 					SwitchUuid:   "uuid1",
 				},
 			}
 
-			dvpg2 = &vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
-				Port: vimTypes.DistributedVirtualSwitchPortConnection{
+			dvpg2 = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+				Port: vimtypes.DistributedVirtualSwitchPortConnection{
 					PortgroupKey: "key2",
 					SwitchUuid:   "uuid2",
 				},
@@ -724,9 +724,9 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		Context("No device change when nothing changes", func() {
-			var card1 vimTypes.BaseVirtualDevice
+			var card1 vimtypes.BaseVirtualDevice
 			var key1 int32 = 100
-			var card2 vimTypes.BaseVirtualDevice
+			var card2 vimtypes.BaseVirtualDevice
 			var key2 int32 = 200
 
 			BeforeEach(func() {
@@ -748,7 +748,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		Context("Add device", func() {
-			var card1 vimTypes.BaseVirtualDevice
+			var card1 vimtypes.BaseVirtualDevice
 			var key1 int32 = 100
 
 			BeforeEach(func() {
@@ -764,13 +764,13 @@ var _ = Describe("Update ConfigSpec", func() {
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 			})
 		})
 
 		Context("Add and remove device when backing change", func() {
-			var card1 vimTypes.BaseVirtualDevice
-			var card2 vimTypes.BaseVirtualDevice
+			var card1 vimtypes.BaseVirtualDevice
+			var card2 vimtypes.BaseVirtualDevice
 
 			BeforeEach(func() {
 				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
@@ -788,33 +788,33 @@ var _ = Describe("Update ConfigSpec", func() {
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
 
 				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 			})
 		})
 
 		Context("Add and remove device when MAC address is different", func() {
-			var card1 vimTypes.BaseVirtualDevice
+			var card1 vimtypes.BaseVirtualDevice
 			var key1 int32 = 100
-			var card2 vimTypes.BaseVirtualDevice
+			var card2 vimtypes.BaseVirtualDevice
 			var key2 int32 = 200
 
 			BeforeEach(func() {
 				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
 				Expect(err).ToNot(HaveOccurred())
 				card1.GetVirtualDevice().Key = key1
-				card1.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
-				card1.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = "mac1"
+				card1.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
+				card1.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = "mac1"
 				expectedList = append(expectedList, card1)
 
 				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
 				Expect(err).ToNot(HaveOccurred())
 				card2.GetVirtualDevice().Key = key2
-				card2.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
-				card2.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = "mac2"
+				card2.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
+				card2.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = "mac2"
 				currentList = append(currentList, card2)
 			})
 
@@ -824,18 +824,18 @@ var _ = Describe("Update ConfigSpec", func() {
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
 
 				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 			})
 		})
 
 		Context("Add and remove device when card type is different", func() {
-			var card1 vimTypes.BaseVirtualDevice
+			var card1 vimtypes.BaseVirtualDevice
 			var key1 int32 = 100
-			var card2 vimTypes.BaseVirtualDevice
+			var card2 vimtypes.BaseVirtualDevice
 			var key2 int32 = 200
 
 			BeforeEach(func() {
@@ -856,31 +856,31 @@ var _ = Describe("Update ConfigSpec", func() {
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
 
 				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 			})
 		})
 
 		Context("Add and remove device when ExternalID is different", func() {
-			var card1 vimTypes.BaseVirtualDevice
+			var card1 vimtypes.BaseVirtualDevice
 			var key1 int32 = 100
-			var card2 vimTypes.BaseVirtualDevice
+			var card2 vimtypes.BaseVirtualDevice
 			var key2 int32 = 200
 
 			BeforeEach(func() {
 				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
 				Expect(err).ToNot(HaveOccurred())
 				card1.GetVirtualDevice().Key = key1
-				card1.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId = "ext1"
+				card1.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId = "ext1"
 				expectedList = append(expectedList, card1)
 
 				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
 				Expect(err).ToNot(HaveOccurred())
 				card2.GetVirtualDevice().Key = key2
-				card2.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId = "ext2"
+				card2.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId = "ext2"
 				currentList = append(currentList, card2)
 			})
 
@@ -890,18 +890,18 @@ var _ = Describe("Update ConfigSpec", func() {
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
 
 				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 			})
 		})
 
 		Context("Keeps existing device with same backing", func() {
-			var card1 vimTypes.BaseVirtualDevice
+			var card1 vimtypes.BaseVirtualDevice
 			var key1 int32 = 100
-			var card2 vimTypes.BaseVirtualDevice
+			var card2 vimtypes.BaseVirtualDevice
 			var key2 int32 = 200
 
 			BeforeEach(func() {
@@ -947,7 +947,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				vSphereDevices := virtualmachine.CreatePCIDevicesFromVMClass(pciDevices)
 				Expect(vSphereDevices).To(HaveLen(1))
 				virtualDevice := vSphereDevices[0].GetVirtualDevice()
-				backing := virtualDevice.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
+				backing := virtualDevice.Backing.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
 				Expect(backing.Vgpu).To(Equal(pciDevices.VGPUDevices[0].ProfileName))
 			})
 		})
@@ -961,7 +961,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				vSphereDevices := virtualmachine.CreatePCIDevicesFromVMClass(pciDevices)
 				Expect(vSphereDevices).To(HaveLen(1))
 				virtualDevice := vSphereDevices[0].GetVirtualDevice()
-				backing := virtualDevice.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
+				backing := virtualDevice.Backing.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
 				Expect(backing.AllowedDevice[0].DeviceId).To(Equal(int32(pciDevices.DynamicDirectPathIODevices[0].DeviceID)))
 				Expect(backing.AllowedDevice[0].VendorId).To(Equal(int32(pciDevices.DynamicDirectPathIODevices[0].VendorID)))
 				Expect(backing.CustomLabel).To(Equal(pciDevices.DynamicDirectPathIODevices[0].CustomLabel))
@@ -970,14 +970,14 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		When("PCI devices from ConfigSpec are specified", func() {
 
-			var devIn []*vimTypes.VirtualPCIPassthrough
+			var devIn []*vimtypes.VirtualPCIPassthrough
 
 			Context("For ConfigSpec VGPU device", func() {
 				BeforeEach(func() {
-					devIn = []*vimTypes.VirtualPCIPassthrough{
+					devIn = []*vimtypes.VirtualPCIPassthrough{
 						{
-							VirtualDevice: vimTypes.VirtualDevice{
-								Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
 									Vgpu: "configspec-profile",
 								},
 							},
@@ -989,21 +989,21 @@ var _ = Describe("Update ConfigSpec", func() {
 					Expect(devList).To(HaveLen(1))
 
 					Expect(devList[0]).ToNot(BeNil())
-					Expect(devList[0]).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthrough{}))
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo).Vgpu).To(Equal("configspec-profile"))
+					Expect(devList[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthrough{}))
+					Expect(devList[0].(*vimtypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
+					Expect(devList[0].(*vimtypes.VirtualPCIPassthrough).Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthroughVmiopBackingInfo{}))
+					Expect(devList[0].(*vimtypes.VirtualPCIPassthrough).Backing.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo).Vgpu).To(Equal("configspec-profile"))
 				})
 			})
 
 			Context("For ConfigSpec DirectPath I/O device", func() {
 				BeforeEach(func() {
-					devIn = []*vimTypes.VirtualPCIPassthrough{
+					devIn = []*vimtypes.VirtualPCIPassthrough{
 						{
-							VirtualDevice: vimTypes.VirtualDevice{
-								Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
 									CustomLabel: "configspec-ddpio-label",
-									AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
+									AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
 										{
 											VendorId: 456,
 											DeviceId: 457,
@@ -1019,15 +1019,15 @@ var _ = Describe("Update ConfigSpec", func() {
 					Expect(devList).To(HaveLen(1))
 
 					Expect(devList[0]).ToNot(BeNil())
-					Expect(devList[0]).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthrough{}))
+					Expect(devList[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthrough{}))
 
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
-					backing := devList[0].(*vimTypes.VirtualPCIPassthrough).Backing
-					Expect(backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughDynamicBackingInfo{}))
+					Expect(devList[0].(*vimtypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
+					backing := devList[0].(*vimtypes.VirtualPCIPassthrough).Backing
+					Expect(backing).To(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{}))
 
-					Expect(backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).CustomLabel).To(Equal("configspec-ddpio-label"))
-					Expect(backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice[0].VendorId).To(BeEquivalentTo(456))
-					Expect(backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice[0].DeviceId).To(BeEquivalentTo(457))
+					Expect(backing.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo).CustomLabel).To(Equal("configspec-ddpio-label"))
+					Expect(backing.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice[0].VendorId).To(BeEquivalentTo(456))
+					Expect(backing.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice[0].DeviceId).To(BeEquivalentTo(457))
 				})
 			})
 		})
@@ -1036,43 +1036,43 @@ var _ = Describe("Update ConfigSpec", func() {
 	Context("PCI Device Changes", func() {
 		var (
 			currentList, expectedList object.VirtualDeviceList
-			deviceChanges             []vimTypes.BaseVirtualDeviceConfigSpec
+			deviceChanges             []vimtypes.BaseVirtualDeviceConfigSpec
 			err                       error
 
 			// Variables related to vGPU devices.
-			backingInfo1, backingInfo2 *vimTypes.VirtualPCIPassthroughVmiopBackingInfo
+			backingInfo1, backingInfo2 *vimtypes.VirtualPCIPassthroughVmiopBackingInfo
 			deviceKey1, deviceKey2     int32
-			vGPUDevice1, vGPUDevice2   vimTypes.BaseVirtualDevice
+			vGPUDevice1, vGPUDevice2   vimtypes.BaseVirtualDevice
 
 			// Variables related to dynamicDirectPathIO devices.
-			allowedDev1, allowedDev2                         vimTypes.VirtualPCIPassthroughAllowedDevice
-			backingInfo3, backingInfo4                       *vimTypes.VirtualPCIPassthroughDynamicBackingInfo
+			allowedDev1, allowedDev2                         vimtypes.VirtualPCIPassthroughAllowedDevice
+			backingInfo3, backingInfo4                       *vimtypes.VirtualPCIPassthroughDynamicBackingInfo
 			deviceKey3, deviceKey4                           int32
-			dynamicDirectPathIODev1, dynamicDirectPathIODev2 vimTypes.BaseVirtualDevice
+			dynamicDirectPathIODev1, dynamicDirectPathIODev2 vimtypes.BaseVirtualDevice
 		)
 
 		BeforeEach(func() {
-			backingInfo1 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop1"}
-			backingInfo2 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop2"}
+			backingInfo1 = &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop1"}
+			backingInfo2 = &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop2"}
 			deviceKey1 = int32(-200)
 			deviceKey2 = int32(-201)
 			vGPUDevice1 = virtualmachine.CreatePCIPassThroughDevice(deviceKey1, backingInfo1)
 			vGPUDevice2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey2, backingInfo2)
 
-			allowedDev1 = vimTypes.VirtualPCIPassthroughAllowedDevice{
+			allowedDev1 = vimtypes.VirtualPCIPassthroughAllowedDevice{
 				VendorId: 1000,
 				DeviceId: 100,
 			}
-			allowedDev2 = vimTypes.VirtualPCIPassthroughAllowedDevice{
+			allowedDev2 = vimtypes.VirtualPCIPassthroughAllowedDevice{
 				VendorId: 2000,
 				DeviceId: 200,
 			}
-			backingInfo3 = &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
-				AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev1},
+			backingInfo3 = &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+				AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{allowedDev1},
 				CustomLabel:   "sampleLabel3",
 			}
-			backingInfo4 = &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
-				AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev2},
+			backingInfo4 = &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+				AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{allowedDev2},
 				CustomLabel:   "sampleLabel4",
 			}
 			deviceKey3 = int32(-202)
@@ -1112,7 +1112,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				for idx, dev := range deviceChanges {
 					configSpec := dev.GetVirtualDeviceConfigSpec()
 					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[idx].GetVirtualDevice().Key))
-					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+					Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 				}
 			})
 		})
@@ -1136,21 +1136,21 @@ var _ = Describe("Update ConfigSpec", func() {
 				for idx, dev := range deviceChanges {
 					configSpec := dev.GetVirtualDeviceConfigSpec()
 					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[idx].GetVirtualDevice().Key))
-					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+					Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 				}
 			})
 		})
 
 		Context("When the expected and current lists have DDPIO devices with different custom labels", func() {
 			BeforeEach(func() {
-				expectedList = []vimTypes.BaseVirtualDevice{dynamicDirectPathIODev1}
+				expectedList = []vimtypes.BaseVirtualDevice{dynamicDirectPathIODev1}
 				// Creating a dynamicDirectPathIO device with same backing info except for the custom label.
-				backingInfoDiffCustomLabel := &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+				backingInfoDiffCustomLabel := &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
 					AllowedDevice: backingInfo3.AllowedDevice,
 					CustomLabel:   "DifferentLabel",
 				}
 				dynamicDirectPathIODev2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey4, backingInfoDiffCustomLabel)
-				currentList = []vimTypes.BaseVirtualDevice{dynamicDirectPathIODev2}
+				currentList = []vimtypes.BaseVirtualDevice{dynamicDirectPathIODev2}
 			})
 
 			It("should return add and remove device changes", func() {
@@ -1159,11 +1159,11 @@ var _ = Describe("Update ConfigSpec", func() {
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
 
 				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[0].GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 			})
 		})
 
@@ -1182,13 +1182,13 @@ var _ = Describe("Update ConfigSpec", func() {
 				for i := 0; i < 2; i++ {
 					configSpec := deviceChanges[i].GetVirtualDeviceConfigSpec()
 					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[i].GetVirtualDevice().Key))
-					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+					Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
 				}
 
 				for i := 2; i < 4; i++ {
 					configSpec := deviceChanges[i].GetVirtualDeviceConfigSpec()
 					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[i-2].GetVirtualDevice().Key))
-					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+					Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 				}
 			})
 		})

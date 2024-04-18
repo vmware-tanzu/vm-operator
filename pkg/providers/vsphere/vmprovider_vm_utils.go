@@ -4,19 +4,19 @@
 package vsphere
 
 import (
-	goctx "context"
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
@@ -45,7 +45,7 @@ func errToConditionReasonAndMessage(err error) (string, string) {
 }
 
 func GetVirtualMachineClass(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineClass, error) {
 
 	key := ctrlclient.ObjectKey{Name: vmCtx.VM.Spec.ClassName, Namespace: vmCtx.VM.Namespace}
@@ -62,7 +62,7 @@ func GetVirtualMachineClass(
 }
 
 func GetVirtualMachineImageSpecAndStatus(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (ctrlclient.Object, *vmopv1.VirtualMachineImageSpec, *vmopv1.VirtualMachineImageStatus, error) {
 
 	if vmCtx.VM.Spec.Image == nil {
@@ -171,7 +171,7 @@ func GetVirtualMachineImageSpecAndStatus(
 }
 
 func getSecretData(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	secretName, secretKey string,
 	configMapFallback, isCloudInitSecret bool) (map[string]string, error) {
@@ -236,7 +236,7 @@ func getSecretData(
 }
 
 func GetVirtualMachineBootstrap(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (vmlifecycle.BootstrapData, error) {
 
 	bootstrapSpec := vmCtx.VM.Spec.Bootstrap
@@ -352,7 +352,7 @@ func GetVirtualMachineBootstrap(
 }
 
 func GetVMSetResourcePolicy(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineSetResourcePolicy, error) {
 
 	var rpName string
@@ -389,7 +389,7 @@ func GetVMSetResourcePolicy(
 // AddInstanceStorageVolumes checks if VM class is configured with instance storage volumes and appends the
 // volumes to the VM's Spec if not already done. Return true if the VM had or now has instance storage volumes.
 func AddInstanceStorageVolumes(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vmClass *vmopv1.VirtualMachineClass) bool {
 
 	if instancestorage.IsPresent(vmCtx.VM) {
@@ -431,12 +431,12 @@ func AddInstanceStorageVolumes(
 }
 
 func GetVMClassConfigSpec(
-	ctx goctx.Context,
-	raw json.RawMessage) (types.VirtualMachineConfigSpec, error) {
+	ctx context.Context,
+	raw json.RawMessage) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	configSpec, err := util.UnmarshalConfigSpecFromJSON(raw)
 	if err != nil {
-		return types.VirtualMachineConfigSpec{}, err
+		return vimtypes.VirtualMachineConfigSpec{}, err
 	}
 	util.SanitizeVMClassConfigSpec(ctx, &configSpec)
 
@@ -446,7 +446,7 @@ func GetVMClassConfigSpec(
 // GetAttachedDiskUUIDToPVC returns a map of disk UUID to PVC object for all
 // attached disks by checking the VM's spec and status of volumes.
 func GetAttachedDiskUUIDToPVC(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (map[string]corev1.PersistentVolumeClaim, error) {
 
 	if len(vmCtx.VM.Spec.Volumes) == 0 {
@@ -491,7 +491,7 @@ func GetAttachedDiskUUIDToPVC(
 // GetAdditionalResourcesForBackup returns a list of Kubernetes client objects
 // that are relevant for VM backup (e.g. bootstrap referenced resources).
 func GetAdditionalResourcesForBackup(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) ([]ctrlclient.Object, error) {
 	var objects []ctrlclient.Object
 	// Get bootstrap related objects from CloudInit or Sysprep (mutually exclusive).
@@ -569,7 +569,7 @@ func GetAdditionalResourcesForBackup(
 }
 
 func getSecretOrConfigMapObject(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	resourceName string,
 	configMapFallback bool) (ctrlclient.Object, error) {

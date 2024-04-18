@@ -4,18 +4,18 @@
 package placement
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"math/rand"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
@@ -26,12 +26,12 @@ type Result struct {
 	ZonePlacement            bool
 	InstanceStoragePlacement bool
 	ZoneName                 string
-	HostMoRef                *types.ManagedObjectReference
-	PoolMoRef                types.ManagedObjectReference
+	HostMoRef                *vimtypes.ManagedObjectReference
+	PoolMoRef                vimtypes.ManagedObjectReference
 	// TODO: Datastore, whatever else as we need it.
 }
 
-func doesVMNeedPlacement(vmCtx context.VirtualMachineContext) (res Result, needZonePlacement, needInstanceStoragePlacement bool) {
+func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result, needZonePlacement, needInstanceStoragePlacement bool) {
 	res.ZonePlacement = true
 
 	if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
@@ -42,13 +42,13 @@ func doesVMNeedPlacement(vmCtx context.VirtualMachineContext) (res Result, needZ
 		needZonePlacement = true
 	}
 
-	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {
+	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
 		if instancestorage.IsPresent(vmCtx.VM) {
 			res.InstanceStoragePlacement = true
 
 			if hostMoID := vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey]; hostMoID != "" {
 				// Host has already been selected.
-				res.HostMoRef = &types.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
+				res.HostMoRef = &vimtypes.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
 			} else {
 				// VM has InstanceStorage volumes so we need to select a host.
 				needInstanceStoragePlacement = true
@@ -62,7 +62,7 @@ func doesVMNeedPlacement(vmCtx context.VirtualMachineContext) (res Result, needZ
 // lookupChildRPs lookups the child ResourcePool under each parent ResourcePool. A VM with a ResourcePolicy
 // may specify a child ResourcePool that the VM will be created under.
 func lookupChildRPs(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vim25.Client,
 	rpMoIDs []string,
 	zoneName, childRPName string) []string {
@@ -70,7 +70,7 @@ func lookupChildRPs(
 	childRPMoIDs := make([]string, 0, len(rpMoIDs))
 
 	for _, rpMoID := range rpMoIDs {
-		rp := object.NewResourcePool(vcClient, types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
+		rp := object.NewResourcePool(vcClient, vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
 
 		childRP, err := vcenter.GetChildResourcePool(vmCtx, rp, childRPName)
 		if err != nil {
@@ -87,7 +87,7 @@ func lookupChildRPs(
 
 // getPlacementCandidates determines the candidate resource pools for VM placement.
 func getPlacementCandidates(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
 	zonePlacement bool,
@@ -145,9 +145,9 @@ func getPlacementCandidates(
 }
 
 func rpMoIDToCluster(
-	ctx goctx.Context,
+	ctx context.Context,
 	vcClient *vim25.Client,
-	rpMoRef types.ManagedObjectReference) (*object.ClusterComputeResource, error) {
+	rpMoRef vimtypes.ManagedObjectReference) (*object.ClusterComputeResource, error) {
 
 	cluster, err := object.NewResourcePool(vcClient, rpMoRef).Owner(ctx)
 	if err != nil {
@@ -159,16 +159,16 @@ func rpMoIDToCluster(
 
 // getPlacementRecommendations calls DRS PlaceVM to determine clusters suitable for placement.
 func getPlacementRecommendations(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vim25.Client,
 	candidates map[string][]string,
-	configSpec types.VirtualMachineConfigSpec) map[string][]Recommendation {
+	configSpec vimtypes.VirtualMachineConfigSpec) map[string][]Recommendation {
 
 	recommendations := map[string][]Recommendation{}
 
 	for zoneName, rpMoIDs := range candidates {
 		for _, rpMoID := range rpMoIDs {
-			rpMoRef := types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID}
+			rpMoRef := vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID}
 
 			cluster, err := rpMoIDToCluster(vmCtx, vcClient, rpMoRef)
 			if err != nil {
@@ -208,18 +208,18 @@ func getPlacementRecommendations(
 
 // getZonalPlacementRecommendations calls DRS PlaceVmsXCluster to determine clusters suitable for placement.
 func getZonalPlacementRecommendations(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vim25.Client,
 	candidates map[string][]string,
-	configSpec types.VirtualMachineConfigSpec,
+	configSpec vimtypes.VirtualMachineConfigSpec,
 	needsHost bool) map[string][]Recommendation {
 
-	rpMOToZone := map[types.ManagedObjectReference]string{}
-	var candidateRPMoRefs []types.ManagedObjectReference
+	rpMOToZone := map[vimtypes.ManagedObjectReference]string{}
+	var candidateRPMoRefs []vimtypes.ManagedObjectReference
 
 	for zoneName, rpMoIDs := range candidates {
 		for _, rpMoID := range rpMoIDs {
-			rpMoRef := types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID}
+			rpMoRef := vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID}
 			candidateRPMoRefs = append(candidateRPMoRefs, rpMoRef)
 			rpMOToZone[rpMoRef] = zoneName
 		}
@@ -283,10 +283,10 @@ func MakePlacementDecision(recommendations map[string][]Recommendation) (string,
 // Placement determines if the VM needs placement, and if so, determines where to place the VM
 // and updates the Labels and Annotations with the placement decision.
 func Placement(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
-	configSpec types.VirtualMachineConfigSpec,
+	configSpec vimtypes.VirtualMachineConfigSpec,
 	childRPName string) (*Result, error) {
 
 	existingRes, zonePlacement, instanceStoragePlacement := doesVMNeedPlacement(vmCtx)

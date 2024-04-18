@@ -8,19 +8,19 @@ import (
 
 	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vapi/rest"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 type Provider interface {
-	CreateModule(ctx context.Context, clusterRef types.ManagedObjectReference) (string, error)
+	CreateModule(ctx context.Context, clusterRef vimtypes.ManagedObjectReference) (string, error)
 	DeleteModule(ctx context.Context, moduleID string) error
-	DoesModuleExist(ctx context.Context, moduleID string, cluster types.ManagedObjectReference) (bool, error)
+	DoesModuleExist(ctx context.Context, moduleID string, cluster vimtypes.ManagedObjectReference) (bool, error)
 
-	IsMoRefModuleMember(ctx context.Context, moduleID string, moRef types.ManagedObjectReference) (bool, error)
-	AddMoRefToModule(ctx context.Context, moduleID string, moRef types.ManagedObjectReference) error
-	RemoveMoRefFromModule(ctx context.Context, moduleID string, moRef types.ManagedObjectReference) error
+	IsMoRefModuleMember(ctx context.Context, moduleID string, moRef vimtypes.ManagedObjectReference) (bool, error)
+	AddMoRefToModule(ctx context.Context, moduleID string, moRef vimtypes.ManagedObjectReference) error
+	RemoveMoRefFromModule(ctx context.Context, moduleID string, moRef vimtypes.ManagedObjectReference) error
 }
 
 type provider struct {
@@ -33,7 +33,7 @@ func NewProvider(restClient *rest.Client) Provider {
 	}
 }
 
-func (cm *provider) CreateModule(ctx context.Context, clusterRef types.ManagedObjectReference) (string, error) {
+func (cm *provider) CreateModule(ctx context.Context, clusterRef vimtypes.ManagedObjectReference) (string, error) {
 	log.Info("Creating cluster module", "cluster", clusterRef)
 
 	moduleID, err := cm.manager.CreateModule(ctx, clusterRef)
@@ -57,7 +57,7 @@ func (cm *provider) DeleteModule(ctx context.Context, moduleID string) error {
 	return nil
 }
 
-func (cm *provider) DoesModuleExist(ctx context.Context, moduleID string, clusterRef types.ManagedObjectReference) (bool, error) {
+func (cm *provider) DoesModuleExist(ctx context.Context, moduleID string, clusterRef vimtypes.ManagedObjectReference) (bool, error) {
 	log.V(4).Info("Checking if cluster module exists", "moduleID", moduleID, "clusterRef", clusterRef)
 
 	if moduleID == "" {
@@ -80,7 +80,7 @@ func (cm *provider) DoesModuleExist(ctx context.Context, moduleID string, cluste
 	return false, nil
 }
 
-func (cm *provider) IsMoRefModuleMember(ctx context.Context, moduleID string, moRef types.ManagedObjectReference) (bool, error) {
+func (cm *provider) IsMoRefModuleMember(ctx context.Context, moduleID string, moRef vimtypes.ManagedObjectReference) (bool, error) {
 	moduleMembers, err := cm.manager.ListModuleMembers(ctx, moduleID)
 	if err != nil {
 		return false, err
@@ -95,7 +95,7 @@ func (cm *provider) IsMoRefModuleMember(ctx context.Context, moduleID string, mo
 	return false, nil
 }
 
-func (cm *provider) AddMoRefToModule(ctx context.Context, moduleID string, moRef types.ManagedObjectReference) error {
+func (cm *provider) AddMoRefToModule(ctx context.Context, moduleID string, moRef vimtypes.ManagedObjectReference) error {
 	isMember, err := cm.IsMoRefModuleMember(ctx, moduleID, moRef)
 	if err != nil {
 		return err
@@ -114,7 +114,7 @@ func (cm *provider) AddMoRefToModule(ctx context.Context, moduleID string, moRef
 	return nil
 }
 
-func (cm *provider) RemoveMoRefFromModule(ctx context.Context, moduleID string, moRef types.ManagedObjectReference) error {
+func (cm *provider) RemoveMoRefFromModule(ctx context.Context, moduleID string, moRef vimtypes.ManagedObjectReference) error {
 	log.Info("Removing moRef from cluster module", "moduleID", moduleID, "moRef", moRef)
 
 	_, err := cm.manager.RemoveModuleMembers(ctx, moduleID, moRef)

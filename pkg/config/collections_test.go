@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 var _ = Describe("Collections", func() {
@@ -18,7 +18,7 @@ var _ = Describe("Collections", func() {
 			out string
 		)
 		JustBeforeEach(func() {
-			out = pkgconfig.SliceToString(in)
+			out = pkgcfg.SliceToString(in)
 		})
 		AfterEach(func() {
 			in = nil
@@ -84,7 +84,7 @@ var _ = Describe("Collections", func() {
 			out []string
 		)
 		JustBeforeEach(func() {
-			out = pkgconfig.StringToSlice(in)
+			out = pkgcfg.StringToSlice(in)
 		})
 		AfterEach(func() {
 			in = ""
@@ -157,7 +157,7 @@ var _ = Describe("Collections", func() {
 			out map[string]struct{}
 		)
 		JustBeforeEach(func() {
-			out = pkgconfig.StringToSet(in)
+			out = pkgcfg.StringToSet(in)
 		})
 		AfterEach(func() {
 			in = ""

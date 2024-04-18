@@ -17,18 +17,18 @@ import (
 	klog "k8s.io/klog/v2"
 	"k8s.io/klog/v2/textlogger"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/controllers"
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/manager"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/webhooks"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	ctrlruntime "sigs.k8s.io/controller-runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	ctrlsig "sigs.k8s.io/controller-runtime/pkg/manager/signals"
@@ -43,7 +43,7 @@ const (
 	serverCertName = "tls.crt"
 )
 
-var defaultConfig = config.FromEnv()
+var defaultConfig = pkgcfg.FromEnv()
 
 func main() {
 	klog.InitFlags(nil)
@@ -69,7 +69,7 @@ func main() {
 		"The default number of maximum burst requests per second to configure the k8s client rate limiter to allow.",
 	)
 
-	var managerOpts manager.Options
+	var managerOpts pkgmgr.Options
 
 	flag.StringVar(
 		&managerOpts.MetricsAddr,
@@ -167,7 +167,7 @@ func main() {
 	}
 
 	if *rateLimiterQPS != 0 || *rateLimiterBurst != 0 {
-		cfg := ctrlruntime.GetConfigOrDie()
+		cfg := ctrl.GetConfigOrDie()
 
 		qps, burst := *rateLimiterQPS, *rateLimiterBurst
 		if qps != 0 {
@@ -195,7 +195,7 @@ func main() {
 	waitForWebhookCertificates(setupLog, managerOpts)
 
 	// Create a function that adds all of the controllers and webhooks to the manager.
-	addToManager := func(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+	addToManager := func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 		if err := controllers.AddToManager(ctx, mgr); err != nil {
 			return err
 		}
@@ -210,7 +210,7 @@ func main() {
 	setupLog.Info("creating controller manager")
 	managerOpts.InitializeProviders = pkgmgrinit.InitializeProviders
 	managerOpts.AddToManager = addToManager
-	mgr, err := manager.New(config.WithConfig(defaultConfig), managerOpts)
+	mgr, err := pkgmgr.New(pkgcfg.WithConfig(defaultConfig), managerOpts)
 	if err != nil {
 		setupLog.Error(err, "problem creating controller manager")
 		os.Exit(1)
@@ -240,48 +240,48 @@ func main() {
 // instead of our separate webhooks.
 //
 //nolint:revive
-func addConversionWebhooksToManager(_ *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	if err := (&v1alpha1.VirtualMachine{}).SetupWebhookWithManager(mgr); err != nil {
+func addConversionWebhooksToManager(_ *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+	if err := (&vmopv1a1.VirtualMachine{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha1.VirtualMachineClass{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a1.VirtualMachineClass{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha1.VirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a1.VirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha1.ClusterVirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a1.ClusterVirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha1.VirtualMachinePublishRequest{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a1.VirtualMachinePublishRequest{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha1.VirtualMachineService{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a1.VirtualMachineService{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha1.VirtualMachineSetResourcePolicy{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a1.VirtualMachineSetResourcePolicy{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
 
-	if err := (&v1alpha2.VirtualMachine{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a2.VirtualMachine{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha2.VirtualMachineClass{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a2.VirtualMachineClass{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha2.VirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a2.VirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha2.ClusterVirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a2.ClusterVirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha2.VirtualMachinePublishRequest{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a2.VirtualMachinePublishRequest{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha2.VirtualMachineService{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a2.VirtualMachineService{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&v1alpha2.VirtualMachineSetResourcePolicy{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&vmopv1a2.VirtualMachineSetResourcePolicy{}).SetupWebhookWithManager(mgr); err != nil {
 		return err
 	}
 
@@ -303,7 +303,7 @@ func configureWebhookTLS(opts *webhook.Options) {
 	}
 }
 
-func waitForWebhookCertificates(setupLog logr.Logger, managerOpts manager.Options) {
+func waitForWebhookCertificates(setupLog logr.Logger, managerOpts pkgmgr.Options) {
 	waitOnCertsStartTime := time.Now()
 	for {
 		select {

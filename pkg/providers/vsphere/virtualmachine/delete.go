@@ -7,14 +7,14 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
 
 func DeleteVirtualMachine(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine) error {
 
 	if _, err := vmutil.SetAndWaitOnPowerState(
@@ -22,7 +22,7 @@ func DeleteVirtualMachine(
 		vcVM.Client(),
 		vmutil.ManagedObjectFromObject(vcVM),
 		false,
-		types.VirtualMachinePowerStatePoweredOff,
+		vimtypes.VirtualMachinePowerStatePoweredOff,
 		vmutil.ParsePowerOpMode(string(vmCtx.VM.Spec.PowerOffMode))); err != nil {
 
 		return err

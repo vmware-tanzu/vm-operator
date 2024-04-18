@@ -4,18 +4,18 @@
 package vmlifecycle_test
 
 import (
-	goctx "context"
+	"context"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 )
@@ -27,11 +27,11 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 
 	var (
 		bsArgs     vmlifecycle.BootstrapArgs
-		configInfo *types.VirtualMachineConfigInfo
+		configInfo *vimtypes.VirtualMachineConfigInfo
 	)
 
 	BeforeEach(func() {
-		configInfo = &types.VirtualMachineConfigInfo{}
+		configInfo = &vimtypes.VirtualMachineConfigInfo{}
 		bsArgs.Data = map[string]string{}
 	})
 
@@ -42,11 +42,11 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 	Context("BootStrapLinuxPrep", func() {
 
 		var (
-			configSpec *types.VirtualMachineConfigSpec
-			custSpec   *types.CustomizationSpec
+			configSpec *vimtypes.VirtualMachineConfigSpec
+			custSpec   *vimtypes.CustomizationSpec
 			err        error
 
-			vmCtx          context.VirtualMachineContext
+			vmCtx          pkgctx.VirtualMachineContext
 			vm             *vmopv1.VirtualMachine
 			linuxPrepSpec  *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
 			vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec
@@ -78,8 +78,8 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 				},
 			}
 
-			vmCtx = context.VirtualMachineContext{
-				Context: goctx.Background(),
+			vmCtx = pkgctx.VirtualMachineContext{
+				Context: context.Background(),
 				Logger:  suite.GetLogger(),
 				VM:      vm,
 			}
@@ -103,8 +103,8 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			Expect(custSpec.GlobalIPSettings.DnsServerList).To(Equal(bsArgs.DNSServers))
 			Expect(custSpec.GlobalIPSettings.DnsSuffixList).To(Equal(bsArgs.SearchSuffixes))
 
-			linuxSpec := custSpec.Identity.(*types.CustomizationLinuxPrep)
-			hostName := linuxSpec.HostName.(*types.CustomizationFixedName).Name
+			linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+			hostName := linuxSpec.HostName.(*vimtypes.CustomizationFixedName).Name
 			Expect(hostName).To(Equal(bsArgs.Hostname))
 			Expect(linuxSpec.TimeZone).To(Equal(linuxPrepSpec.TimeZone))
 			Expect(linuxSpec.HwClockUTC).ToNot(BeNil())
@@ -118,8 +118,8 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			const key, value = "fooKey", "fooValue"
 
 			BeforeEach(func() {
-				configInfo.VAppConfig = &types.VmConfigInfo{
-					Property: []types.VAppPropertyInfo{
+				configInfo.VAppConfig = &vimtypes.VmConfigInfo{
+					Property: []vimtypes.VAppPropertyInfo{
 						{
 							Id:               key,
 							Value:            "should-change",

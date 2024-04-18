@@ -4,31 +4,31 @@
 package v1alpha2
 
 import (
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 // ConvertTo converts this VirtualMachineWebConsoleRequest to the Hub version.
-func (src *VirtualMachineWebConsoleRequest) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachineWebConsoleRequest)
+func (src *VirtualMachineWebConsoleRequest) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineWebConsoleRequest)
 	return Convert_v1alpha2_VirtualMachineWebConsoleRequest_To_v1alpha3_VirtualMachineWebConsoleRequest(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineWebConsoleRequest.
-func (dst *VirtualMachineWebConsoleRequest) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachineWebConsoleRequest)
+func (dst *VirtualMachineWebConsoleRequest) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineWebConsoleRequest)
 	return Convert_v1alpha3_VirtualMachineWebConsoleRequest_To_v1alpha2_VirtualMachineWebConsoleRequest(src, dst, nil)
 }
 
 // ConvertTo converts this VirtualMachineWebConsoleRequestList to the Hub version.
-func (src *VirtualMachineWebConsoleRequestList) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachineWebConsoleRequestList)
+func (src *VirtualMachineWebConsoleRequestList) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineWebConsoleRequestList)
 	return Convert_v1alpha2_VirtualMachineWebConsoleRequestList_To_v1alpha3_VirtualMachineWebConsoleRequestList(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineWebConsoleRequestList.
-func (dst *VirtualMachineWebConsoleRequestList) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachineWebConsoleRequestList)
+func (dst *VirtualMachineWebConsoleRequestList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineWebConsoleRequestList)
 	return Convert_v1alpha3_VirtualMachineWebConsoleRequestList_To_v1alpha2_VirtualMachineWebConsoleRequestList(src, dst, nil)
 }

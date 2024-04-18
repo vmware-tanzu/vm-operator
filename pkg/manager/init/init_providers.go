@@ -8,13 +8,13 @@ import (
 
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vsphere2 "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 func InitializeProviders(
-	ctx *context.ControllerManagerContext,
+	ctx *pkgctx.ControllerManagerContext,
 	mgr ctrlmgr.Manager) error {
 
 	vmProviderName := fmt.Sprintf("%s/%s/vmProvider", ctx.Namespace, ctx.Name)

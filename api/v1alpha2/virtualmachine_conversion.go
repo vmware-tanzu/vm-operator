@@ -5,15 +5,15 @@ package v1alpha2
 
 import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
-	"sigs.k8s.io/controller-runtime/pkg/conversion"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
-	in *v1alpha3.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
+	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
 
 	if err := autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in, out, s); err != nil {
 		return err
@@ -29,13 +29,13 @@ func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 }
 
 func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
-	in *VirtualMachineStatus, out *v1alpha3.VirtualMachineStatus, s apiconversion.Scope) error {
+	in *VirtualMachineStatus, out *vmopv1.VirtualMachineStatus, s apiconversion.Scope) error {
 
 	return autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(in, out, s)
 }
 
 func Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(
-	in *v1alpha3.VirtualMachine, out *VirtualMachine, s apiconversion.Scope) error {
+	in *vmopv1.VirtualMachine, out *VirtualMachine, s apiconversion.Scope) error {
 
 	if err := autoConvert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(in, out, s); err != nil {
 		return err
@@ -43,8 +43,8 @@ func Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(
 
 	// Copy in.spec.image into out.status.image on down-convert.
 	if i := in.Spec.Image; i != nil {
-		out.Status.Image = &common.LocalObjectRef{
-			APIVersion: v1alpha3.SchemeGroupVersion.String(),
+		out.Status.Image = &vmopv1a2common.LocalObjectRef{
+			APIVersion: vmopv1.SchemeGroupVersion.String(),
 			Kind:       i.Kind,
 			Name:       i.Name,
 		}
@@ -53,12 +53,12 @@ func Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(
 	return nil
 }
 
-func restore_v1alpha3_VirtualMachineImage(dst, src *v1alpha3.VirtualMachine) {
+func restore_v1alpha3_VirtualMachineImage(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Image = src.Spec.Image
 	dst.Spec.ImageName = src.Spec.ImageName
 }
 
-func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachine, out *v1alpha3.VirtualMachine, s apiconversion.Scope) error {
+func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachine, out *vmopv1.VirtualMachine, s apiconversion.Scope) error {
 	if err := autoConvert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in, out, s); err != nil {
 		return err
 	}
@@ -77,12 +77,12 @@ func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 	// for spec.image.name is non-empty whenever possible.
 	if in.Generation > 0 {
 		if i := in.Status.Image; i != nil && i.Kind != "" && i.Name != "" {
-			out.Spec.Image = &v1alpha3.VirtualMachineImageRef{
+			out.Spec.Image = &vmopv1.VirtualMachineImageRef{
 				Kind: i.Kind,
 				Name: i.Name,
 			}
 		} else if in.Spec.ImageName != "" {
-			out.Spec.Image = &v1alpha3.VirtualMachineImageRef{
+			out.Spec.Image = &vmopv1.VirtualMachineImageRef{
 				Name: in.Spec.ImageName,
 			}
 		}
@@ -92,14 +92,14 @@ func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 }
 
 // ConvertTo converts this VirtualMachine to the Hub version.
-func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachine)
+func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachine)
 	if err := Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(src, dst, nil); err != nil {
 		return err
 	}
 
 	// Manually restore data.
-	restored := &v1alpha3.VirtualMachine{}
+	restored := &vmopv1.VirtualMachine{}
 	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
 		return err
 	}
@@ -116,8 +116,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 }
 
 // ConvertFrom converts the hub version to this VirtualMachine.
-func (dst *VirtualMachine) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachine)
+func (dst *VirtualMachine) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachine)
 	if err := Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(src, dst, nil); err != nil {
 		return err
 	}
@@ -127,13 +127,13 @@ func (dst *VirtualMachine) ConvertFrom(srcRaw conversion.Hub) error {
 }
 
 // ConvertTo converts this VirtualMachineList to the Hub version.
-func (src *VirtualMachineList) ConvertTo(dstRaw conversion.Hub) error {
-	dst := dstRaw.(*v1alpha3.VirtualMachineList)
+func (src *VirtualMachineList) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineList)
 	return Convert_v1alpha2_VirtualMachineList_To_v1alpha3_VirtualMachineList(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineList.
-func (dst *VirtualMachineList) ConvertFrom(srcRaw conversion.Hub) error {
-	src := srcRaw.(*v1alpha3.VirtualMachineList)
+func (dst *VirtualMachineList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineList)
 	return Convert_v1alpha3_VirtualMachineList_To_v1alpha2_VirtualMachineList(src, dst, nil)
 }

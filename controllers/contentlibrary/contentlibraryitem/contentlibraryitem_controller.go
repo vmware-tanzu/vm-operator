@@ -4,7 +4,7 @@
 package contentlibraryitem
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -24,8 +24,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -33,7 +33,7 @@ import (
 )
 
 // AddToManager adds this package's controller to the provided manager.
-func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		clItemType     = &imgregv1a1.ContentLibraryItem{}
 		clItemTypeName = reflect.TypeOf(clItemType).Elem().Name()
@@ -59,7 +59,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
-	ctx goctx.Context,
+	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
@@ -79,7 +79,7 @@ func NewReconciler(
 // by creating/updating the corresponding VM-Service's VirtualMachineImage resource.
 type Reconciler struct {
 	client.Client
-	Context    goctx.Context
+	Context    context.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
@@ -91,8 +91,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;update;patch
 
-func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	ctx = pkgconfig.JoinContext(ctx, r.Context)
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	logger := r.Logger.WithValues("clItemName", req.Name, "namespace", req.Namespace)
 	logger.Info("Reconciling ContentLibraryItem")
@@ -109,7 +109,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	}
 	logger = logger.WithValues("vmiName", vmiName)
 
-	clItemCtx := &context.ContentLibraryItemContext{
+	clItemCtx := &pkgctx.ContentLibraryItemContext{
 		Context:      ctx,
 		Logger:       logger,
 		CLItem:       clItem,
@@ -127,7 +127,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 }
 
 // ReconcileDelete reconciles a deletion for a ContentLibraryItem resource.
-func (r *Reconciler) ReconcileDelete(ctx *context.ContentLibraryItemContext) error {
+func (r *Reconciler) ReconcileDelete(ctx *pkgctx.ContentLibraryItemContext) error {
 	if controllerutil.ContainsFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer) {
 		r.Metrics.DeleteMetrics(ctx.Logger, ctx.ImageObjName, ctx.CLItem.Namespace)
 		controllerutil.RemoveFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer)
@@ -139,7 +139,7 @@ func (r *Reconciler) ReconcileDelete(ctx *context.ContentLibraryItemContext) err
 
 // ReconcileNormal reconciles a ContentLibraryItem resource by creating or
 // updating the corresponding VirtualMachineImage resource.
-func (r *Reconciler) ReconcileNormal(ctx *context.ContentLibraryItemContext) error {
+func (r *Reconciler) ReconcileNormal(ctx *pkgctx.ContentLibraryItemContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer) {
 		// The finalizer must be present before proceeding in order to ensure ReconcileDelete() will be called.
 		// Return immediately after here to update the object and then we'll proceed on the next reconciliation.
@@ -238,7 +238,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.ContentLibraryItemContext) err
 
 // setUpVMIFromCLItem sets up the VirtualMachineImage fields that
 // are retrievable from the given ContentLibraryItem resource.
-func (r *Reconciler) setUpVMIFromCLItem(ctx *context.ContentLibraryItemContext) error {
+func (r *Reconciler) setUpVMIFromCLItem(ctx *pkgctx.ContentLibraryItemContext) error {
 	clItem := ctx.CLItem
 	vmi := ctx.VMI
 	if err := controllerutil.SetControllerReference(clItem, vmi, r.Scheme()); err != nil {
@@ -258,7 +258,7 @@ func (r *Reconciler) setUpVMIFromCLItem(ctx *context.ContentLibraryItemContext) 
 
 // syncImageContent syncs the VirtualMachineImage content from the provider.
 // It skips syncing if the image content is already up-to-date.
-func (r *Reconciler) syncImageContent(ctx *context.ContentLibraryItemContext) error {
+func (r *Reconciler) syncImageContent(ctx *pkgctx.ContentLibraryItemContext) error {
 	clItem := ctx.CLItem
 	vmi := ctx.VMI
 	latestVersion := clItem.Status.ContentVersion

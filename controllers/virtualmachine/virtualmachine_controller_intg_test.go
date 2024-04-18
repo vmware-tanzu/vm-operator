@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -106,7 +106,7 @@ func intgTestsReconcile() {
 						_ = ctx.Client.Update(ctx, vm)
 					}
 				} else {
-					Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				}
 			})
 		})

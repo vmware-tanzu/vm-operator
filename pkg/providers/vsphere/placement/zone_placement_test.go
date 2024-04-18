@@ -7,11 +7,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -25,8 +25,8 @@ var _ = Describe("MakePlacementDecision", func() {
 			recommendations := map[string][]placement.Recommendation{
 				"zone1": {
 					placement.Recommendation{
-						PoolMoRef: types.ManagedObjectReference{Type: "a", Value: "abc"},
-						HostMoRef: &types.ManagedObjectReference{Type: "b", Value: "xyz"},
+						PoolMoRef: vimtypes.ManagedObjectReference{Type: "a", Value: "abc"},
+						HostMoRef: &vimtypes.ManagedObjectReference{Type: "b", Value: "xyz"},
 					},
 				},
 			}
@@ -49,8 +49,8 @@ var _ = Describe("MakePlacementDecision", func() {
 				for _, host := range hosts {
 					recommendations[zoneName] = append(recommendations[zoneName],
 						placement.Recommendation{
-							PoolMoRef: types.ManagedObjectReference{Type: "a", Value: "abc"},
-							HostMoRef: &types.ManagedObjectReference{Type: "b", Value: host},
+							PoolMoRef: vimtypes.ManagedObjectReference{Type: "a", Value: "abc"},
+							HostMoRef: &vimtypes.ManagedObjectReference{Type: "b", Value: host},
 						})
 				}
 			}
@@ -71,8 +71,8 @@ func vcSimPlacement() {
 		testConfig  builder.VCSimTestConfig
 
 		vm         *vmopv1.VirtualMachine
-		vmCtx      context.VirtualMachineContext
-		configSpec types.VirtualMachineConfigSpec
+		vmCtx      pkgctx.VirtualMachineContext
+		configSpec vimtypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
@@ -82,7 +82,7 @@ func vcSimPlacement() {
 		vm.Name = "placement-test"
 
 		// Other than the name ConfigSpec contents don't matter for vcsim.
-		configSpec = types.VirtualMachineConfigSpec{
+		configSpec = vimtypes.VirtualMachineConfigSpec{
 			Name: vm.Name,
 		}
 	})
@@ -93,7 +93,7 @@ func vcSimPlacement() {
 
 		vm.Namespace = nsInfo.Namespace
 
-		vmCtx = context.VirtualMachineContext{
+		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/go-logr/logr"
@@ -21,7 +21,7 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -60,7 +60,7 @@ func IsSupportedDeployType(t string) bool {
 
 func NewProvider(ctx context.Context, restClient *rest.Client) Provider {
 	var waitSeconds int
-	if w := pkgconfig.FromContext(ctx).ContentAPIWait; w > 0 {
+	if w := pkgcfg.FromContext(ctx).ContentAPIWait; w > 0 {
 		waitSeconds = int(w.Seconds())
 	} else {
 		waitSeconds = DefaultContentLibAPIWaitSecs
@@ -113,7 +113,7 @@ func (cs *provider) GetLibraryItems(ctx context.Context, libraryUUID string) ([]
 		items = append(items, *item)
 	}
 
-	return items, k8serrors.NewAggregate(resErrs)
+	return items, apierrorsutil.NewAggregate(resErrs)
 }
 
 func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName string,

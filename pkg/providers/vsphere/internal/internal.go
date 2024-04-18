@@ -10,15 +10,15 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
 type InvokeFSR_TaskRequest struct {
-	This types.ManagedObjectReference `xml:"_this"`
+	This vimtypes.ManagedObjectReference `xml:"_this"`
 }
 
 type InvokeFSR_TaskResponse struct {
-	Returnval types.ManagedObjectReference `xml:"returnval"`
+	Returnval vimtypes.ManagedObjectReference `xml:"returnval"`
 }
 
 type InvokeFSR_TaskBody struct {
@@ -40,7 +40,7 @@ func InvokeFSR_Task(ctx context.Context, r soap.RoundTripper, req *InvokeFSR_Tas
 	return resBody.Res, nil
 }
 
-func VirtualMachineFSR(ctx context.Context, vm types.ManagedObjectReference, client *vim25.Client) (*object.Task, error) {
+func VirtualMachineFSR(ctx context.Context, vm vimtypes.ManagedObjectReference, client *vim25.Client) (*object.Task, error) {
 	req := InvokeFSR_TaskRequest{
 		This: vm,
 	}
@@ -52,7 +52,7 @@ func VirtualMachineFSR(ctx context.Context, vm types.ManagedObjectReference, cli
 }
 
 type CustomizationCloudinitPrep struct {
-	types.CustomizationIdentitySettings
+	vimtypes.CustomizationIdentitySettings
 
 	Metadata string `xml:"metadata"`
 	Userdata string `xml:"userdata,omitempty"`

@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 )
 
 const (
@@ -455,13 +455,13 @@ type VirtualMachineStatus struct {
 	// this VM.
 	//
 	// +optional
-	Image *common.LocalObjectRef `json:"image,omitempty"`
+	Image *vmopv1a2common.LocalObjectRef `json:"image,omitempty"`
 
 	// Class is a reference to the VirtualMachineClass resource used to deploy
 	// this VM.
 	//
 	// +optional
-	Class *common.LocalObjectRef `json:"class,omitempty"`
+	Class *vmopv1a2common.LocalObjectRef `json:"class,omitempty"`
 
 	// Host describes the hostname or IP address of the infrastructure host
 	// where the VM is executed.

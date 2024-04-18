@@ -8,14 +8,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/mutation"
 )
 
 // suite is used for unit and integration testing this webhook.
 var suite = builder.NewTestSuiteForMutatingWebhookWithContext(
-	pkgconfig.NewContext(),
+	pkgcfg.NewContext(),
 	mutation.AddToManager,
 	mutation.NewMutator,
 	"default.mutating.virtualmachineclass.v1alpha3.vmoperator.vmware.com")

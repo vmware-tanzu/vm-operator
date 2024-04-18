@@ -14,19 +14,19 @@ import (
 	"fmt"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 func GetWebConsoleTicket(
-	vmCtx context.VirtualMachineContext,
+	vmCtx pkgctx.VirtualMachineContext,
 	vm *object.VirtualMachine,
 	pubKey string) (string, error) {
 
 	vmCtx.Logger.V(5).Info("GetWebMKSTicket")
 
-	ticket, err := vm.AcquireTicket(vmCtx, string(types.VirtualMachineTicketTypeWebmks))
+	ticket, err := vm.AcquireTicket(vmCtx, string(vimtypes.VirtualMachineTicketTypeWebmks))
 	if err != nil {
 		return "", err
 	}

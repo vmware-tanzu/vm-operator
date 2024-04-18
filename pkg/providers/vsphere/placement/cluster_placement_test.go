@@ -4,54 +4,54 @@
 package placement_test
 
 import (
-	goctx "context"
+	"context"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func createRelocateSpec() *types.VirtualMachineRelocateSpec {
-	spec := &types.VirtualMachineRelocateSpec{}
-	spec.Host = &types.ManagedObjectReference{}
-	spec.Pool = &types.ManagedObjectReference{}
-	spec.Datastore = &types.ManagedObjectReference{}
+func createRelocateSpec() *vimtypes.VirtualMachineRelocateSpec {
+	spec := &vimtypes.VirtualMachineRelocateSpec{}
+	spec.Host = &vimtypes.ManagedObjectReference{}
+	spec.Pool = &vimtypes.ManagedObjectReference{}
+	spec.Datastore = &vimtypes.ManagedObjectReference{}
 	return spec
 }
 
-func createValidPlacementAction() (types.BaseClusterAction, *types.VirtualMachineRelocateSpec) {
-	action := types.PlacementAction{}
+func createValidPlacementAction() (vimtypes.BaseClusterAction, *vimtypes.VirtualMachineRelocateSpec) {
+	action := vimtypes.PlacementAction{}
 	action.RelocateSpec = createRelocateSpec()
-	return types.BaseClusterAction(&action), action.RelocateSpec
+	return vimtypes.BaseClusterAction(&action), action.RelocateSpec
 }
 
-func createInvalidPlacementAction() types.BaseClusterAction {
-	action := types.PlacementAction{}
+func createInvalidPlacementAction() vimtypes.BaseClusterAction {
+	action := vimtypes.PlacementAction{}
 	action.RelocateSpec = createRelocateSpec()
 	action.RelocateSpec.Host = nil
-	return types.BaseClusterAction(&action)
+	return vimtypes.BaseClusterAction(&action)
 }
 
-func createStoragePlacementAction() types.BaseClusterAction {
-	action := types.StoragePlacementAction{}
+func createStoragePlacementAction() vimtypes.BaseClusterAction {
+	action := vimtypes.StoragePlacementAction{}
 	action.RelocateSpec = *createRelocateSpec()
-	return types.BaseClusterAction(&action)
+	return vimtypes.BaseClusterAction(&action)
 }
 
-func createInvalidRecommendation() types.ClusterRecommendation {
-	r := types.ClusterRecommendation{}
-	r.Reason = string(types.RecommendationReasonCodeXvmotionPlacement)
+func createInvalidRecommendation() vimtypes.ClusterRecommendation {
+	r := vimtypes.ClusterRecommendation{}
+	r.Reason = string(vimtypes.RecommendationReasonCodeXvmotionPlacement)
 	r.Action = append(r.Action, createStoragePlacementAction())
 	r.Action = append(r.Action, createInvalidPlacementAction())
 	return r
 }
 
-func createValidRecommendation() (types.ClusterRecommendation, *types.VirtualMachineRelocateSpec) {
+func createValidRecommendation() (vimtypes.ClusterRecommendation, *vimtypes.VirtualMachineRelocateSpec) {
 	r := createInvalidRecommendation()
 	a, s := createValidPlacementAction()
 	r.Action = append(r.Action, a)
@@ -59,11 +59,11 @@ func createValidRecommendation() (types.ClusterRecommendation, *types.VirtualMac
 }
 
 var _ = Describe("ParsePlaceVMResponse", func() {
-	var vmCtx context.VirtualMachineContext
+	var vmCtx pkgctx.VirtualMachineContext
 
 	BeforeEach(func() {
-		vmCtx = context.VirtualMachineContext{
-			Context: goctx.TODO(),
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: context.TODO(),
 			VM:      builder.DummyVirtualMachineA2(),
 			Logger:  suite.GetLogger(),
 		}
@@ -71,10 +71,10 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 
 	Context("when response is valid", func() {
 		Specify("PlaceVm Response is valid", func() {
-			res := types.PlacementResult{}
+			res := vimtypes.PlacementResult{}
 			res.Recommendations = append(res.Recommendations, createInvalidRecommendation(), createInvalidRecommendation())
 			rec, _ := createValidRecommendation()
-			rec.Reason = string(types.RecommendationReasonCodePowerOnVm)
+			rec.Reason = string(vimtypes.RecommendationReasonCodePowerOnVm)
 			res.Recommendations = append(res.Recommendations, rec)
 			rec, spec := createValidRecommendation()
 			res.Recommendations = append(res.Recommendations, rec)
@@ -89,7 +89,7 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 
 	Context("when response is not valid", func() {
 		Specify("PlaceVm Response without recommendations", func() {
-			res := types.PlacementResult{}
+			res := vimtypes.PlacementResult{}
 			rSpec := placement.ParseRelocateVMResponse(vmCtx, &res)
 			Expect(rSpec).To(BeNil())
 		})
@@ -97,10 +97,10 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 
 	Context("when response is not valid", func() {
 		Specify("PlaceVm Response with invalid recommendations only", func() {
-			res := types.PlacementResult{}
+			res := vimtypes.PlacementResult{}
 			res.Recommendations = append(res.Recommendations, createInvalidRecommendation(), createInvalidRecommendation())
 			rec, _ := createValidRecommendation()
-			rec.Reason = string(types.RecommendationReasonCodePowerOnVm)
+			rec.Reason = string(vimtypes.RecommendationReasonCodePowerOnVm)
 			res.Recommendations = append(res.Recommendations, rec)
 
 			rSpec := placement.ParseRelocateVMResponse(vmCtx, &res)

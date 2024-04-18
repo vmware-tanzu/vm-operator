@@ -6,13 +6,13 @@ package fake
 import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 // NewWebhookRequestContext returns a fake WebhookRequestContext for unit
 // testing webhooks with a fake client.
-func NewWebhookRequestContext(ctx *context.WebhookContext, obj, oldObj *unstructured.Unstructured) *context.WebhookRequestContext {
-	return &context.WebhookRequestContext{
+func NewWebhookRequestContext(ctx *pkgctx.WebhookContext, obj, oldObj *unstructured.Unstructured) *pkgctx.WebhookRequestContext {
+	return &pkgctx.WebhookRequestContext{
 		WebhookContext: ctx,
 		Obj:            obj,
 		OldObj:         oldObj,

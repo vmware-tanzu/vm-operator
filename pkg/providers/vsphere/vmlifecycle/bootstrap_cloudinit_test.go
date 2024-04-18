@@ -4,20 +4,20 @@
 package vmlifecycle_test
 
 import (
-	goctx "context"
+	"context"
 	"encoding/base64"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -34,14 +34,14 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 	var (
 		bsArgs     vmlifecycle.BootstrapArgs
-		configInfo *types.VirtualMachineConfigInfo
+		configInfo *vimtypes.VirtualMachineConfigInfo
 
 		metaData string
 		userData string
 	)
 
 	BeforeEach(func() {
-		configInfo = &types.VirtualMachineConfigInfo{}
+		configInfo = &vimtypes.VirtualMachineConfigInfo{}
 		bsArgs.Data = map[string]string{}
 
 		// Set defaults.
@@ -57,11 +57,11 @@ var _ = Describe("CloudInit Bootstrap", func() {
 	// this Context, but we should focus more on testing via this just method.
 	Context("BootStrapCloudInit", func() {
 		var (
-			configSpec *types.VirtualMachineConfigSpec
-			custSpec   *types.CustomizationSpec
+			configSpec *vimtypes.VirtualMachineConfigSpec
+			custSpec   *vimtypes.CustomizationSpec
 			err        error
 
-			vmCtx         context.VirtualMachineContext
+			vmCtx         pkgctx.VirtualMachineContext
 			vm            *vmopv1.VirtualMachine
 			cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec
 		)
@@ -78,8 +78,8 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				},
 			}
 
-			vmCtx = context.VirtualMachineContext{
-				Context: goctx.Background(),
+			vmCtx = pkgctx.VirtualMachineContext{
+				Context: context.Background(),
 				Logger:  suite.GetLogger(),
 				VM:      vm,
 			}
@@ -133,7 +133,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			Context("With no default user", func() {
 				BeforeEach(func() {
 					// Assert vAppConfig removal in this test too.
-					configInfo.VAppConfig = &types.VmConfigInfo{}
+					configInfo.VAppConfig = &vimtypes.VmConfigInfo{}
 				})
 
 				It("Should return valid data", func() {
@@ -329,7 +329,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 	Context("GetCloudInitGuestInfoCustSpec", func() {
 		var (
-			configSpec *types.VirtualMachineConfigSpec
+			configSpec *vimtypes.VirtualMachineConfigSpec
 			err        error
 		)
 
@@ -341,7 +341,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 			Context("Config has vAppConfig", func() {
 				BeforeEach(func() {
-					configInfo.VAppConfig = &types.VmConfigInfo{}
+					configInfo.VAppConfig = &vimtypes.VmConfigInfo{}
 				})
 
 				It("ConfigSpec should disable vAppConfig", func() {
@@ -437,8 +437,8 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 	Context("GetCloudInitPrepCustSpec", func() {
 		var (
-			configSpec *types.VirtualMachineConfigSpec
-			custSpec   *types.CustomizationSpec
+			configSpec *vimtypes.VirtualMachineConfigSpec
+			custSpec   *vimtypes.CustomizationSpec
 		)
 
 		JustBeforeEach(func() {
@@ -465,7 +465,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 			Context("Config already has a vAppConfig", func() {
 				BeforeEach(func() {
-					configInfo.VAppConfig = &types.VmConfigInfo{}
+					configInfo.VAppConfig = &vimtypes.VmConfigInfo{}
 				})
 
 				It("ConfigSpec updates to expected vAppConfig", func() {
@@ -479,7 +479,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 			Context("Config already has expected vAppConfig", func() {
 				BeforeEach(func() {
-					configInfo.VAppConfig = &types.VmConfigInfo{
+					configInfo.VAppConfig = &vimtypes.VmConfigInfo{
 						OvfEnvironmentTransport: []string{vmlifecycle.OvfEnvironmentTransportGuestInfo},
 					}
 				})

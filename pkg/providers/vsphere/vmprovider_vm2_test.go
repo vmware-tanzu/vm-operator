@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,7 +22,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -55,7 +55,7 @@ func vmE2ETests() {
 	)
 
 	BeforeEach(func() {
-		// Speed up tests until we Watch the network types. Sigh.
+		// Speed up tests until we Watch the network vimtypes. Sigh.
 		network.RetryTimeout = 1 * time.Millisecond
 
 		testConfig = builder.VCSimTestConfig{
@@ -68,7 +68,7 @@ func vmE2ETests() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
-		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
@@ -243,11 +243,11 @@ func vmE2ETests() {
 
 				// For now just check the expected Nic backing.
 				By("Has expected NIC backing", func() {
-					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
 
 					dev1 := l[0].GetVirtualDevice()
-					backingInfo, ok := dev1.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					backingInfo, ok := dev1.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
 				})
@@ -352,11 +352,11 @@ func vmE2ETests() {
 
 				// For now just check the expected Nic backing.
 				By("Has expected NIC backing", func() {
-					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
 
 					dev1 := l[0].GetVirtualDevice()
-					backingInfo, ok := dev1.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					backingInfo, ok := dev1.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
 				})
@@ -461,11 +461,11 @@ func vmE2ETests() {
 
 				// For now just check the expected Nic backing.
 				By("Has expected NIC backing", func() {
-					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
 
 					dev1 := l[0].GetVirtualDevice()
-					backingInfo, ok := dev1.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					backingInfo, ok := dev1.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
 				})

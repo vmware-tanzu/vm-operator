@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -38,10 +38,10 @@ func guestInfoTests() {
 		moID := vcVM.Reference().Value
 		Expect(ctx.GetVMFromMoID(moID)).ToNot(BeNil())
 
-		config := types.VirtualMachineConfigSpec{}
+		config := vimtypes.VirtualMachineConfigSpec{}
 		config.ExtraConfig = append(config.ExtraConfig,
-			&types.OptionValue{Key: "some-key", Value: "ignore-me"},
-			&types.OptionValue{Key: "guestinfo.foo", Value: "hello"},
+			&vimtypes.OptionValue{Key: "some-key", Value: "ignore-me"},
+			&vimtypes.OptionValue{Key: "guestinfo.foo", Value: "hello"},
 		)
 		task, err := vcVM.Reconfigure(ctx, config)
 		Expect(err).ToNot(HaveOccurred())

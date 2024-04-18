@@ -4,7 +4,7 @@
 package virtualmachine
 
 import (
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -17,9 +17,9 @@ const (
 	instanceStorageStartDeviceKey = int32(-300)
 )
 
-func CreatePCIPassThroughDevice(deviceKey int32, backingInfo vimTypes.BaseVirtualDeviceBackingInfo) vimTypes.BaseVirtualDevice {
-	device := &vimTypes.VirtualPCIPassthrough{
-		VirtualDevice: vimTypes.VirtualDevice{
+func CreatePCIPassThroughDevice(deviceKey int32, backingInfo vimtypes.BaseVirtualDeviceBackingInfo) vimtypes.BaseVirtualDevice {
+	device := &vimtypes.VirtualPCIPassthrough{
+		VirtualDevice: vimtypes.VirtualDevice{
 			Key:     deviceKey,
 			Backing: backingInfo,
 		},
@@ -28,8 +28,8 @@ func CreatePCIPassThroughDevice(deviceKey int32, backingInfo vimTypes.BaseVirtua
 }
 
 // CreatePCIDevicesFromConfigSpec creates vim25 VirtualDevices from the specified list of PCI devices from the VM Class ConfigSpec.
-func CreatePCIDevicesFromConfigSpec(pciDevsFromConfigSpec []*vimTypes.VirtualPCIPassthrough) []vimTypes.BaseVirtualDevice {
-	devices := make([]vimTypes.BaseVirtualDevice, 0, len(pciDevsFromConfigSpec))
+func CreatePCIDevicesFromConfigSpec(pciDevsFromConfigSpec []*vimtypes.VirtualPCIPassthrough) []vimtypes.BaseVirtualDevice {
+	devices := make([]vimtypes.BaseVirtualDevice, 0, len(pciDevsFromConfigSpec))
 
 	deviceKey := pciDevicesStartDeviceKey
 
@@ -44,13 +44,13 @@ func CreatePCIDevicesFromConfigSpec(pciDevsFromConfigSpec []*vimTypes.VirtualPCI
 }
 
 // CreatePCIDevicesFromVMClass creates vim25 VirtualDevices from the specified list of PCI devices from VM Class spec.
-func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass vmopv1.VirtualDevices) []vimTypes.BaseVirtualDevice {
-	devices := make([]vimTypes.BaseVirtualDevice, 0, len(pciDevicesFromVMClass.VGPUDevices)+len(pciDevicesFromVMClass.DynamicDirectPathIODevices))
+func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass vmopv1.VirtualDevices) []vimtypes.BaseVirtualDevice {
+	devices := make([]vimtypes.BaseVirtualDevice, 0, len(pciDevicesFromVMClass.VGPUDevices)+len(pciDevicesFromVMClass.DynamicDirectPathIODevices))
 
 	deviceKey := pciDevicesStartDeviceKey
 
 	for _, vGPU := range pciDevicesFromVMClass.VGPUDevices {
-		backingInfo := &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+		backingInfo := &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
 			Vgpu: vGPU.ProfileName,
 		}
 		dev := CreatePCIPassThroughDevice(deviceKey, backingInfo)
@@ -59,12 +59,12 @@ func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass vmopv1.VirtualDevices) []
 	}
 
 	for _, dynamicDirectPath := range pciDevicesFromVMClass.DynamicDirectPathIODevices {
-		allowedDev := vimTypes.VirtualPCIPassthroughAllowedDevice{
+		allowedDev := vimtypes.VirtualPCIPassthroughAllowedDevice{
 			VendorId: int32(dynamicDirectPath.VendorID),
 			DeviceId: int32(dynamicDirectPath.DeviceID),
 		}
-		backingInfo := &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
-			AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev},
+		backingInfo := &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+			AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{allowedDev},
 			CustomLabel:   dynamicDirectPath.CustomLabel,
 		}
 		dev := CreatePCIPassThroughDevice(deviceKey, backingInfo)
@@ -75,20 +75,20 @@ func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass vmopv1.VirtualDevices) []
 	return devices
 }
 
-func CreateInstanceStorageDiskDevices(isVolumes []vmopv1.VirtualMachineVolume) []vimTypes.BaseVirtualDevice {
-	devices := make([]vimTypes.BaseVirtualDevice, 0, len(isVolumes))
+func CreateInstanceStorageDiskDevices(isVolumes []vmopv1.VirtualMachineVolume) []vimtypes.BaseVirtualDevice {
+	devices := make([]vimtypes.BaseVirtualDevice, 0, len(isVolumes))
 	deviceKey := instanceStorageStartDeviceKey
 
 	for _, volume := range isVolumes {
-		device := &vimTypes.VirtualDisk{
+		device := &vimtypes.VirtualDisk{
 			CapacityInBytes: volume.PersistentVolumeClaim.InstanceVolumeClaim.Size.Value(),
-			VirtualDevice: vimTypes.VirtualDevice{
+			VirtualDevice: vimtypes.VirtualDevice{
 				Key: deviceKey,
-				Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
+				Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
 					ThinProvisioned: ptr.To(false),
 				},
 			},
-			VDiskId: &vimTypes.ID{
+			VDiskId: &vimtypes.ID{
 				Id: constants.InstanceStorageVDiskID,
 			},
 		}

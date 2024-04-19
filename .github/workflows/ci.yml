@@ -180,29 +180,6 @@ jobs:
         cache-dependency-path: '**/go.sum'
     - name: Test
       run: make test
-    - name: Store test coverage
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-coverage
-        path: cover.out
-
-  code-coverage:
-    needs:
-    - test
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
-    - name: Install Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache: true
-        cache-dependency-path: '**/go.sum'
-    - name: Fetch test coverage
-      uses: actions/download-artifact@v4
-      with:
-        name: test-coverage
     - name: Convert coverage to XML report
       run: make coverage-xml
     - name: Produce code coverage report
@@ -217,20 +194,6 @@ jobs:
         indicators: true
         output: both
         thresholds: '60 80'
-
-    #
-    # Commenting this out for now to ensure it is possible to re-run this job
-    # without having to re-run the test jobs. We should probably think about
-    # re-enabling this step if at some point the size of artifacts we store
-    # per-PR grows too large.
-    #
-    # - name: Delete the stored test coverage
-    #   if: github.event_name != 'pull_request'
-    #   uses: geekyeggo/delete-artifact@v2
-    #   with:
-    #     name: |
-    #       test-coverage
-
     - name: Save pull request ID
       if: github.event_name == 'pull_request'
       env:

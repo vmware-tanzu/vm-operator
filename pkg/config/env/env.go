@@ -45,6 +45,7 @@ const (
 	FSSVMServiceBackupRestore
 	FSSPodVMOnStretchedSupervisor
 	FSSTKGMultipleCL
+	FSSK8sWorkloadMgmtAPI
 
 	_varNameEnd
 )
@@ -133,6 +134,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_INSTANCE_STORAGE"
 	case FSSVMServiceBackupRestore:
 		return "FSS_WCP_VMSERVICE_BACKUPRESTORE"
+	case FSSK8sWorkloadMgmtAPI:
+		return "FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API"
 	case FSSPodVMOnStretchedSupervisor:
 		return "FSS_PODVMONSTRETCHEDSUPERVISOR"
 	case FSSTKGMultipleCL:

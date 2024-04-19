@@ -50,6 +50,7 @@ func FromEnv() Config {
 
 	setBool(env.FSSInstanceStorage, &config.Features.InstanceStorage)
 	setBool(env.FSSVMServiceBackupRestore, &config.Features.AutoVADPBackupRestore)
+	setBool(env.FSSK8sWorkloadMgmtAPI, &config.Features.K8sWorkloadMgmtAPI)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
 	setBool(env.FSSTKGMultipleCL, &config.Features.TKGMultipleCL)
 

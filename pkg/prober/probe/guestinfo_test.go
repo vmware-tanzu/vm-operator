@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -18,11 +18,11 @@ import (
 )
 
 type fakeGuestInfoProvider struct {
-	guestInfo map[string]string
+	guestInfo map[string]any
 	err       error
 }
 
-func (f fakeGuestInfoProvider) GetVirtualMachineGuestInfo(ctx context.Context, vm *vmopv1.VirtualMachine) (map[string]string, error) {
+func (f fakeGuestInfoProvider) GetVirtualMachineProperties(ctx context.Context, vm *vmopv1.VirtualMachine, propertyPaths []string) (map[string]any, error) {
 	return f.guestInfo, f.err
 }
 
@@ -62,22 +62,45 @@ var _ = Describe("Guest info probe", func() {
 	})
 
 	Context("Provider returns an error", func() {
-		BeforeEach(func() { fakeProvider.err = fmt.Errorf("fake error") })
+		BeforeEach(func() {
+			fakeProvider.err = fmt.Errorf("fake error")
+		})
 
-		It("returns error", func() {
-			Expect(err).To(HaveOccurred())
-			Expect(err).To(MatchError(fmt.Errorf("fake error")))
-			Expect(res).To(Equal(Unknown))
+		When("there are guestinfo actions", func() {
+			BeforeEach(func() {
+				guestInfoAction = []vmopv1.GuestInfoAction{
+					{
+						Key: "key1",
+					},
+				}
+			})
+			It("returns err + Unknown", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(fmt.Errorf("fake error")))
+				Expect(res).To(Equal(Unknown))
+			})
+		})
+
+		When("there are no guestinfo actions", func() {
+			BeforeEach(func() {
+				guestInfoAction = nil
+			})
+			It("returns Unknown", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(res).To(Equal(Unknown))
+			})
 		})
 	})
 
 	Context("Provider does not return an error", func() {
-		const prefix = "guestinfo."
+		toKey := func(s string) string {
+			return fmt.Sprintf(`config.extraConfig["guestinfo.%s"]`, s)
+		}
 
 		Context("Key does not exist in GuestInfo", func() {
 			BeforeEach(func() {
-				fakeProvider.guestInfo = map[string]string{
-					prefix + "key1": "ignored-because-no-value-in-action",
+				fakeProvider.guestInfo = map[string]any{
+					toKey("key1"): "ignored-because-no-value-in-action",
 				}
 
 				guestInfoAction = []vmopv1.GuestInfoAction{
@@ -95,8 +118,8 @@ var _ = Describe("Guest info probe", func() {
 
 		Context("Matches key when value is not set", func() {
 			BeforeEach(func() {
-				fakeProvider.guestInfo = map[string]string{
-					prefix + "key1": "ignored-because-no-value-in-action",
+				fakeProvider.guestInfo = map[string]any{
+					toKey("key1"): "ignored-because-no-value-in-action",
 				}
 
 				guestInfoAction = []vmopv1.GuestInfoAction{
@@ -114,7 +137,7 @@ var _ = Describe("Guest info probe", func() {
 
 		Context("Matches key and has plain string value", func() {
 			BeforeEach(func() {
-				fakeProvider.guestInfo = map[string]string{prefix + "key2": "vmware"}
+				fakeProvider.guestInfo = map[string]any{toKey("key2"): "vmware"}
 			})
 
 			Context("Values match", func() {
@@ -152,8 +175,8 @@ var _ = Describe("Guest info probe", func() {
 
 		Context("Matches key and has regex value", func() {
 			BeforeEach(func() {
-				fakeProvider.guestInfo = map[string]string{
-					prefix + "key3": "aaaaa",
+				fakeProvider.guestInfo = map[string]any{
+					toKey("key3"): "aaaaa",
 				}
 
 			})

@@ -32,7 +32,7 @@ type funcs struct {
 	PublishVirtualMachineFn        func(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
-	GetVirtualMachineGuestInfoFn       func(ctx context.Context, vm *vmopv1.VirtualMachine) (map[string]string, error)
+	GetVirtualMachinePropertiesFn      func(ctx context.Context, vm *vmopv1.VirtualMachine, propertyPaths []string) (map[string]any, error)
 	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error)
 
@@ -122,11 +122,15 @@ func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vm
 	return "", nil
 }
 
-func (s *VMProvider) GetVirtualMachineGuestInfo(ctx context.Context, vm *vmopv1.VirtualMachine) (map[string]string, error) {
+func (s *VMProvider) GetVirtualMachineProperties(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	propertyPaths []string) (map[string]any, error) {
+
 	s.Lock()
 	defer s.Unlock()
-	if s.GetVirtualMachineGuestInfoFn != nil {
-		return s.GetVirtualMachineGuestInfoFn(ctx, vm)
+	if s.GetVirtualMachinePropertiesFn != nil {
+		return s.GetVirtualMachinePropertiesFn(ctx, vm, propertyPaths)
 	}
 	return nil, nil
 }

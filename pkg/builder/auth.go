@@ -20,10 +20,9 @@ func IsPrivilegedAccount(
 
 	// Users specified by Pod's environment variable "PRIVILEGED_USERS" are
 	// considered privileged.
-	if c := pkgcfg.FromContext(ctx); c.Features.AutoVADPBackupRestore {
-		if _, ok := pkgcfg.StringToSet(c.PrivilegedUsers)[username]; ok {
-			return true
-		}
+	c := pkgcfg.FromContext(ctx)
+	if _, ok := pkgcfg.StringToSet(c.PrivilegedUsers)[username]; ok {
+		return true
 	}
 
 	serviceAccount := strings.Join(

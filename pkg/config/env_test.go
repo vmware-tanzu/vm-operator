@@ -89,7 +89,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_INSTANCE_STORAGE", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_NAMESPACED_VM_CLASS", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API", "true")).To(Succeed())
-					Expect(os.Setenv("FSS_WCP_VMSERVICE_ISO_SUPPORT", "false")).To(Succeed())
+					Expect(os.Setenv("FSS_WCP_VMSERVICE_ISO_SUPPORT", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_TKG_Multiple_CL", "false")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
@@ -126,7 +126,7 @@ var _ = Describe(
 						WebhookSecretVolumeMountPath: pkgcfg.Default().WebhookSecretVolumeMountPath,
 						Features: pkgcfg.FeatureStates{
 							InstanceStorage:    false,
-							IsoSupport:         false,
+							IsoSupport:         true,
 							K8sWorkloadMgmtAPI: true,
 						},
 					}))

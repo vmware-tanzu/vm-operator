@@ -327,13 +327,9 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled",
+			Entry("should allow creating VM with admin-only annotations set by WCP user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.AutoVADPBackupRestore = true
-						})
-
 						fakeWCPUser := "sso:wcp-12345-fake-machineid-67890@vsphere.local"
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.PrivilegedUsers = fakeWCPUser
@@ -1645,13 +1641,9 @@ func unitTestsValidateUpdate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("should allow updating admin-only annotations by privileged user when the Backup/Restore FSS is enabled",
+			Entry("should allow updating admin-only annotations by privileged user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.AutoVADPBackupRestore = true
-						})
-
 						privilegedUsersEnvList := "  , foo ,bar , test,  "
 						privilegedUser := "bar"
 
@@ -1674,13 +1666,9 @@ func unitTestsValidateUpdate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("should allow removing admin-only annotations by privileged user when the Backup/Restore FSS is enabled",
+			Entry("should allow removing admin-only annotations by privileged user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.AutoVADPBackupRestore = true
-						})
-
 						privilegedUsersEnvList := "  , foo ,bar , test,  "
 						privilegedUser := "bar"
 

@@ -49,8 +49,8 @@ func FromEnv() Config {
 	setString(env.WebhookSecretNamespace, &config.WebhookSecretNamespace)
 
 	setBool(env.FSSInstanceStorage, &config.Features.InstanceStorage)
+	setBool(env.FSSIsoSupport, &config.Features.IsoSupport)
 	setBool(env.FSSK8sWorkloadMgmtAPI, &config.Features.K8sWorkloadMgmtAPI)
-	setBool(env.FSSVMServiceIsoSupport, &config.Features.IsoSupport)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
 	setBool(env.FSSTKGMultipleCL, &config.Features.TKGMultipleCL)
 

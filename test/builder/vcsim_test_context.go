@@ -93,9 +93,6 @@ type VCSimTestConfig struct {
 
 	// WithNetworkEnv is the network environment type.
 	WithNetworkEnv NetworkEnv
-
-	// WithAutoVADPBackupRestore enables the WCP_VMSERVICE_BACKUPRESTORE FSS.
-	WithAutoVADPBackupRestore bool
 }
 
 type TestContextForVCSim struct {
@@ -299,7 +296,6 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.JSONExtraConfig = config.WithJSONExtraConfig
 
 		cc.Features.InstanceStorage = config.WithInstanceStorage
-		cc.Features.AutoVADPBackupRestore = config.WithAutoVADPBackupRestore
 	})
 }
 

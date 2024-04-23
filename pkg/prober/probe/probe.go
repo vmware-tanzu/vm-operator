@@ -34,7 +34,7 @@ type vmProviderGuestHeartbeatProber interface {
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
 }
 type vmProviderGuestInfoProber interface {
-	GetVirtualMachineGuestInfo(ctx context.Context, vm *vmopv1.VirtualMachine) (map[string]string, error)
+	GetVirtualMachineProperties(ctx context.Context, vm *vmopv1.VirtualMachine, propertyPaths []string) (map[string]any, error)
 }
 type vmProviderProber interface {
 	vmProviderGuestHeartbeatProber

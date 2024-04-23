@@ -13,6 +13,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -195,12 +196,13 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	return status, nil
 }
 
-func (vs *vSphereVMProvider) GetVirtualMachineGuestInfo(
+func (vs *vSphereVMProvider) GetVirtualMachineProperties(
 	ctx context.Context,
-	vm *vmopv1.VirtualMachine) (map[string]string, error) {
+	vm *vmopv1.VirtualMachine,
+	propertyPaths []string) (map[string]any, error) {
 
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "guestInfo")),
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "properties")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -215,12 +217,43 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestInfo(
 		return nil, err
 	}
 
-	guestInfo, err := virtualmachine.GetExtraConfigGuestInfo(vmCtx, vcVM)
+	propSet := []vimtypes.PropertySpec{{Type: "VirtualMachine"}}
+	if len(propertyPaths) == 0 {
+		propSet[0].All = vimtypes.NewBool(true)
+	} else {
+		propSet[0].PathSet = propertyPaths
+	}
+
+	rep, err := property.DefaultCollector(client.VimClient()).RetrieveProperties(
+		ctx,
+		vimtypes.RetrieveProperties{
+			SpecSet: []vimtypes.PropertyFilterSpec{
+				{
+					ObjectSet: []vimtypes.ObjectSpec{
+						{
+							Obj: vcVM.Reference(),
+						},
+					},
+					PropSet: propSet,
+				},
+			},
+		})
+
 	if err != nil {
 		return nil, err
 	}
 
-	return guestInfo, nil
+	if len(rep.Returnval) == 0 {
+		return nil, fmt.Errorf("no properties")
+	}
+
+	result := map[string]any{}
+	for i := range rep.Returnval[0].PropSet {
+		dp := rep.Returnval[0].PropSet[i]
+		result[dp.Name] = dp.Val
+	}
+
+	return result, nil
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(

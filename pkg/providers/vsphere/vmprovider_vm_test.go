@@ -211,6 +211,63 @@ func vmTests() {
 				configSpec = nil
 			})
 
+			Context("GetVirtualMachineProperties", func() {
+				const (
+					propName        = "config.name"
+					propPowerState  = "runtime.powerState"
+					propExtraConfig = "config.extraConfig"
+				)
+				var (
+					err           error
+					result        map[string]any
+					propertyPaths []string
+				)
+				AfterEach(func() {
+					propertyPaths = nil
+				})
+				JustBeforeEach(func() {
+					result, err = vmProvider.GetVirtualMachineProperties(ctx, vm, propertyPaths)
+				})
+				When("getting "+propExtraConfig, func() {
+					BeforeEach(func() {
+						propertyPaths = []string{propExtraConfig}
+					})
+					It("should retrieve a non-zero number of properties", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).ToNot(HaveLen(0))
+					})
+				})
+				When("getting "+propName, func() {
+					BeforeEach(func() {
+						propertyPaths = []string{propName}
+					})
+					It("should retrieve a single property", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(HaveLen(1))
+						Expect(result[propName]).To(Equal(vm.Name))
+					})
+				})
+				When("getting "+propPowerState, func() {
+					BeforeEach(func() {
+						propertyPaths = []string{propPowerState}
+					})
+					It("should retrieve a single property", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(HaveLen(1))
+						switch vm.Spec.PowerState {
+						case vmopv1.VirtualMachinePowerStateOn:
+							Expect(result[propPowerState]).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						case vmopv1.VirtualMachinePowerStateOff:
+							Expect(result[propPowerState]).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+						case vmopv1.VirtualMachinePowerStateSuspended:
+							Expect(result[propPowerState]).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
+						default:
+							panic(fmt.Sprintf("invalid power state: %s", vm.Spec.PowerState))
+						}
+					})
+				})
+			})
+
 			Context("VM Class has no ConfigSpec", func() {
 				BeforeEach(func() {
 					configSpec = nil

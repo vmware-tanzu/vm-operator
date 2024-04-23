@@ -52,6 +52,12 @@
     name: FSS_WCP_TKG_Multiple_CL
     value: "<FSS_WCP_TKG_Multiple_CL_VALUE>"
 
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
+    value: "<FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API_VALUE>"
+
 #
 # Feature state switch flags beneath this line are enabled on main and only
 # retained in this file because it is used by internal testing to determine the

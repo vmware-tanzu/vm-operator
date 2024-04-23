@@ -11,8 +11,8 @@ spec:
         env:
         - name: VSPHERE_NETWORKING
           value: "false"
-        - name: FSS_WCP_INSTANCE_STORAGE
-          value: "true"
+        - name: FSS_WCP_VMSERVICE_ISO_SUPPORT
+          value: "false"
         - name: NETWORK_PROVIDER
           value: "NAMED"
         - name: FSS_WCP_VMSERVICE_BACKUPRESTORE
@@ -28,6 +28,8 @@ spec:
         # branches as well, the flags must remain, otherwise the absence of the
         # flag indicates a feature is not present or disabled.
         #
+        - name: FSS_WCP_INSTANCE_STORAGE
+          value: "true"
         - name: FSS_WCP_Unified_TKG
           value: "true"
         - name: FSS_WCP_VMSERVICE_V1ALPHA2

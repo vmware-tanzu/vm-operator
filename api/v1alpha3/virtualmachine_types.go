@@ -1,6 +1,8 @@
 // Copyright (c) 2024-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate go run ../../pkg/gen/guestosid/guestosid.go v1alpha3 zz_virtualmachine_guestosid_generated.go
+
 package v1alpha3
 
 import (

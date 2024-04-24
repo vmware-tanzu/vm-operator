@@ -456,8 +456,8 @@ github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20230526154708-f67dac
 github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20230526154708-f67dac7c805f/go.mod h1:S0HMBgdo3S/0a5hwq+Ya4XZI2aEDtGkSGeojU1cINOg=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.1.0 h1:HdnQb/X9vJ8a5WQ03g/0nDr9igIIK1fF6wO5wOtkJT4=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.1.0/go.mod h1:Q4JzNkNMvjo7pXtlB5/R3oME4Nhah7fAObWgghVmtxk=
-github.com/vmware/govmomi v0.31.1-0.20240418141617-c385285e275e h1:yMSmYVObRuJ6/V0Dw4izTQrS1KYWgiEeFrczmwkaoXY=
-github.com/vmware/govmomi v0.31.1-0.20240418141617-c385285e275e/go.mod h1:mtGWtM+YhTADHlCgJBiskSRPOZRsN9MSjPzaZLte/oQ=
+github.com/vmware/govmomi v0.31.1-0.20240424153851-2892d60c5c31 h1:s3ncy0AgEOt7y4ynrTEjwcVZFmj9B+eozx2oRmlTz7I=
+github.com/vmware/govmomi v0.31.1-0.20240424153851-2892d60c5c31/go.mod h1:mtGWtM+YhTADHlCgJBiskSRPOZRsN9MSjPzaZLte/oQ=
 github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q53MR2AWcXfiuqkDkRtnGDLqkBTpCHuJHxtU=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

@@ -23,7 +23,6 @@ func Default() Config {
 		ContentAPIWait:               1 * time.Second,
 		DefaultVMClassControllerName: "vmoperator.vmware.com/vsphere",
 		Features: FeatureStates{
-			AutoVADPBackupRestore:      false,
 			InstanceStorage:            true,
 			PodVMOnStretchedSupervisor: false,
 			TKGMultipleCL:              false,

@@ -59,8 +59,7 @@ func vmTests() {
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary:        true,
-			WithAutoVADPBackupRestore: true,
+			WithContentLibrary: true,
 		}
 	})
 

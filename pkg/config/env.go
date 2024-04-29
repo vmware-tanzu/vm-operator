@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -49,7 +49,7 @@ func FromEnv() Config {
 	setString(env.WebhookSecretNamespace, &config.WebhookSecretNamespace)
 
 	setBool(env.FSSInstanceStorage, &config.Features.InstanceStorage)
-	setBool(env.FSSVMServiceBackupRestore, &config.Features.AutoVADPBackupRestore)
+	setBool(env.FSSIsoSupport, &config.Features.IsoSupport)
 	setBool(env.FSSK8sWorkloadMgmtAPI, &config.Features.K8sWorkloadMgmtAPI)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
 	setBool(env.FSSTKGMultipleCL, &config.Features.TKGMultipleCL)

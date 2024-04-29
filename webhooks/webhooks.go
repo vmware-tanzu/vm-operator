@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package webhooks
@@ -7,11 +7,13 @@ import (
 	"github.com/pkg/errors"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/persistentvolumeclaim"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinepublishrequest"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinereplicaset"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinewebconsolerequest"
@@ -40,5 +42,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 	if err := virtualmachinewebconsolerequest.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineWebConsoleRequest webhooks")
 	}
+
+	if pkgcfg.FromContext(ctx).Features.K8sWorkloadMgmtAPI {
+		if err := virtualmachinereplicaset.AddToManager(ctx, mgr); err != nil {
+			return errors.Wrap(err, "failed to initialize VirtualMachineReplicaSet webhooks")
+		}
+	}
+
 	return nil
 }

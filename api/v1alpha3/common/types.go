@@ -6,7 +6,10 @@
 package common
 
 import (
+	apivalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
 // LocalObjectRef describes a reference to another object in the same
@@ -102,4 +105,49 @@ type NameValuePair struct {
 
 	// Value is the optional value part of the name/value pair.
 	Value string `json:"value,omitempty"`
+}
+
+// ObjectMeta is metadata that all persisted resources must have, which includes
+// all objects users must create. This is a copy of customizable fields from
+// metav1.ObjectMeta.
+
+// ObjectMeta is embedded in `VirtualMachineReplicaSet.Template`, which is not a
+// top-level Kubernetes object. By default, controller-gen handles certain known
+// types (e.g., metav1.ObjectMeta) differently by not including their properties.
+// See: https://github.com/kubernetes-sigs/controller-tools/issues/385.
+
+// With https://github.com/kubernetes-sigs/controller-tools/pull/557, this is
+// somewhat fixed so that an embedded metav1.ObjectMeta is expanded while dropping
+// some problematic fields. However, in our case, we are only interested
+// in Labels and Annotations, so we still end up with extraneous fields (e.g.,
+// Namespace). For that purpose, we introduce our copy of metav1.ObjectMeta that
+// only contains the fields that we are interested in.
+
+type ObjectMeta struct {
+	// Map of string keys and values that can be used to organize and categorize
+	// (scope and select) objects. May match selectors of replication controllers
+	// and services.
+	// More info: http://kubernetes.io/docs/user-guide/labels
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Annotations is an unstructured key value map stored with a resource that may be
+	// set by external tools to store and retrieve arbitrary metadata. They are not
+	// queryable and should be preserved when modifying objects.
+	// More info: http://kubernetes.io/docs/user-guide/annotations
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// Validate validates the labels and annotations in ObjectMeta.
+func (metadata *ObjectMeta) Validate(parent *field.Path) field.ErrorList {
+	allErrs := metav1validation.ValidateLabels(
+		metadata.Labels,
+		parent.Child("labels"),
+	)
+	allErrs = append(allErrs, apivalidation.ValidateAnnotations(
+		metadata.Annotations,
+		parent.Child("annotations"),
+	)...)
+	return allErrs
 }

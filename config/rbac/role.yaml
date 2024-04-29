@@ -313,6 +313,17 @@ rules:
 - apiGroups:
   - vmoperator.vmware.com
   resources:
+  - virtualmachinereplicasets
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
   - virtualmachines
   verbs:
   - create

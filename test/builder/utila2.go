@@ -10,8 +10,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 )
 
 func DummyVirtualMachineClass2A2(name string) *vmopv1.VirtualMachineClass {
@@ -175,6 +177,47 @@ func DummyVirtualMachineA2() *vmopv1.VirtualMachine {
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: "eth0",
+					},
+				},
+			},
+		},
+	}
+}
+
+func DummyVirtualMachineReplicaSet() *vmopv1.VirtualMachineReplicaSet {
+	return &vmopv1.VirtualMachineReplicaSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "VirtualMachineReplicaSet",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "test-",
+			Labels:       map[string]string{},
+			Annotations:  map[string]string{},
+		},
+		Spec: vmopv1.VirtualMachineReplicaSetSpec{
+			Replicas: ptr.To(int32(1)),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: make(map[string]string),
+			},
+			Template: vmopv1.VirtualMachineTemplateSpec{
+				ObjectMeta: vmopv1common.ObjectMeta{
+					Labels:      make(map[string]string),
+					Annotations: make(map[string]string),
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Image: &vmopv1.VirtualMachineImageRef{
+						Kind: "VirtualMachineImage",
+						Name: DummyVMIID,
+					},
+					ImageName:  DummyImageName,
+					ClassName:  DummyClassName,
+					PowerState: vmopv1.VirtualMachinePowerStateOn,
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+							},
+						},
 					},
 				},
 			},

@@ -25,6 +25,27 @@ webhooks:
     resources:
     - virtualmachines
   sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-mutate-vmoperator-vmware-com-v1alpha3-virtualmachinereplicaset
+  failurePolicy: Fail
+  name: default.mutating.virtualmachinereplicaset.v1alpha3.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha3
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachinereplicasets
+  sideEffects: None
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
@@ -114,6 +135,27 @@ webhooks:
     - UPDATE
     resources:
     - virtualmachinepublishrequests
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha3-virtualmachinereplicaset
+  failurePolicy: Fail
+  name: default.validating.virtualmachinereplicaset.v1alpha3.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha3
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachinereplicasets
   sideEffects: None
 - admissionReviewVersions:
   - v1

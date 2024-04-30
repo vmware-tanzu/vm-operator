@@ -1377,7 +1377,7 @@ func autoConvert_v1alpha1_VirtualMachineImageSpec_To_v1alpha3_VirtualMachineImag
 	// WARNING: in.Type requires manual conversion: does not exist in peer-type
 	// WARNING: in.ImageSourceType requires manual conversion: does not exist in peer-type
 	// WARNING: in.ImageID requires manual conversion: does not exist in peer-type
-	// WARNING: in.ProviderRef requires manual conversion: inconvertible types (github.com/vmware-tanzu/vm-operator/api/vmopv1a1.ContentProviderReference vs *github.com/vmware-tanzu/vm-operator/api/v1alpha3/common.LocalObjectRef)
+	// WARNING: in.ProviderRef requires manual conversion: inconvertible types (github.com/vmware-tanzu/vm-operator/api/v1alpha1.ContentProviderReference vs *github.com/vmware-tanzu/vm-operator/api/v1alpha3/common.LocalObjectRef)
 	// WARNING: in.ProductInfo requires manual conversion: does not exist in peer-type
 	// WARNING: in.OSInfo requires manual conversion: does not exist in peer-type
 	// WARNING: in.OVFEnv requires manual conversion: does not exist in peer-type
@@ -1386,7 +1386,7 @@ func autoConvert_v1alpha1_VirtualMachineImageSpec_To_v1alpha3_VirtualMachineImag
 }
 
 func autoConvert_v1alpha3_VirtualMachineImageSpec_To_v1alpha1_VirtualMachineImageSpec(in *v1alpha3.VirtualMachineImageSpec, out *VirtualMachineImageSpec, s conversion.Scope) error {
-	// WARNING: in.ProviderRef requires manual conversion: inconvertible types (*github.com/vmware-tanzu/vm-operator/api/v1alpha3/common.LocalObjectRef vs github.com/vmware-tanzu/vm-operator/api/vmopv1a1.ContentProviderReference)
+	// WARNING: in.ProviderRef requires manual conversion: inconvertible types (*github.com/vmware-tanzu/vm-operator/api/v1alpha3/common.LocalObjectRef vs github.com/vmware-tanzu/vm-operator/api/v1alpha1.ContentProviderReference)
 	return nil
 }
 
@@ -1978,7 +1978,7 @@ func autoConvert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_v1alpha3_Virtua
 	if err := Convert_v1alpha1_ResourcePoolSpec_To_v1alpha3_ResourcePoolSpec(&in.ResourcePool, &out.ResourcePool, s); err != nil {
 		return err
 	}
-	// WARNING: in.Folder requires manual conversion: inconvertible types (github.com/vmware-tanzu/vm-operator/api/vmopv1a1.FolderSpec vs string)
+	// WARNING: in.Folder requires manual conversion: inconvertible types (github.com/vmware-tanzu/vm-operator/api/v1alpha1.FolderSpec vs string)
 	// WARNING: in.ClusterModules requires manual conversion: does not exist in peer-type
 	return nil
 }
@@ -1987,7 +1987,7 @@ func autoConvert_v1alpha3_VirtualMachineSetResourcePolicySpec_To_v1alpha1_Virtua
 	if err := Convert_v1alpha3_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec(&in.ResourcePool, &out.ResourcePool, s); err != nil {
 		return err
 	}
-	// WARNING: in.Folder requires manual conversion: inconvertible types (string vs github.com/vmware-tanzu/vm-operator/api/vmopv1a1.FolderSpec)
+	// WARNING: in.Folder requires manual conversion: inconvertible types (string vs github.com/vmware-tanzu/vm-operator/api/v1alpha1.FolderSpec)
 	// WARNING: in.ClusterModuleGroups requires manual conversion: does not exist in peer-type
 	return nil
 }
@@ -2085,6 +2085,7 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	// WARNING: in.Advanced requires manual conversion: does not exist in peer-type
 	// WARNING: in.Reserved requires manual conversion: does not exist in peer-type
 	out.MinHardwareVersion = in.MinHardwareVersion
+	// WARNING: in.BiosUUID requires manual conversion: does not exist in peer-type
 	return nil
 }
 

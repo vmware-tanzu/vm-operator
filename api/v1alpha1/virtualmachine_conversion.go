@@ -930,10 +930,31 @@ func restore_v1alpha3_VirtualMachineReadinessProbeSpec(
 	}
 }
 
-func restore_v1alpha3_VirtualMachineBiosUUID(
+func restore_v1alpha3_VirtualMachineBiosUUID(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.BiosUUID = src.Spec.BiosUUID
+}
+
+func restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(
 	dst, src *vmopv1.VirtualMachine) {
 
-	dst.Spec.BiosUUID = src.Spec.BiosUUID
+	var iid string
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if ci := bs.CloudInit; ci != nil {
+			iid = ci.InstanceID
+		}
+	}
+
+	if iid == "" {
+		return
+	}
+
+	if dst.Spec.Bootstrap == nil {
+		dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+	}
+	if dst.Spec.Bootstrap.CloudInit == nil {
+		dst.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+	}
+	dst.Spec.Bootstrap.CloudInit.InstanceID = iid
 }
 
 func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha3_Conditions(
@@ -1125,6 +1146,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha3_VirtualMachineNetworkSpec(dst, restored)
 	restore_v1alpha3_VirtualMachineReadinessProbeSpec(dst, restored)
 	restore_v1alpha3_VirtualMachineBiosUUID(dst, restored)
+	restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 
 	// END RESTORE
 

@@ -9,13 +9,8 @@ flowchart LR
     Start(Start) --> GetVM
 
     GetVM(Get VM) --> GetVMErr{Error?}
-    GetVMErr -->|No| HasPauseAnnotation{Has pause\nannotation?}
+    GetVMErr -->|No| HasDeletionTimestamp{Has deletion\ntimestamp?}
     GetVMErr ---->|Yes| StoreGetErrAndReturnErr
-
-    HasPauseAnnotation --> |No| CreatePatchHelper
-    HasPauseAnnotation ----> |Yes| End
-
-    CreatePatchHelper(Create patch helper) --> HasDeletionTimestamp{Has deletion\ntimestamp?}
 
     HasDeletionTimestamp --> |Yes| ReconcileDelete
     HasDeletionTimestamp ----> |No| ReconcileNormal
@@ -48,14 +43,20 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    Start(Start) --> HasFinalizer{Has finalizer?}
+    Start(Start) --> HasPauseAnnotation{Has pause\nannotation?}
+    HasPauseAnnotation --> |No| HasFinalizer{Has finalizer?}
+    HasPauseAnnotation ----> |Yes| End
+    
 
     HasFinalizer --> |No| DeleteMetrics(Delete metrics)
     HasFinalizer ----> |Yes| DeleteVM(Delete vSphere VM)
 
     DeleteVM --> DeleteVMErr{Error?}
     DeleteVMErr --> |No| RemoveFinalizer(Remove finalizer)
-    DeleteVMErr ----> |Yes| ReturnErr(Return error)
+    DeleteVMErr ----> |Yes| ErrorVMPausedByAdmin{Has pause\nextraConfig key?}
+    
+    ErrorVMPausedByAdmin --> |Yes| End
+    ErrorVMPausedByAdmin --> |No| ReturnErr(Return error)
 
     RemoveFinalizer --> DeleteMetrics(Delete metrics)
 

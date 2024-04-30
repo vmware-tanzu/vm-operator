@@ -647,7 +647,7 @@ func vpcSubnetPortToResult(
 	subnetPort *vpcv1alpha1.SubnetPort) (*NetworkInterfaceResult, error) {
 
 	var backing object.NetworkReference
-	networkID := subnetPort.Status.LogicalSwitchID
+	networkID := subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID
 	if clusterMoRef != nil {
 		ccr := object.NewClusterComputeResource(vimClient, *clusterMoRef)
 		// VPC is an NSX-T construct that is attached to an NSX-T Project.
@@ -661,16 +661,16 @@ func vpcSubnetPortToResult(
 
 	ipConfigs := []NetworkInterfaceIPConfig{}
 
-	// No DHCP supported in VPC at the moment.
-	ipAddress := subnetPort.Status.IPAddresses
-	for _, ipAddr := range ipAddress {
-		if ipAddr.IP == "" {
+	// IPAddresses have CIDR format.
+	for _, ipAddr := range subnetPort.Status.NetworkInterfaceConfig.IPAddresses {
+		if ipAddr.IPAddress == "" {
 			continue
 		}
 
-		isIPv4 := net.ParseIP(ipAddr.IP).To4() != nil
+		ip, _, _ := net.ParseCIDR(ipAddr.IPAddress)
+		isIPv4 := ip.To4() != nil
 		ipConfig := NetworkInterfaceIPConfig{
-			IPCIDR:  ipCIDRNotation(ipAddr.IP, ipAddr.Netmask, isIPv4),
+			IPCIDR:  ipAddr.IPAddress,
 			IsIPv4:  isIPv4,
 			Gateway: ipAddr.Gateway,
 		}
@@ -680,8 +680,8 @@ func vpcSubnetPortToResult(
 
 	result := &NetworkInterfaceResult{
 		IPConfigs:  ipConfigs,
-		MacAddress: subnetPort.Status.MACAddress,
-		ExternalID: subnetPort.Status.VIFID,
+		MacAddress: subnetPort.Status.NetworkInterfaceConfig.MACAddress,
+		ExternalID: subnetPort.Status.Attachment.ID,
 		NetworkID:  networkID,
 		Backing:    backing,
 	}

@@ -39,7 +39,7 @@ require (
 )
 
 require (
-	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.1.0
+	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20240424021250-778eb97fa048
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000
 	gopkg.in/yaml.v3 v3.0.1
 )

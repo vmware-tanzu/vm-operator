@@ -111,24 +111,6 @@ func intgTestsReconcile() {
 			})
 		})
 
-		When("the pause annotation is set", func() {
-			It("Reconcile returns early and the finalizer never gets added", func() {
-				// Set the Pause annotation on the VM
-				vm.Annotations = map[string]string{
-					vmopv1.PauseAnnotation: "",
-				}
-
-				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-
-				Consistently(func() []string {
-					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
-						return vm.GetFinalizers()
-					}
-					return nil
-				}).ShouldNot(ContainElement(finalizer), "waiting for VirtualMachine finalizer")
-			})
-		})
-
 		It("Reconciles after VirtualMachine creation", func() {
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 

@@ -154,6 +154,8 @@ const (
 const (
 	// PauseVMExtraConfigKey is the ExtraConfig key to allow override
 	// operations for admins to pause reconciliation of VM Service VM.
+	//
+	// Please note, the value that takes effect is the string "True"(case-insensitive).
 	PauseVMExtraConfigKey = "vmservice.virtualmachine.pause"
 
 	// PausedVMLabelKey is the label key to identify VMs that reconciliation

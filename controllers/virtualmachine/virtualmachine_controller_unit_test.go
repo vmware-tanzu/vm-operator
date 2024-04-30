@@ -57,10 +57,10 @@ func unitTestsReconcile() {
 	BeforeEach(func() {
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:       "dummy-vm",
-				Namespace:  "dummy-ns",
-				Labels:     map[string]string{},
-				Finalizers: []string{finalizer},
+				Name:        "dummy-vm",
+				Namespace:   "dummy-ns",
+				Annotations: map[string]string{},
+				Finalizers:  []string{finalizer},
 			},
 			Spec: vmopv1.VirtualMachineSpec{
 				ClassName: "dummy-class",
@@ -176,6 +176,13 @@ func unitTestsReconcile() {
 			// Create the VM to be deleted
 			err := reconciler.ReconcileNormal(vmCtx)
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("will not delete the created VM when VM is paused by devops ", func() {
+			vm.Annotations[vmopv1.PauseAnnotation] = "enabled"
+			err := reconciler.ReconcileDelete(vmCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(vm.GetFinalizers()).To(ContainElement(finalizer))
 		})
 
 		It("will delete the created VM and emit corresponding event", func() {

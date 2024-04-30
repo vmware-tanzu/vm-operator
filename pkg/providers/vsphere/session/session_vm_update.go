@@ -1046,41 +1046,46 @@ func (s *Session) UpdateVirtualMachine(
 		return err
 	}
 
-	// Translate the VM's current power state into the VM Op power state value.
-	var existingPowerState vmopv1.VirtualMachinePowerState
-	switch moVM.Summary.Runtime.PowerState {
-	case vimtypes.VirtualMachinePowerStatePoweredOn:
-		existingPowerState = vmopv1.VirtualMachinePowerStateOn
-	case vimtypes.VirtualMachinePowerStatePoweredOff:
-		existingPowerState = vmopv1.VirtualMachinePowerStateOff
-	case vimtypes.VirtualMachinePowerStateSuspended:
-		existingPowerState = vmopv1.VirtualMachinePowerStateSuspended
-	}
-
 	var refetchProps bool
 	var err error
 
-	switch vmCtx.VM.Spec.PowerState {
-	case vmopv1.VirtualMachinePowerStateOff:
-		refetchProps, err = s.updateVMDesiredPowerStateOff(
-			vmCtx,
-			vcVM,
-			moVM,
-			existingPowerState)
+	// Only update VM's power state when VM is not paused.
+	if !isVMPaused(vmCtx, moVM) {
+		// Translate the VM's current power state into the VM Op power state value.
+		var existingPowerState vmopv1.VirtualMachinePowerState
+		switch moVM.Summary.Runtime.PowerState {
+		case vimtypes.VirtualMachinePowerStatePoweredOn:
+			existingPowerState = vmopv1.VirtualMachinePowerStateOn
+		case vimtypes.VirtualMachinePowerStatePoweredOff:
+			existingPowerState = vmopv1.VirtualMachinePowerStateOff
+		case vimtypes.VirtualMachinePowerStateSuspended:
+			existingPowerState = vmopv1.VirtualMachinePowerStateSuspended
+		}
 
-	case vmopv1.VirtualMachinePowerStateSuspended:
-		refetchProps, err = s.updateVMDesiredPowerStateSuspended(
-			vmCtx,
-			vcVM,
-			existingPowerState)
+		switch vmCtx.VM.Spec.PowerState {
+		case vmopv1.VirtualMachinePowerStateOff:
+			refetchProps, err = s.updateVMDesiredPowerStateOff(
+				vmCtx,
+				vcVM,
+				moVM,
+				existingPowerState)
 
-	case vmopv1.VirtualMachinePowerStateOn:
-		refetchProps, err = s.updateVMDesiredPowerStateOn(
-			vmCtx,
-			vcVM,
-			moVM,
-			getUpdateArgsFn,
-			existingPowerState)
+		case vmopv1.VirtualMachinePowerStateSuspended:
+			refetchProps, err = s.updateVMDesiredPowerStateSuspended(
+				vmCtx,
+				vcVM,
+				existingPowerState)
+
+		case vmopv1.VirtualMachinePowerStateOn:
+			refetchProps, err = s.updateVMDesiredPowerStateOn(
+				vmCtx,
+				vcVM,
+				moVM,
+				getUpdateArgsFn,
+				existingPowerState)
+		}
+	} else {
+		vmCtx.Logger.Info("VirtualMachine is paused. PowerState is not updated.")
 	}
 
 	if refetchProps {
@@ -1098,4 +1103,32 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	return err
+}
+
+// Source of truth is EC and Annotation.
+func isVMPaused(
+	vmCtx pkgctx.VirtualMachineContext,
+	moVM *mo.VirtualMachine) bool {
+
+	vm := vmCtx.VM
+
+	adminPaused := vmutil.IsPausedByAdmin(moVM)
+	_, devopsPaused := vm.Annotations[vmopv1.PauseAnnotation]
+
+	if adminPaused || devopsPaused {
+		if vm.Labels == nil {
+			vm.Labels = make(map[string]string)
+		}
+		switch {
+		case adminPaused && devopsPaused:
+			vm.Labels[vmopv1.PausedVMLabelKey] = "both"
+		case adminPaused:
+			vm.Labels[vmopv1.PausedVMLabelKey] = "admin"
+		case devopsPaused:
+			vm.Labels[vmopv1.PausedVMLabelKey] = "devops"
+		}
+		return true
+	}
+	delete(vm.Labels, vmopv1.PausedVMLabelKey)
+	return false
 }

@@ -23,6 +23,10 @@ const (
 	VSphereCustomizationBypassKey     = pkg.VMOperatorKey + "/vsphere-customization"
 	VSphereCustomizationBypassDisable = "disable"
 
+	// VMPausedByAdminError is an error thrown during VM deletion. Because admin paused VM,
+	// deletion operation is paused.
+	VMPausedByAdminError = "failed to delete this VM because extraConfig Key 'vmservice.virtualmachine.pause' is set by admin"
+
 	// VMOperatorV1Alpha1ExtraConfigKey Special ExtraConfig key for v1alpha1 images.
 	VMOperatorV1Alpha1ExtraConfigKey = "guestinfo.vmservice.defer-cloud-init"
 	VMOperatorV1Alpha1ConfigReady    = "ready"

@@ -1,4 +1,4 @@
-# v1alpha2
+# v1alpha3
 
 
 
@@ -18,7 +18,7 @@ API.
 
 | Field | Description |
 | --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha2`
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
 | `kind` _string_ | `ClusterVirtualMachineImage`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineImageSpec](#virtualmachineimagespec)_ |  |
@@ -36,7 +36,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha2`
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
 | `kind` _string_ | `VirtualMachine`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineSpec](#virtualmachinespec)_ |  |
@@ -54,7 +54,7 @@ resource.
 
 | Field | Description |
 | --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha2`
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
 | `kind` _string_ | `VirtualMachineClass`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineClassSpec](#virtualmachineclassspec)_ |  |
@@ -70,7 +70,7 @@ VirtualMachineImage is the schema for the virtualmachineimages API.
 
 | Field | Description |
 | --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha2`
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
 | `kind` _string_ | `VirtualMachineImage`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineImageSpec](#virtualmachineimagespec)_ |  |
@@ -87,7 +87,7 @@ VirtualMachine as a VirtualMachineImage to an image registry.
 
 | Field | Description |
 | --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha2`
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
 | `kind` _string_ | `VirtualMachinePublishRequest`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachinePublishRequestSpec](#virtualmachinepublishrequestspec)_ |  |
@@ -103,7 +103,7 @@ VirtualMachineService is the Schema for the virtualmachineservices API.
 
 | Field | Description |
 | --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha2`
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
 | `kind` _string_ | `VirtualMachineService`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineServiceSpec](#virtualmachineservicespec)_ |  |
@@ -119,7 +119,7 @@ VirtualMachineSetResourcePolicy is the Schema for the virtualmachinesetresourcep
 
 | Field | Description |
 | --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha2`
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
 | `kind` _string_ | `VirtualMachineSetResourcePolicy`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineSetResourcePolicySpec](#virtualmachinesetresourcepolicyspec)_ |  |
@@ -136,7 +136,7 @@ console connection to a VM.
 
 | Field | Description |
 | --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha2`
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
 | `kind` _string_ | `VirtualMachineWebConsoleRequest`
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineWebConsoleRequestSpec](#virtualmachinewebconsolerequestspec)_ |  |
@@ -792,6 +792,22 @@ _Appears in:_
 | `vendor` _string_ | Vendor describes the organization/user that produced the image. |
 | `version` _string_ | Version describes the short-form version of the image. |
 | `fullVersion` _string_ | FullVersion describes the long-form version of the image. |
+
+### VirtualMachineImageRef
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `kind` _string_ | Kind describes the type of image, either a namespace-scoped
+VirtualMachineImage or cluster-scoped ClusterVirtualMachineImage. |
+| `name` _string_ | Name refers to the name of a VirtualMachineImage resource in the same
+namespace as this VM or a cluster-scoped ClusterVirtualMachineImage. |
 
 ### VirtualMachineImageSpec
 
@@ -1863,6 +1879,17 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
+| `image` _[VirtualMachineImageRef](#virtualmachineimageref)_ | Image describes the reference to the VirtualMachineImage or
+ClusterVirtualMachineImage resource used to deploy this VM.
+
+
+Please note, unlike the field spec.imageName, the value of
+spec.image.name MUST be a Kubernetes object name.
+
+
+Please also note, when creating a new VirtualMachine, if this field and
+spec.imageName are both non-empty, then they must refer to the same
+resource or an error is returned. |
 | `imageName` _string_ | ImageName describes the name of the image resource used to deploy this
 VM.
 
@@ -1879,10 +1906,15 @@ This field may also be used to specify the display name (vSphere name) of
 a VirtualMachineImage or ClusterVirtualMachineImage resource. If the
 display name unambiguously resolves to a distinct VM image (among all
 existing VirtualMachineImages in the VM's namespace and all existing
-ClusterVirtualMachineImages), then a mutation webhook updates this field
-with the VM image resource name. If the display name resolves to multiple
-or no VM images, then the mutation webhook denies the request and outputs
-an error message accordingly. |
+ClusterVirtualMachineImages), then a mutation webhook updates the
+spec.image field with the reference to the resolved VM image. If the
+display name resolves to multiple or no VM images, then the mutation
+webhook denies the request and returns an error.
+
+
+Please also note, when creating a new VirtualMachine, if this field and
+spec.image are both non-empty, then they must refer to the same
+resource or an error is returned. |
 | `className` _string_ | ClassName describes the name of the VirtualMachineClass resource used to
 deploy this VM. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
@@ -2031,9 +2063,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `image` _LocalObjectRef_ | Image is a reference to the VirtualMachineImage resource used to deploy
-this VM. |
-| `class` _[LocalObjectRef](#localobjectref)_ | Class is a reference to the VirtualMachineClass resource used to deploy
+| `class` _LocalObjectRef_ | Class is a reference to the VirtualMachineClass resource used to deploy
 this VM. |
 | `host` _string_ | Host describes the hostname or IP address of the infrastructure host
 where the VM is executed. |

@@ -13,7 +13,7 @@ The field `spec.controllerName` in a VM Class indicates the name of the controll
 The field `spec.configSpec` contains a vSphere [`VirtualMachineConfigSpec`](https://vdc-download.vmware.com/vmwb-repository/dcr-public/184bb3ba-6fa8-4574-a767-d0c96e2a38f4/ba9422ef-405c-47dd-8553-e11b619185b2/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.ConfigSpec.html), a sparse data type capable of representing all of the hardware and options used to deploy a VM, ex:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachineClass
 metadata:
   name: my-vm-class

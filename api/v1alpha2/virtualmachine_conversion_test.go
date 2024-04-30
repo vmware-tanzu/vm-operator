@@ -105,4 +105,28 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(spoke.Spec.ImageName).To(Equal("vmi-123"))
 	})
 
+	t.Run("VirtualMachine hub-spoke-hub with bios UUID", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				BiosUUID: "123",
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine hub-spoke-hub with cloud-init instance ID", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						InstanceID: "123",
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
 }

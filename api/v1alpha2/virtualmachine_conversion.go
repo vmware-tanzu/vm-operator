@@ -12,6 +12,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
+func Convert_v1alpha3_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(
+	in *vmopv1.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha3_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(in, out, s)
+}
+
 func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
 
@@ -91,10 +97,31 @@ func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 	return nil
 }
 
-func restore_v1alpha3_VirtualMachineBiosUUID(
+func restore_v1alpha3_VirtualMachineBiosUUID(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.BiosUUID = src.Spec.BiosUUID
+}
+
+func restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(
 	dst, src *vmopv1.VirtualMachine) {
 
-	dst.Spec.BiosUUID = src.Spec.BiosUUID
+	var iid string
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if ci := bs.CloudInit; ci != nil {
+			iid = ci.InstanceID
+		}
+	}
+
+	if iid == "" {
+		return
+	}
+
+	if dst.Spec.Bootstrap == nil {
+		dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+	}
+	if dst.Spec.Bootstrap.CloudInit == nil {
+		dst.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+	}
+	dst.Spec.Bootstrap.CloudInit.InstanceID = iid
 }
 
 // ConvertTo converts this VirtualMachine to the Hub version.
@@ -114,6 +141,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	restore_v1alpha3_VirtualMachineImage(dst, restored)
 	restore_v1alpha3_VirtualMachineBiosUUID(dst, restored)
+	restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 
 	// END RESTORE
 

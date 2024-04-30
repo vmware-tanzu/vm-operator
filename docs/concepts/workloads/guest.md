@@ -32,7 +32,7 @@ The `VirtualMachine` API directly supports specifying a Cloud-Init [cloud config
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha2
+    apiVersion: vmoperator.vmware.com/v1alpha3
     kind: VirtualMachine
     metadata:
       name:      my-vm
@@ -179,7 +179,7 @@ When more advanced configurations are required, a raw cloud config may be used v
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha2
+    apiVersion: vmoperator.vmware.com/v1alpha3
     kind: VirtualMachine
     metadata:
       name:      my-vm
@@ -235,7 +235,7 @@ When more advanced configurations are required, a raw cloud config may be used v
 If using Linux and Cloud-Init is not an option, try the LinuxPrep bootstrap provider, which uses VMware tools to bootstrap a Linux guest operating system. It has minimal configuration options, but it supports a wide-range of Linux distributions. The following YAML may be used to bootstrap a guest using LinuxPrep:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
 metadata:
   name:      my-vm
@@ -267,7 +267,7 @@ It is possible to specify the sysprep configuration inline with the `VirtualMach
 The following YAML may be used to bootstrap a Windows image that uses the volume license SKU and does not require a product ID:
 
 ``` yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
 metadata:
   name:      my-vm
@@ -288,7 +288,7 @@ The following may be used to bootstrap a Windows image that requires a product I
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha2
+    apiVersion: vmoperator.vmware.com/v1alpha3
     kind: VirtualMachine
     metadata:
       name:      my-vm
@@ -335,7 +335,7 @@ The following YAML may be used to bootstrap a Windows image with minimal informa
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha2
+    apiVersion: vmoperator.vmware.com/v1alpha3
     kind: VirtualMachine
     metadata:
       name:      my-vm
@@ -524,7 +524,7 @@ The vAppConfig bootstrap method is useful for legacy, VM images that rely on bes
 To illustrate, the following YAML can be utilized to deploy a VirtualMachine and bootstrap OVF properties that define the network information:
 
 ``` yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
 metadata:
   name:      my-vm

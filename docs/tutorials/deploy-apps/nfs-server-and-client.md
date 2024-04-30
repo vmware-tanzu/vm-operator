@@ -16,7 +16,7 @@ This tutorial assumes the following:
 The first step is to deploy a VM that will act as the NFS server, which is achieved by applying the following YAML:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
 metadata:
   name: nfs-server
@@ -67,7 +67,7 @@ stringData:
 Great, an NFS server is up and running in namespace `ns-1`! To ensure workloads outside of that namespace are able to mount the NFS server's exports, a `VirtualMachineService` is used to provide a load balanced IP address that can be accessed across namespaces.
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachineService
 metadata:
   name: nfs-server
@@ -104,7 +104,7 @@ nfs-server   LoadBalancer   172.24.116.43   192.168.0.4   22/TCP,111/TCP,2049/TC
 With the NFS server up and running, it is time to deploy the VM that will act as the client by applying the following YAML:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
 metadata:
   name: nfs-client
@@ -153,7 +153,7 @@ stringData:
 Just like a service is required to access the NFS exports across namespaces, the following YAML creates a service that allows external actors to access the NFS client via SSH:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachineService
 metadata:
   name: nfs-client

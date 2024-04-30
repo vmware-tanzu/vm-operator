@@ -92,7 +92,7 @@ Additionally, an administrator might also define certain policies in a `VirtualM
 For an example, consider the following VM Class:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachineClass
 metadata:
   name: my-vm-class
@@ -145,7 +145,7 @@ There are several options which may be used to influence the guest's global netw
 The field `spec.network.interfaces` describes one or more network interfaces to add to the VM, ex.:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -169,7 +169,7 @@ If `spec.network.interfaces` is not specified when deploying a VM, a default net
 The `VirtualMachineClass` used to deploy a VM determines the type for the VM's network adapters. If the number of interfaces for a `VirtualMachine` exceeds the number of interfaces in a `VirtualMachineClass`, the `VirtualVmxnet3` type is used for the additional interfaces. For example, consider the following `VirtualMachineClass` that specifies two different network interfaces:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachineClass
 metadata:
   name: my-vm-class
@@ -196,7 +196,7 @@ spec:
 What happens when the following VM is deployed with the above class?
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -246,7 +246,7 @@ There are several options which may be used to influence the guest's per-interfa
 Deploying a VM also normally means bootstrapping the guest with a valid network configuration. But what if the guest does not include a bootstrap engine, or the one included is not supported by VM Operator? Enter `status.network.config`.  Normally a Kubernetes resource's status contains _observed_ state. However, in the case of the VM's `status.network.config` field, the data represents the _intended_ network configuration. For example, the following YAML illustrates a VM deployed with a single network interface:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -323,7 +323,7 @@ Deployed VMs inherit the storage defined in the `VirtualMachineImage`. To provid
 2. Update the VM's `spec.volumes` field with a new volume that references the PVC:
 
     ```yaml
-    apiVersion: vmoperator.vmware.com/v1alpha2
+    apiVersion: vmoperator.vmware.com/v1alpha3
     kind: VirtualMachine
     metadata:
       name: my-vm

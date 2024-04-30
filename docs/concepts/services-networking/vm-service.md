@@ -25,7 +25,7 @@ A `VirtualMachineService` is an <abbr title="An entity in the Kubernetes system,
 For example, suppose there is a set of VMs that each listen on port 9376 and are labelled as `app.kubernetes.io/name=my-app`. The following `VirtualMachineService` may be defined to publish the TCP listener:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachineService
 metadata:
   name: my-vm-service
@@ -83,7 +83,7 @@ If a `VirtualMachineService` has the `.spec.clusterIP` set to "None", then no IP
 In clusters with support for external load balancers, setting the `type` field to `LoadBalancer` provisions a load balanced IP address for a `VirtualMachineService`. The actual creation of the load balanced IP happens asynchronously, and information about the provisioned IP address is published in the `VirtualMachineService`'s `.status.loadBalancer` field. For example:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha2
+apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachineService
 metadata:
   name: my-vm-service

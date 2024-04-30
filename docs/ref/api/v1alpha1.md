@@ -1193,7 +1193,10 @@ VirtualMachineService with the set of VirtualMachines that should back this Virt
 LoadBalancer will get created with the IP specified in this field.
 This feature depends on whether the underlying load balancer provider supports specifying
 the loadBalancerIP when a load balancer is created.
-This field will be ignored if the provider does not support the feature. |
+This field will be ignored if the provider does not support the feature.
+Deprecated: This field was under-specified and its meaning varies across implementations.
+Using it is non-portable and it may not support dual-stack.
+Users are encouraged to use implementation-specific annotations when available. |
 | `loadBalancerSourceRanges` _string array_ | LoadBalancerSourceRanges is an array of IP addresses in the format of
 CIDRs, for example: 103.21.244.0/22 and 10.0.0.0/24.
 If specified and supported by the load balancer provider, this will restrict
@@ -1266,9 +1269,26 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `imageName` _string_ | ImageName describes the name of a VirtualMachineImage that is to be used as the base Operating System image of
-the desired VirtualMachine instances.  The VirtualMachineImage resources can be introspected to discover identifying
-attributes that may help users to identify the desired image to use. |
+| `imageName` _string_ | ImageName describes the name of the image resource used to deploy this
+VM.
+
+
+This field may be used to specify the name of a VirtualMachineImage
+or ClusterVirtualMachineImage resource. The resolver first checks to see
+if there is a VirtualMachineImage with the specified name in the
+same namespace as the VM being deployed. If no such resource exists, the
+resolver then checks to see if there is a ClusterVirtualMachineImage
+resource with the specified name.
+
+
+This field may also be used to specify the display name (vSphere name) of
+a VirtualMachineImage or ClusterVirtualMachineImage resource. If the
+display name unambiguously resolves to a distinct VM image (among all
+existing VirtualMachineImages in the VM's namespace and all existing
+ClusterVirtualMachineImages), then a mutation webhook updates this field
+with the VM image resource name. If the display name resolves to multiple
+or no VM images, then the mutation webhook denies the request and outputs
+an error message accordingly. |
 | `className` _string_ | ClassName describes the name of a VirtualMachineClass that is to be used as the overlaid resource configuration
 of VirtualMachine.  A VirtualMachineClass is used to further customize the attributes of the VirtualMachine
 instance.  See VirtualMachineClass for more description. |

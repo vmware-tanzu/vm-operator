@@ -110,8 +110,7 @@ func getVM() {
 		})
 	})
 
-	// Not until we start setting either the InstanceUUID or BiosUUID
-	XContext("Gets VM by UUID", func() {
+	Context("Gets VM by UUID", func() {
 		BeforeEach(func() {
 			vm, err := ctx.Finder.VirtualMachine(ctx, vcVMName)
 			Expect(err).ToNot(HaveOccurred())

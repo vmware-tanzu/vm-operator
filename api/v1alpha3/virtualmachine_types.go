@@ -436,6 +436,14 @@ type VirtualMachineSpec struct {
 	// behavior. In other words, please be careful when choosing to upgrade a
 	// VM to a newer hardware version.
 	MinHardwareVersion int32 `json:"minHardwareVersion,omitempty"`
+
+	// BiosUUID describes the desired BIOS UUID for a VM.
+	// If omitted, this field defaults to a random UUID.
+	// When the bootstrap provider is Cloud-Init, this value is
+	// used as the Cloud-Init instance ID.
+	// +optional
+	// +kubebuilder:validation:Format:=uuid4
+	BiosUUID string `json:"biosUUID,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options

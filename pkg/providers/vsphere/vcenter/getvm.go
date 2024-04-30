@@ -25,20 +25,17 @@ func GetVirtualMachine(
 	datacenter *object.Datacenter,
 	finder *find.Finder) (*object.VirtualMachine, error) {
 
+	if instanceUUID := vmCtx.VM.UID; instanceUUID != "" {
+		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, string(instanceUUID), true); err == nil {
+			return vm, nil
+		}
+	}
+
 	if uniqueID := vmCtx.VM.Status.UniqueID; uniqueID != "" {
 		if vm, err := findVMByMoID(vmCtx, finder, uniqueID); err == nil {
 			return vm, nil
 		}
 	}
-
-	// For when we start to use the k8s VM.UID for the VC VM's InstanceUUID or UUID (aka BiosUUID):
-	/*
-		if instanceUUID := vmCtx.VM.UID; instanceUUID != "" {
-			if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, string(instanceUUID), true); err == nil {
-				return vm, nil
-			}
-		}
-	*/
 
 	return findVMByInventory(vmCtx, k8sClient, vimClient, finder)
 }
@@ -62,7 +59,6 @@ func findVMByMoID(
 	return vm, nil
 }
 
-//nolint:unused
 func findVMByUUID(
 	vmCtx pkgctx.VirtualMachineContext,
 	vimClient *vim25.Client,

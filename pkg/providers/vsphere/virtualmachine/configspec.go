@@ -41,6 +41,13 @@ func CreateConfigSpec(
 		Type:         vmopv1.ManagedByExtensionType,
 	}
 
+	// spec.biosUUID is only set when creating a VM and is immutable.
+	// These two fields should not be updated for existing VMs.
+	if id := vmCtx.VM.Spec.BiosUUID; id != "" {
+		configSpec.Uuid = id
+		configSpec.InstanceUuid = string(vmCtx.VM.UID)
+	}
+
 	hardwareVersion := determineHardwareVersion(vmCtx.VM, &configSpec, vmImageStatus)
 	if hardwareVersion.IsValid() {
 		configSpec.Version = hardwareVersion.String()

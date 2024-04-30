@@ -85,6 +85,12 @@ type VirtualMachineBootstrapSpec struct {
 // VirtualMachineBootstrapCloudInitSpec describes the CloudInit configuration
 // used to bootstrap the VM.
 type VirtualMachineBootstrapCloudInitSpec struct {
+	// InstanceID is the cloud-init metadata instance ID.
+	// If omitted, this field defaults to the VM's BiosUUID.
+	//
+	// +optional
+	InstanceID string `json:"instanceID,omitempty"`
+
 	// CloudConfig describes a subset of a Cloud-Init CloudConfig, used to
 	// bootstrap the VM.
 	//

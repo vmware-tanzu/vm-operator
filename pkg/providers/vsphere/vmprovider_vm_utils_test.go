@@ -607,9 +607,11 @@ func vmUtilTests() {
 				pwdSecretName := "domain_password_secret"
 
 				BeforeEach(func() {
+					vmCtx.VM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						DomainName: "foo",
+					}
 					vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{
 						Identification: &sysprep.Identification{
-							JoinDomain: "foo",
 							DomainAdminPassword: &sysprep.DomainPasswordSecretKeySelector{
 								Name: pwdSecretName,
 								Key:  "domain_password",

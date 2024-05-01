@@ -7,6 +7,7 @@ spec:
   className: medium
   imageName: windows-11
   network:
+    domainName: my.domain.local
     nameservers:
     - 1.1.1.1
     - 8.8.8.8
@@ -31,7 +32,6 @@ spec:
           domainAdminPassword:
             name: my-vm-bootstrap-secret
             key: domainAdminPassword
-          joinDomain: my-ad.local
         userData:
           fullName: Andrew Kutz
           orgName: VMware

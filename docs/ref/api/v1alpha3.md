@@ -921,6 +921,8 @@ _Appears in:_
 | --- | --- |
 | `hostName` _string_ | HostName is the host name portion of the DNS name. For example,
 the "my-vm" part of "my-vm.domain.local". |
+| `domainName` _string_ | DomainName is the domain name portion of the DNS name. For example,
+the "domain.local" part of "my-vm.domain.local". |
 | `nameservers` _string array_ | Nameservers is a list of the IP addresses for the DNS servers to use.
 
 
@@ -1053,10 +1055,10 @@ _Appears in:_
 | --- | --- |
 | `dhcp` _boolean_ | DHCP indicates whether or not dynamic host control protocol (DHCP) was
 used to configure DNS configuration. |
-| `domainName` _string_ | DomainName is the domain name portion of the DNS name. For example,
-the "domain.local" part of "my-vm.domain.local". |
 | `hostName` _string_ | HostName is the host name portion of the DNS name. For example,
 the "my-vm" part of "my-vm.domain.local". |
+| `domainName` _string_ | DomainName is the domain name portion of the DNS name. For example,
+the "domain.local" part of "my-vm.domain.local". |
 | `nameservers` _string array_ | Nameservers is a list of the IP addresses for the DNS servers to use.
 
 
@@ -1373,16 +1375,66 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `hostName` _string_ | HostName is the value the guest uses as its host name.
-If omitted then the name of the VM will be used.
+| `hostName` _string_ | HostName describes the value the guest uses as its host name. If omitted,
+the name of the VM will be used.
 
 
-Please note this feature is available only with the following bootstrap
-providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+Please note, this feature is available with the following bootstrap
+providers: CloudInit, LinuxPrep, and Sysprep.
 
 
-When the bootstrap provider is Sysprep (except for RawSysprep) this is
-used as the Computer Name. |
+This field must adhere to the format specified in RFC-1034, Section 3.5
+for DNS labels:
+
+
+  * The total length is restricted to 63 characters or less.
+  * The total length is restricted to 15 characters or less on Windows
+    systems.
+  * The value may begin with a digit per RFC-1123.
+  * Underscores are not allowed.
+  * Dashes are permitted, but not at the start or end of the value.
+  * Symbol unicode points, such as emoji, are permitted, ex. ✓. However,
+    please notes that the use of emoji, even where allowed, may not
+    compatible with the guest operating system, so it recommended to
+    stick with more common characters for this value.
+  * The value may be a valid IP4 or IP6 address. Please note, the use of
+    an IP address for a host name is not compatible with all guest
+    operating systems and is discouraged. Additionally, using an IP
+    address for the host name is disallowed if spec.network.domainName is
+    non-empty.
+
+
+Please note, the combined values of spec.network.hostName and
+spec.network.domainName may not exceed 255 characters in length. |
+| `domainName` _string_ | DomainName describes the value the guest uses as its domain name.
+
+
+Please note, this feature is available with the following bootstrap
+providers: CloudInit, LinuxPrep, and Sysprep.
+
+
+This field must adhere to the format specified in RFC-1034, Section 3.5
+for DNS names:
+
+
+  * When joined with the host name, the total length is restricted to 255
+    characters or less.
+  * Individual segments must be 63 characters or less.
+  * The top-level domain( ex. ".com"), is at least two letters with no
+    special characters.
+  * Underscores are not allowed.
+  * Dashes are permitted, but not at the start or end of the value.
+  * Long, top-level domain names (ex. ".london") are permitted.
+  * Symbol unicode points, such as emoji, are disallowed in the top-level
+    domain.
+
+
+Please note, the combined values of spec.network.hostName and
+spec.network.domainName may not exceed 255 characters in length.
+
+
+When deploying a guest running Microsoft Windows, this field describes
+the domain the computer should join. |
 | `disabled` _boolean_ | Disabled is a flag that indicates whether or not to disable networking
 for this VM.
 

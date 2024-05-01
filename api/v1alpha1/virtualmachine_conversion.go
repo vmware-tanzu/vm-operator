@@ -892,6 +892,7 @@ func restore_v1alpha3_VirtualMachineNetworkSpec(
 	}
 	dstNetwork := dst.Spec.Network
 
+	dstNetwork.DomainName = srcNetwork.DomainName
 	dstNetwork.HostName = srcNetwork.HostName
 	dstNetwork.Disabled = srcNetwork.Disabled
 	dstNetwork.Nameservers = srcNetwork.Nameservers

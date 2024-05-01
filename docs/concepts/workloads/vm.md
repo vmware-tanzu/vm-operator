@@ -137,6 +137,7 @@ There are several options which may be used to influence the guest's global netw
 | Field | Description | Cloud-Init | LinuxPrep | Sysprep |
 |-------|-------------|:----------:|:---------:|:-------:|
 | `spec.network.hostName` | The guest's host name | ✓ | ✓ | ✓ |
+| `spec.network.domainName` | The guest's domain name | ✓ | ✓ | ✓ |
 | `spec.network.nameservers` | A list DNS server IP addresses |  | ✓ | ✓ |
 | `spec.network.searchDomains` | A list of DNS search domains |  | ✓ | ✓ |
 
@@ -287,6 +288,7 @@ The above data does _not_ represent the _observed_ network configuration of the 
 | Field | Source |
 |-------|--------|
 | `status.network.config.dns.hostName` | From `spec.network.hostName` if non-empty, otherwise from `metadata.name` |
+| `status.network.config.dns.domainName` | From `spec.network.domainName` if non-empty |
 | `status.network.config.dns.nameservers[]` | From `spec.network.nameservers[]` if non-empty, otherwise from the `ConfigMap` used to initialize VM Operator | 
 | `status.network.config.dns.searchDomains[]` | From `spec.network.searchDomains[]` is used if non-empty, otherwise from the `ConfigMap` used to initialize VM Operator |
 | `status.network.config.interfaces[]` | There will be an interface for every corresponding interface in `spec.network.interfaces[]` |

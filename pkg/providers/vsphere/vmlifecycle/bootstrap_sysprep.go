@@ -108,7 +108,7 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 	sysprepCustomization.UserData = vimtypes.CustomizationUserData{
 		// This is a mandatory field
 		ComputerName: &vimtypes.CustomizationFixedName{
-			Name: bsArgs.Hostname,
+			Name: bsArgs.HostName,
 		},
 	}
 	if from.UserData != nil {
@@ -121,14 +121,16 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 		}
 	}
 
-	sysprepCustomization.GuiRunOnce = &vimtypes.CustomizationGuiRunOnce{
-		CommandList: from.GUIRunOnce.Commands,
+	if from.GUIRunOnce != nil {
+		sysprepCustomization.GuiRunOnce = &vimtypes.CustomizationGuiRunOnce{
+			CommandList: from.GUIRunOnce.Commands,
+		}
 	}
 
 	if from.Identification != nil {
 		sysprepCustomization.Identification = vimtypes.CustomizationIdentification{
 			JoinWorkgroup: from.Identification.JoinWorkgroup,
-			JoinDomain:    from.Identification.JoinDomain,
+			JoinDomain:    bsArgs.DomainName,
 			DomainAdmin:   from.Identification.DomainAdmin,
 		}
 		if bootstrapData.Sysprep != nil && bootstrapData.Sysprep.DomainPassword != "" {

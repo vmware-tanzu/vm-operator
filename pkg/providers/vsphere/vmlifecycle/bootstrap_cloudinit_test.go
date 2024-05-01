@@ -287,6 +287,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 		var (
 			uid           string
 			hostName      string
+			domainName    string
 			netPlan       *network.Netplan
 			sshPublicKeys string
 
@@ -297,6 +298,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 		BeforeEach(func() {
 			uid = "my-uid"
 			hostName = "my-hostname"
+			domainName = ""
 			netPlan = &network.Netplan{
 				Version: 42,
 				Ethernets: map[string]network.NetplanEthernet{
@@ -309,22 +311,47 @@ var _ = Describe("CloudInit Bootstrap", func() {
 		})
 
 		JustBeforeEach(func() {
-			mdYaml, err = vmlifecycle.GetCloudInitMetadata(uid, hostName, netPlan, sshPublicKeys)
+			mdYaml, err = vmlifecycle.GetCloudInitMetadata(uid, hostName, domainName, netPlan, sshPublicKeys)
 		})
 
-		It("DoIt", func() {
-			Expect(err).ToNot(HaveOccurred())
-			Expect(mdYaml).ToNot(BeEmpty())
+		When("domainName is empty", func() {
+			BeforeEach(func() {
+				domainName = ""
+			})
+			It("DoIt", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mdYaml).ToNot(BeEmpty())
 
-			ciMetadata := &vmlifecycle.CloudInitMetadata{}
-			Expect(yaml.Unmarshal([]byte(mdYaml), ciMetadata)).To(Succeed())
+				ciMetadata := &vmlifecycle.CloudInitMetadata{}
+				Expect(yaml.Unmarshal([]byte(mdYaml), ciMetadata)).To(Succeed())
 
-			Expect(ciMetadata.InstanceID).To(Equal(uid))
-			Expect(ciMetadata.Hostname).To(Equal(hostName))
-			Expect(ciMetadata.PublicKeys).To(Equal(sshPublicKeys))
-			Expect(ciMetadata.Network.Version).To(Equal(42))
-			Expect(ciMetadata.Network.Ethernets).To(HaveKey("eth0"))
+				Expect(ciMetadata.InstanceID).To(Equal(uid))
+				Expect(ciMetadata.Hostname).To(Equal(hostName))
+				Expect(ciMetadata.PublicKeys).To(Equal(sshPublicKeys))
+				Expect(ciMetadata.Network.Version).To(Equal(42))
+				Expect(ciMetadata.Network.Ethernets).To(HaveKey("eth0"))
+			})
 		})
+
+		When("domainName is non-empty", func() {
+			BeforeEach(func() {
+				domainName = "local"
+			})
+			It("DoIt", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mdYaml).ToNot(BeEmpty())
+
+				ciMetadata := &vmlifecycle.CloudInitMetadata{}
+				Expect(yaml.Unmarshal([]byte(mdYaml), ciMetadata)).To(Succeed())
+
+				Expect(ciMetadata.InstanceID).To(Equal(uid))
+				Expect(ciMetadata.Hostname).To(Equal(hostName + "." + domainName))
+				Expect(ciMetadata.PublicKeys).To(Equal(sshPublicKeys))
+				Expect(ciMetadata.Network.Version).To(Equal(42))
+				Expect(ciMetadata.Network.Ethernets).To(HaveKey("eth0"))
+			})
+		})
+
 	})
 
 	Context("GetCloudInitGuestInfoCustSpec", func() {

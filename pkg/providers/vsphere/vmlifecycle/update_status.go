@@ -435,19 +435,22 @@ func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
 
 	// Update the global DNS information.
 	{
-		hn, ns, sd := args.Hostname, args.DNSServers, args.SearchSuffixes
-		lhn, lns, lsd := len(hn) > 0, len(ns) > 0, len(sd) > 0
-		if lhn || lns || lsd {
+		hn, dn, ns, sd := args.HostName, args.DomainName, args.DNSServers, args.SearchSuffixes
+		lhn, ldn, lns, lsd := len(hn) > 0, len(dn) > 0, len(ns) > 0, len(sd) > 0
+		if lhn || ldn || lns || lsd {
 			nc.DNS = &vmopv1.VirtualMachineNetworkConfigDNSStatus{}
-		}
-		if lhn {
-			nc.DNS.HostName = hn
-		}
-		if lns {
-			nc.DNS.Nameservers = ns
-		}
-		if lsd {
-			nc.DNS.SearchDomains = sd
+			if lhn {
+				nc.DNS.HostName = hn
+			}
+			if ldn {
+				nc.DNS.DomainName = dn
+			}
+			if lns {
+				nc.DNS.Nameservers = ns
+			}
+			if lsd {
+				nc.DNS.SearchDomains = sd
+			}
 		}
 	}
 

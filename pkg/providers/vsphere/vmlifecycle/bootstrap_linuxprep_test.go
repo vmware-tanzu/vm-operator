@@ -56,7 +56,7 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			linuxPrepSpec = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
 			vAppConfigSpec = nil
 
-			bsArgs.Hostname = "my-hostname"
+			bsArgs.HostName = "my-hostname"
 			bsArgs.SearchSuffixes = []string{"suffix1", "suffix2"}
 			bsArgs.NetworkResults.Results = []network.NetworkInterfaceResult{
 				{
@@ -105,7 +105,7 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 
 			linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
 			hostName := linuxSpec.HostName.(*vimtypes.CustomizationFixedName).Name
-			Expect(hostName).To(Equal(bsArgs.Hostname))
+			Expect(hostName).To(Equal(bsArgs.HostName))
 			Expect(linuxSpec.TimeZone).To(Equal(linuxPrepSpec.TimeZone))
 			Expect(linuxSpec.HwClockUTC).ToNot(BeNil())
 			Expect(*linuxSpec.HwClockUTC).To(Equal(linuxPrepSpec.HardwareClockIsUTC))

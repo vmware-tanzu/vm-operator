@@ -18,6 +18,18 @@ func Convert_v1alpha3_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMa
 	return autoConvert_v1alpha3_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(in, out, s)
 }
 
+func Convert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(
+	in *vmopv1.VirtualMachineNetworkConfigDNSStatus, out *VirtualMachineNetworkConfigDNSStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(in, out, s)
+}
+
+func Convert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec(
+	in *vmopv1.VirtualMachineNetworkSpec, out *VirtualMachineNetworkSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec(in, out, s)
+}
+
 func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
 
@@ -56,12 +68,48 @@ func Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(
 		}
 	}
 
+	// Copy in.spec.network.domainName to
+	// out.spec.bootstrap.sysprep.sysprep.identification.joinDomain on
+	// down-convert.
+	if net := in.Spec.Network; net != nil && net.DomainName != "" {
+		if bs := out.Spec.Bootstrap; bs != nil {
+			if sp := bs.Sysprep; sp != nil {
+				if spsp := sp.Sysprep; spsp != nil {
+					if spid := spsp.Identification; spid != nil {
+						spid.JoinDomain = net.DomainName
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
 func restore_v1alpha3_VirtualMachineImage(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Image = src.Spec.Image
 	dst.Spec.ImageName = src.Spec.ImageName
+}
+
+func restore_v1alpha3_VirtualMachineSpecNetworkDomainName(dst, src *vmopv1.VirtualMachine) {
+	var (
+		dstDN string
+		srcDN string
+	)
+
+	if net := dst.Spec.Network; net != nil {
+		dstDN = net.DomainName
+	}
+	if net := src.Spec.Network; net != nil {
+		srcDN = net.DomainName
+	}
+
+	if dstDN == "" && srcDN != dstDN {
+		if dst.Spec.Network == nil {
+			dst.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+		}
+		dst.Spec.Network.DomainName = srcDN
+	}
 }
 
 func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachine, out *vmopv1.VirtualMachine, s apiconversion.Scope) error {
@@ -90,6 +138,23 @@ func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 		} else if in.Spec.ImageName != "" {
 			out.Spec.Image = &vmopv1.VirtualMachineImageRef{
 				Name: in.Spec.ImageName,
+			}
+		}
+	}
+
+	// Copy in.bootstrap.sysprep.sysprep.identification.joinDomain to
+	// out.spec.domainName on up-convert.
+	if bs := in.Spec.Bootstrap; bs != nil {
+		if sp := bs.Sysprep; sp != nil {
+			if spsp := sp.Sysprep; spsp != nil {
+				if spid := spsp.Identification; spid != nil {
+					if dn := spid.JoinDomain; dn != "" {
+						if out.Spec.Network == nil {
+							out.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+						}
+						out.Spec.Network.DomainName = dn
+					}
+				}
 			}
 		}
 	}
@@ -142,6 +207,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha3_VirtualMachineImage(dst, restored)
 	restore_v1alpha3_VirtualMachineBiosUUID(dst, restored)
 	restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
+	restore_v1alpha3_VirtualMachineSpecNetworkDomainName(dst, restored)
 
 	// END RESTORE
 

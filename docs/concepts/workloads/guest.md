@@ -21,6 +21,10 @@ There are a number of methods that may be used to bootstrap a virtual machine's 
 
     It is possible to use the Cloud-Init bootstrap provider to deploy a Windows image if it contains [Cloudbase-Init](https://cloudbase.it/cloudbase-init/), the Windows port of Cloud-Init.
 
+### InstanceID
+
+The `cloudInit.instanceID` field defaults to the VM's `spec.biosUUID`. The value of this field can be changed when a VM is restored from backup for example, to trigger cloud-init based network initialization.
+
 ### Inline Cloud Config
 
 The `VirtualMachine` API directly supports specifying a Cloud-Init [cloud config](https://cloudinit.readthedocs.io/en/latest/reference/examples.html) for bootstrapping:

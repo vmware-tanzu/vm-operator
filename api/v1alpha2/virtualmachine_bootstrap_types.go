@@ -118,7 +118,7 @@ type VirtualMachineBootstrapLinuxPrepSpec struct {
 	// local time.
 	//
 	// +optional
-	HardwareClockIsUTC bool `json:"hardwareClockIsUTC,omitempty"`
+	HardwareClockIsUTC *bool `json:"hardwareClockIsUTC,omitempty"`
 
 	// TimeZone is a case-sensitive timezone, such as Europe/Sofia.
 	//

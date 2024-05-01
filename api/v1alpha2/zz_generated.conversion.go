@@ -1452,7 +1452,7 @@ func autoConvert_v1alpha3_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_Virtu
 }
 
 func autoConvert_v1alpha2_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha3_VirtualMachineBootstrapLinuxPrepSpec(in *VirtualMachineBootstrapLinuxPrepSpec, out *v1alpha3.VirtualMachineBootstrapLinuxPrepSpec, s conversion.Scope) error {
-	out.HardwareClockIsUTC = in.HardwareClockIsUTC
+	out.HardwareClockIsUTC = (*bool)(unsafe.Pointer(in.HardwareClockIsUTC))
 	out.TimeZone = in.TimeZone
 	return nil
 }
@@ -1463,7 +1463,7 @@ func Convert_v1alpha2_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha3_VirtualMa
 }
 
 func autoConvert_v1alpha3_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha2_VirtualMachineBootstrapLinuxPrepSpec(in *v1alpha3.VirtualMachineBootstrapLinuxPrepSpec, out *VirtualMachineBootstrapLinuxPrepSpec, s conversion.Scope) error {
-	out.HardwareClockIsUTC = in.HardwareClockIsUTC
+	out.HardwareClockIsUTC = (*bool)(unsafe.Pointer(in.HardwareClockIsUTC))
 	out.TimeZone = in.TimeZone
 	return nil
 }

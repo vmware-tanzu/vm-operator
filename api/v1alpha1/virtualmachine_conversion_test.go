@@ -288,7 +288,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 			Spec: vmopv1.VirtualMachineSpec{
 				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 					LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-						HardwareClockIsUTC: true,
+						HardwareClockIsUTC: &[]bool{true}[0],
 						TimeZone:           "my-tz",
 					},
 				},
@@ -305,7 +305,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 			Spec: vmopv1.VirtualMachineSpec{
 				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 					LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-						HardwareClockIsUTC: true,
+						HardwareClockIsUTC: &[]bool{true}[0],
 						TimeZone:           "my-tz",
 					},
 					VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{

@@ -107,8 +107,7 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			hostName := linuxSpec.HostName.(*vimtypes.CustomizationFixedName).Name
 			Expect(hostName).To(Equal(bsArgs.HostName))
 			Expect(linuxSpec.TimeZone).To(Equal(linuxPrepSpec.TimeZone))
-			Expect(linuxSpec.HwClockUTC).ToNot(BeNil())
-			Expect(*linuxSpec.HwClockUTC).To(Equal(linuxPrepSpec.HardwareClockIsUTC))
+			Expect(linuxSpec.HwClockUTC).To(Equal(linuxPrepSpec.HardwareClockIsUTC))
 
 			Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
 			Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))

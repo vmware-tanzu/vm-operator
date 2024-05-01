@@ -32,7 +32,7 @@ func BootStrapLinuxPrep(
 			},
 			Domain:     bsArgs.DomainName,
 			TimeZone:   linuxPrepSpec.TimeZone,
-			HwClockUTC: vimtypes.NewBool(linuxPrepSpec.HardwareClockIsUTC),
+			HwClockUTC: linuxPrepSpec.HardwareClockIsUTC,
 		},
 		GlobalIPSettings: vimtypes.CustomizationGlobalIPSettings{
 			DnsSuffixList: bsArgs.SearchSuffixes,

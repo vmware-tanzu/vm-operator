@@ -69,7 +69,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						SSHAuthorizedKeys: []string{"my-ssh-key"},
 					},
 					LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-						HardwareClockIsUTC: true,
+						HardwareClockIsUTC: &[]bool{true}[0],
 						TimeZone:           "my-tz",
 					},
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{

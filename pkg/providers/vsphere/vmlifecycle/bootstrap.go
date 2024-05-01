@@ -51,7 +51,8 @@ type BootstrapArgs struct {
 
 	TemplateRenderFn TemplateRenderFunc
 	NetworkResults   network.NetworkInterfaceResults
-	Hostname         string
+	DomainName       string
+	HostName         string
 	DNSServers       []string
 	SearchSuffixes   []string
 }
@@ -142,12 +143,15 @@ func GetBootstrapArgs(
 	bsa := BootstrapArgs{
 		BootstrapData:  bootstrapData,
 		NetworkResults: networkResults,
-		Hostname:       ctx.VM.Name,
+		HostName:       ctx.VM.Name,
 	}
 
 	if networkSpec := ctx.VM.Spec.Network; networkSpec != nil {
 		if networkSpec.HostName != "" {
-			bsa.Hostname = networkSpec.HostName
+			bsa.HostName = networkSpec.HostName
+		}
+		if networkSpec.DomainName != "" {
+			bsa.DomainName = networkSpec.DomainName
 		}
 		bsa.DNSServers = networkSpec.Nameservers
 		bsa.SearchSuffixes = networkSpec.SearchDomains

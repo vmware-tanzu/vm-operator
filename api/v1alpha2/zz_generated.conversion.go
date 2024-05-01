@@ -15,6 +15,8 @@ import (
 	v1alpha2cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	v1alpha2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	v1alpha2sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
+	conversionv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep/conversion/v1alpha2"
+	conversionv1alpha3 "github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep/conversion/v1alpha3"
 	v1alpha3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
 	common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
@@ -452,11 +454,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha3.VirtualMachineNetworkConfigDNSStatus)(nil), (*VirtualMachineNetworkConfigDNSStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(a.(*v1alpha3.VirtualMachineNetworkConfigDNSStatus), b.(*VirtualMachineNetworkConfigDNSStatus), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineNetworkConfigInterfaceIPStatus)(nil), (*v1alpha3.VirtualMachineNetworkConfigInterfaceIPStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_VirtualMachineNetworkConfigInterfaceIPStatus_To_v1alpha3_VirtualMachineNetworkConfigInterfaceIPStatus(a.(*VirtualMachineNetworkConfigInterfaceIPStatus), b.(*v1alpha3.VirtualMachineNetworkConfigInterfaceIPStatus), scope)
 	}); err != nil {
@@ -609,11 +606,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineNetworkSpec)(nil), (*v1alpha3.VirtualMachineNetworkSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetworkSpec(a.(*VirtualMachineNetworkSpec), b.(*v1alpha3.VirtualMachineNetworkSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha3.VirtualMachineNetworkSpec)(nil), (*VirtualMachineNetworkSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec(a.(*v1alpha3.VirtualMachineNetworkSpec), b.(*VirtualMachineNetworkSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -929,6 +921,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*v1alpha3.VirtualMachineBootstrapCloudInitSpec)(nil), (*VirtualMachineBootstrapCloudInitSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(a.(*v1alpha3.VirtualMachineBootstrapCloudInitSpec), b.(*VirtualMachineBootstrapCloudInitSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha3.VirtualMachineNetworkConfigDNSStatus)(nil), (*VirtualMachineNetworkConfigDNSStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(a.(*v1alpha3.VirtualMachineNetworkConfigDNSStatus), b.(*VirtualMachineNetworkConfigDNSStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha3.VirtualMachineNetworkSpec)(nil), (*VirtualMachineNetworkSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec(a.(*v1alpha3.VirtualMachineNetworkSpec), b.(*VirtualMachineNetworkSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -1482,7 +1484,15 @@ func autoConvert_v1alpha2_VirtualMachineBootstrapSpec_To_v1alpha3_VirtualMachine
 		out.CloudInit = nil
 	}
 	out.LinuxPrep = (*v1alpha3.VirtualMachineBootstrapLinuxPrepSpec)(unsafe.Pointer(in.LinuxPrep))
-	out.Sysprep = (*v1alpha3.VirtualMachineBootstrapSysprepSpec)(unsafe.Pointer(in.Sysprep))
+	if in.Sysprep != nil {
+		in, out := &in.Sysprep, &out.Sysprep
+		*out = new(v1alpha3.VirtualMachineBootstrapSysprepSpec)
+		if err := Convert_v1alpha2_VirtualMachineBootstrapSysprepSpec_To_v1alpha3_VirtualMachineBootstrapSysprepSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Sysprep = nil
+	}
 	out.VAppConfig = (*v1alpha3.VirtualMachineBootstrapVAppConfigSpec)(unsafe.Pointer(in.VAppConfig))
 	return nil
 }
@@ -1503,7 +1513,15 @@ func autoConvert_v1alpha3_VirtualMachineBootstrapSpec_To_v1alpha2_VirtualMachine
 		out.CloudInit = nil
 	}
 	out.LinuxPrep = (*VirtualMachineBootstrapLinuxPrepSpec)(unsafe.Pointer(in.LinuxPrep))
-	out.Sysprep = (*VirtualMachineBootstrapSysprepSpec)(unsafe.Pointer(in.Sysprep))
+	if in.Sysprep != nil {
+		in, out := &in.Sysprep, &out.Sysprep
+		*out = new(VirtualMachineBootstrapSysprepSpec)
+		if err := Convert_v1alpha3_VirtualMachineBootstrapSysprepSpec_To_v1alpha2_VirtualMachineBootstrapSysprepSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Sysprep = nil
+	}
 	out.VAppConfig = (*VirtualMachineBootstrapVAppConfigSpec)(unsafe.Pointer(in.VAppConfig))
 	return nil
 }
@@ -1514,7 +1532,15 @@ func Convert_v1alpha3_VirtualMachineBootstrapSpec_To_v1alpha2_VirtualMachineBoot
 }
 
 func autoConvert_v1alpha2_VirtualMachineBootstrapSysprepSpec_To_v1alpha3_VirtualMachineBootstrapSysprepSpec(in *VirtualMachineBootstrapSysprepSpec, out *v1alpha3.VirtualMachineBootstrapSysprepSpec, s conversion.Scope) error {
-	out.Sysprep = (*sysprep.Sysprep)(unsafe.Pointer(in.Sysprep))
+	if in.Sysprep != nil {
+		in, out := &in.Sysprep, &out.Sysprep
+		*out = new(sysprep.Sysprep)
+		if err := conversionv1alpha2.Convert_sysprep_Sysprep_To_sysprep_Sysprep(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Sysprep = nil
+	}
 	out.RawSysprep = (*common.SecretKeySelector)(unsafe.Pointer(in.RawSysprep))
 	return nil
 }
@@ -1525,7 +1551,15 @@ func Convert_v1alpha2_VirtualMachineBootstrapSysprepSpec_To_v1alpha3_VirtualMach
 }
 
 func autoConvert_v1alpha3_VirtualMachineBootstrapSysprepSpec_To_v1alpha2_VirtualMachineBootstrapSysprepSpec(in *v1alpha3.VirtualMachineBootstrapSysprepSpec, out *VirtualMachineBootstrapSysprepSpec, s conversion.Scope) error {
-	out.Sysprep = (*v1alpha2sysprep.Sysprep)(unsafe.Pointer(in.Sysprep))
+	if in.Sysprep != nil {
+		in, out := &in.Sysprep, &out.Sysprep
+		*out = new(v1alpha2sysprep.Sysprep)
+		if err := conversionv1alpha3.Convert_sysprep_Sysprep_To_sysprep_Sysprep(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Sysprep = nil
+	}
 	out.RawSysprep = (*v1alpha2common.SecretKeySelector)(unsafe.Pointer(in.RawSysprep))
 	return nil
 }
@@ -2043,14 +2077,10 @@ func Convert_v1alpha2_VirtualMachineNetworkConfigDNSStatus_To_v1alpha3_VirtualMa
 
 func autoConvert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(in *v1alpha3.VirtualMachineNetworkConfigDNSStatus, out *VirtualMachineNetworkConfigDNSStatus, s conversion.Scope) error {
 	out.HostName = in.HostName
+	// WARNING: in.DomainName requires manual conversion: does not exist in peer-type
 	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
 	out.SearchDomains = *(*[]string)(unsafe.Pointer(&in.SearchDomains))
 	return nil
-}
-
-// Convert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus is an autogenerated conversion function.
-func Convert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(in *v1alpha3.VirtualMachineNetworkConfigDNSStatus, out *VirtualMachineNetworkConfigDNSStatus, s conversion.Scope) error {
-	return autoConvert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(in, out, s)
 }
 
 func autoConvert_v1alpha2_VirtualMachineNetworkConfigInterfaceIPStatus_To_v1alpha3_VirtualMachineNetworkConfigInterfaceIPStatus(in *VirtualMachineNetworkConfigInterfaceIPStatus, out *v1alpha3.VirtualMachineNetworkConfigInterfaceIPStatus, s conversion.Scope) error {
@@ -2082,7 +2112,15 @@ func Convert_v1alpha3_VirtualMachineNetworkConfigInterfaceIPStatus_To_v1alpha2_V
 func autoConvert_v1alpha2_VirtualMachineNetworkConfigInterfaceStatus_To_v1alpha3_VirtualMachineNetworkConfigInterfaceStatus(in *VirtualMachineNetworkConfigInterfaceStatus, out *v1alpha3.VirtualMachineNetworkConfigInterfaceStatus, s conversion.Scope) error {
 	out.Name = in.Name
 	out.IP = (*v1alpha3.VirtualMachineNetworkConfigInterfaceIPStatus)(unsafe.Pointer(in.IP))
-	out.DNS = (*v1alpha3.VirtualMachineNetworkConfigDNSStatus)(unsafe.Pointer(in.DNS))
+	if in.DNS != nil {
+		in, out := &in.DNS, &out.DNS
+		*out = new(v1alpha3.VirtualMachineNetworkConfigDNSStatus)
+		if err := Convert_v1alpha2_VirtualMachineNetworkConfigDNSStatus_To_v1alpha3_VirtualMachineNetworkConfigDNSStatus(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.DNS = nil
+	}
 	return nil
 }
 
@@ -2094,7 +2132,15 @@ func Convert_v1alpha2_VirtualMachineNetworkConfigInterfaceStatus_To_v1alpha3_Vir
 func autoConvert_v1alpha3_VirtualMachineNetworkConfigInterfaceStatus_To_v1alpha2_VirtualMachineNetworkConfigInterfaceStatus(in *v1alpha3.VirtualMachineNetworkConfigInterfaceStatus, out *VirtualMachineNetworkConfigInterfaceStatus, s conversion.Scope) error {
 	out.Name = in.Name
 	out.IP = (*VirtualMachineNetworkConfigInterfaceIPStatus)(unsafe.Pointer(in.IP))
-	out.DNS = (*VirtualMachineNetworkConfigDNSStatus)(unsafe.Pointer(in.DNS))
+	if in.DNS != nil {
+		in, out := &in.DNS, &out.DNS
+		*out = new(VirtualMachineNetworkConfigDNSStatus)
+		if err := Convert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.DNS = nil
+	}
 	return nil
 }
 
@@ -2104,8 +2150,26 @@ func Convert_v1alpha3_VirtualMachineNetworkConfigInterfaceStatus_To_v1alpha2_Vir
 }
 
 func autoConvert_v1alpha2_VirtualMachineNetworkConfigStatus_To_v1alpha3_VirtualMachineNetworkConfigStatus(in *VirtualMachineNetworkConfigStatus, out *v1alpha3.VirtualMachineNetworkConfigStatus, s conversion.Scope) error {
-	out.Interfaces = *(*[]v1alpha3.VirtualMachineNetworkConfigInterfaceStatus)(unsafe.Pointer(&in.Interfaces))
-	out.DNS = (*v1alpha3.VirtualMachineNetworkConfigDNSStatus)(unsafe.Pointer(in.DNS))
+	if in.Interfaces != nil {
+		in, out := &in.Interfaces, &out.Interfaces
+		*out = make([]v1alpha3.VirtualMachineNetworkConfigInterfaceStatus, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha2_VirtualMachineNetworkConfigInterfaceStatus_To_v1alpha3_VirtualMachineNetworkConfigInterfaceStatus(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Interfaces = nil
+	}
+	if in.DNS != nil {
+		in, out := &in.DNS, &out.DNS
+		*out = new(v1alpha3.VirtualMachineNetworkConfigDNSStatus)
+		if err := Convert_v1alpha2_VirtualMachineNetworkConfigDNSStatus_To_v1alpha3_VirtualMachineNetworkConfigDNSStatus(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.DNS = nil
+	}
 	return nil
 }
 
@@ -2115,8 +2179,26 @@ func Convert_v1alpha2_VirtualMachineNetworkConfigStatus_To_v1alpha3_VirtualMachi
 }
 
 func autoConvert_v1alpha3_VirtualMachineNetworkConfigStatus_To_v1alpha2_VirtualMachineNetworkConfigStatus(in *v1alpha3.VirtualMachineNetworkConfigStatus, out *VirtualMachineNetworkConfigStatus, s conversion.Scope) error {
-	out.Interfaces = *(*[]VirtualMachineNetworkConfigInterfaceStatus)(unsafe.Pointer(&in.Interfaces))
-	out.DNS = (*VirtualMachineNetworkConfigDNSStatus)(unsafe.Pointer(in.DNS))
+	if in.Interfaces != nil {
+		in, out := &in.Interfaces, &out.Interfaces
+		*out = make([]VirtualMachineNetworkConfigInterfaceStatus, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha3_VirtualMachineNetworkConfigInterfaceStatus_To_v1alpha2_VirtualMachineNetworkConfigInterfaceStatus(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Interfaces = nil
+	}
+	if in.DNS != nil {
+		in, out := &in.DNS, &out.DNS
+		*out = new(VirtualMachineNetworkConfigDNSStatus)
+		if err := Convert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.DNS = nil
+	}
 	return nil
 }
 
@@ -2193,8 +2275,8 @@ func Convert_v1alpha2_VirtualMachineNetworkDNSStatus_To_v1alpha3_VirtualMachineN
 
 func autoConvert_v1alpha3_VirtualMachineNetworkDNSStatus_To_v1alpha2_VirtualMachineNetworkDNSStatus(in *v1alpha3.VirtualMachineNetworkDNSStatus, out *VirtualMachineNetworkDNSStatus, s conversion.Scope) error {
 	out.DHCP = in.DHCP
-	out.DomainName = in.DomainName
 	out.HostName = in.HostName
+	out.DomainName = in.DomainName
 	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
 	out.SearchDomains = *(*[]string)(unsafe.Pointer(&in.SearchDomains))
 	return nil
@@ -2459,6 +2541,7 @@ func Convert_v1alpha2_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetwor
 
 func autoConvert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec(in *v1alpha3.VirtualMachineNetworkSpec, out *VirtualMachineNetworkSpec, s conversion.Scope) error {
 	out.HostName = in.HostName
+	// WARNING: in.DomainName requires manual conversion: does not exist in peer-type
 	out.Disabled = in.Disabled
 	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
 	out.SearchDomains = *(*[]string)(unsafe.Pointer(&in.SearchDomains))
@@ -2466,13 +2549,16 @@ func autoConvert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNe
 	return nil
 }
 
-// Convert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec is an autogenerated conversion function.
-func Convert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec(in *v1alpha3.VirtualMachineNetworkSpec, out *VirtualMachineNetworkSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec(in, out, s)
-}
-
 func autoConvert_v1alpha2_VirtualMachineNetworkStatus_To_v1alpha3_VirtualMachineNetworkStatus(in *VirtualMachineNetworkStatus, out *v1alpha3.VirtualMachineNetworkStatus, s conversion.Scope) error {
-	out.Config = (*v1alpha3.VirtualMachineNetworkConfigStatus)(unsafe.Pointer(in.Config))
+	if in.Config != nil {
+		in, out := &in.Config, &out.Config
+		*out = new(v1alpha3.VirtualMachineNetworkConfigStatus)
+		if err := Convert_v1alpha2_VirtualMachineNetworkConfigStatus_To_v1alpha3_VirtualMachineNetworkConfigStatus(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Config = nil
+	}
 	out.Interfaces = *(*[]v1alpha3.VirtualMachineNetworkInterfaceStatus)(unsafe.Pointer(&in.Interfaces))
 	out.IPStacks = *(*[]v1alpha3.VirtualMachineNetworkIPStackStatus)(unsafe.Pointer(&in.IPStacks))
 	out.PrimaryIP4 = in.PrimaryIP4
@@ -2486,7 +2572,15 @@ func Convert_v1alpha2_VirtualMachineNetworkStatus_To_v1alpha3_VirtualMachineNetw
 }
 
 func autoConvert_v1alpha3_VirtualMachineNetworkStatus_To_v1alpha2_VirtualMachineNetworkStatus(in *v1alpha3.VirtualMachineNetworkStatus, out *VirtualMachineNetworkStatus, s conversion.Scope) error {
-	out.Config = (*VirtualMachineNetworkConfigStatus)(unsafe.Pointer(in.Config))
+	if in.Config != nil {
+		in, out := &in.Config, &out.Config
+		*out = new(VirtualMachineNetworkConfigStatus)
+		if err := Convert_v1alpha3_VirtualMachineNetworkConfigStatus_To_v1alpha2_VirtualMachineNetworkConfigStatus(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Config = nil
+	}
 	out.Interfaces = *(*[]VirtualMachineNetworkInterfaceStatus)(unsafe.Pointer(&in.Interfaces))
 	out.IPStacks = *(*[]VirtualMachineNetworkIPStackStatus)(unsafe.Pointer(&in.IPStacks))
 	out.PrimaryIP4 = in.PrimaryIP4
@@ -3042,7 +3136,15 @@ func autoConvert_v1alpha2_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *
 	} else {
 		out.Bootstrap = nil
 	}
-	out.Network = (*v1alpha3.VirtualMachineNetworkSpec)(unsafe.Pointer(in.Network))
+	if in.Network != nil {
+		in, out := &in.Network, &out.Network
+		*out = new(v1alpha3.VirtualMachineNetworkSpec)
+		if err := Convert_v1alpha2_VirtualMachineNetworkSpec_To_v1alpha3_VirtualMachineNetworkSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Network = nil
+	}
 	out.PowerState = v1alpha3.VirtualMachinePowerState(in.PowerState)
 	out.PowerOffMode = v1alpha3.VirtualMachinePowerOpMode(in.PowerOffMode)
 	out.SuspendMode = v1alpha3.VirtualMachinePowerOpMode(in.SuspendMode)
@@ -3075,7 +3177,15 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 	} else {
 		out.Bootstrap = nil
 	}
-	out.Network = (*VirtualMachineNetworkSpec)(unsafe.Pointer(in.Network))
+	if in.Network != nil {
+		in, out := &in.Network, &out.Network
+		*out = new(VirtualMachineNetworkSpec)
+		if err := Convert_v1alpha3_VirtualMachineNetworkSpec_To_v1alpha2_VirtualMachineNetworkSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Network = nil
+	}
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.PowerOffMode = VirtualMachinePowerOpMode(in.PowerOffMode)
 	out.SuspendMode = VirtualMachinePowerOpMode(in.SuspendMode)
@@ -3096,7 +3206,15 @@ func autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
 	out.Host = in.Host
 	out.PowerState = v1alpha3.VirtualMachinePowerState(in.PowerState)
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
-	out.Network = (*v1alpha3.VirtualMachineNetworkStatus)(unsafe.Pointer(in.Network))
+	if in.Network != nil {
+		in, out := &in.Network, &out.Network
+		*out = new(v1alpha3.VirtualMachineNetworkStatus)
+		if err := Convert_v1alpha2_VirtualMachineNetworkStatus_To_v1alpha3_VirtualMachineNetworkStatus(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Network = nil
+	}
 	out.UniqueID = in.UniqueID
 	out.BiosUUID = in.BiosUUID
 	out.InstanceUUID = in.InstanceUUID
@@ -3113,7 +3231,15 @@ func autoConvert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	out.Host = in.Host
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
-	out.Network = (*VirtualMachineNetworkStatus)(unsafe.Pointer(in.Network))
+	if in.Network != nil {
+		in, out := &in.Network, &out.Network
+		*out = new(VirtualMachineNetworkStatus)
+		if err := Convert_v1alpha3_VirtualMachineNetworkStatus_To_v1alpha2_VirtualMachineNetworkStatus(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Network = nil
+	}
 	out.UniqueID = in.UniqueID
 	out.BiosUUID = in.BiosUUID
 	out.InstanceUUID = in.InstanceUUID

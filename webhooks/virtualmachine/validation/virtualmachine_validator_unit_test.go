@@ -31,6 +31,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -100,7 +101,7 @@ type unitValidatingWebhookContext struct {
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
 	vm := builder.DummyVirtualMachineA2()
-	vm.Name = "dummy-vm-for-webhook-validation"
+	vm.Name = "dummy-vm"
 	vm.Namespace = "dummy-vm-namespace-for-webhook-validation"
 	obj, err := builder.ToUnstructured(vm)
 	Expect(err).ToNot(HaveOccurred())
@@ -789,11 +790,13 @@ func unitTestsValidateCreate() {
 			Entry("disallow Sysprep mixing inline Sysprep identification",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "foo-domain",
+						}
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &sysprep.Sysprep{
 									Identification: &sysprep.Identification{
-										JoinDomain:    "foo-domain",
 										JoinWorkgroup: "foo-wg",
 									},
 								},
@@ -801,8 +804,8 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.bootstrap.sysprep.sysprep: Invalid value: "identification": joinDomain and joinWorkgroup are mutually exclusive`,
-						`spec.bootstrap.sysprep.sysprep: Invalid value: "identification": joinDomain requires domainAdmin and domainAdminPassword selector to be set`,
+						`spec.bootstrap.sysprep.sysprep: Invalid value: "identification": spec.network.domainName and joinWorkgroup are mutually exclusive`,
+						`spec.bootstrap.sysprep.sysprep: Invalid value: "identification": spec.network.domainName requires domainAdmin and domainAdminPassword selector to be set`,
 					),
 				},
 			),
@@ -1382,11 +1385,303 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						fmt.Sprintf(`spec.network.interfaces[0].name: Invalid value: "dummy-vm-for-webhook-validation-dummy-nw-%x": is the resulting network interface name: must be no more than 253 characters`, make([]byte, validation.DNS1123SubdomainMaxLength)),
-						`spec.network.interfaces[1].name: Invalid value: "dummy-vm-for-webhook-validation-dummy-nw-dummy_If": is the resulting network interface name: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters`,
+						fmt.Sprintf(`spec.network.interfaces[0].name: Invalid value: "dummy-vm-dummy-nw-%x": is the resulting network interface name: must be no more than 253 characters`, make([]byte, validation.DNS1123SubdomainMaxLength)),
+						`spec.network.interfaces[1].name: Invalid value: "dummy-vm-dummy-nw-dummy_If": is the resulting network interface name: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters`,
 						`'-' or '.'`,
 						`and must start and end with an alphanumeric character (e.g. 'example.com'`,
 						"regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"),
+				},
+			),
+		)
+
+		DescribeTable("network create - host and domain names", doTest,
+
+			Entry("allow simple host name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "hello-world",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow host name with one character",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "a",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow host name with leading digit",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "1a",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow host name with unicode",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "ch✓ck",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow host name with invalid character",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "hello_world",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "hello_world": %s`, vmopv1util.ErrInvalidHostName),
+					),
+				},
+			),
+
+			Entry("disallow host name with leading dash",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "-hello-world",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "-hello-world": %s`, vmopv1util.ErrInvalidHostName),
+					),
+				},
+			),
+
+			Entry("disallow host name longer than 63 characters",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: strings.Repeat("a", 64),
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "%s": %s`, strings.Repeat("a", 64), vmopv1util.ErrInvalidHostName),
+					),
+				},
+			),
+
+			Entry("disallow host name longer than 15 characters if sysprep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: strings.Repeat("a", 16),
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "%s": %s`, strings.Repeat("a", 16), vmopv1util.ErrInvalidHostNameWindows),
+					),
+				},
+			),
+
+			Entry("disallow host name with valid FQDN",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "hello-world.com",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "hello-world.com": %s`, vmopv1util.ErrInvalidHostName),
+					),
+				},
+			),
+
+			Entry("allow IP4 as host name when domain name is empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "1.2.3.4",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow IP6 as host name when domain name is empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "2001:db8:3333:4444:5555:6666:7777:8888",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow IP4 as host name when domain name is non-empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName:   "1.2.3.4",
+							DomainName: "com",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "1.2.3.4": %s`, vmopv1util.ErrInvalidHostNameIPWithDomainName),
+					),
+				},
+			),
+
+			Entry("disallow IP6 as host name when domain name is non-empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName:   "2001:db8:3333:4444:5555:6666:7777:8888",
+							DomainName: "com",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "2001:db8:3333:4444:5555:6666:7777:8888": %s`, vmopv1util.ErrInvalidHostNameIPWithDomainName),
+					),
+				},
+			),
+
+			Entry("disallow top-level domain with fewer than two characters",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "c",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.domainName: Invalid value: "c": %s`, vmopv1util.ErrInvalidDomainName),
+					),
+				},
+			),
+
+			Entry("allow valid top-level domain name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "com",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow domain name with multiple parts",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "example.com",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow domain name with unicode in sub-domain",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "ch✓ck.com",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow domain name with unicode in top-level domain",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "check.✓om",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.domainName: Invalid value: "check.✓om": %s`, vmopv1util.ErrInvalidDomainName),
+					),
+				},
+			),
+
+			Entry("disallow domain name with invalid character",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "hello_world",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.domainName: Invalid value: "hello_world": %s`, vmopv1util.ErrInvalidDomainName),
+					),
+				},
+			),
+
+			Entry("disallow domain name with leading dash",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "-hello-world",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.domainName: Invalid value: "-hello-world": %s`, vmopv1util.ErrInvalidDomainName),
+					),
+				},
+			),
+
+			Entry("disallow domain name with one or more segments longer than 63 characters",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: "abc." + strings.Repeat("a", 64) + ".com",
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.domainName: Invalid value: "abc.%s.com": %s`, strings.Repeat("a", 64), vmopv1util.ErrInvalidDomainName),
+					),
+				},
+			),
+
+			Entry("disallow domain name longer than 255 characters",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							DomainName: strings.Repeat("a", 256),
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.domainName: Invalid value: "%s": %s`, strings.Repeat("a", 256), vmopv1util.ErrInvalidDomainName),
+					),
+				},
+			),
+
+			Entry("disallow host and domain name if combined if combined they are longer than 255 characters",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName:   strings.Repeat("a", 63),
+							DomainName: fmt.Sprintf("%[1]s.%[1]s.%[1]s.com", strings.Repeat("a", 63)),
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network: Invalid value: "%[1]s.%[1]s.%[1]s.%[1]s.com": %s`, strings.Repeat("a", 63), vmopv1util.ErrInvalidHostAndDomainName),
+					),
 				},
 			),
 		)
@@ -1808,6 +2103,71 @@ func unitTestsValidateUpdate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.network.interfaces: Forbidden: network interfaces cannot be added or removed`),
+				},
+			),
+		)
+
+		DescribeTable("update network - host and domain names", doTest,
+
+			Entry("disallow host name longer than 15 characters if sysprep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+						}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Network.HostName = strings.Repeat("a", 16)
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "%s": %s`, strings.Repeat("a", 16), vmopv1util.ErrInvalidHostNameWindows),
+					),
+				},
+			),
+
+			Entry("disallow host name longer than 15 characters if sysprep and old VM has host name longer than 15 characters",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network.HostName = strings.Repeat("a", 16)
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+						}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Network.HostName = strings.Repeat("a", 16)
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.hostName: Invalid value: "%s": %s`, strings.Repeat("a", 16), vmopv1util.ErrInvalidHostNameWindows),
+					),
+				},
+			),
+
+			Entry("allow host name longer than 15 characters if sysprep and old VM has host name longer than 15 characters and is sysprep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network.HostName = strings.Repeat("a", 16)
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{},
+							},
+						}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Network.HostName = strings.Repeat("a", 16)
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{},
+							},
+						}
+					},
+					expectAllowed: true,
 				},
 			),
 		)

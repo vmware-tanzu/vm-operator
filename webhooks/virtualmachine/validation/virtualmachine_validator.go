@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -130,6 +131,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateBiosUUID(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -187,6 +189,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -261,7 +264,7 @@ func (v validator) validateBootstrap(
 		}
 
 		if sysPrep.Sysprep != nil {
-			allErrs = append(allErrs, v.validateInlineSysprep(p, sysPrep.Sysprep)...)
+			allErrs = append(allErrs, v.validateInlineSysprep(p, vm, sysPrep.Sysprep)...)
 		}
 	}
 
@@ -294,7 +297,11 @@ func (v validator) validateBootstrap(
 	return allErrs
 }
 
-func (v validator) validateInlineSysprep(p *field.Path, sysprep *sysprep.Sysprep) field.ErrorList {
+func (v validator) validateInlineSysprep(
+	p *field.Path,
+	vm *vmopv1.VirtualMachine,
+	sysprep *sysprep.Sysprep) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	s := p.Child("sysprep")
@@ -311,17 +318,21 @@ func (v validator) validateInlineSysprep(p *field.Path, sysprep *sysprep.Sysprep
 	}
 
 	if identification := sysprep.Identification; identification != nil {
-		if identification.JoinDomain != "" && identification.JoinWorkgroup != "" {
+		var domainName string
+		if network := vm.Spec.Network; network != nil {
+			domainName = network.DomainName
+		}
+		if domainName != "" && identification.JoinWorkgroup != "" {
 			allErrs = append(allErrs, field.Invalid(s, "identification",
-				"joinDomain and joinWorkgroup are mutually exclusive"))
+				"spec.network.domainName and joinWorkgroup are mutually exclusive"))
 		}
 
-		if identification.JoinDomain != "" {
+		if domainName != "" {
 			if identification.DomainAdmin == "" ||
 				identification.DomainAdminPassword == nil ||
 				identification.DomainAdminPassword.Name == "" {
 				allErrs = append(allErrs, field.Invalid(s, "identification",
-					"joinDomain requires domainAdmin and domainAdminPassword selector to be set"))
+					"spec.network.domainName requires domainAdmin and domainAdminPassword selector to be set"))
 			}
 		}
 
@@ -1174,4 +1185,36 @@ func (v validator) validateBiosUUID(ctx *pkgctx.WebhookRequestContext, vm *vmopv
 	}
 
 	return allErrs
+}
+
+func (v validator) validateNetworkHostAndDomainName(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	if vm == nil {
+		panic("vm is nil")
+	}
+
+	if err := vmopv1util.ValidateHostAndDomainName(*vm); err != nil {
+
+		// Do not complain about the host name exceeding 15 characters for a
+		// Windows guest when the old host name already exceeded 15 characters.
+		// This prevents breaking updates/patches to VMs that existed prior to
+		// this restriction.
+		if oldVM != nil && err.Detail == vmopv1util.ErrInvalidHostNameWindows {
+			if bs := oldVM.Spec.Bootstrap; bs != nil && bs.Sysprep != nil {
+				oldHostName := oldVM.Name
+				if oldVM.Spec.Network != nil && oldVM.Spec.Network.HostName != "" {
+					oldHostName = oldVM.Spec.Network.HostName
+				}
+				if len(oldHostName) > 15 {
+					return nil
+				}
+			}
+		}
+
+		return field.ErrorList{err}
+	}
+
+	return nil
 }

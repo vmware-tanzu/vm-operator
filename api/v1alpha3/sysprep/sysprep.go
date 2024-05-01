@@ -15,28 +15,34 @@ package sysprep
 // https://technet.microsoft.com/en-us/library/cc771830(v=ws.10).aspx.
 type Sysprep struct {
 
-	// GUIRunOnce is a representation of the Sysprep GuiRunOnce key.
-	//
 	// +optional
-	GUIRunOnce GUIRunOnce `json:"guiRunOnce,omitempty"`
+
+	// GUIRunOnce is a representation of the Sysprep GuiRunOnce key.
+	GUIRunOnce *GUIRunOnce `json:"guiRunOnce,omitempty"`
+
+	// +optional
 
 	// GUIUnattended is a representation of the Sysprep GUIUnattended key.
 	GUIUnattended *GUIUnattended `json:"guiUnattended,omitempty"`
 
+	// +optional
+
 	// Identification is a representation of the Sysprep Identification key.
 	Identification *Identification `json:"identification,omitempty"`
+
+	// +optional
 
 	// LicenseFilePrintData is a representation of the Sysprep
 	// LicenseFilePrintData key.
 	//
 	// Please note this is required only for Windows 2000 Server and Windows
 	// Server 2003.
-	//
-	// +optional
 	LicenseFilePrintData *LicenseFilePrintData `json:"licenseFilePrintData,omitempty"`
 
+	// +optional
+
 	// UserData is a representation of the Sysprep UserData key.
-	UserData *UserData `json:"userData"`
+	UserData *UserData `json:"userData,omitempty"`
 }
 
 // GUIRunOnce maps to the GuiRunOnce key in the sysprep.xml answer file.
@@ -132,16 +138,10 @@ type Identification struct {
 	// +optional
 	DomainAdminPassword *DomainPasswordSecretKeySelector `json:"domainAdminPassword,omitempty"`
 
-	// JoinDomain is the domain that the virtual machine should join. If this
-	// value is supplied, then DomainAdmin and DomainAdminPassword must also be
-	// supplied, and the JoinWorkgroup name must be empty.
-	//
-	// +optional
-	JoinDomain string `json:"joinDomain,omitempty"`
-
 	// JoinWorkgroup is the workgroup that the virtual machine should join. If
-	// this value is supplied, then the JoinDomain and the authentication fields
-	// (DomainAdmin and DomainAdminPassword) must be empty.
+	// this value is supplied, then the fields spec.network.domain,
+	// spec.bootstrap.sysprep.identification.domainAdmin, and
+	// spec.bootstrap.sysprep.identification.domainAdminPassword must be empty.
 	//
 	// +optional
 	JoinWorkgroup string `json:"joinWorkgroup,omitempty"`

@@ -3803,17 +3803,12 @@ spec:
                                 - key
                                 - name
                                 type: object
-                              joinDomain:
-                                description: |-
-                                  JoinDomain is the domain that the virtual machine should join. If this
-                                  value is supplied, then DomainAdmin and DomainAdminPassword must also be
-                                  supplied, and the JoinWorkgroup name must be empty.
-                                type: string
                               joinWorkgroup:
                                 description: |-
                                   JoinWorkgroup is the workgroup that the virtual machine should join. If
-                                  this value is supplied, then the JoinDomain and the authentication fields
-                                  (DomainAdmin and DomainAdminPassword) must be empty.
+                                  this value is supplied, then the fields spec.network.domain,
+                                  spec.bootstrap.sysprep.identification.domainAdmin, and
+                                  spec.bootstrap.sysprep.identification.domainAdminPassword must be empty.
                                 type: string
                             type: object
                           licenseFilePrintData:
@@ -3882,8 +3877,6 @@ spec:
                             - fullName
                             - orgName
                             type: object
-                        required:
-                        - userData
                         type: object
                     type: object
                   vAppConfig:
@@ -4105,18 +4098,71 @@ spec:
                       When set to true, the VM is not configured with a default interface nor
                       any specified from the Interfaces field.
                     type: boolean
+                  domainName:
+                    description: |-
+                      DomainName describes the value the guest uses as its domain name.
+
+
+                      Please note, this feature is available with the following bootstrap
+                      providers: CloudInit, LinuxPrep, and Sysprep.
+
+
+                      This field must adhere to the format specified in RFC-1034, Section 3.5
+                      for DNS names:
+
+
+                        * When joined with the host name, the total length is restricted to 255
+                          characters or less.
+                        * Individual segments must be 63 characters or less.
+                        * The top-level domain( ex. ".com"), is at least two letters with no
+                          special characters.
+                        * Underscores are not allowed.
+                        * Dashes are permitted, but not at the start or end of the value.
+                        * Long, top-level domain names (ex. ".london") are permitted.
+                        * Symbol unicode points, such as emoji, are disallowed in the top-level
+                          domain.
+
+
+                      Please note, the combined values of spec.network.hostName and
+                      spec.network.domainName may not exceed 255 characters in length.
+
+
+                      When deploying a guest running Microsoft Windows, this field describes
+                      the domain the computer should join.
+                    type: string
                   hostName:
                     description: |-
-                      HostName is the value the guest uses as its host name.
-                      If omitted then the name of the VM will be used.
+                      HostName describes the value the guest uses as its host name. If omitted,
+                      the name of the VM will be used.
 
 
-                      Please note this feature is available only with the following bootstrap
-                      providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+                      Please note, this feature is available with the following bootstrap
+                      providers: CloudInit, LinuxPrep, and Sysprep.
 
 
-                      When the bootstrap provider is Sysprep (except for RawSysprep) this is
-                      used as the Computer Name.
+                      This field must adhere to the format specified in RFC-1034, Section 3.5
+                      for DNS labels:
+
+
+                        * The total length is restricted to 63 characters or less.
+                        * The total length is restricted to 15 characters or less on Windows
+                          systems.
+                        * The value may begin with a digit per RFC-1123.
+                        * Underscores are not allowed.
+                        * Dashes are permitted, but not at the start or end of the value.
+                        * Symbol unicode points, such as emoji, are permitted, ex. ✓. However,
+                          please notes that the use of emoji, even where allowed, may not
+                          compatible with the guest operating system, so it recommended to
+                          stick with more common characters for this value.
+                        * The value may be a valid IP4 or IP6 address. Please note, the use of
+                          an IP address for a host name is not compatible with all guest
+                          operating systems and is discouraged. Additionally, using an IP
+                          address for the host name is disallowed if spec.network.domainName is
+                          non-empty.
+
+
+                      Please note, the combined values of spec.network.hostName and
+                      spec.network.domainName may not exceed 255 characters in length.
                     type: string
                   interfaces:
                     description: |-
@@ -4844,6 +4890,11 @@ spec:
                         description: DNS describes the configured state of client-side
                           DNS.
                         properties:
+                          domainName:
+                            description: |-
+                              DomainName is the domain name portion of the DNS name. For example,
+                              the "domain.local" part of "my-vm.domain.local".
+                            type: string
                           hostName:
                             description: |-
                               HostName is the host name portion of the DNS name. For example,
@@ -4886,6 +4937,11 @@ spec:
                               description: DNS describes the interface's configured
                                 DNS information.
                               properties:
+                                domainName:
+                                  description: |-
+                                    DomainName is the domain name portion of the DNS name. For example,
+                                    the "domain.local" part of "my-vm.domain.local".
+                                  type: string
                                 hostName:
                                   description: |-
                                     HostName is the host name portion of the DNS name. For example,

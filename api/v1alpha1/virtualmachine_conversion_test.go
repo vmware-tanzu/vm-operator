@@ -80,6 +80,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 				Network: &vmopv1.VirtualMachineNetworkSpec{
+					DomainName:    "my-domain.com",
 					HostName:      "my-test-vm",
 					Disabled:      true,
 					Nameservers:   []string{"10.11.12.13", "9.9.9.9"},
@@ -352,7 +353,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 						Sysprep: &vmopv1sysprep.Sysprep{
-							GUIRunOnce: vmopv1sysprep.GUIRunOnce{
+							GUIRunOnce: &vmopv1sysprep.GUIRunOnce{
 								Commands: []string{"echo", "hello"},
 							},
 							GUIUnattended: &vmopv1sysprep.GUIUnattended{

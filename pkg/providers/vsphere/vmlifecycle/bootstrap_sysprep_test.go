@@ -110,6 +110,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 			hostName := "foo-win-vm"
 
 			BeforeEach(func() {
+				bsArgs.DomainName = "foo.local"
 				sysPrepSpec.Sysprep = &vmopv1sysprep.Sysprep{
 					GUIUnattended: &vmopv1sysprep.GUIUnattended{
 						AutoLogon:      true,
@@ -126,12 +127,11 @@ var _ = Describe("SysPrep Bootstrap", func() {
 						OrgName:   "foo-org",
 						ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{Key: "product_id_key"},
 					},
-					GUIRunOnce: vmopv1sysprep.GUIRunOnce{
+					GUIRunOnce: &vmopv1sysprep.GUIRunOnce{
 						Commands: []string{"blah", "boom"},
 					},
 					Identification: &vmopv1sysprep.Identification{
 						DomainAdmin:         "[Foo/Administrator]",
-						JoinDomain:          "foo.local",
 						JoinWorkgroup:       "foo.local.wg",
 						DomainAdminPassword: &vmopv1sysprep.DomainPasswordSecretKeySelector{Key: "admin_pwd_key"},
 					},
@@ -147,7 +147,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 					Password:       password,
 					DomainPassword: domainPassword,
 				}
-				bsArgs.Hostname = hostName
+				bsArgs.HostName = hostName
 			})
 
 			It("should return expected customization spec", func() {

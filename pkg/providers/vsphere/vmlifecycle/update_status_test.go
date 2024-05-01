@@ -985,7 +985,8 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 		}
 
 		args = vmlifecycle.BootstrapArgs{
-			Hostname:       "my-vm",
+			HostName:       "my-vm",
+			DomainName:     "local.domain",
 			DNSServers:     []string{"1.2.3.4", "5.6.7.8"},
 			SearchSuffixes: []string{"fu.bar", "hello.world"},
 			NetworkResults: network.NetworkInterfaceResults{
@@ -1030,6 +1031,7 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 	assertExpectedDNS := func(c *vmopv1.VirtualMachineNetworkConfigStatus) {
 		ExpectWithOffset(1, c.DNS).ToNot(BeNil())
 		ExpectWithOffset(1, c.DNS.HostName).To(Equal("my-vm"))
+		ExpectWithOffset(1, c.DNS.DomainName).To(Equal("local.domain"))
 		ExpectWithOffset(1, c.DNS.Nameservers).To(Equal([]string{"1.2.3.4", "5.6.7.8"}))
 		ExpectWithOffset(1, c.DNS.SearchDomains).To(Equal([]string{"fu.bar", "hello.world"}))
 	}
@@ -1099,7 +1101,8 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 
 				When("there is no DNS information", func() {
 					BeforeEach(func() {
-						args.Hostname = ""
+						args.HostName = ""
+						args.DomainName = ""
 					})
 					When("the DNS servers and search suffixes are nil", func() {
 						BeforeEach(func() {
@@ -1139,6 +1142,7 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 						ic := config.Interfaces[0]
 						Expect(ic.DNS).ToNot(BeNil())
 						Expect(ic.DNS.HostName).To(BeEmpty())
+						Expect(ic.DNS.DomainName).To(BeEmpty())
 						Expect(ic.DNS.Nameservers).To(Equal([]string{"1.1.1.1"}))
 						Expect(ic.DNS.SearchDomains).To(Equal([]string{"per.vm"}))
 					})

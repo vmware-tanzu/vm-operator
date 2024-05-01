@@ -58,7 +58,8 @@ func BootStrapCloudInit(
 	if value, ok := vmCtx.VM.Annotations[vmopv1.InstanceIDAnnotation]; ok {
 		uid = value
 	}
-	metadata, err := GetCloudInitMetadata(uid, bsArgs.Hostname, netPlan, sshPublicKeys)
+	metadata, err := GetCloudInitMetadata(
+		uid, bsArgs.HostName, bsArgs.DomainName, netPlan, sshPublicKeys)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,14 +107,19 @@ func BootStrapCloudInit(
 
 func GetCloudInitMetadata(
 	uid string,
-	hostname string,
+	hostName, domainName string,
 	netplan *network.Netplan,
 	sshPublicKeys string) (string, error) {
 
+	fqdn := hostName
+	if domainName != "" {
+		fqdn = hostName + "." + domainName
+	}
+
 	metadata := &CloudInitMetadata{
 		InstanceID:    uid,
-		LocalHostname: hostname,
-		Hostname:      hostname,
+		LocalHostname: fqdn,
+		Hostname:      fqdn,
 		Network:       *netplan,
 		PublicKeys:    sshPublicKeys,
 	}

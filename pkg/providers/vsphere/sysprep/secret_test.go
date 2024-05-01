@@ -171,7 +171,6 @@ var _ = Describe("GetSysprepSecretData", func() {
 		BeforeEach(func() {
 			inlineSysprep = vmopv1sysprep.Sysprep{
 				Identification: &vmopv1sysprep.Identification{
-					JoinDomain: "foo",
 					DomainAdminPassword: &vmopv1sysprep.DomainPasswordSecretKeySelector{
 						Name: pwdSecretName,
 						Key:  "domain_password",
@@ -336,7 +335,6 @@ var _ = Describe("Sysprep GetSecretResources", func() {
 		BeforeEach(func() {
 			inlineSysprep = vmopv1sysprep.Sysprep{
 				Identification: &vmopv1sysprep.Identification{
-					JoinDomain: "foo",
 					DomainAdminPassword: &vmopv1sysprep.DomainPasswordSecretKeySelector{
 						Name: pwdSecretName,
 						Key:  "domain_password",
@@ -391,7 +389,6 @@ var _ = Describe("Sysprep GetSecretResources", func() {
 					},
 				},
 				Identification: &vmopv1sysprep.Identification{
-					JoinDomain: "foo",
 					DomainAdminPassword: &vmopv1sysprep.DomainPasswordSecretKeySelector{
 						Name: secretName,
 						Key:  "domain_password",

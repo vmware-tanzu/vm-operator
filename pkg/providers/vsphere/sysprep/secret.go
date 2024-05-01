@@ -46,15 +46,17 @@ func GetSysprepSecretData(
 		}
 	}
 
-	if identification := in.Identification; identification != nil && identification.JoinDomain != "" {
-		err := util.GetSecretData(ctx,
-			k8sClient,
-			secretNamespace,
-			identification.DomainAdminPassword.Name,
-			identification.DomainAdminPassword.Key,
-			&domainPwd)
-		if err != nil {
-			return SecretData{}, err
+	if identification := in.Identification; identification != nil {
+		if dap := identification.DomainAdminPassword; dap != nil && dap.Name != "" {
+			err := util.GetSecretData(ctx,
+				k8sClient,
+				secretNamespace,
+				dap.Name,
+				dap.Key,
+				&domainPwd)
+			if err != nil {
+				return SecretData{}, err
+			}
 		}
 	}
 
@@ -106,16 +108,18 @@ func GetSecretResources(
 		captureSecret(s, guiUnattended.Password.Name)
 	}
 
-	if identification := in.Identification; identification != nil && identification.JoinDomain != "" {
-		s, err := util.GetSecretResource(
-			ctx,
-			k8sClient,
-			secretNamespace,
-			identification.DomainAdminPassword.Name)
-		if err != nil {
-			return nil, err
+	if identification := in.Identification; identification != nil {
+		if dap := identification.DomainAdminPassword; dap != nil && dap.Name != "" {
+			s, err := util.GetSecretResource(
+				ctx,
+				k8sClient,
+				secretNamespace,
+				dap.Name)
+			if err != nil {
+				return nil, err
+			}
+			captureSecret(s, dap.Name)
 		}
-		captureSecret(s, identification.DomainAdminPassword.Name)
 	}
 
 	return result, nil

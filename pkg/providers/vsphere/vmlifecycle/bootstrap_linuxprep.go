@@ -28,8 +28,9 @@ func BootStrapLinuxPrep(
 	customSpec := &vimtypes.CustomizationSpec{
 		Identity: &vimtypes.CustomizationLinuxPrep{
 			HostName: &vimtypes.CustomizationFixedName{
-				Name: bsArgs.Hostname,
+				Name: bsArgs.HostName,
 			},
+			Domain:     bsArgs.DomainName,
 			TimeZone:   linuxPrepSpec.TimeZone,
 			HwClockUTC: vimtypes.NewBool(linuxPrepSpec.HardwareClockIsUTC),
 		},

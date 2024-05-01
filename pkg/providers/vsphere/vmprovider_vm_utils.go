@@ -173,27 +173,23 @@ func GetVirtualMachineImageSpecAndStatus(
 func getSecretData(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
-	secretName, secretKey string,
-	configMapFallback, isCloudInitSecret bool) (map[string]string, error) {
+	resName, resKey string,
+	isCloudInitSecret bool) (map[string]string, error) {
 
 	var data map[string]string
 
-	key := ctrlclient.ObjectKey{Name: secretName, Namespace: vmCtx.VM.Namespace}
-	secret := &corev1.Secret{}
-	if err := k8sClient.Get(vmCtx, key, secret); err != nil {
+	// For backwards compat use a ConfigMap when V1alpha1ConfigMapTransportAnnotation is set. In v1a1, either a
+	// Secret and ConfigMap was supported for metadata (bootstrap) as separate fields, but later versions only
+	// supports Secrets for bootstrap data.
+	useConfigMap := false
+	if _, ok := vmCtx.VM.Annotations[vmopv1.V1alpha1ConfigMapTransportAnnotation]; ok {
+		useConfigMap = true
+	}
+
+	key := ctrlclient.ObjectKey{Name: resName, Namespace: vmCtx.VM.Namespace}
+	if useConfigMap {
 		configMap := &corev1.ConfigMap{}
-
-		// For backwards compat if we cannot find the Secret, fallback to a ConfigMap. In v1a1, either a
-		// Secret and ConfigMap was supported for metadata (bootstrap) as separate fields, but v1a2 only
-		// supports Secrets.
-		if configMapFallback && apierrors.IsNotFound(err) {
-			// Use the Secret error since the error message isn't misleading.
-			if k8sClient.Get(vmCtx, key, configMap) == nil {
-				err = nil
-			}
-		}
-
-		if err != nil {
+		if err := k8sClient.Get(vmCtx, key, configMap); err != nil {
 			reason, msg := errToConditionReasonAndMessage(err)
 			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
 			return nil, err
@@ -201,6 +197,13 @@ func getSecretData(
 
 		data = configMap.Data
 	} else {
+		secret := &corev1.Secret{}
+		if err := k8sClient.Get(vmCtx, key, secret); err != nil {
+			reason, msg := errToConditionReasonAndMessage(err)
+			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+			return nil, err
+		}
+
 		data = make(map[string]string, len(secret.Data))
 
 		for k, v := range secret.Data {
@@ -208,8 +211,8 @@ func getSecretData(
 		}
 	}
 
-	if secretKey != "" {
-		secretKeys := []string{secretKey}
+	if resKey != "" {
+		secretKeys := []string{resKey}
 		if isCloudInitSecret {
 			// Hack: the v1a1 bootstrap did not have a Key field so for CloudInit we'd check
 			// for a few well-known keys. Check for the existence of those other keys when
@@ -226,7 +229,7 @@ func getSecretData(
 		}
 
 		if !found {
-			err := fmt.Errorf("required key %q not found in Secret %s", secretKey, secretName)
+			err := fmt.Errorf("required key %q not found in Secret %s", resKey, resName)
 			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err.Error())
 			return nil, err
 		}
@@ -265,7 +268,7 @@ func GetVirtualMachineBootstrap(
 			cloudConfigSecretData = &out
 		} else if raw := v.RawCloudConfig; raw != nil {
 			var err error
-			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, true, true)
+			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, true)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
 				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
@@ -287,7 +290,7 @@ func GetVirtualMachineBootstrap(
 			sysprepSecretData = &out
 		} else if raw := v.RawSysprep; raw != nil {
 			var err error
-			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, true, false)
+			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, false)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
 				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
@@ -301,7 +304,7 @@ func GetVirtualMachineBootstrap(
 
 		if vApp.RawProperties != "" {
 			var err error
-			vAppData, err = getSecretData(vmCtx, k8sClient, vApp.RawProperties, "", true, false)
+			vAppData, err = getSecretData(vmCtx, k8sClient, vApp.RawProperties, "", false)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
 				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
@@ -318,7 +321,7 @@ func GetVirtualMachineBootstrap(
 				if data, ok := vAppExData[from.Name]; !ok {
 					// Do the easy thing here and carry along each Secret's entire data. We could instead
 					// shoehorn this in the vAppData with a concat key using an invalid k8s name delimiter.
-					fromData, err := getSecretData(vmCtx, k8sClient, from.Name, from.Key, false, false)
+					fromData, err := getSecretData(vmCtx, k8sClient, from.Name, from.Key, false)
 					if err != nil {
 						reason, msg := errToConditionReasonAndMessage(err)
 						conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)

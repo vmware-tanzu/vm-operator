@@ -24,8 +24,16 @@ jobs:
           fetch-depth: 0
       - name: Check diff
         id: check-diff
+        # The following exclude files should match the ones in labeler.yml file.
         run: |
-          loc=$(git diff --shortstat HEAD ${{ github.sha }} | awk '{print $4+$6}')
+          loc=$(git diff --shortstat HEAD ${{ github.sha }} -- . \
+              ':(exclude)*_generated.go' \
+              ':(exclude)*_generated.deepcopy.go' \
+              ':(exclude)*_generated.conversion.go' \
+              ':(exclude)config/crd/bases/*' \
+              ':(exclude)docs/ref/api/v.*.md' \
+              ':(exclude)*go.sum' \
+              | awk '{print $4+$6}')
           echo "Lines of change: $loc"
           echo "lines_of_change=$loc" >> $GITHUB_OUTPUT
       - name: Update label

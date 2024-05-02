@@ -60,47 +60,51 @@ const (
 
 // VirtualMachineImageProductInfo describes product information for an image.
 type VirtualMachineImageProductInfo struct {
-	// Product is a general descriptor for the image.
 	// +optional
+
+	// Product is a general descriptor for the image.
 	Product string `json:"product,omitempty"`
 
-	// Vendor describes the organization/user that produced the image.
 	// +optional
+
+	// Vendor describes the organization/user that produced the image.
 	Vendor string `json:"vendor,omitempty"`
 
-	// Version describes the short-form version of the image.
 	// +optional
+
+	// Version describes the short-form version of the image.
 	Version string `json:"version,omitempty"`
 
-	// FullVersion describes the long-form version of the image.
 	// +optional
+
+	// FullVersion describes the long-form version of the image.
 	FullVersion string `json:"fullVersion,omitempty"`
 }
 
 // VirtualMachineImageOSInfo describes the image's guest operating system.
 type VirtualMachineImageOSInfo struct {
+	// +optional
+
 	// ID describes the operating system ID.
 	//
 	// This value is also added to the image resource's labels as
 	// VirtualMachineImageOSIDLabel.
-	//
-	// +optional
 	ID string `json:"id,omitempty"`
+
+	// +optional
 
 	// Type describes the operating system type.
 	//
 	// This value is also added to the image resource's labels as
 	// VirtualMachineImageOSTypeLabel.
-	//
-	// +optional
 	Type string `json:"type,omitempty"`
+
+	// +optional
 
 	// Version describes the operating system version.
 	//
 	// This value is also added to the image resource's labels as
 	// VirtualMachineImageOSVersionLabel.
-	//
-	// +optional
 	Version string `json:"version,omitempty"`
 }
 
@@ -114,27 +118,31 @@ type OVFProperty struct {
 	// Type describes the OVF property's type.
 	Type string `json:"type"`
 
-	// Default describes the OVF property's default value.
 	// +optional
+
+	// Default describes the OVF property's default value.
 	Default *string `json:"default,omitempty"`
 }
 
 // VirtualMachineImageSpec defines the desired state of VirtualMachineImage.
 type VirtualMachineImageSpec struct {
+	// +optional
+
 	// ProviderRef is a reference to the resource that contains the source of
 	// this image's information.
-	//
-	// +optional
 	ProviderRef *vmopv1common.LocalObjectRef `json:"providerRef,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage.
 type VirtualMachineImageStatus struct {
 
-	// Name describes the display name of this image.
-	//
 	// +optional
+
+	// Name describes the display name of this image.
 	Name string `json:"name,omitempty"`
+
+	// +optional
+	// +listType=set
 
 	// Capabilities describes the image's observed capabilities.
 	//
@@ -152,63 +160,63 @@ type VirtualMachineImageStatus struct {
 	// VirtualMachineImageCapabilityLabel + Value. For example, if the
 	// capability is "cloud-init" then the following label will be added to the
 	// resource: capability.image.vmoperator.vmware.com/cloud-init.
-	//
-	// +optional
-	// +listType=set
 	Capabilities []string `json:"capabilities,omitempty"`
 
-	// Firmware describe the firmware type used by this image, ex. BIOS, EFI.
 	// +optional
+
+	// Firmware describe the firmware type used by this image, ex. BIOS, EFI.
 	Firmware string `json:"firmware,omitempty"`
 
-	// HardwareVersion describes the observed hardware version of this image.
-	//
 	// +optional
+
+	// HardwareVersion describes the observed hardware version of this image.
 	HardwareVersion *int32 `json:"hardwareVersion,omitempty"`
+
+	// +optional
 
 	// OSInfo describes the observed operating system information for this
 	// image.
 	//
 	// The OS information is also added to the image resource's labels. Please
 	// refer to VirtualMachineImageOSInfo for more information.
-	//
-	//
-	// +optional
 	OSInfo VirtualMachineImageOSInfo `json:"osInfo,omitempty"`
+
+	// +optional
 
 	// OVFProperties describes the observed user configurable OVF properties defined for this
 	// image.
-	//
-	// +optional
 	OVFProperties []OVFProperty `json:"ovfProperties,omitempty"`
+
+	// +optional
 
 	// VMwareSystemProperties describes the observed VMware system properties defined for
 	// this image.
-	//
-	// +optional
 	VMwareSystemProperties []vmopv1common.KeyValuePair `json:"vmwareSystemProperties,omitempty"`
 
-	// ProductInfo describes the observed product information for this image.
 	// +optional
+
+	// ProductInfo describes the observed product information for this image.
 	ProductInfo VirtualMachineImageProductInfo `json:"productInfo,omitempty"`
+
+	// +optional
 
 	// ProviderContentVersion describes the content version from the provider item
 	// that this image corresponds to. If the provider of this image is a Content
 	// Library, this will be the version of the corresponding Content Library item.
-	// +optional
 	ProviderContentVersion string `json:"providerContentVersion,omitempty"`
+
+	// +optional
 
 	// ProviderItemID describes the ID of the provider item that this image corresponds to.
 	// If the provider of this image is a Content Library, this ID will be that of the
 	// corresponding Content Library item.
-	// +optional
 	ProviderItemID string `json:"providerItemID,omitempty"`
 
-	// Conditions describes the observed conditions for this image.
-	//
 	// +optional
 	// +listType=map
 	// +listMapKey=type
+
+	// Conditions describes the observed conditions for this image.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 

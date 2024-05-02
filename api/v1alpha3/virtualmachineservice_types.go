@@ -51,10 +51,11 @@ type VirtualMachineServicePort struct {
 
 // LoadBalancerStatus represents the status of a load balancer.
 type LoadBalancerStatus struct {
+	// +optional
+
 	// Ingress is a list containing ingress addresses for the load balancer.
 	// Traffic intended for the service should be sent to any of these ingress
 	// points.
-	// +optional
 	Ingress []LoadBalancerIngress `json:"ingress,omitempty"`
 }
 
@@ -63,14 +64,16 @@ type LoadBalancerStatus struct {
 // IP or Hostname may both be set in this structure. It is up to the consumer to
 // determine which field should be used when accessing this LoadBalancer.
 type LoadBalancerIngress struct {
+	// +optional
+
 	// IP is set for load balancer ingress points that are specified by an IP
 	// address.
-	// +optional
 	IP string `json:"ip,omitempty"`
+
+	// +optional
 
 	// Hostname is set for load balancer ingress points that are specified by a
 	// DNS address.
-	// +optional
 	Hostname string `json:"hostname,omitempty"`
 }
 
@@ -86,32 +89,37 @@ type VirtualMachineServiceSpec struct {
 	// entry point to access this service by.
 	Ports []VirtualMachineServicePort `json:"ports,omitempty"`
 
+	// +optional
+
 	// Selector specifies a map of key-value pairs, also known as a Label
 	// Selector, that is used to match this VirtualMachineService with the set
 	// of VirtualMachines that should back this VirtualMachineService.
-	// +optional
 	Selector map[string]string `json:"selector,omitempty"`
 
-	// Only applies to VirtualMachineService Type: LoadBalancer
+	// +optional
+
 	// LoadBalancer will get created with the IP specified in this field.
+	// Only applies to VirtualMachineService Type: LoadBalancer
 	// This feature depends on whether the underlying load balancer provider
 	// supports specifying the loadBalancerIP when a load balancer is created.
 	// This field will be ignored if the provider does not support the feature.
 	// Deprecated: This field was under-specified and its meaning varies across implementations.
 	// Using it is non-portable and it may not support dual-stack.
 	// Users are encouraged to use implementation-specific annotations when available.
-	// +optional
 	LoadBalancerIP string `json:"loadBalancerIP,omitempty"`
+
+	// +optional
 
 	// LoadBalancerSourceRanges is an array of IP addresses in the format of
 	// CIDRs, for example: 103.21.244.0/22 and 10.0.0.0/24.
 	// If specified and supported by the load balancer provider, this will
 	// restrict ingress traffic to the specified client IPs. This field will be
 	// ignored if the provider does not support the feature.
-	// +optional
 	LoadBalancerSourceRanges []string `json:"loadBalancerSourceRanges,omitempty"`
 
-	// clusterIP is the IP address of the service and is usually assigned
+	// +optional
+
+	// ClusterIP is the IP address of the service and is usually assigned
 	// randomly by the master. If an address is specified manually and is not in
 	// use by others, it will be allocated to the service; otherwise, creation
 	// of the service will fail. This field can not be changed through updates.
@@ -120,23 +128,24 @@ type VirtualMachineServiceSpec struct {
 	// Only applies to types ClusterIP and LoadBalancer.
 	// Ignored if type is ExternalName.
 	// More info: https://kubernetes.io/docs/concepts/services-networking/service/#virtual-ips-and-service-proxies
-	// +optional
 	ClusterIP string `json:"clusterIp,omitempty"`
 
-	// externalName is the external reference that kubedns or equivalent will
+	// +optional
+
+	// ExternalName is the external reference that kubedns or equivalent will
 	// return as a CNAME record for this service. No proxying will be involved.
 	// Must be a valid RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
 	// and requires Type to be ExternalName.
-	// +optional
 	ExternalName string `json:"externalName,omitempty"`
 }
 
 // VirtualMachineServiceStatus defines the observed state of
 // VirtualMachineService.
 type VirtualMachineServiceStatus struct {
+	// +optional
+
 	// LoadBalancer contains the current status of the load balancer,
 	// if one is present.
-	// +optional
 	LoadBalancer LoadBalancerStatus `json:"loadBalancer,omitempty"`
 }
 

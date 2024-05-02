@@ -271,17 +271,18 @@ _Appears in:_
 Condition defines an observation of a VM Operator API resource operational state.
 
 _Appears in:_
+- [Conditions](#conditions)
 - [VirtualMachineImageStatus](#virtualmachineimagestatus)
 - [VirtualMachinePublishRequestStatus](#virtualmachinepublishrequeststatus)
 - [VirtualMachineStatus](#virtualmachinestatus)
 
 | Field | Description |
 | --- | --- |
-| `type` _ConditionType_ | Type of condition in CamelCase or in foo.example.com/CamelCase.
+| `type` _[ConditionType](#conditiontype)_ | Type of condition in CamelCase or in foo.example.com/CamelCase.
 Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
 can be useful (see .node.status.conditions), the ability to disambiguate is important. |
 | `status` _[ConditionStatus](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#conditionstatus-v1-core)_ | Status of the condition, one of True, False, Unknown. |
-| `severity` _ConditionSeverity_ | Severity provides an explicit classification of Reason code, so the users or machines can immediately
+| `severity` _[ConditionSeverity](#conditionseverity)_ | Severity provides an explicit classification of Reason code, so the users or machines can immediately
 understand the current situation and act accordingly.
 The Severity field MUST be set only when Status=False. |
 | `lastTransitionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | Last time the condition transitioned from one status to another.
@@ -292,6 +293,26 @@ The specific API may choose whether or not this field is considered a guaranteed
 This field may not be empty. |
 | `message` _string_ | A human readable message indicating details about the transition.
 This field may be empty. |
+
+### ConditionSeverity
+
+_Underlying type:_ `string`
+
+ConditionSeverity expresses the severity of a Condition Type failing.
+
+_Appears in:_
+- [Condition](#condition)
+
+
+### ConditionType
+
+_Underlying type:_ `string`
+
+ConditionType is a valid value for Condition.Type.
+
+_Appears in:_
+- [Condition](#condition)
+
 
 
 ### ContentLibraryProviderSpec
@@ -307,6 +328,16 @@ _Appears in:_
 | --- | --- |
 | `uuid` _string_ | UUID describes the UUID of a vSphere content library. It is the unique identifier for a
 vSphere content library. |
+
+### ContentLibraryProviderStatus
+
+
+
+ContentLibraryProviderStatus defines the observed state of ContentLibraryProvider
+Can include fields indicating when was the last time VM images were updated from a library.
+
+_Appears in:_
+- [ContentLibraryProvider](#contentlibraryprovider)
 
 
 ### ContentProviderReference
@@ -353,6 +384,15 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `providerRef` _[ContentProviderReference](#contentproviderreference)_ | ProviderRef is a reference to a content provider object that describes a provider. |
+
+### ContentSourceStatus
+
+
+
+ContentSourceStatus defines the observed state of ContentSource.
+
+_Appears in:_
+- [ContentSource](#contentsource)
 
 
 ### DynamicDirectPathIODevice
@@ -440,7 +480,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `size` _Quantity_ |  |
+| `size` _[Quantity](#quantity)_ |  |
 
 ### InstanceVolumeClaimVolumeSource
 
@@ -456,7 +496,7 @@ _Appears in:_
 | --- | --- |
 | `storageClass` _string_ | StorageClass is the name of the Kubernetes StorageClass that provides
 the backing storage for this instance storage volume. |
-| `size` _Quantity_ | Size is the size of the requested instance storage volume. |
+| `size` _[Quantity](#quantity)_ | Size is the size of the requested instance storage volume. |
 
 ### LoadBalancerIngress
 
@@ -643,7 +683,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `port` _IntOrString_ | Port specifies a number or name of the port to access on the VirtualMachine.
+| `port` _[IntOrString](#intorstring)_ | Port specifies a number or name of the port to access on the VirtualMachine.
 If the format of port is a number, it must be in the range 1 to 65535.
 If the format of name is a string, it must be an IANA_SVC_NAME. |
 | `host` _string_ | Host is an optional host name to connect to.  Host defaults to the VirtualMachine IP. |
@@ -660,6 +700,16 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `profileName` _string_ |  |
+
+### VMStatusPhase
+
+_Underlying type:_ `string`
+
+VMStatusPhase is used to indicate the phase of a VirtualMachine's lifecycle.
+
+_Appears in:_
+- [VirtualMachineStatus](#virtualmachinestatus)
+
 
 ### VirtualDevices
 
@@ -703,7 +753,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `cpus` _integer_ |  |
-| `memory` _Quantity_ |  |
+| `memory` _[Quantity](#quantity)_ |  |
 | `devices` _[VirtualDevices](#virtualdevices)_ |  |
 | `instanceStorage` _[InstanceStorage](#instancestorage)_ |  |
 
@@ -767,11 +817,21 @@ policy.  The configuration specified in this field is used to customize various 
 infrastructure resource consumption. |
 | `description` _string_ | Description describes the configuration of the VirtualMachineClass which is not related to virtual hardware
 or infrastructure policy. This field is used to address remaining specs about this VirtualMachineClass. |
-| `configSpec` _[json.RawMessage](https://pkg.go.dev/encoding/json#RawMessage)_ | ConfigSpec describes additional configuration information for a
+| `configSpec` _[RawMessage](#rawmessage)_ | ConfigSpec describes additional configuration information for a
 VirtualMachine.
 The contents of this field are the VirtualMachineConfigSpec data object
 (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator
 field "_typeName" to preserve type information. |
+
+### VirtualMachineClassStatus
+
+
+
+VirtualMachineClassStatus defines the observed state of VirtualMachineClass.  VirtualMachineClasses are immutable,
+non-dynamic resources, so this status is currently unused.
+
+_Appears in:_
+- [VirtualMachineClass](#virtualmachineclass)
 
 
 ### VirtualMachineImageOSInfo
@@ -887,8 +947,19 @@ Please note, this field and SecretName are mutually exclusive. |
 for VirtualMachine metadata. The contents of the Data field of the Secret is used as the VM Metadata.
 The format of the contents of the VM Metadata are not parsed or interpreted by the VirtualMachine controller.
 Please note, this field and ConfigMapName are mutually exclusive. |
-| `transport` _VirtualMachineMetadataTransport_ | Transport describes the name of a supported VirtualMachineMetadata transport protocol.  Currently, the only supported
+| `transport` _[VirtualMachineMetadataTransport](#virtualmachinemetadatatransport)_ | Transport describes the name of a supported VirtualMachineMetadata transport protocol.  Currently, the only supported
 transport protocols are "ExtraConfig", "OvfEnv" and "CloudInit". |
+
+### VirtualMachineMetadataTransport
+
+_Underlying type:_ `string`
+
+VirtualMachineMetadataTransport is used to indicate the transport used by VirtualMachineMetadata
+Valid values are "ExtraConfig", "OvfEnv", "vAppConfig", "CloudInit", and "Sysprep".
+
+_Appears in:_
+- [VirtualMachineMetadata](#virtualmachinemetadata)
+
 
 ### VirtualMachineNetworkInterface
 
@@ -931,6 +1002,28 @@ _Appears in:_
 | `ip` _string_ |  |
 | `name` _string_ |  |
 | `protocol` _[Protocol](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#protocol-v1-core)_ |  |
+
+### VirtualMachinePowerOpMode
+
+_Underlying type:_ `string`
+
+VirtualMachinePowerOpMode represents the various power operation modes when
+powering off or suspending a VM.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+
+### VirtualMachinePowerState
+
+_Underlying type:_ `string`
+
+VirtualMachinePowerState represents the power state of a VirtualMachine.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+- [VirtualMachineStatus](#virtualmachinestatus)
+
 
 ### VirtualMachinePublishRequestSource
 
@@ -1146,8 +1239,8 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `cpu` _Quantity_ |  |
-| `memory` _Quantity_ |  |
+| `cpu` _[Quantity](#quantity)_ |  |
+| `memory` _[Quantity](#quantity)_ |  |
 
 ### VirtualMachineServicePort
 
@@ -1183,7 +1276,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `type` _VirtualMachineServiceType_ | Type specifies a desired VirtualMachineServiceType for this VirtualMachineService. Supported types
+| `type` _[VirtualMachineServiceType](#virtualmachineservicetype)_ | Type specifies a desired VirtualMachineServiceType for this VirtualMachineService. Supported types
 are ClusterIP, LoadBalancer, ExternalName. |
 | `ports` _[VirtualMachineServicePort](#virtualmachineserviceport) array_ | Ports specifies a list of VirtualMachineServicePort to expose with this VirtualMachineService. Each of these ports
 will be an accessible network entry point to access this service by. |
@@ -1229,6 +1322,16 @@ _Appears in:_
 | --- | --- |
 | `loadBalancer` _[LoadBalancerStatus](#loadbalancerstatus)_ | LoadBalancer contains the current status of the load balancer,
 if one is present. |
+
+### VirtualMachineServiceType
+
+_Underlying type:_ `string`
+
+VirtualMachineServiceType string describes ingress methods for a service.
+
+_Appears in:_
+- [VirtualMachineServiceSpec](#virtualmachineservicespec)
+
 
 ### VirtualMachineSetResourcePolicySpec
 
@@ -1292,7 +1395,7 @@ an error message accordingly. |
 | `className` _string_ | ClassName describes the name of a VirtualMachineClass that is to be used as the overlaid resource configuration
 of VirtualMachine.  A VirtualMachineClass is used to further customize the attributes of the VirtualMachine
 instance.  See VirtualMachineClass for more description. |
-| `powerState` _VirtualMachinePowerState_ | PowerState describes the desired power state of a VirtualMachine.
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the desired power state of a VirtualMachine.
 
 
 Please note this field may be omitted when creating a new VM and will
@@ -1304,7 +1407,7 @@ Additionally, setting this value to "suspended" is not supported when
 creating a new VM. The valid values when creating a new VM are
 "poweredOn" and "poweredOff." An empty value is also allowed on create
 since this value defaults to "poweredOn" for new VMs. |
-| `powerOffMode` _VirtualMachinePowerOpMode_ | PowerOffMode describes the desired behavior when powering off a VM.
+| `powerOffMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | PowerOffMode describes the desired behavior when powering off a VM.
 
 
 There are three, supported power off modes: hard, soft, and
@@ -1317,7 +1420,7 @@ state after five minutes, the VM is halted.
 
 
 If omitted, the mode defaults to hard. |
-| `suspendMode` _VirtualMachinePowerOpMode_ | SuspendMode describes the desired behavior when suspending a VM.
+| `suspendMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | SuspendMode describes the desired behavior when suspending a VM.
 
 
 There are three, supported suspend modes: hard, soft, and
@@ -1344,7 +1447,7 @@ restarted.
 Please note it is not possible to schedule future restarts using this
 field. The only value that users may set is the string "now"
 (case-insensitive). |
-| `restartMode` _VirtualMachinePowerOpMode_ | RestartMode describes the desired behavior for restarting a VM when
+| `restartMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | RestartMode describes the desired behavior for restarting a VM when
 spec.nextRestartTime is set to "now" (case-insensitive).
 
 
@@ -1428,8 +1531,8 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `host` _string_ | Host describes the hostname or IP address of the infrastructure host that the VirtualMachine is executing on. |
-| `powerState` _VirtualMachinePowerState_ | PowerState describes the current power state of the VirtualMachine. |
-| `phase` _VMStatusPhase_ | Phase describes the current phase information of the VirtualMachine. |
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the current power state of the VirtualMachine. |
+| `phase` _[VMStatusPhase](#vmstatusphase)_ | Phase describes the current phase information of the VirtualMachine. |
 | `conditions` _[Condition](#condition) array_ | Conditions describes the current condition information of the VirtualMachine. |
 | `vmIp` _string_ | VmIp describes the Primary IP address assigned to the guest operating system, if known.
 Multiple IPs can be available for the VirtualMachine. Refer to networkInterfaces in the VirtualMachine
@@ -1528,7 +1631,6 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `capacity` _object (keys:[ResourceName](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#resourcename-v1-core), values:Quantity)_ | A description of the virtual volume's resources and capacity |
 | `deviceKey` _integer_ | Device key of vSphere disk. |
 
 ### WebConsoleRequestSpec

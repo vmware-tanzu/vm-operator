@@ -52,18 +52,18 @@ type SecretKeySelector struct {
 // ValueOrSecretKeySelector describes a value from either a SecretKeySelector
 // or value directly in this object.
 type ValueOrSecretKeySelector struct {
+	// +optional
+
 	// From is specified to reference a value from a Secret resource.
 	//
 	// Please note this field is mutually exclusive with the Value field.
-	//
-	// +optional
 	From *SecretKeySelector `json:"from,omitempty"`
+
+	// +optional
 
 	// Value is used to directly specify a value.
 	//
 	// Please note this field is mutually exclusive with the From field.
-	//
-	// +optional
 	Value *string `json:"value,omitempty"`
 }
 
@@ -72,8 +72,10 @@ type ValueOrSecretKeySelector struct {
 type KeyValuePair struct {
 	// Key is the key part of the key/value pair.
 	Key string `json:"key"`
-	// Value is the optional value part of the key/value pair.
+
 	// +optional
+
+	// Value is the optional value part of the key/value pair.
 	Value string `json:"value,omitempty"`
 }
 
@@ -83,8 +85,10 @@ type KeyValuePair struct {
 type KeyValueOrSecretKeySelectorPair struct {
 	// Key is the key part of the key/value pair.
 	Key string `json:"key"`
-	// Value is the optional value part of the key/value pair.
+
 	// +optional
+
+	// Value is the optional value part of the key/value pair.
 	Value ValueOrSecretKeySelector `json:"value,omitempty"`
 }
 
@@ -93,7 +97,9 @@ type KeyValueOrSecretKeySelectorPair struct {
 type NameValuePair struct {
 	// Name is the name part of the name/value pair.
 	Name string `json:"name"`
-	// Value is the optional value part of the name/value pair.
+
 	// +optional
+
+	// Value is the optional value part of the name/value pair.
 	Value string `json:"value,omitempty"`
 }

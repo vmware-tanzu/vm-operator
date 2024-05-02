@@ -10,17 +10,20 @@ import (
 // ResourcePoolSpec defines a Logical Grouping of workloads that share resource
 // policies.
 type ResourcePoolSpec struct {
-	// Name describes the name of the ResourcePool grouping.
 	// +optional
+
+	// Name describes the name of the ResourcePool grouping.
 	Name string `json:"name,omitempty"`
+
+	// +optional
 
 	// Reservations describes the guaranteed resources reserved for the
 	// ResourcePool.
-	// +optional
 	Reservations VirtualMachineResourceSpec `json:"reservations,omitempty"`
 
-	// Limits describes the limit to resources available to the ResourcePool.
 	// +optional
+
+	// Limits describes the limit to resources available to the ResourcePool.
 	Limits VirtualMachineResourceSpec `json:"limits,omitempty"`
 }
 

@@ -391,7 +391,7 @@ spec:
             properties:
               clusterIp:
                 description: |-
-                  clusterIP is the IP address of the service and is usually assigned
+                  ClusterIP is the IP address of the service and is usually assigned
                   randomly by the master. If an address is specified manually and is not in
                   use by others, it will be allocated to the service; otherwise, creation
                   of the service will fail. This field can not be changed through updates.
@@ -403,15 +403,15 @@ spec:
                 type: string
               externalName:
                 description: |-
-                  externalName is the external reference that kubedns or equivalent will
+                  ExternalName is the external reference that kubedns or equivalent will
                   return as a CNAME record for this service. No proxying will be involved.
                   Must be a valid RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
                   and requires Type to be ExternalName.
                 type: string
               loadBalancerIP:
                 description: |-
-                  Only applies to VirtualMachineService Type: LoadBalancer
                   LoadBalancer will get created with the IP specified in this field.
+                  Only applies to VirtualMachineService Type: LoadBalancer
                   This feature depends on whether the underlying load balancer provider
                   supports specifying the loadBalancerIP when a load balancer is created.
                   This field will be ignored if the provider does not support the feature.

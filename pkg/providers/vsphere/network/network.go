@@ -660,22 +660,25 @@ func vpcSubnetPortToResult(
 	}
 
 	ipConfigs := []NetworkInterfaceIPConfig{}
+	if macAddr := subnetPort.Status.NetworkInterfaceConfig.MACAddress; len(macAddr) == 0 {
+		// NSX Operator's way of saying DHCP.
+	} else {
+		// IPAddresses have CIDR format.
+		for _, ipAddr := range subnetPort.Status.NetworkInterfaceConfig.IPAddresses {
+			if ipAddr.IPAddress == "" {
+				continue
+			}
 
-	// IPAddresses have CIDR format.
-	for _, ipAddr := range subnetPort.Status.NetworkInterfaceConfig.IPAddresses {
-		if ipAddr.IPAddress == "" {
-			continue
+			ip, _, _ := net.ParseCIDR(ipAddr.IPAddress)
+			isIPv4 := ip.To4() != nil
+			ipConfig := NetworkInterfaceIPConfig{
+				IPCIDR:  ipAddr.IPAddress,
+				IsIPv4:  isIPv4,
+				Gateway: ipAddr.Gateway,
+			}
+
+			ipConfigs = append(ipConfigs, ipConfig)
 		}
-
-		ip, _, _ := net.ParseCIDR(ipAddr.IPAddress)
-		isIPv4 := ip.To4() != nil
-		ipConfig := NetworkInterfaceIPConfig{
-			IPCIDR:  ipAddr.IPAddress,
-			IsIPv4:  isIPv4,
-			Gateway: ipAddr.Gateway,
-		}
-
-		ipConfigs = append(ipConfigs, ipConfig)
 	}
 
 	result := &NetworkInterfaceResult{

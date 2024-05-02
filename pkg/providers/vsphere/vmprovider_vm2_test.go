@@ -421,13 +421,12 @@ func vmE2ETests() {
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
 					Expect(subnetPort.Spec.Subnet).To(Equal(networkName))
 
-					subnetPort.Status.MACAddress = "01-23-45-67-89-AB-CD-EF"
-					subnetPort.Status.LogicalSwitchID = builder.VPCLogicalSwitchUUID
-					subnetPort.Status.IPAddresses = []vpcv1alpha1.SubnetPortIPAddress{
+					subnetPort.Status.NetworkInterfaceConfig.MACAddress = "01-23-45-67-89-AB-CD-EF"
+					subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.VPCLogicalSwitchUUID
+					subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 						{
-							IP:      "192.168.1.110",
-							Gateway: "192.168.1.1",
-							Netmask: "255.255.255.0",
+							IPAddress: "192.168.1.110/24",
+							Gateway:   "192.168.1.1",
 						},
 					}
 					subnetPort.Status.Conditions = []vpcv1alpha1.Condition{

@@ -664,19 +664,17 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(subnetPort.Spec.SubnetSet).To(Equal(networkName))
 					Expect(subnetPort.Annotations).To(HaveKeyWithValue(constants.VPCAttachmentRef, annotationVal))
 
-					subnetPort.Status.VIFID = interfaceID
-					subnetPort.Status.MACAddress = macAddress
-					subnetPort.Status.LogicalSwitchID = builder.VPCLogicalSwitchUUID
-					subnetPort.Status.IPAddresses = []vpcv1alpha1.SubnetPortIPAddress{
+					subnetPort.Status.Attachment.ID = interfaceID
+					subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
+					subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.VPCLogicalSwitchUUID
+					subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 						{
-							IP:      "192.168.1.110",
-							Gateway: "192.168.1.1",
-							Netmask: "255.255.255.0",
+							IPAddress: "192.168.1.110/24",
+							Gateway:   "192.168.1.1",
 						},
 						{
-							IP:      "fd1a:6c85:79fe:7c98:0000:0000:0000:000f",
-							Gateway: "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
-							Netmask: "ffff:ffff:ffff:ff00:0000:0000:0000:0000",
+							IPAddress: "fd1a:6c85:79fe:7c98::f/56",
+							Gateway:   "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
 						},
 					}
 					subnetPort.Status.Conditions = []vpcv1alpha1.Condition{

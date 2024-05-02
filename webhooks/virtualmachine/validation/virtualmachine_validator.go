@@ -130,7 +130,6 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, nil)...)
-	fieldErrs = append(fieldErrs, v.validateBiosUUID(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
@@ -1166,22 +1165,6 @@ func (v validator) validateLabel(ctx *pkgctx.WebhookRequestContext, vm, oldVM *v
 
 	if vm.Labels[vmopv1.PausedVMLabelKey] != oldVM.Labels[vmopv1.PausedVMLabelKey] {
 		allErrs = append(allErrs, field.Forbidden(labelPath.Child(vmopv1.PausedVMLabelKey), modifyLabelNotAllowedForNonAdmin))
-	}
-
-	return allErrs
-}
-
-func (v validator) validateBiosUUID(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
-	var allErrs field.ErrorList
-
-	if ctx.IsPrivilegedAccount {
-		return allErrs
-	}
-
-	// devops users are not allowed to set biosUUID when creating a VM.
-	if vm.Spec.BiosUUID != "" {
-		uuidPath := field.NewPath("spec", "biosUUID")
-		allErrs = append(allErrs, field.Forbidden(uuidPath, modifyLabelNotAllowedForNonAdmin))
 	}
 
 	return allErrs

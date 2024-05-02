@@ -288,7 +288,6 @@ func unitTestsValidateCreate() {
 			createArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
 		Entry("should allow creating VM with biosUUID set by admin user", createArgs{biosUUID: "uuid", isServiceUser: true}, true, nil, nil),
-		Entry("should disallow creating VM with biosUUID set by SSO user", createArgs{biosUUID: "uuid"}, false, nil, nil),
 	)
 
 	doTest := func(args testParams) {

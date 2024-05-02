@@ -13,6 +13,8 @@ import (
 // configuration.
 type VirtualMachineBootstrapSpec struct {
 
+	// +optional
+
 	// CloudInit may be used to bootstrap Linux guests with Cloud-Init or
 	// Windows guests that support Cloudbase-Init.
 	//
@@ -21,9 +23,9 @@ type VirtualMachineBootstrapSpec struct {
 	//
 	// Please note this bootstrap provider may not be used in conjunction with
 	// the other bootstrap providers.
-	//
-	// +optional
 	CloudInit *VirtualMachineBootstrapCloudInitSpec `json:"cloudInit,omitempty"`
+
+	// +optional
 
 	// LinuxPrep may be used to bootstrap Linux guests.
 	//
@@ -36,9 +38,9 @@ type VirtualMachineBootstrapSpec struct {
 	//
 	// This bootstrap provider may not be used in conjunction with the CloudInit
 	// or Sysprep bootstrap providers.
-	//
-	// +optional
 	LinuxPrep *VirtualMachineBootstrapLinuxPrepSpec `json:"linuxPrep,omitempty"`
+
+	// +optional
 
 	// Sysprep may be used to bootstrap Windows guests.
 	//
@@ -51,9 +53,9 @@ type VirtualMachineBootstrapSpec struct {
 	//
 	// This bootstrap provider may not be used in conjunction with the CloudInit
 	// or LinuxPrep bootstrap providers.
-	//
-	// +optional
 	Sysprep *VirtualMachineBootstrapSysprepSpec `json:"sysprep,omitempty"`
+
+	// +optional
 
 	// VAppConfig may be used to bootstrap guests that rely on vApp properties
 	// (how VMware surfaces OVF properties on guests) to transport data into the
@@ -77,27 +79,27 @@ type VirtualMachineBootstrapSpec struct {
 	//
 	// This bootstrap provider may not be used in conjunction with the CloudInit
 	// bootstrap provider.
-	//
-	// +optional
 	VAppConfig *VirtualMachineBootstrapVAppConfigSpec `json:"vAppConfig,omitempty"`
 }
 
 // VirtualMachineBootstrapCloudInitSpec describes the CloudInit configuration
 // used to bootstrap the VM.
 type VirtualMachineBootstrapCloudInitSpec struct {
+	// +optional
+
 	// InstanceID is the cloud-init metadata instance ID.
 	// If omitted, this field defaults to the VM's BiosUUID.
-	//
-	// +optional
 	InstanceID string `json:"instanceID,omitempty"`
+
+	// +optional
 
 	// CloudConfig describes a subset of a Cloud-Init CloudConfig, used to
 	// bootstrap the VM.
 	//
 	// Please note this field and RawCloudConfig are mutually exclusive.
-	//
-	// +optional
 	CloudConfig *vmopv1cloudinit.CloudConfig `json:"cloudConfig,omitempty"`
+
+	// +optional
 
 	// RawCloudConfig describes a key in a Secret resource that contains the
 	// CloudConfig data used to bootstrap the VM.
@@ -106,25 +108,25 @@ type VirtualMachineBootstrapCloudInitSpec struct {
 	// base64-encoded, or gzipped and base64-encoded.
 	//
 	// Please note this field and CloudConfig are mutually exclusive.
-	//
-	// +optional
 	RawCloudConfig *vmopv1common.SecretKeySelector `json:"rawCloudConfig,omitempty"`
+
+	// +optional
 
 	// SSHAuthorizedKeys is a list of public keys that CloudInit will apply to
 	// the guest's default user.
-	//
-	// +optional
 	SSHAuthorizedKeys []string `json:"sshAuthorizedKeys,omitempty"`
 }
 
 // VirtualMachineBootstrapLinuxPrepSpec describes the LinuxPrep configuration
 // used to bootstrap the VM.
 type VirtualMachineBootstrapLinuxPrepSpec struct {
+	// +optional
+
 	// HardwareClockIsUTC specifies whether the hardware clock is in UTC or
 	// local time.
-	//
-	// +optional
 	HardwareClockIsUTC *bool `json:"hardwareClockIsUTC,omitempty"`
+
+	// +optional
 
 	// TimeZone is a case-sensitive timezone, such as Europe/Sofia.
 	//
@@ -135,14 +137,14 @@ type VirtualMachineBootstrapLinuxPrepSpec struct {
 	//
 	// Please see https://kb.vmware.com/s/article/2145518 for a list of valid
 	// time zones for Linux systems.
-	//
-	// +optional
 	TimeZone string `json:"timeZone,omitempty"`
 }
 
 // VirtualMachineBootstrapSysprepSpec describes the Sysprep configuration used
 // to bootstrap the VM.
 type VirtualMachineBootstrapSysprepSpec struct {
+	// +optional
+
 	// Sysprep is an object representation of a Windows sysprep.xml answer file.
 	//
 	// This field encloses all the individual keys listed in a sysprep.xml file.
@@ -151,9 +153,9 @@ type VirtualMachineBootstrapSysprepSpec struct {
 	// https://technet.microsoft.com/en-us/library/cc771830(v=ws.10).aspx.
 	//
 	// Please note this field and RawSysprep are mutually exclusive.
-	//
-	// +optional
 	Sysprep *vmopv1sysprep.Sysprep `json:"sysprep,omitempty"`
+
+	// +optional
 
 	// RawSysprep describes a key in a Secret resource that contains an XML
 	// string of the Sysprep text used to bootstrap the VM.
@@ -162,29 +164,27 @@ type VirtualMachineBootstrapSysprepSpec struct {
 	// or gzipped and base64-encoded.
 	//
 	// Please note this field and Sysprep are mutually exclusive.
-	//
-	// +optional
 	RawSysprep *vmopv1common.SecretKeySelector `json:"rawSysprep,omitempty"`
 }
 
 // VirtualMachineBootstrapVAppConfigSpec describes the vApp configuration
 // used to bootstrap the VM.
 type VirtualMachineBootstrapVAppConfigSpec struct {
-	// Properties is a list of vApp/OVF property key/value pairs.
-	//
-	// Please note this field and RawProperties are mutually exclusive.
-	//
 	// +optional
 	// +listType=map
 	// +listMapKey=key
+
+	// Properties is a list of vApp/OVF property key/value pairs.
+	//
+	// Please note this field and RawProperties are mutually exclusive.
 	Properties []vmopv1common.KeyValueOrSecretKeySelectorPair `json:"properties,omitempty"`
+
+	// +optional
 
 	// RawProperties is the name of a Secret resource in the same Namespace as
 	// this VM where each key/value pair from the Secret is used as a vApp
 	// key/value pair.
 	//
 	// Please note this field and Properties are mutually exclusive.
-	//
-	// +optional
 	RawProperties string `json:"rawProperties,omitempty"`
 }

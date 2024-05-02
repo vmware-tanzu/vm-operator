@@ -4,4 +4,6 @@
 // +k8s:openapi-gen=true
 // +kubebuilder:object:generate=true
 // +groupName=vmoperator.vmware.com
+
+// Package v1alpha3 is one of the schemas for VM Operator.
 package v1alpha3

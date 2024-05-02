@@ -110,30 +110,32 @@ const (
 // VirtualMachinePublishRequestSource is the source of a publication request,
 // typically a VirtualMachine resource.
 type VirtualMachinePublishRequestSource struct {
+	// +optional
+
 	// Name is the name of the referenced object.
 	//
 	// If omitted this value defaults to the name of the
 	// VirtualMachinePublishRequest resource.
-	//
-	// +optional
 	Name string `json:"name,omitempty"`
 
-	// APIVersion is the API version of the referenced object.
-	//
-	// +kubebuilder:default=vmoperator.vmware.com/v1alpha1
 	// +optional
+	// +kubebuilder:default=vmoperator.vmware.com/v1alpha1
+
+	// APIVersion is the API version of the referenced object.
 	APIVersion string `json:"apiVersion,omitempty"`
 
-	// Kind is the kind of referenced object.
-	//
-	// +kubebuilder:default=VirtualMachine
 	// +optional
+	// +kubebuilder:default=VirtualMachine
+
+	// Kind is the kind of referenced object.
 	Kind string `json:"kind,omitempty"`
 }
 
 // VirtualMachinePublishRequestTargetItem is the item part of a
 // publication request's target.
 type VirtualMachinePublishRequestTargetItem struct {
+	// +optional
+
 	// Name is the name of the published object.
 	//
 	// If the spec.target.location.apiVersion equals
@@ -143,19 +145,19 @@ type VirtualMachinePublishRequestTargetItem struct {
 	// in the namespace.
 	//
 	// If omitted then the controller will use spec.source.name + "-image".
-	//
-	// +optional
 	Name string `json:"name,omitempty"`
 
-	// Description is the description to assign to the published object.
-	//
 	// +optional
+
+	// Description is the description to assign to the published object.
 	Description string `json:"description,omitempty"`
 }
 
 // VirtualMachinePublishRequestTargetLocation is the location part of a
 // publication request's target.
 type VirtualMachinePublishRequestTargetLocation struct {
+	// +optional
+
 	// Name is the name of the referenced object.
 	//
 	// Please note an error will be returned if this field is not
@@ -165,40 +167,38 @@ type VirtualMachinePublishRequestTargetLocation struct {
 	// equal to spec.target.location.apiVersion, a kind equal to
 	// spec.target.location.kind, and has the label
 	// "imageregistry.vmware.com/default".
-	//
-	// +optional
 	Name string `json:"name,omitempty"`
 
-	// APIVersion is the API version of the referenced object.
-	//
-	// +kubebuilder:default=imageregistry.vmware.com/v1alpha1
 	// +optional
+	// +kubebuilder:default=imageregistry.vmware.com/v1alpha1
+
+	// APIVersion is the API version of the referenced object.
 	APIVersion string `json:"apiVersion,omitempty"`
 
-	// Kind is the kind of referenced object.
-	//
-	// +kubebuilder:default=ContentLibrary
 	// +optional
+	// +kubebuilder:default=ContentLibrary
+
+	// Kind is the kind of referenced object.
 	Kind string `json:"kind,omitempty"`
 }
 
 // VirtualMachinePublishRequestTarget is the target of a publication request,
 // typically a ContentLibrary resource.
 type VirtualMachinePublishRequestTarget struct {
+	// +optional
+
 	// Item contains information about the name of the object to which
 	// the VM is published.
 	//
 	// Please note this value is optional and if omitted, the controller
 	// will use spec.source.name + "-image" as the name of the published
 	// item.
-	//
-	// +optional
 	Item VirtualMachinePublishRequestTargetItem `json:"item,omitempty"`
+
+	// +optional
 
 	// Location contains information about the location to which to publish
 	// the VM.
-	//
-	// +optional
 	Location VirtualMachinePublishRequestTargetLocation `json:"location,omitempty"`
 }
 
@@ -210,6 +210,8 @@ type VirtualMachinePublishRequestTarget struct {
 // applying a VirtualMachinePublishRequest resource that has the same name
 // as said VM in the same namespace as said VM.
 type VirtualMachinePublishRequestSpec struct {
+	// +optional
+
 	// Source is the source of the publication request, ex. a VirtualMachine
 	// resource.
 	//
@@ -218,9 +220,9 @@ type VirtualMachinePublishRequestSpec struct {
 	// VirtualMachinePublishRequest resource, an API version equal to
 	// spec.source.apiVersion, and a kind equal to spec.source.kind. If such
 	// a resource exists, then it is the source of the publication.
-	//
-	// +optional
 	Source VirtualMachinePublishRequestSource `json:"source,omitempty"`
+
+	// +optional
 
 	// Target is the target of the publication request, ex. item
 	// information and a ContentLibrary resource.
@@ -236,9 +238,10 @@ type VirtualMachinePublishRequestSpec struct {
 	// target information is applied to a namespace without a default
 	// publication target, then the VirtualMachinePublishRequest resource
 	// will be marked in error.
-	//
-	// +optional
 	Target VirtualMachinePublishRequestTarget `json:"target,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum=0
 
 	// TTLSecondsAfterFinished is the time-to-live duration for how long this
 	// resource will be allowed to exist once the publication operation
@@ -248,27 +251,25 @@ type VirtualMachinePublishRequestSpec struct {
 	// If this field is unset then the request resource will not be
 	// automatically deleted. If this field is set to zero then the request
 	// resource is eligible for deletion immediately after it finishes.
-	//
-	// +optional
-	// +kubebuilder:validation:Minimum=0
 	TTLSecondsAfterFinished *int64 `json:"ttlSecondsAfterFinished,omitempty"`
 }
 
 // VirtualMachinePublishRequestStatus defines the observed state of a
 // VirtualMachinePublishRequest.
 type VirtualMachinePublishRequestStatus struct {
+	// +optional
+
 	// SourceRef is the reference to the source of the publication request,
 	// ex. a VirtualMachine resource.
-	//
-	// +optional
 	SourceRef *VirtualMachinePublishRequestSource `json:"sourceRef,omitempty"`
+
+	// +optional
 
 	// TargetRef is the reference to the target of the publication request,
 	// ex. item information and a ContentLibrary resource.
-	//
-	//
-	// +optional
 	TargetRef *VirtualMachinePublishRequestTarget `json:"targetRef,omitempty"`
+
+	// +optional
 
 	// CompletionTime represents time when the request was completed. It is not
 	// guaranteed to be set in happens-before order across separate operations.
@@ -276,28 +277,28 @@ type VirtualMachinePublishRequestStatus struct {
 	//
 	// The value of this field should be equal to the value of the
 	// LastTransitionTime for the status condition Type=Complete.
-	//
-	// +optional
 	CompletionTime metav1.Time `json:"completionTime,omitempty"`
+
+	// +optional
 
 	// StartTime represents time when the request was acknowledged by the
 	// controller. It is not guaranteed to be set in happens-before order
 	// across separate operations. It is represented in RFC3339 form and is
 	// in UTC.
-	//
-	// +optional
 	StartTime metav1.Time `json:"startTime,omitempty"`
+
+	// +optional
 
 	// Attempts represents the number of times the request to publish the VM
 	// has been attempted.
-	//
-	// +optional
 	Attempts int64 `json:"attempts,omitempty"`
 
-	// LastAttemptTime represents the time when the latest request was sent.
-	//
 	// +optional
+
+	// LastAttemptTime represents the time when the latest request was sent.
 	LastAttemptTime metav1.Time `json:"lastAttemptTime,omitempty"`
+
+	// +optional
 
 	// ImageName is the name of the VirtualMachineImage resource that is
 	// eventually realized in the same namespace as the VM and publication
@@ -305,9 +306,9 @@ type VirtualMachinePublishRequestStatus struct {
 	//
 	// This field will not be set until the VirtualMachineImage resource
 	// is realized.
-	//
-	// +optional
 	ImageName string `json:"imageName,omitempty"`
+
+	// +optional
 
 	// Ready is set to true only when the VM has been published successfully
 	// and the new VirtualMachineImage resource is ready.
@@ -321,14 +322,12 @@ type VirtualMachinePublishRequestStatus struct {
 	//   * Uploaded
 	//   * ImageAvailable
 	//   * Complete
-	//
-	// +optional
 	Ready bool `json:"ready,omitempty"`
+
+	// +optional
 
 	// Conditions is a list of the latest, available observations of the
 	// request's current state.
-	//
-	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 

@@ -1,5 +1,6 @@
 # v1alpha3
 
+Package v1alpha3 is one of the schemas for VM Operator.
 
 
 ---
@@ -247,7 +248,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `size` _Quantity_ |  |
+| `size` _[Quantity](#quantity)_ |  |
 
 ### InstanceVolumeClaimVolumeSource
 
@@ -263,7 +264,7 @@ _Appears in:_
 | --- | --- |
 | `storageClass` _string_ | StorageClass is the name of the Kubernetes StorageClass that provides
 the backing storage for this instance storage volume. |
-| `size` _Quantity_ | Size is the size of the requested instance storage volume. |
+| `size` _[Quantity](#quantity)_ | Size is the size of the requested instance storage volume. |
 
 ### LoadBalancerIngress
 
@@ -358,6 +359,7 @@ PersistentVolumeClaimVolumeSource is a composite for the Kubernetes
 corev1.PersistentVolumeClaimVolumeSource and instance storage options.
 
 _Appears in:_
+- [VirtualMachineVolume](#virtualmachinevolume)
 - [VirtualMachineVolumeSource](#virtualmachinevolumesource)
 
 | Field | Description |
@@ -396,7 +398,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `port` _IntOrString_ | Port specifies a number or name of the port to access on the VM.
+| `port` _[IntOrString](#intorstring)_ | Port specifies a number or name of the port to access on the VM.
 If the format of port is a number, it must be in the range 1 to 65535.
 If the format of name is a string, it must be an IANA_SVC_NAME. |
 | `host` _string_ | Host is an optional host name to connect to. Host defaults to the VM IP. |
@@ -457,7 +459,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `bootDiskCapacity` _Quantity_ | BootDiskCapacity is the capacity of the VM's boot disk -- the first disk
+| `bootDiskCapacity` _[Quantity](#quantity)_ | BootDiskCapacity is the capacity of the VM's boot disk -- the first disk
 from the VirtualMachineImage from which the VM was deployed.
 
 
@@ -466,7 +468,7 @@ running. Also, resizing the VM's boot disk may require actions inside of
 the guest to take advantage of the additional capacity. Finally, changing
 the size of the VM's boot disk, even increasing it, could adversely
 affect the VM. |
-| `defaultVolumeProvisioningMode` _VirtualMachineVolumeProvisioningMode_ | DefaultVolumeProvisioningMode specifies the default provisioning mode for
+| `defaultVolumeProvisioningMode` _[VirtualMachineVolumeProvisioningMode](#virtualmachinevolumeprovisioningmode)_ | DefaultVolumeProvisioningMode specifies the default provisioning mode for
 persistent volumes managed by this VM. |
 | `changeBlockTracking` _boolean_ | ChangeBlockTracking is a flag that enables incremental backup support
 for this VM, a feature utilized by external backup systems such as
@@ -484,12 +486,14 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `cloudConfig` _CloudConfig_ | CloudConfig describes a subset of a Cloud-Init CloudConfig, used to
+| `instanceID` _string_ | InstanceID is the cloud-init metadata instance ID.
+If omitted, this field defaults to the VM's BiosUUID. |
+| `cloudConfig` _[CloudConfig](#cloudconfig)_ | CloudConfig describes a subset of a Cloud-Init CloudConfig, used to
 bootstrap the VM.
 
 
 Please note this field and RawCloudConfig are mutually exclusive. |
-| `rawCloudConfig` _SecretKeySelector_ | RawCloudConfig describes a key in a Secret resource that contains the
+| `rawCloudConfig` _[SecretKeySelector](#secretkeyselector)_ | RawCloudConfig describes a key in a Secret resource that contains the
 CloudConfig data used to bootstrap the VM.
 
 
@@ -617,7 +621,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `sysprep` _Sysprep_ | Sysprep is an object representation of a Windows sysprep.xml answer file.
+| `sysprep` _[Sysprep](#sysprep)_ | Sysprep is an object representation of a Windows sysprep.xml answer file.
 
 
 This field encloses all the individual keys listed in a sysprep.xml file.
@@ -650,7 +654,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `properties` _[KeyValueOrSecretKeySelectorPair](#keyvalueorsecretkeyselectorpair) array_ | Properties is a list of vApp/OVF property key/value pairs.
+| `properties` _KeyValueOrSecretKeySelectorPair array_ | Properties is a list of vApp/OVF property key/value pairs.
 
 
 Please note this field and RawProperties are mutually exclusive. |
@@ -674,7 +678,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `cpus` _integer_ |  |
-| `memory` _Quantity_ |  |
+| `memory` _[Quantity](#quantity)_ |  |
 | `devices` _[VirtualDevices](#virtualdevices)_ |  |
 | `instanceStorage` _[InstanceStorage](#instancestorage)_ |  |
 
@@ -742,11 +746,21 @@ infrastructure resource consumption. |
 | `description` _string_ | Description describes the configuration of the VirtualMachineClass which
 is not related to virtual hardware or infrastructure policy. This field
 is used to address remaining specs about this VirtualMachineClass. |
-| `configSpec` _[json.RawMessage](https://pkg.go.dev/encoding/json#RawMessage)_ | ConfigSpec describes additional configuration information for a
+| `configSpec` _[RawMessage](#rawmessage)_ | ConfigSpec describes additional configuration information for a
 VirtualMachine.
 The contents of this field are the VirtualMachineConfigSpec data object
 (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator
 field "_typeName" to preserve type information. |
+
+### VirtualMachineClassStatus
+
+
+
+VirtualMachineClassStatus defines the observed state of VirtualMachineClass.
+
+_Appears in:_
+- [VirtualMachineClass](#virtualmachineclass)
+
 
 
 
@@ -866,7 +880,7 @@ The OS information is also added to the image resource's labels. Please
 refer to VirtualMachineImageOSInfo for more information. |
 | `ovfProperties` _[OVFProperty](#ovfproperty) array_ | OVFProperties describes the observed user configurable OVF properties defined for this
 image. |
-| `vmwareSystemProperties` _[KeyValuePair](#keyvaluepair) array_ | VMwareSystemProperties describes the observed VMware system properties defined for
+| `vmwareSystemProperties` _KeyValuePair array_ | VMwareSystemProperties describes the observed VMware system properties defined for
 this image. |
 | `productInfo` _[VirtualMachineImageProductInfo](#virtualmachineimageproductinfo)_ | ProductInfo describes the observed product information for this image. |
 | `providerContentVersion` _string_ | ProviderContentVersion describes the content version from the provider item
@@ -1012,7 +1026,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `config` _[KeyValuePair](#keyvaluepair) array_ | Config describes platform-dependent settings for the DHCP client.
+| `config` _KeyValuePair array_ | Config describes platform-dependent settings for the DHCP client.
 
 
 The key part is a unique number while the value part is the platform
@@ -1132,7 +1146,7 @@ _Appears in:_
 | `dhcp` _[VirtualMachineNetworkDHCPStatus](#virtualmachinenetworkdhcpstatus)_ | DHCP describes the VM's observed, client-side, system-wide DHCP options. |
 | `dns` _[VirtualMachineNetworkDNSStatus](#virtualmachinenetworkdnsstatus)_ | DNS describes the VM's observed, client-side DNS configuration. |
 | `ipRoutes` _[VirtualMachineNetworkIPRouteStatus](#virtualmachinenetworkiproutestatus) array_ | IPRoutes contain the VM's routing tables for all address families. |
-| `kernelConfig` _[KeyValuePair](#keyvaluepair) array_ | KernelConfig describes the observed state of the VM's kernel IP
+| `kernelConfig` _KeyValuePair array_ | KernelConfig describes the observed state of the VM's kernel IP
 configuration settings.
 
 
@@ -1215,7 +1229,7 @@ When the bootstrap provider is Cloud-Init and GuestDeviceName is not
 specified, the device inside the guest will be renamed to this value.
 Please note it is up to the user to ensure the provided name does not
 conflict with any other devices inside the guest, ex. dvd, cdrom, sda, etc. |
-| `network` _PartialObjectRef_ | Network is the name of the network resource to which this interface is
+| `network` _[PartialObjectRef](#partialobjectref)_ | Network is the name of the network resource to which this interface is
 connected.
 
 
@@ -1466,8 +1480,8 @@ If the Interfaces field is empty and the Disabled field is false, then
 a default interface with the name eth0 will be created.
 
 
-The maximum number of network interface allowed is 10 because of the limit
-built into vSphere. |
+The maximum number of network interface allowed is 10 because a vSphere
+virtual machine may not have more than 10 virtual ethernet card devices. |
 
 ### VirtualMachineNetworkStatus
 
@@ -1517,6 +1531,28 @@ calculated.
 If the bootstrap provider is anything else then this field is set to the
 value of the infrastructure VM's "guest.ipAddress" field. Please see
 https://bit.ly/3Au0jM4 for more information. |
+
+### VirtualMachinePowerOpMode
+
+_Underlying type:_ `string`
+
+VirtualMachinePowerOpMode represents the various power operation modes when
+powering off or suspending a VM.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+
+### VirtualMachinePowerState
+
+_Underlying type:_ `string`
+
+VirtualMachinePowerState defines a VM's desired and observed power states.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+- [VirtualMachineStatus](#virtualmachinestatus)
+
 
 ### VirtualMachinePublishRequestSource
 
@@ -1787,9 +1823,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `resourcePolicyName` _string_ | ResourcePolicyName describes the name of a
-VirtualMachineSetResourcePolicy resource used to configure the VM's
-resource policy. |
+| `resourcePolicyName` _string_ |  |
 
 ### VirtualMachineResourceSpec
 
@@ -1803,8 +1837,8 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `cpu` _Quantity_ |  |
-| `memory` _Quantity_ |  |
+| `cpu` _[Quantity](#quantity)_ |  |
+| `memory` _[Quantity](#quantity)_ |  |
 
 ### VirtualMachineServicePort
 
@@ -1839,7 +1873,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `type` _VirtualMachineServiceType_ | Type specifies a desired VirtualMachineServiceType for this
+| `type` _[VirtualMachineServiceType](#virtualmachineservicetype)_ | Type specifies a desired VirtualMachineServiceType for this
 VirtualMachineService. Supported types are ClusterIP, LoadBalancer,
 ExternalName. |
 | `ports` _[VirtualMachineServicePort](#virtualmachineserviceport) array_ | Ports specifies a list of VirtualMachineServicePort to expose with this
@@ -1848,8 +1882,8 @@ entry point to access this service by. |
 | `selector` _object (keys:string, values:string)_ | Selector specifies a map of key-value pairs, also known as a Label
 Selector, that is used to match this VirtualMachineService with the set
 of VirtualMachines that should back this VirtualMachineService. |
-| `loadBalancerIP` _string_ | Only applies to VirtualMachineService Type: LoadBalancer
-LoadBalancer will get created with the IP specified in this field.
+| `loadBalancerIP` _string_ | LoadBalancer will get created with the IP specified in this field.
+Only applies to VirtualMachineService Type: LoadBalancer
 This feature depends on whether the underlying load balancer provider
 supports specifying the loadBalancerIP when a load balancer is created.
 This field will be ignored if the provider does not support the feature.
@@ -1861,7 +1895,7 @@ CIDRs, for example: 103.21.244.0/22 and 10.0.0.0/24.
 If specified and supported by the load balancer provider, this will
 restrict ingress traffic to the specified client IPs. This field will be
 ignored if the provider does not support the feature. |
-| `clusterIp` _string_ | clusterIP is the IP address of the service and is usually assigned
+| `clusterIp` _string_ | ClusterIP is the IP address of the service and is usually assigned
 randomly by the master. If an address is specified manually and is not in
 use by others, it will be allocated to the service; otherwise, creation
 of the service will fail. This field can not be changed through updates.
@@ -1870,7 +1904,7 @@ can be specified for headless services when proxying is not required.
 Only applies to types ClusterIP and LoadBalancer.
 Ignored if type is ExternalName.
 More info: https://kubernetes.io/docs/concepts/services-networking/service/#virtual-ips-and-service-proxies |
-| `externalName` _string_ | externalName is the external reference that kubedns or equivalent will
+| `externalName` _string_ | ExternalName is the external reference that kubedns or equivalent will
 return as a CNAME record for this service. No proxying will be involved.
 Must be a valid RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
 and requires Type to be ExternalName. |
@@ -1889,6 +1923,16 @@ _Appears in:_
 | --- | --- |
 | `loadBalancer` _[LoadBalancerStatus](#loadbalancerstatus)_ | LoadBalancer contains the current status of the load balancer,
 if one is present. |
+
+### VirtualMachineServiceType
+
+_Underlying type:_ `string`
+
+VirtualMachineServiceType string describes ingress methods for a service.
+
+_Appears in:_
+- [VirtualMachineServiceSpec](#virtualmachineservicespec)
+
 
 ### VirtualMachineSetResourcePolicySpec
 
@@ -1987,7 +2031,7 @@ guest OS identifier. If Linux, then the LinuxPrep method is used. |
 Please note this value may be omitted entirely and the VM will be
 assigned a single, virtual network interface that is connected to the
 Namespace's default network. |
-| `powerState` _VirtualMachinePowerState_ | PowerState describes the desired power state of a VirtualMachine.
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the desired power state of a VirtualMachine.
 
 
 Please note this field may be omitted when creating a new VM and will
@@ -1999,7 +2043,7 @@ Additionally, setting this value to "Suspended" is not supported when
 creating a new VM. The valid values when creating a new VM are
 "PoweredOn" and "PoweredOff." An empty value is also allowed on create
 since this value defaults to "PoweredOn" for new VMs. |
-| `powerOffMode` _VirtualMachinePowerOpMode_ | PowerOffMode describes the desired behavior when powering off a VM.
+| `powerOffMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | PowerOffMode describes the desired behavior when powering off a VM.
 
 
 There are three, supported power off modes: Hard, Soft, and
@@ -2012,7 +2056,7 @@ state after five minutes, the VM is halted.
 
 
 If omitted, the mode defaults to TrySoft. |
-| `suspendMode` _VirtualMachinePowerOpMode_ | SuspendMode describes the desired behavior when suspending a VM.
+| `suspendMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | SuspendMode describes the desired behavior when suspending a VM.
 
 
 There are three, supported suspend modes: Hard, Soft, and
@@ -2039,7 +2083,7 @@ restarted.
 Please note it is not possible to schedule future restarts using this
 field. The only value that users may set is the string "now"
 (case-insensitive). |
-| `restartMode` _VirtualMachinePowerOpMode_ | RestartMode describes the desired behavior for restarting a VM when
+| `restartMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | RestartMode describes the desired behavior for restarting a VM when
 spec.nextRestartTime is set to "now" (case-insensitive).
 
 
@@ -2103,6 +2147,10 @@ downgraded and upgrading a VM deployed from an image based on an older
 hardware version to a more recent one may result in unpredictable
 behavior. In other words, please be careful when choosing to upgrade a
 VM to a newer hardware version. |
+| `biosUUID` _string_ | BiosUUID describes the desired BIOS UUID for a VM.
+If omitted, this field defaults to a random UUID.
+When the bootstrap provider is Cloud-Init, this value is
+used as the Cloud-Init instance ID. |
 
 ### VirtualMachineStatus
 
@@ -2115,11 +2163,11 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `class` _LocalObjectRef_ | Class is a reference to the VirtualMachineClass resource used to deploy
+| `class` _[LocalObjectRef](#localobjectref)_ | Class is a reference to the VirtualMachineClass resource used to deploy
 this VM. |
 | `host` _string_ | Host describes the hostname or IP address of the infrastructure host
 where the VM is executed. |
-| `powerState` _VirtualMachinePowerState_ | PowerState describes the observed power state of the VirtualMachine. |
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the observed power state of the VirtualMachine. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions of the VirtualMachine. |
 | `network` _[VirtualMachineNetworkStatus](#virtualmachinenetworkstatus)_ | Network describes the observed state of the VM's network configuration.
 Please note much of the network status information is only available if
@@ -2167,6 +2215,17 @@ in the same namespace.
 
 More information is available at
 https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims. |
+
+### VirtualMachineVolumeProvisioningMode
+
+_Underlying type:_ `string`
+
+VirtualMachineVolumeProvisioningMode is the type used to express the
+desired or observed provisioning mode for a virtual machine disk.
+
+_Appears in:_
+- [VirtualMachineAdvancedSpec](#virtualmachineadvancedspec)
+
 
 ### VirtualMachineVolumeSource
 

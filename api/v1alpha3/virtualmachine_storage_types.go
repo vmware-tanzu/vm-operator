@@ -8,10 +8,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+// +kubebuilder:validation:Enum=Thin;Thick;ThickEagerZero
+
 // VirtualMachineVolumeProvisioningMode is the type used to express the
 // desired or observed provisioning mode for a virtual machine disk.
-//
-// +kubebuilder:validation:Enum=Thin;Thick;ThickEagerZero
 type VirtualMachineVolumeProvisioningMode string
 
 const (
@@ -34,13 +34,13 @@ type VirtualMachineVolume struct {
 // VirtualMachineVolumeSource represents the source location of a volume to
 // mount. Only one of its members may be specified.
 type VirtualMachineVolumeSource struct {
+	// +optional
+
 	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
 	// in the same namespace.
 	//
 	// More information is available at
 	// https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
-	//
-	// +optional
 	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
 }
 
@@ -49,8 +49,9 @@ type VirtualMachineVolumeSource struct {
 type PersistentVolumeClaimVolumeSource struct {
 	corev1.PersistentVolumeClaimVolumeSource `json:",inline" yaml:",inline"`
 
-	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
 	// +optional
+
+	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
 	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
 }
 
@@ -71,18 +72,21 @@ type VirtualMachineVolumeStatus struct {
 	// Name is the name of the attached volume.
 	Name string `json:"name"`
 
+	// +optional
+
 	// Attached represents whether a volume has been successfully attached to
 	// the VirtualMachine or not.
-	// +optional
 	Attached bool `json:"attached,omitempty"`
+
+	// +optional
 
 	// DiskUUID represents the underlying virtual disk UUID and is present when
 	// attachment succeeds.
-	// +optional
 	DiskUUID string `json:"diskUUID,omitempty"`
+
+	// +optional
 
 	// Error represents the last error seen when attaching or detaching a
 	// volume.  Error will be empty if attachment succeeds.
-	// +optional
 	Error string `json:"error,omitempty"`
 }

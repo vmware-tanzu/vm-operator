@@ -16,10 +16,10 @@ import (
 //
 // We only support XML for now, but that may change in the future.
 type VirtualMachineConfigSpec struct {
+	// +optional
+
 	// XML contains a vim.vm.ConfigSpec object that has been serialized to XML
 	// and base64-encoded.
-	//
-	// +optional
 	XML string `json:"xml,omitempty"`
 }
 
@@ -35,6 +35,7 @@ type DynamicDirectPathIODevice struct {
 	DeviceID int64 `json:"deviceID"`
 
 	// +optional
+
 	CustomLabel string `json:"customLabel,omitempty"`
 }
 
@@ -115,6 +116,8 @@ type VirtualMachineClassPolicies struct {
 
 // VirtualMachineClassSpec defines the desired state of VirtualMachineClass.
 type VirtualMachineClassSpec struct {
+	// +optional
+
 	// ControllerName describes the name of the controller responsible for
 	// reconciling VirtualMachine resources that are realized from this
 	// VirtualMachineClass.
@@ -126,43 +129,41 @@ type VirtualMachineClassSpec struct {
 	//
 	// Once a non-empty value is assigned to this field, attempts to set this
 	// field to an empty value will be silently ignored.
-	//
-	// +optional
 	ControllerName string `json:"controllerName,omitempty"`
+
+	// +optional
 
 	// Hardware describes the configuration of the VirtualMachineClass
 	// attributes related to virtual hardware. The configuration specified in
 	// this field is used to customize the virtual hardware characteristics of
 	// any VirtualMachine associated with this VirtualMachineClass.
-	//
-	// +optional
 	Hardware VirtualMachineClassHardware `json:"hardware,omitempty"`
+
+	// +optional
 
 	// Policies describes the configuration of the VirtualMachineClass
 	// attributes related to virtual infrastructure policy. The configuration
 	// specified in this field is used to customize various policies related to
 	// infrastructure resource consumption.
-	//
-	// +optional
 	Policies VirtualMachineClassPolicies `json:"policies,omitempty"`
+
+	// +optional
 
 	// Description describes the configuration of the VirtualMachineClass which
 	// is not related to virtual hardware or infrastructure policy. This field
 	// is used to address remaining specs about this VirtualMachineClass.
-	//
-	// +optional
 	Description string `json:"description,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:validation:Type=object
+	// +kubebuilder:pruning:PreserveUnknownFields
 
 	// ConfigSpec describes additional configuration information for a
 	// VirtualMachine.
 	// The contents of this field are the VirtualMachineConfigSpec data object
 	// (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator
 	// field "_typeName" to preserve type information.
-	//
-	// +optional
-	// +kubebuilder:validation:Schemaless
-	// +kubebuilder:validation:Type=object
-	// +kubebuilder:pruning:PreserveUnknownFields
 	ConfigSpec json.RawMessage `json:"configSpec,omitempty"`
 }
 

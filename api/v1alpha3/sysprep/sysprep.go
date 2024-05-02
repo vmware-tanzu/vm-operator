@@ -47,24 +47,25 @@ type Sysprep struct {
 
 // GUIRunOnce maps to the GuiRunOnce key in the sysprep.xml answer file.
 type GUIRunOnce struct {
+	// +optional
+
 	// Commands is a list of commands to run at first user logon, after guest
 	// customization.
-	//
-	// +optional
 	Commands []string `json:"commands,omitempty"`
 }
 
 // GUIUnattended maps to the GuiUnattended key in the sysprep.xml answer file.
 type GUIUnattended struct {
+	// +optional
 
 	// AutoLogon determine whether the machine automatically logs on as
 	// Administrator.
 	//
 	// Please note if AutoLogon is true, then Password must be set or guest
 	// customization will fail.
-	//
-	// +optional
 	AutoLogon bool `json:"autoLogon,omitempty"`
+
+	// +optional
 
 	// AutoLogonCount specifies the number of times the machine should
 	// automatically log on as Administrator.
@@ -73,10 +74,11 @@ type GUIUnattended struct {
 	// you may want to increase it. This number may be determined by the list of
 	// commands executed by the GuiRunOnce command.
 	//
-	// Please note this field must be specified with a non-zero positive integer if AutoLogon is true.
-	//
-	// +optional
+	// Please note this field must be specified with a non-zero positive integer
+	// if AutoLogon is true.
 	AutoLogonCount int32 `json:"autoLogonCount,omitempty"`
+
+	// +optional
 
 	// Password is the new administrator password for the machine.
 	//
@@ -94,16 +96,14 @@ type GUIUnattended struct {
 	//
 	// When not explicitly specified, the Key field for the selector defaults to
 	// `password`.
-	//
-	// +optional
 	Password *PasswordSecretKeySelector `json:"password,omitempty"`
+
+	// +optional
 
 	// TimeZone is the time zone index for the virtual machine.
 	//
 	// Please note that numbers correspond to time zones listed at
 	// https://bit.ly/3Rzv8oL.
-	//
-	// +optional
 	TimeZone int32 `json:"timeZone,omitempty"`
 }
 
@@ -112,8 +112,9 @@ type PasswordSecretKeySelector struct {
 	// Name is the name of the secret.
 	Name string `json:"name"`
 
-	// Key is the key in the secret that specifies the requested data.
 	// +kubebuilder:default=password
+
+	// Key is the key in the secret that specifies the requested data.
 	Key string `json:"key"`
 }
 
@@ -121,29 +122,29 @@ type PasswordSecretKeySelector struct {
 // and provides information needed to join a workgroup or domain.
 type Identification struct {
 
+	// +optional
+
 	// DomainAdmin is the domain user account used for authentication if the
 	// virtual machine is joining a domain. The user does not need to be a
 	// domain administrator, but the account must have the privileges required
 	// to add computers to the domain.
-	//
-	// +optional
 	DomainAdmin string `json:"domainAdmin,omitempty"`
+
+	// +optional
 
 	// DomainAdminPassword is the password for the domain user account used for
 	// authentication if the virtual machine is joining a domain.
 	//
 	// When not explicitly specified, the Key field for the selector defaults to
 	// `domain_admin_password`.
-	//
-	// +optional
 	DomainAdminPassword *DomainPasswordSecretKeySelector `json:"domainAdminPassword,omitempty"`
+
+	// +optional
 
 	// JoinWorkgroup is the workgroup that the virtual machine should join. If
 	// this value is supplied, then the fields spec.network.domain,
 	// spec.bootstrap.sysprep.identification.domainAdmin, and
 	// spec.bootstrap.sysprep.identification.domainAdminPassword must be empty.
-	//
-	// +optional
 	JoinWorkgroup string `json:"joinWorkgroup,omitempty"`
 }
 
@@ -152,15 +153,16 @@ type DomainPasswordSecretKeySelector struct {
 	// Name is the name of the secret.
 	Name string `json:"name"`
 
-	// Key is the key in the secret that specifies the requested data.
 	// +kubebuilder:default=domain_admin_password
+
+	// Key is the key in the secret that specifies the requested data.
 	Key string `json:"key"`
 }
 
+// +kubebuilder:validation:Enum=perSeat;perServer
+
 // CustomizationLicenseDataMode is an enumeration of the different license
 // modes.
-//
-// +kubebuilder:validation:Enum=perSeat;perServer
 type CustomizationLicenseDataMode string
 
 const (
@@ -182,12 +184,12 @@ type LicenseFilePrintData struct {
 	// AutoMode specifies the server licensing mode.
 	AutoMode CustomizationLicenseDataMode `json:"autoMode"`
 
+	// +optional
+
 	// AutoUsers indicates the number of client licenses purchased for the
 	// VirtualCenter server being installed.
 	//
 	// Please note this value is ignored unless AutoMode is PerServer.
-	//
-	// +optional
 	AutoUsers *int32 `json:"autoUsers,omitempty"`
 }
 
@@ -201,6 +203,8 @@ type UserData struct {
 	// OrgName is the name of the user's organization.
 	OrgName string `json:"orgName"`
 
+	// +optional
+
 	// ProductID is a valid serial number.
 	//
 	// Please note unless the VirtualMachineImage was installed with a volume
@@ -208,8 +212,6 @@ type UserData struct {
 	//
 	// When not explicitly specified, the Key field for the selector defaults to
 	// `domain_admin_password`.
-	//
-	// +optional
 	ProductID *ProductIDSecretKeySelector `json:"productID,omitempty"`
 }
 
@@ -218,7 +220,8 @@ type ProductIDSecretKeySelector struct {
 	// Name is the name of the secret.
 	Name string `json:"name"`
 
-	// Key is the key in the secret that specifies the requested data.
 	// +kubebuilder:default=product_id
+
+	// Key is the key in the secret that specifies the requested data.
 	Key string `json:"key"`
 }

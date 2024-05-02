@@ -3254,11 +3254,11 @@ spec:
                             x-kubernetes-preserve-unknown-fields: true
                           ssh_pwauth:
                             description: |-
-                              SSHPwdAuth sets whether or not to accept password authentication. ``true`` will enable password
-                              auth. ``false`` will disable. Default: leave the value unchanged. In order for this
-                              config to be applied, SSH may need to be restarted. On systemd systems, this restart will
-                              only happen if the SSH service has already been started. On non-systemd systems, a
-                              restart will be attempted regardless of the service state.
+                              SSHPwdAuth sets whether or not to accept password authentication.
+                              In order for this config to be applied, SSH may need to be restarted.
+                              On systemd systems, this restart will only happen if the SSH service has
+                              already been started. On non-systemd systems, a restart will be attempted
+                              regardless of the service state.
                             type: boolean
                           timezone:
                             description: Timezone describes the timezone represented
@@ -3470,11 +3470,11 @@ spec:
                             - name
                             x-kubernetes-list-type: map
                           write_files:
-                            description: WriteFiles
+                            description: WriteFiles allows adding files to the guest
+                              file system.
                             items:
-                              description: |-
-                                WriteFile is a CloudConfig
-                                write_file data structure.
+                              description: WriteFile is a CloudConfig write_file data
+                                structure.
                               properties:
                                 append:
                                   description: |-
@@ -3723,7 +3723,8 @@ spec:
                                   commands executed by the GuiRunOnce command.
 
 
-                                  Please note this field must be specified with a non-zero positive integer if AutoLogon is true.
+                                  Please note this field must be specified with a non-zero positive integer
+                                  if AutoLogon is true.
                                 format: int32
                                 type: integer
                               password:
@@ -4173,8 +4174,8 @@ spec:
                       a default interface with the name eth0 will be created.
 
 
-                      The maximum number of network interface allowed is 10 because of the limit
-                      built into vSphere.
+                      The maximum number of network interface allowed is 10 because a vSphere
+                      virtual machine may not have more than 10 virtual ethernet card devices.
                     items:
                       description: |-
                         VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's
@@ -4611,10 +4612,6 @@ spec:
                   will result in a validation error.
                 properties:
                   resourcePolicyName:
-                    description: |-
-                      ResourcePolicyName describes the name of a
-                      VirtualMachineSetResourcePolicy resource used to configure the VM's
-                      resource policy.
                     type: string
                 type: object
               restartMode:
@@ -5033,8 +5030,6 @@ spec:
                                 Please note this name is not necessarily related to the name of the
                                 device as it is surfaced inside of the guest.
                               type: string
-                          required:
-                          - name
                           type: object
                         type: array
                     type: object
@@ -5150,8 +5145,6 @@ spec:
                                     - tentative
                                     - unknown
                                     type: string
-                                required:
-                                - address
                                 type: object
                               type: array
                             autoConfigurationEnabled:
@@ -5448,9 +5441,6 @@ spec:
                                   '::' to represent multiple 16-bit groups of contiguous 0's only once in
                                   an address as described in RFC 2373.
                                 type: string
-                            required:
-                            - gateway
-                            - networkAddress
                             type: object
                           type: array
                         kernelConfig:

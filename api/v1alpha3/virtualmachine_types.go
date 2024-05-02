@@ -166,8 +166,9 @@ const (
 	PausedVMLabelKey = GroupName + "/paused"
 )
 
-// VirtualMachinePowerState defines a VM's desired and observed power states.
 // +kubebuilder:validation:Enum=PoweredOff;PoweredOn;Suspended
+
+// VirtualMachinePowerState defines a VM's desired and observed power states.
 type VirtualMachinePowerState string
 
 const (
@@ -184,9 +185,10 @@ const (
 	VirtualMachinePowerStateSuspended VirtualMachinePowerState = "Suspended"
 )
 
+// +kubebuilder:validation:Enum=Hard;Soft;TrySoft
+
 // VirtualMachinePowerOpMode represents the various power operation modes when
 // powering off or suspending a VM.
-// +kubebuilder:validation:Enum=Hard;Soft;TrySoft
 type VirtualMachinePowerOpMode string
 
 const (
@@ -264,38 +266,40 @@ type VirtualMachineSpec struct {
 	// resource or an error is returned.
 	ImageName string `json:"imageName,omitempty"`
 
+	// +optional
+
 	// ClassName describes the name of the VirtualMachineClass resource used to
 	// deploy this VM.
-	//
-	// +optional
 	ClassName string `json:"className,omitempty"`
+
+	// +optional
 
 	// StorageClass describes the name of a Kubernetes StorageClass resource
 	// used to configure this VM's storage-related attributes.
 	//
 	// Please see https://kubernetes.io/docs/concepts/storage/storage-classes/
 	// for more information on Kubernetes storage classes.
-	//
-	// +optional
 	StorageClass string `json:"storageClass,omitempty"`
+
+	// +optional
 
 	// Bootstrap describes the desired state of the guest's bootstrap
 	// configuration.
 	//
 	// If omitted, a default bootstrap method may be selected based on the
 	// guest OS identifier. If Linux, then the LinuxPrep method is used.
-	//
-	// +optional
 	Bootstrap *VirtualMachineBootstrapSpec `json:"bootstrap,omitempty"`
+
+	// +optional
 
 	// Network describes the desired network configuration for the VM.
 	//
 	// Please note this value may be omitted entirely and the VM will be
 	// assigned a single, virtual network interface that is connected to the
 	// Namespace's default network.
-	//
-	// +optional
 	Network *VirtualMachineNetworkSpec `json:"network,omitempty"`
+
+	// +optional
 
 	// PowerState describes the desired power state of a VirtualMachine.
 	//
@@ -307,9 +311,10 @@ type VirtualMachineSpec struct {
 	// creating a new VM. The valid values when creating a new VM are
 	// "PoweredOn" and "PoweredOff." An empty value is also allowed on create
 	// since this value defaults to "PoweredOn" for new VMs.
-	//
-	// +optional
 	PowerState VirtualMachinePowerState `json:"powerState,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=TrySoft
 
 	// PowerOffMode describes the desired behavior when powering off a VM.
 	//
@@ -322,10 +327,10 @@ type VirtualMachineSpec struct {
 	// state after five minutes, the VM is halted.
 	//
 	// If omitted, the mode defaults to TrySoft.
-	//
+	PowerOffMode VirtualMachinePowerOpMode `json:"powerOffMode,omitempty"`
+
 	// +optional
 	// +kubebuilder:default=TrySoft
-	PowerOffMode VirtualMachinePowerOpMode `json:"powerOffMode,omitempty"`
 
 	// SuspendMode describes the desired behavior when suspending a VM.
 	//
@@ -338,10 +343,9 @@ type VirtualMachineSpec struct {
 	// standby by the guest after five minutes, the VM is suspended.
 	//
 	// If omitted, the mode defaults to TrySoft.
-	//
-	// +optional
-	// +kubebuilder:default=TrySoft
 	SuspendMode VirtualMachinePowerOpMode `json:"suspendMode,omitempty"`
+
+	// +optional
 
 	// NextRestartTime may be used to restart the VM, in accordance with
 	// RestartMode, by setting the value of this field to "now"
@@ -355,9 +359,10 @@ type VirtualMachineSpec struct {
 	// Please note it is not possible to schedule future restarts using this
 	// field. The only value that users may set is the string "now"
 	// (case-insensitive).
-	//
-	// +optional
 	NextRestartTime string `json:"nextRestartTime,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=TrySoft
 
 	// RestartMode describes the desired behavior for restarting a VM when
 	// spec.nextRestartTime is set to "now" (case-insensitive).
@@ -370,34 +375,32 @@ type VirtualMachineSpec struct {
 	// does not complete within five minutes, the VM is hard reset.
 	//
 	// If omitted, the mode defaults to TrySoft.
-	//
-	// +optional
-	// +kubebuilder:default=TrySoft
 	RestartMode VirtualMachinePowerOpMode `json:"restartMode,omitempty"`
 
-	// Volumes describes a list of volumes that can be mounted to the VM.
-	//
 	// +optional
 	// +listType=map
 	// +listMapKey=name
+
+	// Volumes describes a list of volumes that can be mounted to the VM.
 	Volumes []VirtualMachineVolume `json:"volumes,omitempty"`
 
-	// ReadinessProbe describes a probe used to determine the VM's ready state.
-	//
 	// +optional
+
+	// ReadinessProbe describes a probe used to determine the VM's ready state.
 	ReadinessProbe *VirtualMachineReadinessProbeSpec `json:"readinessProbe,omitempty"`
 
-	// Advanced describes a set of optional, advanced VM configuration options.
 	// +optional
+
+	// Advanced describes a set of optional, advanced VM configuration options.
 	Advanced *VirtualMachineAdvancedSpec `json:"advanced,omitempty"`
+
+	// +optional
 
 	// Reserved describes a set of VM configuration options reserved for system
 	// use.
 	//
 	// Please note attempts to modify the value of this field by a DevOps user
 	// will result in a validation error.
-	//
-	// +optional
 	Reserved *VirtualMachineReservedSpec `json:"reserved,omitempty"`
 
 	// +optional
@@ -439,12 +442,13 @@ type VirtualMachineSpec struct {
 	// VM to a newer hardware version.
 	MinHardwareVersion int32 `json:"minHardwareVersion,omitempty"`
 
+	// +optional
+	// +kubebuilder:validation:Format:=uuid4
+
 	// BiosUUID describes the desired BIOS UUID for a VM.
 	// If omitted, this field defaults to a random UUID.
 	// When the bootstrap provider is Cloud-Init, this value is
 	// used as the Cloud-Init instance ID.
-	// +optional
-	// +kubebuilder:validation:Format:=uuid4
 	BiosUUID string `json:"biosUUID,omitempty"`
 }
 
@@ -452,17 +456,19 @@ type VirtualMachineSpec struct {
 // reserved for system use. Modification attempts by DevOps users will result
 // in a validation error.
 type VirtualMachineReservedSpec struct {
+	// +optional
+
 	// ResourcePolicyName describes the name of a
 	// VirtualMachineSetResourcePolicy resource used to configure the VM's
-	// resource policy.
-	//
-	// +optional
+
 	ResourcePolicyName string `json:"resourcePolicyName,omitempty"`
 }
 
 // VirtualMachineAdvancedSpec describes a set of optional, advanced VM
 // configuration options.
 type VirtualMachineAdvancedSpec struct {
+	// +optional
+
 	// BootDiskCapacity is the capacity of the VM's boot disk -- the first disk
 	// from the VirtualMachineImage from which the VM was deployed.
 	//
@@ -471,103 +477,105 @@ type VirtualMachineAdvancedSpec struct {
 	// the guest to take advantage of the additional capacity. Finally, changing
 	// the size of the VM's boot disk, even increasing it, could adversely
 	// affect the VM.
-	//
-	// +optional
 	BootDiskCapacity *resource.Quantity `json:"bootDiskCapacity,omitempty"`
+
+	// +optional
 
 	// DefaultVolumeProvisioningMode specifies the default provisioning mode for
 	// persistent volumes managed by this VM.
-	//
-	// +optional
 	DefaultVolumeProvisioningMode VirtualMachineVolumeProvisioningMode `json:"defaultVolumeProvisioningMode,omitempty"`
+
+	// +optional
 
 	// ChangeBlockTracking is a flag that enables incremental backup support
 	// for this VM, a feature utilized by external backup systems such as
 	// VMware Data Recovery.
-	//
-	// +optional
 	ChangeBlockTracking bool `json:"changeBlockTracking,omitempty"`
 }
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
 type VirtualMachineStatus struct {
+	// +optional
+
 	// Class is a reference to the VirtualMachineClass resource used to deploy
 	// this VM.
-	//
-	// +optional
 	Class *vmopv1common.LocalObjectRef `json:"class,omitempty"`
+
+	// +optional
 
 	// Host describes the hostname or IP address of the infrastructure host
 	// where the VM is executed.
-	//
-	// +optional
 	Host string `json:"host,omitempty"`
 
-	// PowerState describes the observed power state of the VirtualMachine.
 	// +optional
+
+	// PowerState describes the observed power state of the VirtualMachine.
 	PowerState VirtualMachinePowerState `json:"powerState,omitempty"`
 
-	// Conditions describes the observed conditions of the VirtualMachine.
 	// +optional
+
+	// Conditions describes the observed conditions of the VirtualMachine.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// +optional
 
 	// Network describes the observed state of the VM's network configuration.
 	// Please note much of the network status information is only available if
 	// the guest has VM Tools installed.
-	// +optional
 	Network *VirtualMachineNetworkStatus `json:"network,omitempty"`
+
+	// +optional
 
 	// UniqueID describes a unique identifier that is provided by the underlying
 	// infrastructure provider, such as vSphere.
-	//
-	// +optional
 	UniqueID string `json:"uniqueID,omitempty"`
+
+	// +optional
 
 	// BiosUUID describes a unique identifier provided by the underlying
 	// infrastructure provider that is exposed to the Guest OS BIOS as a unique
 	// hardware identifier.
-	//
-	// +optional
 	BiosUUID string `json:"biosUUID,omitempty"`
+
+	// +optional
 
 	// InstanceUUID describes the unique instance UUID provided by the
 	// underlying infrastructure provider, such as vSphere.
-	//
-	// +optional
 	InstanceUUID string `json:"instanceUUID,omitempty"`
 
-	// Volumes describes a list of current status information for each Volume
-	// that is desired to be attached to the VM.
 	// +optional
 	// +listType=map
 	// +listMapKey=name
+
+	// Volumes describes a list of current status information for each Volume
+	// that is desired to be attached to the VM.
 	Volumes []VirtualMachineVolumeStatus `json:"volumes,omitempty"`
 
-	// ChangeBlockTracking describes the CBT enablement status on the VM.
-	//
 	// +optional
+
+	// ChangeBlockTracking describes the CBT enablement status on the VM.
 	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
+
+	// +optional
 
 	// Zone describes the availability zone where the VirtualMachine has been
 	// scheduled.
 	//
 	// Please note this field may be empty when the cluster is not zone-aware.
-	//
-	// +optional
 	Zone string `json:"zone,omitempty"`
 
-	// LastRestartTime describes the last time the VM was restarted.
-	//
 	// +optional
+
+	// LastRestartTime describes the last time the VM was restarted.
 	LastRestartTime *metav1.Time `json:"lastRestartTime,omitempty"`
+
+	// +optional
 
 	// HardwareVersion describes the VirtualMachine resource's observed
 	// hardware version.
 	//
 	// Please refer to VirtualMachineSpec.MinHardwareVersion for more
 	// information on the topic of a VM's hardware version.
-	//
-	// +optional
 	HardwareVersion int32 `json:"hardwareVersion,omitempty"`
 }
 

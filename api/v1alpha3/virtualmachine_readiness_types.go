@@ -10,16 +10,20 @@ import (
 // VirtualMachineReadinessProbeSpec describes a probe used to determine if a VM
 // is in a ready state. All probe actions are mutually exclusive.
 type VirtualMachineReadinessProbeSpec struct {
+	// +optional
+
 	// TCPSocket specifies an action involving a TCP port.
 	//
 	// Deprecated: The TCPSocket action requires network connectivity that is not supported in all environments.
 	// This field will be removed in a later API version.
-	// +optional
 	TCPSocket *TCPSocketAction `json:"tcpSocket,omitempty"`
 
-	// GuestHeartbeat specifies an action involving the guest heartbeat status.
 	// +optional
+
+	// GuestHeartbeat specifies an action involving the guest heartbeat status.
 	GuestHeartbeat *GuestHeartbeatAction `json:"guestHeartbeat,omitempty"`
+
+	// +optional
 
 	// GuestInfo specifies an action involving key/value pairs from GuestInfo.
 	//
@@ -45,21 +49,21 @@ type VirtualMachineReadinessProbeSpec struct {
 	//
 	// Once executed, the VM's readiness probe will be signaled and the
 	// VM resource will be marked as ready.
-	//
-	// +optional
 	GuestInfo []GuestInfoAction `json:"guestInfo,omitempty"`
 
-	// TimeoutSeconds specifies a number of seconds after which the probe times out.
-	// Defaults to 10 seconds. Minimum value is 1.
 	// +optional
 	// +kubebuilder:validation:Minimum:=1
 	// +kubebuilder:validation:Maximum:=60
+
+	// TimeoutSeconds specifies a number of seconds after which the probe times out.
+	// Defaults to 10 seconds. Minimum value is 1.
 	TimeoutSeconds int32 `json:"timeoutSeconds,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum:=1
 
 	// PeriodSeconds specifics how often (in seconds) to perform the probe.
 	// Defaults to 10 seconds. Minimum value is 1.
-	// +optional
-	// +kubebuilder:validation:Minimum:=1
 	PeriodSeconds int32 `json:"periodSeconds,omitempty"`
 }
 
@@ -70,8 +74,9 @@ type TCPSocketAction struct {
 	// If the format of name is a string, it must be an IANA_SVC_NAME.
 	Port intstr.IntOrString `json:"port"`
 
-	// Host is an optional host name to connect to. Host defaults to the VM IP.
 	// +optional
+
+	// Host is an optional host name to connect to. Host defaults to the VM IP.
 	Host string `json:"host,omitempty"`
 }
 
@@ -94,11 +99,12 @@ const (
 
 // GuestHeartbeatAction describes an action based on the guest heartbeat.
 type GuestHeartbeatAction struct {
-	// ThresholdStatus is the value that the guest heartbeat status must be at or above to be
-	// considered successful.
-	// +kubebuilder:validation:Optional
+	// +optional
 	// +kubebuilder:default=green
 	// +kubebuilder:validation:Enum=yellow;green
+
+	// ThresholdStatus is the value that the guest heartbeat status must be at or above to be
+	// considered successful.
 	ThresholdStatus GuestHeartbeatStatus `json:"thresholdStatus,omitempty"`
 }
 
@@ -112,6 +118,8 @@ type GuestInfoAction struct {
 	// evaluated as "guestinfo.guestinfo.mykey".
 	Key string `json:"key"`
 
+	// +optional
+
 	// Value is a regular expression that is matched against the value of the
 	// specified key.
 	//
@@ -121,7 +129,5 @@ type GuestInfoAction struct {
 	// at https://golang.org/s/re2syntax. Invalid values may be rejected or
 	// ignored depending on the implementation of this API. Either way, invalid
 	// values will not be considered when evaluating the ready state of a VM.
-	//
-	// +optional
 	Value string `json:"value,omitempty"`
 }

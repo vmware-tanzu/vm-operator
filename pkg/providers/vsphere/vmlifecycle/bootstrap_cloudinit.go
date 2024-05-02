@@ -49,17 +49,61 @@ func BootStrapCloudInit(
 		sshPublicKeys = strings.Join(cloudInitSpec.SSHAuthorizedKeys, "\n")
 	}
 
-	uid := cloudInitSpec.InstanceID
-	if uid == "" {
-		// InstanceID will be set to the VM bios uuid when creating new VMs.
-		// Use VM.UID for backward compatibility when InstanceID is not set.
-		uid = string(vmCtx.VM.UID)
+	// The Cloud-Init instance ID is from spec.bootstrap.cloudInit.instanceID.
+	iid := cloudInitSpec.InstanceID
+
+	if iid == "" {
+		// For new VM resources that use the Cloud-Init bootstrap provider, if
+		// the field spec.bootstrap.cloudInit.instanceID is empty when the VM
+		// resource is created, the field defaults to the value of
+		// spec.biosUUID.
+		//
+		// However, to maintain backwards compatibility with older VM resources
+		// that existed prior to the introduction of the field
+		// spec.bootstrap.cloudInit.instanceID, use the VM resource's object
+		// UID as the Cloud-Init instance ID if the value of
+		// spec.bootstrap.cloudInit.instanceID is empty.
+		iid = string(vmCtx.VM.UID)
 	}
-	if value, ok := vmCtx.VM.Annotations[vmopv1.InstanceIDAnnotation]; ok {
-		uid = value
+
+	if v := vmCtx.VM.Annotations[vmopv1.InstanceIDAnnotation]; v != "" && v != iid {
+		// Before the introduction of spec.bootstrap.cloudInit.instanceID,
+		// the Cloud-Init instance ID was set to the value of the VM object's
+		// metadata.uid field.
+		//
+		// The annotation vmopv1.InstanceIDAnnotation was introduced as part of
+		// https://github.com/vmware-tanzu/vm-operator/pull/211 to contend with
+		// VMs previously deployed with Cloud-Init but sans user data. This was
+		// a bug that meant Cloud-Init was not actually used to bootstrap the
+		// guest. If we fixed the bug and did nothing else, affected VMs that
+		// were already deployed would suddenly be subject to Cloud-Init running
+		// for what it thought was the very first time. This could lead to the
+		// erasure of the VM's SSH host keys or other behavior not acceptable
+		// post first-boot.
+		//
+		// To avoid this side-effect, during the upgrade process, if a VM
+		// used Cloud-Init sans user data, the annotation
+		// vmopv1.InstanceIDAnnotation was added to that VM with the value
+		// "iid-datasource-none". This caused Cloud-Init to run, but to do
+		// nothing, preventing any adverse impact to the deployed VM.
+		//
+		// If the instance ID from the annotation is non-empty *and* is
+		// different than the current instance ID value (whether it is from
+		// spec.bootstrap.cloudInit.instanceID or metadata.uid), go ahead and
+		// use the value from the annotation.
+		iid = v
+		delete(vmCtx.VM.Annotations, vmopv1.InstanceIDAnnotation)
 	}
+
+	// If the value of the Cloud-Init instance ID is different than the
+	// one from spec.bootstrap.cloudInit.instanceID, then go ahead and assign
+	// the derived value to the field. This ensures the object's desired state
+	// matches the intent, whether it was derived from the value of metadata.uid
+	// or the value of the annotation vmopv1.InstanceIDAnnotation.
+	cloudInitSpec.InstanceID = iid
+
 	metadata, err := GetCloudInitMetadata(
-		uid, bsArgs.HostName, bsArgs.DomainName, netPlan, sshPublicKeys)
+		iid, bsArgs.HostName, bsArgs.DomainName, netPlan, sshPublicKeys)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,8 +150,7 @@ func BootStrapCloudInit(
 }
 
 func GetCloudInitMetadata(
-	uid string,
-	hostName, domainName string,
+	instanceID, hostName, domainName string,
 	netplan *network.Netplan,
 	sshPublicKeys string) (string, error) {
 
@@ -117,7 +160,7 @@ func GetCloudInitMetadata(
 	}
 
 	metadata := &CloudInitMetadata{
-		InstanceID:    uid,
+		InstanceID:    instanceID,
 		LocalHostname: fqdn,
 		Hostname:      fqdn,
 		Network:       *netplan,

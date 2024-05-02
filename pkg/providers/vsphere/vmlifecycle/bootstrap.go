@@ -74,7 +74,7 @@ func DoBootstrap(
 
 		bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 			LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-				HardwareClockIsUTC: true,
+				HardwareClockIsUTC: vimtypes.NewBool(true),
 			},
 		}
 	}

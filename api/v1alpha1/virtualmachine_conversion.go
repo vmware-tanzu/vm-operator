@@ -176,7 +176,7 @@ func convert_v1alpha1_VmMetadata_To_v1alpha3_BootstrapSpec(
 		}
 	case VirtualMachineMetadataOvfEnvTransport:
 		out.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-			HardwareClockIsUTC: true,
+			HardwareClockIsUTC: &[]bool{true}[0],
 		}
 		out.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
 			RawProperties: objectName,

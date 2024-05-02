@@ -1,24 +1,41 @@
+# Please ensure to update the corresponding command in the testing-needed.yml
+# workflow file when modifying the following exclude-file list.
+defaults: &defaults
+  exclude-files:
+    - ".*_generated.go"
+    - ".*_generated.deepcopy.go"
+    - ".*_generated.conversion.go"
+    - "config\\/crd\\/bases\\/.*"
+    - "docs\\/ref\\/api\\/v.*.md"
+    - "go.sum"
+
 version: 1
 labels:
   - label: "size/XS"
     size:
       below: 10
+      <<: *defaults
   - label: "size/S"
     size:
       above: 9
       below: 30
+      <<: *defaults
   - label: "size/M"
     size:
       above: 29
       below: 100
+      <<: *defaults
   - label: "size/L"
     size:
       above: 99
       below: 500
+      <<: *defaults
   - label: "size/XL"
     size:
       above: 499
       below: 1000
+      <<: *defaults
   - label: "size/XXL"
     size:
       above: 999
+      <<: *defaults

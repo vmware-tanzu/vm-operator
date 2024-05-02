@@ -2149,8 +2149,8 @@ behavior. In other words, please be careful when choosing to upgrade a
 VM to a newer hardware version. |
 | `biosUUID` _string_ | BiosUUID describes the desired BIOS UUID for a VM.
 If omitted, this field defaults to a random UUID.
-When the bootstrap provider is Cloud-Init, this value is
-used as the Cloud-Init instance ID. |
+When the bootstrap provider is Cloud-Init, this value is used as the
+default value for spec.bootstrap.cloudInit.instanceID if it is omitted. |
 
 ### VirtualMachineStatus
 

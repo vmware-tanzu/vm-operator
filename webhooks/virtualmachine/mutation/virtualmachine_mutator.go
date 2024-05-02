@@ -325,14 +325,18 @@ func SetDefaultBiosUUID(
 
 	if vm.Spec.BiosUUID == "" {
 		// Default to a Random (Version 4) UUID.
-		// This is the same UUID flavor/version used by Kubernetes and preferred by vSphere.
+		// This is the same UUID flavor/version used by Kubernetes and preferred
+		// by vSphere.
 		vm.Spec.BiosUUID = uuid.New().String()
 		wasMutated = true
 	}
 
-	if vm.Spec.Bootstrap != nil {
-		if ci := vm.Spec.Bootstrap.CloudInit; ci != nil {
+	if bs := vm.Spec.Bootstrap; bs != nil {
+		if ci := bs.CloudInit; ci != nil {
 			if ci.InstanceID == "" {
+				// If the Cloud-Init bootstrap provider was selected and the
+				// value for spec.bootstrap.cloudInit.instanceID was omitted,
+				// then default it to the value of spec.biosUUID.
 				ci.InstanceID = vm.Spec.BiosUUID
 				wasMutated = true
 			}

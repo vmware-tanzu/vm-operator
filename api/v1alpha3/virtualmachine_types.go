@@ -447,8 +447,8 @@ type VirtualMachineSpec struct {
 
 	// BiosUUID describes the desired BIOS UUID for a VM.
 	// If omitted, this field defaults to a random UUID.
-	// When the bootstrap provider is Cloud-Init, this value is
-	// used as the Cloud-Init instance ID.
+	// When the bootstrap provider is Cloud-Init, this value is used as the
+	// default value for spec.bootstrap.cloudInit.instanceID if it is omitted.
 	BiosUUID string `json:"biosUUID,omitempty"`
 }
 

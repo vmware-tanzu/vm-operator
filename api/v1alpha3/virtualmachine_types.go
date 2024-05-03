@@ -490,7 +490,7 @@ type VirtualMachineAdvancedSpec struct {
 	// ChangeBlockTracking is a flag that enables incremental backup support
 	// for this VM, a feature utilized by external backup systems such as
 	// VMware Data Recovery.
-	ChangeBlockTracking bool `json:"changeBlockTracking,omitempty"`
+	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 }
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.

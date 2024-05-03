@@ -577,10 +577,10 @@ var _ = Describe("Update ConfigSpec", func() {
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
-		It("configSpec cbt set to true OMG", func() {
+		It("configSpec cbt set to true", func() {
 			config.ChangeTrackingEnabled = ptr.To(true)
 			vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-				ChangeBlockTracking: false,
+				ChangeBlockTracking: ptr.To(false),
 			}
 
 			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
@@ -588,19 +588,18 @@ var _ = Describe("Update ConfigSpec", func() {
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeFalse())
 		})
 
-		It("configSpec cbt set to true OMG w Advanced set to nil", func() {
+		It("configSpec cbt set to true with Advanced set to nil", func() {
 			config.ChangeTrackingEnabled = ptr.To(true)
 			vmSpec.Advanced = nil
 
 			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
-			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
-			Expect(*configSpec.ChangeTrackingEnabled).To(BeFalse())
+			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
 		It("configSpec cbt set to false", func() {
 			config.ChangeTrackingEnabled = ptr.To(false)
 			vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-				ChangeBlockTracking: true,
+				ChangeBlockTracking: ptr.To(true),
 			}
 
 			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
@@ -611,7 +610,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		It("configSpec cbt matches", func() {
 			config.ChangeTrackingEnabled = ptr.To(true)
 			vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-				ChangeBlockTracking: true,
+				ChangeBlockTracking: ptr.To(true),
 			}
 
 			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
@@ -622,7 +621,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				config.ChangeTrackingEnabled = ptr.To(false)
 				vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-					ChangeBlockTracking: true,
+					ChangeBlockTracking: ptr.To(true),
 				}
 			})
 
@@ -632,7 +631,8 @@ var _ = Describe("Update ConfigSpec", func() {
 				}
 
 				session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
-				Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
+				Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
+				Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
 			})
 
 			It("classConfigSpec not nil, different from configInfo, overrides vm spec cbt", func() {

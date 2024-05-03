@@ -448,7 +448,7 @@ type VirtualMachineAdvancedSpec struct {
 	// VMware Data Recovery.
 	//
 	// +optional
-	ChangeBlockTracking bool `json:"changeBlockTracking,omitempty"`
+	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 }
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.

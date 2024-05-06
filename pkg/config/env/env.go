@@ -46,6 +46,7 @@ const (
 	FSSPodVMOnStretchedSupervisor
 	FSSTKGMultipleCL
 	FSSK8sWorkloadMgmtAPI
+	FSSVMResize
 
 	_varNameEnd
 )
@@ -140,6 +141,8 @@ func (n VarName) String() string {
 		return "FSS_PODVMONSTRETCHEDSUPERVISOR"
 	case FSSTKGMultipleCL:
 		return "FSS_WCP_TKG_Multiple_CL"
+	case FSSVMResize:
+		return "FSS_WCP_VMSERVICE_RESIZE"
 	}
 	panic("unknown environment variable")
 }

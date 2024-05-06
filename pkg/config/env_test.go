@@ -91,6 +91,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_ISO_SUPPORT", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_TKG_Multiple_CL", "false")).To(Succeed())
+					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE", "true")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(Equal(pkgcfg.Config{
@@ -128,6 +129,7 @@ var _ = Describe(
 							InstanceStorage:    false,
 							IsoSupport:         true,
 							K8sWorkloadMgmtAPI: true,
+							VMResize:           true,
 						},
 					}))
 				})

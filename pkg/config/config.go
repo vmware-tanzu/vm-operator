@@ -106,6 +106,7 @@ type FeatureStates struct {
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR
 	TKGMultipleCL              bool // FSS_WCP_TKG_Multiple_CL
 	K8sWorkloadMgmtAPI         bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
+	VMResize                   bool // FSS_WCP_VMSERVICE_RESIZE
 }
 
 type InstanceStorage struct {

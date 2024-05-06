@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -143,6 +144,46 @@ func intgTestsReconcile() {
 					}
 					return ""
 				}, 4*time.Second).Should(Equal(expected))
+			})
+		})
+
+		When("VM schema needs upgrade", func() {
+			biosUUID := uuid.New().String()
+
+			BeforeEach(func() {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					vm.Status.BiosUUID = biosUUID
+					return nil
+				}
+				intgFakeVMProvider.Unlock()
+			})
+
+			// NOTE: mutating webhook sets the default spec.biosUUID, but is not run in this test -
+			// leaving spec.biosUUID empty as it would be for a pre-v1alpha3 VM
+			It("will set spec.biosUUID", func() {
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+				Eventually(func() string {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Spec.BiosUUID
+					}
+					return ""
+				}).Should(Equal(biosUUID), "waiting for expected biosUUID")
+			})
+
+			It("will set cloudInit.instanceID", func() {
+				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+				}
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+				Eventually(func() string {
+					if vm = getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Spec.Bootstrap.CloudInit.InstanceID
+					}
+					return ""
+				}).Should(Equal(string(vm.UID)), "waiting for expected instanceID")
 			})
 		})
 

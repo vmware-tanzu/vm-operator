@@ -193,7 +193,7 @@ spec:
                           If omitted, this field defaults to a random UUID.
                           When the bootstrap provider is Cloud-Init, this value is used as the
                           default value for spec.bootstrap.cloudInit.instanceID if it is omitted.
-                        format: uuid4
+                        format: uuid
                         type: string
                       bootstrap:
                         description: |-

@@ -447,7 +447,7 @@ type VirtualMachineSpec struct {
 	MinHardwareVersion int32 `json:"minHardwareVersion,omitempty"`
 
 	// +optional
-	// +kubebuilder:validation:Format:=uuid4
+	// +kubebuilder:validation:Format:=uuid
 
 	// BiosUUID describes the desired BIOS UUID for a VM.
 	// If omitted, this field defaults to a random UUID.

@@ -156,6 +156,26 @@ func classToVMMapperFn(ctx *pkgctx.ControllerManagerContext, c client.Client, is
 	}
 }
 
+func upgradeSchema(ctx *pkgctx.VirtualMachineContext) {
+	// If empty, this VM was created before v1alpha3 added the spec.biosUUID field.
+	if ctx.VM.Spec.BiosUUID == "" && ctx.VM.Status.BiosUUID != "" {
+		ctx.VM.Spec.BiosUUID = ctx.VM.Status.BiosUUID
+		ctx.Logger.Info("Upgrade VirtualMachine spec",
+			"biosUUID", ctx.VM.Spec.BiosUUID)
+	}
+
+	// If empty, this VM was created before v1alpha3 added the instanceID field
+	if bs := ctx.VM.Spec.Bootstrap; bs != nil {
+		if ci := bs.CloudInit; ci != nil {
+			if ci.InstanceID == "" {
+				ci.InstanceID = string(ctx.VM.UID)
+				ctx.Logger.Info("Upgrade VirtualMachine spec",
+					"bootstrap.cloudInit.instanceID", ci.InstanceID)
+			}
+		}
+	}
+}
+
 func NewReconciler(
 	ctx context.Context,
 	client client.Client,
@@ -332,6 +352,9 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	defer func() {
 		r.vmMetrics.RegisterVMCreateOrUpdateMetrics(ctx)
 	}()
+
+	// Upgrade schema fields where needed
+	upgradeSchema(ctx)
 
 	if err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM); err != nil {
 		r.Recorder.EmitEvent(ctx.VM, "CreateOrUpdate", err, false)

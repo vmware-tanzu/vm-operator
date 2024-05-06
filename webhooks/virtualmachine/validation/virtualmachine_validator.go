@@ -148,7 +148,6 @@ func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Respo
 // Changes to following fields are not allowed:
 //   - Image
 //   - ImageName
-//   - ClassName
 //   - StorageClass
 //   - ResourcePolicyName
 //   - Minimum VM Hardware Version
@@ -362,6 +361,21 @@ func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *
 
 func (v validator) validateClass(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
+
+	if vm.Spec.ClassName == "" {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "className"), ""))
+	}
+
+	return allErrs
+}
+
+func (v validator) validateClassNameOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if !pkgcfg.FromContext(ctx).Features.VMResize {
+		return append(allErrs,
+			validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, field.NewPath("spec", "className"))...)
+	}
 
 	if vm.Spec.ClassName == "" {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "className"), ""))
@@ -981,7 +995,7 @@ func (v validator) validateImmutableFields(ctx *pkgctx.WebhookRequestContext, vm
 
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.Image, oldVM.Spec.Image, specPath.Child("image"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, specPath.Child("imageName"))...)
-	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, specPath.Child("className"))...)
+	allErrs = append(allErrs, v.validateClassNameOnUpdate(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
 	// New VMs always have non-empty biosUUID. Existing VMs being upgraded may have an empty biosUUID.
 	if oldVM.Spec.BiosUUID != "" {

@@ -128,6 +128,10 @@ const (
 	// booted at least once. This annotation cannot be set by users and will not
 	// be removed once set until the VM is deleted.
 	FirstBootDoneAnnotation = "virtualmachine." + GroupName + "/first-boot-done"
+
+	// V1alpha1ConfigMapTransportAnnotation is an annotation that indicates that the VM
+	// was created with the v1alpha1 API and specifies a configMap as the metadata transport resource type.
+	V1alpha1ConfigMapTransportAnnotation = GroupName + "/v1a1-configmap-md-transport"
 )
 
 const (

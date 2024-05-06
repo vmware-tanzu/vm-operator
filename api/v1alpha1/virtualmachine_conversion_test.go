@@ -1477,6 +1477,24 @@ func TestVirtualMachineConversion(t *testing.T) {
 		spokeHubSpoke(g, &spoke, &vmopv1.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine spoke-hub-spoke with ConfigMapName", func(t *testing.T) {
+		g := NewWithT(t)
+
+		spoke := vmopv1a1.VirtualMachine{
+			Spec: vmopv1a1.VirtualMachineSpec{
+				VmMetadata: &vmopv1a1.VirtualMachineMetadata{
+					Transport:     vmopv1a1.VirtualMachineMetadataCloudInitTransport,
+					ConfigMapName: "my-configMap",
+				},
+			},
+			Status: vmopv1a1.VirtualMachineStatus{
+				Phase: vmopv1a1.Unknown,
+			},
+		}
+
+		spokeHubSpoke(g, &spoke, &vmopv1.VirtualMachine{})
+	})
+
 	t.Run("VirtualMachine hub-spoke-hub with spec.image", func(t *testing.T) {
 		g := NewWithT(t)
 		hub := vmopv1.VirtualMachine{

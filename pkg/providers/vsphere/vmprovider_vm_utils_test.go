@@ -365,9 +365,11 @@ func vmUtilTests() {
 				Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
 			})
 
-			When("ConfigMap exists", func() {
+			When("Utilize ConfigMap when V1alpha1ConfigMapTransportAnnotation is set", func() {
 				BeforeEach(func() {
-					initObjects = append(initObjects, bootstrapCM)
+					initObjects = append(initObjects, bootstrapCM, bootstrapSecret)
+					vmCtx.VM.Annotations = map[string]string{vmopv1.V1alpha1ConfigMapTransportAnnotation: "true"}
+
 				})
 
 				It("returns success", func() {
@@ -439,9 +441,11 @@ func vmUtilTests() {
 				Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
 			})
 
-			When("ConfigMap exists", func() {
+			When("Utilize ConfigMap when V1alpha1ConfigMapTransportAnnotation is set", func() {
 				BeforeEach(func() {
-					initObjects = append(initObjects, bootstrapCM)
+					initObjects = append(initObjects, bootstrapCM, bootstrapSecret)
+					vmCtx.VM.Annotations = map[string]string{vmopv1.V1alpha1ConfigMapTransportAnnotation: "true"}
+
 				})
 
 				It("returns success", func() {
@@ -679,9 +683,11 @@ func vmUtilTests() {
 				Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
 			})
 
-			When("ConfigMap exists", func() {
+			When("Utilize ConfigMap when V1alpha1ConfigMapTransportAnnotation is set", func() {
 				BeforeEach(func() {
 					initObjects = append(initObjects, bootstrapVAppCM)
+					vmCtx.VM.Annotations = map[string]string{vmopv1.V1alpha1ConfigMapTransportAnnotation: "true"}
+
 				})
 
 				It("returns success", func() {

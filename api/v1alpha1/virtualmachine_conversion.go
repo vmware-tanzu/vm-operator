@@ -207,19 +207,17 @@ func convert_v1alpha1_VmMetadata_To_v1alpha3_BootstrapSpec(
 }
 
 func convert_v1alpha3_BootstrapSpec_To_v1alpha1_VmMetadata(
-	in *vmopv1.VirtualMachineBootstrapSpec) *VirtualMachineMetadata {
+	in *vmopv1.VirtualMachineBootstrapSpec, annotations map[string]string) *VirtualMachineMetadata {
 
 	if in == nil || apiequality.Semantic.DeepEqual(*in, vmopv1.VirtualMachineBootstrapSpec{}) {
 		return nil
 	}
 
-	// TODO: nextver only has a Secret bootstrap field so that's what we set in v1a1. If this was created
-	// as v1a1, we need to store the serialized object to know to set either the ConfigMap or Secret field.
 	out := &VirtualMachineMetadata{}
-
+	var secretName string
 	if cloudInit := in.CloudInit; cloudInit != nil {
 		if cloudInit.RawCloudConfig != nil {
-			out.SecretName = cloudInit.RawCloudConfig.Name
+			secretName = cloudInit.RawCloudConfig.Name
 
 			switch cloudInit.RawCloudConfig.Key {
 			case "guestinfo.userdata":
@@ -236,15 +234,25 @@ func convert_v1alpha3_BootstrapSpec_To_v1alpha1_VmMetadata(
 	} else if sysprep := in.Sysprep; sysprep != nil {
 		out.Transport = VirtualMachineMetadataSysprepTransport
 		if in.Sysprep.RawSysprep != nil {
-			out.SecretName = sysprep.RawSysprep.Name
+			secretName = sysprep.RawSysprep.Name
 		}
 	} else if in.VAppConfig != nil {
-		out.SecretName = in.VAppConfig.RawProperties
+		secretName = in.VAppConfig.RawProperties
 
 		if in.LinuxPrep != nil {
 			out.Transport = VirtualMachineMetadataOvfEnvTransport
 		} else {
 			out.Transport = VirtualMachineMetadataVAppConfigTransport
+		}
+	}
+
+	if secretName != "" {
+		// If this was created as a v1alpha1 VM, use the V1alpha1ConfigMapTransportAnnotation if set to use ConfigMapName field for bootstrap.
+		// nextVersions only support Secrets for bootstrap.
+		if _, ok := annotations[vmopv1.V1alpha1ConfigMapTransportAnnotation]; !ok {
+			out.SecretName = secretName
+		} else {
+			out.ConfigMapName = secretName
 		}
 	}
 
@@ -630,7 +638,6 @@ func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	out.SuspendMode = convert_v1alpha3_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.SuspendMode)
 	out.NextRestartTime = in.NextRestartTime
 	out.RestartMode = convert_v1alpha3_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.RestartMode)
-	out.VmMetadata = convert_v1alpha3_BootstrapSpec_To_v1alpha1_VmMetadata(in.Bootstrap)
 
 	if in.Network != nil {
 		out.NetworkInterfaces = make([]VirtualMachineNetworkInterface, 0, len(in.Network.Interfaces))
@@ -1092,6 +1099,20 @@ func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha3_Conditions(
 	return append(dst.Status.Conditions, conditions...)
 }
 
+func Convert_v1alpha3_VirtualMachine_To_v1alpha1_VirtualMachine(in *vmopv1.VirtualMachine, out *VirtualMachine, s apiconversion.Scope) error {
+	if err := autoConvert_v1alpha3_VirtualMachine_To_v1alpha1_VirtualMachine(in, out, s); err != nil {
+		return err
+	}
+
+	// v1alpha3 Bootstrap to v1alpha1 VMMetadata conversion also requires a specific annotation lookup
+	out.Spec.VmMetadata = convert_v1alpha3_BootstrapSpec_To_v1alpha1_VmMetadata(in.Spec.Bootstrap, in.GetAnnotations())
+	// Remove the v1a1 configmap vmMetadata annotation if present during down-conversion back to v1a1. This is only
+	// necessary for later versions that don't support configMap based bootstrap.
+	delete(out.Annotations, vmopv1.V1alpha1ConfigMapTransportAnnotation)
+
+	return nil
+}
+
 func Convert_v1alpha1_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachine, out *vmopv1.VirtualMachine, s apiconversion.Scope) error {
 	if err := autoConvert_v1alpha1_VirtualMachine_To_v1alpha3_VirtualMachine(in, out, s); err != nil {
 		return err
@@ -1114,6 +1135,22 @@ func Convert_v1alpha1_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 			out.Spec.Image = &vmopv1.VirtualMachineImageRef{
 				Name: in.Spec.ImageName,
 			}
+		}
+	}
+
+	// For existing v1a1 VMs that have metadata transport resource type set to use
+	// a configMap, set an annotation during up-conversion to indicate that the
+	// provider needs to also use the configMap. The annotation will also be
+	// used to set the respective ConfigMapName field on down-conversion to v1alpha1
+	md := in.Spec.VmMetadata
+	if md != nil && md.ConfigMapName != "" {
+		annotations := out.GetObjectMeta().GetAnnotations()
+		if _, ok := annotations[vmopv1.V1alpha1ConfigMapTransportAnnotation]; !ok {
+			if annotations == nil {
+				annotations = map[string]string{}
+			}
+			annotations[vmopv1.V1alpha1ConfigMapTransportAnnotation] = "true"
+			out.GetObjectMeta().SetAnnotations(annotations)
 		}
 	}
 

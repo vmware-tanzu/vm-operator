@@ -64,8 +64,8 @@ func CreateConfigSpec(
 		configSpec.Firmware = vmImageStatus.Firmware
 	}
 
-	if advanced := vmCtx.VM.Spec.Advanced; advanced != nil && advanced.ChangeBlockTracking {
-		configSpec.ChangeTrackingEnabled = ptr.To(true)
+	if advanced := vmCtx.VM.Spec.Advanced; advanced != nil && advanced.ChangeBlockTracking != nil {
+		configSpec.ChangeTrackingEnabled = advanced.ChangeBlockTracking
 	}
 
 	// Populate the CPU reservation and limits in the ConfigSpec if VAPI fields specify any.

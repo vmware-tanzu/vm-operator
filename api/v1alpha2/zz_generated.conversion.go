@@ -1410,7 +1410,7 @@ func autoConvert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(in *v1alpha3
 func autoConvert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha3_VirtualMachineAdvancedSpec(in *VirtualMachineAdvancedSpec, out *v1alpha3.VirtualMachineAdvancedSpec, s conversion.Scope) error {
 	out.BootDiskCapacity = (*resource.Quantity)(unsafe.Pointer(in.BootDiskCapacity))
 	out.DefaultVolumeProvisioningMode = v1alpha3.VirtualMachineVolumeProvisioningMode(in.DefaultVolumeProvisioningMode)
-	out.ChangeBlockTracking = in.ChangeBlockTracking
+	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	return nil
 }
 
@@ -1422,7 +1422,7 @@ func Convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha3_VirtualMachineAdvan
 func autoConvert_v1alpha3_VirtualMachineAdvancedSpec_To_v1alpha2_VirtualMachineAdvancedSpec(in *v1alpha3.VirtualMachineAdvancedSpec, out *VirtualMachineAdvancedSpec, s conversion.Scope) error {
 	out.BootDiskCapacity = (*resource.Quantity)(unsafe.Pointer(in.BootDiskCapacity))
 	out.DefaultVolumeProvisioningMode = VirtualMachineVolumeProvisioningMode(in.DefaultVolumeProvisioningMode)
-	out.ChangeBlockTracking = in.ChangeBlockTracking
+	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	return nil
 }
 

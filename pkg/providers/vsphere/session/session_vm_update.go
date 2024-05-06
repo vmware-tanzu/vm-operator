@@ -16,7 +16,6 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg"
@@ -441,23 +440,16 @@ func UpdateConfigSpecChangeBlockTracking(
 	configSpec, classConfigSpec *vimtypes.VirtualMachineConfigSpec,
 	vmSpec vmopv1.VirtualMachineSpec) {
 
-	// BMV: I don't think this is correct: the class shouldn't dictate this for
-	// backup purposes. There is a webhook out there that changes this in the VM
-	// spec.
-	if classConfigSpec != nil && classConfigSpec.ChangeTrackingEnabled != nil {
-		if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
-			configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
+	if adv := vmSpec.Advanced; adv != nil && adv.ChangeBlockTracking != nil {
+		if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, adv.ChangeBlockTracking) {
+			configSpec.ChangeTrackingEnabled = adv.ChangeBlockTracking
 		}
 		return
 	}
 
-	if adv := vmSpec.Advanced; adv != nil && adv.ChangeBlockTracking {
-		if config.ChangeTrackingEnabled == nil || !*config.ChangeTrackingEnabled {
-			configSpec.ChangeTrackingEnabled = ptr.To(true)
-		}
-	} else {
-		if config.ChangeTrackingEnabled != nil && *config.ChangeTrackingEnabled {
-			configSpec.ChangeTrackingEnabled = ptr.To(false)
+	if classConfigSpec != nil && classConfigSpec.ChangeTrackingEnabled != nil {
+		if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
+			configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
 		}
 	}
 }

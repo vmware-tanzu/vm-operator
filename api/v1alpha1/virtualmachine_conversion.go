@@ -405,9 +405,7 @@ func convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha3_VirtualMachineAd
 			}
 		}
 
-		if in.ChangeBlockTracking != nil {
-			out.ChangeBlockTracking = *in.ChangeBlockTracking
-		}
+		out.ChangeBlockTracking = in.ChangeBlockTracking
 	}
 
 	return &out
@@ -440,10 +438,8 @@ func convert_v1alpha3_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvan
 		return nil
 	}
 
-	out := &VirtualMachineAdvancedOptions{}
-
-	if in.ChangeBlockTracking {
-		out.ChangeBlockTracking = ptr.To(true)
+	out := &VirtualMachineAdvancedOptions{
+		ChangeBlockTracking: in.ChangeBlockTracking,
 	}
 
 	switch in.DefaultVolumeProvisioningMode {

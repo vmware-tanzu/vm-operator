@@ -208,7 +208,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					BootDiskCapacity:              ptrOf(resource.MustParse("1024k")),
 					DefaultVolumeProvisioningMode: vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero,
-					ChangeBlockTracking:           true,
+					ChangeBlockTracking:           ptrOf(true),
 				},
 				Reserved: &vmopv1.VirtualMachineReservedSpec{
 					ResourcePolicyName: "my-resource-policy",

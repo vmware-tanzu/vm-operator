@@ -53,6 +53,7 @@ func FromEnv() Config {
 	setBool(env.FSSK8sWorkloadMgmtAPI, &config.Features.K8sWorkloadMgmtAPI)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
 	setBool(env.FSSTKGMultipleCL, &config.Features.TKGMultipleCL)
+	setBool(env.FSSVMResize, &config.Features.VMResize)
 
 	return config
 }

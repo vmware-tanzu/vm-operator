@@ -13,6 +13,29 @@ import (
 )
 
 const (
+	// ImportedVirtualMachineClassName is the value assigned to the field
+	// spec.className for a VirtualMachine resource that was not originally
+	// deployed by VM Operator, but instead was imported into Kubernetes by
+	// some other means and references an existing VM on the underlying
+	// infrastructure.
+	//
+	// Because VirtualMachineClass resources are Kubernetes objects, they must
+	// have names that adhere to Kubernetes naming conventions. Kubernetes
+	// object names cannot contain upper-case characters, and therefore no real
+	// VirtualMachineClass object can ever be named
+	// ImportedVirtualMachineClassName.
+	//
+	// All webhooks and reconciliation logic related to VirtualMachine resources
+	// should recognize when spec.className is set to the value
+	// ImportedVirtualMachineClassName and act accordingly.
+	//
+	// Only privileged users may create a VirtualMachine resource with the
+	// spec.className field set to ImportedVirtualMachineClassName, otherwise
+	// an error is returned.
+	ImportedVirtualMachineClassName = "Imported"
+)
+
+const (
 	// VirtualMachineConditionClassReady indicates that a referenced
 	// VirtualMachineClass is ready.
 	//

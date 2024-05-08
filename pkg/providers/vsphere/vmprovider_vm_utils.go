@@ -12,7 +12,9 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -20,8 +22,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -59,6 +62,327 @@ func GetVirtualMachineClass(
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionClassReady)
 
 	return vmClass, nil
+}
+
+type GetCPUMinimumFrequencyFn func(context.Context) (uint64, error)
+
+func GetOrCreateVirtualMachineConfig(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	getCPUMinFreq GetCPUMinimumFrequencyFn) (vmopv1.VirtualMachineConfig, error) {
+
+	var (
+		obj vmopv1.VirtualMachineConfig
+		key = ctrlclient.ObjectKey{
+			Name:      vmCtx.VM.Name,
+			Namespace: vmCtx.VM.Namespace,
+		}
+	)
+
+	// Return the VirtualMachineConfig resource if there is no issue getting it.
+	err := k8sClient.Get(vmCtx, key, &obj)
+	if err == nil {
+		return obj, nil
+	}
+
+	// If the error is something other than NotFound, then return the error.
+	if !apierrors.IsNotFound(err) {
+		reason, msg := errToConditionReasonAndMessage(err)
+		conditions.MarkFalse(
+			vmCtx.VM, vmopv1.VirtualMachineConditionClassReady, reason, msg)
+		return vmopv1.VirtualMachineConfig{}, err
+	}
+
+	//
+	// At this point we know we need to create a VirtualMachineConfig resource
+	// for the VM, it just depends on the source of the resource's information.
+	//
+
+	if vmCtx.VM.Spec.ClassName == vmopv1.ImportedVirtualMachineClassName {
+		obj, err = createVMConfigFromVM(vmCtx, k8sClient)
+	} else {
+		obj, err = createVMConfigFromVMClassAndImage(
+			vmCtx,
+			k8sClient,
+			getCPUMinFreq)
+	}
+
+	if err != nil {
+		reason, msg := errToConditionReasonAndMessage(err)
+		conditions.MarkFalse(
+			vmCtx.VM, vmopv1.VirtualMachineConditionClassReady, reason, msg)
+		return vmopv1.VirtualMachineConfig{}, err
+	}
+
+	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionClassReady)
+
+	return obj, nil
+}
+
+func createVMConfigFromVM(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineConfig, error) {
+
+	return createVMConfig(
+		vmCtx,
+		k8sClient,
+		vmopv1.VirtualMachineConfigSource{
+			Name:            "Imported",
+			UID:             "",
+			ResourceVersion: "",
+			Generation:      0,
+		},
+		nil)
+}
+
+func createVMConfigFromVMClassAndImage(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	getCPUMinFreq GetCPUMinimumFrequencyFn) (vmopv1.VirtualMachineConfig, error) {
+
+	var (
+		vmClass    vmopv1.VirtualMachineClass
+		vmClassKey = ctrlclient.ObjectKey{
+			Name:      vmCtx.VM.Spec.ClassName,
+			Namespace: vmCtx.VM.Namespace,
+		}
+	)
+
+	if err := k8sClient.Get(vmCtx, vmClassKey, &vmClass); err != nil {
+		return vmopv1.VirtualMachineConfig{}, err
+	}
+
+	var configSpec vimtypes.VirtualMachineConfigSpec
+	if rawConfigSpec := vmClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
+		vmClassConfigSpec, err := UnmarshalConfigSpec(vmCtx, rawConfigSpec)
+		if err != nil {
+			return vmopv1.VirtualMachineConfig{}, err
+		}
+		configSpec = vmClassConfigSpec
+	} else {
+		configSpec = virtualmachine.ConfigSpecFromVMClassDevices(vmClass.Spec)
+	}
+
+	imgStatus, err := getImageStatusFromVM(vmCtx, k8sClient)
+	if err != nil {
+		return vmopv1.VirtualMachineConfig{}, err
+	}
+
+	hardwareVersion := determineHardwareVersion(*vmCtx.VM, configSpec, imgStatus)
+	if hardwareVersion.IsValid() {
+		configSpec.Version = hardwareVersion.String()
+	}
+
+	if val, ok := vmCtx.VM.Annotations[constants.FirmwareOverrideAnnotation]; ok && (val == "efi" || val == "bios") {
+		configSpec.Firmware = val
+	} else if imgStatus.Firmware != "" {
+		// Use the image's firmware type if present.
+		// This is necessary until the vSphere UI can support creating VM
+		// Classes with an empty/nil firmware type. Since VM Classes created via
+		// the vSphere UI always has a non-empty firmware value set, this can
+		// cause VM boot failures.
+		//
+		// TODO: Use image firmware only when the class config spec has an empty
+		//       firmware type.
+		configSpec.Firmware = imgStatus.Firmware
+	}
+
+	configSpec.Name = vmCtx.VM.Name
+
+	if configSpec.Annotation == "" {
+		// Set a default annotation if none is present in the class ConfigSpec.
+		configSpec.Annotation = constants.VCVMAnnotation
+	}
+
+	// CPU and Memory configurations specified in the VM Class standalone fields
+	// take precedence over values in the ConfigSpec.
+	configSpec.NumCPUs = int32(vmClass.Spec.Hardware.Cpus)
+	configSpec.MemoryMB = virtualmachine.MemoryQuantityToMb(vmClass.Spec.Hardware.Memory)
+
+	// Indicate the VM is managed by VM Service.
+	configSpec.ManagedBy = &vimtypes.ManagedByInfo{
+		ExtensionKey: vmopv1.ManagedByExtensionKey,
+		Type:         vmopv1.ManagedByExtensionType,
+	}
+
+	// Populate the CPU reservation and limits in the ConfigSpec if VAPI has
+	// any. VM Class VAPI does not support Limits, so they are always nil.
+	// TODO: Remove limits: issues/56
+	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+		// TODO: Always override?
+		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+			Shares: &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
+			},
+		}
+
+		if !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+			minFreq, err := getCPUMinFreq(vmCtx)
+			if err != nil {
+				return vmopv1.VirtualMachineConfig{}, err
+			}
+			if !res.Requests.Cpu.IsZero() {
+				rsv := virtualmachine.CPUQuantityToMhz(vmClass.Spec.Policies.Resources.Requests.Cpu, minFreq)
+				configSpec.CpuAllocation.Reservation = &rsv
+			}
+			if !res.Limits.Cpu.IsZero() {
+				lim := virtualmachine.CPUQuantityToMhz(vmClass.Spec.Policies.Resources.Limits.Cpu, minFreq)
+				configSpec.CpuAllocation.Limit = &lim
+			}
+		}
+	}
+
+	// Populate the memory reservation and limits in the ConfigSpec if VAPI
+	// fields specify any.
+	// TODO: Remove limits: issues/56
+	if res := vmClass.Spec.Policies.Resources; !res.Requests.Memory.IsZero() || !res.Limits.Memory.IsZero() {
+		// TODO: Always override?
+		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+			Shares: &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
+			},
+		}
+
+		if !res.Requests.Memory.IsZero() {
+			rsv := virtualmachine.MemoryQuantityToMb(vmClass.Spec.Policies.Resources.Requests.Memory)
+			configSpec.MemoryAllocation.Reservation = &rsv
+		}
+		if !res.Limits.Memory.IsZero() {
+			lim := virtualmachine.MemoryQuantityToMb(vmClass.Spec.Policies.Resources.Limits.Memory)
+			configSpec.MemoryAllocation.Limit = &lim
+		}
+	}
+
+	rawConfigSpec, err := pkgutil.MarshalConfigSpecToJSON(configSpec)
+	if err != nil {
+		return vmopv1.VirtualMachineConfig{}, err
+	}
+
+	return createVMConfig(
+		vmCtx,
+		k8sClient,
+		vmopv1.VirtualMachineConfigSource{
+			Name:            vmClass.Name,
+			UID:             vmClass.UID,
+			ResourceVersion: vmClass.ResourceVersion,
+			Generation:      vmClass.Generation,
+		},
+		rawConfigSpec)
+}
+
+func createVMConfig(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	source vmopv1.VirtualMachineConfigSource,
+	config json.RawMessage) (vmopv1.VirtualMachineConfig, error) {
+
+	obj := vmopv1.VirtualMachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vmCtx.VM.Name,
+			Namespace: vmCtx.VM.Namespace,
+		},
+		Spec: vmopv1.VirtualMachineConfigSpec{
+			Source: source,
+			Config: config,
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(
+		vmCtx.VM, &obj, k8sClient.Scheme()); err != nil {
+
+		return vmopv1.VirtualMachineConfig{}, err
+	}
+
+	if err := k8sClient.Create(vmCtx, &obj); err != nil {
+		return vmopv1.VirtualMachineConfig{}, err
+	}
+
+	return obj, nil
+}
+
+func getImageStatusFromVM(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineImageStatus, error) {
+
+	switch vmCtx.VM.Spec.Image.Kind {
+	case "ClusterVirtualMachineImage":
+		var obj vmopv1.ClusterVirtualMachineImage
+		if err := k8sClient.Get(
+			vmCtx,
+			ctrlclient.ObjectKey{Name: vmCtx.VM.Spec.Image.Name},
+			&obj); err != nil {
+
+			return vmopv1.VirtualMachineImageStatus{}, err
+		}
+		return obj.Status, nil
+
+	case "VirtualMachineImage":
+		var obj vmopv1.VirtualMachineImage
+		if err := k8sClient.Get(
+			vmCtx,
+			ctrlclient.ObjectKey{
+				Name:      vmCtx.VM.Spec.Image.Name,
+				Namespace: vmCtx.VM.Namespace,
+			},
+			&obj); err != nil {
+
+			return vmopv1.VirtualMachineImageStatus{}, err
+		}
+		return obj.Status, nil
+	}
+
+	panic("unsupported image ref")
+}
+
+func determineHardwareVersion(
+	vm vmopv1.VirtualMachine,
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	imgStatus vmopv1.VirtualMachineImageStatus) vimtypes.HardwareVersion {
+
+	vmMinVersion := vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion)
+
+	var configSpecVersion vimtypes.HardwareVersion
+	if configSpec.Version != "" {
+		configSpecVersion, _ = vimtypes.ParseHardwareVersion(configSpec.Version)
+	}
+
+	if configSpecVersion.IsValid() {
+		if vmMinVersion <= configSpecVersion {
+			// No update needed.
+			return 0
+		}
+
+		return vmMinVersion
+	}
+
+	// A VM Class with an embedded ConfigSpec should have the version set, so
+	// this is a ConfigSpec we created from the HW devices in the class. If the
+	// image's version is too old to support passthrough devices or PVCs if
+	// configured, bump the version so those devices will work.
+	var imageVersion vimtypes.HardwareVersion
+	if imgStatus.HardwareVersion != nil {
+		imageVersion = vimtypes.HardwareVersion(*imgStatus.HardwareVersion)
+	}
+
+	var minVerFromDevs vimtypes.HardwareVersion
+	if pkgutil.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange) {
+		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPCIPassthruDevices)
+	} else if hasPVC(vm) {
+		// This only catches volumes set at VM create time.
+		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPVC)
+	}
+
+	// If both are zero, VC will use the cluster's default version.
+	return max(vmMinVersion, minVerFromDevs)
+}
+
+func hasPVC(vm vmopv1.VirtualMachine) bool {
+	for i := range vm.Spec.Volumes {
+		if vm.Spec.Volumes[i].PersistentVolumeClaim != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func GetVirtualMachineImageSpecAndStatus(
@@ -393,7 +717,7 @@ func GetVMSetResourcePolicy(
 // volumes to the VM's Spec if not already done. Return true if the VM had or now has instance storage volumes.
 func AddInstanceStorageVolumes(
 	vmCtx pkgctx.VirtualMachineContext,
-	vmClass *vmopv1.VirtualMachineClass) bool {
+	is vmopv1.InstanceStorage) bool {
 
 	if instancestorage.IsPresent(vmCtx.VM) {
 		// Instance storage disks are copied from the class to the VM only once, regardless
@@ -401,7 +725,6 @@ func AddInstanceStorageVolumes(
 		return true
 	}
 
-	is := vmClass.Spec.Hardware.InstanceStorage
 	if len(is.Volumes) == 0 {
 		return false
 	}
@@ -433,15 +756,15 @@ func AddInstanceStorageVolumes(
 	return true
 }
 
-func GetVMClassConfigSpec(
+func UnmarshalConfigSpec(
 	ctx context.Context,
 	raw json.RawMessage) (vimtypes.VirtualMachineConfigSpec, error) {
 
-	configSpec, err := util.UnmarshalConfigSpecFromJSON(raw)
+	configSpec, err := pkgutil.UnmarshalConfigSpecFromJSON(raw)
 	if err != nil {
 		return vimtypes.VirtualMachineConfigSpec{}, err
 	}
-	util.SanitizeVMClassConfigSpec(ctx, &configSpec)
+	pkgutil.SanitizeVMClassConfigSpec(ctx, &configSpec)
 
 	return configSpec, nil
 }

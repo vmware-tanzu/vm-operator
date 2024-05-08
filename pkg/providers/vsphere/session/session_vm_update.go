@@ -32,15 +32,10 @@ import (
 
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
 type VMUpdateArgs struct {
-	VMClass        *vmopv1.VirtualMachineClass
 	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
-	MinCPUFreq     uint64
 	ExtraConfig    map[string]string
-
-	BootstrapData vmlifecycle.BootstrapData
-
-	ConfigSpec vimtypes.VirtualMachineConfigSpec
-
+	BootstrapData  vmlifecycle.BootstrapData
+	ConfigSpec     vimtypes.VirtualMachineConfigSpec
 	NetworkResults network2.NetworkInterfaceResults
 }
 
@@ -286,13 +281,12 @@ func UpdateConfigSpecMemoryAllocation(
 }
 
 // UpdateConfigSpecExtraConfig updates the ExtraConfig of the given ConfigSpec.
-// At a minimum, config and configSpec must be non-nil, in which case it will
-// just ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig.
+// At a minimum, configInfo and dstConfigSpec must be non-nil, in which case it
+// will just ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig.
 func UpdateConfigSpecExtraConfig(
 	ctx context.Context,
-	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec, classConfigSpec *vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec,
+	configInfo *vimtypes.VirtualMachineConfigInfo,
+	dstConfigSpec, srcConfigSpec *vimtypes.VirtualMachineConfigSpec,
 	vm *vmopv1.VirtualMachine,
 	globalExtraConfig map[string]string) {
 
@@ -309,16 +303,16 @@ func UpdateConfigSpecExtraConfig(
 	// correct flags in ExtraConfig for memory mapped I/O. Please see
 	// https://kb.vmware.com/s/article/2142307 for more information about these
 	// flags.
-	if hasvGPUOrDDPIODevices(config, classConfigSpec, vmClassSpec) {
+	if hasvGPUOrDDPIODevices(configInfo, srcConfigSpec) {
 		setMemoryMappedIOFlagsInExtraConfig(vm, extraConfig)
 	}
 
-	if classConfigSpec != nil {
+	if srcConfigSpec != nil {
 		// Merge non-intersecting keys from the desired config spec extra config
 		// with the class config spec extra config (ie) class config spec extra
 		// config keys takes precedence over the desired config spec extra
 		// config keys.
-		combinedExtraConfig := util.AppendNewExtraConfigValues(classConfigSpec.ExtraConfig, extraConfig)
+		combinedExtraConfig := util.AppendNewExtraConfigValues(srcConfigSpec.ExtraConfig, extraConfig)
 		extraConfig = util.ExtraConfigToMap(combinedExtraConfig)
 	}
 
@@ -326,8 +320,8 @@ func UpdateConfigSpecExtraConfig(
 	// loop below.
 	linuxPrepAndVAppConfig := isLinuxPrepAndVAppConfig(vm)
 
-	for i := range config.ExtraConfig {
-		if o := config.ExtraConfig[i].GetOptionValue(); o != nil {
+	for i := range configInfo.ExtraConfig {
+		if o := configInfo.ExtraConfig[i].GetOptionValue(); o != nil {
 
 			switch o.Key {
 
@@ -359,7 +353,7 @@ func UpdateConfigSpecExtraConfig(
 	// Update the ConfigSpec's ExtraConfig property with the results from
 	// above. Please note this *may* include keys with empty values. This
 	// indicates to vSphere that a key/value pair should be removed.
-	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
+	dstConfigSpec.ExtraConfig = util.MergeExtraConfig(configInfo.ExtraConfig, extraConfig)
 }
 
 func isLinuxPrepAndVAppConfig(vm *vmopv1.VirtualMachine) bool {
@@ -373,15 +367,14 @@ func isLinuxPrepAndVAppConfig(vm *vmopv1.VirtualMachine) bool {
 }
 
 func hasvGPUOrDDPIODevices(
-	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec) bool {
+	configInfo *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec) bool {
 
-	return hasvGPUOrDDPIODevicesInVM(config) ||
-		hasvGPUOrDDPIODevicesInVMClass(configSpec, vmClassSpec)
+	return hasvGPUOrDDPIODevicesInConfigInfo(configInfo) ||
+		hasvGPUOrDDPIODevicesInConfigSpec(configSpec)
 }
 
-func hasvGPUOrDDPIODevicesInVM(config *vimtypes.VirtualMachineConfigInfo) bool {
+func hasvGPUOrDDPIODevicesInConfigInfo(config *vimtypes.VirtualMachineConfigInfo) bool {
 	if config == nil {
 		return false
 	}
@@ -394,23 +387,13 @@ func hasvGPUOrDDPIODevicesInVM(config *vimtypes.VirtualMachineConfigInfo) bool {
 	return false
 }
 
-func hasvGPUOrDDPIODevicesInVMClass(
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec) bool {
-
-	if vmClassSpec != nil {
-		if len(vmClassSpec.Hardware.Devices.VGPUDevices) > 0 {
-			return true
-		}
-		if len(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices) > 0 {
-			return true
-		}
+func hasvGPUOrDDPIODevicesInConfigSpec(configSpec *vimtypes.VirtualMachineConfigSpec) bool {
+	if configSpec == nil {
+		return false
 	}
-
 	if configSpec != nil {
 		return util.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange)
 	}
-
 	return false
 }
 
@@ -506,13 +489,12 @@ func updateConfigSpec(
 	updateArgs *VMUpdateArgs) *vimtypes.VirtualMachineConfigSpec {
 
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
-	vmClassSpec := updateArgs.VMClass.Spec
 
 	UpdateConfigSpecAnnotation(config, configSpec)
 	UpdateConfigSpecManagedBy(config, configSpec)
 	UpdateConfigSpecExtraConfig(
 		vmCtx, config, configSpec, &updateArgs.ConfigSpec,
-		&vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
+		vmCtx.VM, updateArgs.ExtraConfig)
 	UpdateConfigSpecChangeBlockTracking(
 		vmCtx, config, configSpec, &updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
@@ -788,7 +770,7 @@ func (s *Session) poweredOnVMReconfigure(
 
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 
-	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, nil, nil)
+	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, nil)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
 	var refetchProps bool

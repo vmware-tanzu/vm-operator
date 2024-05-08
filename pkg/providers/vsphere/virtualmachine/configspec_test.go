@@ -31,7 +31,6 @@ var _ = Describe("CreateConfigSpec", func() {
 		vmCtx           pkgctx.VirtualMachineContext
 		vmClassSpec     *vmopv1.VirtualMachineClassSpec
 		vmImageStatus   *vmopv1.VirtualMachineImageStatus
-		minCPUFreq      uint64
 		configSpec      vimtypes.VirtualMachineConfigSpec
 		classConfigSpec vimtypes.VirtualMachineConfigSpec
 		pvcVolume       = vmopv1.VirtualMachineVolume{
@@ -50,7 +49,6 @@ var _ = Describe("CreateConfigSpec", func() {
 		vmClass := builder.DummyVirtualMachineClassA2()
 		vmClassSpec = &vmClass.Spec
 		vmImageStatus = &vmopv1.VirtualMachineImageStatus{Firmware: "efi"}
-		minCPUFreq = 2500
 
 		vm = builder.DummyVirtualMachineA2()
 		vm.Name = vmName
@@ -70,10 +68,7 @@ var _ = Describe("CreateConfigSpec", func() {
 	JustBeforeEach(func() {
 		configSpec = virtualmachine.CreateConfigSpec(
 			vmCtx,
-			classConfigSpec,
-			vmClassSpec,
-			vmImageStatus,
-			minCPUFreq)
+			classConfigSpec)
 		Expect(configSpec).ToNot(BeNil())
 	})
 
@@ -469,14 +464,14 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 var _ = Describe("ConfigSpecFromVMClassDevices", func() {
 
 	var (
-		vmClassSpec *vmopv1.VirtualMachineClassSpec
+		vmClassSpec vmopv1.VirtualMachineClassSpec
 		configSpec  vimtypes.VirtualMachineConfigSpec
 	)
 
 	Context("when Class specifies GPU/DDPIO in Hardware", func() {
 
 		BeforeEach(func() {
-			vmClassSpec = &vmopv1.VirtualMachineClassSpec{}
+			vmClassSpec = vmopv1.VirtualMachineClassSpec{}
 
 			vmClassSpec.Hardware.Devices.VGPUDevices = []vmopv1.VGPUDevice{{
 				ProfileName: "createplacementspec-profile",

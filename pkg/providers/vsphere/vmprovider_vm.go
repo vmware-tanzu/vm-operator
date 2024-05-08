@@ -45,7 +45,8 @@ type VMCreateArgs struct {
 	vmlifecycle.CreateArgs
 	vmlifecycle.BootstrapData
 
-	VMClass        *vmopv1.VirtualMachineClass
+	VMClass2       *vmopv1.VirtualMachineClass
+	VMConfig       vmopv1.VirtualMachineConfig
 	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 	ImageObj       ctrlclient.Object
 	ImageSpec      *vmopv1.VirtualMachineImageSpec
@@ -367,8 +368,8 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 	vmCtx.VM.Status.UniqueID = moRef.Reference().Value
 	vmCtx.VM.Status.Class = &common.LocalObjectRef{
 		APIVersion: vmopv1.SchemeGroupVersion.String(),
-		Kind:       createArgs.VMClass.Kind,
-		Name:       createArgs.VMClass.Name,
+		Kind:       createArgs.VMConfig.Kind,
+		Name:       createArgs.VMConfig.Name,
 	}
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
 
@@ -686,11 +687,14 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	createArgs := &VMCreateArgs{}
 	var prereqErrs []error
 
-	if err := vs.vmCreateGetVirtualMachineClass(vmCtx, createArgs); err != nil {
+	if err := vs.vmCreateGetVirtualMachineImage(vmCtx, createArgs); err != nil {
 		prereqErrs = append(prereqErrs, err)
 	}
 
-	if err := vs.vmCreateGetVirtualMachineImage(vmCtx, createArgs); err != nil {
+	// Please note, the function vmCreateGetVirtualMachineConfig should be
+	// invoked *after* vmCreateGetVirtualMachineImage to ensure the VM field
+	// spec.image is correct.
+	if err := vs.vmCreateGetVirtualMachineConfig(vmCtx, createArgs); err != nil {
 		prereqErrs = append(prereqErrs, err)
 	}
 
@@ -715,24 +719,27 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	}
 
 	vmCtx.VM.Status.Class = &common.LocalObjectRef{
-		APIVersion: createArgs.VMClass.APIVersion,
-		Kind:       createArgs.VMClass.Kind,
-		Name:       createArgs.VMClass.Name,
+		APIVersion: createArgs.VMConfig.APIVersion,
+		Kind:       createArgs.VMConfig.Spec.Source.Kind,
+		Name:       createArgs.VMConfig.Spec.Source.Name,
 	}
 
 	return createArgs, nil
 }
 
-func (vs *vSphereVMProvider) vmCreateGetVirtualMachineClass(
+func (vs *vSphereVMProvider) vmCreateGetVirtualMachineConfig(
 	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
-	vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
+	vmConfig, err := GetOrCreateVirtualMachineConfig(
+		vmCtx,
+		vs.k8sClient,
+		vs.getOrComputeCPUMinFrequency)
 	if err != nil {
 		return err
 	}
 
-	createArgs.VMClass = vmClass
+	createArgs.VMConfig = vmConfig
 
 	return nil
 }
@@ -818,16 +825,19 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 	createArgs *VMCreateArgs) error {
 
 	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
-		// To determine all the storage profiles, we need the class because of the possibility of
-		// InstanceStorage volumes. If we weren't able to get the class earlier, still check & set
-		// the storage condition because instance storage usage is rare, it is helpful to report
-		// as many prereqs as possible, and we'll reevaluate this once the class is available.
-		if createArgs.VMClass != nil {
-			// Add the class's instance storage disks - if any - to the VM.Spec. Once the instance
-			// storage disks are added to the VM, they are set in stone even if the class itself or
-			// the VM's assigned class changes.
-			createArgs.HasInstanceStorage = AddInstanceStorageVolumes(vmCtx, createArgs.VMClass)
-		}
+		// To determine all the storage profiles, we need the class because of
+		// the possibility of InstanceStorage volumes. If we weren't able to get
+		// the class earlier, still check & set the storage condition because
+		// instance storage usage is rare, it is helpful to report as many
+		// prereqs as possible, and we'll reevaluate this once the class is
+		// available.
+		//
+		// Add the class's instance storage disks - if any - to the VM.Spec.
+		// Once the instance storage disks are added to the VM, they are set in
+		// stone even if the class itself or the VM's assigned class changes.
+		createArgs.HasInstanceStorage = AddInstanceStorageVolumes(
+			vmCtx,
+			createArgs.VMConfig.Spec.InstanceStorage)
 	}
 
 	vmStorageClass := vmCtx.VM.Spec.StorageClass
@@ -917,45 +927,29 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	// TODO: This is a partial dupe of what's done in the update path in the remaining Session code. I got
 	// tired of trying to keep that in sync so we get to live with a frankenstein thing longer.
 
-	var configSpec vimtypes.VirtualMachineConfigSpec
-	if rawConfigSpec := createArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
-		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
-		if err != nil {
-			return err
-		}
-		configSpec = vmClassConfigSpec
-	} else {
-		configSpec = virtualmachine.ConfigSpecFromVMClassDevices(&createArgs.VMClass.Spec)
+	if len(createArgs.VMConfig.Spec.Config) == 0 {
+		panic("empty vm config")
 	}
 
-	var minCPUFreq uint64
-	if res := createArgs.VMClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
-		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
-		if err != nil {
-			return err
-		}
-		minCPUFreq = freq
+	configSpec, err := UnmarshalConfigSpec(vmCtx, createArgs.VMConfig.Spec.Config)
+	if err != nil {
+		return err
 	}
 
 	createArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx,
-		configSpec,
-		&createArgs.VMClass.Spec,
-		createArgs.ImageStatus,
-		minCPUFreq)
+		configSpec)
 
-	err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs)
-	if err != nil {
+	if err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs); err != nil {
 		return err
 	}
 
-	err = vs.vmCreateGenConfigSpecChangeBootDiskSize(vmCtx, createArgs)
-	if err != nil {
+	if err := vs.vmCreateGenConfigSpecChangeBootDiskSize(vmCtx, createArgs); err != nil {
 		return err
 	}
 
-	err = vs.vmCreateGenConfigSpecZipNetworkInterfaces(vmCtx, createArgs)
-	if err != nil {
+	//nolint:revive
+	if err := vs.vmCreateGenConfigSpecZipNetworkInterfaces(vmCtx, createArgs); err != nil {
 		return err
 	}
 
@@ -1092,7 +1086,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	vmCtx pkgctx.VirtualMachineContext) (*vmUpdateArgs, error) {
 
-	vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
+	vmConfig, err := GetOrCreateVirtualMachineConfig(
+		vmCtx, vs.k8sClient, vs.getOrComputeCPUMinFrequency)
 	if err != nil {
 		return nil, err
 	}
@@ -1107,10 +1102,10 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		return nil, err
 	}
 
-	updateArgs := &vmUpdateArgs{}
-	updateArgs.VMClass = vmClass
-	updateArgs.ResourcePolicy = resourcePolicy
-	updateArgs.BootstrapData = bsData
+	updateArgs := &vmUpdateArgs{
+		ResourcePolicy: resourcePolicy,
+		BootstrapData:  bsData,
+	}
 
 	ecMap := maps.Clone(vs.globalExtraConfig)
 	maps.DeleteFunc(ecMap, func(k string, v string) bool {
@@ -1119,29 +1114,14 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	})
 	updateArgs.ExtraConfig = ecMap
 
-	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
-		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
-		if err != nil {
-			return nil, err
-		}
-		updateArgs.MinCPUFreq = freq
-	}
-
-	var configSpec vimtypes.VirtualMachineConfigSpec
-	if rawConfigSpec := updateArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
-		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
-		if err != nil {
-			return nil, err
-		}
-		configSpec = vmClassConfigSpec
+	configSpec, err := UnmarshalConfigSpec(vmCtx, vmConfig.Spec.Config)
+	if err != nil {
+		return nil, err
 	}
 
 	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx,
-		configSpec,
-		&updateArgs.VMClass.Spec,
-		nil,
-		updateArgs.MinCPUFreq)
+		configSpec)
 
 	return updateArgs, nil
 }

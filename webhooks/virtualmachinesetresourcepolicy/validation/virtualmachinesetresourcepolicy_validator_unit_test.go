@@ -58,7 +58,7 @@ type unitValidatingWebhookContext struct {
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
-	vmRP := builder.DummyVirtualMachineSetResourcePolicyA2()
+	vmRP := builder.DummyVirtualMachineSetResourcePolicy()
 	obj, err := builder.ToUnstructured(vmRP)
 	Expect(err).ToNot(HaveOccurred())
 

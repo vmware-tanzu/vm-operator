@@ -58,7 +58,7 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),
 	}
 
-	ctx.vmPub = builder.DummyVirtualMachinePublishRequestA2("dummy-vmpub", ctx.Namespace, "dummy-vm",
+	ctx.vmPub = builder.DummyVirtualMachinePublishRequest("dummy-vmpub", ctx.Namespace, "dummy-vm",
 		"dummy-item", "dummy-cl")
 	return ctx
 }

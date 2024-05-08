@@ -35,7 +35,7 @@ var _ = Describe("UpdateStatus", func() {
 	BeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 
-		vm := builder.DummyVirtualMachineA2()
+		vm := builder.DummyVirtualMachine()
 		vm.Name = "update-status-test"
 
 		vmCtx = pkgctx.VirtualMachineContext{

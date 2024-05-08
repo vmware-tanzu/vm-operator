@@ -35,7 +35,7 @@ type unitMutationWebhookContext struct {
 }
 
 func newUnitTestContextForMutatingWebhook() *unitMutationWebhookContext {
-	vmService := builder.DummyVirtualMachineServiceA2()
+	vmService := builder.DummyVirtualMachineService()
 	obj, err := builder.ToUnstructured(vmService)
 	Expect(err).ToNot(HaveOccurred())
 

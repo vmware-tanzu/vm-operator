@@ -67,14 +67,14 @@ var _ = Describe("ResolveImageName", func() {
 		namespace = actualNamespace
 
 		newNsImgFn := func(id, name string) *vmopv1.VirtualMachineImage {
-			img := builder.DummyVirtualMachineImageA2(id)
+			img := builder.DummyVirtualMachineImage(id)
 			img.Namespace = actualNamespace
 			img.Status.Name = name
 			return img
 		}
 
 		newClImgFn := func(id, name string) *vmopv1.ClusterVirtualMachineImage {
-			img := builder.DummyClusterVirtualMachineImageA2(id)
+			img := builder.DummyClusterVirtualMachineImage(id)
 			img.Status.Name = name
 			return img
 		}

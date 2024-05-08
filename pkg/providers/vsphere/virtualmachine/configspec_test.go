@@ -47,12 +47,12 @@ var _ = Describe("CreateConfigSpec", func() {
 	)
 
 	BeforeEach(func() {
-		vmClass := builder.DummyVirtualMachineClassA2()
+		vmClass := builder.DummyVirtualMachineClassGenName()
 		vmClassSpec = &vmClass.Spec
 		vmImageStatus = &vmopv1.VirtualMachineImageStatus{Firmware: "efi"}
 		minCPUFreq = 2500
 
-		vm = builder.DummyVirtualMachineA2()
+		vm = builder.DummyVirtualMachine()
 		vm.Name = vmName
 		vm.UID = types.UID(uuid.New().String())
 		vm.Spec.BiosUUID = uuid.New().String()
@@ -350,7 +350,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		baseConfigSpec = vimtypes.VirtualMachineConfigSpec{}
 		storageClassesToIDs = map[string]string{}
 
-		vm := builder.DummyVirtualMachineA2()
+		vm := builder.DummyVirtualMachine()
 		vmCtx = pkgctx.VirtualMachineContext{
 			Context: pkgcfg.NewContext(),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
@@ -433,7 +433,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 				config.Features.InstanceStorage = true
 			})
 
-			builder.AddDummyInstanceStorageVolumeA2(vmCtx.VM)
+			builder.AddDummyInstanceStorageVolume(vmCtx.VM)
 			storageClassesToIDs[builder.DummyStorageClassName] = storagePolicyID
 		})
 		It("ConfigSpec contains expected InstanceStorage devices", func() {

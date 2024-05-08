@@ -36,7 +36,7 @@ func getVM() {
 		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 		nsInfo = ctx.CreateWorkloadNamespace()
 
-		vm := builder.DummyVirtualMachineA2()
+		vm := builder.DummyVirtualMachine()
 		vm.Name = "getvm-test"
 		vm.Namespace = nsInfo.Namespace
 

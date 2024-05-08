@@ -69,7 +69,7 @@ func unitTestsReconcile() {
 			},
 		}
 
-		vmpub = builder.DummyVirtualMachinePublishRequestA2("dummy-vmpub", vm.Namespace, vm.Name, "dummy-item", "dummy-cl")
+		vmpub = builder.DummyVirtualMachinePublishRequest("dummy-vmpub", vm.Namespace, vm.Name, "dummy-item", "dummy-cl")
 		cl = builder.DummyContentLibrary("dummy-cl", vm.Namespace, "dummy-id")
 	})
 
@@ -473,7 +473,7 @@ func unitTestsReconcile() {
 
 					When("VirtualMachineImage is available", func() {
 						JustBeforeEach(func() {
-							vmi := builder.DummyVirtualMachineImageA2("dummy-image")
+							vmi := builder.DummyVirtualMachineImage("dummy-image")
 							vmi.Namespace = vmpub.Namespace
 							Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
 							vmi.Status.ProviderItemID = itemID

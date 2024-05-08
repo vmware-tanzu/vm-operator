@@ -425,7 +425,7 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 			"images", "ttylinux-pc_i486-16.1.ovf"))
 
 	// The image isn't quite as prod but sufficient for what we need here ATM.
-	clusterVMImage := DummyClusterVirtualMachineImageA2(c.ContentLibraryImageName)
+	clusterVMImage := DummyClusterVirtualMachineImage(c.ContentLibraryImageName)
 	clusterVMImage.Spec.ProviderRef = &common.LocalObjectRef{
 		Kind: "ClusterContentLibraryItem",
 	}
@@ -462,7 +462,7 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 	Expect(err).ToNot(HaveOccurred())
 
 	// Create the expected VirtualMachineImage for the template.
-	clusterVMImage := DummyClusterVirtualMachineImageA2(templateName)
+	clusterVMImage := DummyClusterVirtualMachineImage(templateName)
 	clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
 	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
 	clusterVMImage.Status.ProviderItemID = itemID
@@ -652,7 +652,7 @@ func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicyA2(
 	name string,
 	nsInfo WorkloadNamespaceInfo) (*vmopv1.VirtualMachineSetResourcePolicy, *object.Folder) {
 
-	resourcePolicy := DummyVirtualMachineSetResourcePolicy2A2(name, nsInfo.Namespace)
+	resourcePolicy := DummyVirtualMachineSetResourcePolicy2(name, nsInfo.Namespace)
 	Expect(c.Client.Create(c, resourcePolicy)).To(Succeed())
 
 	folder := c.createVirtualMachineSetResourcePolicyCommon(

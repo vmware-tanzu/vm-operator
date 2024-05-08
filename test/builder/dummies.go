@@ -4,19 +4,191 @@
 package builder
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 )
 
-func DummyVirtualMachineClass2A2(name string) *vmopv1.VirtualMachineClass {
+const (
+	DummyVMIID                = "vmi-0123456789"
+	DummyImageName            = "dummy-image-name"
+	DummyClassName            = "dummyClassName"
+	DummyVolumeName           = "dummy-volume-name"
+	DummyPVCName              = "dummyPVCName"
+	DummyDistroVersion        = "dummyDistroVersion"
+	DummyOSType               = "centosGuest"
+	DummyStorageClassName     = "dummy-storage-class"
+	DummyResourceQuotaName    = "dummy-resource-quota"
+	DummyAvailabilityZoneName = "dummy-availability-zone"
+)
+
+func DummyStorageClass() *storagev1.StorageClass {
+	return &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DummyStorageClassName,
+		},
+		Provisioner: "foo",
+		Parameters: map[string]string{
+			"storagePolicyID": "id42",
+		},
+	}
+}
+
+func DummyResourceQuota(namespace, rlName string) *corev1.ResourceQuota {
+	return &corev1.ResourceQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      DummyResourceQuotaName,
+			Namespace: namespace,
+		},
+		Spec: corev1.ResourceQuotaSpec{
+			Hard: corev1.ResourceList{
+				corev1.ResourceName(rlName): resource.MustParse("1"),
+			},
+		},
+	}
+}
+
+func DummyAvailabilityZone() *topologyv1.AvailabilityZone {
+	return DummyNamedAvailabilityZone(DummyAvailabilityZoneName)
+}
+
+func DummyNamedAvailabilityZone(name string) *topologyv1.AvailabilityZone {
+	return &topologyv1.AvailabilityZone{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: topologyv1.AvailabilityZoneSpec{
+			ClusterComputeResourceMoIDs: []string{"cluster"},
+			Namespaces:                  map[string]topologyv1.NamespaceInfo{},
+		},
+	}
+}
+
+func DummyPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
+	var storageClass = "dummy-storage-class"
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "validate-webhook-pvc",
+			Labels: make(map[string]string),
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse("5Gi"),
+				},
+			},
+			StorageClassName: &storageClass,
+		},
+	}
+}
+
+func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrary {
+	return &imgregv1a1.ContentLibrary{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: imgregv1a1.ContentLibrarySpec{
+			UUID:     types.UID(uuid),
+			Writable: true,
+		},
+		Status: imgregv1a1.ContentLibraryStatus{
+			Conditions: []imgregv1a1.Condition{
+				{
+					Type:   imgregv1a1.ReadyCondition,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+}
+
+func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLibrary {
+	return &imgregv1a1.ClusterContentLibrary{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: imgregv1a1.ClusterContentLibrarySpec{
+			UUID: types.UID(uuid),
+		},
+	}
+}
+
+func DummyStoragePolicyQuota(quotaName, quotaNs, className string) *cnsstoragev1.StoragePolicyQuota {
+	return &cnsstoragev1.StoragePolicyQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      quotaName,
+			Namespace: quotaNs,
+		},
+		Spec: cnsstoragev1.StoragePolicyQuotaSpec{StoragePolicyId: "uuid-abcd-1234"},
+		Status: cnsstoragev1.StoragePolicyQuotaStatus{
+			SCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{
+				{
+					StorageClassName: className,
+				},
+			},
+			ResourceTypeLevelQuotaStatuses: []cnsstoragev1.ResourceTypeLevelQuotaStatus{
+				{
+					ResourceExtensionName: "volume.cns.vsphere.vmware.com",
+					ResourceTypeSCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{{
+						StorageClassName: className,
+					}},
+				},
+				{
+					ResourceExtensionName: "volume.cns.vsphere.vmware.com",
+					ResourceTypeSCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{{
+						StorageClassName: className + "-abcde",
+					}},
+				},
+			},
+		},
+	}
+}
+
+func DummyWebConsoleRequest(namespace, wcrName, vmName, pubKey string) *vmopv1a1.WebConsoleRequest {
+	return &vmopv1a1.WebConsoleRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      wcrName,
+			Namespace: namespace,
+		},
+		Spec: vmopv1a1.WebConsoleRequestSpec{
+			VirtualMachineName: vmName,
+			PublicKey:          pubKey,
+		},
+	}
+}
+
+func WebConsoleRequestKeyPair() (privateKey *rsa.PrivateKey, publicKeyPem string) {
+	privateKey, _ = rsa.GenerateKey(rand.Reader, 2048)
+	publicKey := privateKey.PublicKey
+	publicKeyPem = string(pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: x509.MarshalPKCS1PublicKey(&publicKey),
+		},
+	))
+	return privateKey, publicKeyPem
+}
+
+func DummyVirtualMachineClass(name string) *vmopv1.VirtualMachineClass {
 	return &vmopv1.VirtualMachineClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -42,33 +214,13 @@ func DummyVirtualMachineClass2A2(name string) *vmopv1.VirtualMachineClass {
 	}
 }
 
-func DummyVirtualMachineClassA2() *vmopv1.VirtualMachineClass {
-	return &vmopv1.VirtualMachineClass{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "test-",
-		},
-		Spec: vmopv1.VirtualMachineClassSpec{
-			Hardware: vmopv1.VirtualMachineClassHardware{
-				Cpus:   int64(2),
-				Memory: resource.MustParse("4Gi"),
-			},
-			Policies: vmopv1.VirtualMachineClassPolicies{
-				Resources: vmopv1.VirtualMachineClassResources{
-					Requests: vmopv1.VirtualMachineResourceSpec{
-						Cpu:    resource.MustParse("1Gi"),
-						Memory: resource.MustParse("2Gi"),
-					},
-					Limits: vmopv1.VirtualMachineResourceSpec{
-						Cpu:    resource.MustParse("2Gi"),
-						Memory: resource.MustParse("4Gi"),
-					},
-				},
-			},
-		},
-	}
+func DummyVirtualMachineClassGenName() *vmopv1.VirtualMachineClass {
+	class := DummyVirtualMachineClass("")
+	class.GenerateName = "test-"
+	return class
 }
 
-func DummyInstanceStorageA2() vmopv1.InstanceStorage {
+func DummyInstanceStorage() vmopv1.InstanceStorage {
 	return vmopv1.InstanceStorage{
 		StorageClass: DummyStorageClassName,
 		Volumes: []vmopv1.InstanceStorageVolume{
@@ -82,7 +234,7 @@ func DummyInstanceStorageA2() vmopv1.InstanceStorage {
 	}
 }
 
-func DummyInstanceStorageVirtualMachineVolumesA2() []vmopv1.VirtualMachineVolume {
+func DummyInstanceStorageVirtualMachineVolumes() []vmopv1.VirtualMachineVolume {
 	return []vmopv1.VirtualMachineVolume{
 		{
 			Name: "instance-pvc-1",
@@ -115,7 +267,7 @@ func DummyInstanceStorageVirtualMachineVolumesA2() []vmopv1.VirtualMachineVolume
 	}
 }
 
-func DummyBasicVirtualMachineA2(name, namespace string) *vmopv1.VirtualMachine {
+func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		TypeMeta: metav1.TypeMeta{
 			Kind: "VirtualMachine",
@@ -140,7 +292,7 @@ func DummyBasicVirtualMachineA2(name, namespace string) *vmopv1.VirtualMachine {
 	}
 }
 
-func DummyVirtualMachineA2() *vmopv1.VirtualMachine {
+func DummyVirtualMachine() *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		TypeMeta: metav1.TypeMeta{
 			Kind: "VirtualMachine",
@@ -225,11 +377,11 @@ func DummyVirtualMachineReplicaSet() *vmopv1.VirtualMachineReplicaSet {
 	}
 }
 
-func AddDummyInstanceStorageVolumeA2(vm *vmopv1.VirtualMachine) {
-	vm.Spec.Volumes = append(vm.Spec.Volumes, DummyInstanceStorageVirtualMachineVolumesA2()...)
+func AddDummyInstanceStorageVolume(vm *vmopv1.VirtualMachine) {
+	vm.Spec.Volumes = append(vm.Spec.Volumes, DummyInstanceStorageVirtualMachineVolumes()...)
 }
 
-func DummyVirtualMachineServiceA2() *vmopv1.VirtualMachineService {
+func DummyVirtualMachineService() *vmopv1.VirtualMachineService {
 	return &vmopv1.VirtualMachineService{
 		ObjectMeta: metav1.ObjectMeta{
 			// Using image.GenerateName causes problems with unit tests
@@ -252,7 +404,7 @@ func DummyVirtualMachineServiceA2() *vmopv1.VirtualMachineService {
 	}
 }
 
-func DummyVirtualMachineSetResourcePolicyA2() *vmopv1.VirtualMachineSetResourcePolicy {
+func DummyVirtualMachineSetResourcePolicy() *vmopv1.VirtualMachineSetResourcePolicy {
 	return &vmopv1.VirtualMachineSetResourcePolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "test-",
@@ -275,7 +427,7 @@ func DummyVirtualMachineSetResourcePolicyA2() *vmopv1.VirtualMachineSetResourceP
 	}
 }
 
-func DummyVirtualMachineSetResourcePolicy2A2(name, namespace string) *vmopv1.VirtualMachineSetResourcePolicy {
+func DummyVirtualMachineSetResourcePolicy2(name, namespace string) *vmopv1.VirtualMachineSetResourcePolicy {
 	return &vmopv1.VirtualMachineSetResourcePolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -290,7 +442,7 @@ func DummyVirtualMachineSetResourcePolicy2A2(name, namespace string) *vmopv1.Vir
 	}
 }
 
-func DummyVirtualMachinePublishRequestA2(name, namespace, sourceName, itemName, clName string) *vmopv1.VirtualMachinePublishRequest {
+func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, clName string) *vmopv1.VirtualMachinePublishRequest {
 	return &vmopv1.VirtualMachinePublishRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
@@ -317,7 +469,7 @@ func DummyVirtualMachinePublishRequestA2(name, namespace, sourceName, itemName, 
 	}
 }
 
-func DummyVirtualMachineImageA2(imageName string) *vmopv1.VirtualMachineImage {
+func DummyVirtualMachineImage(imageName string) *vmopv1.VirtualMachineImage {
 	return &vmopv1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: imageName,
@@ -334,7 +486,7 @@ func DummyVirtualMachineImageA2(imageName string) *vmopv1.VirtualMachineImage {
 	}
 }
 
-func DummyClusterVirtualMachineImageA2(imageName string) *vmopv1.ClusterVirtualMachineImage {
+func DummyClusterVirtualMachineImage(imageName string) *vmopv1.ClusterVirtualMachineImage {
 	return &vmopv1.ClusterVirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: imageName,

@@ -39,7 +39,7 @@ func newIntgMutatingWebhookContext() *intgMutatingWebhookContext {
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),
 	}
 
-	ctx.vmService = builder.DummyVirtualMachineServiceA2()
+	ctx.vmService = builder.DummyVirtualMachineService()
 	ctx.vmService.Namespace = ctx.Namespace
 
 	return ctx

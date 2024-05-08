@@ -62,7 +62,7 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),
 	}
 
-	ctx.vmRP = builder.DummyVirtualMachineSetResourcePolicyA2()
+	ctx.vmRP = builder.DummyVirtualMachineSetResourcePolicy()
 	ctx.vmRP.Namespace = ctx.Namespace
 
 	return ctx

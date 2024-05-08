@@ -47,7 +47,7 @@ func newIntgMutatingWebhookContext() *intgMutatingWebhookContext {
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),
 	}
 
-	ctx.vm = builder.DummyVirtualMachineA2()
+	ctx.vm = builder.DummyVirtualMachine()
 	ctx.vm.Namespace = ctx.Namespace
 
 	return ctx
@@ -62,7 +62,7 @@ func intgTestsMutating() {
 	BeforeEach(func() {
 		ctx = newIntgMutatingWebhookContext()
 
-		img = builder.DummyVirtualMachineImageA2(builder.DummyVMIID)
+		img = builder.DummyVirtualMachineImage(builder.DummyVMIID)
 		img.Namespace = ctx.vm.Namespace
 		Expect(ctx.Client.Create(ctx, img)).To(Succeed())
 		img.Status.Name = ctx.vm.Spec.ImageName

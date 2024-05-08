@@ -62,7 +62,7 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),
 	}
 
-	ctx.vm = builder.DummyVirtualMachineA2()
+	ctx.vm = builder.DummyVirtualMachine()
 	ctx.vm.Namespace = ctx.Namespace
 
 	return ctx

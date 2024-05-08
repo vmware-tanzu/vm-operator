@@ -81,7 +81,7 @@ func intgTestsReconcile() {
 
 		cl = builder.DummyContentLibrary("dummy-cl", ctx.Namespace, "dummy-cl-uuid")
 
-		vmPubReq = builder.DummyVirtualMachinePublishRequestA2(
+		vmPubReq = builder.DummyVirtualMachinePublishRequest(
 			"dummy-vmpub", ctx.Namespace,
 			vm.Name,
 			"dummy-item",
@@ -210,7 +210,7 @@ func intgTestsReconcile() {
 						clItem := utils.DummyContentLibraryItem("dummy-clitem", ctx.Namespace)
 						Expect(ctx.Client.Create(ctx, clItem)).To(Succeed())
 
-						vmi := builder.DummyVirtualMachineImageA2("dummy-image")
+						vmi := builder.DummyVirtualMachineImage("dummy-image")
 						vmi.Namespace = ctx.Namespace
 						Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
 						targetName := vmPubReq.Spec.Target.Item.Name

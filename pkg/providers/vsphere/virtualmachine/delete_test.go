@@ -32,7 +32,7 @@ func deleteTests() {
 		vmCtx = pkgctx.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vcVM.Name()),
-			VM:      builder.DummyVirtualMachineA2(),
+			VM:      builder.DummyVirtualMachine(),
 		}
 	})
 

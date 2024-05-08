@@ -100,7 +100,7 @@ type unitValidatingWebhookContext struct {
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
-	vm := builder.DummyVirtualMachineA2()
+	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm"
 	vm.Namespace = "dummy-vm-namespace-for-webhook-validation"
 	obj, err := builder.ToUnstructured(vm)
@@ -193,7 +193,7 @@ func unitTestsValidateCreate() {
 		}
 
 		if args.withInstanceStorageVolumes {
-			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumesA2()
+			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
 		}
 
@@ -1759,11 +1759,11 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.withInstanceStorageVolumes {
-			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumesA2()
+			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
 		}
 		if args.changeInstanceStorageVolume {
-			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumesA2()
+			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
 			ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, instanceStorageVolumes...)
 			instanceStorageVolumes[0].Name += updateSuffix
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)

@@ -64,7 +64,7 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 	BeforeEach(func() {
 		vmCtx = pkgctx.VirtualMachineContext{
 			Context: context.TODO(),
-			VM:      builder.DummyVirtualMachineA2(),
+			VM:      builder.DummyVirtualMachine(),
 			Logger:  suite.GetLogger(),
 		}
 	})

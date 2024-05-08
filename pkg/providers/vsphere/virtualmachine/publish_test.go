@@ -37,10 +37,10 @@ func publishTests() {
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).ToNot(HaveOccurred())
 
-		vm = builder.DummyVirtualMachineA2()
+		vm = builder.DummyVirtualMachine()
 		vm.Status.UniqueID = vcVM.Reference().Value
 		cl = builder.DummyContentLibrary("dummy-cl", "dummy-ns", ctx.ContentLibraryID)
-		vmPub = builder.DummyVirtualMachinePublishRequestA2("dummy-vmpub", "dummy-ns",
+		vmPub = builder.DummyVirtualMachinePublishRequest("dummy-vmpub", "dummy-ns",
 			vcVM.Name(), "dummy-item-name", "dummy-cl")
 		vmPub.Status.SourceRef = &vmPub.Spec.Source
 		vmPub.Status.TargetRef = &vmPub.Spec.Target

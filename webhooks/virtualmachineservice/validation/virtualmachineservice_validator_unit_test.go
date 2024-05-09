@@ -56,7 +56,7 @@ type unitValidatingWebhookContext struct {
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
-	vmService := builder.DummyVirtualMachineServiceA2()
+	vmService := builder.DummyVirtualMachineService()
 	obj, err := builder.ToUnstructured(vmService)
 	Expect(err).ToNot(HaveOccurred())
 

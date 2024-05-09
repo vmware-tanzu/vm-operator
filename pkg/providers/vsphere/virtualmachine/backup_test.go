@@ -60,7 +60,7 @@ func backupTests() {
 
 	Context("Backup VM Resource YAML", func() {
 		BeforeEach(func() {
-			vm := builder.DummyVirtualMachineA2()
+			vm := builder.DummyVirtualMachine()
 			vmCtx.VM = vm
 		})
 
@@ -240,7 +240,7 @@ func backupTests() {
 			}
 		)
 		BeforeEach(func() {
-			vm := builder.DummyVirtualMachineA2()
+			vm := builder.DummyVirtualMachine()
 			vmCtx.VM = vm
 		})
 

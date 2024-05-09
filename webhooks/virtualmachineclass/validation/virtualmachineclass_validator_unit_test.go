@@ -59,7 +59,7 @@ type unitValidatingWebhookContext struct {
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
-	vmClass := builder.DummyVirtualMachineClassA2()
+	vmClass := builder.DummyVirtualMachineClassGenName()
 	obj, err := builder.ToUnstructured(vmClass)
 	Expect(err).ToNot(HaveOccurred())
 

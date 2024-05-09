@@ -62,8 +62,8 @@ func vmE2ETests() {
 			WithContentLibrary: true,
 		}
 
-		vm = builder.DummyBasicVirtualMachineA2("test-vm", "")
-		vmClass = builder.DummyVirtualMachineClassA2()
+		vm = builder.DummyBasicVirtualMachine("test-vm", "")
+		vmClass = builder.DummyVirtualMachineClassGenName()
 	})
 
 	JustBeforeEach(func() {

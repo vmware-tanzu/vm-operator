@@ -245,7 +245,7 @@ func intgTestsReconcile() {
 				config.InstanceStorage.PVPlacementFailedTTL = 0
 			})
 
-			vm.Spec.Volumes = append(vm.Spec.Volumes, builder.DummyInstanceStorageVirtualMachineVolumesA2()...)
+			vm.Spec.Volumes = append(vm.Spec.Volumes, builder.DummyInstanceStorageVirtualMachineVolumes()...)
 			vm.Labels = map[string]string{constants.InstanceStorageLabelKey: "true"}
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 

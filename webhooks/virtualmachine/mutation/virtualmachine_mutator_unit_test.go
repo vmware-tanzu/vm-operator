@@ -49,7 +49,7 @@ type unitMutationWebhookContext struct {
 }
 
 func newUnitTestContextForMutatingWebhook() *unitMutationWebhookContext {
-	vm := builder.DummyVirtualMachineA2()
+	vm := builder.DummyVirtualMachine()
 	obj, err := builder.ToUnstructured(vm)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -368,14 +368,14 @@ func unitTestsMutating() {
 		)
 
 		newNsImgFn := func(id, name string) *vmopv1.VirtualMachineImage {
-			img := builder.DummyVirtualMachineImageA2(id)
+			img := builder.DummyVirtualMachineImage(id)
 			img.Namespace = ctx.vm.Namespace
 			img.Status.Name = name
 			return img
 		}
 
 		newClImgFn := func(id, name string) *vmopv1.ClusterVirtualMachineImage {
-			img := builder.DummyClusterVirtualMachineImageA2(id)
+			img := builder.DummyClusterVirtualMachineImage(id)
 			img.Status.Name = name
 			return img
 		}

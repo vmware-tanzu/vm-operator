@@ -61,12 +61,12 @@ type unitValidatingWebhookContext struct {
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
-	vm := builder.DummyVirtualMachineA2()
+	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm"
 	vm.Namespace = "dummy-ns"
 	cl := builder.DummyContentLibrary("dummy-cl", "dummy-ns", "dummy-uuid")
 
-	vmPub := builder.DummyVirtualMachinePublishRequestA2("dummy-vmpub", "dummy-ns", vm.Name,
+	vmPub := builder.DummyVirtualMachinePublishRequest("dummy-vmpub", "dummy-ns", vm.Name,
 		"dummy-item", cl.Name)
 	obj, err := builder.ToUnstructured(vmPub)
 	Expect(err).ToNot(HaveOccurred())

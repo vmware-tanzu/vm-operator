@@ -78,7 +78,7 @@ func vcSimPlacement() {
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{}
 
-		vm = builder.DummyVirtualMachineA2()
+		vm = builder.DummyVirtualMachine()
 		vm.Name = "placement-test"
 
 		// Other than the name ConfigSpec contents don't matter for vcsim.
@@ -203,7 +203,7 @@ func vcSimPlacement() {
 
 		BeforeEach(func() {
 			testConfig.WithInstanceStorage = true
-			builder.AddDummyInstanceStorageVolumeA2(vm)
+			builder.AddDummyInstanceStorageVolume(vm)
 			testConfig.NumFaultDomains = 1 // Only support for non-HA "HA"
 		})
 

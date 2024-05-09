@@ -111,7 +111,7 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 			},
 		}
 
-		image = builder.DummyVirtualMachineImageA2("dummy-image")
+		image = builder.DummyVirtualMachineImage("dummy-image")
 	})
 
 	AfterEach(func() {

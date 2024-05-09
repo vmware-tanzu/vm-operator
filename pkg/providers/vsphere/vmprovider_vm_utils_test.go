@@ -35,7 +35,7 @@ func vmUtilTests() {
 	)
 
 	BeforeEach(func() {
-		vm := builder.DummyBasicVirtualMachineA2("test-vm", "dummy-ns")
+		vm := builder.DummyBasicVirtualMachine("test-vm", "dummy-ns")
 
 		vmCtx = pkgctx.VirtualMachineContext{
 			Context: pkgcfg.WithConfig(pkgcfg.Config{MaxDeployThreadsOnProvider: 16}),
@@ -59,7 +59,7 @@ func vmUtilTests() {
 		)
 
 		BeforeEach(func() {
-			vmClass = builder.DummyVirtualMachineClass2A2("dummy-vm-class")
+			vmClass = builder.DummyVirtualMachineClass("dummy-vm-class")
 			vmClass.Namespace = vmCtx.VM.Namespace
 			vmCtx.VM.Spec.ClassName = vmClass.Name
 		})
@@ -100,10 +100,10 @@ func vmUtilTests() {
 		)
 
 		BeforeEach(func() {
-			nsVMImage = builder.DummyVirtualMachineImageA2(builder.DummyVMIID)
+			nsVMImage = builder.DummyVirtualMachineImage(builder.DummyVMIID)
 			nsVMImage.Namespace = vmCtx.VM.Namespace
 			conditions.MarkTrue(nsVMImage, vmopv1.ReadyConditionType)
-			clusterVMImage = builder.DummyClusterVirtualMachineImageA2(builder.DummyVMIID)
+			clusterVMImage = builder.DummyClusterVirtualMachineImage(builder.DummyVMIID)
 			conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 		})
 
@@ -810,7 +810,7 @@ func vmUtilTests() {
 		}
 
 		BeforeEach(func() {
-			vmClass = builder.DummyVirtualMachineClassA2()
+			vmClass = builder.DummyVirtualMachineClassGenName()
 		})
 
 		When("InstanceStorage FFS is enabled", func() {
@@ -823,7 +823,7 @@ func vmUtilTests() {
 
 			When("Instance Volume is added in VM Class", func() {
 				BeforeEach(func() {
-					vmClass.Spec.Hardware.InstanceStorage = builder.DummyInstanceStorageA2()
+					vmClass.Spec.Hardware.InstanceStorage = builder.DummyInstanceStorage()
 				})
 
 				It("Instance Volumes should be added", func() {

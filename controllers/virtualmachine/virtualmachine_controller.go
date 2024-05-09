@@ -33,6 +33,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vspherevm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -168,9 +169,9 @@ func upgradeSchema(ctx *pkgctx.VirtualMachineContext) {
 	if bs := ctx.VM.Spec.Bootstrap; bs != nil {
 		if ci := bs.CloudInit; ci != nil {
 			if ci.InstanceID == "" {
-				ci.InstanceID = string(ctx.VM.UID)
+				iid := vmlifecycle.BootStrapCloudInitInstanceID(*ctx, ci)
 				ctx.Logger.Info("Upgrade VirtualMachine spec",
-					"bootstrap.cloudInit.instanceID", ci.InstanceID)
+					"bootstrap.cloudInit.instanceID", iid)
 			}
 		}
 	}

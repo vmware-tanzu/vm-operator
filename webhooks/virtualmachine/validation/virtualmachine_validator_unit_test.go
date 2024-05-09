@@ -1695,7 +1695,6 @@ func unitTestsValidateUpdate() {
 	type updateArgs struct {
 		isServiceUser               bool
 		changeBiosUUID              bool
-		changeClassName             bool
 		changeImageRef              bool
 		changeImageName             bool
 		changeStorageClass          bool
@@ -1736,9 +1735,6 @@ func unitTestsValidateUpdate() {
 		}
 		if args.changeBiosUUID {
 			ctx.vm.Spec.BiosUUID += updateSuffix
-		}
-		if args.changeClassName {
-			ctx.vm.Spec.ClassName += updateSuffix
 		}
 		if args.changeStorageClass {
 			ctx.vm.Spec.StorageClass += updateSuffix
@@ -1824,7 +1820,6 @@ func unitTestsValidateUpdate() {
 		Entry("should deny image ref change", updateArgs{changeImageRef: true}, false, msg, nil),
 		Entry("should deny image name change", updateArgs{changeImageName: true}, false, msg, nil),
 		Entry("should deny bios uuid change", updateArgs{changeBiosUUID: true, oldBiosUUID: "uuid"}, false, msg, nil),
-		Entry("should deny class name change", updateArgs{changeClassName: true}, false, msg, nil),
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 
@@ -2036,6 +2031,55 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
 					},
 					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("ClassName", func() {
+
+		DescribeTable("class name", doTest,
+
+			Entry("disallow changing class name when FSS_WCP_VMSERVICE_RESIZE is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.ClassName = "class"
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ClassName = "new-class"
+					},
+					validate: doValidateWithMsg(
+						`spec.className: Invalid value: "new-class": field is immutable`),
+				},
+			),
+
+			Entry("allow changing class name when FSS_WCP_VMSERVICE_RESIZE is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMResize = true
+						})
+
+						ctx.oldVM.Spec.ClassName = "small-class"
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ClassName = "big-class"
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow changing class name to empty string when FSS_WCP_VMSERVICE_RESIZE is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMResize = true
+						})
+
+						ctx.oldVM.Spec.ClassName = "small-class"
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ClassName = ""
+					},
+					validate: doValidateWithMsg("spec.className: Required value"),
 				},
 			),
 		)

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -18,8 +17,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -76,22 +75,20 @@ func intgTestsReconcile() {
 	}
 
 	waitForVirtualMachineFinalizer := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) {
-		Eventually(func() []string {
-			if vm := getVirtualMachine(ctx, objKey); vm != nil {
-				return vm.GetFinalizers()
-			}
-			return nil
-		}).Should(ContainElement(finalizer), "waiting for VirtualMachine finalizer")
+		Eventually(func(g Gomega) {
+			vm := getVirtualMachine(ctx, objKey)
+			g.Expect(vm).ToNot(BeNil())
+			g.Expect(vm.GetFinalizers()).To(ContainElement(finalizer))
+		}).Should(Succeed(), "waiting for VirtualMachine finalizer")
 	}
 
 	Context("Reconcile", func() {
-		dummyInstanceUUID := "instanceUUID1234"
+		const dummyInstanceUUID = "instanceUUID1234"
+		const dummyIPAddress = "1.2.3.4"
 
 		BeforeEach(func() {
 			intgFakeVMProvider.Lock()
 			intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				// Used below just to check for something in the Status is updated.
-				vm.Status.InstanceUUID = dummyInstanceUUID
 				return nil
 			}
 			intgFakeVMProvider.Unlock()
@@ -119,13 +116,63 @@ func intgTestsReconcile() {
 				waitForVirtualMachineFinalizer(ctx, vmKey)
 			})
 
-			By("VirtualMachine should reflect VMProvider updates", func() {
-				Eventually(func() string {
-					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
-						return vm.Status.InstanceUUID
+			By("Set InstanceUUID in CreateOrUpdateVM", func() {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					// Just using InstanceUUID here for a field to update.
+					vm.Status.InstanceUUID = dummyInstanceUUID
+					return nil
+				}
+				intgFakeVMProvider.Unlock()
+			})
+
+			By("VirtualMachine should have InstanceUUID set", func() {
+				// This depends on CreateVMRequeueDelay to timely reflect the update.
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.InstanceUUID).To(Equal(dummyInstanceUUID))
+				}, "4s").Should(Succeed(), "waiting for expected InstanceUUID")
+			})
+
+			By("Set Created condition in CreateOrUpdateVM", func() {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+					conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+					return nil
+				}
+				intgFakeVMProvider.Unlock()
+			})
+
+			By("VirtualMachine should have Created condition set", func() {
+				// This depends on CreateVMRequeueDelay to timely reflect the update.
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+				}, "4s").Should(Succeed(), "waiting for Created condition")
+			})
+
+			By("Set IP address in CreateOrUpdateVM", func() {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+						PrimaryIP4: dummyIPAddress,
 					}
-					return ""
-				}).Should(Equal(dummyInstanceUUID), "waiting for expected InstanceUUID")
+					return nil
+				}
+				intgFakeVMProvider.Unlock()
+			})
+
+			By("VirtualMachine should have IP address set", func() {
+				// This depends on PoweredOnVMHasIPRequeueDelay to timely reflect the update.
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Network).ToNot(BeNil())
+					g.Expect(vm.Status.Network.PrimaryIP4).To(Equal(dummyIPAddress))
+				}, "4s").Should(Succeed(), "waiting for IP address")
 			})
 
 			By("VirtualMachine should not be updated in steady-state", func() {
@@ -134,16 +181,11 @@ func intgTestsReconcile() {
 				rv := vm.GetResourceVersion()
 				Expect(rv).ToNot(BeEmpty())
 				expected := fmt.Sprintf("%s :: %d", rv, vm.GetGeneration())
-				// The resync period is 1 second, so balance between giving enough time vs a slow test.
-				// Note: the kube-apiserver we test against (obtained from kubebuilder) is old and
-				// appears to behavior differently than newer versions (like used in the SV) in that noop
-				// Status subresource updates don't increment the ResourceVersion.
-				Consistently(func() string {
-					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
-						return fmt.Sprintf("%s :: %d", vm.GetResourceVersion(), vm.GetGeneration())
-					}
-					return ""
-				}, 4*time.Second).Should(Equal(expected))
+				Consistently(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(fmt.Sprintf("%s :: %d", vm.GetResourceVersion(), vm.GetGeneration())).To(Equal(expected))
+				}, "4s").Should(Succeed(), "no updates in steady state")
 			})
 		})
 
@@ -212,13 +254,12 @@ func intgTestsReconcile() {
 			waitForVirtualMachineFinalizer(ctx, vmKey)
 
 			Expect(ctx.Client.Delete(ctx, vm)).To(Succeed())
-			By("Finalizer should be removed after deletion", func() {
-				Eventually(func() []string {
-					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
-						return vm.GetFinalizers()
-					}
-					return nil
-				}).ShouldNot(ContainElement(finalizer))
+
+			By("VirtualMachine should be deleted", func() {
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).NotTo(BeNil())
+				}).Should(Succeed())
 			})
 		})
 

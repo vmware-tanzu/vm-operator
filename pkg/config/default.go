@@ -35,6 +35,8 @@ func Default() Config {
 		LeaderElectionID:             defaultPrefix + "controller-manager-runtime",
 		MaxCreateVMsOnProvider:       80,
 		MaxConcurrentReconciles:      1,
+		CreateVMRequeueDelay:         10 * time.Second,
+		PoweredOnVMHasIPRequeueDelay: 10 * time.Second,
 		NetworkProviderType:          NetworkProviderTypeNamed,
 		PodName:                      defaultPrefix + "controller-manager",
 		PodNamespace:                 defaultPrefix + "system",

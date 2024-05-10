@@ -20,6 +20,8 @@ func FromEnv() Config {
 	setDuration(env.ContentAPIWaitDuration, &config.ContentAPIWait)
 	setString(env.DefaultVMClassControllerName, &config.DefaultVMClassControllerName)
 	setInt(env.MaxCreateVMsOnProvider, &config.MaxCreateVMsOnProvider)
+	setDuration(env.CreateVMRequeueDelay, &config.CreateVMRequeueDelay)
+	setDuration(env.PoweredOnVMHasIPRequeueDelay, &config.PoweredOnVMHasIPRequeueDelay)
 	setNetworkProviderType(env.NetworkProviderType, &config.NetworkProviderType)
 	setString(env.LoadBalancerProvider, &config.LoadBalancerProvider)
 	setBool(env.VSphereNetworking, &config.VSphereNetworking)

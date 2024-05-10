@@ -976,9 +976,23 @@ func (v validator) validatePowerStateOnUpdate(
 	return allErrs
 }
 
+func isBootstrapCloudInit(vm *vmopv1.VirtualMachine) bool {
+	if vm.Spec.Bootstrap == nil {
+		return false
+	}
+	return vm.Spec.Bootstrap.CloudInit != nil
+}
+
 func (v validator) validateUpdatesWhenPoweredOn(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
+
+	// Permit upgrade of existing VM's instanceID, regardless of powerState
+	if isBootstrapCloudInit(oldVM) && isBootstrapCloudInit(vm) {
+		if oldVM.Spec.Bootstrap.CloudInit.InstanceID == "" {
+			oldVM.Spec.Bootstrap.CloudInit.InstanceID = vm.Spec.Bootstrap.CloudInit.InstanceID
+		}
+	}
 
 	if !equality.Semantic.DeepEqual(vm.Spec.Bootstrap, oldVM.Spec.Bootstrap) {
 		allErrs = append(allErrs, field.Forbidden(specPath.Child("bootstrap"), updatesNotAllowedWhenPowerOn))

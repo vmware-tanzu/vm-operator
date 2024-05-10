@@ -33,6 +33,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vspherevm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -153,6 +154,26 @@ func classToVMMapperFn(ctx *pkgctx.ControllerManagerContext, c client.Client, is
 
 		logger.Info("Returning VM reconcile requests due to VirtualMachineClass watch", "requests", reconcileRequests)
 		return reconcileRequests
+	}
+}
+
+func upgradeSchema(ctx *pkgctx.VirtualMachineContext) {
+	// If empty, this VM was created before v1alpha3 added the spec.biosUUID field.
+	if ctx.VM.Spec.BiosUUID == "" && ctx.VM.Status.BiosUUID != "" {
+		ctx.VM.Spec.BiosUUID = ctx.VM.Status.BiosUUID
+		ctx.Logger.Info("Upgrade VirtualMachine spec",
+			"biosUUID", ctx.VM.Spec.BiosUUID)
+	}
+
+	// If empty, this VM was created before v1alpha3 added the instanceID field
+	if bs := ctx.VM.Spec.Bootstrap; bs != nil {
+		if ci := bs.CloudInit; ci != nil {
+			if ci.InstanceID == "" {
+				iid := vmlifecycle.BootStrapCloudInitInstanceID(*ctx, ci)
+				ctx.Logger.Info("Upgrade VirtualMachine spec",
+					"bootstrap.cloudInit.instanceID", iid)
+			}
+		}
 	}
 }
 
@@ -332,6 +353,9 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	defer func() {
 		r.vmMetrics.RegisterVMCreateOrUpdateMetrics(ctx)
 	}()
+
+	// Upgrade schema fields where needed
+	upgradeSchema(ctx)
 
 	if err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM); err != nil {
 		r.Recorder.EmitEvent(ctx.VM, "CreateOrUpdate", err, false)

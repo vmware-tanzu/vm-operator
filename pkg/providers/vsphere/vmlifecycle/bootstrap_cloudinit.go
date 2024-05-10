@@ -33,21 +33,9 @@ type CloudInitMetadata struct {
 // The 'value' key lookup will eventually be deprecated.
 var CloudInitUserDataSecretKeys = []string{"user-data", "value"}
 
-func BootStrapCloudInit(
+func BootStrapCloudInitInstanceID(
 	vmCtx pkgctx.VirtualMachineContext,
-	config *vimtypes.VirtualMachineConfigInfo,
-	cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec,
-	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
-
-	netPlan, err := network.NetPlanCustomization(bsArgs.NetworkResults)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create NetPlan customization: %w", err)
-	}
-
-	sshPublicKeys := bsArgs.BootstrapData.Data["ssh-public-keys"]
-	if len(cloudInitSpec.SSHAuthorizedKeys) > 0 {
-		sshPublicKeys = strings.Join(cloudInitSpec.SSHAuthorizedKeys, "\n")
-	}
+	cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec) string {
 
 	// The Cloud-Init instance ID is from spec.bootstrap.cloudInit.instanceID.
 	iid := cloudInitSpec.InstanceID
@@ -101,6 +89,27 @@ func BootStrapCloudInit(
 	// matches the intent, whether it was derived from the value of metadata.uid
 	// or the value of the annotation vmopv1.InstanceIDAnnotation.
 	cloudInitSpec.InstanceID = iid
+
+	return iid
+}
+
+func BootStrapCloudInit(
+	vmCtx pkgctx.VirtualMachineContext,
+	config *vimtypes.VirtualMachineConfigInfo,
+	cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec,
+	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
+
+	netPlan, err := network.NetPlanCustomization(bsArgs.NetworkResults)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create NetPlan customization: %w", err)
+	}
+
+	sshPublicKeys := bsArgs.BootstrapData.Data["ssh-public-keys"]
+	if len(cloudInitSpec.SSHAuthorizedKeys) > 0 {
+		sshPublicKeys = strings.Join(cloudInitSpec.SSHAuthorizedKeys, "\n")
+	}
+
+	iid := BootStrapCloudInitInstanceID(vmCtx, cloudInitSpec)
 
 	metadata, err := GetCloudInitMetadata(
 		iid, bsArgs.HostName, bsArgs.DomainName, netPlan, sshPublicKeys)

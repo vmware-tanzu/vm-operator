@@ -249,7 +249,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 func requeueDelay(ctx *pkgctx.VirtualMachineContext) time.Duration {
 	// If the VM is in Creating phase, the reconciler has run out of threads to Create VMs on the provider. Do not queue
 	// immediately to avoid exponential backoff.
-	if conditions.IsFalse(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
+	if !conditions.IsTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
 		return 10 * time.Second
 	}
 

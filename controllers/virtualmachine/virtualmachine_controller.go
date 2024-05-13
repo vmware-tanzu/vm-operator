@@ -365,7 +365,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	// Add this VM to prober manager if ReconcileNormal succeeds.
 	r.Prober.AddToProberManager(ctx.VM)
 
-	ctx.Logger.Info("Finished Reconciling VirtualMachine")
 	return nil
 }
 

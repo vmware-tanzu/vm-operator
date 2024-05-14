@@ -47,6 +47,7 @@ const (
 	FSSTKGMultipleCL
 	FSSK8sWorkloadMgmtAPI
 	FSSVMResize
+	FSSVMImportNewNet
 
 	_varNameEnd
 )
@@ -143,6 +144,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_TKG_Multiple_CL"
 	case FSSVMResize:
 		return "FSS_WCP_VMSERVICE_RESIZE"
+	case FSSVMImportNewNet:
+		return "FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET"
 	}
 	panic("unknown environment variable")
 }

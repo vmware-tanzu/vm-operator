@@ -54,6 +54,7 @@ func FromEnv() Config {
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
 	setBool(env.FSSTKGMultipleCL, &config.Features.TKGMultipleCL)
 	setBool(env.FSSVMResize, &config.Features.VMResize)
+	setBool(env.FSSVMImportNewNet, &config.Features.VMImportNewNet)
 
 	return config
 }

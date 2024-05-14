@@ -62,6 +62,7 @@ type VMCreateArgs struct {
 
 // TODO: Until we sort out what the Session becomes.
 type vmUpdateArgs = session.VMUpdateArgs
+type vmResizeArgs = session.VMResizeArgs
 
 var (
 	createCountLock       sync.Mutex
@@ -436,7 +437,11 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			return vs.vmUpdateGetArgs(vmCtx)
 		}
 
-		err = ses.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgsFn)
+		getResizeArgsFn := func() (*vmResizeArgs, error) {
+			return vs.vmResizeGetArgs(vmCtx)
+		}
+
+		err = ses.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgsFn, getResizeArgsFn)
 		if err != nil {
 			return err
 		}
@@ -1168,4 +1173,42 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		updateArgs.MinCPUFreq)
 
 	return updateArgs, nil
+}
+
+func (vs *vSphereVMProvider) vmResizeGetArgs(
+	vmCtx pkgctx.VirtualMachineContext) (*vmResizeArgs, error) {
+
+	vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
+	if err != nil {
+		return nil, err
+	}
+
+	resizeArgs := &vmResizeArgs{}
+	resizeArgs.VMClass = vmClass
+
+	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
+		if err != nil {
+			return nil, err
+		}
+		resizeArgs.MinCPUFreq = freq
+	}
+
+	var configSpec vimtypes.VirtualMachineConfigSpec
+	if rawConfigSpec := resizeArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
+		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
+		if err != nil {
+			return nil, err
+		}
+		configSpec = vmClassConfigSpec
+	}
+
+	resizeArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
+		vmCtx,
+		configSpec,
+		resizeArgs.VMClass.Spec,
+		vmopv1.VirtualMachineImageStatus{},
+		resizeArgs.MinCPUFreq)
+
+	return resizeArgs, nil
 }

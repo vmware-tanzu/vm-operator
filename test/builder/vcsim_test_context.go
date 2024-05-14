@@ -77,6 +77,9 @@ type VCSimTestConfig struct {
 	// WithInstanceStorage enables the WCP_INSTANCE_STORAGE FSS.
 	WithInstanceStorage bool
 
+	// WithVMResize enables the FSS_WCP_VMSERVICE_RESIZE FSS.
+	WithVMResize bool
+
 	// WithoutStorageClass disables the storage class required, meaning that the
 	// Datastore will be used instead. In WCP production the storage class is
 	// always required; the Datastore is only needed for gce2e.
@@ -296,6 +299,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.JSONExtraConfig = config.WithJSONExtraConfig
 
 		cc.Features.InstanceStorage = config.WithInstanceStorage
+		cc.Features.VMResize = config.WithVMResize
 	})
 }
 

@@ -64,6 +64,12 @@
     name: FSS_WCP_VMSERVICE_RESIZE
     value: "<FSS_WCP_VMSERVICE_RESIZE_VALUE>"
 
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
+    value: "<FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET_VALUE>"
+
 #
 # Feature state switch flags beneath this line are enabled on main and only
 # retained in this file because it is used by internal testing to determine the

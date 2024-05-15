@@ -12,10 +12,21 @@ import (
 func IsPrivilegedAccount(
 	ctx *pkgctx.WebhookContext, userInfo authv1.UserInfo) bool {
 
-	username := userInfo.Username
+	// Per https://kubernetes.io/docs/reference/access-authn-authz/rbac/#user-facing-roles,
+	// any user that belongs to the group "system:masters" is a cluster-admin.
+	for i := range userInfo.Groups {
+		if userInfo.Groups[i] == "system:masters" {
+			return true
+		}
+	}
 
+	username := userInfo.Username
 	if strings.EqualFold(username, kubeAdminUser) {
 		return true
+	}
+
+	if ctx == nil {
+		return false
 	}
 
 	// Users specified by Pod's environment variable "PRIVILEGED_USERS" are

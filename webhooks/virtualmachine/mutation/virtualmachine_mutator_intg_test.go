@@ -114,6 +114,55 @@ func intgTestsMutating() {
 		})
 	})
 
+	Context("SetDefaultInstanceUUID", func() {
+		When("Creating VirtualMachine", func() {
+			When("When VM InstanceUUID is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.InstanceUUID = ""
+				})
+
+				It("Should set InstanceUUID", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					Expect(vm.Spec.InstanceUUID).ToNot(BeEmpty())
+				})
+			})
+			When("When VM InstanceUUID is not empty", func() {
+				var id = uuid.NewString()
+
+				BeforeEach(func() {
+					ctx.vm.Spec.InstanceUUID = id
+				})
+
+				It("Should not mutate InstanceUUID", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					Expect(vm.Spec.InstanceUUID).To(Equal(id))
+				})
+			})
+		})
+
+		When("Updating VirtualMachine", func() {
+			var id = uuid.NewString()
+
+			BeforeEach(func() {
+				ctx.vm.Spec.InstanceUUID = id
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			})
+
+			It("Should not mutate InstanceUUID", func() {
+				vm := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				Expect(vm.Spec.InstanceUUID).To(Equal(id))
+			})
+		})
+	})
+
 	Context("SetDefaultBiosUUID", func() {
 		When("Creating VirtualMachine", func() {
 			When("When VM BiosUUID is empty", func() {
@@ -130,7 +179,7 @@ func intgTestsMutating() {
 				})
 			})
 			When("When VM BiosUUID is not empty", func() {
-				var id = uuid.New().String()
+				var id = uuid.NewString()
 
 				BeforeEach(func() {
 					ctx.vm.Spec.BiosUUID = id
@@ -146,7 +195,7 @@ func intgTestsMutating() {
 		})
 
 		When("Updating VirtualMachine", func() {
-			var id = uuid.New().String()
+			var id = uuid.NewString()
 
 			BeforeEach(func() {
 				ctx.vm.Spec.BiosUUID = id

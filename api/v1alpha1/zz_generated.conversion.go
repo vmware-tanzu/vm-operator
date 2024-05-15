@@ -2080,6 +2080,7 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	// WARNING: in.Advanced requires manual conversion: does not exist in peer-type
 	// WARNING: in.Reserved requires manual conversion: does not exist in peer-type
 	out.MinHardwareVersion = in.MinHardwareVersion
+	// WARNING: in.InstanceUUID requires manual conversion: does not exist in peer-type
 	// WARNING: in.BiosUUID requires manual conversion: does not exist in peer-type
 	return nil
 }

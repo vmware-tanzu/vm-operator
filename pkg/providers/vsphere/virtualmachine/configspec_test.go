@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -54,8 +53,8 @@ var _ = Describe("CreateConfigSpec", func() {
 
 		vm = builder.DummyVirtualMachine()
 		vm.Name = vmName
-		vm.UID = types.UID(uuid.New().String())
-		vm.Spec.BiosUUID = uuid.New().String()
+		vm.Spec.InstanceUUID = uuid.NewString()
+		vm.Spec.BiosUUID = uuid.NewString()
 		// Explicitly set these in the tests.
 		vm.Spec.Volumes = nil
 		vm.Spec.MinHardwareVersion = 0
@@ -97,8 +96,9 @@ var _ = Describe("CreateConfigSpec", func() {
 			})
 		})
 
-		When("VM has no bios uuid", func() {
+		When("VM has no bios or instance uuid", func() {
 			BeforeEach(func() {
+				vm.Spec.InstanceUUID = ""
 				vm.Spec.BiosUUID = ""
 			})
 
@@ -108,11 +108,11 @@ var _ = Describe("CreateConfigSpec", func() {
 			})
 		})
 
-		When("VM has bios uuid", func() {
+		When("VM has bios and instance uuid", func() {
 			It("config spec has expected uuids", func() {
 				Expect(configSpec.Uuid).ToNot(BeEmpty())
 				Expect(configSpec.Uuid).To(Equal(vm.Spec.BiosUUID))
-				Expect(configSpec.InstanceUuid).To(BeEquivalentTo(vm.UID))
+				Expect(configSpec.InstanceUuid).To(BeEquivalentTo(vm.Spec.InstanceUUID))
 			})
 		})
 

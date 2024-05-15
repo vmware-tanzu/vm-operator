@@ -162,6 +162,10 @@ func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 	return nil
 }
 
+func restore_v1alpha3_VirtualMachineInstanceUUID(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.InstanceUUID = src.Spec.InstanceUUID
+}
+
 func restore_v1alpha3_VirtualMachineBiosUUID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.BiosUUID = src.Spec.BiosUUID
 }
@@ -205,6 +209,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	// BEGIN RESTORE
 
 	restore_v1alpha3_VirtualMachineImage(dst, restored)
+	restore_v1alpha3_VirtualMachineInstanceUUID(dst, restored)
 	restore_v1alpha3_VirtualMachineBiosUUID(dst, restored)
 	restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 	restore_v1alpha3_VirtualMachineSpecNetworkDomainName(dst, restored)

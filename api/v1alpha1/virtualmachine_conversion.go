@@ -934,6 +934,10 @@ func restore_v1alpha3_VirtualMachineReadinessProbeSpec(
 	}
 }
 
+func restore_v1alpha3_VirtualMachineInstanceUUID(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.InstanceUUID = src.Spec.InstanceUUID
+}
+
 func restore_v1alpha3_VirtualMachineBiosUUID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.BiosUUID = src.Spec.BiosUUID
 }

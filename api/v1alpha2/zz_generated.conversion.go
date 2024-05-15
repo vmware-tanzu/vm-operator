@@ -3196,6 +3196,7 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 	out.Advanced = (*VirtualMachineAdvancedSpec)(unsafe.Pointer(in.Advanced))
 	out.Reserved = (*VirtualMachineReservedSpec)(unsafe.Pointer(in.Reserved))
 	out.MinHardwareVersion = in.MinHardwareVersion
+	// WARNING: in.InstanceUUID requires manual conversion: does not exist in peer-type
 	// WARNING: in.BiosUUID requires manual conversion: does not exist in peer-type
 	return nil
 }

@@ -214,7 +214,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 					ResourcePolicyName: "my-resource-policy",
 				},
 				MinHardwareVersion: 42,
-				BiosUUID:           uuid.New().String(),
+				InstanceUUID:       uuid.NewString(),
+				BiosUUID:           uuid.NewString(),
 			},
 		}
 

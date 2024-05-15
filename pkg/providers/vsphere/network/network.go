@@ -93,7 +93,7 @@ var (
 //     but eventually we should Watch() these resources. Note though, that in the very
 //     common case, the CR is reconciled before our poll timeout, so that does save us
 //     from bailing out of the Reconcile.
-//   - Both NCP and NetOP CR Status inform us of the backing and IPAM info. However, for
+//   - NCP, NetOP and VPC CR Status inform us of the backing and IPAM info. However, for
 //     our InterfaceSpec we allow for DHCP but neither NCP nor NetOP has a way for us to
 //     mark the CR to don't do IPAM or to check DHCP is even enabled on the network. So
 //     this burns an IP, and the user must know that DHCP is actually configured.
@@ -661,12 +661,12 @@ func vpcSubnetPortToResult(
 
 	ipConfigs := []NetworkInterfaceIPConfig{}
 
-	// IPAddresses have CIDR format.
 	for _, ipAddr := range subnetPort.Status.NetworkInterfaceConfig.IPAddresses {
+		// An empty ipAddress is NSX Operator's way of saying DHCP.
 		if ipAddr.IPAddress == "" {
 			continue
 		}
-
+		// IPAddresses have CIDR format.
 		ip, _, _ := net.ParseCIDR(ipAddr.IPAddress)
 		isIPv4 := ip.To4() != nil
 		ipConfig := NetworkInterfaceIPConfig{

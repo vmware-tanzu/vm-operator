@@ -275,58 +275,231 @@ func unitTestsMutating() {
 
 	Describe("SetDefaultBiosUUID", func() {
 
-		Context("When VM BiosUUID is empty", func() {
+		var (
+			err         error
+			wasMutated  bool
+			inUUID      = uuid.NewString()
+			expectedErr = field.Forbidden(
+				field.NewPath("spec", "biosUUID"),
+				"only privileged users may set this field")
+		)
+
+		JustBeforeEach(func() {
+			wasMutated, err = mutation.SetDefaultBiosUUID(
+				&ctx.WebhookRequestContext,
+				ctx.Client,
+				ctx.vm)
+		})
+
+		When("spec.biosUUID is empty", func() {
+
 			BeforeEach(func() {
 				ctx.vm.Spec.BiosUUID = ""
 			})
 
-			It("Should set BiosUUID", func() {
-				Expect(mutation.SetDefaultBiosUUID(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
-				Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+			Context("privileged user", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = true
+				})
+
+				It("Should set BiosUUID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+				})
 			})
 
+			Context("unprivileged user", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = false
+				})
+
+				It("Should set BiosUUID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+				})
+			})
+
+			When("spec.bootstrap.cloudInit.instanceID is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+					}
+				})
+
+				Context("privileged user", func() {
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = true
+					})
+
+					It("Should set BiosUUID and set CloudInit InstanceID", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(wasMutated).To(BeTrue())
+						Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(ctx.vm.Spec.BiosUUID))
+					})
+				})
+
+				Context("unprivileged user", func() {
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = false
+					})
+
+					It("Should set BiosUUID and set CloudInit InstanceID", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(wasMutated).To(BeTrue())
+						Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(ctx.vm.Spec.BiosUUID))
+					})
+				})
+			})
+
+			When("spec.bootstrap.cloudInit.instanceID is not empty", func() {
+				var (
+					inInstanceID = uuid.NewString()
+				)
+
+				BeforeEach(func() {
+					ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+							InstanceID: inInstanceID,
+						},
+					}
+				})
+
+				Context("privileged user", func() {
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = true
+					})
+
+					It("Should set BiosUUID and ignore CloudInit InstanceID", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(wasMutated).To(BeTrue())
+						Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
+					})
+				})
+
+				Context("unprivileged user", func() {
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = false
+					})
+
+					It("Should set BiosUUID and ignore CloudInit InstanceID", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(wasMutated).To(BeTrue())
+						Expect(ctx.vm.Spec.BiosUUID).ToNot(BeEmpty())
+						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
+					})
+				})
+			})
 		})
 
-		Context("When VM BiosUUID is not empty", func() {
+		When("spec.biosUUID is not empty", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.BiosUUID = uuid.New().String()
+				ctx.vm.Spec.BiosUUID = inUUID
 			})
 
-			It("Should not mutate BiosUUID", func() {
-				oldVM := ctx.vm.DeepCopy()
-				Expect(mutation.SetDefaultBiosUUID(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
-				Expect(ctx.vm.Spec.BiosUUID).Should(Equal(oldVM.Spec.BiosUUID))
-			})
-		})
+			Context("privileged user", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = true
+				})
 
-		Context("When CloudInit is not empty", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.BiosUUID = uuid.New().String()
-				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
-				}
+				It("Should allow BiosUUID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
+				})
 			})
 
-			It("Should set default CloudInit InstanceID", func() {
-				Expect(mutation.SetDefaultBiosUUID(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
-				Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(ctx.vm.Spec.BiosUUID))
-			})
-		})
+			Context("unprivileged user", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = false
+				})
 
-		Context("When CloudInit instanceID is not empty", func() {
-			instanceID := uuid.New().String()
-			BeforeEach(func() {
-				ctx.vm.Spec.BiosUUID = uuid.New().String()
-				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-						InstanceID: instanceID,
-					},
-				}
+				It("Should return an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(expectedErr))
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
+				})
 			})
 
-			It("Should set specified CloudInit InstanceID", func() {
-				Expect(mutation.SetDefaultBiosUUID(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
-				Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(instanceID))
+			When("spec.bootstrap.cloudInit.instanceID is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+					}
+				})
+
+				Context("privileged user", func() {
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = true
+					})
+
+					It("Should allow BiosUUID and set CloudInit InstanceID", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(wasMutated).To(BeTrue())
+						Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
+						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inUUID))
+					})
+				})
+
+				Context("unprivileged user", func() {
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = false
+					})
+
+					It("Should return an error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(expectedErr))
+						Expect(wasMutated).To(BeFalse())
+						Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
+						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(BeEmpty())
+					})
+				})
+			})
+
+			When("spec.bootstrap.cloudInit.instanceID is not empty", func() {
+				var (
+					inInstanceID = uuid.NewString()
+				)
+
+				BeforeEach(func() {
+					ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+							InstanceID: inInstanceID,
+						},
+					}
+				})
+
+				Context("privileged user", func() {
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = true
+					})
+
+					It("Should allow BiosUUID and ignore CloudInit InstanceID", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(wasMutated).To(BeFalse())
+						Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
+						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
+					})
+				})
+
+				Context("unprivileged user", func() {
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = false
+					})
+
+					It("Should return an error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(expectedErr))
+						Expect(wasMutated).To(BeFalse())
+						Expect(ctx.vm.Spec.BiosUUID).To(Equal(inUUID))
+						Expect(ctx.vm.Spec.Bootstrap.CloudInit.InstanceID).To(Equal(inInstanceID))
+					})
+				})
 			})
 		})
 	})

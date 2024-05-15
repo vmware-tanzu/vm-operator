@@ -119,7 +119,9 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		SetCreatedAtAnnotations(ctx, modified)
 		AddDefaultNetworkInterface(ctx, m.client, modified)
 		SetDefaultPowerState(ctx, m.client, modified)
-		SetDefaultBiosUUID(ctx, m.client, modified)
+		if _, err := SetDefaultBiosUUID(ctx, m.client, modified); err != nil {
+			return admission.Denied(err.Error())
+		}
 		if _, err := ResolveImageNameOnCreate(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
 		}
@@ -314,12 +316,20 @@ func SetDefaultPowerState(
 }
 
 // SetDefaultBiosUUID sets a default bios uuid for a new VM.
-// If CloudInit is the Bootstrap method, CloudInit InstanceID is also set to BiosUUID.
+// If CloudInit is the Bootstrap method, CloudInit InstanceID is also set to
+// BiosUUID.
 // Return true if a default bios uuid was set, otherwise false.
 func SetDefaultBiosUUID(
 	ctx *pkgctx.WebhookRequestContext,
 	client client.Client,
-	vm *vmopv1.VirtualMachine) bool {
+	vm *vmopv1.VirtualMachine) (bool, error) {
+
+	// DevOps users are not allowed to set spec.biosUUID when creating a VM.
+	if !ctx.IsPrivilegedAccount && vm.Spec.BiosUUID != "" {
+		return false, field.Forbidden(
+			field.NewPath("spec", "biosUUID"),
+			"only privileged users may set this field")
+	}
 
 	var wasMutated bool
 
@@ -327,7 +337,7 @@ func SetDefaultBiosUUID(
 		// Default to a Random (Version 4) UUID.
 		// This is the same UUID flavor/version used by Kubernetes and preferred
 		// by vSphere.
-		vm.Spec.BiosUUID = uuid.New().String()
+		vm.Spec.BiosUUID = uuid.NewString()
 		wasMutated = true
 	}
 
@@ -343,7 +353,7 @@ func SetDefaultBiosUUID(
 		}
 	}
 
-	return wasMutated
+	return wasMutated, nil
 }
 
 const (

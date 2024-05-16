@@ -10,8 +10,8 @@ set -o pipefail
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if ! make generate; then
-  exit_code="${?}"
+make generate || exit_code="${?}"
+if [ "${exit_code:-0}" -ne 0 ]; then
 
   # Please note the following heredoc uses leading tabs to allow
   # the contents to be indented with the if/fi statement. For
@@ -55,8 +55,8 @@ else
   exit "${exit_code}"
 fi
 
-if ! make generate-go-conversions; then
-  exit_code="${?}"
+make generate-go-conversions || exit_code="${?}"
+if [ "${exit_code:-0}" -ne 0 ]; then
 
   # Please note the following heredoc uses leading tabs to allow
   # the contents to be indented with the if/fi statement. For

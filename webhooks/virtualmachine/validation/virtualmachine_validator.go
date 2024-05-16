@@ -73,6 +73,7 @@ const (
 	invalidMinHardwareVersionDowngrade       = "cannot downgrade hardware version"
 	invalidMinHardwareVersionPowerState      = "cannot upgrade hardware version unless powered off"
 	invalidImageKind                         = "supported: " + vmiKind + ", " + cvmiKind
+	restrictedToPrivUsers                    = "restricted to privileged users"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha3-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha3,name=default.validating.virtualmachine.v1alpha3.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -362,8 +363,21 @@ func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *
 func (v validator) validateClass(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	if vm.Spec.ClassName == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec", "className"), ""))
+	f := field.NewPath("spec", "className")
+
+	switch {
+	case vmopv1util.IsClasslessVM(*vm) &&
+		pkgcfg.FromContext(ctx).Features.VMImportNewNet:
+
+		// Restrict creating classless VM resources to privileged users.
+		if !ctx.IsPrivilegedAccount {
+			allErrs = append(allErrs, field.Forbidden(f, restrictedToPrivUsers))
+		}
+
+	case vm.Spec.ClassName == "":
+
+		allErrs = append(allErrs, field.Required(f, ""))
+
 	}
 
 	return allErrs

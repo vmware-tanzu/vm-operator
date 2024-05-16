@@ -33,6 +33,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -670,10 +671,10 @@ func (r *Reconciler) processAttachments(
 
 			// If hardware version is 0, which means we failed to parse the version from VM, then just assume that it
 			// is above minimal requirement.
-			if hardwareVersion.IsValid() && hardwareVersion < constants.MinSupportedHWVersionForPVC {
+			if hardwareVersion.IsValid() && hardwareVersion < pkgconst.MinSupportedHWVersionForPVC {
 				retErr := fmt.Errorf("VirtualMachine has an unsupported "+
 					"hardware version %d for PersistentVolumes. Minimum supported hardware version %d",
-					hardwareVersion, constants.MinSupportedHWVersionForPVC)
+					hardwareVersion, pkgconst.MinSupportedHWVersionForPVC)
 				r.recorder.EmitEvent(ctx.VM, "VolumeAttachment", retErr, true)
 				return retErr
 			}

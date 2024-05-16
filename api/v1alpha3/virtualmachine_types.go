@@ -274,6 +274,11 @@ type VirtualMachineSpec struct {
 
 	// ClassName describes the name of the VirtualMachineClass resource used to
 	// deploy this VM.
+	//
+	// Please note, this field *may* be empty if the VM was imported instead of
+	// deployed by VM Operator. An imported VirtualMachine resource references
+	// an existing VM on the underlying platform that was not deployed from a
+	// VM class.
 	ClassName string `json:"className,omitempty"`
 
 	// +optional

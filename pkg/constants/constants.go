@@ -3,6 +3,10 @@
 
 package constants
 
+import (
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+)
+
 const (
 	createdAtPrefix = "vmoperator.vmware.com/created-at-"
 
@@ -21,4 +25,12 @@ const (
 	// in fact useful, as it still indicates something about the schema version
 	// at which an object was first created.
 	CreatedAtSchemaVersionAnnotationKey = createdAtPrefix + "schema-version"
+
+	// MinSupportedHWVersionForPVC is the supported virtual hardware version for
+	// persistent volumes.
+	MinSupportedHWVersionForPVC = vimtypes.VMX15
+
+	// MinSupportedHWVersionForPCIPassthruDevices is the supported virtual
+	// hardware version for NVidia PCI devices.
+	MinSupportedHWVersionForPCIPassthruDevices = vimtypes.VMX17
 )

@@ -28,8 +28,8 @@ var _ = Describe("CreateConfigSpec", func() {
 	var (
 		vm              *vmopv1.VirtualMachine
 		vmCtx           pkgctx.VirtualMachineContext
-		vmClassSpec     *vmopv1.VirtualMachineClassSpec
-		vmImageStatus   *vmopv1.VirtualMachineImageStatus
+		vmClassSpec     vmopv1.VirtualMachineClassSpec
+		vmImageStatus   vmopv1.VirtualMachineImageStatus
 		minCPUFreq      uint64
 		configSpec      vimtypes.VirtualMachineConfigSpec
 		classConfigSpec vimtypes.VirtualMachineConfigSpec
@@ -47,8 +47,8 @@ var _ = Describe("CreateConfigSpec", func() {
 
 	BeforeEach(func() {
 		vmClass := builder.DummyVirtualMachineClassGenName()
-		vmClassSpec = &vmClass.Spec
-		vmImageStatus = &vmopv1.VirtualMachineImageStatus{Firmware: "efi"}
+		vmClassSpec = vmClass.Spec
+		vmImageStatus = vmopv1.VirtualMachineImageStatus{Firmware: "efi"}
 		minCPUFreq = 2500
 
 		vm = builder.DummyVirtualMachine()
@@ -118,7 +118,7 @@ var _ = Describe("CreateConfigSpec", func() {
 
 		When("VM has min version", func() {
 			BeforeEach(func() {
-				vmImageStatus = nil
+				vmImageStatus = vmopv1.VirtualMachineImageStatus{}
 				vm.Spec.MinHardwareVersion = int32(vimtypes.VMX10)
 			})
 
@@ -177,7 +177,7 @@ var _ = Describe("CreateConfigSpec", func() {
 
 		When("Image firmware is empty", func() {
 			BeforeEach(func() {
-				vmImageStatus = &vmopv1.VirtualMachineImageStatus{}
+				vmImageStatus = vmopv1.VirtualMachineImageStatus{}
 			})
 
 			It("config spec has the firmware from the class", func() {

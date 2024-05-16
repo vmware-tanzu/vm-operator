@@ -7,7 +7,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -28,13 +27,16 @@ func DeleteVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine) error {
 
-	moVM := &mo.VirtualMachine{}
-	if err := vcVM.Properties(vmCtx, vcVM.Reference(), []string{"config.extraConfig"}, moVM); err != nil {
+	if err := vcVM.Properties(
+		vmCtx,
+		vcVM.Reference(),
+		[]string{"config.extraConfig"}, &vmCtx.MoVM); err != nil {
+
 		vmCtx.Logger.Error(err, "failed to fetch config.extraConfig properties of VM for DeleteVirtualMachine")
 		return err
 	}
 	// Throw an error to distinguish from successful deletion.
-	if paused := vmutil.IsPausedByAdmin(moVM); paused {
+	if paused := vmutil.IsPausedByAdmin(vmCtx.MoVM); paused {
 		if vmCtx.VM.Labels == nil {
 			vmCtx.VM.Labels = make(map[string]string)
 		}

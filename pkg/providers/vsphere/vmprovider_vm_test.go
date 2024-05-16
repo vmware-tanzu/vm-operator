@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
@@ -28,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -82,8 +84,9 @@ func vmTests() {
 
 	Context("Create/Update/Delete VirtualMachine", func() {
 		var (
-			vm      *vmopv1.VirtualMachine
-			vmClass *vmopv1.VirtualMachineClass
+			vm                   *vmopv1.VirtualMachine
+			vmClass              *vmopv1.VirtualMachineClass
+			skipCreateOrUpdateVM bool
 		)
 
 		BeforeEach(func() {
@@ -100,6 +103,7 @@ func vmTests() {
 		AfterEach(func() {
 			vmClass = nil
 			vm = nil
+			skipCreateOrUpdateVM = false
 		})
 
 		JustBeforeEach(func() {
@@ -200,14 +204,127 @@ func vmTests() {
 					},
 				}
 
-				var err error
-				vcVM, err = createOrUpdateAndGetVcVM(ctx, vm)
-				Expect(err).ToNot(HaveOccurred())
+				if !skipCreateOrUpdateVM {
+					var err error
+					vcVM, err = createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+				}
 			})
 
 			AfterEach(func() {
 				vcVM = nil
 				configSpec = nil
+			})
+
+			Context("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", func() {
+
+				BeforeEach(func() {
+					skipCreateOrUpdateVM = true
+				})
+
+				JustBeforeEach(func() {
+					vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmList).ToNot(BeEmpty())
+
+					vcVM = vmList[0]
+					vm.Spec.BiosUUID = vcVM.UUID(ctx)
+
+					powerState, err := vcVM.PowerState(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					if powerState == vimtypes.VirtualMachinePowerStatePoweredOn {
+						tsk, err := vcVM.PowerOff(ctx)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(tsk.Wait(ctx)).To(Succeed())
+					}
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				})
+
+				When("fss is disabled", func() {
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMImportNewNet = false
+						})
+					})
+
+					assertClassNotFound := func(className string) {
+						var err error
+						vcVM, err = createOrUpdateAndGetVcVM(ctx, vm)
+						ExpectWithOffset(1, err).To(MatchError(
+							fmt.Sprintf(
+								"virtualmachineclasses.vmoperator.vmware.com %q not found",
+								className)))
+						ExpectWithOffset(1, vcVM).To(BeNil())
+					}
+
+					When("spec.className is empty", func() {
+						JustBeforeEach(func() {
+							vm.Spec.ClassName = ""
+						})
+						When("spec.biosUUID matches existing VM", func() {
+							JustBeforeEach(func() {
+								vm.Spec.BiosUUID = vcVM.UUID(ctx)
+							})
+							It("should error when getting class", func() {
+								assertClassNotFound("")
+							})
+						})
+						When("spec.biosUUID does not match existing VM", func() {
+							JustBeforeEach(func() {
+								vm.Spec.BiosUUID = uuid.NewString()
+							})
+							It("should error when getting class", func() {
+								assertClassNotFound("")
+							})
+						})
+					})
+
+				})
+
+				When("fss is enabled", func() {
+
+					assertPoweredOnNoVMClassCondition := func() {
+						var err error
+						vcVM, err = createOrUpdateAndGetVcVM(ctx, vm)
+						ExpectWithOffset(1, err).ToNot(HaveOccurred())
+						ExpectWithOffset(1, vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						powerState, err := vcVM.PowerState(ctx)
+						ExpectWithOffset(1, err).ToNot(HaveOccurred())
+						ExpectWithOffset(1, powerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						ExpectWithOffset(1, conditions.IsTrue(vm, vmopv1.VirtualMachineConditionClassReady)).To(BeFalse())
+					}
+
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMImportNewNet = true
+						})
+					})
+
+					When("spec.className is empty", func() {
+						JustBeforeEach(func() {
+							vm.Spec.ClassName = ""
+						})
+						When("spec.biosUUID matches existing VM", func() {
+							JustBeforeEach(func() {
+								vm.Spec.BiosUUID = vcVM.UUID(ctx)
+							})
+							It("should synthesize class from vSphere VM and power it on", func() {
+								assertPoweredOnNoVMClassCondition()
+							})
+						})
+						When("spec.biosUUID does not match existing VM", func() {
+							JustBeforeEach(func() {
+								vm.Spec.BiosUUID = uuid.NewString()
+							})
+							It("should return an error", func() {
+								var err error
+								vcVM, err = createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).To(MatchError("cannot synthesize class from nil ConfigInfo"))
+								Expect(vcVM).To(BeNil())
+							})
+						})
+					})
+				})
 			})
 
 			Context("GetVirtualMachineProperties", func() {
@@ -838,7 +955,7 @@ func vmTests() {
 					It("creates a VM with a hardware version minimum supported for PCI devices", func() {
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", constants.MinSupportedHWVersionForPCIPassthruDevices)))
+						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", pkgconst.MinSupportedHWVersionForPCIPassthruDevices)))
 					})
 				})
 
@@ -901,7 +1018,7 @@ func vmTests() {
 					It("creates a VM with a hardware version minimum supported for PCI devices", func() {
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", constants.MinSupportedHWVersionForPCIPassthruDevices)))
+						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", pkgconst.MinSupportedHWVersionForPCIPassthruDevices)))
 					})
 				})
 
@@ -931,7 +1048,7 @@ func vmTests() {
 					It("creates a VM with a hardware version minimum supported for PVCs", func() {
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", constants.MinSupportedHWVersionForPVC)))
+						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", pkgconst.MinSupportedHWVersionForPVC)))
 					})
 				})
 			})

@@ -10,11 +10,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -243,3 +245,201 @@ var _ = Describe("ResolveImageName", func() {
 		})
 	})
 })
+
+var _ = DescribeTable("DetermineHardwareVersion",
+	func(
+		vm vmopv1.VirtualMachine,
+		configSpec vimtypes.VirtualMachineConfigSpec,
+		imgStatus vmopv1.VirtualMachineImageStatus,
+		expected vimtypes.HardwareVersion,
+	) {
+		Ω(vmopv1util.DetermineHardwareVersion(vm, configSpec, imgStatus)).Should(Equal(expected))
+	},
+	Entry(
+		"empty inputs",
+		vmopv1.VirtualMachine{},
+		vimtypes.VirtualMachineConfigSpec{},
+		vmopv1.VirtualMachineImageStatus{},
+		vimtypes.HardwareVersion(0),
+	),
+	Entry(
+		"spec.minHardwareVersion is 11",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MinHardwareVersion: 11,
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{},
+		vmopv1.VirtualMachineImageStatus{},
+		vimtypes.HardwareVersion(11),
+	),
+	Entry(
+		"spec.minHardwareVersion is 11, configSpec.version is 13",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MinHardwareVersion: 11,
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{
+			Version: "vmx-13",
+		},
+		vmopv1.VirtualMachineImageStatus{},
+		vimtypes.HardwareVersion(13),
+	),
+	Entry(
+		"spec.minHardwareVersion is 11, configSpec.version is invalid",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MinHardwareVersion: 11,
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{
+			Version: "invalid",
+		},
+		vmopv1.VirtualMachineImageStatus{},
+		vimtypes.HardwareVersion(11),
+	),
+	Entry(
+		"spec.minHardwareVersion is 11, configSpec has pci pass-through",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MinHardwareVersion: 11,
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Device: &vimtypes.VirtualPCIPassthrough{},
+				},
+			},
+		},
+		vmopv1.VirtualMachineImageStatus{},
+		pkgconst.MinSupportedHWVersionForPCIPassthruDevices,
+	),
+	Entry(
+		"spec.minHardwareVersion is 11, vm has pvc",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MinHardwareVersion: 11,
+				Volumes: []vmopv1.VirtualMachineVolume{
+					{
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{},
+						},
+					},
+				},
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{},
+		vmopv1.VirtualMachineImageStatus{},
+		pkgconst.MinSupportedHWVersionForPVC,
+	),
+	Entry(
+		"spec.minHardwareVersion is 11, configSpec has pci pass-through, image version is 20",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MinHardwareVersion: 11,
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Device: &vimtypes.VirtualPCIPassthrough{},
+				},
+			},
+		},
+		vmopv1.VirtualMachineImageStatus{
+			HardwareVersion: &[]int32{20}[0],
+		},
+		vimtypes.HardwareVersion(20),
+	),
+	Entry(
+		"spec.minHardwareVersion is 11, vm has pvc, image version is 20",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MinHardwareVersion: 11,
+				Volumes: []vmopv1.VirtualMachineVolume{
+					{
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{},
+						},
+					},
+				},
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{},
+		vmopv1.VirtualMachineImageStatus{
+			HardwareVersion: &[]int32{20}[0],
+		},
+		vimtypes.HardwareVersion(20),
+	),
+)
+
+var _ = DescribeTable("HasPVC",
+	func(
+		vm vmopv1.VirtualMachine,
+		expected bool,
+	) {
+		Ω(vmopv1util.HasPVC(vm)).Should(Equal(expected))
+	},
+	Entry(
+		"spec.volumes is empty",
+		vmopv1.VirtualMachine{},
+		false,
+	),
+	Entry(
+		"spec.volumes is non-empty with no pvcs",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name: "hello",
+					},
+				},
+			},
+		},
+		false,
+	),
+	Entry(
+		"spec.volumes is non-empty with at least one pvc",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Volumes: []vmopv1.VirtualMachineVolume{
+					{
+						Name: "hello",
+					},
+					{
+						Name: "world",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{},
+						},
+					},
+				},
+			},
+		},
+		true,
+	),
+)
+
+var _ = DescribeTable("IsClasslessVM",
+	func(
+		vm vmopv1.VirtualMachine,
+		expected bool,
+	) {
+		Ω(vmopv1util.IsClasslessVM(vm)).Should(Equal(expected))
+	},
+	Entry(
+		"spec.className is empty",
+		vmopv1.VirtualMachine{},
+		true,
+	),
+	Entry(
+		"spec.className is non-empty",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				ClassName: "small",
+			},
+		},
+		false,
+	),
+)

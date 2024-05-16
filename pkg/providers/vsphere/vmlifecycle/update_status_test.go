@@ -5,31 +5,48 @@ package vmlifecycle_test
 
 import (
 	"slices"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+var _ = Describe("UpdateVM selected MO Properties", func() {
+
+	It("Covers VM Status properties", func() {
+		for _, p := range vmlifecycle.VMStatusPropertiesSelector {
+			match := false
+			for _, pp := range vsphere.VMUpdatePropertiesSelector {
+				if p == pp || strings.HasPrefix(p, pp+".") {
+					match = true
+					break
+				}
+			}
+			Expect(match).To(BeTrue(), "Status prop %q not found in update props", p)
+		}
+	})
+})
+
 var _ = Describe("UpdateStatus", func() {
 
 	var (
-		ctx   *builder.TestContextForVCSim
-		vmCtx pkgctx.VirtualMachineContext
-		vcVM  *object.VirtualMachine
-		moVM  *mo.VirtualMachine
+		ctx          *builder.TestContextForVCSim
+		vmCtx        pkgctx.VirtualMachineContext
+		vcVM         *object.VirtualMachine
+		refetchProps bool
 	)
 
 	BeforeEach(func() {
@@ -48,7 +65,7 @@ var _ = Describe("UpdateStatus", func() {
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).ToNot(HaveOccurred())
 
-		moVM = &mo.VirtualMachine{}
+		refetchProps = false
 	})
 
 	AfterEach(func() {
@@ -57,8 +74,25 @@ var _ = Describe("UpdateStatus", func() {
 	})
 
 	JustBeforeEach(func() {
-		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, moVM)
+		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, refetchProps)
 		Expect(err).ToNot(HaveOccurred())
+	})
+
+	When("properties are refetched", func() {
+		BeforeEach(func() {
+			refetchProps = true
+		})
+		Specify("the status is created from the properties fetched from vsphere", func() {
+			Expect(vcVM.Properties(
+				ctx,
+				vcVM.Reference(),
+				vmlifecycle.VMStatusPropertiesSelector,
+				&vmCtx.MoVM)).To(Succeed())
+			Expect(vmCtx.VM.Status.BiosUUID).To(Equal(vmCtx.MoVM.Summary.Config.Uuid))
+			Expect(vmCtx.VM.Status.InstanceUUID).To(Equal(vmCtx.MoVM.Summary.Config.InstanceUuid))
+			Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+			Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(vmCtx.MoVM.Guest.IpAddress))
+		})
 	})
 
 	Context("Network", func() {
@@ -70,7 +104,7 @@ var _ = Describe("UpdateStatus", func() {
 				validIP6 = "FD00:F53B:82E4::54"
 			)
 			BeforeEach(func() {
-				moVM.Guest = &vimtypes.GuestInfo{}
+				vmCtx.MoVM.Guest = &vimtypes.GuestInfo{}
 				vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: "eth0",
@@ -82,7 +116,7 @@ var _ = Describe("UpdateStatus", func() {
 			Context("IP4", func() {
 				When("address is invalid", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = invalid
+						vmCtx.MoVM.Guest.IpAddress = invalid
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -90,7 +124,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is unspecified", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = "0.0.0.0"
+						vmCtx.MoVM.Guest.IpAddress = "0.0.0.0"
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -98,7 +132,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is link-local multicast", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = "224.0.0.0"
+						vmCtx.MoVM.Guest.IpAddress = "224.0.0.0"
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -106,7 +140,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is link-local unicast", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = "169.254.0.0"
+						vmCtx.MoVM.Guest.IpAddress = "169.254.0.0"
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -114,7 +148,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is loopback", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = "127.0.0.0"
+						vmCtx.MoVM.Guest.IpAddress = "127.0.0.0"
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -122,7 +156,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is ip6", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = validIP6
+						vmCtx.MoVM.Guest.IpAddress = validIP6
 					})
 					Specify("status.network.primaryIP4 should be empty", func() {
 						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
@@ -132,7 +166,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is valid", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = validIP4
+						vmCtx.MoVM.Guest.IpAddress = validIP4
 					})
 					Specify("status.network.primaryIP4 should be expected value", func() {
 						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
@@ -145,7 +179,7 @@ var _ = Describe("UpdateStatus", func() {
 			Context("IP6", func() {
 				When("address is invalid", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = invalid
+						vmCtx.MoVM.Guest.IpAddress = invalid
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -153,7 +187,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is unspecified", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = "::0"
+						vmCtx.MoVM.Guest.IpAddress = "::0"
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -161,7 +195,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is link-local multicast", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = "FF02:::"
+						vmCtx.MoVM.Guest.IpAddress = "FF02:::"
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -169,7 +203,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is link-local unicast", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = "FE80:::"
+						vmCtx.MoVM.Guest.IpAddress = "FE80:::"
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -177,7 +211,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is loopback", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = "::1"
+						vmCtx.MoVM.Guest.IpAddress = "::1"
 					})
 					Specify("status.network should be nil", func() {
 						Expect(vmCtx.VM.Status.Network).To(BeNil())
@@ -185,7 +219,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is ip4", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = validIP4
+						vmCtx.MoVM.Guest.IpAddress = validIP4
 					})
 					Specify("status.network.primaryIP6 should be empty", func() {
 						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
@@ -195,7 +229,7 @@ var _ = Describe("UpdateStatus", func() {
 				})
 				When("address is valid", func() {
 					BeforeEach(func() {
-						moVM.Guest.IpAddress = validIP6
+						vmCtx.MoVM.Guest.IpAddress = validIP6
 					})
 					Specify("status.network.primaryIP6 should be expected value", func() {
 						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
@@ -209,7 +243,7 @@ var _ = Describe("UpdateStatus", func() {
 		Context("Interfaces", func() {
 			Context("VM has pseudo devices", func() {
 				BeforeEach(func() {
-					moVM.Guest = &vimtypes.GuestInfo{
+					vmCtx.MoVM.Guest = &vimtypes.GuestInfo{
 						Net: []vimtypes.GuestNicInfo{
 							{
 								DeviceConfigId: -1,
@@ -242,7 +276,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			Context("VM has more interfaces than expected", func() {
 				BeforeEach(func() {
-					moVM.Guest = &vimtypes.GuestInfo{
+					vmCtx.MoVM.Guest = &vimtypes.GuestInfo{
 						Net: []vimtypes.GuestNicInfo{
 							{
 								DeviceConfigId: 4000,
@@ -279,7 +313,7 @@ var _ = Describe("UpdateStatus", func() {
 
 		Context("IPRoutes", func() {
 			BeforeEach(func() {
-				moVM.Guest = &vimtypes.GuestInfo{
+				vmCtx.MoVM.Guest = &vimtypes.GuestInfo{
 					IpStack: []vimtypes.GuestStackInfo{
 						{
 							IpRouteConfig: &vimtypes.NetIpRouteConfigInfo{
@@ -325,7 +359,6 @@ var _ = Describe("UpdateStatus", func() {
 
 			When("nil Guest property", func() {
 				BeforeEach(func() {
-					moVM.Guest = nil
 					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
 				})
 
@@ -336,7 +369,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			When("Guest property is empty", func() {
 				BeforeEach(func() {
-					moVM.Guest = &vimtypes.GuestInfo{}
+					vmCtx.MoVM.Guest = &vimtypes.GuestInfo{}
 					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
 				})
 
@@ -347,7 +380,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			When("Empty guest property but has existing status.network.config", func() {
 				BeforeEach(func() {
-					moVM.Guest = &vimtypes.GuestInfo{}
+					vmCtx.MoVM.Guest = &vimtypes.GuestInfo{}
 					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
 						PrimaryIP4: "my-ipv4",
 						PrimaryIP6: "my-ipv6",
@@ -386,7 +419,7 @@ var _ = Describe("UpdateStatus", func() {
 	Context("Copies values to the VM status", func() {
 		biosUUID, instanceUUID := "f7c371d6-2003-5a48-9859-3bc9a8b0890", "6132d223-1566-5921-bc3b-df91ece09a4d"
 		BeforeEach(func() {
-			moVM.Summary = vimtypes.VirtualMachineSummary{
+			vmCtx.MoVM.Summary = vimtypes.VirtualMachineSummary{
 				Config: vimtypes.VirtualMachineConfigSummary{
 					Uuid:         biosUUID,
 					InstanceUuid: instanceUUID,

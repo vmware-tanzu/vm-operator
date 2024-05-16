@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,6 +23,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -64,30 +66,135 @@ func vmUtilTests() {
 			vmCtx.VM.Spec.ClassName = vmClass.Name
 		})
 
-		Context("VirtualMachineClass custom resource doesn't exist", func() {
-			It("Returns error and sets condition when VM Class does not exist", func() {
-				expectedErrMsg := fmt.Sprintf("virtualmachineclasses.vmoperator.vmware.com %q not found", vmCtx.VM.Spec.ClassName)
+		assertClassExists := func() {
+			obj, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+			ExpectWithOffset(1, err).ToNot(HaveOccurred())
+			ExpectWithOffset(1, obj).ToNot(BeNil())
+		}
 
-				_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+		assertClassNotFound := func() {
+			obj, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+			ExpectWithOffset(1, err).To(HaveOccurred())
+			expectedErrMsg := fmt.Sprintf(
+				"virtualmachineclasses.vmoperator.vmware.com %q not found",
+				vmCtx.VM.Spec.ClassName)
+			ExpectWithOffset(1, err).To(MatchError(expectedErrMsg))
+			expectedCondition := []metav1.Condition{
+				*conditions.FalseCondition(
+					vmopv1.VirtualMachineConditionClassReady,
+					"NotFound",
+					expectedErrMsg),
+			}
+			ExpectWithOffset(1, vmCtx.VM.Status.Conditions).To(
+				conditions.MatchConditions(expectedCondition))
+			ExpectWithOffset(1, obj).To(Equal(vmopv1.VirtualMachineClass{}))
+		}
 
-				expectedCondition := []metav1.Condition{
-					*conditions.FalseCondition(vmopv1.VirtualMachineConditionClassReady, "NotFound", expectedErrMsg),
-				}
-				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+		When("spec.className is valid", func() {
+			When("class exists", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, vmClass)
+				})
+				Context("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", func() {
+					When("fss disabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMImportNewNet = false
+							})
+						})
+						It("should return the class", func() {
+							assertClassExists()
+						})
+					})
+					When("fss enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMImportNewNet = true
+							})
+						})
+						It("should return the class", func() {
+							assertClassExists()
+						})
+					})
+				})
+			})
+			When("class does not exist", func() {
+				Context("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", func() {
+					When("fss disabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMImportNewNet = false
+							})
+						})
+						It("should return not found", func() {
+							assertClassNotFound()
+						})
+					})
+					When("fss enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMImportNewNet = true
+							})
+						})
+						It("should return not found", func() {
+							assertClassNotFound()
+						})
+					})
+				})
 			})
 		})
-
-		Context("VirtualMachineClass custom resource exists", func() {
+		When("spec.className is empty", func() {
 			BeforeEach(func() {
-				initObjects = append(initObjects, vmClass)
+				vmCtx.VM.Spec.ClassName = ""
 			})
-
-			It("returns success", func() {
-				class, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(class).ToNot(BeNil())
+			Context("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", func() {
+				When("fss disabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+							config.Features.VMImportNewNet = false
+						})
+					})
+					It("should return not found", func() {
+						assertClassNotFound()
+					})
+				})
+				When("fss enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+							config.Features.VMImportNewNet = true
+						})
+					})
+					When("underlying vm exists", func() {
+						BeforeEach(func() {
+							vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+								Hardware: vimtypes.VirtualHardware{
+									NumCPU:   2,
+									MemoryMB: 1024,
+								},
+							}
+						})
+						It("should return the class", func() {
+							obj, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(obj).ToNot(BeNil())
+							Expect(obj.Spec.Hardware.Cpus).To(Equal(int64(2)))
+							Expect(obj.Spec.Hardware.Memory.String()).To(Equal("1Gi"))
+							configSpec, err := util.UnmarshalConfigSpecFromJSON(obj.Spec.ConfigSpec)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(configSpec.NumCPUs).To(Equal(int32(2)))
+							Expect(configSpec.MemoryMB).To(Equal(int64(1024)))
+							Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionClassReady)).To(BeFalse())
+						})
+					})
+					When("underlying vm does not exist", func() {
+						It("should return an error", func() {
+							obj, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+							Expect(err).To(HaveOccurred())
+							Expect(err).To(MatchError("cannot synthesize class from nil ConfigInfo"))
+							Expect(obj).To(Equal(vmopv1.VirtualMachineClass{}))
+						})
+					})
+				})
 			})
 		})
 	})
@@ -816,7 +923,7 @@ func vmUtilTests() {
 		When("InstanceStorage FFS is enabled", func() {
 
 			It("VM Class does not contain instance storage volumes", func() {
-				is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass)
+				is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 				Expect(is).To(BeFalse())
 				Expect(instancestorage.FilterVolumes(vmCtx.VM)).To(BeEmpty())
 			})
@@ -827,20 +934,20 @@ func vmUtilTests() {
 				})
 
 				It("Instance Volumes should be added", func() {
-					is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass)
+					is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 					Expect(is).To(BeTrue())
 					expectInstanceStorageVolumes(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)
 				})
 
 				It("Instance Storage is already added to VM Spec.Volumes", func() {
-					is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass)
+					is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 					Expect(is).To(BeTrue())
 
 					isVolumesBefore := instancestorage.FilterVolumes(vmCtx.VM)
 					expectInstanceStorageVolumes(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)
 
 					// Instance Storage is already configured, should not patch again
-					is = vsphere.AddInstanceStorageVolumes(vmCtx, vmClass)
+					is = vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 					Expect(is).To(BeTrue())
 					isVolumesAfter := instancestorage.FilterVolumes(vmCtx.VM)
 					Expect(isVolumesAfter).To(HaveLen(len(isVolumesBefore)))

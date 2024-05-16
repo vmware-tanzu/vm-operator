@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/vim25/mo"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
@@ -17,6 +18,7 @@ type VirtualMachineContext struct {
 	context.Context
 	Logger logr.Logger
 	VM     *vmopv1.VirtualMachine
+	MoVM   mo.VirtualMachine
 }
 
 func (v *VirtualMachineContext) String() string {

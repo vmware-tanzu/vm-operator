@@ -142,7 +142,6 @@ func unitTestsValidateCreate() {
 		emptyImage                 bool
 		emptyImageKind             bool
 		invalidImageKind           bool
-		invalidClassName           bool
 		invalidVolumeName          bool
 		dupVolumeName              bool
 		invalidVolumeSource        bool
@@ -172,10 +171,6 @@ func unitTestsValidateCreate() {
 		if args.invalidImageKind {
 			ctx.vm.Spec.Image.Kind = "invalid"
 		}
-		if args.invalidClassName {
-			ctx.vm.Spec.ClassName = ""
-		}
-
 		if args.invalidVolumeName {
 			ctx.vm.Spec.Volumes[0].Name = "underscore_not_valid"
 		}
@@ -245,9 +240,6 @@ func unitTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-
-		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false,
-			field.Required(specPath.Child("className"), "").Error(), nil),
 		Entry("should deny empty image", createArgs{emptyImage: true}, false,
 			field.Required(specPath.Child("image"), "").Error(), nil),
 		Entry("should deny empty image kind", createArgs{emptyImageKind: true}, false,
@@ -307,6 +299,109 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	Context("spec.className", func() {
+		fieldPath := field.NewPath("spec", "className")
+
+		Context("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", func() {
+			When("fss is disabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+					})
+				})
+
+				When("privileged user", func() {
+
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = true
+					})
+
+					DescribeTable("create", doTest,
+						Entry("should disallow spec.className set to empty string",
+							testParams{
+								setup: func(ctx *unitValidatingWebhookContext) {
+									ctx.vm.Spec.ClassName = ""
+								},
+								validate: doValidateWithMsg(
+									field.Required(fieldPath, "").Error(),
+								),
+							},
+						),
+					)
+				})
+
+				When("unprivileged user", func() {
+
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = false
+					})
+
+					DescribeTable("create", doTest,
+						Entry("should disallow spec.className set to empty string",
+							testParams{
+								setup: func(ctx *unitValidatingWebhookContext) {
+									ctx.vm.Spec.ClassName = ""
+								},
+								validate: doValidateWithMsg(
+									field.Required(fieldPath, "").Error(),
+								),
+							},
+						),
+					)
+				})
+
+			})
+
+			When("fss is enabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				})
+
+				When("privileged user", func() {
+
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = true
+					})
+
+					DescribeTable("create", doTest,
+						Entry("should allow spec.className set to empty string",
+							testParams{
+								setup: func(ctx *unitValidatingWebhookContext) {
+									ctx.vm.Spec.ClassName = ""
+								},
+								expectAllowed: true,
+							},
+						),
+					)
+				})
+
+				When("unprivileged user", func() {
+
+					const restrictedToPrivUsers = "restricted to privileged users"
+
+					BeforeEach(func() {
+						ctx.IsPrivilegedAccount = false
+					})
+
+					DescribeTable("create", doTest,
+						Entry("should disallow spec.className set to empty string",
+							testParams{
+								setup: func(ctx *unitValidatingWebhookContext) {
+									ctx.vm.Spec.ClassName = ""
+								},
+								validate: doValidateWithMsg(
+									field.Forbidden(fieldPath, restrictedToPrivUsers).Error(),
+								),
+							},
+						),
+					)
+				})
+			})
+		})
+	})
 
 	Context("Annotations", func() {
 		annotationPath := field.NewPath("metadata", "annotations")

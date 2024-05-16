@@ -12,10 +12,12 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
@@ -46,24 +48,86 @@ func errToConditionReasonAndMessage(err error) (string, string) {
 
 func GetVirtualMachineClass(
 	vmCtx pkgctx.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineClass, error) {
+	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineClass, error) {
 
-	key := ctrlclient.ObjectKey{Name: vmCtx.VM.Spec.ClassName, Namespace: vmCtx.VM.Namespace}
-	vmClass := &vmopv1.VirtualMachineClass{}
-	if err := k8sClient.Get(vmCtx, key, vmClass); err != nil {
+	if vmopv1util.IsClasslessVM(*vmCtx.VM) &&
+		pkgcfg.FromContext(vmCtx).Features.VMImportNewNet {
+
+		// If VM was not deployed from a class, then synthesize the class from
+		// the underlying VM.
+		vmCtx.Logger.Info("Synthesize class from underlying VM")
+		return getVirtualMachineClassFromVM(vmCtx)
+	}
+
+	obj, err := getVirtualMachineClassFromClassName(vmCtx, k8sClient)
+
+	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionClassReady, reason, msg)
-		return nil, err
+		conditions.MarkFalse(
+			vmCtx.VM, vmopv1.VirtualMachineConditionClassReady, reason, msg)
+		return vmopv1.VirtualMachineClass{}, err
 	}
 
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionClassReady)
 
-	return vmClass, nil
+	return obj, nil
+}
+
+func getVirtualMachineClassFromVM(
+	vmCtx pkgctx.VirtualMachineContext) (vmopv1.VirtualMachineClass, error) {
+
+	var obj vmopv1.VirtualMachineClass
+
+	if vmCtx.MoVM.Config == nil {
+		return vmopv1.VirtualMachineClass{},
+			fmt.Errorf("cannot synthesize class from nil ConfigInfo")
+	}
+
+	configSpec := vmCtx.MoVM.Config.ToConfigSpec()
+	rawConfigSpec, err := util.MarshalConfigSpecToJSON(configSpec)
+	if err != nil {
+		return vmopv1.VirtualMachineClass{}, err
+	}
+	obj.Spec.ConfigSpec = rawConfigSpec
+
+	obj.Spec.Hardware.Cpus = int64(vmCtx.MoVM.Config.Hardware.NumCPU)
+
+	// Please note that the VMODL (https://via.vmw.com/vm-configinfo-memorymb)
+	// for a VM's hardware.memoryMB does not indicate this is the scientific
+	// MiB. The name of the property has the suffix "MB", which certainly
+	// implies base-10 instead of base-2. However, when looking at a VM in
+	// production with "8GB" of memory, the field hardware.memoryMB has a value
+	// of 8192, which is actually 8GiB. Therefore this next line uses the K8s
+	// resource unit (https://via.vmw.com/k8s-meaning-of-mem) for base-2, "Mi",
+	// instead of "M" for base-10.
+	obj.Spec.Hardware.Memory = resource.MustParse(
+		fmt.Sprintf("%dMi", vmCtx.MoVM.Config.Hardware.MemoryMB))
+
+	return obj, nil
+}
+
+func getVirtualMachineClassFromClassName(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineClass, error) {
+
+	var (
+		obj vmopv1.VirtualMachineClass
+		key = ctrlclient.ObjectKey{
+			Name:      vmCtx.VM.Spec.ClassName,
+			Namespace: vmCtx.VM.Namespace,
+		}
+	)
+
+	if err := k8sClient.Get(vmCtx, key, &obj); err != nil {
+		return vmopv1.VirtualMachineClass{}, err
+	}
+
+	return obj, nil
 }
 
 func GetVirtualMachineImageSpecAndStatus(
 	vmCtx pkgctx.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (ctrlclient.Object, *vmopv1.VirtualMachineImageSpec, *vmopv1.VirtualMachineImageStatus, error) {
+	k8sClient ctrlclient.Client) (ctrlclient.Object, vmopv1.VirtualMachineImageSpec, vmopv1.VirtualMachineImageStatus, error) {
 
 	if vmCtx.VM.Spec.Image == nil {
 		// This should never be possible in production as this function is
@@ -72,14 +136,17 @@ func GetVirtualMachineImageSpecAndStatus(
 		// call stack for this function changes.
 		reason := "NotSet"
 		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, "")
-		return nil, nil, nil, fmt.Errorf(reason)
+		return nil,
+			vmopv1.VirtualMachineImageSpec{},
+			vmopv1.VirtualMachineImageStatus{},
+			fmt.Errorf(reason)
 	}
 
 	var (
 		obj    conditions.Getter
 		objErr error
-		spec   *vmopv1.VirtualMachineImageSpec
-		status *vmopv1.VirtualMachineImageStatus
+		spec   vmopv1.VirtualMachineImageSpec
+		status vmopv1.VirtualMachineImageStatus
 		key    = ctrlclient.ObjectKey{
 			Name:      vmCtx.VM.Spec.Image.Name,
 			Namespace: vmCtx.VM.Namespace,
@@ -90,14 +157,14 @@ func GetVirtualMachineImageSpecAndStatus(
 	case "VirtualMachineImage":
 		var img vmopv1.VirtualMachineImage
 		if objErr = k8sClient.Get(vmCtx, key, &img); objErr == nil {
-			obj, spec, status = &img, &img.Spec, &img.Status
+			obj, spec, status = &img, img.Spec, img.Status
 		}
 
 	case "ClusterVirtualMachineImage":
 		key.Namespace = ""
 		var img vmopv1.ClusterVirtualMachineImage
 		if objErr = k8sClient.Get(vmCtx, key, &img); objErr == nil {
-			obj, spec, status = &img, &img.Spec, &img.Status
+			obj, spec, status = &img, img.Spec, img.Status
 		}
 	case "":
 		// This is only possible IFF VirtualMachine API resources created at a
@@ -121,13 +188,13 @@ func GetVirtualMachineImageSpecAndStatus(
 					Kind: "VirtualMachineImage",
 					Name: timg.Name,
 				}
-				obj, spec, status = timg, &timg.Spec, &timg.Status
+				obj, spec, status = timg, timg.Spec, timg.Status
 			case *vmopv1.ClusterVirtualMachineImage:
 				vmCtx.VM.Spec.Image = &vmopv1.VirtualMachineImageRef{
 					Kind: "ClusterVirtualMachineImage",
 					Name: timg.Name,
 				}
-				obj, spec, status = timg, &timg.Spec, &timg.Status
+				obj, spec, status = timg, timg.Spec, timg.Status
 			}
 		}
 	default:
@@ -138,7 +205,11 @@ func GetVirtualMachineImageSpecAndStatus(
 		reason := "UnknownKind"
 		msg := vmCtx.VM.Spec.Image.Kind
 		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, msg)
-		return nil, nil, nil, fmt.Errorf("%s: %s", reason, msg)
+
+		return nil,
+			vmopv1.VirtualMachineImageSpec{},
+			vmopv1.VirtualMachineImageStatus{},
+			fmt.Errorf("%s: %s", reason, msg)
 	}
 
 	if objErr != nil {
@@ -148,13 +219,20 @@ func GetVirtualMachineImageSpecAndStatus(
 		}
 		msg := objErr.Error()
 		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, msg)
-		return nil, nil, nil, fmt.Errorf("%s: %w", msg, objErr)
+
+		return nil,
+			vmopv1.VirtualMachineImageSpec{},
+			vmopv1.VirtualMachineImageStatus{},
+			fmt.Errorf("%s: %w", msg, objErr)
 	}
 
 	// Ensure the GVK for the object is synced back into the object since
 	// the object's APIVersion and Kind fields may be used later.
 	if err := kube.SyncGVKToObject(obj, k8sClient.Scheme()); err != nil {
-		return nil, nil, nil, err
+		return nil,
+			vmopv1.VirtualMachineImageSpec{},
+			vmopv1.VirtualMachineImageStatus{},
+			err
 	}
 
 	vmiNotReadyMessage := "VirtualMachineImage is not ready"
@@ -164,7 +242,10 @@ func GetVirtualMachineImageSpecAndStatus(
 		obj,
 		conditions.WithFallbackValue(false, "NotReady", vmiNotReadyMessage))
 	if conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady) {
-		return nil, nil, nil, fmt.Errorf(vmiNotReadyMessage)
+		return nil,
+			vmopv1.VirtualMachineImageSpec{},
+			vmopv1.VirtualMachineImageStatus{},
+			fmt.Errorf(vmiNotReadyMessage)
 	}
 
 	return obj, spec, status, nil
@@ -393,7 +474,7 @@ func GetVMSetResourcePolicy(
 // volumes to the VM's Spec if not already done. Return true if the VM had or now has instance storage volumes.
 func AddInstanceStorageVolumes(
 	vmCtx pkgctx.VirtualMachineContext,
-	vmClass *vmopv1.VirtualMachineClass) bool {
+	is vmopv1.InstanceStorage) bool {
 
 	if instancestorage.IsPresent(vmCtx.VM) {
 		// Instance storage disks are copied from the class to the VM only once, regardless
@@ -401,7 +482,6 @@ func AddInstanceStorageVolumes(
 		return true
 	}
 
-	is := vmClass.Spec.Hardware.InstanceStorage
 	if len(is.Volumes) == 0 {
 		return false
 	}

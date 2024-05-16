@@ -11,7 +11,6 @@ import (
 	"slices"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -43,7 +42,7 @@ func UpdateStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	vcVM *object.VirtualMachine,
-	moVM *mo.VirtualMachine) error {
+	refetchProperties bool) error {
 
 	vm := vmCtx.VM
 
@@ -62,21 +61,30 @@ func UpdateStatus(
 		}
 	}
 
-	if moVM == nil {
-		// In the common case, our caller will have already gotten the MO properties in order to determine
-		// if it had any reconciliation to do, and there was nothing to do since the VM is in the steady
-		// state so that MO is still entirely valid here.
-		// NOTE: The properties must have been retrieved with at least vmStatusPropertiesSelector.
-		moVM = &mo.VirtualMachine{}
-		if err := vcVM.Properties(vmCtx, vcVM.Reference(), VMStatusPropertiesSelector, moVM); err != nil {
+	if refetchProperties {
+		// In the common case, our caller will have already gotten the MO
+		// properties in order to determine if it had any reconciliation to do,
+		// and there was nothing to do since the VM is in the steady state so
+		// that MO is still entirely valid here.
+		//
+		// NOTE: The properties must have been retrieved with at least
+		//       vmStatusPropertiesSelector.
+		if err := vcVM.Properties(
+			vmCtx,
+			vcVM.Reference(),
+			VMStatusPropertiesSelector,
+			&vmCtx.MoVM); err != nil {
+
 			// Leave the current Status unchanged for now.
 			return fmt.Errorf("failed to get VM properties for status update: %w", err)
 		}
 	}
 
-	var errs []error
-	var err error
-	summary := moVM.Summary
+	var (
+		err     error
+		errs    []error
+		summary = vmCtx.MoVM.Summary
+	)
 
 	vm.Status.PowerState = convertPowerState(summary.Runtime.PowerState)
 	vm.Status.UniqueID = vcVM.Reference().Value
@@ -84,7 +92,7 @@ func UpdateStatus(
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
 	hardwareVersion, _ := vimtypes.ParseHardwareVersion(summary.Config.HwVersion)
 	vm.Status.HardwareVersion = int32(hardwareVersion)
-	updateGuestNetworkStatus(vmCtx.VM, moVM.Guest)
+	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest)
 
 	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {
@@ -92,11 +100,11 @@ func UpdateStatus(
 	}
 
 	MarkReconciliationCondition(vmCtx.VM)
-	MarkVMToolsRunningStatusCondition(vmCtx.VM, moVM.Guest)
-	MarkCustomizationInfoCondition(vmCtx.VM, moVM.Guest)
-	MarkBootstrapCondition(vmCtx.VM, moVM.Config)
+	MarkVMToolsRunningStatusCondition(vmCtx.VM, vmCtx.MoVM.Guest)
+	MarkCustomizationInfoCondition(vmCtx.VM, vmCtx.MoVM.Guest)
+	MarkBootstrapCondition(vmCtx.VM, vmCtx.MoVM.Config)
 
-	if config := moVM.Config; config != nil {
+	if config := vmCtx.MoVM.Config; config != nil {
 		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled
 	} else {
 		vm.Status.ChangeBlockTracking = nil

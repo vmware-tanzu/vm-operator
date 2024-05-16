@@ -11,11 +11,14 @@ import (
 
 	"github.com/pkg/errors"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -137,4 +140,72 @@ func ResolveImageName(
 	}
 
 	return obj, nil
+}
+
+// DetermineHardwareVersion returns the hardware version recommended for the
+// provided VirtualMachine based on its own spec.minHardwareVersion, as well as
+// the hardware in the provided ConfigSpec and requirements of the given
+// VirtualMachineImage.
+func DetermineHardwareVersion(
+	vm vmopv1.VirtualMachine,
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	imgStatus vmopv1.VirtualMachineImageStatus) vimtypes.HardwareVersion {
+
+	// Get the minimum hardware version required by the VM from the VM spec.
+	vmMinVersion := vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion)
+
+	// Check to see if the ConfigSpec specifies a hardware version.
+	var configSpecVersion vimtypes.HardwareVersion
+	if configSpec.Version != "" {
+		configSpecVersion, _ = vimtypes.ParseHardwareVersion(configSpec.Version)
+	}
+
+	// If the ConfigSpec contained a valid hardware version, then the version
+	// the VM will use is determined by comparing the ConfigSpec version and the
+	// one from the VM's spec.minHardwareVersion field and returning the largest
+	// of the two versions.
+	if configSpecVersion.IsValid() {
+		return max(vmMinVersion, configSpecVersion)
+	}
+
+	// A VM Class with an embedded ConfigSpec should have the version set, so
+	// this is a ConfigSpec we created from the HW devices in the class. If the
+	// image's version is too old to support passthrough devices or PVCs if
+	// configured, bump the version so those devices will work.
+	var imageVersion vimtypes.HardwareVersion
+	if imgStatus.HardwareVersion != nil {
+		imageVersion = vimtypes.HardwareVersion(*imgStatus.HardwareVersion)
+	}
+
+	// VMs with PCI pass-through devices require a minimum hardware version, as
+	// do VMs with PVCs. Since the version required by PCI pass-through devices
+	// is higher than the one required by PVCs, first check if the VM has any
+	// PCI pass-through devices, then check if the VM has any PVCs.
+	var minVerFromDevs vimtypes.HardwareVersion
+	if pkgutil.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange) {
+		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPCIPassthruDevices)
+	} else if HasPVC(vm) {
+		// This only catches volumes set at VM create time.
+		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPVC)
+	}
+
+	// Return the larger of the two versions. If both versions are zero, then
+	// the underlying platform determines the default hardware version.
+	return max(vmMinVersion, minVerFromDevs)
+}
+
+// HasPVC returns true if any of spec.volumes contains a PVC.
+func HasPVC(vm vmopv1.VirtualMachine) bool {
+	for i := range vm.Spec.Volumes {
+		if vm.Spec.Volumes[i].PersistentVolumeClaim != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// IsClasslessVM returns true if the provided VM was not deployed from a VM
+// class.
+func IsClasslessVM(vm vmopv1.VirtualMachine) bool {
+	return vm.Spec.ClassName == ""
 }

@@ -262,7 +262,7 @@ generate: ## Generate code
 .PHONY: generate-go
 generate-go: $(CONTROLLER_GEN)
 generate-go: ## Generate golang sources
-	go generate ./api/...
+	go -C ./api generate ./...
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/api/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt

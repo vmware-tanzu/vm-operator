@@ -158,6 +158,13 @@ func classToVMMapperFn(ctx *pkgctx.ControllerManagerContext, c client.Client, is
 }
 
 func upgradeSchema(ctx *pkgctx.VirtualMachineContext) {
+	// If empty, this VM was created before v1alpha3 added the spec.instanceUUID field.
+	if ctx.VM.Spec.InstanceUUID == "" && ctx.VM.Status.InstanceUUID != "" {
+		ctx.VM.Spec.InstanceUUID = ctx.VM.Status.InstanceUUID
+		ctx.Logger.Info("Upgrade VirtualMachine spec",
+			"instanceUUID", ctx.VM.Spec.InstanceUUID)
+	}
+
 	// If empty, this VM was created before v1alpha3 added the spec.biosUUID field.
 	if ctx.VM.Spec.BiosUUID == "" && ctx.VM.Status.BiosUUID != "" {
 		ctx.VM.Spec.BiosUUID = ctx.VM.Status.BiosUUID

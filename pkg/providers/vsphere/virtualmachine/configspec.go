@@ -42,10 +42,14 @@ func CreateConfigSpec(
 	}
 
 	// spec.biosUUID is only set when creating a VM and is immutable.
-	// These two fields should not be updated for existing VMs.
+	// This field should not be updated for existing VMs.
 	if id := vmCtx.VM.Spec.BiosUUID; id != "" {
 		configSpec.Uuid = id
-		configSpec.InstanceUuid = string(vmCtx.VM.UID)
+	}
+	// spec.instanceUUID is only set when creating a VM and is immutable.
+	// This field should not be updated for existing VMs.
+	if id := vmCtx.VM.Spec.InstanceUUID; id != "" {
+		configSpec.InstanceUuid = id
 	}
 
 	hardwareVersion := determineHardwareVersion(vmCtx.VM, &configSpec, vmImageStatus)

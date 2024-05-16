@@ -119,6 +119,9 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		SetCreatedAtAnnotations(ctx, modified)
 		AddDefaultNetworkInterface(ctx, m.client, modified)
 		SetDefaultPowerState(ctx, m.client, modified)
+		if _, err := SetDefaultInstanceUUID(ctx, m.client, modified); err != nil {
+			return admission.Denied(err.Error())
+		}
 		if _, err := SetDefaultBiosUUID(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
 		}
@@ -313,6 +316,31 @@ func SetDefaultPowerState(
 		return true
 	}
 	return false
+}
+
+// SetDefaultInstanceUUID sets a default instance uuid for a new VM.
+// Return true if a default instance uuid was set, otherwise false.
+func SetDefaultInstanceUUID(
+	ctx *pkgctx.WebhookRequestContext,
+	client client.Client,
+	vm *vmopv1.VirtualMachine) (bool, error) {
+
+	// DevOps users are not allowed to set spec.instanceUUID when creating a VM.
+	if !ctx.IsPrivilegedAccount && vm.Spec.InstanceUUID != "" {
+		return false, field.Forbidden(
+			field.NewPath("spec", "instanceUUID"),
+			"only privileged users may set this field")
+	}
+
+	if vm.Spec.InstanceUUID == "" {
+		// Default to a Random (Version 4) UUID.
+		// This is the same UUID flavor/version used by Kubernetes and preferred
+		// by vSphere.
+		vm.Spec.InstanceUUID = uuid.NewString()
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // SetDefaultBiosUUID sets a default bios uuid for a new VM.

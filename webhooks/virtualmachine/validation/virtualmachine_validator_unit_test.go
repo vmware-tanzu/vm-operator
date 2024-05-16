@@ -154,6 +154,7 @@ func unitTestsValidateCreate() {
 		isEmptyAvailabilityZone    bool
 		powerState                 vmopv1.VirtualMachinePowerState
 		nextRestartTime            string
+		instanceUUID               string
 		biosUUID                   string
 	}
 
@@ -212,6 +213,7 @@ func unitTestsValidateCreate() {
 
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
+		ctx.vm.Spec.InstanceUUID = args.instanceUUID
 		ctx.vm.Spec.BiosUUID = args.biosUUID
 
 		var err error
@@ -287,6 +289,7 @@ func unitTestsValidateCreate() {
 		Entry("should disallow creating VM with non-empty, invalid nextRestartTime value",
 			createArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
+		Entry("should allow creating VM with instanceUUID set by admin user", createArgs{instanceUUID: "uuid", isServiceUser: true}, true, nil, nil),
 		Entry("should allow creating VM with biosUUID set by admin user", createArgs{biosUUID: "uuid", isServiceUser: true}, true, nil, nil),
 	)
 
@@ -1694,6 +1697,7 @@ func unitTestsValidateUpdate() {
 
 	type updateArgs struct {
 		isServiceUser               bool
+		changeInstanceUUID          bool
 		changeBiosUUID              bool
 		changeImageRef              bool
 		changeImageName             bool
@@ -1704,6 +1708,7 @@ func unitTestsValidateUpdate() {
 		isSysprepTransportUsed      bool
 		withInstanceStorageVolumes  bool
 		changeInstanceStorageVolume bool
+		oldInstanceUUID             string
 		oldBiosUUID                 string
 		oldPowerState               vmopv1.VirtualMachinePowerState
 		newPowerState               vmopv1.VirtualMachinePowerState
@@ -1718,6 +1723,7 @@ func unitTestsValidateUpdate() {
 			ctx.oldVM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
 		}
 		ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
+		ctx.oldVM.Spec.InstanceUUID = args.oldInstanceUUID
 		ctx.oldVM.Spec.BiosUUID = args.oldBiosUUID
 
 		if args.isServiceUser {
@@ -1732,6 +1738,9 @@ func unitTestsValidateUpdate() {
 		}
 		if args.changeImageName {
 			ctx.vm.Spec.ImageName += updateSuffix
+		}
+		if args.changeInstanceUUID {
+			ctx.vm.Spec.InstanceUUID += updateSuffix
 		}
 		if args.changeBiosUUID {
 			ctx.vm.Spec.BiosUUID += updateSuffix
@@ -1819,10 +1828,12 @@ func unitTestsValidateUpdate() {
 
 		Entry("should deny image ref change", updateArgs{changeImageRef: true}, false, msg, nil),
 		Entry("should deny image name change", updateArgs{changeImageName: true}, false, msg, nil),
+		Entry("should deny instance uuid change", updateArgs{changeInstanceUUID: true, oldInstanceUUID: "uuid"}, false, msg, nil),
 		Entry("should deny bios uuid change", updateArgs{changeBiosUUID: true, oldBiosUUID: "uuid"}, false, msg, nil),
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 
+		Entry("should allow empty instance uuid change", updateArgs{changeInstanceUUID: true}, true, nil, nil),
 		Entry("should allow empty bios uuid change", updateArgs{changeBiosUUID: true}, true, nil, nil),
 		Entry("should allow initial zone assignment", updateArgs{assignZoneName: true}, true, nil, nil),
 

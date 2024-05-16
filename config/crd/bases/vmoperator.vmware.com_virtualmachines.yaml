@@ -4034,6 +4034,16 @@ spec:
                   spec.image are both non-empty, then they must refer to the same
                   resource or an error is returned.
                 type: string
+              instanceUUID:
+                description: |-
+                  InstanceUUID describes the desired Instance UUID for a VM.
+                  If omitted, this field defaults to a random UUID.
+                  This value is only used for the VM Instance UUID,
+                  it is not used within cloudInit.
+                  This identifier is used by VirtualCenter to uniquely identify all
+                  virtual machine instances, including those that may share the same BIOS UUID.
+                format: uuid
+                type: string
               minHardwareVersion:
                 description: |-
                   MinHardwareVersion describes the desired, minimum hardware version.

@@ -273,6 +273,86 @@ func unitTestsMutating() {
 		})
 	})
 
+	Describe("SetDefaultInstanceUUID", func() {
+
+		var (
+			err         error
+			wasMutated  bool
+			inUUID      = uuid.NewString()
+			expectedErr = field.Forbidden(
+				field.NewPath("spec", "instanceUUID"),
+				"only privileged users may set this field")
+		)
+
+		JustBeforeEach(func() {
+			wasMutated, err = mutation.SetDefaultInstanceUUID(
+				&ctx.WebhookRequestContext,
+				ctx.Client,
+				ctx.vm)
+		})
+
+		When("spec.instanceUUID is empty", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.InstanceUUID = ""
+			})
+
+			Context("privileged user", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = true
+				})
+
+				It("Should set InstanceUUID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.InstanceUUID).ToNot(BeEmpty())
+				})
+			})
+
+			Context("unprivileged user", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = false
+				})
+
+				It("Should set InstanceUUID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.InstanceUUID).ToNot(BeEmpty())
+				})
+			})
+		})
+
+		When("spec.instanceUUID is not empty", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.InstanceUUID = inUUID
+			})
+
+			Context("privileged user", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = true
+				})
+
+				It("Should allow InstanceUUID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.InstanceUUID).To(Equal(inUUID))
+				})
+			})
+
+			Context("unprivileged user", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = false
+				})
+
+				It("Should return an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(expectedErr))
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.InstanceUUID).To(Equal(inUUID))
+				})
+			})
+		})
+	})
+
 	Describe("SetDefaultBiosUUID", func() {
 
 		var (

@@ -449,6 +449,17 @@ type VirtualMachineSpec struct {
 	// +optional
 	// +kubebuilder:validation:Format:=uuid
 
+	// InstanceUUID describes the desired Instance UUID for a VM.
+	// If omitted, this field defaults to a random UUID.
+	// This value is only used for the VM Instance UUID,
+	// it is not used within cloudInit.
+	// This identifier is used by VirtualCenter to uniquely identify all
+	// virtual machine instances, including those that may share the same BIOS UUID.
+	InstanceUUID string `json:"instanceUUID,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Format:=uuid
+
 	// BiosUUID describes the desired BIOS UUID for a VM.
 	// If omitted, this field defaults to a random UUID.
 	// When the bootstrap provider is Cloud-Init, this value is used as the

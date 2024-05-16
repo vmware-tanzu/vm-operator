@@ -1015,6 +1015,10 @@ func (v validator) validateImmutableFields(ctx *pkgctx.WebhookRequestContext, vm
 	if oldVM.Spec.BiosUUID != "" {
 		allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.BiosUUID, oldVM.Spec.BiosUUID, specPath.Child("biosUUID"))...)
 	}
+	// New VMs always have non-empty instanceUUID. Existing VMs being upgraded may have an empty instanceUUID.
+	if oldVM.Spec.InstanceUUID != "" {
+		allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.InstanceUUID, oldVM.Spec.InstanceUUID, specPath.Child("instanceUUID"))...)
+	}
 	allErrs = append(allErrs, v.validateImmutableReserved(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateImmutableNetwork(ctx, vm, oldVM)...)
 

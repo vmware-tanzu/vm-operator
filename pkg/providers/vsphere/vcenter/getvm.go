@@ -25,18 +25,28 @@ func GetVirtualMachine(
 	datacenter *object.Datacenter,
 	finder *find.Finder) (*object.VirtualMachine, error) {
 
-	if instanceUUID := vmCtx.VM.UID; instanceUUID != "" {
-		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, string(instanceUUID), true); err == nil {
+	// Find by instance UUID.
+	if id := vmCtx.VM.UID; id != "" {
+		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, string(id), true); err == nil {
 			return vm, nil
 		}
 	}
 
-	if uniqueID := vmCtx.VM.Status.UniqueID; uniqueID != "" {
-		if vm, err := findVMByMoID(vmCtx, finder, uniqueID); err == nil {
+	// Find by BIOS UUID.
+	if id := vmCtx.VM.Spec.BiosUUID; id != "" {
+		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, id, false); err == nil {
 			return vm, nil
 		}
 	}
 
+	// Find by MoRef.
+	if id := vmCtx.VM.Status.UniqueID; id != "" {
+		if vm, err := findVMByMoID(vmCtx, finder, id); err == nil {
+			return vm, nil
+		}
+	}
+
+	// Find by inventory path.
 	return findVMByInventory(vmCtx, k8sClient, vimClient, finder)
 }
 

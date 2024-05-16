@@ -50,7 +50,7 @@ func managedObjectTests() {
 		})
 
 		It("should return false when PauseVMExtraConfigKey is not set", func() {
-			Expect(vmutil.IsPausedByAdmin(&mgdObj)).To(BeFalse())
+			Expect(vmutil.IsPausedByAdmin(mgdObj)).To(BeFalse())
 		})
 
 		It("should return false when PauseVMExtraConfigKey is set to False", func() {
@@ -59,7 +59,7 @@ func managedObjectTests() {
 				Value: constants.ExtraConfigFalse,
 			})
 
-			Expect(vmutil.IsPausedByAdmin(&mgdObj)).To(BeFalse())
+			Expect(vmutil.IsPausedByAdmin(mgdObj)).To(BeFalse())
 		})
 
 		It("should return false when PauseVMExtraConfigKey is set to 1", func() {
@@ -68,7 +68,7 @@ func managedObjectTests() {
 				Value: 1,
 			})
 
-			Expect(vmutil.IsPausedByAdmin(&mgdObj)).To(BeFalse())
+			Expect(vmutil.IsPausedByAdmin(mgdObj)).To(BeFalse())
 		})
 
 		It("should return true when PauseVMExtraConfigKey is set to 'true'", func() {
@@ -77,7 +77,7 @@ func managedObjectTests() {
 				Value: "true",
 			})
 
-			Expect(vmutil.IsPausedByAdmin(&mgdObj)).To(BeTrue())
+			Expect(vmutil.IsPausedByAdmin(mgdObj)).To(BeTrue())
 		})
 
 		It("should return true when PauseVMExtraConfigKey is set to 'True'", func() {
@@ -86,7 +86,7 @@ func managedObjectTests() {
 				Value: "True",
 			})
 
-			Expect(vmutil.IsPausedByAdmin(&mgdObj)).To(BeTrue())
+			Expect(vmutil.IsPausedByAdmin(mgdObj)).To(BeTrue())
 		})
 
 		It("should return true when PauseVMExtraConfigKey is set to 'TRUE'", func() {
@@ -95,7 +95,7 @@ func managedObjectTests() {
 				Value: constants.ExtraConfigTrue,
 			})
 
-			Expect(vmutil.IsPausedByAdmin(&mgdObj)).To(BeTrue())
+			Expect(vmutil.IsPausedByAdmin(mgdObj)).To(BeTrue())
 		})
 	})
 }

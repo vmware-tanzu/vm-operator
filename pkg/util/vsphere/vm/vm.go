@@ -28,7 +28,7 @@ func ManagedObjectFromObject(obj *object.VirtualMachine) mo.VirtualMachine {
 	return ManagedObjectFromMoRef(obj.Reference())
 }
 
-func IsPausedByAdmin(moVM *mo.VirtualMachine) bool {
+func IsPausedByAdmin(moVM mo.VirtualMachine) bool {
 	for i := range moVM.Config.ExtraConfig {
 		if o := moVM.Config.ExtraConfig[i].GetOptionValue(); o != nil {
 			if o.Key == vmopv1.PauseVMExtraConfigKey {

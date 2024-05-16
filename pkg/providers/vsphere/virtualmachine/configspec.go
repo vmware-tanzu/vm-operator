@@ -13,6 +13,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 // CreateConfigSpec returns an initial ConfigSpec that is created by overlaying the
@@ -23,8 +24,8 @@ import (
 func CreateConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec,
-	vmImageStatus *vmopv1.VirtualMachineImageStatus,
+	vmClassSpec vmopv1.VirtualMachineClassSpec,
+	vmImageStatus vmopv1.VirtualMachineImageStatus,
 	minFreq uint64) vimtypes.VirtualMachineConfigSpec {
 
 	configSpec.Name = vmCtx.VM.Name
@@ -48,14 +49,15 @@ func CreateConfigSpec(
 		configSpec.InstanceUuid = string(vmCtx.VM.UID)
 	}
 
-	hardwareVersion := determineHardwareVersion(vmCtx.VM, &configSpec, vmImageStatus)
+	hardwareVersion := vmopv1util.DetermineHardwareVersion(
+		*vmCtx.VM, configSpec, vmImageStatus)
 	if hardwareVersion.IsValid() {
 		configSpec.Version = hardwareVersion.String()
 	}
 
 	if val, ok := vmCtx.VM.Annotations[constants.FirmwareOverrideAnnotation]; ok && (val == "efi" || val == "bios") {
 		configSpec.Firmware = val
-	} else if vmImageStatus != nil && vmImageStatus.Firmware != "" {
+	} else if vmImageStatus.Firmware != "" {
 		// Use the image's firmware type if present.
 		// This is necessary until the vSphere UI can support creating VM Classes with
 		// an empty/nil firmware type. Since VM Classes created via the vSphere UI always has
@@ -110,48 +112,6 @@ func CreateConfigSpec(
 	}
 
 	return configSpec
-}
-
-func determineHardwareVersion(
-	vm *vmopv1.VirtualMachine,
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	vmImageStatus *vmopv1.VirtualMachineImageStatus) vimtypes.HardwareVersion {
-
-	vmMinVersion := vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion)
-
-	var configSpecVersion vimtypes.HardwareVersion
-	if configSpec.Version != "" {
-		configSpecVersion, _ = vimtypes.ParseHardwareVersion(configSpec.Version)
-	}
-
-	if configSpecVersion.IsValid() {
-		if vmMinVersion <= configSpecVersion {
-			// No update needed.
-			return 0
-		}
-
-		return vmMinVersion
-	}
-
-	// A VM Class with an embedded ConfigSpec should have the version set, so
-	// this is a ConfigSpec we created from the HW devices in the class. If the
-	// image's version is too old to support passthrough devices or PVCs if
-	// configured, bump the version so those devices will work.
-	var imageVersion vimtypes.HardwareVersion
-	if vmImageStatus != nil && vmImageStatus.HardwareVersion != nil {
-		imageVersion = vimtypes.HardwareVersion(*vmImageStatus.HardwareVersion)
-	}
-
-	var minVerFromDevs vimtypes.HardwareVersion
-	if util.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange) {
-		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPCIPassthruDevices)
-	} else if hasPVC(vm) {
-		// This only catches volumes set at VM create time.
-		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPVC)
-	}
-
-	// If both are zero, VC will use the cluster's default version.
-	return max(vmMinVersion, minVerFromDevs)
 }
 
 // CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for
@@ -246,13 +206,4 @@ func ConfigSpecFromVMClassDevices(vmClassSpec *vmopv1.VirtualMachineClassSpec) v
 		})
 	}
 	return configSpec
-}
-
-func hasPVC(vm *vmopv1.VirtualMachine) bool {
-	for i := range vm.Spec.Volumes {
-		if vm.Spec.Volumes[i].PersistentVolumeClaim != nil {
-			return true
-		}
-	}
-	return false
 }

@@ -32,15 +32,12 @@ import (
 
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
 type VMUpdateArgs struct {
-	VMClass        *vmopv1.VirtualMachineClass
+	VMClass        vmopv1.VirtualMachineClass
 	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 	MinCPUFreq     uint64
 	ExtraConfig    map[string]string
-
-	BootstrapData vmlifecycle.BootstrapData
-
-	ConfigSpec vimtypes.VirtualMachineConfigSpec
-
+	BootstrapData  vmlifecycle.BootstrapData
+	ConfigSpec     vimtypes.VirtualMachineConfigSpec
 	NetworkResults network2.NetworkInterfaceResults
 }
 
@@ -840,7 +837,6 @@ func (s *Session) attachClusterModule(
 func (s *Session) updateVMDesiredPowerStateOff(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	moVM *mo.VirtualMachine,
 	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
 
 	var powerOff bool
@@ -868,7 +864,7 @@ func (s *Session) updateVMDesiredPowerStateOff(
 	opResult, err := vmutil.ReconcileMinHardwareVersion(
 		vmCtx,
 		vcVM.Client(),
-		*moVM,
+		vmCtx.MoVM,
 		false,
 		vmCtx.VM.Spec.MinHardwareVersion)
 	if err != nil {
@@ -905,15 +901,16 @@ func (s *Session) updateVMDesiredPowerStateSuspended(
 func (s *Session) updateVMDesiredPowerStateOn(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	moVM *mo.VirtualMachine,
 	getUpdateArgsFn func() (*VMUpdateArgs, error),
 	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
 
-	config := moVM.Config
+	config := vmCtx.MoVM.Config
 
 	// See GoVmomi's VirtualMachine::Device() explanation for this check.
 	if config == nil {
-		return refetchProps, fmt.Errorf("VM config is not available, connectionState=%s", moVM.Summary.Runtime.ConnectionState)
+		return refetchProps, fmt.Errorf(
+			"VM config is not available, connectionState=%s",
+			vmCtx.MoVM.Summary.Runtime.ConnectionState)
 	}
 
 	resVM := res.NewVMFromObject(vcVM)
@@ -986,7 +983,7 @@ func (s *Session) updateVMDesiredPowerStateOn(
 	_, err = vmutil.ReconcileMinHardwareVersion(
 		vmCtx,
 		vcVM.Client(),
-		*moVM,
+		vmCtx.MoVM,
 		false,
 		vmCtx.VM.Spec.MinHardwareVersion)
 	if err != nil {
@@ -1019,33 +1016,19 @@ func (s *Session) updateVMDesiredPowerStateOn(
 	return //nolint:nakedret
 }
 
-// VMUpdatePropertiesSelector is the VM properties fetched at the start of UpdateVirtualMachine() when we are
-// It must be a super set of vmlifecycle.vmStatusPropertiesSelector[] since we may pass the properties collected
-// here to vmlifecycle.UpdateStatus() to avoid a second fetch of the VM properties.
-var VMUpdatePropertiesSelector = []string{
-	"config",
-	"guest",
-	"summary",
-}
-
 func (s *Session) UpdateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	getUpdateArgsFn func() (*VMUpdateArgs, error)) error {
 
-	moVM := &mo.VirtualMachine{}
-	if err := vcVM.Properties(vmCtx, vcVM.Reference(), VMUpdatePropertiesSelector, moVM); err != nil {
-		return err
-	}
-
 	var refetchProps bool
 	var err error
 
 	// Only update VM's power state when VM is not paused.
-	if !isVMPaused(vmCtx, moVM) {
+	if !isVMPaused(vmCtx) {
 		// Translate the VM's current power state into the VM Op power state value.
 		var existingPowerState vmopv1.VirtualMachinePowerState
-		switch moVM.Summary.Runtime.PowerState {
+		switch vmCtx.MoVM.Summary.Runtime.PowerState {
 		case vimtypes.VirtualMachinePowerStatePoweredOn:
 			existingPowerState = vmopv1.VirtualMachinePowerStateOn
 		case vimtypes.VirtualMachinePowerStatePoweredOff:
@@ -1059,7 +1042,6 @@ func (s *Session) UpdateVirtualMachine(
 			refetchProps, err = s.updateVMDesiredPowerStateOff(
 				vmCtx,
 				vcVM,
-				moVM,
 				existingPowerState)
 
 		case vmopv1.VirtualMachinePowerStateSuspended:
@@ -1072,7 +1054,6 @@ func (s *Session) UpdateVirtualMachine(
 			refetchProps, err = s.updateVMDesiredPowerStateOn(
 				vmCtx,
 				vcVM,
-				moVM,
 				getUpdateArgsFn,
 				existingPowerState)
 		}
@@ -1081,12 +1062,15 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	if refetchProps {
-		moVM = nil
+		vmCtx.MoVM = mo.VirtualMachine{}
 	}
 
-	vmCtx.Logger.V(8).Info("UpdateVM", "refetchProps", refetchProps, "powerState", vmCtx.VM.Spec.PowerState)
+	vmCtx.Logger.V(8).Info(
+		"UpdateVM",
+		"refetchProps", refetchProps,
+		"powerState", vmCtx.VM.Spec.PowerState)
 
-	updateErr := vmlifecycle.UpdateStatus(vmCtx, s.K8sClient, vcVM, moVM)
+	updateErr := vmlifecycle.UpdateStatus(vmCtx, s.K8sClient, vcVM, refetchProps)
 	if updateErr != nil {
 		vmCtx.Logger.Error(updateErr, "Updating VM status failed")
 		if err == nil {
@@ -1098,13 +1082,11 @@ func (s *Session) UpdateVirtualMachine(
 }
 
 // Source of truth is EC and Annotation.
-func isVMPaused(
-	vmCtx pkgctx.VirtualMachineContext,
-	moVM *mo.VirtualMachine) bool {
+func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 
 	vm := vmCtx.VM
 
-	adminPaused := vmutil.IsPausedByAdmin(moVM)
+	adminPaused := vmutil.IsPausedByAdmin(vmCtx.MoVM)
 	_, devopsPaused := vm.Annotations[vmopv1.PauseAnnotation]
 
 	if adminPaused || devopsPaused {

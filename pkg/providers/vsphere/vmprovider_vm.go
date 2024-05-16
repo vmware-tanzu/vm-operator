@@ -45,11 +45,11 @@ type VMCreateArgs struct {
 	vmlifecycle.CreateArgs
 	vmlifecycle.BootstrapData
 
-	VMClass        *vmopv1.VirtualMachineClass
+	VMClass        vmopv1.VirtualMachineClass
 	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 	ImageObj       ctrlclient.Object
-	ImageSpec      *vmopv1.VirtualMachineImageSpec
-	ImageStatus    *vmopv1.VirtualMachineImageStatus
+	ImageSpec      vmopv1.VirtualMachineImageSpec
+	ImageStatus    vmopv1.VirtualMachineImageStatus
 
 	StorageClassesToIDs   map[string]string
 	HasInstanceStorage    bool
@@ -387,6 +387,17 @@ func (vs *vSphereVMProvider) createdVirtualMachineFallthroughUpdate(
 	return vs.updateVirtualMachine(vmCtx, vcVM, vcClient, createArgs)
 }
 
+// VMUpdatePropertiesSelector is the set of VM properties fetched at the start
+// of UpdateVirtualMachine,
+// It must be a super set of vmlifecycle.vmStatusPropertiesSelector[] since we
+// may pass the properties collected here to vmlifecycle.UpdateStatus to avoid a
+// second fetch of the VM properties.
+var VMUpdatePropertiesSelector = []string{
+	"config",
+	"guest",
+	"summary",
+}
+
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -408,6 +419,15 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			Client:    vcClient,
 			Finder:    vcClient.Finder(),
 			Cluster:   cluster,
+		}
+
+		if err := vcVM.Properties(
+			vmCtx,
+			vcVM.Reference(),
+			VMUpdatePropertiesSelector,
+			&vmCtx.MoVM); err != nil {
+
+			return err
 		}
 
 		getUpdateArgsFn := func() (*vmUpdateArgs, error) {
@@ -818,16 +838,19 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 	createArgs *VMCreateArgs) error {
 
 	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
-		// To determine all the storage profiles, we need the class because of the possibility of
-		// InstanceStorage volumes. If we weren't able to get the class earlier, still check & set
-		// the storage condition because instance storage usage is rare, it is helpful to report
-		// as many prereqs as possible, and we'll reevaluate this once the class is available.
-		if createArgs.VMClass != nil {
-			// Add the class's instance storage disks - if any - to the VM.Spec. Once the instance
-			// storage disks are added to the VM, they are set in stone even if the class itself or
-			// the VM's assigned class changes.
-			createArgs.HasInstanceStorage = AddInstanceStorageVolumes(vmCtx, createArgs.VMClass)
-		}
+		// To determine all the storage profiles, we need the class because of
+		// the possibility of InstanceStorage volumes. If we weren't able to get
+		// the class earlier, still check & set the storage condition because
+		// instance storage usage is rare, it is helpful to report as many
+		// prereqs as possible, and we'll reevaluate this once the class is
+		// available.
+		//
+		// Add the class's instance storage disks - if any - to the VM.Spec.
+		// Once the instance storage disks are added to the VM, they are set in
+		// stone even if the class itself or the VM's assigned class changes.
+		createArgs.HasInstanceStorage = AddInstanceStorageVolumes(
+			vmCtx,
+			createArgs.VMClass.Spec.Hardware.InstanceStorage)
 	}
 
 	vmStorageClass := vmCtx.VM.Spec.StorageClass
@@ -940,7 +963,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	createArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx,
 		configSpec,
-		&createArgs.VMClass.Spec,
+		createArgs.VMClass.Spec,
 		createArgs.ImageStatus,
 		minCPUFreq)
 
@@ -1107,10 +1130,11 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		return nil, err
 	}
 
-	updateArgs := &vmUpdateArgs{}
-	updateArgs.VMClass = vmClass
-	updateArgs.ResourcePolicy = resourcePolicy
-	updateArgs.BootstrapData = bsData
+	updateArgs := &vmUpdateArgs{
+		VMClass:        vmClass,
+		ResourcePolicy: resourcePolicy,
+		BootstrapData:  bsData,
+	}
 
 	ecMap := maps.Clone(vs.globalExtraConfig)
 	maps.DeleteFunc(ecMap, func(k string, v string) bool {
@@ -1139,8 +1163,8 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx,
 		configSpec,
-		&updateArgs.VMClass.Spec,
-		nil,
+		updateArgs.VMClass.Spec,
+		vmopv1.VirtualMachineImageStatus{},
 		updateArgs.MinCPUFreq)
 
 	return updateArgs, nil

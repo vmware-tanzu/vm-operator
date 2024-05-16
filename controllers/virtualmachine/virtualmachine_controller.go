@@ -271,13 +271,13 @@ func requeueDelay(ctx *pkgctx.VirtualMachineContext) time.Duration {
 	// If the VM is in Creating phase, the reconciler has run out of threads to Create VMs on the provider. Do not queue
 	// immediately to avoid exponential backoff.
 	if !conditions.IsTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
-		return 10 * time.Second
+		return pkgcfg.FromContext(ctx).CreateVMRequeueDelay
 	}
 
 	if ctx.VM.Status.PowerState == vmopv1.VirtualMachinePowerStateOn {
 		network := ctx.VM.Status.Network
 		if network == nil || (network.PrimaryIP4 == "" && network.PrimaryIP6 == "") {
-			return 10 * time.Second
+			return pkgcfg.FromContext(ctx).PoweredOnVMHasIPRequeueDelay
 		}
 	}
 

@@ -5,6 +5,7 @@ package virtualmachine_test
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 
@@ -20,7 +21,11 @@ import (
 var intgFakeVMProvider = providerfake.NewVMProvider()
 
 var suite = builder.NewTestSuiteForControllerWithContext(
-	pkgcfg.NewContextWithDefaultConfig(),
+	pkgcfg.UpdateContext(pkgcfg.NewContextWithDefaultConfig(), func(config *pkgcfg.Config) {
+		config.SyncPeriod = 60 * time.Minute
+		config.CreateVMRequeueDelay = 1 * time.Second
+		config.PoweredOnVMHasIPRequeueDelay = 1 * time.Second
+	}),
 	virtualmachine.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = intgFakeVMProvider

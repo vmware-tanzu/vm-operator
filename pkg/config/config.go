@@ -54,6 +54,19 @@ type Config struct {
 	// the GetMaxDeployThreadsOnProvider function.
 	MaxDeployThreadsOnProvider int
 
+	// CreateVMRequeueDelay is the requeue delay that is used to retry a VM
+	// create that was unable to handled because MaxDeployThreadsOnProvider
+	// creates where already in progress.
+	// Defaults to 10 seconds.
+	CreateVMRequeueDelay time.Duration
+
+	// PoweredOnVMHasIPRequeueDelay is the requeue delay that is when a VM
+	// is powered on but does not yet have an IP assigned. This is used so
+	// the VM Status is updated sooner than waiting for the SyncPeriod to
+	// occur.
+	// Defaults to 10 seconds.
+	PoweredOnVMHasIPRequeueDelay time.Duration
+
 	NetworkProviderType  NetworkProviderType
 	VSphereNetworking    bool
 	LoadBalancerProvider string

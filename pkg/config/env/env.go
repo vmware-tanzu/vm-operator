@@ -15,6 +15,8 @@ const (
 
 	DefaultVMClassControllerName
 	MaxCreateVMsOnProvider
+	CreateVMRequeueDelay
+	PoweredOnVMHasIPRequeueDelay
 	PrivilegedUsers
 	NetworkProviderType
 	LoadBalancerProvider
@@ -80,6 +82,10 @@ func (n VarName) String() string {
 		return "DEFAULT_VM_CLASS_CONTROLLER_NAME"
 	case MaxCreateVMsOnProvider:
 		return "MAX_CREATE_VMS_ON_PROVIDER"
+	case CreateVMRequeueDelay:
+		return "CREATE_VM_REQUEUE_DELAY"
+	case PoweredOnVMHasIPRequeueDelay:
+		return "POWERED_ON_VM_HAS_IP_REQUEUE_DELAY"
 	case PrivilegedUsers:
 		return "PRIVILEGED_USERS"
 	case NetworkProviderType:

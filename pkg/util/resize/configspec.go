@@ -3,12 +3,17 @@
 
 package resize
 
-import vimtypes "github.com/vmware/govmomi/vim25/types"
+import (
+	"context"
+
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+)
 
 // CreateResizeConfigSpec takes the current VM state in the ConfigInfo and compares it to the
 // desired state in the ConfigSpec, returning a ConfigSpec with any required changes to drive
 // the desired state.
 func CreateResizeConfigSpec(
+	_ context.Context,
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs vimtypes.VirtualMachineConfigSpec) (vimtypes.VirtualMachineConfigSpec, error) {
 

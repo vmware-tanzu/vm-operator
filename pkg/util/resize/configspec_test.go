@@ -4,6 +4,7 @@
 package resize_test
 
 import (
+	"context"
 	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -20,12 +21,14 @@ type ConfigInfo = vimtypes.VirtualMachineConfigInfo
 
 var _ = Describe("CreateResizeConfigSpec", func() {
 
+	ctx := context.Background()
+
 	DescribeTable("Simple fields",
 		func(
 			ci vimtypes.VirtualMachineConfigInfo,
 			cs, expectedCS vimtypes.VirtualMachineConfigSpec) {
 
-			actualCS, err := resize.CreateResizeConfigSpec(ci, cs)
+			actualCS, err := resize.CreateResizeConfigSpec(ctx, ci, cs)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(reflect.DeepEqual(actualCS, expectedCS)).To(BeTrue(), cmp.Diff(actualCS, expectedCS))
 		},

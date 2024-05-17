@@ -19,6 +19,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -27,6 +28,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
 
@@ -39,6 +41,13 @@ type VMUpdateArgs struct {
 	BootstrapData  vmlifecycle.BootstrapData
 	ConfigSpec     vimtypes.VirtualMachineConfigSpec
 	NetworkResults network2.NetworkInterfaceResults
+}
+
+// VMResizeArgs contains the arguments needed to resize a VM on VC.
+type VMResizeArgs struct {
+	ConfigSpec vimtypes.VirtualMachineConfigSpec
+	VMClass    vmopv1.VirtualMachineClass
+	MinCPUFreq uint64
 }
 
 func ethCardMatch(newBaseEthCard, curBaseEthCard vimtypes.BaseVirtualEthernetCard) bool {
@@ -834,9 +843,42 @@ func (s *Session) attachClusterModule(
 	return s.Client.ClusterModuleClient().AddMoRefToModule(vmCtx, moduleUUID, resVM.MoRef())
 }
 
+func (s *Session) resizeVMWhenPoweredStateOff(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	getResizeArgsFn func() (*VMResizeArgs, error)) (bool, error) {
+
+	resizeArgs, err := getResizeArgsFn()
+	if err != nil {
+		return false, err
+	}
+
+	cs, err := resize.CreateResizeConfigSpec(
+		vmCtx,
+		*moVM.Config,
+		resizeArgs.ConfigSpec)
+	if err != nil {
+		return false, err
+	}
+
+	if !reflect.DeepEqual(cs, vimtypes.VirtualMachineConfigSpec{}) {
+		vmCtx.Logger.Info("Powered off resizing", "configSpec", cs)
+		if err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, &cs); err != nil {
+			vmCtx.Logger.Error(err, "powered off resize reconfigure failed")
+			return false, err
+		}
+
+		return true, nil
+	}
+
+	return false, nil
+}
+
 func (s *Session) updateVMDesiredPowerStateOff(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
+	getResizeArgsFn func() (*VMResizeArgs, error),
 	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
 
 	var powerOff bool
@@ -872,6 +914,17 @@ func (s *Session) updateVMDesiredPowerStateOff(
 	}
 	if opResult == vmutil.ReconcileMinHardwareVersionResultUpgraded {
 		refetchProps = true
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.VMResize {
+		refetchProps, err = s.resizeVMWhenPoweredStateOff(
+			vmCtx,
+			vcVM,
+			vmCtx.MoVM,
+			getResizeArgsFn)
+		if err != nil {
+			return
+		}
 	}
 
 	return refetchProps, err
@@ -1019,7 +1072,8 @@ func (s *Session) updateVMDesiredPowerStateOn(
 func (s *Session) UpdateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	getUpdateArgsFn func() (*VMUpdateArgs, error)) error {
+	getUpdateArgsFn func() (*VMUpdateArgs, error),
+	getResizeArgsFn func() (*VMResizeArgs, error)) error {
 
 	var refetchProps bool
 	var err error
@@ -1042,6 +1096,7 @@ func (s *Session) UpdateVirtualMachine(
 			refetchProps, err = s.updateVMDesiredPowerStateOff(
 				vmCtx,
 				vcVM,
+				getResizeArgsFn,
 				existingPowerState)
 
 		case vmopv1.VirtualMachinePowerStateSuspended:

@@ -19,6 +19,7 @@ func vcSimTests() {
 	Describe("ResourcePolicyTests", resourcePolicyTests)
 	Describe("VirtualMachine", vmTests)
 	Describe("VirtualMachineE2E", vmE2ETests)
+	Describe("VirtualMachineResize", vmResizeTests)
 	Describe("VirtualMachineUtilsTest", vmUtilTests)
 }
 

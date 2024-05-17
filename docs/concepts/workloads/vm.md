@@ -289,7 +289,7 @@ The above data does _not_ represent the _observed_ network configuration of the 
 |-------|--------|
 | `status.network.config.dns.hostName` | From `spec.network.hostName` if non-empty, otherwise from `metadata.name` |
 | `status.network.config.dns.domainName` | From `spec.network.domainName` if non-empty |
-| `status.network.config.dns.nameservers[]` | From `spec.network.nameservers[]` if non-empty, otherwise from the `ConfigMap` used to initialize VM Operator | 
+| `status.network.config.dns.nameservers[]` | From `spec.network.nameservers[]` if non-empty, otherwise from the `ConfigMap` used to initialize VM Operator |
 | `status.network.config.dns.searchDomains[]` | From `spec.network.searchDomains[]` is used if non-empty, otherwise from the `ConfigMap` used to initialize VM Operator |
 | `status.network.config.interfaces[]` | There will be an interface for every corresponding interface in `spec.network.interfaces[]` |
 | `status.network.config.interfaces[].name` | From the corresponding `spec.network.interfaces[].name` |
@@ -345,7 +345,7 @@ Deployed VMs inherit the storage defined in the `VirtualMachineImage`. To provid
 4. SSH into the guest.
 
 5. Format the new disk with desired filesystem.
-   
+
 6. Mount the disk and begin using it.
 
 ## Power States
@@ -424,3 +424,17 @@ The fields `spec.powerOffMode`, `spec.suspendMode`, and `spec.restartMode` contr
 | `Soft` | The guest is shutdown, suspended, or restarted gracefully (requires VM Tools) |  |
 | `TrySoft` | Attempts a graceful shutdown/standby/restart if VM Tools is present, otherwise falls back to a hard operation the VM has not achieved the desired power state after five minutes. | ✓ |
 
+## VM UUIDs
+
+The `spec.instanceUUID` and `spec.biosUUID` fields both default to a random v4 UUID. These fields can only be specified by privileged accounts when creating a VM and cannot be updated.
+This instanceUUID is used by VirtualCenter to uniquely identify all virtual machine instances, including those that may share the same BIOS UUID.
+
+The value of `spec.instanceUUID` is used to set the vSphere VM `config.instanceUuid` field, which in turn is used to populate the VM's `status.instanceUUID`. An instanceUUID can be used to find the vSphere VM, for example:
+``` bash
+govc vm.info -vm.uuid $(k get vm -o jsonpath='{.spec.instanceUUID}' -n $ns $name)
+```
+
+The value of `spec.biosUUID` is used to set the vSphere VM `config.uuid` field, which in turn is used to populate the VM's `status.biosUUID`. A biosUUID can be used to find the vSphere VM, for example:
+``` bash
+govc vm.info -vm.uuid $(k get vm -o jsonpath='{.spec.biosUUID}' -n $ns $name)
+```

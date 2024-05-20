@@ -54,10 +54,10 @@ func doValidateWithMsg(msgs ...string) func(admission.Response) {
 	return func(response admission.Response) {
 		reasons := strings.Split(string(response.Result.Reason), ", ")
 		for _, m := range msgs {
-			Expect(reasons).To(ContainElement(m))
+			ExpectWithOffset(1, reasons).To(ContainElement(m))
 		}
 		// This may be overly strict in some cases but catches missed assertions.
-		Expect(reasons).To(HaveLen(len(msgs)))
+		ExpectWithOffset(1, reasons).To(HaveLen(len(msgs)))
 	}
 }
 
@@ -130,7 +130,7 @@ func unitTestsValidateCreate() {
 	const (
 		vmiKind          = "VirtualMachineImage"
 		cvmiKind         = "Cluster" + vmiKind
-		invalidImageKind = "supported: " + vmiKind + ", " + cvmiKind
+		invalidImageKind = "supported: " + vmiKind + "; " + cvmiKind
 	)
 
 	var (
@@ -139,9 +139,6 @@ func unitTestsValidateCreate() {
 
 	type createArgs struct {
 		isServiceUser              bool
-		emptyImage                 bool
-		emptyImageKind             bool
-		invalidImageKind           bool
 		invalidVolumeName          bool
 		dupVolumeName              bool
 		invalidVolumeSource        bool
@@ -162,15 +159,6 @@ func unitTestsValidateCreate() {
 			ctx.IsPrivilegedAccount = true
 		}
 
-		if args.emptyImage {
-			ctx.vm.Spec.Image = nil
-		}
-		if args.emptyImageKind {
-			ctx.vm.Spec.Image.Kind = ""
-		}
-		if args.invalidImageKind {
-			ctx.vm.Spec.Image.Kind = "invalid"
-		}
 		if args.invalidVolumeName {
 			ctx.vm.Spec.Volumes[0].Name = "underscore_not_valid"
 		}
@@ -240,12 +228,6 @@ func unitTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-		Entry("should deny empty image", createArgs{emptyImage: true}, false,
-			field.Required(specPath.Child("image"), "").Error(), nil),
-		Entry("should deny empty image kind", createArgs{emptyImageKind: true}, false,
-			field.Required(specPath.Child("image").Child("kind"), invalidImageKind).Error(), nil),
-		Entry("should deny invalid image kind", createArgs{invalidImageKind: true}, false,
-			field.Invalid(specPath.Child("image").Child("kind"), "invalid", invalidImageKind).Error(), nil),
 
 		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false,
 			field.Invalid(volPath.Index(0).Child("name"), "underscore_not_valid", validation.IsDNS1123Subdomain("underscore_not_valid")[0]).Error(), nil),
@@ -290,118 +272,281 @@ func unitTestsValidateCreate() {
 
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
-		Expect(err).ToNot(HaveOccurred())
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 
 		response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-		Expect(response.Allowed).To(Equal(args.expectAllowed))
+		ExpectWithOffset(1, response.Allowed).To(Equal(args.expectAllowed))
 
 		if args.validate != nil {
 			args.validate(response)
 		}
 	}
 
-	Context("spec.className", func() {
-		fieldPath := field.NewPath("spec", "className")
+	DescribeTable(
+		"spec.className",
+		doTest,
 
-		Context("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", func() {
-			When("fss is disabled", func() {
-				BeforeEach(func() {
+		//
+		// FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled
+		//
+		Entry("require spec.className for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = true
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMImportNewNet = false
 					})
-				})
-
-				When("privileged user", func() {
-
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = true
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "className"), "").Error(),
+				),
+			},
+		),
+		Entry("require spec.className for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
 					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "className"), "").Error(),
+				),
+			},
+		),
 
-					DescribeTable("create", doTest,
-						Entry("should disallow spec.className set to empty string",
-							testParams{
-								setup: func(ctx *unitValidatingWebhookContext) {
-									ctx.vm.Spec.ClassName = ""
-								},
-								validate: doValidateWithMsg(
-									field.Required(fieldPath, "").Error(),
-								),
-							},
-						),
-					)
-				})
-
-				When("unprivileged user", func() {
-
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = false
-					})
-
-					DescribeTable("create", doTest,
-						Entry("should disallow spec.className set to empty string",
-							testParams{
-								setup: func(ctx *unitValidatingWebhookContext) {
-									ctx.vm.Spec.ClassName = ""
-								},
-								validate: doValidateWithMsg(
-									field.Required(fieldPath, "").Error(),
-								),
-							},
-						),
-					)
-				})
-
-			})
-
-			When("fss is enabled", func() {
-				BeforeEach(func() {
+		//
+		// FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled
+		//
+		Entry("allow empty spec.className for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = true
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMImportNewNet = true
 					})
-				})
-
-				When("privileged user", func() {
-
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = true
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("forbid empty spec.className for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
 					})
+				},
+				validate: doValidateWithMsg(
+					field.Forbidden(field.NewPath("spec", "className"), "restricted to privileged users").Error(),
+				),
+			},
+		),
+	)
 
-					DescribeTable("create", doTest,
-						Entry("should allow spec.className set to empty string",
-							testParams{
-								setup: func(ctx *unitValidatingWebhookContext) {
-									ctx.vm.Spec.ClassName = ""
-								},
-								expectAllowed: true,
-							},
-						),
-					)
-				})
+	DescribeTable(
+		"spec.image",
+		doTest,
 
-				When("unprivileged user", func() {
-
-					const restrictedToPrivUsers = "restricted to privileged users"
-
-					BeforeEach(func() {
-						ctx.IsPrivilegedAccount = false
+		//
+		// FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled
+		//
+		Entry("require spec.image for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
 					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "image"), "").Error(),
+				),
+			},
+		),
+		Entry("require spec.image for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "image"), "").Error(),
+				),
+			},
+		),
+		Entry("require spec.image.kind for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKind).Error(),
+				),
+			},
+		),
+		Entry("require spec.image.kind for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKind).Error(),
+				),
+			},
+		),
+		Entry("require valid spec.image.kind for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+						Kind: "invalid",
+					}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKind).Error(),
+				),
+			},
+		),
+		Entry("require valid spec.image.kind for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+						Kind: "invalid",
+					}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKind).Error(),
+				),
+			},
+		),
 
-					DescribeTable("create", doTest,
-						Entry("should disallow spec.className set to empty string",
-							testParams{
-								setup: func(ctx *unitValidatingWebhookContext) {
-									ctx.vm.Spec.ClassName = ""
-								},
-								validate: doValidateWithMsg(
-									field.Forbidden(fieldPath, restrictedToPrivUsers).Error(),
-								),
-							},
-						),
-					)
-				})
-			})
-		})
-	})
+		//
+		// FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled
+		//
+		Entry("allow empty spec.image for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("require spec.image.kind for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKind).Error(),
+				),
+			},
+		),
+		Entry("forbid empty spec.image for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Forbidden(field.NewPath("spec", "image"), "restricted to privileged users").Error(),
+				),
+			},
+		),
+		Entry("require spec.image.kind for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKind).Error(),
+				),
+			},
+		),
+		Entry("require valid spec.image.kind for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+						Kind: "invalid",
+					}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKind).Error(),
+				),
+			},
+		),
+		Entry("require valid spec.image.kind for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+						Kind: "invalid",
+					}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKind).Error(),
+				),
+			},
+		),
+	)
 
 	Context("Annotations", func() {
 		annotationPath := field.NewPath("metadata", "annotations")

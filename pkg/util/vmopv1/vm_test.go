@@ -443,3 +443,52 @@ var _ = DescribeTable("IsClasslessVM",
 		false,
 	),
 )
+
+var _ = DescribeTable("IsImageLessVM",
+	func(
+		vm vmopv1.VirtualMachine,
+		expected bool,
+	) {
+		Ω(vmopv1util.IsImagelessVM(vm)).Should(Equal(expected))
+	},
+	Entry(
+		"spec.image is nil and spec.imageName is empty",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Image:     nil,
+				ImageName: "",
+			},
+		},
+		true,
+	),
+	Entry(
+		"spec.image is not nil and spec.imageName is empty",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Image:     &vmopv1.VirtualMachineImageRef{},
+				ImageName: "",
+			},
+		},
+		false,
+	),
+	Entry(
+		"spec.image is nil and spec.imageName is non-empty",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Image:     nil,
+				ImageName: "non-empty",
+			},
+		},
+		false,
+	),
+	Entry(
+		"spec.image is not nil and spec.imageName is non-empty",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Image:     &vmopv1.VirtualMachineImageRef{},
+				ImageName: "non-empty",
+			},
+		},
+		false,
+	),
+)

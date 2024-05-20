@@ -209,3 +209,9 @@ func HasPVC(vm vmopv1.VirtualMachine) bool {
 func IsClasslessVM(vm vmopv1.VirtualMachine) bool {
 	return vm.Spec.ClassName == ""
 }
+
+// IsImagelessVM returns true if the provided VM was not deployed from a VM
+// image.
+func IsImagelessVM(vm vmopv1.VirtualMachine) bool {
+	return vm.Spec.Image == nil && vm.Spec.ImageName == ""
+}

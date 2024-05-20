@@ -5,6 +5,7 @@ package image
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
@@ -32,20 +33,27 @@ func SyncStatusToLabels(
 		labels = map[string]string{}
 	}
 
-	if k, v := vmopv1.VirtualMachineImageOSIDLabel, osID; v != "" {
+	if k, v := vmopv1.VirtualMachineImageOSIDLabel, osID; isValidLabelValue(v) {
 		labels[k] = v
 	}
-	if k, v := vmopv1.VirtualMachineImageOSTypeLabel, osType; v != "" {
+	if k, v := vmopv1.VirtualMachineImageOSTypeLabel, osType; isValidLabelValue(v) {
 		labels[k] = v
 	}
-	if k, v := vmopv1.VirtualMachineImageOSVersionLabel, osVersion; v != "" {
+	if k, v := vmopv1.VirtualMachineImageOSVersionLabel, osVersion; isValidLabelValue(v) {
 		labels[k] = v
 	}
 	if kp, v := vmopv1.VirtualMachineImageCapabilityLabel, caps; len(v) > 0 {
 		for i := range v {
-			labels[kp+v[i]] = "true"
+			k := kp + v[i]
+			if len(validation.IsQualifiedName(k)) == 0 {
+				labels[k] = "true"
+			}
 		}
 	}
 
 	obj.SetLabels(labels)
+}
+
+func isValidLabelValue(v string) bool {
+	return v != "" && len(validation.IsValidLabelValue(v)) == 0
 }

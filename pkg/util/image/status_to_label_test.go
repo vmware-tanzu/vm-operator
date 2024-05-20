@@ -47,11 +47,20 @@ var _ = Describe("SyncStatusToLabels", func() {
 		})
 	})
 
+	When("the status has the OS ID that is not valid label value", func() {
+		BeforeEach(func() {
+			status.OSInfo.ID = "-100"
+		})
+		It("should not have the OS ID", func() {
+			Expect(obj.GetLabels()).To(BeEmpty())
+		})
+	})
+
 	When("the status has the OS type", func() {
 		BeforeEach(func() {
 			status.OSInfo.Type = "linux"
 		})
-		It("should have the OS ID label", func() {
+		It("should have the OS type label", func() {
 			Expect(obj.GetLabels()).To(HaveLen(1))
 			Expect(obj.GetLabels()).To(HaveKeyWithValue(
 				vmopv1.VirtualMachineImageOSTypeLabel,
@@ -59,15 +68,33 @@ var _ = Describe("SyncStatusToLabels", func() {
 		})
 	})
 
+	When("the status has the OS type that is not valid label value", func() {
+		BeforeEach(func() {
+			status.OSInfo.Type = "linux!"
+		})
+		It("should not have the OS type label", func() {
+			Expect(obj.GetLabels()).To(BeEmpty())
+		})
+	})
+
 	When("the status has the OS version", func() {
 		BeforeEach(func() {
 			status.OSInfo.Version = "5"
 		})
-		It("should have the OS ID label", func() {
+		It("should have the OS version label", func() {
 			Expect(obj.GetLabels()).To(HaveLen(1))
 			Expect(obj.GetLabels()).To(HaveKeyWithValue(
 				vmopv1.VirtualMachineImageOSVersionLabel,
 				status.OSInfo.Version))
+		})
+	})
+
+	When("the status has the OS version that is not valid label value", func() {
+		BeforeEach(func() {
+			status.OSInfo.Version = "5."
+		})
+		It("should not have the OS version label", func() {
+			Expect(obj.GetLabels()).To(BeEmpty())
 		})
 	})
 
@@ -80,6 +107,18 @@ var _ = Describe("SyncStatusToLabels", func() {
 			Expect(obj.GetLabels()).To(HaveKeyWithValue(
 				vmopv1.VirtualMachineImageCapabilityLabel+"cloud-init",
 				"true"))
+			Expect(obj.GetLabels()).To(HaveKeyWithValue(
+				vmopv1.VirtualMachineImageCapabilityLabel+"nvidia-vgpu",
+				"true"))
+		})
+	})
+
+	When("the status has an invalid capabilities label key", func() {
+		BeforeEach(func() {
+			status.Capabilities = []string{"cloud-init!", "nvidia-vgpu"}
+		})
+		It("should have just the valid capability label key", func() {
+			Expect(obj.GetLabels()).To(HaveLen(1))
 			Expect(obj.GetLabels()).To(HaveKeyWithValue(
 				vmopv1.VirtualMachineImageCapabilityLabel+"nvidia-vgpu",
 				"true"))

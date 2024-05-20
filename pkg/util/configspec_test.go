@@ -156,11 +156,6 @@ var _ = Describe("ConfigSpec Util", func() {
 			var cs3 vimtypes.VirtualMachineConfigSpec
 			Expect(dec2.Decode(&cs3)).To(Succeed())
 
-			// This is a quirk of the ToConfigSpec() function. When converting
-			// between a ConfigInfo and ConfigSpec, nillable fields are nil'd
-			// if there is no data present.
-			cs3.CpuFeatureMask = []vimtypes.VirtualMachineCpuIdInfoSpec{}
-
 			Expect(cmp.Diff(cs1, cs3)).To(BeEmpty())
 			Expect(cmp.Diff(cs2, cs3)).To(BeEmpty())
 		})

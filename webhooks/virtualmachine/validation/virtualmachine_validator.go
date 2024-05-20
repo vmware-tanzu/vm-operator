@@ -72,7 +72,7 @@ const (
 	modifyLabelNotAllowedForNonAdmin         = "modifying this label is not allowed for non-admin users"
 	invalidMinHardwareVersionDowngrade       = "cannot downgrade hardware version"
 	invalidMinHardwareVersionPowerState      = "cannot upgrade hardware version unless powered off"
-	invalidImageKind                         = "supported: " + vmiKind + ", " + cvmiKind
+	invalidImageKind                         = "supported: " + vmiKind + "; " + cvmiKind
 	restrictedToPrivUsers                    = "restricted to privileged users"
 )
 
@@ -119,7 +119,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateImageOnCreate(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateClass(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateClassOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateStorageClass(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
@@ -347,20 +347,32 @@ func (v validator) validateInlineSysprep(
 }
 
 func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
-	var allErrs field.ErrorList
+	var (
+		allErrs field.ErrorList
+		f       = field.NewPath("spec", "image")
+	)
 
-	if vm.Spec.Image == nil {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec", "image"), ""))
-	} else if k := vm.Spec.Image.Kind; k == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec", "image", "kind"), invalidImageKind))
-	} else if k != vmiKind && k != cvmiKind {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "image", "kind"), vm.Spec.Image.Kind, invalidImageKind))
+	switch {
+	case vmopv1util.IsImagelessVM(*vm) &&
+		pkgcfg.FromContext(ctx).Features.VMImportNewNet:
+
+		// Restrict creating imageless VM resources to privileged users.
+		if !ctx.IsPrivilegedAccount {
+			allErrs = append(allErrs, field.Forbidden(f, restrictedToPrivUsers))
+		}
+
+	case vm.Spec.Image == nil:
+		allErrs = append(allErrs, field.Required(f, ""))
+	case vm.Spec.Image.Kind == "":
+		allErrs = append(allErrs, field.Required(f.Child("kind"), invalidImageKind))
+	case vm.Spec.Image.Kind != vmiKind && vm.Spec.Image.Kind != cvmiKind:
+		allErrs = append(allErrs, field.Invalid(f.Child("kind"), vm.Spec.Image.Kind, invalidImageKind))
 	}
 
 	return allErrs
 }
 
-func (v validator) validateClass(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateClassOnCreate(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	f := field.NewPath("spec", "className")
@@ -383,7 +395,7 @@ func (v validator) validateClass(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.V
 	return allErrs
 }
 
-func (v validator) validateClassNameOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if !pkgcfg.FromContext(ctx).Features.VMResize {
@@ -1023,7 +1035,7 @@ func (v validator) validateImmutableFields(ctx *pkgctx.WebhookRequestContext, vm
 
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.Image, oldVM.Spec.Image, specPath.Child("image"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, specPath.Child("imageName"))...)
-	allErrs = append(allErrs, v.validateClassNameOnUpdate(ctx, vm, oldVM)...)
+	allErrs = append(allErrs, v.validateClassOnUpdate(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
 	// New VMs always have non-empty biosUUID. Existing VMs being upgraded may have an empty biosUUID.
 	if oldVM.Spec.BiosUUID != "" {

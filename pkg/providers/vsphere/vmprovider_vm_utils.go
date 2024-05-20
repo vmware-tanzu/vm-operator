@@ -125,6 +125,15 @@ func getVirtualMachineClassFromClassName(
 	return obj, nil
 }
 
+// GetVirtualMachineImageSpecAndStatus returns either the VirtualMachineImage
+// or ClusterVirtualMachineImage resource, as well as its spec and status, for
+// the resource used to deploy a VM.
+//
+// Please note, this function is *not* designed to be invoked in the "update"
+// VM workflow. This function assumes it is only ever invoked as part of the
+// "create" workflow. For example, spec.image *can* be nil during the update
+// workflow for imported VMs, and that is perfectly legal. However, this
+// function marks a VM in error during the create workflow if spec.image is nil.
 func GetVirtualMachineImageSpecAndStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (ctrlclient.Object, vmopv1.VirtualMachineImageSpec, vmopv1.VirtualMachineImageStatus, error) {

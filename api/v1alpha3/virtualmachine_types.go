@@ -242,6 +242,11 @@ type VirtualMachineSpec struct {
 	// Please also note, when creating a new VirtualMachine, if this field and
 	// spec.imageName are both non-empty, then they must refer to the same
 	// resource or an error is returned.
+	//
+	// Please note, this field *may* be empty if the VM was imported instead of
+	// deployed by VM Operator. An imported VirtualMachine resource references
+	// an existing VM on the underlying platform that was not deployed from a
+	// VM image.
 	Image *VirtualMachineImageRef `json:"image,omitempty"`
 
 	// +optional
@@ -268,6 +273,11 @@ type VirtualMachineSpec struct {
 	// Please also note, when creating a new VirtualMachine, if this field and
 	// spec.image are both non-empty, then they must refer to the same
 	// resource or an error is returned.
+	//
+	// Please note, this field *may* be empty if the VM was imported instead of
+	// deployed by VM Operator. An imported VirtualMachine resource references
+	// an existing VM on the underlying platform that was not deployed from a
+	// VM image.
 	ImageName string `json:"imageName,omitempty"`
 
 	// +optional

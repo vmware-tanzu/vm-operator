@@ -74,7 +74,7 @@ func intgTestsValidateCreate() {
 		invalid          = "invalid"
 		vmiKind          = "VirtualMachineImage"
 		cvmiKind         = "Cluster" + vmiKind
-		invalidImageKind = "supported: " + vmiKind + ", " + cvmiKind
+		invalidImageKind = "supported: " + vmiKind + "; " + cvmiKind
 	)
 
 	var (

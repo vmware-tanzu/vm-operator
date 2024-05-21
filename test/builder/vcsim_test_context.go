@@ -399,7 +399,7 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	libSpec := library.Library{
 		Name: "vmop-content-library",
 		Type: "LOCAL",
-		Storage: []library.StorageBackings{
+		Storage: []library.StorageBacking{
 			{
 				DatastoreID: c.datastore.Reference().Value,
 				Type:        "DATASTORE",

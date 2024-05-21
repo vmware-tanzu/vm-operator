@@ -47,7 +47,7 @@ func ReconcileMinHardwareVersion(
 		return ReconcileMinHardwareVersionResultMinHardwareVersionZero, nil
 	}
 	targetHardwareVersion := vimtypes.HardwareVersion(minHardwareVersion)
-	if !targetHardwareVersion.IsValid() {
+	if !targetHardwareVersion.IsSupported() {
 		return 0, fmt.Errorf("invalid minHardwareVersion: %d", minHardwareVersion)
 	}
 

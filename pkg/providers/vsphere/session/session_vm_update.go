@@ -29,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
 
@@ -859,6 +860,13 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		*moVM.Config,
 		resizeArgs.ConfigSpec)
 	if err != nil {
+		return false, err
+	}
+
+	if err := vmopv1util.OverrideResizeConfigSpec(
+		vmCtx,
+		*vmCtx.VM,
+		&cs); err != nil {
 		return false, err
 	}
 

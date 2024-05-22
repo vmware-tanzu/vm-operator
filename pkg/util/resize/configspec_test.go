@@ -59,8 +59,8 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 
 		Entry("MemoryMB needs updating",
 			ConfigInfo{Hardware: vimtypes.VirtualHardware{MemoryMB: 512}},
-			ConfigSpec{NumCPUs: 1024},
-			ConfigSpec{NumCPUs: 1024}),
+			ConfigSpec{MemoryMB: 1024},
+			ConfigSpec{MemoryMB: 1024}),
 		Entry("MemoryMB does not need updating",
 			ConfigInfo{Hardware: vimtypes.VirtualHardware{MemoryMB: 1024}},
 			ConfigSpec{MemoryMB: 1024},

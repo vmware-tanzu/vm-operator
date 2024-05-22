@@ -166,5 +166,27 @@ func vmResizeTests() {
 				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
 			})
 		})
+
+		Context("Devops Overrides", func() {
+
+			Context("ChangeBlockTracking", func() {
+				BeforeEach(func() {
+					configSpec.ChangeTrackingEnabled = vimtypes.NewBool(false)
+				})
+
+				It("Overrides", func() {
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						ChangeBlockTracking: vimtypes.NewBool(true),
+					}
+
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
+				})
+			})
+		})
 	})
 }

@@ -9,7 +9,6 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
 )
 
 // CreateArgs contains the arguments needed to create a VM.
@@ -28,13 +27,12 @@ type CreateArgs struct {
 
 func CreateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
-	clClient contentlibrary.Provider,
 	restClient *rest.Client,
 	finder *find.Finder,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
 	if createArgs.UseContentLibrary {
-		return deployFromContentLibrary(vmCtx, clClient, restClient, createArgs)
+		return deployFromContentLibrary(vmCtx, restClient, createArgs)
 	}
 
 	return cloneVMFromInventory(vmCtx, finder, createArgs)

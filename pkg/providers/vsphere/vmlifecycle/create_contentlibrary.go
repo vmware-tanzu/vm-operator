@@ -80,13 +80,13 @@ func deployVMTX(
 
 func deployFromContentLibrary(
 	vmCtx pkgctx.VirtualMachineContext,
-	clClient contentlibrary.Provider,
 	restClient *rest.Client,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
 	// This call is needed to get the item type. We could avoid going to CL here, and
 	// instead get the item type via the {Cluster}ContentLibrary CR for the image.
-	item, err := clClient.GetLibraryItemID(vmCtx, createArgs.ProviderItemID)
+	contentLibraryProvider := contentlibrary.NewProvider(vmCtx, restClient)
+	item, err := contentLibraryProvider.GetLibraryItemID(vmCtx, createArgs.ProviderItemID)
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -47,7 +47,8 @@ func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 		return false, err
 	}
 
-	modulesExist, err := vs.doClusterModulesExist(ctx, client.ClusterModuleClient(), clusterRef.Reference(), resourcePolicy)
+	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
+	modulesExist, err := vs.doClusterModulesExist(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
 	if err != nil {
 		return false, err
 	}
@@ -92,7 +93,8 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 
 		clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
 		if err == nil {
-			err = vs.createClusterModules(ctx, client.ClusterModuleClient(), clusterRef.Reference(), resourcePolicy)
+			clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
+			err = vs.createClusterModules(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
 		}
 		if err != nil {
 			errs = append(errs, err)
@@ -127,7 +129,8 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 		}
 	}
 
-	errs = append(errs, vs.deleteClusterModules(ctx, client.ClusterModuleClient(), resourcePolicy)...)
+	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
+	errs = append(errs, vs.deleteClusterModules(ctx, clusterModuleProvider, resourcePolicy)...)
 
 	if err := vcenter.DeleteChildFolder(ctx, vimClient, folderMoID, resourcePolicy.Spec.Folder); err != nil {
 		errs = append(errs, err)

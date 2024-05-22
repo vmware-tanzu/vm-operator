@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -234,7 +234,8 @@ func (vs *vSphereVMProvider) getOvfEnvelope(
 			return nil, err
 		}
 
-		ovfEnvelope, err := client.ContentLibClient().RetrieveOvfEnvelopeByLibraryItemID(ctx, itemID)
+		contentLibraryProvider := contentlibrary.NewProvider(ctx, client.RestClient())
+		ovfEnvelope, err := contentLibraryProvider.RetrieveOvfEnvelopeByLibraryItemID(ctx, itemID)
 		if err != nil || ovfEnvelope == nil {
 			return nil, err
 		}
@@ -262,7 +263,8 @@ func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx context.Context,
 		return nil, err
 	}
 
-	return client.ContentLibClient().GetLibraryItem(ctx, contentLibrary, itemName, false)
+	contentLibraryProvider := contentlibrary.NewProvider(ctx, client.RestClient())
+	return contentLibraryProvider.GetLibraryItem(ctx, contentLibrary, itemName, false)
 }
 
 func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
@@ -273,7 +275,8 @@ func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemI
 		return err
 	}
 
-	return client.ContentLibClient().UpdateLibraryItem(ctx, itemID, newName, newDescription)
+	contentLibraryProvider := contentlibrary.NewProvider(ctx, client.RestClient())
+	return contentLibraryProvider.UpdateLibraryItem(ctx, itemID, newName, newDescription)
 }
 
 func (vs *vSphereVMProvider) getOpID(vm *vmopv1.VirtualMachine, operation string) string {

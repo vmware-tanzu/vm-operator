@@ -27,6 +27,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
@@ -355,7 +356,6 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 	moRef, err := vmlifecycle.CreateVirtualMachine(
 		vmCtx,
-		vcClient.ContentLibClient(),
 		vcClient.RestClient(),
 		vcClient.Finder(),
 		&createArgs.CreateArgs)
@@ -641,7 +641,8 @@ func (vs *vSphereVMProvider) vmCreateIsReady(
 
 	if policy := createArgs.ResourcePolicy; policy != nil {
 		// TODO: May want to do this as to filter the placement candidates.
-		exists, err := vs.doClusterModulesExist(vmCtx, vcClient.ClusterModuleClient(), createArgs.ClusterMoRef, policy)
+		clusterModuleProvider := clustermodules.NewProvider(vcClient.RestClient())
+		exists, err := vs.doClusterModulesExist(vmCtx, clusterModuleProvider, createArgs.ClusterMoRef, policy)
 		if err != nil {
 			return err
 		} else if !exists {

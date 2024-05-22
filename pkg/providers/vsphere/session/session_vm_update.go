@@ -840,7 +840,8 @@ func (s *Session) attachClusterModule(
 		return fmt.Errorf("ClusterModule %s not found", clusterModuleName)
 	}
 
-	return s.Client.ClusterModuleClient().AddMoRefToModule(vmCtx, moduleUUID, resVM.MoRef())
+	clusterModuleProvider := clustermodules.NewProvider(s.Client.RestClient())
+	return clusterModuleProvider.AddMoRefToModule(vmCtx, moduleUUID, resVM.MoRef())
 }
 
 func (s *Session) resizeVMWhenPoweredStateOff(

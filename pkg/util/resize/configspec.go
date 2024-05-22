@@ -19,28 +19,36 @@ func CreateResizeConfigSpec(
 
 	outCS := vimtypes.VirtualMachineConfigSpec{}
 
-	compareNumCpus(ci, cs, &outCS)
-	compareMemoryMB(ci, cs, &outCS)
+	compareHardware(ci, cs, &outCS)
 
 	return outCS, nil
 }
 
-func compareNumCpus(
+// compareHardware compares the ConfigSpec.Hardware.
+func compareHardware(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs vimtypes.VirtualMachineConfigSpec,
 	outCS *vimtypes.VirtualMachineConfigSpec) {
 
-	if ci.Hardware.NumCPU != cs.NumCPUs {
-		outCS.NumCPUs = cs.NumCPUs
+	cmp(ci.Hardware.NumCPU, cs.NumCPUs, &outCS.NumCPUs)
+	cmp(ci.Hardware.NumCoresPerSocket, cs.NumCoresPerSocket, &outCS.NumCoresPerSocket)
+	// outCS.AutoCoresPerSocket = ...
+	cmp(int64(ci.Hardware.MemoryMB), cs.MemoryMB, &outCS.MemoryMB)
+	cmpPtr(ci.Hardware.VirtualICH7MPresent, cs.VirtualICH7MPresent, &outCS.VirtualICH7MPresent)
+	cmpPtr(ci.Hardware.VirtualSMCPresent, cs.VirtualSMCPresent, &outCS.VirtualSMCPresent)
+	// outCS.Device = ...
+	cmp(ci.Hardware.MotherboardLayout, cs.MotherboardLayout, &outCS.MotherboardLayout)
+	cmp(ci.Hardware.SimultaneousThreads, cs.SimultaneousThreads, &outCS.SimultaneousThreads)
+}
+
+func cmp[T comparable](a, b T, c *T) {
+	if a != b {
+		*c = b
 	}
 }
 
-func compareMemoryMB(
-	ci vimtypes.VirtualMachineConfigInfo,
-	cs vimtypes.VirtualMachineConfigSpec,
-	outCS *vimtypes.VirtualMachineConfigSpec) {
-
-	if int64(ci.Hardware.MemoryMB) != cs.MemoryMB {
-		outCS.MemoryMB = cs.MemoryMB
+func cmpPtr[T comparable](a *T, b *T, c **T) {
+	if (a == nil || b == nil) || *a != *b {
+		*c = b
 	}
 }

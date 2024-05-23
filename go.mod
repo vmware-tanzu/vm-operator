@@ -6,6 +6,8 @@ replace (
 	github.com/envoyproxy/go-control-plane => github.com/envoyproxy/go-control-plane v0.9.4
 	github.com/envoyproxy/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v0.1.0
 	github.com/vmware-tanzu/vm-operator/api => ./api
+	github.com/vmware-tanzu/vm-operator/external/ncp => ./external/ncp
+	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ./external/tanzu-topology
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ./pkg/constants/testlabels
 )
 
@@ -87,7 +89,3 @@ require (
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
-
-replace github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ./external/tanzu-topology
-
-replace github.com/vmware-tanzu/vm-operator/external/ncp => ./external/ncp

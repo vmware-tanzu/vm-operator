@@ -11,8 +11,6 @@ resources:
 - ../rbac
 - ../webhook
 - ../certmanager
-- ../crd/external-crds/topology.tanzu.vmware.com_availabilityzones.yaml
-- ../crd/external-crds/topology.tanzu.vmware.com_vspherezones.yaml
 
 patchesStrategicMerge:
 - manager_default_container_patch.yaml

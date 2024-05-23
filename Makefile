@@ -296,6 +296,11 @@ generate-external-manifests: ## Generate manifests for the external types for te
 		crd:crdVersions=v1 \
 		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
 		output:none
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/tanzu-topology/... \
+		crd:crdVersions=v1 \
+		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
+		output:none
 
 .PHONY: generate-go-conversions
 generate-go-conversions: ## Generate conversions go code

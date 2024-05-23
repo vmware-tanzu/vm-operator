@@ -1928,6 +1928,24 @@ func unitTestsValidateCreate() {
 			),
 		)
 	})
+
+	Context("HardwareVersion", func() {
+
+		DescribeTable("MinHardwareVersion", doTest,
+			Entry("disallow greater than max valid hardware version",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.MinHardwareVersion = 22
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					validate: doValidateWithMsg(
+						`spec.minHardwareVersion: Invalid value: 22: should be less than or equal to 21`,
+					),
+					expectAllowed: false,
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateUpdate() {
@@ -2480,6 +2498,19 @@ func unitTestsValidateUpdate() {
 	Context("HardwareVersion", func() {
 
 		DescribeTable("MinHardwareVersion", doTest,
+			Entry("disallow greater than max valid hardware version",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.MinHardwareVersion = 22
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					validate: doValidateWithMsg(
+						`spec.minHardwareVersion: Invalid value: 22: should be less than or equal to 21`,
+					),
+					expectAllowed: false,
+				},
+			),
+
 			Entry("allow same version",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

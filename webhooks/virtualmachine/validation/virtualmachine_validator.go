@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -70,6 +71,7 @@ const (
 	invalidNextRestartTimeOnUpdateNow        = "mutation webhooks are required to restart VM"
 	modifyAnnotationNotAllowedForNonAdmin    = "modifying this annotation is not allowed for non-admin users"
 	modifyLabelNotAllowedForNonAdmin         = "modifying this label is not allowed for non-admin users"
+	invalidMinHardwareVersionNotSupported    = "should be less than or equal to %d"
 	invalidMinHardwareVersionDowngrade       = "cannot downgrade hardware version"
 	invalidMinHardwareVersionPowerState      = "cannot upgrade hardware version unless powered off"
 	invalidImageKind                         = "supported: " + vmiKind + "; " + cvmiKind
@@ -132,6 +134,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, nil)...)
+	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1183,24 +1186,35 @@ func (v validator) validateMinHardwareVersion(ctx *pkgctx.WebhookRequestContext,
 	var allErrs field.ErrorList
 	fieldPath := field.NewPath("spec", "minHardwareVersion")
 
-	// Disallow downgrades.
-	oldHV, newHV := oldVM.Spec.MinHardwareVersion, vm.Spec.MinHardwareVersion
-	if newHV < oldHV {
+	// kubebuilder validations handles check for minHardwareVersion < 13.
+	// This is necessary here to handle brownfield api versions.
+	if vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion) > vimtypes.MaxValidHardwareVersion {
 		allErrs = append(allErrs, field.Invalid(
 			fieldPath,
 			vm.Spec.MinHardwareVersion,
-			invalidMinHardwareVersionDowngrade))
+			fmt.Sprintf(invalidMinHardwareVersionNotSupported, vimtypes.MaxValidHardwareVersion)))
 	}
 
-	// Disallow upgrades unless powered off or will be powered off.
-	if newHV > oldHV {
-		if oldVM.Spec.PowerState != vmopv1.VirtualMachinePowerStateOff &&
-			vm.Spec.PowerState != vmopv1.VirtualMachinePowerStateOff {
-
+	if oldVM != nil {
+		// Disallow downgrades.
+		oldHV, newHV := oldVM.Spec.MinHardwareVersion, vm.Spec.MinHardwareVersion
+		if newHV < oldHV {
 			allErrs = append(allErrs, field.Invalid(
 				fieldPath,
 				vm.Spec.MinHardwareVersion,
-				invalidMinHardwareVersionPowerState))
+				invalidMinHardwareVersionDowngrade))
+		}
+
+		// Disallow upgrades unless powered off or will be powered off.
+		if newHV > oldHV {
+			if oldVM.Spec.PowerState != vmopv1.VirtualMachinePowerStateOff &&
+				vm.Spec.PowerState != vmopv1.VirtualMachinePowerStateOff {
+
+				allErrs = append(allErrs, field.Invalid(
+					fieldPath,
+					vm.Spec.MinHardwareVersion,
+					invalidMinHardwareVersionPowerState))
+			}
 		}
 	}
 

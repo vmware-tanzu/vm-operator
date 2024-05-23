@@ -1,3 +1,12 @@
+# Only vendor the net-op CRD for networkinterfaces.
+config/crd/external-crds/netoperator.vmware.com_aviloadbalancerconfigs.yaml
+config/crd/external-crds/netoperator.vmware.com_foundationloadbalancerconfigs.yaml
+config/crd/external-crds/netoperator.vmware.com_haproxyloadbalancerconfigs.yaml
+config/crd/external-crds/netoperator.vmware.com_ippools.yaml
+config/crd/external-crds/netoperator.vmware.com_loadbalancerconfigs.yaml
+config/crd/external-crds/netoperator.vmware.com_networks.yaml
+config/crd/external-crds/netoperator.vmware.com_vspheredistributednetworks.yaml
+
 .DS_Store
 .cache
 

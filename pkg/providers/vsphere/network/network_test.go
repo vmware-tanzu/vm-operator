@@ -15,9 +15,9 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/nsx.vmware.com/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
@@ -254,13 +254,13 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 						{
 							IP:         "192.168.1.110",
-							IPFamily:   netopv1alpha1.IPv4Protocol,
+							IPFamily:   corev1.IPv4Protocol,
 							Gateway:    "192.168.1.1",
 							SubnetMask: "255.255.255.0",
 						},
 						{
 							IP:         "fd1a:6c85:79fe:7c98:0000:0000:0000:000f",
-							IPFamily:   netopv1alpha1.IPv6Protocol,
+							IPFamily:   corev1.IPv6Protocol,
 							Gateway:    "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
 							SubnetMask: "ffff:ffff:ffff:ff00:0000:0000:0000:0000",
 						},
@@ -344,13 +344,13 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 							{
 								IP:         "192.168.1.110",
-								IPFamily:   netopv1alpha1.IPv4Protocol,
+								IPFamily:   corev1.IPv4Protocol,
 								Gateway:    "192.168.1.1",
 								SubnetMask: "255.255.255.0",
 							},
 							{
 								IP:         "fd1a:6c85:79fe:7c98:0000:0000:0000:000f",
-								IPFamily:   netopv1alpha1.IPv6Protocol,
+								IPFamily:   corev1.IPv6Protocol,
 								Gateway:    "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
 								SubnetMask: "ffff:ffff:ffff:ff00:0000:0000:0000:0000",
 							},

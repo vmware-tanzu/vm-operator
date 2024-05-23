@@ -6,17 +6,13 @@ package client
 import (
 	"context"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
 type Client struct {
 	*client.Client
-	contentLibClient contentlibrary.Provider
-	clusterModClient clustermodules.Provider
-	config           *config.VSphereVMProviderConfig
+	config *config.VSphereVMProviderConfig
 }
 
 // NewClient creates a new Client. As a side effect, it creates a vim25 client
@@ -40,19 +36,9 @@ func NewClient(
 	}
 
 	return &Client{
-		Client:           c,
-		contentLibClient: contentlibrary.NewProvider(ctx, c.RestClient()),
-		clusterModClient: clustermodules.NewProvider(c.RestClient()),
-		config:           config,
+		Client: c,
+		config: config,
 	}, nil
-}
-
-func (c *Client) ContentLibClient() contentlibrary.Provider {
-	return c.contentLibClient
-}
-
-func (c *Client) ClusterModuleClient() clustermodules.Provider {
-	return c.clusterModClient
 }
 
 func (c *Client) Config() *config.VSphereVMProviderConfig {

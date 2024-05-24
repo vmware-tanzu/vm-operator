@@ -23,9 +23,9 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/nsx.vmware.com/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg"
@@ -347,8 +347,8 @@ func netOpNetIfToResult(
 	ipConfigs := make([]NetworkInterfaceIPConfig, 0, len(netIf.Status.IPConfigs))
 	for _, ip := range netIf.Status.IPConfigs {
 		ipConfig := NetworkInterfaceIPConfig{
-			IPCIDR:  ipCIDRNotation(ip.IP, ip.SubnetMask, ip.IPFamily == netopv1alpha1.IPv4Protocol),
-			IsIPv4:  ip.IPFamily == netopv1alpha1.IPv4Protocol,
+			IPCIDR:  ipCIDRNotation(ip.IP, ip.SubnetMask, ip.IPFamily == corev1.IPv4Protocol),
+			IsIPv4:  ip.IPFamily == corev1.IPv4Protocol,
 			Gateway: ip.Gateway,
 		}
 		ipConfigs = append(ipConfigs, ipConfig)

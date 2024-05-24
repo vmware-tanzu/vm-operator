@@ -111,6 +111,7 @@ LOCAL_YAML = $(ARTIFACTS_DIR)/local-deployment.yaml
 DEFAULT_VMCLASSES_YAML = $(ARTIFACTS_DIR)/default-vmclasses.yaml
 
 IMG_REGISTRY_OP_API_SLUG := github.com/vmware-tanzu/image-registry-operator-api
+NET_OP_API_SLUG := github.com/vmware-tanzu/net-operator-api
 
 BUILD_TYPE ?= dev
 BUILD_NUMBER ?= 00000000
@@ -291,6 +292,12 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 generate-external-manifests: $(CONTROLLER_GEN)
 generate-external-manifests: ## Generate manifests for the external types for testing
 	API_MOD_DIR=$(shell go mod download -json $(IMG_REGISTRY_OP_API_SLUG) | grep '"Dir":' | awk '{print $$2}' | tr -d '",') && \
+	$(CONTROLLER_GEN) \
+		paths=$${API_MOD_DIR}/api/v1alpha1/... \
+		crd:crdVersions=v1 \
+		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
+		output:none
+	API_MOD_DIR=$(shell go mod download -json $(NET_OP_API_SLUG) | grep '"Dir":' | awk '{print $$2}' | tr -d '",') && \
 	$(CONTROLLER_GEN) \
 		paths=$${API_MOD_DIR}/api/v1alpha1/... \
 		crd:crdVersions=v1 \

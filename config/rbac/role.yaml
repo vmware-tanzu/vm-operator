@@ -173,7 +173,6 @@ rules:
   - netoperator.vmware.com
   resources:
   - networkinterfaces
-  - vmxnet3networkinterfaces
   verbs:
   - create
   - delete

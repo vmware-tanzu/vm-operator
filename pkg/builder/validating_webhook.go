@@ -103,7 +103,7 @@ var _ admission.Handler = &validatingWebhookHandler{}
 
 type validatingWebhookHandler struct {
 	*pkgctx.WebhookContext
-	*admission.Decoder
+	admission.Decoder
 	Validator
 }
 

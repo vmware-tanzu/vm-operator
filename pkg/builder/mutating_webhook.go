@@ -95,7 +95,7 @@ var _ admission.Handler = &mutatingWebhookHandler{}
 
 type mutatingWebhookHandler struct {
 	*pkgctx.WebhookContext
-	*admission.Decoder
+	admission.Decoder
 	Mutator
 }
 

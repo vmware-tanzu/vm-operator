@@ -170,8 +170,11 @@ func (v validator) validateSpec(ctx *pkgctx.WebhookRequestContext, vmService *vm
 	}
 
 	if clusterIP := vmService.Spec.ClusterIP; clusterIP != "" && clusterIP != corev1.ClusterIPNone {
-		for _, msg := range validation.IsValidIP(clusterIP) {
-			allErrs = append(allErrs, field.Invalid(specPath.Child("clusterIP"), clusterIP, msg))
+		if errs := validation.IsValidIP(
+			specPath.Child("clusterIP"),
+			clusterIP); len(errs) > 0 {
+
+			allErrs = append(allErrs, errs...)
 		}
 	}
 

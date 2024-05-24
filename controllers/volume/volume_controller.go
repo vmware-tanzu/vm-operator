@@ -84,19 +84,28 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 
 	// Watch for changes to VirtualMachine.
-	err = c.Watch(source.Kind(mgr.GetCache(), &vmopv1.VirtualMachine{}), &handler.EnqueueRequestForObject{})
-	if err != nil {
+	if err := c.Watch(source.Kind(
+		mgr.GetCache(),
+		&vmopv1.VirtualMachine{},
+		&handler.TypedEnqueueRequestForObject[*vmopv1.VirtualMachine]{},
+	)); err != nil {
+
 		return err
 	}
 
-	// Watch for changes for CnsNodeVmAttachment, and enqueue VirtualMachine which is the owner of CnsNodeVmAttachment.
-	err = c.Watch(source.Kind(mgr.GetCache(), &cnsv1alpha1.CnsNodeVmAttachment{}),
-		handler.EnqueueRequestForOwner(
+	// Watch for changes for CnsNodeVmAttachment, and enqueue VirtualMachine
+	// which is the owner of CnsNodeVmAttachment.
+	if err := c.Watch(source.Kind(
+		mgr.GetCache(),
+		&cnsv1alpha1.CnsNodeVmAttachment{},
+		handler.TypedEnqueueRequestForOwner[*cnsv1alpha1.CnsNodeVmAttachment](
 			mgr.GetScheme(),
 			mgr.GetRESTMapper(),
 			&vmopv1.VirtualMachine{},
-			handler.OnlyControllerOwner()))
-	if err != nil {
+			handler.OnlyControllerOwner(),
+		),
+	)); err != nil {
+
 		return err
 	}
 
@@ -135,15 +144,19 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				r.isPVCCache = pvcCache
 			}
 
-			// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is the owner
-			// of PersistentVolumeClaim.
-			if err := c.Watch(
-				source.Kind(r.isPVCCache, &corev1.PersistentVolumeClaim{}),
-				handler.EnqueueRequestForOwner(
+			// Watch for changes for PersistentVolumeClaim, and enqueue
+			// VirtualMachine which is the owner of PersistentVolumeClaim.
+			if err := c.Watch(source.Kind(
+				r.isPVCCache,
+				&corev1.PersistentVolumeClaim{},
+				handler.TypedEnqueueRequestForOwner[*corev1.PersistentVolumeClaim](
 					mgr.GetScheme(),
 					mgr.GetRESTMapper(),
 					&vmopv1.VirtualMachine{},
-					handler.OnlyControllerOwner())); err != nil {
+					handler.OnlyControllerOwner(),
+				),
+			)); err != nil {
+
 				return nil, fmt.Errorf("failed to start VirtualMachine watch: %w", err)
 			}
 

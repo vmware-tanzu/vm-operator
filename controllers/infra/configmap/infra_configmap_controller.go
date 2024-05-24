@@ -24,6 +24,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -58,25 +59,26 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		return err
 	}
 
-	return c.Watch(
-		source.Kind(cache, controlledType),
-		&handler.EnqueueRequestForObject{},
-		predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool {
+	return c.Watch(source.Kind(
+		cache,
+		controlledType,
+		&handler.TypedEnqueueRequestForObject[*corev1.ConfigMap]{},
+		predicate.TypedFuncs[*corev1.ConfigMap]{
+			CreateFunc: func(e event.TypedCreateEvent[*corev1.ConfigMap]) bool {
 				return e.Object.GetName() == WcpClusterConfigMapName
 			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
+			UpdateFunc: func(e event.TypedUpdateEvent[*corev1.ConfigMap]) bool {
 				return e.ObjectOld.GetName() == WcpClusterConfigMapName
 			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
+			DeleteFunc: func(e event.TypedDeleteEvent[*corev1.ConfigMap]) bool {
 				return false
 			},
-			GenericFunc: func(e event.GenericEvent) bool {
+			GenericFunc: func(e event.TypedGenericEvent[*corev1.ConfigMap]) bool {
 				return false
 			},
 		},
-		predicate.ResourceVersionChangedPredicate{},
-	)
+		kubeutil.TypedResourceVersionChangedPredicate[*corev1.ConfigMap]{},
+	))
 }
 
 type provider interface {

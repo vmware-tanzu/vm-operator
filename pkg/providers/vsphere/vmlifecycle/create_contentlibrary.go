@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
@@ -97,6 +96,6 @@ func deployFromContentLibrary(
 	case library.ItemTypeVMTX:
 		return deployVMTX(vmCtx, restClient, item, createArgs)
 	default:
-		return nil, errors.Errorf("item %s not a supported type: %s", item.Name, item.Type)
+		return nil, fmt.Errorf("item %s not a supported type: %s", item.Name, item.Type)
 	}
 }

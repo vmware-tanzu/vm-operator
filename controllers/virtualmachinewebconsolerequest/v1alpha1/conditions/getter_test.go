@@ -18,12 +18,12 @@ limitations under the License.
 package conditions
 
 import (
+	"errors"
 	"testing"
 
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
 	"github.com/onsi/gomega/types"
-	"github.com/pkg/errors"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )

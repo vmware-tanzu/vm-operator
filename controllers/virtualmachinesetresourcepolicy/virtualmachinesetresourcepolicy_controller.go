@@ -9,7 +9,6 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -152,7 +151,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	patchHelper, err := patch.NewHelper(rp, r.Client)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", rpCtx.String())
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", rpCtx, err)
 	}
 	defer func() {
 		if err := patchHelper.Patch(ctx, rp); err != nil {

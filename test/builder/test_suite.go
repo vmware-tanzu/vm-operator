@@ -22,7 +22,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -245,7 +244,7 @@ func newTestSuiteForWebhook(
 	// Create a temp directory for the certs needed for testing webhooks.
 	certDir, err := os.MkdirTemp(os.TempDir(), "")
 	if err != nil {
-		panic(errors.Wrap(err, "failed to create temp dir for certs"))
+		panic(fmt.Errorf("failed to create temp dir for certs: %w", err))
 	}
 	testSuite.certDir = certDir
 

@@ -4,7 +4,8 @@
 package webhooks
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
+
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -22,30 +23,30 @@ import (
 // AddToManager adds all webhooks and a certificate manager to the provided controller manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	if err := persistentvolumeclaim.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize PersistentVolumeClaim webhook")
+		return fmt.Errorf("failed to initialize PersistentVolumeClaim webhook: %w", err)
 	}
 	if err := virtualmachine.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachine webhooks")
+		return fmt.Errorf("failed to initialize VirtualMachine webhooks: %w", err)
 	}
 	if err := virtualmachineclass.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineClass webhooks")
+		return fmt.Errorf("failed to initialize VirtualMachineClass webhooks: %w", err)
 	}
 	if err := virtualmachinepublishrequest.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachinePublishRequest webhooks")
+		return fmt.Errorf("failed to initialize VirtualMachinePublishRequest webhooks: %w", err)
 	}
 	if err := virtualmachineservice.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineService webhooks")
+		return fmt.Errorf("failed to initialize VirtualMachineService webhooks: %w", err)
 	}
 	if err := virtualmachinesetresourcepolicy.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineSetResourcePolicy webhooks")
+		return fmt.Errorf("failed to initialize VirtualMachineSetResourcePolicy webhooks: %w", err)
 	}
 	if err := virtualmachinewebconsolerequest.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineWebConsoleRequest webhooks")
+		return fmt.Errorf("failed to initialize VirtualMachineWebConsoleRequest webhooks: %w", err)
 	}
 
 	if pkgcfg.FromContext(ctx).Features.K8sWorkloadMgmtAPI {
 		if err := virtualmachinereplicaset.AddToManager(ctx, mgr); err != nil {
-			return errors.Wrap(err, "failed to initialize VirtualMachineReplicaSet webhooks")
+			return fmt.Errorf("failed to initialize VirtualMachineReplicaSet webhooks: %w", err)
 		}
 	}
 

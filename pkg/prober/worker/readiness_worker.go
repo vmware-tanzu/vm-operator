@@ -12,8 +12,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/pkg/errors"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -105,7 +103,7 @@ func (w *readinessWorker) ProcessProbeResult(ctx *proberctx.ProbeContext, res pr
 		Conditions: []string{vmopv1.ReadyConditionType},
 	})
 	if err != nil {
-		return errors.Wrapf(err, "patched failed")
+		return fmt.Errorf("patched failed: %w", err)
 	}
 
 	return nil

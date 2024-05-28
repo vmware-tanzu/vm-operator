@@ -4,10 +4,10 @@
 package validation
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -40,7 +40,7 @@ const (
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
-		return errors.Wrapf(err, "failed to create VirtualMachinePublishRequest validation webhook")
+		return fmt.Errorf("failed to create VirtualMachinePublishRequest validation webhook: %w", err)
 	}
 	mgr.GetWebhookServer().Register(hook.Path, hook)
 

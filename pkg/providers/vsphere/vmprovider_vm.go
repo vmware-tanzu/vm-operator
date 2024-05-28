@@ -11,7 +11,6 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -159,7 +158,7 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to get vCenter client")
+		return "", fmt.Errorf("failed to get vCenter client: %w", err)
 	}
 
 	itemID, err := virtualmachine.CreateOVF(vmCtx, client.RestClient(), vmPub, cl, actID)

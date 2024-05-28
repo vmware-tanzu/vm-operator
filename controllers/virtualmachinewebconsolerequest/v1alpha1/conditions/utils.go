@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -36,17 +35,17 @@ var (
 func UnstructuredUnmarshalField(obj *unstructured.Unstructured, v interface{}, fields ...string) error {
 	value, found, err := unstructured.NestedFieldNoCopy(obj.Object, fields...)
 	if err != nil {
-		return errors.Wrapf(err, "failed to retrieve field %q from %q", strings.Join(fields, "."), obj.GroupVersionKind())
+		return fmt.Errorf("failed to retrieve field %q from %q: %w", strings.Join(fields, "."), obj.GroupVersionKind(), err)
 	}
 	if !found || value == nil {
 		return ErrUnstructuredFieldNotFound
 	}
 	valueBytes, err := json.Marshal(value)
 	if err != nil {
-		return errors.Wrapf(err, "failed to json-encode field %q value from %q", strings.Join(fields, "."), obj.GroupVersionKind())
+		return fmt.Errorf("failed to json-encode field %q value from %q: %w", strings.Join(fields, "."), obj.GroupVersionKind(), err)
 	}
 	if err := json.Unmarshal(valueBytes, v); err != nil {
-		return errors.Wrapf(err, "failed to json-decode field %q value from %q", strings.Join(fields, "."), obj.GroupVersionKind())
+		return fmt.Errorf("failed to json-decode field %q value from %q: %w", strings.Join(fields, "."), obj.GroupVersionKind(), err)
 	}
 	return nil
 }

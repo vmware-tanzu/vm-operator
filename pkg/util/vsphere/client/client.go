@@ -5,11 +5,11 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/url"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/session"
@@ -154,7 +154,7 @@ func newRestClient(
 	// Initial login. This will also start the keepalive.
 	if err := restClient.Login(ctx, userInfo); err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
-		return nil, errors.Wrapf(err, "login failed for url: %v", vimClient.URL())
+		return nil, fmt.Errorf("login failed for url: %v: %w", vimClient.URL(), err)
 	}
 
 	return restClient, nil
@@ -171,28 +171,28 @@ func NewVimClient(
 	log.Info("Creating new vim Client", "VcPNID", config.Host, "VcPort", config.Port)
 	soapURL, err := soap.ParseURL(net.JoinHostPort(config.Host, config.Port))
 	if err != nil {
-		return nil, nil, errors.Wrapf(
-			err, "failed to parse %s:%s", config.Host, config.Port)
+		return nil, nil, fmt.Errorf(
+			"failed to parse %s:%s: %w", config.Host, config.Port, err)
 	}
 
 	soapClient := soap.NewClient(soapURL, config.Insecure)
 	if config.CAFilePath != "" {
 		err = soapClient.SetRootCAs(config.CAFilePath)
 		if err != nil {
-			return nil, nil, errors.Wrapf(
-				err, "failed to set root CA %s", config.CAFilePath)
+			return nil, nil, fmt.Errorf(
+				"failed to set root CA %s: %w", config.CAFilePath, err)
 		}
 	}
 
 	vimClient, err := vim25.NewClient(ctx, soapClient)
 	if err != nil {
-		return nil, nil, errors.Wrapf(
-			err, "error creating a new vim client for url: %v", soapURL)
+		return nil, nil, fmt.Errorf(
+			"error creating a new vim client for url: %v: %w", soapURL, err)
 	}
 
 	if err := vimClient.UseServiceVersion(); err != nil {
-		return nil, nil, errors.Wrapf(
-			err, "error setting vim client version for url: %v", soapURL)
+		return nil, nil, fmt.Errorf(
+			"error setting vim client version for url: %v: %w", soapURL, err)
 	}
 
 	userInfo := url.UserPassword(config.Username, config.Password)
@@ -207,8 +207,8 @@ func NewVimClient(
 	// Initial login. This will also start the keepalive.
 	if err = sm.Login(ctx, userInfo); err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
-		return nil, nil, errors.Wrapf(
-			err, "login failed for url: %v", soapURL)
+		return nil, nil, fmt.Errorf(
+			"login failed for url: %v: %w", soapURL, err)
 	}
 
 	return vimClient, sm, err
@@ -228,8 +228,8 @@ func newFinder(
 			Value: config.Datacenter,
 		})
 	if err != nil {
-		return nil, nil, errors.Wrapf(
-			err, "failed to find Datacenter %q", config.Datacenter)
+		return nil, nil, fmt.Errorf(
+			"failed to find Datacenter %q: %w", config.Datacenter, err)
 	}
 
 	dc := dcRef.(*object.Datacenter)

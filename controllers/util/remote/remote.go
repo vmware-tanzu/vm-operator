@@ -5,8 +5,8 @@ package remote
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,12 +32,11 @@ func ApplyYAMLWithNamespace(ctx context.Context, c client.Client, data []byte, n
 			// The create call is idempotent, so if the object already exists
 			// then do not consider it to be an error.
 			if !apierrors.IsAlreadyExists(err) {
-				return errors.Wrapf(
-					err,
-					"failed to create object %s %s/%s",
+				return fmt.Errorf("failed to create object %s %s/%s: %w",
 					obj.GroupVersionKind(),
 					obj.GetNamespace(),
-					obj.GetName())
+					obj.GetName(),
+					err)
 			}
 		}
 		return nil
@@ -62,12 +61,12 @@ func DeleteYAMLWithNamespace(ctx context.Context, c client.Client, data []byte, 
 			// The delete call is idempotent, so if the object does not
 			// exist, then do not consider it to be an error.
 			if !apierrors.IsNotFound(err) {
-				return errors.Wrapf(
-					err,
-					"failed to delete object %s %s/%s",
+				return fmt.Errorf(
+					"failed to delete object %s %s/%s: %w",
 					obj.GroupVersionKind(),
 					obj.GetNamespace(),
-					obj.GetName())
+					obj.GetName(),
+					err)
 			}
 		}
 		return nil
@@ -91,12 +90,12 @@ func ExistsYAMLWithNamespace(ctx context.Context, c client.Client, data []byte, 
 		key := client.ObjectKeyFromObject(obj)
 
 		if err := c.Get(ctx, key, obj); err != nil {
-			return errors.Wrapf(
-				err,
-				"failed to find %s %s/%s",
+			return fmt.Errorf(
+				"failed to find %s %s/%s: %w",
 				obj.GroupVersionKind(),
 				obj.GetNamespace(),
-				obj.GetName())
+				obj.GetName(),
+				err)
 		}
 		return nil
 	})
@@ -124,12 +123,12 @@ func DoesNotExistYAMLWithNamespace(ctx context.Context, c client.Client, data []
 		if err := c.Get(ctx, key, obj); err != nil {
 			found = false
 			if !apierrors.IsNotFound(err) {
-				return errors.Wrapf(
-					err,
-					"failed to find %s %s/%s",
+				return fmt.Errorf(
+					"failed to find %s %s/%s: %w",
 					obj.GroupVersionKind(),
 					obj.GetNamespace(),
-					obj.GetName())
+					obj.GetName(),
+					err)
 			}
 			return nil
 		}
@@ -173,7 +172,7 @@ func ForEachObjectInYAML(
 			if err == nil {
 				return nil
 			}
-			return errors.Wrap(err, "received error while decoding yaml to delete from server")
+			return fmt.Errorf("received error while decoding yaml to delete from server: %w", err)
 		}
 	}
 }

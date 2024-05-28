@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
@@ -191,7 +190,7 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx context.Context, cli, v
 		itemID = string(cli.Spec.UUID)
 		contentVersion = cli.Status.ContentVersion
 	default:
-		return errors.Errorf("unexpected content library item type %T", cli)
+		return fmt.Errorf("unexpected content library item type %T", cli)
 	}
 
 	ovfEnvelope, err := vs.getOvfEnvelope(ctx, itemID, contentVersion)
@@ -392,7 +391,7 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) 
 
 	collector, err := taskManager.CreateCollectorForTasks(ctx, filterSpec)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create collector for tasks")
+		return nil, fmt.Errorf("failed to create collector for tasks: %w", err)
 	}
 	defer func() {
 		err = collector.Destroy(ctx)

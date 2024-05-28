@@ -5,6 +5,7 @@ package contentlibrary
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -15,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -120,22 +120,22 @@ func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName st
 	notFoundReturnErr bool) (*library.Item, error) {
 	itemIDs, err := cs.libMgr.FindLibraryItems(ctx, library.FindItem{LibraryID: libraryUUID, Name: itemName})
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to find image: %s", itemName)
+		return nil, fmt.Errorf("failed to find image: %s: %w", itemName, err)
 	}
 
 	if len(itemIDs) == 0 {
 		if notFoundReturnErr {
-			return nil, errors.Errorf("no library item named: %s", itemName)
+			return nil, fmt.Errorf("no library item named: %s", itemName)
 		}
 		return nil, nil
 	}
 	if len(itemIDs) != 1 {
-		return nil, errors.Errorf("multiple library items named: %s", itemName)
+		return nil, fmt.Errorf("multiple library items named: %s", itemName)
 	}
 
 	item, err := cs.libMgr.GetLibraryItem(ctx, itemIDs[0])
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get library item: %s", itemName)
+		return nil, fmt.Errorf("failed to get library item: %s: %w", itemName, err)
 	}
 
 	return item, nil
@@ -144,7 +144,7 @@ func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName st
 func (cs *provider) GetLibraryItemID(ctx context.Context, itemUUID string) (*library.Item, error) {
 	item, err := cs.libMgr.GetLibraryItem(ctx, itemUUID)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to find image: %s", itemUUID)
+		return nil, fmt.Errorf("failed to find image: %s: %w", itemUUID, err)
 	}
 
 	return item, nil
@@ -327,7 +327,7 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 		}
 	}
 	if fileToDownload == "" {
-		return nil, errors.Errorf("No files with supported deploy type are available for download for %s", item.ID)
+		return nil, fmt.Errorf("no files with supported deploy type are available for download for %s", item.ID)
 	}
 
 	_, err = cs.libMgr.PrepareLibraryItemDownloadSessionFile(ctx, sessionID, fileToDownload)
@@ -357,7 +357,7 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 
 		if info.Status == "ERROR" {
 			// Log message used by VMC LINT. Refer to before making changes
-			return false, errors.Errorf("Error occurred preparing file for download %v", info.ErrorMessage)
+			return false, fmt.Errorf("error occurred preparing file for download %v", info.ErrorMessage)
 		}
 
 		if info.Status != "PREPARED" {
@@ -365,7 +365,7 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 		}
 
 		if info.DownloadEndpoint == nil {
-			return false, errors.Errorf("Prepared file for download does not have endpoint")
+			return false, fmt.Errorf("prepared file for download does not have endpoint")
 		}
 
 		fileURL = info.DownloadEndpoint.URI

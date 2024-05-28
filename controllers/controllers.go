@@ -4,7 +4,7 @@
 package controllers
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -25,36 +25,36 @@ import (
 // AddToManager adds all controllers to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	if err := contentlibrary.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize ContentLibrary controllers")
+		return fmt.Errorf("failed to initialize ContentLibrary controllers: %w", err)
 	}
 	if err := infra.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize Infra controllers")
+		return fmt.Errorf("failed to initialize Infra controllers: %w", err)
 	}
 	if err := virtualmachine.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachine controller")
+		return fmt.Errorf("failed to initialize VirtualMachine controller: %w", err)
 	}
 	if err := virtualmachineclass.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineClass controller")
+		return fmt.Errorf("failed to initialize VirtualMachineClass controller: %w", err)
 	}
 	if err := virtualmachineservice.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineService controller")
+		return fmt.Errorf("failed to initialize VirtualMachineService controller: %w", err)
 	}
 	if err := virtualmachinesetresourcepolicy.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineSetResourcePolicy controller")
+		return fmt.Errorf("failed to initialize VirtualMachineSetResourcePolicy controller: %w", err)
 	}
 	if err := virtualmachinewebconsolerequest.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineWebConsoleRequest controller")
+		return fmt.Errorf("failed to initialize VirtualMachineWebConsoleRequest controller: %w", err)
 	}
 	if err := volume.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize Volume controller")
+		return fmt.Errorf("failed to initialize Volume controller: %w", err)
 	}
 	if err := virtualmachinepublishrequest.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachinePublishRequest controller")
+		return fmt.Errorf("failed to initialize VirtualMachinePublishRequest controller: %w", err)
 	}
 
 	if pkgcfg.FromContext(ctx).Features.K8sWorkloadMgmtAPI {
 		if err := virtualmachinereplicaset.AddToManager(ctx, mgr); err != nil {
-			return errors.Wrap(err, "failed to initialize VirtualMachineReplicaSet controller")
+			return fmt.Errorf("failed to initialize VirtualMachineReplicaSet controller: %w", err)
 		}
 	}
 

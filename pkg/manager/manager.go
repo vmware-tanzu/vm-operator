@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -98,7 +97,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		NewCache:                opts.NewCache,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to create manager")
+		return nil, fmt.Errorf("unable to create manager: %w", err)
 	}
 
 	// Build the controller manager pkgctx.
@@ -122,7 +121,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 
 	// Add the requested items to the manager.
 	if err := opts.AddToManager(controllerManagerContext, mgr); err != nil {
-		return nil, errors.Wrap(err, "failed to add resources to the manager")
+		return nil, fmt.Errorf("failed to add resources to the manager: %w", err)
 	}
 
 	return &manager{

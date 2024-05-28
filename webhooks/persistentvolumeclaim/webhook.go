@@ -4,7 +4,8 @@
 package persistentvolumeclaim
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
+
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -13,7 +14,7 @@ import (
 
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	if err := validation.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize validation webhook")
+		return fmt.Errorf("failed to initialize validation webhook: %w", err)
 	}
 	return nil
 }

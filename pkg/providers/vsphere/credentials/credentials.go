@@ -5,8 +5,9 @@ package credentials
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -24,7 +25,7 @@ func GetProviderCredentials(client ctrlclient.Client, namespace, secretName stri
 	secretKey := types.NamespacedName{Namespace: namespace, Name: secretName}
 	if err := client.Get(context.Background(), secretKey, secret); err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
-		return nil, errors.Wrapf(err, "cannot find secret for provider credentials: %s", secretKey)
+		return nil, fmt.Errorf("cannot find secret for provider credentials: %s: %w", secretKey, err)
 	}
 
 	var credentials VSphereVMProviderCredentials

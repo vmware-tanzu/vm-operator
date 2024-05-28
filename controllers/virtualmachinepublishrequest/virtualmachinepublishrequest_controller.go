@@ -5,6 +5,7 @@ package virtualmachinepublishrequest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -23,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -217,7 +217,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	patchHelper, err := patch.NewHelper(vmPublishReq, r.Client)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", fmt.Sprintf("%s/%s", vmPublishReq.Namespace, vmPublishReq.Name))
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s/%s: %w", vmPublishReq.Namespace, vmPublishReq.Name, err)
 	}
 
 	// the patch is skipped when the VirtualMachinePublishRequest.Status().Update
@@ -884,7 +884,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		err := r.publishVirtualMachine(ctx)
 		if err != nil {
 			ctx.Logger.Error(err, "failed to publish VirtualMachine")
-			return ctrl.Result{}, errors.Wrapf(err, "failed to publish VirtualMachine")
+			return ctrl.Result{}, fmt.Errorf("failed to publish VirtualMachine: %w", err)
 		}
 		return requeueResult(ctx), nil
 	}

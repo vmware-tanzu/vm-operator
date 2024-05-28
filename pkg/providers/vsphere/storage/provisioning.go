@@ -4,7 +4,8 @@
 package storage
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
+
 	"github.com/vmware/govmomi/pbm"
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -72,7 +73,7 @@ func GetDiskProvisioningForProfile(
 
 	profiles, err := c.RetrieveContent(vmCtx, []pbmTypes.PbmProfileId{{UniqueId: storageProfileID}})
 	if err != nil {
-		return "", errors.Wrapf(err, "Failed to get storage profiles for ID: %s", storageProfileID)
+		return "", fmt.Errorf("failed to get storage profiles for ID: %s: %w", storageProfileID, err)
 	}
 
 	for _, p := range profiles {

@@ -6,9 +6,9 @@ package encoding
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -36,7 +36,7 @@ func DecodeYAML(data []byte) (<-chan *unstructured.Unstructured, <-chan error) {
 				if err == io.EOF {
 					return
 				}
-				chanErr <- errors.Wrap(err, "failed to read yaml data")
+				chanErr <- fmt.Errorf("failed to read yaml data: %w", err)
 				return
 			}
 
@@ -57,7 +57,7 @@ func DecodeYAML(data []byte) (<-chan *unstructured.Unstructured, <-chan error) {
 
 			// Unmarshal the YAML document into the unstructured object.
 			if err := yaml.Unmarshal(buf, &obj.Object); err != nil {
-				chanErr <- errors.Wrap(err, "failed to unmarshal yaml data")
+				chanErr <- fmt.Errorf("failed to unmarshal yaml data: %w", err)
 				return
 			}
 

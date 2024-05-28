@@ -5,6 +5,8 @@ package config
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -12,8 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	"github.com/pkg/errors"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
@@ -86,7 +86,7 @@ func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about st
 		var err error
 		scRequired, err = strconv.ParseBool(s)
 		if err != nil {
-			return nil, errors.Wrap(err, "unable to parse value of StorageClassRequired")
+			return nil, fmt.Errorf("unable to parse value of StorageClassRequired: %w", err)
 		}
 	}
 
@@ -95,7 +95,7 @@ func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about st
 		var err error
 		useInventory, err = strconv.ParseBool(u)
 		if err != nil {
-			return nil, errors.Wrap(err, "unable to parse value of UseInventory")
+			return nil, fmt.Errorf("unable to parse value of UseInventory: %w", err)
 		}
 	}
 
@@ -105,7 +105,7 @@ func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about st
 		var err error
 		insecureSkipTLSVerify, err = strconv.ParseBool(v)
 		if err != nil {
-			return nil, errors.Wrap(err, "unable to parse value of InsecureSkipTLSVerify")
+			return nil, fmt.Errorf("unable to parse value of InsecureSkipTLSVerify: %w", err)
 		}
 	}
 
@@ -140,7 +140,7 @@ func configMapToProviderCredentials(
 
 	secretName := configMap.Data[vcCredsSecretNameKey]
 	if secretName == "" {
-		return nil, errors.Errorf("%s creds secret not set in vmop system namespace", vcCredsSecretNameKey)
+		return nil, fmt.Errorf("%s creds secret not set in vmop system namespace", vcCredsSecretNameKey)
 	}
 
 	return credentials.GetProviderCredentials(client, configMap.Namespace, secretName)
@@ -162,16 +162,16 @@ func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlclient.Clien
 
 	nsStr, ok := configMap.Data[NameserversKey]
 	if !ok {
-		return nil, nil, errors.Errorf("invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
+		return nil, nil, fmt.Errorf("invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
 	}
 
 	nameservers = strings.Fields(nsStr)
 	if len(nameservers) == 0 {
-		return nil, nil, errors.Errorf("No nameservers in %v ConfigMap", NetworkConfigMapName)
+		return nil, nil, fmt.Errorf("no nameservers in %v ConfigMap", NetworkConfigMapName)
 	}
 
 	if len(nameservers) == 1 && nameservers[0] == "<worker_dns>" {
-		return nil, nil, errors.Errorf("No valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
+		return nil, nil, fmt.Errorf("no valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
 	}
 
 	if ssStr, ok := configMap.Data[SearchSuffixesKey]; ok {
@@ -193,7 +193,7 @@ func getProviderConfigMap(
 	configMapKey := ctrlclient.ObjectKey{Name: ProviderConfigMapName, Namespace: vmopNamespace}
 	if err := client.Get(ctx, configMapKey, configMap); err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
-		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %s", configMapKey)
+		return nil, fmt.Errorf("error retrieving the provider ConfigMap %s: %w", configMapKey, err)
 	}
 
 	return configMap, nil

@@ -5,11 +5,13 @@ package virtualmachine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
@@ -19,9 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
@@ -242,7 +241,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	patchHelper, err := patch.NewHelper(vm, r.Client)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", vmCtx.String())
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", vmCtx, err)
 	}
 
 	defer func() {

@@ -85,7 +85,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	patchHelper, err := patch.NewHelper(vmClass, r.Client)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", vmClassCtx.String(), err)
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", vmClassCtx, err)
 	}
 	defer func() {
 		if err := patchHelper.Patch(ctx, vmClass); err != nil {

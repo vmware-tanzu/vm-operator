@@ -5,11 +5,10 @@ package builder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/pkg/errors"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

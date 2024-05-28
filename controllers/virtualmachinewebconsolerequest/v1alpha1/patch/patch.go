@@ -16,10 +16,10 @@ package patch
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"time"
 
-	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -90,7 +90,7 @@ func (h *Helper) Patch(ctx context.Context, obj client.Object, opts ...Option) e
 		return err
 	}
 	if gvk != h.gvk {
-		return errors.Errorf("unmatched GroupVersionKind, expected %q got %q", h.gvk, gvk)
+		return fmt.Errorf("unmatched GroupVersionKind, expected %q got %q", h.gvk, gvk)
 	}
 
 	// Calculate the options.
@@ -186,11 +186,11 @@ func (h *Helper) patchStatusConditions(ctx context.Context, obj client.Object, f
 	// interface any longer, although this shouldn't happen because we already check when creating the patcher.
 	before, ok := h.beforeObject.(conditions.Getter)
 	if !ok {
-		return errors.Errorf("object %s doesn't satisfy conditions.Getter, cannot patch", before.GetObjectKind())
+		return fmt.Errorf("object %s doesn't satisfy conditions.Getter, cannot patch", before.GetObjectKind())
 	}
 	after, ok := obj.(conditions.Getter)
 	if !ok {
-		return errors.Errorf("object %s doesn't satisfy conditions.Getter, cannot patch", after.GetObjectKind())
+		return fmt.Errorf("object %s doesn't satisfy conditions.Getter, cannot patch", after.GetObjectKind())
 	}
 
 	// Store the diff from the before/after object, and return early if there are no changes.
@@ -219,7 +219,7 @@ func (h *Helper) patchStatusConditions(ctx context.Context, obj client.Object, f
 	return wait.ExponentialBackoff(backoff, func() (bool, error) {
 		latest, ok := before.DeepCopyObject().(conditions.Setter)
 		if !ok {
-			return false, errors.Errorf("object %s doesn't satisfy conditions.Setter, cannot patch", latest.GetObjectKind())
+			return false, fmt.Errorf("object %s doesn't satisfy conditions.Setter, cannot patch", latest.GetObjectKind())
 		}
 
 		// Get a new copy of the object.
@@ -279,13 +279,13 @@ func (h *Helper) calculateChanges(after client.Object) (map[string]bool, error) 
 	patch := client.MergeFrom(h.beforeObject)
 	diff, err := patch.Data(after)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to calculate patch data")
+		return nil, fmt.Errorf("failed to calculate patch data: %w", err)
 	}
 
 	// Unmarshal patch data into a local map.
 	patchDiff := map[string]interface{}{}
 	if err := json.Unmarshal(diff, &patchDiff); err != nil {
-		return nil, errors.Wrapf(err, "failed to unmarshal patch data into a map")
+		return nil, fmt.Errorf("failed to unmarshal patch data into a map: %w", err)
 	}
 
 	// Return the map.
@@ -300,7 +300,7 @@ func checkNilObject(obj client.Object) error {
 	// If you're wondering why we need reflection to do this check, see https://golang.org/doc/faq#nil_error.
 	// TODO(vincepri): Remove this check and let it panic if used improperly in a future minor release.
 	if obj == nil || (reflect.ValueOf(obj).IsValid() && reflect.ValueOf(obj).IsNil()) {
-		return errors.Errorf("expected non-nil object")
+		return fmt.Errorf("expected non-nil object")
 	}
 	return nil
 }

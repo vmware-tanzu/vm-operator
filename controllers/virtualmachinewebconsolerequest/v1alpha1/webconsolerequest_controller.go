@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -121,7 +120,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if err != nil {
 		r.Recorder.Warn(webConsoleRequestCtx.WebConsoleRequest, "VirtualMachine Not Found", "")
 		webConsoleRequestCtx.Logger.Error(err, "failed to get subject vm %s", webconsolerequest.Spec.VirtualMachineName)
-		return ctrl.Result{}, errors.Wrapf(err, "failed to get subject vm %s", webconsolerequest.Spec.VirtualMachineName)
+		return ctrl.Result{}, fmt.Errorf("failed to get subject vm %s: %w", webconsolerequest.Spec.VirtualMachineName, err)
 	}
 
 	patchHelper, err := patch.NewHelper(webconsolerequest, r.Client)
@@ -151,7 +150,7 @@ func (r *Reconciler) ReconcileEarlyNormal(ctx *pkgctx.WebConsoleRequestContext) 
 	if !expiryTime.IsZero() && !nowTime.Before(&expiryTime) {
 		err := r.Delete(ctx, ctx.WebConsoleRequest)
 		if client.IgnoreNotFound(err) != nil {
-			return false, errors.Wrapf(err, "failed to delete webconsolerequest")
+			return false, fmt.Errorf("failed to delete webconsolerequest: %w", err)
 		}
 		ctx.Logger.Info("Deleted expired WebConsoleRequest")
 		return true, nil
@@ -175,12 +174,12 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.WebConsoleRequestContext) error
 
 	v1a3VM := &vmopv1.VirtualMachine{}
 	if err := ctx.VM.ConvertTo(v1a3VM); err != nil {
-		return errors.Wrapf(err, "failed to convert VM to v1a2")
+		return fmt.Errorf("failed to convert VM to v1a2: %w", err)
 	}
 
 	ticket, err := r.VMProvider.GetVirtualMachineWebMKSTicket(ctx, v1a3VM, ctx.WebConsoleRequest.Spec.PublicKey)
 	if err != nil {
-		return errors.Wrapf(err, "failed to get webmksticket")
+		return fmt.Errorf("failed to get webmksticket: %w", err)
 	}
 
 	r.Recorder.EmitEvent(ctx.WebConsoleRequest, "Acquired Ticket", nil, false)
@@ -193,10 +192,10 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.WebConsoleRequestContext) error
 	proxySvcObjectKey := client.ObjectKey{Name: ProxyAddrServiceName, Namespace: ProxyAddrServiceNamespace}
 	err = r.Get(ctx, proxySvcObjectKey, proxySvc)
 	if err != nil {
-		return errors.Wrapf(err, "failed to get proxy address service  %s", proxySvcObjectKey)
+		return fmt.Errorf("failed to get proxy address service  %s: %w", proxySvcObjectKey, err)
 	}
 	if len(proxySvc.Status.LoadBalancer.Ingress) == 0 {
-		return errors.Errorf("no ingress found for proxy address service %s", proxySvcObjectKey)
+		return fmt.Errorf("no ingress found for proxy address service %s", proxySvcObjectKey)
 	}
 
 	ctx.WebConsoleRequest.Status.ProxyAddr = proxySvc.Status.LoadBalancer.Ingress[0].IP

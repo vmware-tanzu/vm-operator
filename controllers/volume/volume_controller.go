@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -166,7 +165,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 	} else {
 		r.GetInstanceStoragePVCClient = func() (client.Reader, error) {
-			return nil, fmt.Errorf("GetInstanceStoragePVCClient() should only be called when the feature is enabled")
+			return nil, fmt.Errorf("method GetInstanceStoragePVCClient should only be called when the feature is enabled")
 		}
 	}
 
@@ -240,7 +239,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 
 	patchHelper, err := patch.NewHelper(vm, r.Client)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", volCtx.String())
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", volCtx, err)
 	}
 	defer func() {
 		if err := patchHelper.Patch(ctx, vm); err != nil {
@@ -519,7 +518,7 @@ func (r *Reconciler) createInstanceStoragePVC(
 
 	if err := controllerutil.SetControllerReference(ctx.VM, pvc, r.Client.Scheme()); err != nil {
 		// This is an unexpected error.
-		return errors.Wrap(err, "Cannot set controller reference on PersistentVolumeClaim")
+		return fmt.Errorf("cannot set controller reference on PersistentVolumeClaim: %w", err)
 	}
 
 	// We merely consider creating non-existing PVCs in reconcileInstanceStoragePVCs flow.
@@ -599,7 +598,7 @@ func (r *Reconciler) getAttachmentsForVM(ctx *pkgctx.VolumeContext) (map[string]
 		client.InNamespace(ctx.VM.Namespace),
 		client.MatchingFields{"spec.nodeuuid": ctx.VM.Status.BiosUUID})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to list CnsNodeVmAttachments")
+		return nil, fmt.Errorf("failed to list CnsNodeVmAttachments: %w", err)
 	}
 
 	attachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(list.Items))
@@ -679,13 +678,13 @@ func (r *Reconciler) processAttachments(
 		if len(volumeStatus) == 0 && len(attachments) == 0 {
 			hardwareVersion, err := r.VMProvider.GetVirtualMachineHardwareVersion(ctx, ctx.VM)
 			if err != nil {
-				return errors.Wrapf(err, "failed to get VM hardware version")
+				return fmt.Errorf("failed to get VM hardware version: %w", err)
 			}
 
 			// If hardware version is 0, which means we failed to parse the version from VM, then just assume that it
 			// is above minimal requirement.
 			if hardwareVersion.IsValid() && hardwareVersion < pkgconst.MinSupportedHWVersionForPVC {
-				retErr := fmt.Errorf("VirtualMachine has an unsupported "+
+				retErr := fmt.Errorf("vm has an unsupported "+
 					"hardware version %d for PersistentVolumes. Minimum supported hardware version %d",
 					hardwareVersion, pkgconst.MinSupportedHWVersionForPVC)
 				r.recorder.EmitEvent(ctx.VM, "VolumeAttachment", retErr, true)
@@ -694,7 +693,7 @@ func (r *Reconciler) processAttachments(
 		}
 
 		if err := r.createCNSAttachment(ctx, attachmentName, volume); err != nil {
-			createErrs = append(createErrs, errors.Wrap(err, "Cannot create CnsNodeVmAttachment"))
+			createErrs = append(createErrs, fmt.Errorf("cannot create CnsNodeVmAttachment: %w", err))
 		} else {
 			// Add a placeholder Status entry for this volume. We'll populate it fully on a later
 			// reconcile after the CNS attachment controller updates it.
@@ -736,14 +735,14 @@ func (r *Reconciler) createCNSAttachment(
 
 	if err := controllerutil.SetControllerReference(ctx.VM, attachment, r.Client.Scheme()); err != nil {
 		// This is an unexpected error.
-		return errors.Wrap(err, "Cannot set controller reference on CnsNodeVmAttachment")
+		return fmt.Errorf("cannot set controller reference on CnsNodeVmAttachment: %w", err)
 	}
 
 	if err := r.Create(ctx, attachment); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return r.createCNSAttachmentButAlreadyExists(ctx, attachmentName)
 		}
-		return errors.Wrap(err, "Cannot create CnsNodeVmAttachment")
+		return fmt.Errorf("cannot create CnsNodeVmAttachment: %w", err)
 	}
 
 	return nil
@@ -767,7 +766,7 @@ func (r *Reconciler) createCNSAttachmentButAlreadyExists(
 		if apierrors.IsNotFound(err) {
 			// Create failed but now the attachment does not exist. Most likely the attachment got GC'd.
 			// Return an error to force another reconcile to create it.
-			return errors.Errorf("stale client cache for CnsNodeVmAttachment %s that now does not exist. Force re-reconcile", attachmentName)
+			return fmt.Errorf("stale client cache for CnsNodeVmAttachment %s that now does not exist. Force re-reconcile", attachmentName)
 		}
 
 		return err
@@ -777,7 +776,7 @@ func (r *Reconciler) createCNSAttachmentButAlreadyExists(
 		// This attachment has our expected name but is not owned by us. Most likely, the owning VM
 		// is in the process of being deleted, and the attachment will be GC after the owner is gone.
 		// We just have to wait it out here: we cannot delete an attachment that isn't ours.
-		return errors.Errorf("CnsNodeVmAttachment %s has a different controlling owner", attachmentName)
+		return fmt.Errorf("the CnsNodeVmAttachment %s has a different controlling owner", attachmentName)
 	}
 
 	if attachment.Spec.NodeUUID != ctx.VM.Status.BiosUUID {
@@ -791,15 +790,15 @@ func (r *Reconciler) createCNSAttachmentButAlreadyExists(
 		if err := r.Client.Delete(ctx, attachment); err != nil {
 			// The attachment may have been GC'd since the Get() above and that's fine.
 			// Return an error to force another reconcile.
-			return errors.Wrap(err, "Failed to delete existing CnsNodeVmAttachment with stale BiosUUID")
+			return fmt.Errorf("failed to delete existing CnsNodeVmAttachment with stale BiosUUID: %w", err)
 		}
 
-		return errors.Errorf("deleted stale CnsNodeVmAttachment %s with old NodeUUID: %s", attachmentName, attachment.Spec.NodeUUID)
+		return fmt.Errorf("deleted stale CnsNodeVmAttachment %s with old NodeUUID: %s", attachmentName, attachment.Spec.NodeUUID)
 	}
 
 	// The attachment is ours and has our BiosUUID. The client cache was stale so we didn't see it
 	// in getAttachmentsForVM(). This should be transient. Return an error to force another reconcile.
-	return errors.Errorf("stale client cache for expected CnsNodeVmAttachment %s. Force re-reconcile", attachmentName)
+	return fmt.Errorf("stale client cache for expected CnsNodeVmAttachment %s. Force re-reconcile", attachmentName)
 }
 
 // This is a hack to preserve the prior behavior of including detach(ing) volumes that were

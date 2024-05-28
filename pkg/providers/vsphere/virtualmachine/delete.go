@@ -4,8 +4,10 @@
 package virtualmachine
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -63,7 +65,7 @@ func DeleteVirtualMachine(
 		if taskInfo != nil {
 			vmCtx.Logger.V(5).Error(err, "destroy VM task failed", "taskInfo", taskInfo)
 		}
-		return errors.Wrapf(err, "destroy VM task failed")
+		return fmt.Errorf("destroy VM task failed: %w", err)
 	}
 
 	return nil

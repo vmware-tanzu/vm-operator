@@ -17,8 +17,6 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/pkg/errors"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -49,7 +47,7 @@ var (
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
-		return errors.Wrapf(err, "failed to create PersistentVolumeClaim validation webhook")
+		return fmt.Errorf("failed to create PersistentVolumeClaim validation webhook: %w", err)
 	}
 	mgr.GetWebhookServer().Register(hook.Path, hook)
 

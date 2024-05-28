@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	unversionedvalidation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -56,7 +55,7 @@ var (
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
-		return errors.Wrapf(err, "failed to create VirtualMachineService validation webhook")
+		return fmt.Errorf("failed to create VirtualMachineService validation webhook: %w", err)
 	}
 	mgr.GetWebhookServer().Register(hook.Path, hook)
 

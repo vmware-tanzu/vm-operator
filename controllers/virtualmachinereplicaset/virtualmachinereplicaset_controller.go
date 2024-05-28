@@ -20,7 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
@@ -115,7 +114,7 @@ func (r *Reconciler) getReplicaSetsForVM(
 
 	rsList := &vmopv1.VirtualMachineReplicaSetList{}
 	if err := r.Client.List(ctx, rsList, client.InNamespace(vm.Namespace)); err != nil {
-		return nil, errors.Wrapf(err, "failed to list VirtualMachineReplicaSets")
+		return nil, fmt.Errorf("failed to list VirtualMachineReplicaSets: %w", err)
 	}
 
 	var rss []*vmopv1.VirtualMachineReplicaSet
@@ -181,7 +180,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	patchHelper, err := patch.NewHelper(rs, r.Client)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", rsCtx.String())
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", rsCtx, err)
 	}
 
 	defer func() {

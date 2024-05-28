@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -108,7 +106,7 @@ func ResolveImageName(
 	case 1:
 		obj = &vmiList.Items[0]
 	default:
-		return nil, errors.Errorf(
+		return nil, fmt.Errorf(
 			"multiple VM images exist for %q in namespace scope", imgName)
 	}
 
@@ -124,13 +122,13 @@ func ResolveImageName(
 		break
 	case 1:
 		if obj != nil {
-			return nil, errors.Errorf(
+			return nil, fmt.Errorf(
 				"multiple VM images exist for %q in namespace and cluster scope",
 				imgName)
 		}
 		obj = &cvmiList.Items[0]
 	default:
-		return nil, errors.Errorf(
+		return nil, fmt.Errorf(
 			"multiple VM images exist for %q in cluster scope", imgName)
 	}
 

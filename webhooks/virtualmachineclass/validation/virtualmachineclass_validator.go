@@ -4,6 +4,7 @@
 package validation
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 
@@ -16,8 +17,6 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-
-	"github.com/pkg/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
@@ -41,7 +40,7 @@ const (
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
-		return errors.Wrapf(err, "failed to create VirtualMachineClass validation webhook")
+		return fmt.Errorf("failed to create VirtualMachineClass validation webhook: %w", err)
 	}
 	mgr.GetWebhookServer().Register(hook.Path, hook)
 

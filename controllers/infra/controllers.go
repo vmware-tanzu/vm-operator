@@ -4,7 +4,8 @@
 package infra
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
+
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
@@ -16,13 +17,13 @@ import (
 // AddToManager adds the controllers to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	if err := configmap.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize infra configmap controller")
+		return fmt.Errorf("failed to initialize infra configmap controller: %w", err)
 	}
 	if err := node.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize infra node controller")
+		return fmt.Errorf("failed to initialize infra node controller: %w", err)
 	}
 	if err := secret.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize infra secret controller")
+		return fmt.Errorf("failed to initialize infra secret controller: %w", err)
 	}
 
 	return nil

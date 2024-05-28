@@ -5,10 +5,10 @@ package mutation
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 
-	"github.com/pkg/errors"
 	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,7 +33,7 @@ const (
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	hook, err := builder.NewMutatingWebhook(ctx, mgr, webHookName, NewMutator(nil))
 	if err != nil {
-		return errors.Wrapf(err, "failed to create mutation webhook")
+		return fmt.Errorf("failed to create mutation webhook: %w", err)
 	}
 	mgr.GetWebhookServer().Register(hook.Path, hook)
 

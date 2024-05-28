@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -52,7 +51,7 @@ func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, poo
 
 	result, err := createTask.WaitForResult(ctx, nil)
 	if err != nil {
-		return errors.Wrapf(err, "create VM %q task failed", vm.Name)
+		return fmt.Errorf("create VM %q task failed: %w", vm.Name, err)
 	}
 
 	vm.vcVirtualMachine = object.NewVirtualMachine(folder.Client(), result.Result.(vimtypes.ManagedObjectReference))
@@ -69,7 +68,7 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 
 	result, err := cloneTask.WaitForResult(ctx, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "clone VM task failed")
+		return nil, fmt.Errorf("clone VM task failed: %w", err)
 	}
 
 	ref := result.Result.(vimtypes.ManagedObjectReference)
@@ -86,7 +85,7 @@ func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *vimtypes.
 
 	_, err = reconfigureTask.WaitForResult(ctx, nil)
 	if err != nil {
-		return errors.Wrapf(err, "reconfigure VM task failed")
+		return fmt.Errorf("reconfigure VM task failed: %w", err)
 	}
 
 	return nil
@@ -220,10 +219,10 @@ func (vm *VirtualMachine) Customize(ctx context.Context, spec vimtypes.Customiza
 		// Fetch fault messages for task.Error
 		fault := taskErr.Fault.GetMethodFault()
 		if fault != nil {
-			err = errors.Wrapf(err, "Fault messages: %v", fault.FaultMessage)
+			err = fmt.Errorf("fault messages: %v: %w", fault.FaultMessage, err)
 		}
 
-		return errors.Wrap(err, "Customization task failed")
+		return fmt.Errorf("customization task failed: %w", err)
 	}
 
 	return nil

@@ -6,7 +6,6 @@ package vmlifecycle
 import (
 	"fmt"
 
-	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -28,12 +27,12 @@ func cloneVMFromInventory(
 
 	srcVM, err := finder.VirtualMachine(vmCtx, srcVMName)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to find clone source VM: %s", srcVMName)
+		return nil, fmt.Errorf("failed to find clone source VM: %s: %w", srcVMName, err)
 	}
 
 	cloneSpec, err := createCloneSpec(vmCtx, createArgs, srcVM)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create CloneSpec")
+		return nil, fmt.Errorf("failed to create CloneSpec: %w", err)
 	}
 
 	// We always set cloneSpec.Location.Folder so use that to get the parent folder object.
@@ -46,7 +45,7 @@ func cloneVMFromInventory(
 
 	result, err := cloneTask.WaitForResult(vmCtx, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "clone VM task failed")
+		return nil, fmt.Errorf("clone VM task failed: %w", err)
 	}
 
 	ref := result.Result.(vimtypes.ManagedObjectReference)

@@ -21,6 +21,7 @@ MD033:
   - th
   - em
   - abbr
+  - strike
 
 # no-hard-tabs
 MD010:

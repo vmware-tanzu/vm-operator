@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"

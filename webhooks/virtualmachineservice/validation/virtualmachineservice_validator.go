@@ -6,6 +6,7 @@ package validation
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"reflect"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	utilnet "k8s.io/utils/net"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -190,10 +190,19 @@ func (v validator) validateSpec(ctx *pkgctx.WebhookRequestContext, vmService *vm
 			allErrs = append(allErrs, field.Forbidden(fldPath, "may only be used when `type` is 'LoadBalancer'"))
 		}
 
-		_, err := utilnet.ParseIPNets(vmService.Spec.LoadBalancerSourceRanges...)
-		if err != nil {
-			allErrs = append(allErrs, field.Invalid(fldPath, fmt.Sprintf("%v", vmService.Spec.LoadBalancerSourceRanges),
-				"must be a list of IP ranges. For example, 10.240.0.0/24,10.250.0.0/24"))
+		for i := range vmService.Spec.LoadBalancerSourceRanges {
+			srcRange := vmService.Spec.LoadBalancerSourceRanges[i]
+			srcRange = strings.TrimSpace(srcRange)
+			if _, _, err := net.ParseCIDR(srcRange); err != nil {
+				allErrs = append(
+					allErrs,
+					field.Invalid(
+						fldPath.Index(i),
+						srcRange,
+						"must be compatible with https://pkg.go.dev/net#ParseCIDR",
+					),
+				)
+			}
 		}
 	}
 

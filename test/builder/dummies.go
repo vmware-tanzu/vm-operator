@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
@@ -24,6 +23,7 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 const (

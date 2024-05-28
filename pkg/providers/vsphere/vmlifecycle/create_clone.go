@@ -9,10 +9,10 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/utils/ptr"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // CloneVMFromInventory creates a new VM by cloning the source VM. This is not reachable/used

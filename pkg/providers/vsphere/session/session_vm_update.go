@@ -47,9 +47,9 @@ type VMUpdateArgs struct {
 
 // VMResizeArgs contains the arguments needed to resize a VM on VC.
 type VMResizeArgs struct {
+	VMClass *vmopv1.VirtualMachineClass
+	// ConfigSpec derived from the class and VM Spec.
 	ConfigSpec vimtypes.VirtualMachineConfigSpec
-	VMClass    vmopv1.VirtualMachineClass
-	MinCPUFreq uint64
 }
 
 func ethCardMatch(newBaseEthCard, curBaseEthCard vimtypes.BaseVirtualEthernetCard) bool {
@@ -863,32 +863,41 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		return false, err
 	}
 
-	cs, err := resize.CreateResizeConfigSpec(
-		vmCtx,
-		*moVM.Config,
-		resizeArgs.ConfigSpec)
-	if err != nil {
+	var configSpec vimtypes.VirtualMachineConfigSpec
+	var needsResize bool
+
+	if resizeArgs.VMClass != nil {
+		needsResize = vmopv1util.ResizeNeeded(*vmCtx.VM, *resizeArgs.VMClass)
+		if needsResize {
+			cs, err := resize.CreateResizeConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
+			if err != nil {
+				return false, err
+			}
+
+			configSpec = cs
+		}
+	}
+
+	if err := vmopv1util.OverwriteResizeConfigSpec(vmCtx, *vmCtx.VM, *moVM.Config, &configSpec); err != nil {
 		return false, err
 	}
 
-	if err := vmopv1util.OverrideResizeConfigSpec(
-		vmCtx,
-		*vmCtx.VM,
-		&cs); err != nil {
-		return false, err
-	}
-
-	if !reflect.DeepEqual(cs, vimtypes.VirtualMachineConfigSpec{}) {
-		vmCtx.Logger.Info("Powered off resizing", "configSpec", cs)
-		if err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, &cs); err != nil {
+	refetchProps := false
+	if !reflect.DeepEqual(configSpec, vimtypes.VirtualMachineConfigSpec{}) {
+		vmCtx.Logger.Info("Powered off resizing", "configSpec", configSpec)
+		if err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, &configSpec); err != nil {
 			vmCtx.Logger.Error(err, "powered off resize reconfigure failed")
 			return false, err
 		}
 
-		return true, nil
+		refetchProps = true
 	}
 
-	return false, nil
+	if needsResize {
+		vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, *resizeArgs.VMClass)
+	}
+
+	return refetchProps, nil
 }
 
 func (s *Session) updateVMDesiredPowerStateOff(

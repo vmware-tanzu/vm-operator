@@ -31,7 +31,7 @@ func CreateResizeConfigSpec(
 	return outCS, nil
 }
 
-// compareHardware compares the ConfigSpec.Hardware.
+// compareHardware compares the ConfigInfo.Hardware.
 func compareHardware(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs vimtypes.VirtualMachineConfigSpec,

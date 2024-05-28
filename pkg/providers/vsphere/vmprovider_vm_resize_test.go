@@ -20,6 +20,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -95,6 +96,22 @@ func vmResizeTests() {
 		return class
 	}
 
+	updateVMClass := func(class *vmopv1.VirtualMachineClass, cs vimtypes.VirtualMachineConfigSpec) {
+		class.Spec.ConfigSpec = encodedConfigSpec(cs)
+		class.Spec.Hardware.Cpus = int64(cs.NumCPUs)
+		class.Spec.Hardware.Memory = resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB))
+		class.Generation++ // Fake client doesn't increment this.
+		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
+	}
+
+	assertExpectedLastResizeAnnotation := func(vm *vmopv1.VirtualMachine, class *vmopv1.VirtualMachineClass) {
+		name, uid, generation, exists := vmopv1util.GetLastResizedAnnotation(*vm)
+		ExpectWithOffset(1, exists).To(BeTrue())
+		ExpectWithOffset(1, name).To(Equal(class.Name))
+		ExpectWithOffset(1, uid).To(BeEquivalentTo(class.UID))
+		ExpectWithOffset(1, generation).To(Equal(class.Generation))
+	}
+
 	Context("Resize VM", func() {
 
 		var (
@@ -137,7 +154,8 @@ func vmResizeTests() {
 			It("Resizes", func() {
 				cs := configSpec
 				cs.NumCPUs = 42
-				vm.Spec.ClassName = createVMClass(cs).Name
+				newVMClass := createVMClass(cs)
+				vm.Spec.ClassName = newVMClass.Name
 
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
@@ -145,6 +163,8 @@ func vmResizeTests() {
 				var o mo.VirtualMachine
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 				Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
+
+				assertExpectedLastResizeAnnotation(vm, newVMClass)
 			})
 		})
 
@@ -156,7 +176,8 @@ func vmResizeTests() {
 			It("Resizes", func() {
 				cs := configSpec
 				cs.MemoryMB = 8192
-				vm.Spec.ClassName = createVMClass(cs).Name
+				newVMClass := createVMClass(cs)
+				vm.Spec.ClassName = newVMClass.Name
 
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
@@ -164,17 +185,88 @@ func vmResizeTests() {
 				var o mo.VirtualMachine
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+
+				assertExpectedLastResizeAnnotation(vm, newVMClass)
+			})
+		})
+
+		Context("Same Class Resize Annotation", func() {
+			BeforeEach(func() {
+				configSpec.MemoryMB = 1024
+			})
+
+			It("Resizes", func() {
+				cs := configSpec
+				cs.MemoryMB = 8192
+				updateVMClass(vmClass, cs)
+
+				By("Does not resize without annotation", func() {
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
+				})
+
+				vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+
+				assertExpectedLastResizeAnnotation(vm, vmClass)
 			})
 		})
 
 		Context("Devops Overrides", func() {
-
 			Context("ChangeBlockTracking", func() {
+				It("Overrides", func() {
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						ChangeBlockTracking: vimtypes.NewBool(true),
+					}
+
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
+
+					assertExpectedLastResizeAnnotation(vm, vmClass)
+				})
+			})
+
+			Context("VM Class does not exist", func() {
 				BeforeEach(func() {
 					configSpec.ChangeTrackingEnabled = vimtypes.NewBool(false)
 				})
 
-				It("Overrides", func() {
+				It("Still applies overrides", func() {
+					Expect(ctx.Client.Delete(ctx, vmClass)).To(Succeed())
+
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						ChangeBlockTracking: vimtypes.NewBool(true),
+					}
+
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
+				})
+			})
+
+			Context("VM Classless VMs", func() {
+				BeforeEach(func() {
+					configSpec.ChangeTrackingEnabled = vimtypes.NewBool(false)
+				})
+
+				It("Still applies overrides", func() {
+					vm.Spec.ClassName = ""
 					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
 						ChangeBlockTracking: vimtypes.NewBool(true),
 					}

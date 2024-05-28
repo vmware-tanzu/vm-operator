@@ -12,14 +12,15 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-// OverrideResizeConfigSpec applies any set fields in the VM Spec to the ConfigSpec.
-func OverrideResizeConfigSpec(
+// OverwriteResizeConfigSpec applies any set fields in the VM Spec to the ConfigSpec.
+func OverwriteResizeConfigSpec(
 	_ context.Context,
 	vm vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
 	cs *vimtypes.VirtualMachineConfigSpec) error {
 
 	if adv := vm.Spec.Advanced; adv != nil {
-		ptr.Overwrite(&cs.ChangeTrackingEnabled, adv.ChangeBlockTracking)
+		ptr.OverwriteWithUser(&cs.ChangeTrackingEnabled, adv.ChangeBlockTracking, ci.ChangeTrackingEnabled)
 	}
 
 	return nil

@@ -12,7 +12,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("SetResizeAnnotation", func() {
+const vmClassUID = "my-uid"
+
+var _ = Describe("SetLastResizedAnnotation", func() {
 
 	var (
 		vm      *vmopv1.VirtualMachine
@@ -23,20 +25,20 @@ var _ = Describe("SetResizeAnnotation", func() {
 		vm = builder.DummyVirtualMachine()
 
 		vmClass = *builder.DummyVirtualMachineClass("my-class")
-		vmClass.UID = "my-uid"
+		vmClass.UID = vmClassUID
 		vmClass.Generation = 42
 	})
 
 	It("Sets expected annotation", func() {
-		err := vmopv1util.SetResizeAnnotation(vm, vmClass)
+		err := vmopv1util.SetLastResizedAnnotation(vm, vmClass)
 		Expect(err).ToNot(HaveOccurred())
 		val, ok := vm.Annotations[vmopv1util.LastResizedAnnotationKey]
 		Expect(ok).To(BeTrue())
-		Expect(val).To(MatchJSON(`{"Name":"my-class","UID":"my-uid","Generation":42}`))
+		Expect(val).To(MatchJSON(`{"name":"my-class","uid":"my-uid","generation":42}`))
 	})
 })
 
-var _ = Describe("GetResizeAnnotation", func() {
+var _ = Describe("SetLastResizedAnnotationClassName", func() {
 
 	var (
 		vm      *vmopv1.VirtualMachine
@@ -47,13 +49,45 @@ var _ = Describe("GetResizeAnnotation", func() {
 		vm = builder.DummyVirtualMachine()
 
 		vmClass = *builder.DummyVirtualMachineClass("my-class")
-		vmClass.UID = "my-uid"
+		vmClass.UID = vmClassUID
+		vmClass.Generation = 42
+	})
+
+	It("Sets expected annotation", func() {
+		err := vmopv1util.SetLastResizedAnnotationClassName(vm, vmClass.Name)
+		Expect(err).ToNot(HaveOccurred())
+		val, ok := vm.Annotations[vmopv1util.LastResizedAnnotationKey]
+		Expect(ok).To(BeTrue())
+		Expect(val).To(MatchJSON(`{"name":"my-class"}`))
+
+		By("GetLastResizedAnnotation also returns expected values", func() {
+			className, uid, generation, ok := vmopv1util.GetLastResizedAnnotation(*vm)
+			Expect(ok).To(BeTrue())
+			Expect(className).To(Equal(vmClass.Name))
+			Expect(uid).To(BeEmpty())
+			Expect(generation).To(BeZero())
+		})
+	})
+})
+
+var _ = Describe("GetLastResizedAnnotation", func() {
+
+	var (
+		vm      *vmopv1.VirtualMachine
+		vmClass vmopv1.VirtualMachineClass
+	)
+
+	BeforeEach(func() {
+		vm = builder.DummyVirtualMachine()
+
+		vmClass = *builder.DummyVirtualMachineClass("my-class")
+		vmClass.UID = vmClassUID
 		vmClass.Generation = 42
 	})
 
 	When("Resize annotation is not present", func() {
 		It("Returns expected values", func() {
-			className, uid, generation, ok := vmopv1util.GetResizeAnnotation(*vm)
+			className, uid, generation, ok := vmopv1util.GetLastResizedAnnotation(*vm)
 			Expect(ok).To(BeFalse())
 			Expect(className).To(BeEmpty())
 			Expect(uid).To(BeEmpty())
@@ -63,15 +97,83 @@ var _ = Describe("GetResizeAnnotation", func() {
 
 	When("Resize annotation is present", func() {
 		BeforeEach(func() {
-			Expect(vmopv1util.SetResizeAnnotation(vm, vmClass)).To(Succeed())
+			Expect(vmopv1util.SetLastResizedAnnotation(vm, vmClass)).To(Succeed())
 		})
 
 		It("Returns expected values", func() {
-			className, uid, generation, ok := vmopv1util.GetResizeAnnotation(*vm)
+			className, uid, generation, ok := vmopv1util.GetLastResizedAnnotation(*vm)
 			Expect(ok).To(BeTrue())
 			Expect(className).To(Equal(vmClass.Name))
 			Expect(uid).To(BeEquivalentTo(vmClass.UID))
 			Expect(generation).To(Equal(vmClass.Generation))
+		})
+	})
+})
+
+var _ = Describe("ResizeNeeded", func() {
+
+	var (
+		vm      vmopv1.VirtualMachine
+		vmClass vmopv1.VirtualMachineClass
+	)
+
+	BeforeEach(func() {
+		vmClass = *builder.DummyVirtualMachineClass("my-class")
+		vmClass.UID = vmClassUID
+		vmClass.Generation = 42
+
+		vm = *builder.DummyVirtualMachine()
+		vm.Name = "vm-need-resize-test"
+		vm.Spec.ClassName = vmClass.Name
+	})
+
+	Context("Resize annotation is not present", func() {
+		It("returns false", func() {
+			Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeFalse())
+		})
+	})
+
+	Context("Resize annotation is present", func() {
+		BeforeEach(func() {
+			Expect(vmopv1util.SetLastResizedAnnotation(&vm, vmClass)).To(Succeed())
+		})
+
+		When("Spec.ClassName is the same", func() {
+			When("same-class annotation is not present", func() {
+				It("returns false", func() {
+					Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeFalse())
+				})
+			})
+
+			When("same-class annotation is present", func() {
+				BeforeEach(func() {
+					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
+				})
+
+				When("class is unchanged", func() {
+					It("returns false", func() {
+						Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeFalse())
+					})
+				})
+				When("class is changed", func() {
+					BeforeEach(func() {
+						vmClass.Generation++
+					})
+					It("returns true", func() {
+						Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeTrue())
+					})
+				})
+			})
+		})
+
+		When("Spec.ClassName changes", func() {
+			BeforeEach(func() {
+				vm.Spec.ClassName = "my-new-class"
+			})
+
+			It("returns true", func() {
+				Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeTrue())
+			})
 		})
 	})
 })

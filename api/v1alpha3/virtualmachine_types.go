@@ -132,6 +132,10 @@ const (
 	// V1alpha1ConfigMapTransportAnnotation is an annotation that indicates that the VM
 	// was created with the v1alpha1 API and specifies a configMap as the metadata transport resource type.
 	V1alpha1ConfigMapTransportAnnotation = GroupName + "/v1a1-configmap-md-transport"
+
+	// VirtualMachineSameVMClassResizeAnnotation is an annotation that indicates the VM
+	// should be resized as the class it points to changes.
+	VirtualMachineSameVMClassResizeAnnotation = GroupName + "/same-vm-class-resize "
 )
 
 const (

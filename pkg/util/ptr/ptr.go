@@ -3,6 +3,10 @@
 
 package ptr
 
+import (
+	"reflect"
+)
+
 // To returns a pointer to t.
 func To[T any](t T) *T {
 	return &t
@@ -40,14 +44,28 @@ func Equal[T comparable](a, b *T) bool {
 	return *a == *b
 }
 
-// Overwrite copies src to dst as long as src is non-nil.
-func Overwrite[T any](dst **T, src *T) bool {
+// Overwrite copies src to dst if:
+// - src is a non-nil channel, function, interface, map, pointer, or slice
+// - src is any other type of value
+// Please note, this function panics if dst is nil.
+func Overwrite[T any](dst *T, src T) {
 	if dst == nil {
-		return false
+		panic("dst is nil")
 	}
-	if src != nil {
+
+	valueOfSrc := reflect.ValueOf(src)
+	switch valueOfSrc.Kind() {
+	case reflect.Chan,
+		reflect.Func,
+		reflect.Interface,
+		reflect.Map,
+		reflect.Pointer,
+		reflect.Slice:
+
+		if !valueOfSrc.IsNil() {
+			*dst = src
+		}
+	default:
 		*dst = src
-		return true
 	}
-	return false
 }

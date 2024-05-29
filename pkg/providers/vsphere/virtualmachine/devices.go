@@ -5,10 +5,10 @@ package virtualmachine
 
 import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/utils/ptr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 const (

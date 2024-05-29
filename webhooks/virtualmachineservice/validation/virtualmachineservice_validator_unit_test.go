@@ -151,7 +151,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid ports", createArgs{invalidPorts: true}, false, "spec.ports: Required value", nil),
 		Entry("should deny invalid selector", createArgs{invalidSelector: true}, false, "spec.selector: Invalid value: \"THIS_NOT_VALID!\": name part must consist of alphanumeric characters", nil),
 		Entry("should deny invalid ClusterIP", createArgs{invalidClusterIP: true}, false, "spec.clusterIP: Invalid value: \"100.1000.1.1\": must be a valid IP address", nil),
-		Entry("should deny invalid LoadBalancerSourceRanges", createArgs{invalidLBSourceRanges: true}, false, "spec.loadBalancerSourceRanges: Invalid value: \"[10.1.1.1/42]", nil),
+		Entry("should deny invalid LoadBalancerSourceRanges", createArgs{invalidLBSourceRanges: true}, false, `spec.loadBalancerSourceRanges[0]: Invalid value: "10.1.1.1/42": must be compatible with https://pkg.go.dev/net#ParseCIDR`, nil),
 		Entry("should deny invalid ExternalName", createArgs{invalidExternalName: true}, false, "spec.externalName: Invalid value: \"InValid!\": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters", nil),
 	)
 

@@ -9,6 +9,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // OverrideResizeConfigSpec applies any set fields in the VM Spec to the ConfigSpec.
@@ -18,14 +19,8 @@ func OverrideResizeConfigSpec(
 	cs *vimtypes.VirtualMachineConfigSpec) error {
 
 	if adv := vm.Spec.Advanced; adv != nil {
-		overridePtrField(adv.ChangeBlockTracking, &cs.ChangeTrackingEnabled)
+		ptr.Overwrite(&cs.ChangeTrackingEnabled, adv.ChangeBlockTracking)
 	}
 
 	return nil
-}
-
-func overridePtrField[T any](a *T, b **T) {
-	if a != nil {
-		*b = a
-	}
 }

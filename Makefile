@@ -91,9 +91,15 @@ IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
 # Code coverage files
-COVERAGE_FILE = cover.out
-INT_COV_FILE  = integration-cover.out
-FULL_COV_FILE = merged-cover.out
+COVERAGE_FILE := cover.out
+
+# Gather a set of root packages that have at least one file that matches
+# the pattern *_test.go as a child or descendent in that directory.
+# However, given this is not a cheap operation, only gather these packages if
+# the test-nocover target is one of the currenty active goals.
+ifeq (,$(filter-out test-nocover,$(MAKECMDGOALS)))
+COVERED_PKGS := $(shell find . -name '*_test.go' -not -path './api/*' -print | awk -F'/' '{print "./"$$2}' | sort -u)
+endif
 
 # Kind cluster name used in integration tests. Please note this name must
 # match the value in the Groovy CI script or else the CI process won't
@@ -142,16 +148,22 @@ help: ## Display this help
 ## Testing
 ## --------------------------------------
 
+.PHONY: test-api
+test-api: | $(GINKGO)
+test-api: ## Run API tests
+	COVERAGE_FILE="" hack/test.sh ./api
+
 .PHONY: test-nocover
 test-nocover: | $(GINKGO)
+test-nocover: | test-api
 test-nocover: ## Run tests sans coverage
-	hack/test.sh
+	hack/test.sh $(COVERED_PKGS)
 
 .PHONY: test
 test: | $(GINKGO) $(ETCD) $(KUBE_APISERVER)
 test: ## Run tests
-	@rm -f $(COVERAGE_FILE)
-	hack/test.sh $(COVERAGE_FILE)
+	@rm -f "$(COVERAGE_FILE)"
+	COVERAGE_FILE="$(COVERAGE_FILE)" $(MAKE) test-nocover
 
 .PHONY: coverage-xml
 coverage-xml: $(GOCOV) $(GOCOV_XML)
@@ -160,7 +172,7 @@ coverage-xml:
 
 .PHONY: coverage
 coverage: ## Show test coverage in browser
-	go tool cover -html=$(COVERAGE_FILE)
+	go tool cover -html="$(COVERAGE_FILE)"
 
 
 ## --------------------------------------

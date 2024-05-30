@@ -14,7 +14,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.19.0
 	golang.org/x/vuln v1.1.1
 	k8s.io/code-generator v0.30.0
-	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240215124517-56159419231e
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240524133911-be2f383334bd
 	sigs.k8s.io/controller-tools v0.15.0
 	sigs.k8s.io/kind v0.20.0
 	sigs.k8s.io/kubebuilder/v3 v3.12.0
@@ -95,7 +95,7 @@ require (
 	github.com/go-critic/go-critic v0.11.4 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
-	github.com/go-logr/zapr v1.2.4 // indirect
+	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/swag v0.22.3 // indirect

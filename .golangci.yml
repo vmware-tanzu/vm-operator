@@ -1,9 +1,5 @@
 run:
   timeout: 5m
-  skip-files:
-   - ".*generated.*\\.go"
-   - external/
-   - pkg/util/cloudinit/schema/
 
 # override defaults
 linters-settings:
@@ -81,6 +77,25 @@ linters-settings:
       - alias: proberctx
         pkg: github.com/vmware-tanzu/vm-operator/pkg/prober/context
 
+  depguard:
+    rules:
+      main:
+        list-mode: lax # allow unless explicitly denied
+        files:
+        - $all
+        - "!$test"
+        deny:
+        - pkg: io/ioutil
+          desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+      test:
+        list-mode: lax # allow unless explicitly denied
+        files:
+        - $test
+        deny:
+        - pkg: io/ioutil
+          desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+
+
 linters:
   disable-all: true
   enable:
@@ -123,6 +138,11 @@ issues:
   # reviewers focus on reviewing the most relevant changes in the PRs and avoid
   # nitpicking.
   exclude-use-default: false
+  exclude-dirs:
+  - external
+  - pkg/util/cloudinit/schema
+  exclude-files:
+  - ".*generated.*\\.go"
   exclude:
   # TODO: Remove the following exclusions over time once we have fixed those.
   - "ST1000: at least one file in a package should have a package comment"
@@ -150,6 +170,8 @@ issues:
     text: should not use dot imports
   - path: test/builder/vcsim_test_context.go
     text: should not use dot imports
+  - path: _test.go
+    text: should not use dot imports
   # All of our webhooks follow the pattern of passing the webhook context which
   # contains fields like the Client. Ignore the linter warnings for now.
   - path: webhooks/
@@ -157,6 +179,7 @@ issues:
   - path: _test.go
     linters:
     - gosec
+    - depguard
   - linters:
     - revive
     text: "unused-parameter: parameter"

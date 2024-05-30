@@ -780,7 +780,6 @@ func (s *Session) prepareVMForPowerOn(
 		return err
 	}
 
-	//nolint:revive
 	if err := s.ensureCNSVolumes(vmCtx); err != nil {
 		return err
 	}
@@ -905,7 +904,7 @@ func (s *Session) updateVMDesiredPowerStateOff(
 			vmCtx.VM.Spec.PowerState,
 			vmCtx.VM.Spec.PowerOffMode)
 		if err != nil {
-			return
+			return refetchProps, err
 		}
 
 		refetchProps = true
@@ -919,7 +918,7 @@ func (s *Session) updateVMDesiredPowerStateOff(
 		false,
 		vmCtx.VM.Spec.MinHardwareVersion)
 	if err != nil {
-		return
+		return refetchProps, err
 	}
 	if opResult == vmutil.ReconcileMinHardwareVersionResultUpgraded {
 		refetchProps = true
@@ -932,7 +931,7 @@ func (s *Session) updateVMDesiredPowerStateOff(
 			vmCtx.MoVM,
 			getResizeArgsFn)
 		if err != nil {
-			return
+			return refetchProps, err
 		}
 	}
 
@@ -951,7 +950,7 @@ func (s *Session) updateVMDesiredPowerStateSuspended(
 			vmCtx.VM.Spec.PowerState,
 			vmCtx.VM.Spec.SuspendMode)
 		if err != nil {
-			return
+			return refetchProps, err
 		}
 
 		refetchProps = true
@@ -1013,11 +1012,11 @@ func (s *Session) updateVMDesiredPowerStateOn(
 		var reconfigured bool
 		reconfigured, err = s.poweredOnVMReconfigure(vmCtx, resVM, config)
 		if err != nil {
-			return
+			return refetchProps, err
 		}
 		refetchProps = refetchProps || reconfigured
 
-		return
+		return refetchProps, err
 	}
 
 	if existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
@@ -1032,13 +1031,13 @@ func (s *Session) updateVMDesiredPowerStateOn(
 
 	updateArgs, err := getUpdateArgsFn()
 	if err != nil {
-		return
+		return refetchProps, err
 	}
 
 	// TODO: Find a better place for this?
 	err = s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy)
 	if err != nil {
-		return
+		return refetchProps, err
 	}
 
 	// A VM's hardware can only be upgraded if the VM is powered off.
@@ -1049,7 +1048,7 @@ func (s *Session) updateVMDesiredPowerStateOn(
 		false,
 		vmCtx.VM.Spec.MinHardwareVersion)
 	if err != nil {
-		return
+		return refetchProps, err
 	}
 
 	// Just assume something is going to change after this point - which is most likely true - until
@@ -1058,7 +1057,7 @@ func (s *Session) updateVMDesiredPowerStateOn(
 
 	err = s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs)
 	if err != nil {
-		return
+		return refetchProps, err
 	}
 
 	err = resVM.SetPowerState(
@@ -1067,7 +1066,7 @@ func (s *Session) updateVMDesiredPowerStateOn(
 		vmCtx.VM.Spec.PowerState,
 		vmopv1.VirtualMachinePowerOpModeHard)
 	if err != nil {
-		return
+		return refetchProps, err
 	}
 
 	if vmCtx.VM.Annotations == nil {
@@ -1075,7 +1074,7 @@ func (s *Session) updateVMDesiredPowerStateOn(
 	}
 	vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
 
-	return //nolint:nakedret
+	return refetchProps, err
 }
 
 func (s *Session) UpdateVirtualMachine(

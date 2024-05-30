@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
-	"k8s.io/utils/ptr"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
@@ -453,15 +452,15 @@ func convert_v1alpha3_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvan
 	switch in.DefaultVolumeProvisioningMode {
 	case vmopv1.VirtualMachineVolumeProvisioningModeThin:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
-			ThinProvisioned: ptr.To(true),
+			ThinProvisioned: ptrTo(true),
 		}
 	case vmopv1.VirtualMachineVolumeProvisioningModeThick:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
-			ThinProvisioned: ptr.To(false),
+			ThinProvisioned: ptrTo(false),
 		}
 	case vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
-			EagerZeroed: ptr.To(true),
+			EagerZeroed: ptrTo(true),
 		}
 	}
 
@@ -485,7 +484,7 @@ func convert_v1alpha3_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(capacity
 			Capacity: corev1.ResourceList{
 				corev1.ResourceEphemeralStorage: *capacity,
 			},
-			DeviceKey: ptr.To(bootDiskDeviceKey),
+			DeviceKey: ptrTo(bootDiskDeviceKey),
 		},
 	}
 }
@@ -1214,4 +1213,8 @@ func (src *VirtualMachineList) ConvertTo(dstRaw ctrlconversion.Hub) error {
 func (dst *VirtualMachineList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachineList)
 	return Convert_v1alpha3_VirtualMachineList_To_v1alpha1_VirtualMachineList(src, dst, nil)
+}
+
+func ptrTo[T any](t T) *T {
+	return &t
 }

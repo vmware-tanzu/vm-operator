@@ -33,7 +33,6 @@ SETUP_ENVTEST     := $(BIN_DIR)/$(GOHOSTOSARCH)/setup-envtest
 GOLANGCI_LINT     := $(BIN_DIR)/$(GOHOSTOSARCH)/golangci-lint
 KUSTOMIZE         := $(BIN_DIR)/$(GOHOSTOSARCH)/kustomize
 GINKGO            := $(BIN_DIR)/$(GOHOSTOSARCH)/ginkgo
-GOCOVMERGE        := $(BIN_DIR)/$(GOHOSTOSARCH)/gocovmerge
 KUBEBUILDER       := $(BIN_DIR)/$(GOHOSTOSARCH)/kubebuilder
 ETCD              := $(BIN_DIR)/$(GOHOSTOSARCH)/etcd
 KUBE_APISERVER    := $(BIN_DIR)/$(GOHOSTOSARCH)/kube-apiserver
@@ -89,11 +88,6 @@ ginkgo: $(GINKGO) ## Install ginkgo
 $(GINKGO): go.mod
 	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
 	go build -tags=vmop_tools -o $(@) github.com/onsi/ginkgo/v2/ginkgo
-
-gocovmerge: $(GOCOVMERGE) ## Install gocovmerge
-$(GOCOVMERGE): go.mod
-	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
-	go build -tags=vmop_tools -o $(@) github.com/wadey/gocovmerge
 
 gocov: $(GOCOV) ## Install gocov
 $(GOCOV): go.mod

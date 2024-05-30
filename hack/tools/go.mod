@@ -10,7 +10,7 @@ require (
 	github.com/elastic/crd-ref-docs v0.0.12
 	github.com/golangci/golangci-lint v1.59.0
 	github.com/onsi/ginkgo/v2 v2.19.0
-	golang.org/x/vuln v1.0.1
+	golang.org/x/vuln v1.1.1
 	k8s.io/code-generator v0.30.0
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240215124517-56159419231e
 	sigs.k8s.io/controller-tools v0.15.0
@@ -234,7 +234,7 @@ require (
 	golang.org/x/sync v0.7.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
-	golang.org/x/tools v0.21.0
+	golang.org/x/tools v0.21.1-0.20240514024235-59d9797072e7
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

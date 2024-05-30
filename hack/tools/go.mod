@@ -6,7 +6,7 @@ toolchain go1.22.3
 
 require (
 	github.com/AlekSi/gocov-xml v1.1.0
-	github.com/axw/gocov v1.1.1-0.20220608235813-12cc591a77f7
+	github.com/axw/gocov v1.1.0
 	github.com/elastic/crd-ref-docs v0.0.12
 	github.com/golangci/golangci-lint v1.52.2
 	github.com/onsi/ginkgo/v2 v2.19.0

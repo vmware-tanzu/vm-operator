@@ -35,7 +35,8 @@ import (
 )
 
 const (
-	finalizerName = "virtualmachineservice.vmoperator.vmware.com"
+	finalizerName           = "vmoperator.vmware.com/virtualmachineservice"
+	deprecatedFinalizerName = "virtualmachineservice.vmoperator.vmware.com"
 
 	OpCreate = "CreateK8sService"
 	OpDelete = "DeleteK8sService"
@@ -153,7 +154,8 @@ func (r *ReconcileVirtualMachineService) Reconcile(ctx context.Context, request 
 }
 
 func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *pkgctx.VirtualMachineServiceContext) error {
-	if controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) {
+	if controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) ||
+		controllerutil.ContainsFinalizer(ctx.VMService, deprecatedFinalizerName) {
 		objectMeta := metav1.ObjectMeta{
 			Name:      ctx.VMService.Name,
 			Namespace: ctx.VMService.Namespace,
@@ -174,6 +176,7 @@ func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *pkgctx.VirtualMach
 		ctx.Logger.Info("Delete VirtualMachineService")
 		r.recorder.EmitEvent(ctx.VMService, OpDelete, nil, false)
 		controllerutil.RemoveFinalizer(ctx.VMService, finalizerName)
+		controllerutil.RemoveFinalizer(ctx.VMService, deprecatedFinalizerName)
 	}
 
 	return nil
@@ -181,6 +184,11 @@ func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *pkgctx.VirtualMach
 
 func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx *pkgctx.VirtualMachineServiceContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) {
+		// If the object has the deprecated finalizer, remove it.
+		if updated := controllerutil.RemoveFinalizer(ctx.VMService, deprecatedFinalizerName); updated {
+			ctx.Logger.V(5).Info("Removed deprecated finalizer", "finalizerName", deprecatedFinalizerName)
+		}
+
 		controllerutil.AddFinalizer(ctx.VMService, finalizerName)
 		// NOTE: The VirtualMachineService is set as the OwnerReference of the Service and Endpoints.
 		// So while ReconcileDelete() does delete them when our finalizer is set, the k8s GC will

@@ -31,7 +31,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-const finalizerName = "virtualmachinepublishrequest.vmoperator.vmware.com"
+const finalizerName = "vmoperator.vmware.com/virtualmachinepublishrequest"
 
 func unitTests() {
 	Describe(

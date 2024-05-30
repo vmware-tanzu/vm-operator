@@ -73,7 +73,7 @@ func unitTestsReconcile() {
 
 		cclItem = utils.DummyClusterContentLibraryItem(utils.ItemFieldNamePrefix + "-dummy")
 		// Add our finalizer so ReconcileNormal() does not return early.
-		cclItem.Finalizers = []string{utils.ClusterContentLibraryItemVmopFinalizer}
+		cclItem.Finalizers = []string{utils.CCLItemFinalizer}
 	})
 
 	JustBeforeEach(func() {
@@ -109,7 +109,7 @@ func unitTestsReconcile() {
 			It("should add the finalizer", func() {
 				Expect(reconciler.ReconcileNormal(cclItemCtx)).To(Succeed())
 
-				Expect(cclItem.Finalizers).To(ContainElement(utils.ClusterContentLibraryItemVmopFinalizer))
+				Expect(cclItem.Finalizers).To(ContainElement(utils.CCLItemFinalizer))
 			})
 		})
 
@@ -287,10 +287,10 @@ func unitTestsReconcile() {
 	Context("ReconcileDelete", func() {
 
 		It("should remove the finalizer from ClusterContentLibraryItem resource", func() {
-			Expect(cclItem.Finalizers).To(ContainElement(utils.ClusterContentLibraryItemVmopFinalizer))
+			Expect(cclItem.Finalizers).To(ContainElement(utils.CCLItemFinalizer))
 
 			Expect(reconciler.ReconcileDelete(cclItemCtx)).To(Succeed())
-			Expect(cclItem.Finalizers).ToNot(ContainElement(utils.ClusterContentLibraryItemVmopFinalizer))
+			Expect(cclItem.Finalizers).ToNot(ContainElement(utils.CCLItemFinalizer))
 		})
 	})
 }

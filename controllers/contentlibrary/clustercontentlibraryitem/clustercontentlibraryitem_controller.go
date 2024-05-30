@@ -128,9 +128,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 // ReconcileDelete reconciles a deletion for a ClusterContentLibraryItem resource.
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.ClusterContentLibraryItemContext) error {
-	if controllerutil.ContainsFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer) {
+	if controllerutil.ContainsFinalizer(ctx.CCLItem, utils.CCLItemFinalizer) ||
+		controllerutil.ContainsFinalizer(ctx.CCLItem, utils.DeprecatedCCLItemFinalizer) {
+
 		r.Metrics.DeleteMetrics(ctx.Logger, ctx.ImageObjName, "")
-		controllerutil.RemoveFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer)
+		controllerutil.RemoveFinalizer(ctx.CCLItem, utils.CCLItemFinalizer)
+		controllerutil.RemoveFinalizer(ctx.CCLItem, utils.DeprecatedCCLItemFinalizer)
 		return r.Update(ctx, ctx.CCLItem)
 	}
 
@@ -140,10 +143,16 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.ClusterContentLibraryItemContex
 // ReconcileNormal reconciles a ClusterContentLibraryItem resource by creating or
 // updating the corresponding ClusterVirtualMachineImage resource.
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.ClusterContentLibraryItemContext) error {
-	if !controllerutil.ContainsFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer) {
+	if !controllerutil.ContainsFinalizer(ctx.CCLItem, utils.CCLItemFinalizer) {
+
+		// If the object has the deprecated finalizer, remove it.
+		if updated := controllerutil.RemoveFinalizer(ctx.CCLItem, utils.DeprecatedCCLItemFinalizer); updated {
+			ctx.Logger.V(5).Info("Removed deprecated finalizer", "finalizerName", utils.DeprecatedCCLItemFinalizer)
+		}
+
 		// The finalizer must be present before proceeding in order to ensure ReconcileDelete() will be called.
 		// Return immediately after here to update the object and then we'll proceed on the next reconciliation.
-		controllerutil.AddFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer)
+		controllerutil.AddFinalizer(ctx.CCLItem, utils.CCLItemFinalizer)
 		return r.Update(ctx, ctx.CCLItem)
 	}
 

@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	finalizerName = "virtualmachineservice.vmoperator.vmware.com"
+	finalizerName = "vmoperator.vmware.com/virtualmachineservice"
 )
 
 func intgTests() {

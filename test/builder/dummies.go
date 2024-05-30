@@ -447,7 +447,7 @@ func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, cl
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
 			Namespace:  namespace,
-			Finalizers: []string{"virtualmachinepublishrequest.vmoperator.vmware.com"},
+			Finalizers: []string{"vmoperator.vmware.com/virtualmachinepublishrequest"},
 		},
 		Spec: vmopv1.VirtualMachinePublishRequestSpec{
 			Source: vmopv1.VirtualMachinePublishRequestSource{

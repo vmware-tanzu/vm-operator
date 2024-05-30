@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	finalizer = "virtualmachinesetresourcepolicy.vmoperator.vmware.com"
+	finalizer = "vmoperator.vmware.com/virtualmachinesetresourcepolicy"
 )
 
 func unitTests() {

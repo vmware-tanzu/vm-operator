@@ -38,7 +38,8 @@ import (
 )
 
 const (
-	finalizerName = "virtualmachine.vmoperator.vmware.com"
+	deprecatedFinalizerName = "virtualmachine.vmoperator.vmware.com"
+	finalizerName           = "vmoperator.vmware.com/virtualmachine"
 
 	// vmClassControllerName is the name of the controller specified in a
 	// VirtualMachineClass resource's field spec.controllerName field that
@@ -300,7 +301,8 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 		return nil
 	}
 
-	if controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
+	if controllerutil.ContainsFinalizer(ctx.VM, finalizerName) ||
+		controllerutil.ContainsFinalizer(ctx.VM, deprecatedFinalizerName) {
 		defer func() {
 			r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)
 		}()
@@ -316,6 +318,7 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 		}
 
 		controllerutil.RemoveFinalizer(ctx.VM, finalizerName)
+		controllerutil.RemoveFinalizer(ctx.VM, deprecatedFinalizerName)
 		ctx.Logger.Info("Provider Completed deleting Virtual Machine", "time", time.Now().Format(time.RFC3339))
 	}
 
@@ -330,6 +333,12 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 // ReconcileNormal processes a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr error) {
 	if !controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
+
+		// If the object has the deprecated finalizer, remove it.
+		if updated := controllerutil.RemoveFinalizer(ctx.VM, deprecatedFinalizerName); updated {
+			ctx.Logger.V(5).Info("Removed deprecated finalizer", "finalizerName", deprecatedFinalizerName)
+		}
+
 		// The finalizer must be present before proceeding in order to ensure that the VM will
 		// be cleaned up. Return immediately after here to let the patcher helper update the
 		// object, and then we'll proceed on the next reconciliation.

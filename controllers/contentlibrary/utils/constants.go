@@ -11,8 +11,10 @@ const (
 	ContentLibraryKind            = "ContentLibrary"
 	ContentLibraryItemKind        = "ContentLibraryItem"
 
-	ContentLibraryItemVmopFinalizer        = "contentlibraryitem.vmoperator.vmware.com"
-	ClusterContentLibraryItemVmopFinalizer = "clustercontentlibraryitem.vmoperator.vmware.com"
+	CLItemFinalizer            = "vmoperator.vmware.com/contentlibraryitem"
+	DeprecatedCLItemFinalizer  = "contentlibraryitem.vmoperator.vmware.com"
+	CCLItemFinalizer           = "clustercontentlibraryitem.vmoperator.vmware.com"
+	DeprecatedCCLItemFinalizer = "vmoperator.vmware.com/clustercontentlibraryitem"
 
 	// TKGServiceTypeLabelKeyPrefix is a label prefix used to identify
 	// labels that contain information about the type of service provided

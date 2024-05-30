@@ -46,7 +46,7 @@ func intgTestsReconcile() {
 		Eventually(func(g Gomega) {
 			item := &imgregv1a1.ContentLibraryItem{}
 			g.Expect(ctx.Client.Get(ctx, objKey, item)).To(Succeed())
-			g.Expect(item.Finalizers).To(ContainElement(utils.ContentLibraryItemVmopFinalizer))
+			g.Expect(item.Finalizers).To(ContainElement(utils.CLItemFinalizer))
 		}).Should(Succeed(), "waiting for ContentLibraryItem finalizer")
 	}
 

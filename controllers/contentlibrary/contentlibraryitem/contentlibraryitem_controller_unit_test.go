@@ -74,7 +74,7 @@ func unitTestsReconcile() {
 		}
 
 		clItem = utils.DummyContentLibraryItem(utils.ItemFieldNamePrefix+"-dummy", "dummy-ns")
-		clItem.Finalizers = []string{utils.ContentLibraryItemVmopFinalizer}
+		clItem.Finalizers = []string{utils.CLItemFinalizer}
 	})
 
 	JustBeforeEach(func() {
@@ -109,7 +109,7 @@ func unitTestsReconcile() {
 			It("should add the finalizer", func() {
 				Expect(reconciler.ReconcileNormal(clItemCtx)).To(Succeed())
 
-				Expect(clItem.Finalizers).To(ContainElement(utils.ContentLibraryItemVmopFinalizer))
+				Expect(clItem.Finalizers).To(ContainElement(utils.CLItemFinalizer))
 			})
 		})
 
@@ -265,10 +265,10 @@ func unitTestsReconcile() {
 	Context("ReconcileDelete", func() {
 
 		It("should remove the finalizer from ContentLibraryItem resource", func() {
-			Expect(clItem.Finalizers).To(ContainElement(utils.ContentLibraryItemVmopFinalizer))
+			Expect(clItem.Finalizers).To(ContainElement(utils.CLItemFinalizer))
 
 			Expect(reconciler.ReconcileDelete(clItemCtx)).To(Succeed())
-			Expect(clItem.Finalizers).ToNot(ContainElement(utils.ContentLibraryItemVmopFinalizer))
+			Expect(clItem.Finalizers).ToNot(ContainElement(utils.CLItemFinalizer))
 		})
 	})
 }

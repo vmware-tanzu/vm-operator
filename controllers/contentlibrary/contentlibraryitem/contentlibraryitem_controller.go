@@ -128,9 +128,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 // ReconcileDelete reconciles a deletion for a ContentLibraryItem resource.
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.ContentLibraryItemContext) error {
-	if controllerutil.ContainsFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer) {
+	if controllerutil.ContainsFinalizer(ctx.CLItem, utils.CLItemFinalizer) ||
+		controllerutil.ContainsFinalizer(ctx.CLItem, utils.DeprecatedCLItemFinalizer) {
+
 		r.Metrics.DeleteMetrics(ctx.Logger, ctx.ImageObjName, ctx.CLItem.Namespace)
-		controllerutil.RemoveFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer)
+		controllerutil.RemoveFinalizer(ctx.CLItem, utils.CLItemFinalizer)
+		controllerutil.RemoveFinalizer(ctx.CLItem, utils.DeprecatedCLItemFinalizer)
 		return r.Update(ctx, ctx.CLItem)
 	}
 
@@ -140,10 +143,16 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.ContentLibraryItemContext) erro
 // ReconcileNormal reconciles a ContentLibraryItem resource by creating or
 // updating the corresponding VirtualMachineImage resource.
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.ContentLibraryItemContext) error {
-	if !controllerutil.ContainsFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer) {
+	if !controllerutil.ContainsFinalizer(ctx.CLItem, utils.CLItemFinalizer) {
+
+		// If the object has the deprecated finalizer, remove it.
+		if updated := controllerutil.RemoveFinalizer(ctx.CLItem, utils.DeprecatedCLItemFinalizer); updated {
+			ctx.Logger.V(5).Info("Removed deprecated finalizer", "finalizerName", utils.DeprecatedCLItemFinalizer)
+		}
+
 		// The finalizer must be present before proceeding in order to ensure ReconcileDelete() will be called.
 		// Return immediately after here to update the object and then we'll proceed on the next reconciliation.
-		controllerutil.AddFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer)
+		controllerutil.AddFinalizer(ctx.CLItem, utils.CLItemFinalizer)
 		return r.Update(ctx, ctx.CLItem)
 	}
 

@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	finalizerName = "virtualmachinesetresourcepolicy.vmoperator.vmware.com"
+	finalizerName           = "vmoperator.vmware.com/virtualmachinesetresourcepolicy"
+	deprecatedFinalizerName = "virtualmachinesetresourcepolicy.vmoperator.vmware.com"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -68,6 +69,11 @@ type Reconciler struct {
 // ReconcileNormal reconciles a VirtualMachineSetResourcePolicy.
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSetResourcePolicyContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.ResourcePolicy, finalizerName) {
+		// If the object has the deprecated finalizer, remove it.
+		if updated := controllerutil.RemoveFinalizer(ctx.ResourcePolicy, deprecatedFinalizerName); updated {
+			ctx.Logger.V(5).Info("Removed deprecated finalizer", "finalizerName", deprecatedFinalizerName)
+		}
+
 		// Return here so the VirtualMachineSetResourcePolicy can be patched immediately. This ensures that
 		// the resource policies are cleaned up properly when they are deleted.
 		controllerutil.AddFinalizer(ctx.ResourcePolicy, finalizerName)
@@ -121,12 +127,14 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSetResourcePolicy
 		ctx.Logger.Info("Finished Reconciling VirtualMachineSetResourcePolicy Deletion")
 	}()
 
-	if controllerutil.ContainsFinalizer(ctx.ResourcePolicy, finalizerName) {
+	if controllerutil.ContainsFinalizer(ctx.ResourcePolicy, finalizerName) ||
+		controllerutil.ContainsFinalizer(ctx.ResourcePolicy, deprecatedFinalizerName) {
 		if err := r.deleteResourcePolicy(ctx); err != nil {
 			return err
 		}
 
 		controllerutil.RemoveFinalizer(ctx.ResourcePolicy, finalizerName)
+		controllerutil.RemoveFinalizer(ctx.ResourcePolicy, deprecatedFinalizerName)
 	}
 
 	return nil

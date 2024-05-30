@@ -40,8 +40,9 @@ import (
 )
 
 const (
-	finalizerName     = "virtualmachinepublishrequest.vmoperator.vmware.com"
-	TaskDescriptionID = "com.vmware.ovfs.LibraryItem.capture"
+	finalizerName           = "vmoperator.vmware.com/virtualmachinepublishrequest"
+	deprecatedFinalizerName = "virtualmachinepublishrequest.vmoperator.vmware.com"
+	TaskDescriptionID       = "com.vmware.ovfs.LibraryItem.capture"
 
 	// waitForTaskTimeout represents the timeout to wait for task existence in task manager.
 	// When calling `CreateOVF` API, there is no guarantee that we can get its task info due to
@@ -832,6 +833,11 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 	vmPublishReq := ctx.VMPublishRequest
 
 	if !controllerutil.ContainsFinalizer(vmPublishReq, finalizerName) {
+		// If the object has the deprecated finalizer, remove it.
+		if updated := controllerutil.RemoveFinalizer(vmPublishReq, deprecatedFinalizerName); updated {
+			ctx.Logger.V(5).Info("Removed deprecated finalizer", "finalizerName", deprecatedFinalizerName)
+		}
+
 		// The finalizer must be present before proceeding in order to ensure that the VirtualMachinePublishRequest will
 		// be cleaned up. Return immediately after here to let the patcher helper update the
 		// object, and then we'll proceed on the next reconciliation.
@@ -912,9 +918,11 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 }
 
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachinePublishRequestContext) (ctrl.Result, error) {
-	if controllerutil.ContainsFinalizer(ctx.VMPublishRequest, finalizerName) {
+	if controllerutil.ContainsFinalizer(ctx.VMPublishRequest, finalizerName) ||
+		controllerutil.ContainsFinalizer(ctx.VMPublishRequest, deprecatedFinalizerName) {
 		r.Metrics.DeleteMetrics(ctx.Logger, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
 		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, finalizerName)
+		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, deprecatedFinalizerName)
 	}
 
 	return ctrl.Result{}, nil

@@ -17,7 +17,7 @@ require (
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240524133911-be2f383334bd
 	sigs.k8s.io/controller-tools v0.15.0
 	sigs.k8s.io/kind v0.23.0
-	sigs.k8s.io/kubebuilder/v3 v3.12.0
+	sigs.k8s.io/kubebuilder/v3 v3.15.1
 	sigs.k8s.io/kustomize/kustomize/v5 v5.1.1
 )
 

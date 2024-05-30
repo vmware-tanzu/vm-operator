@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -238,8 +238,6 @@ func main() {
 // addConversionWebhooksToManager adds the ctrl-runtime managed webhooks. We just use these
 // for version conversion, but they can also do mutation and validation webhook callbacks
 // instead of our separate webhooks.
-//
-//nolint:revive
 func addConversionWebhooksToManager(_ *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	if err := (&vmopv1a1.VirtualMachine{}).SetupWebhookWithManager(mgr); err != nil {
 		return err

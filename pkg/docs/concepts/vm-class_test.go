@@ -35,11 +35,11 @@ var _ = Describe("VirtualMachineClass", func() {
 					rawj := json.RawMessage(act)
 					data, err := json.MarshalIndent(rawj, "", "  ")
 					ExpectWithOffset(1, err).ToNot(HaveOccurred())
-					fmt.Fprintf(GinkgoWriter, "JSON\n----\n%s\n\n", string(data))
+					_, _ = fmt.Fprintf(GinkgoWriter, "JSON\n----\n%s\n\n", string(data))
 
 					data, err = yaml.Marshal(rawj)
 					ExpectWithOffset(1, err).ToNot(HaveOccurred())
-					fmt.Fprintf(GinkgoWriter, "YAML\n----\n%s\n\n", string(data))
+					_, _ = fmt.Fprintf(GinkgoWriter, "YAML\n----\n%s\n\n", string(data))
 				}
 			})
 

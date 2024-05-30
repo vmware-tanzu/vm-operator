@@ -836,7 +836,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		// be cleaned up. Return immediately after here to let the patcher helper update the
 		// object, and then we'll proceed on the next reconciliation.
 		controllerutil.AddFinalizer(vmPublishReq, finalizerName)
-		return
+		return ctrl.Result{}, reterr
 	}
 
 	// Register VM publish request metrics based on the reconcile result.

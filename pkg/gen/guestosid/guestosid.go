@@ -29,7 +29,7 @@ func main() {
 		}
 	}()
 
-	fmt.Fprintf(
+	_, _ = fmt.Fprintf(
 		f,
 		format,
 		os.Args[1],

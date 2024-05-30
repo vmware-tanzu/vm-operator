@@ -54,7 +54,7 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 		})
 		It("Should return user data", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(data).To(Equal("## template: jinja\n#cloud-config\n\nusers:\n  - name: bob.wilson\n"))
+			Expect(data).To(Equal("## template: jinja\n#cloud-config\n\nusers:\n- name: bob.wilson\n"))
 		})
 	})
 
@@ -512,150 +512,150 @@ const cloudConfigWithNoDefaultUser = `## template: jinja
 #cloud-config
 
 users:
-  - hashed_passwd: "0123456789"
-    name: bob.wilson
+- hashed_passwd: "0123456789"
+  name: bob.wilson
 write_files:
-  - content: world
-    path: /hello
-  - content: there
-    path: /hi
+- content: world
+  path: /hello
+- content: there
+  path: /hi
 `
 
 const cloudConfigWithDefaultUser = `## template: jinja
 #cloud-config
 
 users:
-  - default
-  - hashed_passwd: "0123456789"
-    name: bob.wilson
+- default
+- hashed_passwd: "0123456789"
+  name: bob.wilson
 write_files:
-  - content: world
-    path: /hello
-  - content: there
-    path: /hi
+- content: world
+  path: /hello
+- content: there
+  path: /hi
 `
 
 const cloudConfigWithWithRunCmds = `## template: jinja
 #cloud-config
 
-users:
-  - hashed_passwd: "0123456789"
-    name: bob.wilson
 runcmd:
-  - ls /
-  - - ls
-    - -a
-    - -l
-    - /
-  - - echo
-    - hello, world.
+- ls /
+- - ls
+  - -a
+  - -l
+  - /
+- - echo
+  - hello, world.
+users:
+- hashed_passwd: "0123456789"
+  name: bob.wilson
 `
 
 const cloudConfigWithEmptyFileContent = `## template: jinja
 #cloud-config
 
 users:
-  - hashed_passwd: "0123456789"
-    name: bob.wilson
+- hashed_passwd: "0123456789"
+  name: bob.wilson
 write_files:
-  - content: world
-    path: /hello
-  - content: there
-    path: /hi
-  - append: true
-    defer: true
-    encoding: text/plain
-    path: /foo
-    permissions: "0644"
+- content: world
+  path: /hello
+- content: there
+  path: /hi
+- append: true
+  defer: true
+  encoding: text/plain
+  path: /foo
+  permissions: "0644"
 `
 
 const cloudConfigWithAllPossibleValues = `## template: jinja
 #cloud-config
 
-users:
-  - create_groups: false
-    expiredate: 9999-99-99
-    gecos: gecos
-    groups:
-      - group1
-      - group2
-    hashed_passwd: "0123456789"
-    homedir: /home/bob.wilson
-    inactive: "1"
-    lock_passwd: false
-    name: bob.wilson
-    no_create_home: false
-    no_log_init: false
-    primary_group: group1
-    selinux_user: bob.wilson
-    shell: /bin/bash
-    snapuser: bob.wilson
-    ssh_authorized_keys:
-      - key1
-      - key2
-    ssh_import_id:
-      - id1
-      - id2
-    ssh_redirect_user: false
-    sudo: sudoyou?
-    system: false
-    uid: 123
-  - create_groups: true
-    expiredate: 9999-99-99
-    gecos: gecos
-    groups:
-      - group1
-      - group2
-    homedir: /home/rob.wilson
-    inactive: "10"
-    lock_passwd: true
-    name: rob.wilson
-    no_create_home: true
-    no_log_init: true
-    passwd: password
-    primary_group: group1
-    selinux_user: rob.wilson
-    shell: /bin/bash
-    snapuser: rob.wilson
-    ssh_authorized_keys:
-      - key1
-      - key2
-    ssh_import_id:
-      - id1
-      - id2
-    ssh_redirect_user: true
-    sudo: sudoyou?
-    system: true
-    uid: 123
 runcmd:
-  - ls /
-  - - ls
-    - -a
-    - -l
-    - /
-  - - echo
-    - hello, world.
-write_files:
-  - append: true
-    content: world
-    defer: true
-    encoding: text/plain
-    owner: bob.wilson:bob.wilson
-    path: /hello
-    permissions: "0644"
-  - content: there
-    encoding: text/plain
-    owner: rob.wilson:rob.wilson
-    path: /hi
-    permissions: "0755"
-  - append: true
-    content: |-
-      a multi-line
-      document
-    defer: true
-    encoding: text/plain
-    owner: bob.wilson:bob.wilson
-    path: /doc
-    permissions: "0644"
+- ls /
+- - ls
+  - -a
+  - -l
+  - /
+- - echo
+  - hello, world.
 ssh_pwauth: true
+users:
+- create_groups: false
+  expiredate: 9999-99-99
+  gecos: gecos
+  groups:
+  - group1
+  - group2
+  hashed_passwd: "0123456789"
+  homedir: /home/bob.wilson
+  inactive: "1"
+  lock_passwd: false
+  name: bob.wilson
+  no_create_home: false
+  no_log_init: false
+  primary_group: group1
+  selinux_user: bob.wilson
+  shell: /bin/bash
+  snapuser: bob.wilson
+  ssh_authorized_keys:
+  - key1
+  - key2
+  ssh_import_id:
+  - id1
+  - id2
+  ssh_redirect_user: false
+  sudo: sudoyou?
+  system: false
+  uid: 123
+- create_groups: true
+  expiredate: 9999-99-99
+  gecos: gecos
+  groups:
+  - group1
+  - group2
+  homedir: /home/rob.wilson
+  inactive: "10"
+  lock_passwd: true
+  name: rob.wilson
+  no_create_home: true
+  no_log_init: true
+  passwd: password
+  primary_group: group1
+  selinux_user: rob.wilson
+  shell: /bin/bash
+  snapuser: rob.wilson
+  ssh_authorized_keys:
+  - key1
+  - key2
+  ssh_import_id:
+  - id1
+  - id2
+  ssh_redirect_user: true
+  sudo: sudoyou?
+  system: true
+  uid: 123
+write_files:
+- append: true
+  content: world
+  defer: true
+  encoding: text/plain
+  owner: bob.wilson:bob.wilson
+  path: /hello
+  permissions: "0644"
+- content: there
+  encoding: text/plain
+  owner: rob.wilson:rob.wilson
+  path: /hi
+  permissions: "0755"
+- append: true
+  content: |-
+    a multi-line
+    document
+  defer: true
+  encoding: text/plain
+  owner: bob.wilson:bob.wilson
+  path: /doc
+  permissions: "0644"
 `

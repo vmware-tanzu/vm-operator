@@ -8,10 +8,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"gopkg.in/yaml.v3"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/yaml"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"

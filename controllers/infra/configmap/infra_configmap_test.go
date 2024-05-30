@@ -47,7 +47,7 @@ func unitTestsWcpConfig() {
 
 			It("returns an error", func() {
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unmarshal errors"))
+				Expect(err.Error()).To(ContainSubstring("error unmarshaling JSON"))
 			})
 		})
 

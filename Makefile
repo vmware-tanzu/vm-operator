@@ -68,7 +68,6 @@ CONTROLLER_GEN     := $(TOOLS_BIN_DIR)/controller-gen
 CONVERSION_GEN     := $(TOOLS_BIN_DIR)/conversion-gen
 GOLANGCI_LINT      := $(TOOLS_BIN_DIR)/golangci-lint
 KUSTOMIZE          := $(TOOLS_BIN_DIR)/kustomize
-GOCOVMERGE         := $(TOOLS_BIN_DIR)/gocovmerge
 GOCOV              := $(TOOLS_BIN_DIR)/gocov
 GOCOV_XML          := $(TOOLS_BIN_DIR)/gocov-xml
 GINKGO             := $(TOOLS_BIN_DIR)/ginkgo
@@ -202,7 +201,7 @@ web-console-validator: prereqs generate lint-go web-console-validator-only ## Bu
 TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(CONVERSION_GEN) \
                     $(GOLANGCI_LINT) $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) $(ETCD) \
-                    $(GINKGO) $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK)
+                    $(GINKGO) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
 $(TOOLING_BINARIES):
 	make -C $(TOOLS_DIR) $(@F)

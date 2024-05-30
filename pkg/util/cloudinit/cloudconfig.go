@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"gopkg.in/yaml.v3"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
@@ -165,14 +165,12 @@ func MarshalYAML(
 	fmt.Fprintln(&w1, "#cloud-config")
 	fmt.Fprintln(&w1, "")
 
-	var w2 bytes.Buffer
-	enc := yaml.NewEncoder(&w2)
-	enc.SetIndent(2)
-	if err := enc.Encode(out); err != nil {
+	w2, err := yaml.Marshal(out)
+	if err != nil {
 		return "", err
 	}
 
-	data := w2.String()
+	data := string(w2)
 	if data == emptyYAMLObject {
 		return "", nil
 	}
@@ -254,7 +252,7 @@ func copyWriteFile(
 	out.Permissions = in.Permissions
 }
 
-func (ccu *cloudConfigUsers) MarshalYAML() (any, error) {
+func (ccu cloudConfigUsers) MarshalJSON() ([]byte, error) {
 	if len(ccu.users) == 0 {
 		return nil, nil
 	}
@@ -265,14 +263,14 @@ func (ccu *cloudConfigUsers) MarshalYAML() (any, error) {
 	for i := range ccu.users {
 		result = append(result, ccu.users[i])
 	}
-	return result, nil
+	return json.Marshal(result)
 }
 
-func (ccu cloudConfigRunCmd) MarshalYAML() (any, error) {
+func (ccu cloudConfigRunCmd) MarshalJSON() ([]byte, error) {
 	if ccu.singleString != "" {
-		return ccu.singleString, nil
+		return json.Marshal(ccu.singleString)
 	} else if len(ccu.listOfStrings) > 0 {
-		return ccu.listOfStrings, nil
+		return json.Marshal(ccu.listOfStrings)
 	}
 	return nil, nil
 }

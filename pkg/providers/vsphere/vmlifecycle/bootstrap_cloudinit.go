@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"

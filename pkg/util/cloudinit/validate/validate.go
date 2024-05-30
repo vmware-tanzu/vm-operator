@@ -6,8 +6,8 @@ package validate
 import (
 	"encoding/json"
 
-	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/yaml"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"

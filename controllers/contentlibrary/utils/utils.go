@@ -20,11 +20,11 @@ import (
 // by using the same identifier from the given Item name in "clitem-<uuid>".
 func GetImageFieldNameFromItem(itemName string) (string, error) {
 	if !strings.HasPrefix(itemName, ItemFieldNamePrefix) {
-		return "", fmt.Errorf("item name doesn't start with %q", ItemFieldNamePrefix)
+		return "", fmt.Errorf("item name does not start with %q", ItemFieldNamePrefix)
 	}
 	itemNameSplit := strings.Split(itemName, "-")
 	if len(itemNameSplit) < 2 {
-		return "", fmt.Errorf("item name doesn't have an identifier after %s-", ItemFieldNamePrefix)
+		return "", fmt.Errorf("item name does not have an identifier after %s-", ItemFieldNamePrefix)
 	}
 
 	uuid := strings.Join(itemNameSplit[1:], "-")

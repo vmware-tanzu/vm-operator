@@ -339,10 +339,12 @@ generate-go-conversions: $(CONVERSION_GEN)
 endif
 
 generate-go-conversions:
-	$(CONVERSION_GEN) \
-		--input-dirs='./api/v1alpha1,./api/v1alpha2,./api/v1alpha2/sysprep/conversion/v1alpha2,./api/v1alpha2/sysprep/conversion/v1alpha3' \
-		--output-file-base=zz_generated.conversion \
-		--go-header-file=./hack/boilerplate/boilerplate.generatego.txt
+	cd api && \
+	$(abspath $(CONVERSION_GEN)) \
+		--output-file=zz_generated.conversion.go \
+		--go-header-file=$(abspath hack/boilerplate/boilerplate.generatego.txt) \
+		--extra-peer-dirs='./v1alpha2/sysprep/conversion/v1alpha2,./v1alpha2/sysprep/conversion/v1alpha3' \
+		./v1alpha1 ./v1alpha2
 
 else ifeq (symlink,$(CONVERSION_GEN_FALLBACK_MODE))
 

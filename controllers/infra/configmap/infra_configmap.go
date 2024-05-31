@@ -24,8 +24,8 @@ const (
 )
 
 type WcpClusterConfig struct {
-	VcPNID string `yaml:"vc_pnid"`
-	VcPort string `yaml:"vc_port"`
+	VcPNID string `json:"vc_pnid"`
+	VcPort string `json:"vc_port"`
 }
 
 // ParseWcpClusterConfig builds and returns the cluster config.

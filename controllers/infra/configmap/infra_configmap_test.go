@@ -4,6 +4,8 @@
 package configmap_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -72,5 +74,24 @@ func unitTestsWcpConfig() {
 				Expect(config.VcPort).To(Equal(port))
 			})
 		})
+
+		Context("valid data directly", func() {
+			pnid := "foo-pnid"
+			port := "foo-port"
+
+			BeforeEach(func() {
+				data = map[string]string{
+					"wcp-cluster-config.yaml": fmt.Sprintf("\"vc_pnid\": %s\n\"vc_port\": %s", pnid, port),
+				}
+			})
+
+			It("returns expected config", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(config).ToNot(BeNil())
+				Expect(config.VcPNID).To(Equal(pnid))
+				Expect(config.VcPort).To(Equal(port))
+			})
+		})
 	})
+
 }

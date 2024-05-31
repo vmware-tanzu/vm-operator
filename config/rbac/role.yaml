@@ -323,6 +323,14 @@ rules:
 - apiGroups:
   - vmoperator.vmware.com
   resources:
+  - virtualmachinereplicasets/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
   - virtualmachines
   verbs:
   - create

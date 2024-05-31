@@ -12,22 +12,25 @@ spec:
     listKind: VirtualMachineReplicaSetList
     plural: virtualmachinereplicasets
     shortNames:
+    - vmrs
     - vmreplicaset
     singular: virtualmachinereplicaset
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.replicas
+    - description: Total number of non-terminated virtual machines targeted by this
+        VirtualMachineReplicaSet
+      jsonPath: .status.replicas
       name: Replicas
-      priority: 1
       type: integer
-    - jsonPath: .status.readyReplicas
-      name: Ready-Replicas
-      priority: 1
+    - description: Total number of ready virtual machines targeted by this VirtualMachineReplicaSet
+      jsonPath: .status.readyReplicas
+      name: Ready
       type: integer
-    - jsonPath: .status.availableReplicas
-      name: Available-Replicas
-      type: integer
+    - description: Time duration since creation of VirtualMachineReplicaSet
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     name: v1alpha3
     schema:
       openAPIV3Schema:
@@ -54,14 +57,13 @@ spec:
           spec:
             description: VirtualMachineReplicaSetSpec is the specification of a VirtualMachineReplicaSet.
             properties:
-              minReadySeconds:
+              deletePolicy:
                 description: |-
-                  Minimum number of seconds for which a newly created replica virtual
-                  machine should be ready for it to be considered available.
-                  Defaults to 0 (virtual machine will be considered available as soon as it
-                  is ready).
-                format: int32
-                type: integer
+                  DeletePolicy defines the policy used to identify nodes to delete when downscaling.
+                  Only supported deletion policy is "Random".
+                enum:
+                - Random
+                type: string
               replicas:
                 default: 1
                 description: |-
@@ -75,6 +77,9 @@ spec:
                   Selector is a label to query over virtual machines that should match the
                   replica count. A virtual machine's label keys and values must match in order
                   to be controlled by this VirtualMachineReplicaSet.
+
+
+                  It must match the VirtualMachine template's labels.
                   More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors
                 properties:
                   matchExpressions:
@@ -1771,12 +1776,6 @@ spec:
               VirtualMachineReplicaSetStatus represents the observed state of a
               VirtualMachineReplicaSet resource.
             properties:
-              availableReplicas:
-                description: |-
-                  AvailableReplicas is the number of available replicas (ready for at
-                  least minReadySeconds) for this VirtualMachineReplicaSet.
-                format: int32
-                type: integer
               conditions:
                 description: |-
                   Conditions represents the latest available observations of a

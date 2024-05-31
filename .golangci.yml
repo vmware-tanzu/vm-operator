@@ -84,9 +84,23 @@ linters-settings:
         files:
         - $all
         - "!$test"
+        - "!**/test/builder/*.go"
+        - "!**/matcher.go"
         deny:
         - pkg: io/ioutil
           desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+        - pkg: github.com/pkg/errors
+          desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
+        - pkg: k8s.io/utils
+          desc: "replaced by internal packages like pkg/util/ptr"
+        - pkg: testing
+          desc: "do not import testing packages in non-test sources"
+        - pkg: github.com/onsi/ginkgo$
+          desc: "do not import testing packages in non-test sources"
+        - pkg: github.com/onsi/ginkgo/v2
+          desc: "do not import testing packages in non-test sources"
+        - pkg: github.com/onsi/gomega
+          desc: "do not import testing packages in non-test sources"
       test:
         list-mode: lax # allow unless explicitly denied
         files:
@@ -94,6 +108,27 @@ linters-settings:
         deny:
         - pkg: io/ioutil
           desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+        - pkg: github.com/pkg/errors
+          desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
+        - pkg: k8s.io/utils
+          desc: "replaced by internal packages like pkg/util/ptr"
+        - pkg: github.com/onsi/ginkgo$
+          desc: "replaced by github.com/onsi/ginkgo/v2"
+      test-builder:
+        list-mode: lax # allow unless explicitly denied
+        files:
+        - "**/test/builder/*.go"
+        - "**/matcher.go"
+        - "!$test"
+        deny:
+        - pkg: io/ioutil
+          desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+        - pkg: github.com/pkg/errors
+          desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
+        - pkg: k8s.io/utils
+          desc: "replaced by internal packages like pkg/util/ptr"
+        - pkg: github.com/onsi/ginkgo$
+          desc: "replaced by github.com/onsi/ginkgo/v2"
 
 
 linters:

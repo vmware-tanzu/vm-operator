@@ -97,7 +97,7 @@ func intgTestsReconcile() {
 	Context("Reconcile ClusterContentLibraryItem", func() {
 
 		It("Workflow", func() {
-			origCCLItem := utils.DummyClusterContentLibraryItem(utils.ItemFieldNamePrefix + "-" + uuid.NewString())
+			origCCLItem := dummyClusterContentLibraryItem(utils.ItemFieldNamePrefix + "-" + uuid.NewString())
 			cclItemKey := client.ObjectKeyFromObject(origCCLItem)
 			Expect(ctx.Client.Create(ctx, origCCLItem.DeepCopy())).To(Succeed())
 

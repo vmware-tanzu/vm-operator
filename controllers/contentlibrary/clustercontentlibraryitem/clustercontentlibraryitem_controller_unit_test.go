@@ -71,7 +71,7 @@ func unitTestsReconcile() {
 			return nil
 		}
 
-		cclItem = utils.DummyClusterContentLibraryItem(utils.ItemFieldNamePrefix + "-dummy")
+		cclItem = dummyClusterContentLibraryItem(utils.ItemFieldNamePrefix + "-dummy")
 		// Add our finalizer so ReconcileNormal() does not return early.
 		cclItem.Finalizers = []string{utils.CCLItemFinalizer}
 	})
@@ -306,7 +306,7 @@ func assertCVMImageFromCCLItem(
 	cclItem *imgregv1a1.ClusterContentLibraryItem) {
 
 	Expect(metav1.IsControlledBy(cvmi, cclItem)).To(BeTrue())
-	for k := range utils.FilterServicesTypeLabels(cclItem.Labels) {
+	for k := range filterServicesTypeLabels(cclItem.Labels) {
 		Expect(cvmi.Labels).To(HaveKey(k))
 	}
 

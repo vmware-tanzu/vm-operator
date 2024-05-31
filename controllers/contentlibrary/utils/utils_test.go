@@ -20,6 +20,45 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 )
 
+func TestGetImageFieldNameFromItem(t *testing.T) {
+	testCases := []struct {
+		name        string
+		in          string
+		expectedErr string
+		expectedOut string
+	}{
+		{
+			name:        "missing prefix",
+			in:          "123",
+			expectedErr: "item name does not start with \"clitem\"",
+		},
+		{
+			name:        "missing identifier",
+			in:          "clitem",
+			expectedErr: "item name does not have an identifier after clitem-",
+		},
+		{
+			name:        "valid",
+			in:          "clitem-123",
+			expectedOut: "vmi-123",
+		},
+	}
+
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			out, err := utils.GetImageFieldNameFromItem(tc.in)
+			if tc.expectedErr != "" {
+				g.Expect(err).To(MatchError(tc.expectedErr))
+				g.Expect(out).To(BeEmpty())
+			} else {
+				g.Expect(out).To(Equal(tc.expectedOut))
+			}
+		})
+	}
+}
+
 func Test_AddContentLibRefToAnnotation(t *testing.T) {
 	obj := &vmopv1.ClusterVirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{},

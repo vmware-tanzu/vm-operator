@@ -73,7 +73,7 @@ func unitTestsReconcile() {
 			return nil
 		}
 
-		clItem = utils.DummyContentLibraryItem(utils.ItemFieldNamePrefix+"-dummy", "dummy-ns")
+		clItem = dummyContentLibraryItem(utils.ItemFieldNamePrefix+"-dummy", "dummy-ns")
 		clItem.Finalizers = []string{utils.CLItemFinalizer}
 	})
 

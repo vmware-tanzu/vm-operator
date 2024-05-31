@@ -207,7 +207,7 @@ func intgTestsReconcile() {
 					intgFakeVMProvider.Unlock()
 
 					By("Simulate ContentLibrary and VM Image reconcile", func() {
-						clItem := utils.DummyContentLibraryItem("dummy-clitem", ctx.Namespace)
+						clItem := dummyContentLibraryItem("dummy-clitem", ctx.Namespace)
 						Expect(ctx.Client.Create(ctx, clItem)).To(Succeed())
 
 						vmi := builder.DummyVirtualMachineImage("dummy-image")
@@ -257,4 +257,38 @@ func intgTestsReconcile() {
 			})
 		})
 	})
+}
+
+func dummyContentLibraryItem(name, namespace string) *imgregv1a1.ContentLibraryItem {
+	clItem := &imgregv1a1.ContentLibraryItem{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       utils.ContentLibraryItemKind,
+			APIVersion: imgregv1a1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: imgregv1a1.ContentLibraryItemSpec{
+			UUID: "dummy-cl-item-uuid",
+		},
+		Status: imgregv1a1.ContentLibraryItemStatus{
+			Type:           imgregv1a1.ContentLibraryItemTypeOvf,
+			Name:           "dummy-image-name",
+			ContentVersion: "dummy-content-version",
+			ContentLibraryRef: &imgregv1a1.NameAndKindRef{
+				Kind: utils.ContentLibraryKind,
+				Name: "cl-dummy",
+			},
+			Conditions: []imgregv1a1.Condition{
+				{
+					Type:   imgregv1a1.ReadyCondition,
+					Status: corev1.ConditionTrue,
+				},
+			},
+			SecurityCompliance: &[]bool{true}[0],
+		},
+	}
+
+	return clItem
 }

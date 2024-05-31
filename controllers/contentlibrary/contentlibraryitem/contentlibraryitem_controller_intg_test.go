@@ -93,7 +93,7 @@ func intgTestsReconcile() {
 	Context("Reconcile ContentLibraryItem", func() {
 
 		It("Workflow", func() {
-			origCLItem := utils.DummyContentLibraryItem(utils.ItemFieldNamePrefix+"-"+uuid.NewString(), ctx.Namespace)
+			origCLItem := dummyContentLibraryItem(utils.ItemFieldNamePrefix+"-"+uuid.NewString(), ctx.Namespace)
 			clItemKey := client.ObjectKeyFromObject(origCLItem)
 			Expect(ctx.Client.Create(ctx, origCLItem.DeepCopy())).To(Succeed())
 

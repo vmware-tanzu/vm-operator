@@ -236,7 +236,7 @@ var _ = Describe("Availability Zones", func() {
 		It("returns error when cluster is not found", func() {
 			_, err := topology.LookupZoneForClusterMoID(ctx, client, "cluster-42")
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("failed to find zone for cluster MoID "))
+			Expect(err.Error()).To(ContainSubstring("failed to find availability zone for cluster MoID "))
 		})
 
 		It("returns expected zone name", func() {

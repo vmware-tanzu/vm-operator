@@ -14,32 +14,14 @@ import (
 )
 
 const (
-	// DefaultAvailabilityZoneName is the name of the default availability
-	// zone used in backwards compatibility mode.
-	DefaultAvailabilityZoneName = "default"
-
 	// KubernetesTopologyZoneLabelKey is the label used to specify the
 	// availability zone for a VM.
 	KubernetesTopologyZoneLabelKey = "topology.kubernetes.io/zone"
-
-	// NamespaceRPAnnotationKey is the annotation value set by WCP that
-	// indicates the managed object ID of the resource pool for a given
-	// namespace.
-	NamespaceRPAnnotationKey = "vmware-system-resource-pool"
-
-	// NamespaceFolderAnnotationKey is the annotation value set by WCP
-	// that indicates the managed object ID of the folder for a given
-	// namespace.
-	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
 )
 
 var (
 	// ErrNoAvailabilityZones occurs when no availability zones are detected.
 	ErrNoAvailabilityZones = errors.New("no availability zones")
-
-	// ErrWcpFaultDomainsFSSIsEnabled occurs when a function is invoked that
-	// is disabled when the WCP_FaultDomains FSS is enabled.
-	ErrWcpFaultDomainsFSSIsEnabled = errors.New("wcp fault domains fss is enabled")
 )
 
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones,verbs=get;list;watch
@@ -56,10 +38,6 @@ func LookupZoneForClusterMoID(
 		return "", err
 	}
 
-	if len(availabilityZones) == 0 {
-		return "", fmt.Errorf("no AvailabilityZones")
-	}
-
 	for _, az := range availabilityZones {
 		if az.Spec.ClusterComputeResourceMoId == clusterMoID {
 			return az.Name, nil
@@ -72,7 +50,7 @@ func LookupZoneForClusterMoID(
 		}
 	}
 
-	return "", fmt.Errorf("failed to find zone for cluster MoID %s", clusterMoID)
+	return "", fmt.Errorf("failed to find availability zone for cluster MoID %s", clusterMoID)
 }
 
 // GetNamespaceFolderAndRPMoID returns the Folder and ResourcePool MoID for the zone and namespace.
@@ -165,10 +143,7 @@ func GetAvailabilityZones(
 		return nil, ErrNoAvailabilityZones
 	}
 
-	zones := make([]topologyv1.AvailabilityZone, len(availabilityZoneList.Items))
-	copy(zones, availabilityZoneList.Items)
-
-	return zones, nil
+	return availabilityZoneList.Items, nil
 }
 
 // GetAvailabilityZone returns a named AvailabilityZone resource.

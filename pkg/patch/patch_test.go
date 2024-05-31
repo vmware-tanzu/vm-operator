@@ -37,6 +37,7 @@ import (
 )
 
 func intgTests() {
+
 	var (
 		ctx *builder.IntegrationTestContext
 	)
@@ -63,7 +64,7 @@ func intgTests() {
 				},
 			}
 
-			Context("adding an owner reference, preserving its status", func() {
+			By("adding an owner reference, preserving its status", func() {
 				obj := obj.DeepCopy()
 
 				By("Creating the unstructured object")

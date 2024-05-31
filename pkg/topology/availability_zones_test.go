@@ -31,11 +31,13 @@ var _ = Describe("Availability Zones", func() {
 		client                    ctrlclient.Client
 		numberOfAvailabilityZones int
 		numberOfNamespaces        int
+		specCCRID                 bool
 	)
 
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContextWithDefaultConfig()
 		client = builder.NewFakeClient()
+		specCCRID = false
 	})
 
 	AfterEach(func() {
@@ -52,9 +54,13 @@ var _ = Describe("Availability Zones", func() {
 					Name: fmt.Sprintf("az-%d", i),
 				},
 				Spec: topologyv1.AvailabilityZoneSpec{
-					ClusterComputeResourceMoIDs: []string{fmt.Sprintf("cluster-%d", i)},
-					Namespaces:                  map[string]topologyv1.NamespaceInfo{},
+					Namespaces: map[string]topologyv1.NamespaceInfo{},
 				},
+			}
+			if specCCRID {
+				obj.Spec.ClusterComputeResourceMoId = fmt.Sprintf("cluster-%d", i)
+			} else {
+				obj.Spec.ClusterComputeResourceMoIDs = []string{fmt.Sprintf("cluster-%d", i)}
 			}
 			for j := 0; j < numberOfNamespaces; j++ {
 				obj.Spec.Namespaces[fmt.Sprintf("ns-%d", j)] = topologyv1.NamespaceInfo{
@@ -137,6 +143,35 @@ var _ = Describe("Availability Zones", func() {
 		}
 	}
 
+	assertGetNamespaceFolderAndRPMoIDsInvalidNamespaceNoErr := func() {
+		folder, rpMoIDs, err := topology.GetNamespaceFolderAndRPMoIDs(ctx, client, "invalid")
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		ExpectWithOffset(1, rpMoIDs).To(BeEmpty())
+		ExpectWithOffset(1, folder).To(BeEmpty())
+	}
+
+	assertGetNamespaceFolderAndRPMoIDsSuccess := func() {
+		for i := 0; i < numberOfNamespaces; i++ {
+			folder, rpMoIDs, err := topology.GetNamespaceFolderAndRPMoIDs(ctx, client, fmt.Sprintf("ns-%d", i))
+			ExpectWithOffset(1, err).ToNot(HaveOccurred())
+			ExpectWithOffset(1, rpMoIDs).To(Not(BeEmpty()))
+			ExpectWithOffset(1, folder).To(Equal(folderMoID))
+		}
+	}
+
+	assertGetNamespaceFolderMoIDInvalidNamespaceErrNotFound := func() {
+		_, err := topology.GetNamespaceFolderMoID(ctx, client, "invalid")
+		ExpectWithOffset(1, err).To(HaveOccurred())
+	}
+
+	assertGetNamespaceFolderMoIDSuccess := func() {
+		for i := 0; i < numberOfNamespaces; i++ {
+			folder, err := topology.GetNamespaceFolderMoID(ctx, client, fmt.Sprintf("ns-%d", i))
+			ExpectWithOffset(1, err).ToNot(HaveOccurred())
+			ExpectWithOffset(1, folder).To(Equal(folderMoID))
+		}
+	}
+
 	When("Two AvailabilityZone resources exist", func() {
 		BeforeEach(func() {
 			numberOfAvailabilityZones = 2
@@ -169,6 +204,22 @@ var _ = Describe("Availability Zones", func() {
 				})
 				Context("With an invalid Namespace name", func() {
 					It("Should return an missing info error", assertGetNamespaceFolderAndRPMoIDInvalidNamespaceErrNotFound)
+				})
+			})
+			Context("GetNamespaceFolderMoID", func() {
+				Context("With an invalid Namespace name", func() {
+					It("Should return NotFound", assertGetNamespaceFolderMoIDInvalidNamespaceErrNotFound)
+				})
+				Context("With a valid Namespace name", func() {
+					It("Should return the RP and Folder resources", assertGetNamespaceFolderMoIDSuccess)
+				})
+			})
+			Context("GetNamespaceFolderAndRPMoIDs", func() {
+				Context("With an invalid Namespace name", func() {
+					It("Should return NotFound", assertGetNamespaceFolderAndRPMoIDsInvalidNamespaceNoErr)
+				})
+				Context("With a valid Namespace name", func() {
+					It("Should return the RP and Folder resources", assertGetNamespaceFolderAndRPMoIDsSuccess)
 				})
 			})
 		})
@@ -239,10 +290,36 @@ var _ = Describe("Availability Zones", func() {
 			Expect(err.Error()).To(ContainSubstring("failed to find zone for cluster MoID "))
 		})
 
-		It("returns expected zone name", func() {
-			zoneName, err := topology.LookupZoneForClusterMoID(ctx, client, "cluster-2")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(zoneName).To(Equal("az-2"))
+		When("spec.ClusterComputeResourceMoId", func() {
+			BeforeEach(func() {
+				specCCRID = true
+			})
+			It("returns expected zone name", func() {
+				name, err := topology.LookupZoneForClusterMoID(ctx, client, "cluster-0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("az-0"))
+			})
+		})
+		When("spec.ClusterComputeResourceMoIIDs", func() {
+			BeforeEach(func() {
+				specCCRID = false
+			})
+			It("returns expected zone name", func() {
+				name, err := topology.LookupZoneForClusterMoID(ctx, client, "cluster-0")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("az-0"))
+			})
+		})
+
+		When("there are no zones", func() {
+			BeforeEach(func() {
+				numberOfAvailabilityZones = 0
+			})
+			It("returns error when cluster is not found", func() {
+				_, err := topology.LookupZoneForClusterMoID(ctx, client, "cluster-42")
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("no availability zones"))
+			})
 		})
 	})
 })

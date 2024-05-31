@@ -4,8 +4,6 @@ go 1.22.0
 
 toolchain go1.22.3
 
-replace k8s.io/code-generator => k8s.io/code-generator v0.29.0
-
 require (
 	github.com/AlekSi/gocov-xml v1.1.0
 	github.com/axw/gocov v1.1.0
@@ -13,7 +11,7 @@ require (
 	github.com/golangci/golangci-lint v1.59.0
 	github.com/onsi/ginkgo/v2 v2.19.0
 	golang.org/x/vuln v1.1.1
-	k8s.io/code-generator v0.30.0
+	k8s.io/code-generator v0.30.1
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240524133911-be2f383334bd
 	sigs.k8s.io/controller-tools v0.15.0
 	sigs.k8s.io/kind v0.23.0
@@ -36,7 +34,6 @@ require (
 	github.com/catenacyber/perfsprint v0.7.1 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.2 // indirect
 	github.com/ckaznocha/intrange v0.1.2 // indirect
-	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/ghostiam/protogetter v0.3.6 // indirect
 	github.com/go-viper/mapstructure/v2 v2.0.0-alpha.1 // indirect
 	github.com/golangci/modinfo v0.3.4 // indirect
@@ -53,7 +50,6 @@ require (
 	go-simpler.org/sloglint v0.7.0 // indirect
 	go.uber.org/automaxprocs v1.5.3 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
-	k8s.io/gengo v0.0.0-20230829151522-9cce18d56c01 // indirect
 	k8s.io/gengo/v2 v2.0.0-20240228010128-51d4e06bde70 // indirect
 )
 
@@ -249,7 +245,7 @@ require (
 	honnef.co/go/tools v0.4.7 // indirect
 	k8s.io/api v0.30.0 // indirect
 	k8s.io/apiextensions-apiserver v0.30.0 // indirect
-	k8s.io/apimachinery v0.30.0 // indirect
+	k8s.io/apimachinery v0.30.1 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect

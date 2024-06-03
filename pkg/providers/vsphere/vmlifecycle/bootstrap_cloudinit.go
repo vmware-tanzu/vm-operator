@@ -21,11 +21,11 @@ import (
 )
 
 type CloudInitMetadata struct {
-	InstanceID    string          `yaml:"instance-id,omitempty"`
-	LocalHostname string          `yaml:"local-hostname,omitempty"`
-	Hostname      string          `yaml:"hostname,omitempty"`
-	Network       network.Netplan `yaml:"network,omitempty"`
-	PublicKeys    string          `yaml:"public-keys,omitempty"`
+	InstanceID    string          `json:"instance-id,omitempty"`
+	LocalHostname string          `json:"local-hostname,omitempty"`
+	Hostname      string          `json:"hostname,omitempty"`
+	Network       network.Netplan `json:"network,omitempty"`
+	PublicKeys    string          `json:"public-keys,omitempty"`
 }
 
 // CloudInitUserDataSecretKeys are the Secret keys that in v1a1 we'd check for the userdata.

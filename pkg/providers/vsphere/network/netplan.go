@@ -11,36 +11,36 @@ import (
 
 // Netplan representation described in https://via.vmw.com/cloud-init-netplan // FIXME: 404.
 type Netplan struct {
-	Version   int                        `yaml:"version,omitempty"`
-	Ethernets map[string]NetplanEthernet `yaml:"ethernets,omitempty"`
+	Version   int                        `json:"version,omitempty"`
+	Ethernets map[string]NetplanEthernet `json:"ethernets,omitempty"`
 }
 
 type NetplanEthernet struct {
-	Match       NetplanEthernetMatch      `yaml:"match,omitempty"`
-	SetName     string                    `yaml:"set-name,omitempty"`
-	Dhcp4       bool                      `yaml:"dhcp4,omitempty"`
-	Dhcp6       bool                      `yaml:"dhcp6,omitempty"`
-	Addresses   []string                  `yaml:"addresses,omitempty"`
-	Gateway4    string                    `yaml:"gateway4,omitempty"`
-	Gateway6    string                    `yaml:"gateway6,omitempty"`
-	MTU         int64                     `yaml:"mtu,omitempty"`
-	Nameservers NetplanEthernetNameserver `yaml:"nameservers,omitempty"`
-	Routes      []NetplanEthernetRoute    `yaml:"routes,omitempty"`
+	Match       NetplanEthernetMatch      `json:"match,omitempty"`
+	SetName     string                    `json:"set-name,omitempty"`
+	Dhcp4       bool                      `json:"dhcp4,omitempty"`
+	Dhcp6       bool                      `json:"dhcp6,omitempty"`
+	Addresses   []string                  `json:"addresses,omitempty"`
+	Gateway4    string                    `json:"gateway4,omitempty"`
+	Gateway6    string                    `json:"gateway6,omitempty"`
+	MTU         int64                     `json:"mtu,omitempty"`
+	Nameservers NetplanEthernetNameserver `json:"nameservers,omitempty"`
+	Routes      []NetplanEthernetRoute    `json:"routes,omitempty"`
 }
 
 type NetplanEthernetMatch struct {
-	MacAddress string `yaml:"macaddress,omitempty"`
+	MacAddress string `json:"macaddress,omitempty"`
 }
 
 type NetplanEthernetNameserver struct {
-	Addresses []string `yaml:"addresses,omitempty"`
-	Search    []string `yaml:"search,omitempty"`
+	Addresses []string `json:"addresses,omitempty"`
+	Search    []string `json:"search,omitempty"`
 }
 
 type NetplanEthernetRoute struct {
-	To     string `yaml:"to"`
-	Via    string `yaml:"via"`
-	Metric int32  `yaml:"metric,omitempty"`
+	To     string `json:"to"`
+	Via    string `json:"via"`
+	Metric int32  `json:"metric,omitempty"`
 }
 
 func NetPlanCustomization(result NetworkInterfaceResults) (*Netplan, error) {

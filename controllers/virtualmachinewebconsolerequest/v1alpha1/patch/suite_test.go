@@ -32,7 +32,7 @@ const (
 var suite = builder.NewTestSuite()
 
 func TestPatch(t *testing.T) {
-	suite.Register(t, "Patch Suite", intgTests, nil)
+	suite.Register(t, "Patch Suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

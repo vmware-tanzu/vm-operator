@@ -138,6 +138,18 @@ func (h *mutatingWebhookHandler) Handle(_ context.Context, req admission.Request
 		}
 	}
 
+	var (
+		objName      string
+		objNamespace string
+	)
+	if obj != nil {
+		objName = obj.GetName()
+		objNamespace = obj.GetNamespace()
+	} else {
+		objName = oldObj.GetName()
+		objNamespace = oldObj.GetNamespace()
+	}
+
 	webhookRequestContext := &pkgctx.WebhookRequestContext{
 		WebhookContext:      h.WebhookContext,
 		Op:                  req.Operation,
@@ -146,7 +158,7 @@ func (h *mutatingWebhookHandler) Handle(_ context.Context, req admission.Request
 		OldObj:              oldObj,
 		UserInfo:            req.UserInfo,
 		IsPrivilegedAccount: IsPrivilegedAccount(h.WebhookContext, req.UserInfo),
-		Logger:              h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
+		Logger:              h.WebhookContext.Logger.WithName(objNamespace).WithName(objName),
 	}
 
 	return h.Mutate(webhookRequestContext)

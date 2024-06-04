@@ -13,6 +13,7 @@ import (
 )
 
 var suite = builder.NewTestSuite()
+
 var _ = BeforeSuite(suite.BeforeSuite)
 var _ = AfterSuite(suite.AfterSuite)
 

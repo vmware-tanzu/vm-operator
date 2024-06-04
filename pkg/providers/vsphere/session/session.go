@@ -9,13 +9,13 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
+	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
 type Session struct {
-	Client    *client.Client
+	Client    *pkgclient.Client
 	K8sClient ctrlclient.Client
 	Finder    *find.Finder
 

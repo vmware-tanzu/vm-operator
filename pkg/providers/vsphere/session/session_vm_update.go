@@ -4,6 +4,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"maps"
@@ -584,7 +585,14 @@ func (s *Session) prePowerOnVMReconfigure(
 
 	defaultConfigSpec := &vimtypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
-		vmCtx.Logger.Info("Pre PowerOn Reconfigure", "configSpec", configSpec)
+		var w bytes.Buffer
+		enc := vimtypes.NewJSONEncoder(&w)
+		if err := enc.Encode(configSpec); err != nil {
+			vmCtx.Logger.Error(err, "Failed to marshal ConfigSpec to JSON")
+			vmCtx.Logger.Info("Pre PowerOn Reconfigure", "configSpec", configSpec)
+		} else {
+			vmCtx.Logger.Info("Pre PowerOn Reconfigure", "configSpec", w.String())
+		}
 		if err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
 			vmCtx.Logger.Error(err, "pre power on reconfigure failed")
 			return err
@@ -893,9 +901,8 @@ func (s *Session) updateVMDesiredPowerStateOff(
 	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
 		powerOff = true
 	} else if existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
-		if vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeHard {
-			powerOff = true
-		}
+		powerOff = vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeHard ||
+			vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeTrySoft
 	}
 	if powerOff {
 		err = res.NewVMFromObject(vcVM).SetPowerState(

@@ -50,6 +50,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
@@ -104,12 +105,13 @@ type TestContextForVCSim struct {
 	// unit testing is a little misleading here since we're using vcsim.
 	*UnitTestContext
 
-	PodNamespace string
-	VCClient     *govmomi.Client
-	Datacenter   *object.Datacenter
-	Finder       *find.Finder
-	RestClient   *rest.Client
-	Recorder     record.Recorder
+	PodNamespace   string
+	VCClient       *govmomi.Client
+	VCClientConfig pkgclient.Config
+	Datacenter     *object.Datacenter
+	Finder         *find.Finder
+	RestClient     *rest.Client
+	Recorder       record.Recorder
 
 	// When WithFaultDomains is true:
 	ZoneCount       int
@@ -386,6 +388,17 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 		Expect(ok).To(BeTrue())
 		dvpg.Config.LogicalSwitchUuid = VPCLogicalSwitchUUID
 		dvpg.Config.BackingType = "nsx"
+	}
+
+	c.VCClientConfig = pkgclient.Config{
+		Host:       c.server.URL.Hostname(),
+		Port:       c.server.URL.Port(),
+		Username:   simulator.DefaultLogin.Username(),
+		CAFilePath: c.tlsServerCertPath,
+		Datacenter: dc.Reference().Value,
+	}
+	if p, ok := simulator.DefaultLogin.Password(); ok {
+		c.VCClientConfig.Password = p
 	}
 }
 

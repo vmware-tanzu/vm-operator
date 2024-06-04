@@ -416,7 +416,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 		ses := &session.Session{
 			K8sClient: vs.k8sClient,
-			Client:    vcClient,
+			Client:    vcClient.Client,
 			Finder:    vcClient.Finder(),
 			Cluster:   cluster,
 		}

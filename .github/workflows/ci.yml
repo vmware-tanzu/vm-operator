@@ -187,13 +187,13 @@ jobs:
       with:
         filename: cover.xml
         badge: true
-        fail_below_min: false
+        fail_below_min: true
         format: markdown
         hide_branch_rate: false
         hide_complexity: true
         indicators: true
         output: both
-        thresholds: '60 80'
+        thresholds: '79 89' # really '80 90', but the values are not inclusive
     - name: Save pull request ID
       if: github.event_name == 'pull_request'
       env:

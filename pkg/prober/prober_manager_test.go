@@ -7,21 +7,26 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
+	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	fakeworker "github.com/vmware-tanzu/vm-operator/pkg/prober/fake/worker"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -37,10 +42,12 @@ var _ = Describe("VirtualMachine probes", func() {
 		vmKey         client.ObjectKey
 		periodSeconds int32
 
-		fakeClient   client.Client
-		fakeRecorder record.Recorder
-		fakeWorkerIf worker.Worker
-		fakeWorker   *fakeworker.FakeWorker
+		fakeCtrlManager pkgmgr.Manager
+		fakeClient      client.Client
+		fakeRecorder    record.Recorder
+		fakeWorkerIf    worker.Worker
+		fakeWorker      *fakeworker.FakeWorker
+		fakeVMProvider  providers.VirtualMachineProviderInterface
 	)
 
 	BeforeEach(func() {
@@ -71,7 +78,8 @@ var _ = Describe("VirtualMachine probes", func() {
 		fakeClient = builder.NewFakeClient(initObjects...)
 		eventRecorder := clientgorecord.NewFakeRecorder(1024)
 		fakeRecorder = record.New(eventRecorder)
-		fakeVMProvider := &fake.VMProvider{}
+		fakeVMProvider = &fake.VMProvider{}
+		fakeCtrlManager = &fakeManager{client: fakeClient}
 		testManagerIf := NewManager(fakeClient, fakeRecorder, fakeVMProvider)
 		testManager = testManagerIf.(*manager)
 		fakeWorkerIf = fakeworker.NewFakeWorker(testManager.readinessQueue)
@@ -83,6 +91,8 @@ var _ = Describe("VirtualMachine probes", func() {
 		fakeWorker = nil
 		fakeClient = nil
 		fakeRecorder = nil
+		fakeCtrlManager = nil
+		fakeVMProvider = nil
 		testManager = nil
 		initObjects = nil
 	})
@@ -98,6 +108,31 @@ var _ = Describe("VirtualMachine probes", func() {
 			return testManager.readinessQueue.Len()
 		}, interval).Should(Equal(expectedLen))
 	}
+
+	Specify("Adding prober to controller manager should succeed", func() {
+		m, err := AddToManager(fakeCtrlManager, fakeVMProvider)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(m).ToNot(BeNil())
+	})
+
+	Specify("Starting probe manager should succeed", func() {
+		m, err := AddToManager(fakeCtrlManager, fakeVMProvider)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(m).ToNot(BeNil())
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		Expect(m.Start(ctx)).To(Succeed())
+	})
+
+	Specify("Removing probe from prober should succeed", func() {
+		testManager.RemoveFromProberManager(&vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "hello",
+				Name:      "world",
+			},
+		})
+	})
 
 	Context("Probe manager processes items from the queue", func() {
 		JustBeforeEach(func() {
@@ -266,4 +301,26 @@ var _ = Describe("VirtualMachine probes", func() {
 func TestProberManager(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "VM Prober Manager")
+}
+
+type fakeManager struct {
+	pkgmgr.Manager
+	scheme *runtime.Scheme
+	client client.Client
+}
+
+func (f fakeManager) GetEventRecorderFor(name string) clientgorecord.EventRecorder {
+	return nil
+}
+
+func (f fakeManager) GetScheme() *runtime.Scheme {
+	return f.scheme
+}
+
+func (f fakeManager) GetClient() client.Client {
+	return f.client
+}
+
+func (f fakeManager) Add(_ ctrlmgr.Runnable) error {
+	return nil
 }

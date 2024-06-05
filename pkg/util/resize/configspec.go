@@ -8,7 +8,11 @@ import (
 	"reflect"
 	"slices"
 
+	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // CreateResizeConfigSpec takes the current VM state in the ConfigInfo and compares it to the
@@ -43,9 +47,96 @@ func compareHardware(
 	cmp(int64(ci.Hardware.MemoryMB), cs.MemoryMB, &outCS.MemoryMB)
 	cmpPtr(ci.Hardware.VirtualICH7MPresent, cs.VirtualICH7MPresent, &outCS.VirtualICH7MPresent)
 	cmpPtr(ci.Hardware.VirtualSMCPresent, cs.VirtualSMCPresent, &outCS.VirtualSMCPresent)
-	// outCS.Device = ...
 	cmp(ci.Hardware.MotherboardLayout, cs.MotherboardLayout, &outCS.MotherboardLayout)
 	cmp(ci.Hardware.SimultaneousThreads, cs.SimultaneousThreads, &outCS.SimultaneousThreads)
+
+	compareHardwareDevices(ci, cs, outCS)
+}
+
+func compareHardwareDevices(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+
+	// The VM's current virtual devices.
+	deviceList := object.VirtualDeviceList(ci.Hardware.Device)
+	// The VM's desired virtual devices.
+	csDeviceList := util.DevicesFromConfigSpec(&cs)
+
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+
+	pciDeviceChanges := comparePCIDevices(deviceList, csDeviceList)
+	deviceChanges = append(deviceChanges, pciDeviceChanges...)
+
+	outCS.DeviceChange = deviceChanges
+}
+
+func comparePCIDevices(
+	currentPCIDevices, desiredPCIDevices []vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
+
+	pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(desiredPCIDevices)
+	expectedPCIDevices := virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
+
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+	for _, expectedDev := range expectedPCIDevices {
+		expectedPci := expectedDev.(*vimtypes.VirtualPCIPassthrough)
+		expectedBacking := expectedPci.Backing
+		expectedBackingType := reflect.TypeOf(expectedBacking)
+
+		var matchingIdx = -1
+		for idx, curDev := range currentPCIDevices {
+			curBacking := curDev.GetVirtualDevice().Backing
+			if curBacking == nil || reflect.TypeOf(curBacking) != expectedBackingType {
+				continue
+			}
+
+			var backingMatch bool
+			switch a := curBacking.(type) {
+			case *vimtypes.VirtualPCIPassthroughVmiopBackingInfo:
+				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
+				backingMatch = a.Vgpu == b.Vgpu
+
+			case *vimtypes.VirtualPCIPassthroughDynamicBackingInfo:
+				currAllowedDevs := a.AllowedDevice
+				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
+				if a.CustomLabel == b.CustomLabel && len(b.AllowedDevice) > 0 {
+					// b.AllowedDevice has only one element because CreatePCIDevices() adds only one device based
+					// on the devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
+					expectedAllowedDev := b.AllowedDevice[0]
+					for i := 0; i < len(currAllowedDevs) && !backingMatch; i++ {
+						backingMatch = expectedAllowedDev.DeviceId == currAllowedDevs[i].DeviceId &&
+							expectedAllowedDev.VendorId == currAllowedDevs[i].VendorId
+					}
+				}
+			}
+
+			if backingMatch {
+				matchingIdx = idx
+				break
+			}
+		}
+
+		if matchingIdx == -1 {
+			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				Device:    expectedPci,
+			})
+		} else {
+			// There could be multiple vGPUs with same BackingInfo. Remove current device if matching found.
+			currentPCIDevices = append(currentPCIDevices[:matchingIdx], currentPCIDevices[matchingIdx+1:]...)
+		}
+	}
+	// Remove any unmatched existing devices.
+	removeDeviceChanges := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(currentPCIDevices))
+	for _, dev := range currentPCIDevices {
+		removeDeviceChanges = append(removeDeviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+			Device:    dev,
+		})
+	}
+
+	// Process any removes first.
+	return append(removeDeviceChanges, deviceChanges...)
 }
 
 // compareCPUAllocation compares CPU resource allocation.

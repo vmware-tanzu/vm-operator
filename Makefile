@@ -29,6 +29,12 @@ GOHOSTOSARCH := $(GOHOSTOS)_$(GOHOSTARCH)
 export GOOS ?= $(GOHOSTOS)
 export GOARCH ?= $(GOHOSTARCH)
 
+# Default GOTOOLCHAIN to the one on the system instead of downloading whatever
+# the go.mod file(s) specify. This fixes an issue of when the build happens
+# behind a firewall or when GOSUMDB=off and the toolchain cannot be verified,
+# and thus a potential download fails.
+export GOTOOLCHAIN ?= local
+
 # The directory in which this Makefile is located. Please note this will not
 # behave correctly if the path to any Makefile in the list contains any spaces.
 ROOT_DIR ?= $(dir $(realpath $(lastword $(MAKEFILE_LIST))))

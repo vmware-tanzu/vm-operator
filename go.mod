@@ -1,8 +1,6 @@
 module github.com/vmware-tanzu/vm-operator
 
-go 1.22.0
-
-toolchain go1.22.3
+go 1.22.4
 
 replace (
 	github.com/envoyproxy/go-control-plane => github.com/envoyproxy/go-control-plane v0.9.4

@@ -203,6 +203,15 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigInfo{LatencySensitivity: &vimtypes.LatencySensitivity{Level: vimtypes.LatencySensitivitySensitivityLevelLow}},
 			ConfigSpec{LatencySensitivity: &vimtypes.LatencySensitivity{Level: vimtypes.LatencySensitivitySensitivityLevelLow}},
 			ConfigSpec{}),
+
+		Entry("Extra Config setting needs updating",
+			ConfigInfo{ExtraConfig: []vimtypes.BaseOptionValue{&vimtypes.OptionValue{Key: "foo", Value: "bar"}}},
+			ConfigSpec{ExtraConfig: []vimtypes.BaseOptionValue{&vimtypes.OptionValue{Key: "foo", Value: "bar1"}, &vimtypes.OptionValue{Key: "bat", Value: "man"}}},
+			ConfigSpec{ExtraConfig: []vimtypes.BaseOptionValue{&vimtypes.OptionValue{Key: "foo", Value: "bar1"}, &vimtypes.OptionValue{Key: "bat", Value: "man"}}}),
+		Entry("Extra Config setting does not need updating",
+			ConfigInfo{ExtraConfig: []vimtypes.BaseOptionValue{&vimtypes.OptionValue{Key: "foo", Value: "bar"}}},
+			ConfigSpec{ExtraConfig: []vimtypes.BaseOptionValue{&vimtypes.OptionValue{Key: "foo", Value: "bar"}}},
+			ConfigSpec{}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

@@ -31,6 +31,7 @@ func CreateResizeConfigSpec(
 	compareCPUAffinity(ci, cs, &outCS)
 	compareCPUPerfCounter(ci, cs, &outCS)
 	compareLatencySensitivity(ci, cs, &outCS)
+	compareExtraConfig(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -251,6 +252,21 @@ func compareLatencySensitivity(
 			//Sensitivity: cs.LatencySensitivity.Sensitivity,
 		}
 	}
+}
+
+// compareExtraConfig compares the extra config setting in the Config Spec to add new keys
+// or updates values for existing keys.
+func compareExtraConfig(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+
+	if len(cs.ExtraConfig) == 0 {
+		return
+	}
+
+	extraConfig := util.ExtraConfigToMap(cs.ExtraConfig)
+	outCS.ExtraConfig = util.MergeExtraConfig(ci.ExtraConfig, extraConfig)
 }
 
 func cmp[T comparable](a, b T, c *T) {

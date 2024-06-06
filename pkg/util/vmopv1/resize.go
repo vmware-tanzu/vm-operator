@@ -6,28 +6,30 @@ package vmopv1
 import (
 	"encoding/json"
 
+	"k8s.io/apimachinery/pkg/types"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 const (
 	// LastResizedAnnotationKey denotes the VM Class that the VM was last resized from.
-	LastResizedAnnotationKey = "vmoperator.vmware.com/last-resized-vm-class"
+	LastResizedAnnotationKey = vmopv1.GroupName + "/last-resized-vm-class"
 )
 
 type lastResizedAnnotation struct {
-	Name       string
-	UID        string
-	Generation int64
+	Name       string    `json:"name"`
+	UID        types.UID `json:"uid,omitempty"`
+	Generation int64     `json:"generation,omitempty"`
 }
 
-// SetResizeAnnotation sets the resize annotation to match the given class.
-func SetResizeAnnotation(
+// SetLastResizedAnnotation sets the resize annotation to match the given class.
+func SetLastResizedAnnotation(
 	vm *vmopv1.VirtualMachine,
 	vmClass vmopv1.VirtualMachineClass) error {
 
 	b, err := json.Marshal(lastResizedAnnotation{
 		Name:       vmClass.Name,
-		UID:        string(vmClass.UID),
+		UID:        vmClass.UID,
 		Generation: vmClass.Generation,
 	})
 	if err != nil {
@@ -37,23 +39,91 @@ func SetResizeAnnotation(
 	if vm.Annotations == nil {
 		vm.Annotations = make(map[string]string)
 	}
-
 	vm.Annotations[LastResizedAnnotationKey] = string(b)
+
 	return nil
 }
 
-// GetResizeAnnotation returns the VM Class Name, UID, Generation, and true from the last resize annotation
-// if present. Otherwise returns false.
-func GetResizeAnnotation(vm vmopv1.VirtualMachine) (name, uid string, generation int64, ok bool) {
-	val, exists := vm.Annotations[LastResizedAnnotationKey]
-	if !exists {
-		return
+// MustSetLastResizedAnnotation sets the resize annotation to match the given class.
+// Panic if fails.
+func MustSetLastResizedAnnotation(
+	vm *vmopv1.VirtualMachine,
+	vmClass vmopv1.VirtualMachineClass) {
+
+	err := SetLastResizedAnnotation(vm, vmClass)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// SetLastResizedAnnotationClassName sets the resize annotation to just of the class name.
+func SetLastResizedAnnotationClassName(
+	vm *vmopv1.VirtualMachine,
+	className string) error {
+
+	b, err := json.Marshal(lastResizedAnnotation{
+		Name: className,
+	})
+	if err != nil {
+		return err
 	}
 
-	var v lastResizedAnnotation
-	if err := json.Unmarshal([]byte(val), &v); err != nil {
-		return
+	if vm.Annotations == nil {
+		vm.Annotations = make(map[string]string)
+	}
+	vm.Annotations[LastResizedAnnotationKey] = string(b)
+
+	return nil
+}
+
+// GetLastResizedAnnotation returns the VM Class Name, UID, Generation, and true from the
+// last resize annotation if present. Otherwise returns false.
+func GetLastResizedAnnotation(vm vmopv1.VirtualMachine) (string, string, int64, bool) {
+	lra, ok := getLastResizeAnnotation(vm)
+	if !ok {
+		return "", "", 0, false
 	}
 
-	return v.Name, v.UID, v.Generation, true
+	return lra.Name, string(lra.UID), lra.Generation, true
+}
+
+func getLastResizeAnnotation(vm vmopv1.VirtualMachine) (lastResizedAnnotation, bool) {
+	val, ok := vm.Annotations[LastResizedAnnotationKey]
+	if !ok {
+		return lastResizedAnnotation{}, false
+	}
+
+	var lra lastResizedAnnotation
+	if err := json.Unmarshal([]byte(val), &lra); err != nil {
+		return lastResizedAnnotation{}, false
+	}
+
+	return lra, true
+}
+
+func ResizeNeeded(
+	vm vmopv1.VirtualMachine,
+	vmClass vmopv1.VirtualMachineClass) bool {
+
+	lra, exists := getLastResizeAnnotation(vm)
+	if !exists || lra.Name == "" {
+		// The VM does not have the last resized annotation. Most likely this is an existing VM
+		// and the VM Spec.ClassName hasn't been changed (because the mutation webhook sets the
+		// annotation when it changes).
+		return false
+	}
+
+	if vm.Spec.ClassName != lra.Name {
+		// Usual resize case: the VM Spec.ClassName has been changed so need to resize.
+		return true
+	}
+
+	// Resizing as the class itself changes is only performed with an opt-in annotation
+	// because a change in the class could break existing VMs.
+	if _, exists := vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation]; exists {
+		same := vmClass.UID == lra.UID && vmClass.Generation == lra.Generation
+		return !same
+	}
+
+	return false
 }

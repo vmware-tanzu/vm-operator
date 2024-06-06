@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -38,6 +39,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -739,6 +741,11 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		return nil, apierrorsutil.NewAggregate(prereqErrs)
 	}
 
+	if pkgcfg.FromContext(vmCtx).Features.VMResize {
+		if createArgs.VMClass.Name != "" {
+			vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, createArgs.VMClass)
+		}
+	}
 	vmCtx.VM.Status.Class = &common.LocalObjectRef{
 		APIVersion: createArgs.VMClass.APIVersion,
 		Kind:       createArgs.VMClass.Kind,
@@ -1178,37 +1185,46 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 func (vs *vSphereVMProvider) vmResizeGetArgs(
 	vmCtx pkgctx.VirtualMachineContext) (*vmResizeArgs, error) {
 
-	vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
-	if err != nil {
-		return nil, err
-	}
-
 	resizeArgs := &vmResizeArgs{}
-	resizeArgs.VMClass = vmClass
 
-	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
-		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
+	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {
+		vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
 		if err != nil {
-			return nil, err
+			if !apierrors.IsNotFound(err) {
+				return nil, err
+			}
+		} else {
+			resizeArgs.VMClass = &vmClass
 		}
-		resizeArgs.MinCPUFreq = freq
 	}
 
-	var configSpec vimtypes.VirtualMachineConfigSpec
-	if rawConfigSpec := resizeArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
-		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
-		if err != nil {
-			return nil, err
-		}
-		configSpec = vmClassConfigSpec
-	}
+	if resizeArgs.VMClass != nil {
+		var minCPUFreq uint64
 
-	resizeArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
-		vmCtx,
-		configSpec,
-		resizeArgs.VMClass.Spec,
-		vmopv1.VirtualMachineImageStatus{},
-		resizeArgs.MinCPUFreq)
+		if res := resizeArgs.VMClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+			freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
+			if err != nil {
+				return nil, err
+			}
+			minCPUFreq = freq
+		}
+
+		var configSpec vimtypes.VirtualMachineConfigSpec
+		if rawConfigSpec := resizeArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
+			vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
+			if err != nil {
+				return nil, err
+			}
+			configSpec = vmClassConfigSpec
+		}
+
+		resizeArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
+			vmCtx,
+			configSpec,
+			resizeArgs.VMClass.Spec,
+			vmopv1.VirtualMachineImageStatus{},
+			minCPUFreq)
+	}
 
 	return resizeArgs, nil
 }

@@ -190,3 +190,31 @@ var _ = DescribeTable(
 	Entry("**byte - dst is not empty, src is not empty", &[]**byte{&[]*byte{&[]byte{byte(1)}[0]}[0]}[0], &[]*byte{&[]byte{byte(2)}[0]}[0], byte(2), false),
 	Entry("**byte - dst is not empty, src is empty", &[]**byte{&[]*byte{&[]byte{byte(1)}[0]}[0]}[0], &[]*byte{&[]byte{byte(0)}[0]}[0], byte(0), false),
 )
+
+var _ = Describe("OverwriteWithUser", func() {
+	It("panics with nil dst", func() {
+		fn := func() {
+			ptr.OverwriteWithUser[int](nil, nil, nil)
+		}
+		Expect(fn).To(PanicWith(dstIsNil))
+	})
+})
+
+var _ = DescribeTable("OverwriteWithUser table",
+	func(dst *int, user *int, current *int, expectedDst *int) {
+		ptr.OverwriteWithUser(&dst, user, current)
+		if expectedDst == nil {
+			Expect(dst).To(BeNil())
+		} else {
+			Expect(dst).To(HaveValue(Equal(*expectedDst)))
+		}
+	},
+	Entry("Nil args", nil, nil, nil, nil),
+	Entry("Only *dst set", ptr.To(1), nil, nil, ptr.To(1)),
+	Entry("Only user value set", nil, ptr.To(1), nil, ptr.To(1)),
+	Entry("Only current value set", nil, nil, ptr.To(1), nil),
+	Entry("Set user value takes precedence", ptr.To(1), ptr.To(2), nil, ptr.To(2)),
+	Entry("*dst value matches current value", ptr.To(1), nil, ptr.To(1), nil),
+	Entry("User value matches current value", ptr.To(1), ptr.To(2), ptr.To(2), nil),
+	Entry("Set user value takes precedence & different from current value", ptr.To(1), ptr.To(2), ptr.To(3), ptr.To(2)),
+)

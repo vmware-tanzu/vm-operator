@@ -19,8 +19,9 @@ import (
 )
 
 type ConfigSpec = vimtypes.VirtualMachineConfigSpec
+type ConfigInfo = vimtypes.VirtualMachineConfigInfo
 
-var _ = Describe("OverrideResizeConfigSpec", func() {
+var _ = Describe("OverwriteResizeConfigSpec", func() {
 
 	ctx := context.Background()
 	truePtr, falsePtr := vimtypes.NewBool(true), vimtypes.NewBool(false)
@@ -33,29 +34,49 @@ var _ = Describe("OverrideResizeConfigSpec", func() {
 
 	DescribeTable("Resize Overrides",
 		func(vm vmopv1.VirtualMachine,
-			cs, expectedCS vimtypes.VirtualMachineConfigSpec) {
+			ci ConfigInfo,
+			cs, expectedCS ConfigSpec) {
 
-			err := vmopv1util.OverrideResizeConfigSpec(ctx, vm, &cs)
+			err := vmopv1util.OverwriteResizeConfigSpec(ctx, vm, ci, &cs)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(reflect.DeepEqual(cs, expectedCS)).To(BeTrue(), cmp.Diff(cs, expectedCS))
 		},
 
 		Entry("Empty AdvancedSpec",
 			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{}),
+			ConfigInfo{},
 			ConfigSpec{},
 			ConfigSpec{}),
 
 		Entry("CBT not set in VM Spec but in ConfigSpec",
 			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{}),
+			ConfigInfo{},
 			ConfigSpec{ChangeTrackingEnabled: truePtr},
 			ConfigSpec{ChangeTrackingEnabled: truePtr}),
 		Entry("CBT set in VM Spec takes precedence over ConfigSpec",
 			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{ChangeBlockTracking: falsePtr}),
+			ConfigInfo{},
 			ConfigSpec{ChangeTrackingEnabled: truePtr},
 			ConfigSpec{ChangeTrackingEnabled: falsePtr}),
 		Entry("CBT set in VM Spec but not in ConfigSpec",
 			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{ChangeBlockTracking: truePtr}),
+			ConfigInfo{},
 			ConfigSpec{},
 			ConfigSpec{ChangeTrackingEnabled: truePtr}),
+		Entry("CBT set in VM Spec with same value in ConfigInfo",
+			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{ChangeBlockTracking: truePtr}),
+			ConfigInfo{ChangeTrackingEnabled: truePtr},
+			ConfigSpec{},
+			ConfigSpec{}),
+		Entry("CBT set in ConfigSpec with same value in ConfigInfo",
+			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{}),
+			ConfigInfo{ChangeTrackingEnabled: truePtr},
+			ConfigSpec{ChangeTrackingEnabled: truePtr},
+			ConfigSpec{}),
+		Entry("CBT set in VM Spec with same value in ConfigInfo but different value in ConfigSpec",
+			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{ChangeBlockTracking: truePtr}),
+			ConfigInfo{ChangeTrackingEnabled: truePtr},
+			ConfigSpec{ChangeTrackingEnabled: falsePtr},
+			ConfigSpec{}),
 	)
 })

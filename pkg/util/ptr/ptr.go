@@ -69,3 +69,32 @@ func Overwrite[T any](dst *T, src T) {
 		*dst = src
 	}
 }
+
+// OverwriteWithUser overwrites the *dst with an optional user value depending on
+// if the value needs to be updated based on the current value.
+func OverwriteWithUser[T comparable](dst **T, user, current *T) {
+	if dst == nil {
+		panic("dst is nil")
+	}
+
+	// Determine what the ultimate desired value is. If set the user
+	// value takes precedence.
+	var desired *T
+	switch {
+	case user != nil:
+		desired = user
+	case *dst != nil:
+		desired = *dst
+	default:
+		// Leave *dst as-is.
+		return
+	}
+
+	if current == nil || *current != *desired {
+		// An update is required to the desired value.
+		*dst = desired
+	} else if *current == *desired {
+		// Already at the desired value so no update is required.
+		*dst = nil
+	}
+}

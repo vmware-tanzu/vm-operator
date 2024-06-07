@@ -106,7 +106,11 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 // classToVMMapperFn returns a mapper function that can be used to queue reconcile request
 // for the VirtualMachines in response to an event on the VirtualMachineClass resource when
 // WCP_Namespaced_VM_Class FSS is enabled.
-func classToVMMapperFn(ctx *pkgctx.ControllerManagerContext, c client.Client, isDefaultVMClassController bool) func(_ context.Context, o client.Object) []reconcile.Request {
+func classToVMMapperFn(
+	ctx *pkgctx.ControllerManagerContext,
+	c client.Client,
+	isDefaultVMClassController bool) func(_ context.Context, o client.Object) []reconcile.Request {
+
 	// For a given VirtualMachineClass, return reconcile requests
 	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
 	return func(_ context.Context, o client.Object) []reconcile.Request {
@@ -116,16 +120,16 @@ func classToVMMapperFn(ctx *pkgctx.ControllerManagerContext, c client.Client, is
 		// Only watch resources that reference a VirtualMachineClass with its
 		// field spec.controllerName equal to controllerName or if the field is
 		// empty and isDefaultVMClassController is true.
-		controllerName := class.Spec.ControllerName
-		if controllerName == "" && !isDefaultVMClassController {
-			// Log at a high-level so the logs are not over-run.
-			logger.V(8).Info(
-				"Skipping class with empty controller name & not default VM Class controller",
-				"defaultVMClassController", pkgcfg.FromContext(ctx).DefaultVMClassControllerName,
-				"expectedControllerName", vmClassControllerName)
-			return nil
-		}
-		if controllerName != vmClassControllerName {
+		if controllerName := class.Spec.ControllerName; controllerName == "" {
+			if !isDefaultVMClassController {
+				// Log at a high-level so the logs are not over-run.
+				logger.V(8).Info(
+					"Skipping class with empty controller name & not default VM Class controller",
+					"defaultVMClassController", pkgcfg.FromContext(ctx).DefaultVMClassControllerName,
+					"expectedControllerName", vmClassControllerName)
+				return nil
+			}
+		} else if controllerName != vmClassControllerName {
 			// Log at a high-level so the logs are not over-run.
 			logger.V(8).Info(
 				"Skipping class with mismatched controller name",
@@ -137,6 +141,7 @@ func classToVMMapperFn(ctx *pkgctx.ControllerManagerContext, c client.Client, is
 		logger.V(4).Info("Reconciling all VMs referencing a VM class because of a VirtualMachineClass watch")
 
 		// Find all VM resources that reference this VM Class.
+		// TODO: May need an index or to use pagination.
 		vmList := &vmopv1.VirtualMachineList{}
 		if err := c.List(ctx, vmList, client.InNamespace(class.Namespace)); err != nil {
 			logger.Error(err, "Failed to list VirtualMachines for reconciliation due to VirtualMachineClass watch")
@@ -147,6 +152,7 @@ func classToVMMapperFn(ctx *pkgctx.ControllerManagerContext, c client.Client, is
 		var reconcileRequests []reconcile.Request
 		for _, vm := range vmList.Items {
 			if vm.Spec.ClassName == class.Name {
+				// TODO: We could be smarter here on what VMs actually need to be reconciled.
 				key := client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}
 				reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
 			}
@@ -282,9 +288,12 @@ func requeueDelay(ctx *pkgctx.VirtualMachineContext) time.Duration {
 	}
 
 	if ctx.VM.Status.PowerState == vmopv1.VirtualMachinePowerStateOn {
-		network := ctx.VM.Status.Network
-		if network == nil || (network.PrimaryIP4 == "" && network.PrimaryIP6 == "") {
-			return pkgcfg.FromContext(ctx).PoweredOnVMHasIPRequeueDelay
+		networkSpec := ctx.VM.Spec.Network
+		if networkSpec != nil && !networkSpec.Disabled {
+			networkStatus := ctx.VM.Status.Network
+			if networkStatus == nil || (networkStatus.PrimaryIP4 == "" && networkStatus.PrimaryIP6 == "") {
+				return pkgcfg.FromContext(ctx).PoweredOnVMHasIPRequeueDelay
+			}
 		}
 	}
 

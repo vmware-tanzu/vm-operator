@@ -25,7 +25,7 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 	ctx := context.Background()
 	truePtr, falsePtr := vimtypes.NewBool(true), vimtypes.NewBool(false)
 
-	DescribeTable("ConfigInfo.Hardware",
+	DescribeTable("ConfigInfo",
 		func(
 			ci vimtypes.VirtualMachineConfigInfo,
 			cs, expectedCS vimtypes.VirtualMachineConfigSpec) {
@@ -35,10 +35,28 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			Expect(reflect.DeepEqual(actualCS, expectedCS)).To(BeTrue(), cmp.Diff(actualCS, expectedCS))
 		},
 
-		Entry("Empty Hardware needs no updating",
-			ConfigInfo{Hardware: vimtypes.VirtualHardware{}},
+		Entry("Empty needs no updating",
+			ConfigInfo{},
 			ConfigSpec{},
 			ConfigSpec{}),
+
+		Entry("Annotation is currently set",
+			ConfigInfo{Annotation: "my-annotation"},
+			ConfigSpec{},
+			ConfigSpec{}),
+		Entry("Annotation is currently unset",
+			ConfigInfo{},
+			ConfigSpec{Annotation: "my-annotation"},
+			ConfigSpec{Annotation: "my-annotation"}),
+
+		Entry("ManagedBy is currently set",
+			ConfigInfo{ManagedBy: &vimtypes.ManagedByInfo{Type: "my-managed-by"}},
+			ConfigSpec{},
+			ConfigSpec{}),
+		Entry("ManagedBy is currently unset",
+			ConfigInfo{},
+			ConfigSpec{ManagedBy: &vimtypes.ManagedByInfo{Type: "my-managed-by"}},
+			ConfigSpec{ManagedBy: &vimtypes.ManagedByInfo{Type: "my-managed-by"}}),
 
 		Entry("NumCPUs needs updating",
 			ConfigInfo{Hardware: vimtypes.VirtualHardware{NumCPU: 2}},

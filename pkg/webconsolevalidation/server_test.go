@@ -25,45 +25,48 @@ import (
 
 func serverUnitTests() {
 
-	Context("InitServer", func() {
+	const (
+		serverPath = "/validate"
+		serverAddr = "localhost:8080"
+	)
 
-		var (
-			originalInClusterConfig func() (*rest.Config, error)
-			originalNewClient       func(config *rest.Config, options ctrlclient.Options) (ctrlclient.Client, error)
-			originalAddToScheme     func(*runtime.Scheme) error
-		)
+	var (
+		inClusterConfig = func() (*rest.Config, error) {
+			return &rest.Config{}, nil
+		}
+		addToScheme = func(*runtime.Scheme) error {
+			return nil
+		}
+		//nolint:unparam
+		newClient = func(*rest.Config, ctrlclient.Options) (ctrlclient.Client, error) {
+			return builder.NewFakeClient(), nil
+		}
+	)
 
-		BeforeEach(func() {
-			originalInClusterConfig = webconsolevalidation.InClusterConfig
-			originalNewClient = webconsolevalidation.NewClient
-			originalAddToScheme = webconsolevalidation.AddToScheme
+	Context("NewServer", func() {
 
-			// Init all the function variables to return without any error.
-			webconsolevalidation.InClusterConfig = func() (*rest.Config, error) {
-				return &rest.Config{}, nil
-			}
-			webconsolevalidation.NewClient = func(*rest.Config, ctrlclient.Options) (ctrlclient.Client, error) {
-				return builder.NewFakeClient(), nil
-			}
-			webconsolevalidation.AddToScheme = func(*runtime.Scheme) error {
-				return nil
-			}
-		})
+		When("Server addr or path is empty", func() {
 
-		AfterEach(func() {
-			webconsolevalidation.InClusterConfig = originalInClusterConfig
-			webconsolevalidation.NewClient = originalNewClient
-			webconsolevalidation.AddToScheme = originalAddToScheme
+			It("should return an error", func() {
+				_, err := webconsolevalidation.NewServer("", serverPath, nil, nil, nil)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("server addr and path cannot be empty"))
+
+				_, err = webconsolevalidation.NewServer(serverAddr, "", nil, nil, nil)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("server addr and path cannot be empty"))
+			})
+
 		})
 
 		When("InClusterConfig returns an error", func() {
 
 			It("should return the error", func() {
-				webconsolevalidation.InClusterConfig = func() (*rest.Config, error) {
+				errInClusterConfig := func() (*rest.Config, error) {
 					return nil, errors.New("in-cluster config error")
 				}
 
-				err := webconsolevalidation.InitServer()
+				_, err := webconsolevalidation.NewServer(serverAddr, serverPath, errInClusterConfig, addToScheme, newClient)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal("in-cluster config error"))
 			})
@@ -73,11 +76,11 @@ func serverUnitTests() {
 		When("AddToScheme returns an error", func() {
 
 			It("should return the error", func() {
-				webconsolevalidation.AddToScheme = func(*runtime.Scheme) error {
+				errAddToScheme := func(*runtime.Scheme) error {
 					return errors.New("add to scheme error")
 				}
 
-				err := webconsolevalidation.InitServer()
+				_, err := webconsolevalidation.NewServer(serverAddr, serverPath, inClusterConfig, errAddToScheme, newClient)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal("add to scheme error"))
 			})
@@ -87,11 +90,11 @@ func serverUnitTests() {
 		When("NewClient returns an error", func() {
 
 			It("should return the error", func() {
-				webconsolevalidation.NewClient = func(config *rest.Config, options ctrlclient.Options) (ctrlclient.Client, error) {
+				errNewClient := func(config *rest.Config, options ctrlclient.Options) (ctrlclient.Client, error) {
 					return nil, errors.New("new client error")
 				}
 
-				err := webconsolevalidation.InitServer()
+				_, err := webconsolevalidation.NewServer(serverAddr, serverPath, inClusterConfig, addToScheme, errNewClient)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal("new client error"))
 			})
@@ -100,9 +103,13 @@ func serverUnitTests() {
 
 		When("Everything works as expected", func() {
 
-			It("should initialize a K8sClient successfully", func() {
-				Expect(webconsolevalidation.InitServer()).To(Succeed())
-				Expect(webconsolevalidation.K8sClient).NotTo(BeNil())
+			It("should initialize a new Server successfully", func() {
+				server, err := webconsolevalidation.NewServer(serverAddr, serverPath, inClusterConfig, addToScheme, newClient)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(server).NotTo(BeNil())
+				Expect(server.Addr).To(Equal(serverAddr))
+				Expect(server.Path).To(Equal(serverPath))
+				Expect(server.KubeClient).NotTo(BeNil())
 			})
 
 		})
@@ -111,17 +118,21 @@ func serverUnitTests() {
 	Context("RunServer", func() {
 
 		It("should start the server at the given address and path", func(done Done) {
-			addr := "localhost:8080"
-			path := "/validate"
+
+			server := &webconsolevalidation.Server{
+				Addr:       serverAddr,
+				Path:       serverPath,
+				KubeClient: builder.NewFakeClient(),
+			}
 
 			go func() {
-				Expect(webconsolevalidation.RunServer(addr, path)).To(Succeed())
+				Expect(server.Run()).To(Succeed())
 			}()
 
 			// Wait for the server to start.
 			time.Sleep(100 * time.Millisecond)
 
-			resp, err := http.Get("http://" + addr + path)
+			resp, err := http.Get("http://" + serverAddr + serverPath)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp).NotTo(BeNil())
 			// Verify the server path is correct.
@@ -138,15 +149,17 @@ func serverUnitTests() {
 
 		var (
 			initObjects []ctrlclient.Object
+			server      webconsolevalidation.Server
 		)
 
 		JustBeforeEach(func() {
-			webconsolevalidation.K8sClient = builder.NewFakeClient(initObjects...)
+			server = webconsolevalidation.Server{
+				KubeClient: builder.NewFakeClient(initObjects...),
+			}
 		})
 
 		AfterEach(func() {
 			initObjects = nil
-			webconsolevalidation.K8sClient = nil
 		})
 
 		Context("requests with missing params", func() {
@@ -154,13 +167,13 @@ func serverUnitTests() {
 			It("should return http.StatusBadRequest (400)", func() {
 				var responseCode int
 
-				responseCode = fakeValidationRequest("/")
+				responseCode = fakeValidationRequest("/", server)
 				Expect(responseCode).To(Equal(http.StatusBadRequest))
 
-				responseCode = fakeValidationRequest("/?uuid=123")
+				responseCode = fakeValidationRequest("/?uuid=123", server)
 				Expect(responseCode).To(Equal(http.StatusBadRequest))
 
-				responseCode = fakeValidationRequest("/?namespace=dummy")
+				responseCode = fakeValidationRequest("/?namespace=dummy", server)
 				Expect(responseCode).To(Equal(http.StatusBadRequest))
 			})
 
@@ -181,9 +194,9 @@ func serverUnitTests() {
 
 				It("should return http.StatusInternalServerError (500)", func() {
 					// Use the default fake client to cause an error when getting the CR.
-					webconsolevalidation.K8sClient = fake.NewFakeClient()
+					server.KubeClient = fake.NewFakeClient()
 					url := "/?uuid=test-uuid-1234&namespace=test-namespace"
-					responseCode := fakeValidationRequest(url)
+					responseCode := fakeValidationRequest(url, server)
 					Expect(responseCode).To(Equal(http.StatusInternalServerError))
 				})
 
@@ -193,7 +206,7 @@ func serverUnitTests() {
 
 				It("should return http.StatusOK (200)", func() {
 					url := "/?uuid=test-uuid-1234&namespace=test-namespace"
-					responseCode := fakeValidationRequest(url)
+					responseCode := fakeValidationRequest(url, server)
 					Expect(responseCode).To(Equal(http.StatusOK))
 				})
 
@@ -203,7 +216,7 @@ func serverUnitTests() {
 
 				It("should return http.StatusForbidden (403)", func() {
 					url := "/?uuid=test-uuid-1234&namespace=non-existent-namespace"
-					responseCode := fakeValidationRequest(url)
+					responseCode := fakeValidationRequest(url, server)
 					Expect(responseCode).To(Equal(http.StatusForbidden))
 				})
 
@@ -213,7 +226,7 @@ func serverUnitTests() {
 
 				It("should return http.StatusForbidden (403)", func() {
 					url := "/?uuid=non-existent-uuid&namespace=test-namespace"
-					responseCode := fakeValidationRequest(url)
+					responseCode := fakeValidationRequest(url, server)
 					Expect(responseCode).To(Equal(http.StatusForbidden))
 				})
 
@@ -224,9 +237,9 @@ func serverUnitTests() {
 
 // fakeValidationRequest is a helper function to make a fake validation request.
 // It returns the response code from the server.
-func fakeValidationRequest(url string) int {
+func fakeValidationRequest(url string, server webconsolevalidation.Server) int {
 	responseRecorder := httptest.NewRecorder()
-	handler := http.HandlerFunc(webconsolevalidation.HandleWebConsoleValidation)
+	handler := http.HandlerFunc(server.HandleWebConsoleValidation)
 	testRequest, err := http.NewRequest("GET", url, nil)
 	Expect(err).NotTo(HaveOccurred())
 	handler.ServeHTTP(responseRecorder, testRequest)

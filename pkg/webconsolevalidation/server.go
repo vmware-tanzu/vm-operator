@@ -5,6 +5,7 @@ package webconsolevalidation
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -17,46 +18,50 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 )
 
-// K8sClient is used to get the webconsolerequest resource from UUID and namespace.
-var K8sClient ctrlclient.Client
-
-// Function variables to allow for mocking in tests.
-var (
-	InClusterConfig = rest.InClusterConfig
-	NewClient       = ctrlclient.New
-	AddToScheme     = vmopv1a1.AddToScheme
-)
-
-// InitServer initializes a K8sClient used by the web-console validation server.
-func InitServer() error {
-	restConfig, err := InClusterConfig()
-	if err != nil {
-		return err
-	}
-
-	scheme := runtime.NewScheme()
-	if err := AddToScheme(scheme); err != nil {
-		return err
-	}
-
-	ctrlruntimeClient, err := NewClient(restConfig, ctrlclient.Options{
-		Scheme: scheme,
-	})
-	if err != nil {
-		return err
-	}
-
-	K8sClient = ctrlruntimeClient
-	return nil
+// Server represents a web console validation server.
+type Server struct {
+	Addr, Path string
+	KubeClient ctrlclient.Client
 }
 
-// RunServer runs the web-console validation server at the given addr and path.
-func RunServer(addr, path string) error {
+// NewServer creates a new web console validation server.
+func NewServer(
+	addr, path string,
+	inClusterConfigFunc func() (*rest.Config, error),
+	addToSchemeFunc func(*runtime.Scheme) error,
+	newClientFunc func(*rest.Config, ctrlclient.Options) (ctrlclient.Client, error)) (*Server, error) {
+	if addr == "" || path == "" {
+		return nil, errors.New("server addr and path cannot be empty")
+	}
+
+	// Init Kubernetes client.
+	restConfig, err := inClusterConfigFunc()
+	if err != nil {
+		return nil, err
+	}
+	scheme := runtime.NewScheme()
+	if err := addToSchemeFunc(scheme); err != nil {
+		return nil, err
+	}
+	client, err := newClientFunc(restConfig, ctrlclient.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Server{
+		Addr:       addr,
+		Path:       path,
+		KubeClient: client,
+	}, nil
+}
+
+// Run starts the web console validation server.
+func (s *Server) Run() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc(path, HandleWebConsoleValidation)
+	mux.HandleFunc(s.Path, s.HandleWebConsoleValidation)
 
 	server := &http.Server{
-		Addr:              addr,
+		Addr:              s.Addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -64,8 +69,9 @@ func RunServer(addr, path string) error {
 	return server.ListenAndServe()
 }
 
-// HandleWebConsoleValidation handles the web-console validation server requests.
-func HandleWebConsoleValidation(w http.ResponseWriter, r *http.Request) {
+// HandleWebConsoleValidation verifies a web console validation request by
+// checking if a WebConsoleRequest resource exists with the given UUID in query.
+func (s *Server) HandleWebConsoleValidation(w http.ResponseWriter, r *http.Request) {
 	uuid := r.URL.Query().Get("uuid")
 	if uuid == "" {
 		http.Error(w, "'uuid' param is empty", http.StatusBadRequest)
@@ -80,7 +86,7 @@ func HandleWebConsoleValidation(w http.ResponseWriter, r *http.Request) {
 
 	logger := ctrllog.Log.WithName(r.URL.Path).WithValues("uuid", uuid).WithValues("namespace", namespace)
 
-	found, err := isResourceFound(r.Context(), uuid, namespace)
+	found, err := isResourceFound(r.Context(), uuid, namespace, s.KubeClient)
 	if err != nil {
 		logger.Error(err, "Error occurred in finding a webconsolerequest resource with the given params.")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -96,14 +102,22 @@ func HandleWebConsoleValidation(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func isResourceFound(goCtx context.Context, uuid, namespace string) (bool, error) {
+func isResourceFound(
+	ctx context.Context,
+	uuid, namespace string,
+	kubeClient ctrlclient.Client) (bool, error) {
 	labelSelector := ctrlclient.MatchingLabels{
 		v1alpha1.UUIDLabelKey: uuid,
 	}
 
 	// TODO: Use an Informer to avoid hitting the API server for every request.
 	wcrObjectList := &vmopv1a1.WebConsoleRequestList{}
-	if err := K8sClient.List(goCtx, wcrObjectList, ctrlclient.InNamespace(namespace), labelSelector); err != nil {
+	if err := kubeClient.List(
+		ctx,
+		wcrObjectList,
+		ctrlclient.InNamespace(namespace),
+		labelSelector,
+	); err != nil {
 		return false, err
 	}
 

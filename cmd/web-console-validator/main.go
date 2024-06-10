@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -9,10 +9,13 @@ import (
 	"os"
 	"strconv"
 
+	"k8s.io/client-go/rest"
 	klog "k8s.io/klog/v2"
 	"k8s.io/klog/v2/textlogger"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/webconsolevalidation"
 )
@@ -53,17 +56,21 @@ func main() {
 
 	flag.Parse()
 
-	if initErr := webconsolevalidation.InitServer(); initErr != nil {
-		logger.Error(initErr, "Failed to initialize web-console validation server")
+	server, err := webconsolevalidation.NewServer(
+		":"+strconv.Itoa(*serverPort),
+		*serverPath,
+		rest.InClusterConfig,
+		vmopv1a1.AddToScheme,
+		ctrlclient.New,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to initialize web-console validation server")
 		os.Exit(1)
 	}
 
 	logger.Info("Starting the web-console validation server", "port", *serverPort, "path", *serverPath)
-
-	// Pass serverPath to the RunServer so one can check what path the server is listening on
-	// by looking at the commands specified in the server deployment spec.
-	runErr := webconsolevalidation.RunServer(":"+strconv.Itoa(*serverPort), *serverPath)
-	if runErr != nil && runErr != http.ErrServerClosed {
-		logger.Error(runErr, "Error occurred while running the web-console validation server!")
+	if err := server.Run(); err != nil && err != http.ErrServerClosed {
+		logger.Error(err, "Failed to run the web-console validation server")
+		os.Exit(1)
 	}
 }

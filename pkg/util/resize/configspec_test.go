@@ -234,6 +234,46 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigInfo{ExtraConfig: []vimtypes.BaseOptionValue{&vimtypes.OptionValue{Key: "foo", Value: "bar"}}},
 			ConfigSpec{ExtraConfig: []vimtypes.BaseOptionValue{&vimtypes.OptionValue{Key: "foo", Value: "bar"}}},
 			ConfigSpec{}),
+
+		Entry("Console Preferences needs updating -- configInfo console preferences nil",
+			ConfigInfo{},
+			ConfigSpec{
+				ConsolePreferences: &vimtypes.VirtualMachineConsolePreferences{
+					EnterFullScreenOnPowerOn: truePtr,
+					PowerOnWhenOpened:        falsePtr,
+				}},
+			ConfigSpec{
+				ConsolePreferences: &vimtypes.VirtualMachineConsolePreferences{
+					EnterFullScreenOnPowerOn: truePtr,
+					PowerOnWhenOpened:        falsePtr,
+				}}),
+		Entry("Console Preferences needs updating -- configInfo console preferences set",
+			ConfigInfo{
+				ConsolePreferences: &vimtypes.VirtualMachineConsolePreferences{
+					PowerOnWhenOpened: truePtr,
+				}},
+			ConfigSpec{
+				ConsolePreferences: &vimtypes.VirtualMachineConsolePreferences{
+					EnterFullScreenOnPowerOn: truePtr,
+					PowerOnWhenOpened:        falsePtr,
+				}},
+			ConfigSpec{
+				ConsolePreferences: &vimtypes.VirtualMachineConsolePreferences{
+					EnterFullScreenOnPowerOn: truePtr,
+					PowerOnWhenOpened:        falsePtr,
+				}}),
+		Entry("Console Preferences does not need updating",
+			ConfigInfo{
+				ConsolePreferences: &vimtypes.VirtualMachineConsolePreferences{
+					EnterFullScreenOnPowerOn: truePtr,
+					PowerOnWhenOpened:        falsePtr,
+				}},
+			ConfigSpec{
+				ConsolePreferences: &vimtypes.VirtualMachineConsolePreferences{
+					EnterFullScreenOnPowerOn: truePtr,
+					PowerOnWhenOpened:        falsePtr,
+				}},
+			ConfigSpec{}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

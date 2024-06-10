@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package webconsolevalidation
@@ -20,19 +20,28 @@ import (
 // K8sClient is used to get the webconsolerequest resource from UUID and namespace.
 var K8sClient ctrlclient.Client
 
+// Function variables to allow for mocking in tests.
+var (
+	InClusterConfig = rest.InClusterConfig
+	NewClient       = ctrlclient.New
+	AddToScheme     = vmopv1a1.AddToScheme
+)
+
 // InitServer initializes a K8sClient used by the web-console validation server.
 func InitServer() error {
-	restConfig, err := rest.InClusterConfig()
+	restConfig, err := InClusterConfig()
 	if err != nil {
 		return err
 	}
 
 	scheme := runtime.NewScheme()
-	if err = vmopv1a1.AddToScheme(scheme); err != nil {
+	if err := AddToScheme(scheme); err != nil {
 		return err
 	}
 
-	ctrlruntimeClient, err := ctrlclient.New(restConfig, ctrlclient.Options{Scheme: scheme})
+	ctrlruntimeClient, err := NewClient(restConfig, ctrlclient.Options{
+		Scheme: scheme,
+	})
 	if err != nil {
 		return err
 	}

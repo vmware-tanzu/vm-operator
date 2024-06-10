@@ -49,11 +49,6 @@ const (
 	// For more information, please see https://cloudinit.readthedocs.io/en/latest/topics/network-config-format-v2.html
 	NetPlanVersion = 2
 
-	// VMImageCLVersionAnnotation VirtualMachineImage annotation to cache the last fetched version.
-	VMImageCLVersionAnnotation = pkg.VMOperatorKey + "/content-library-version"
-	// VMImageCLVersionAnnotationVersion is the version of the VMImageCLVersionAnnotation for the VirtualMachineImage.
-	VMImageCLVersionAnnotationVersion = 1
-
 	PCIPassthruMMIOOverrideAnnotation = pkg.VMOperatorKey + "/pci-passthru-64bit-mmio-size"
 	PCIPassthruMMIOExtraConfigKey     = "pciPassthru.use64bitMMIO"    //nolint:gosec
 	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" //nolint:gosec

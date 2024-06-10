@@ -248,28 +248,6 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 	})
 })
 
-var _ = Describe("AppendNewExtraConfigValues", func() {
-
-	It("only adds new values not already in the ExtraConfig", func() {
-		ec := []vimtypes.BaseOptionValue{
-			&vimtypes.OptionValue{
-				Key:   "key1",
-				Value: "keep-me",
-			},
-		}
-
-		newECMap := map[string]string{
-			"key1": "should-be-ignored",
-			"key2": "add-me",
-		}
-
-		newExtraConfig := util.AppendNewExtraConfigValues(ec, newECMap)
-		Expect(newExtraConfig).To(HaveLen(2))
-		Expect(newExtraConfig).To(ContainElement(&vimtypes.OptionValue{Key: "key1", Value: "keep-me"}))
-		Expect(newExtraConfig).To(ContainElement(&vimtypes.OptionValue{Key: "key2", Value: "add-me"}))
-	})
-})
-
 var _ = Describe("SanitizeVMClassConfigSpec", func() {
 	var (
 		ctx        context.Context
@@ -387,94 +365,6 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 		backing, ok := dev.Backing.(*vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo)
 		Expect(ok).To(BeTrue())
 		Expect(backing.LunUuid).To(Equal("dummy-uuid"))
-	})
-})
-
-var _ = Describe("ExtraConfigToMap", func() {
-	var (
-		extraConfig    []vimtypes.BaseOptionValue
-		extraConfigMap map[string]string
-	)
-	BeforeEach(func() {
-		extraConfig = []vimtypes.BaseOptionValue{}
-	})
-	JustBeforeEach(func() {
-		extraConfigMap = util.ExtraConfigToMap(extraConfig)
-	})
-
-	Context("Empty extraConfig", func() {
-		It("Return empty map", func() {
-			Expect(extraConfigMap).To(HaveLen(0))
-		})
-	})
-
-	Context("With extraConfig", func() {
-		BeforeEach(func() {
-			extraConfig = append(extraConfig, &vimtypes.OptionValue{Key: "key1", Value: "value1"})
-			extraConfig = append(extraConfig, &vimtypes.OptionValue{Key: "key2", Value: "value2"})
-		})
-		It("Return valid map", func() {
-			Expect(extraConfigMap).To(HaveLen(2))
-			Expect(extraConfigMap["key1"]).To(Equal("value1"))
-			Expect(extraConfigMap["key2"]).To(Equal("value2"))
-		})
-	})
-})
-
-var _ = Describe("MergeExtraConfig", func() {
-	var (
-		extraConfig []vimtypes.BaseOptionValue
-		newMap      map[string]string
-		merged      []vimtypes.BaseOptionValue
-	)
-	BeforeEach(func() {
-		extraConfig = []vimtypes.BaseOptionValue{
-			&vimtypes.OptionValue{Key: "existingkey1", Value: "existingvalue1"},
-			&vimtypes.OptionValue{Key: "existingkey2", Value: "existingvalue2"},
-		}
-		newMap = map[string]string{}
-	})
-	JustBeforeEach(func() {
-		merged = util.MergeExtraConfig(extraConfig, newMap)
-	})
-
-	Context("Empty newMap", func() {
-		It("Return empty merged", func() {
-			Expect(merged).To(BeEmpty())
-		})
-	})
-
-	Context("NewMap with existing key and same value", func() {
-		BeforeEach(func() {
-			newMap["existingkey1"] = "existingvalue1"
-		})
-		It("Return empty merged", func() {
-			Expect(merged).To(BeEmpty())
-		})
-	})
-
-	Context("NewMap with existing key and new value", func() {
-		BeforeEach(func() {
-			newMap["existingkey1"] = "newvalue1"
-		})
-		It("Return merged map", func() {
-			Expect(merged).To(HaveLen(1))
-			mergedMap := util.ExtraConfigToMap(merged)
-			Expect(mergedMap["existingkey1"]).To(Equal("newvalue1"))
-		})
-	})
-
-	Context("NewMap with new keys", func() {
-		BeforeEach(func() {
-			newMap["newkey1"] = "newvalue1"
-			newMap["newkey2"] = "newvalue2"
-		})
-		It("Return merged map", func() {
-			Expect(merged).To(HaveLen(2))
-			mergedMap := util.ExtraConfigToMap(merged)
-			Expect(mergedMap["newkey1"]).To(Equal("newvalue1"))
-			Expect(mergedMap["newkey2"]).To(Equal("newvalue2"))
-		})
 	})
 })
 

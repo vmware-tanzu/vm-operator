@@ -326,8 +326,9 @@ func UpdateConfigSpecExtraConfig(
 		// with the class config spec extra config (ie) class config spec extra
 		// config keys takes precedence over the desired config spec extra
 		// config keys.
-		combinedExtraConfig := util.AppendNewExtraConfigValues(classConfigSpec.ExtraConfig, extraConfig)
-		extraConfig = util.ExtraConfigToMap(combinedExtraConfig)
+		extraConfig = util.OptionValues(classConfigSpec.ExtraConfig).
+			Append(util.OptionValuesFromMap(extraConfig)...).
+			StringMap()
 	}
 
 	// Note if the VM uses both LinuxPrep and vAppConfig. This is used in the
@@ -367,7 +368,8 @@ func UpdateConfigSpecExtraConfig(
 	// Update the ConfigSpec's ExtraConfig property with the results from
 	// above. Please note this *may* include keys with empty values. This
 	// indicates to vSphere that a key/value pair should be removed.
-	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
+	configSpec.ExtraConfig = util.OptionValues(config.ExtraConfig).
+		Diff(util.OptionValuesFromMap(extraConfig)...)
 }
 
 func isLinuxPrepAndVAppConfig(vm *vmopv1.VirtualMachine) bool {

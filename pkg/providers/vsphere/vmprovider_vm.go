@@ -1044,8 +1044,11 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
 		}
 	}
 
-	// The ConfigSpec's current ExtraConfig values (that came from the class) take precedence over what was set here.
-	createArgs.ConfigSpec.ExtraConfig = util.AppendNewExtraConfigValues(createArgs.ConfigSpec.ExtraConfig, ecMap)
+	// The ConfigSpec's current ExtraConfig values (that came from the class)
+	// take precedence over what was set here.
+	createArgs.ConfigSpec.ExtraConfig = util.OptionValues(
+		createArgs.ConfigSpec.ExtraConfig).
+		Append(util.OptionValuesFromMap(ecMap)...)
 
 	// Leave constants.VMOperatorV1Alpha1ExtraConfigKey for the update path (if that's still even needed)
 

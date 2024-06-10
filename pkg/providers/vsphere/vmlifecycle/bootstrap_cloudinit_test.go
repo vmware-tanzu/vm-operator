@@ -143,7 +143,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
 					Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
 
-					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+					extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 					Expect(extraConfig).To(HaveLen(4))
 					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
 					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
@@ -166,7 +166,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(configSpec).ToNot(BeNil())
 					Expect(configSpec.VAppConfigRemoved).To(BeNil())
 
-					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+					extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 					Expect(extraConfig).To(HaveLen(4))
 					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
 					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
@@ -189,7 +189,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(configSpec).ToNot(BeNil())
 					Expect(configSpec.VAppConfigRemoved).To(BeNil())
 
-					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+					extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 					Expect(extraConfig).To(HaveLen(4))
 					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
 					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
@@ -243,7 +243,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(configSpec).ToNot(BeNil())
 					Expect(configSpec.VAppConfigRemoved).To(BeNil())
 
-					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+					extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 					Expect(extraConfig).To(HaveLen(4))
 					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata)) // TODO: Better assertion (reduce w/ GetCloudInitMetadata)
 					Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
@@ -266,7 +266,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(configSpec).ToNot(BeNil())
 
-						extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+						extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 						Expect(extraConfig).To(HaveLen(4))
 						Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata)) // TODO: Better assertion (reduce w/ GetCloudInitMetadata)
 						Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
@@ -402,7 +402,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(configSpec).ToNot(BeNil())
 
-				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 				Expect(extraConfig).To(HaveLen(2))
 				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
@@ -414,7 +414,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(configSpec).ToNot(BeNil())
 
-				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 				Expect(extraConfig).To(HaveLen(4))
 				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
@@ -432,7 +432,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(configSpec).ToNot(BeNil())
 
-				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 				Expect(extraConfig).To(HaveLen(4))
 				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
@@ -452,7 +452,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(configSpec).ToNot(BeNil())
 
-				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.OptionValues(configSpec.ExtraConfig).StringMap()
 				Expect(extraConfig).To(HaveLen(4))
 				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadata, "H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))

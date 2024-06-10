@@ -232,9 +232,15 @@ func GetCloudInitGuestInfoCustSpec(
 		return nil, fmt.Errorf("encoding cloud-init metadata failed: %w", err)
 	}
 
-	extraConfig := map[string]string{
-		constants.CloudInitGuestInfoMetadata:         encodedMetadata,
-		constants.CloudInitGuestInfoMetadataEncoding: "gzip+base64",
+	extraConfig := util.OptionValues{
+		&vimtypes.OptionValue{
+			Key:   constants.CloudInitGuestInfoMetadata,
+			Value: encodedMetadata,
+		},
+		&vimtypes.OptionValue{
+			Key:   constants.CloudInitGuestInfoMetadataEncoding,
+			Value: "gzip+base64",
+		},
 	}
 
 	if userdata != "" {
@@ -249,12 +255,22 @@ func GetCloudInitGuestInfoCustSpec(
 			return nil, fmt.Errorf("encoding cloud-init userdata failed: %w", err)
 		}
 
-		extraConfig[constants.CloudInitGuestInfoUserdata] = encodedUserdata
-		extraConfig[constants.CloudInitGuestInfoUserdataEncoding] = "gzip+base64"
+		extraConfig = append(
+			extraConfig,
+			&vimtypes.OptionValue{
+				Key:   constants.CloudInitGuestInfoUserdata,
+				Value: encodedUserdata,
+			},
+			&vimtypes.OptionValue{
+				Key:   constants.CloudInitGuestInfoUserdataEncoding,
+				Value: "gzip+base64",
+			})
 	}
 
-	configSpec := &vimtypes.VirtualMachineConfigSpec{}
-	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
+	configSpec := &vimtypes.VirtualMachineConfigSpec{
+		ExtraConfig: util.OptionValues(config.ExtraConfig).Diff(extraConfig...),
+	}
+
 	if config.VAppConfig != nil && config.VAppConfig.GetVmConfigInfo() != nil {
 		// Remove the VAppConfig to ensure Cloud-Init inside the guest does not
 		// activate and prefer the OVF datasource over the VMware datasource.

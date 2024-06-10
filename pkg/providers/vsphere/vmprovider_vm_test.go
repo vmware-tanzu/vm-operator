@@ -1256,7 +1256,8 @@ func vmTests() {
 
 				By("has expected backup ExtraConfig key", func() {
 					Expect(o.Config.ExtraConfig).ToNot(BeNil())
-					ecMap := util.ExtraConfigToMap(o.Config.ExtraConfig)
+
+					ecMap := util.OptionValues(o.Config.ExtraConfig).StringMap()
 					Expect(ecMap).To(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
 				})
 
@@ -1278,7 +1279,7 @@ func vmTests() {
 
 				By("does not have any backup ExtraConfig key", func() {
 					Expect(o.Config.ExtraConfig).ToNot(BeNil())
-					ecMap := util.ExtraConfigToMap(o.Config.ExtraConfig)
+					ecMap := util.OptionValues(o.Config.ExtraConfig).StringMap()
 					Expect(ecMap).ToNot(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
 				})
 			})

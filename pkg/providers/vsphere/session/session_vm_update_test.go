@@ -273,7 +273,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				vm,
 				globalExtraConfig)
 
-			ecMap = util.ExtraConfigToMap(configSpec.ExtraConfig)
+			ecMap = util.OptionValues(configSpec.ExtraConfig).StringMap()
 		})
 
 		Context("Empty input", func() {

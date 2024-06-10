@@ -414,7 +414,7 @@ func verifyBackupDataInExtraConfig(
 	Expect(objVM).NotTo(BeNil())
 	var moVM mo.VirtualMachine
 	Expect(objVM.Properties(ctx, objVM.Reference(), []string{"config.extraConfig"}, &moVM)).To(Succeed())
-	ecMap := util.ExtraConfigToMap(moVM.Config.ExtraConfig)
+	ecMap := util.OptionValues(moVM.Config.ExtraConfig).StringMap()
 
 	// Verify the expected key doesn't exist in ExtraConfig if the expected value is empty.
 	if expectedValDecoded == "" {

@@ -291,12 +291,7 @@ func compareExtraConfig(
 	cs vimtypes.VirtualMachineConfigSpec,
 	outCS *vimtypes.VirtualMachineConfigSpec) {
 
-	if len(cs.ExtraConfig) == 0 {
-		return
-	}
-
-	extraConfig := util.ExtraConfigToMap(cs.ExtraConfig)
-	outCS.ExtraConfig = util.MergeExtraConfig(ci.ExtraConfig, extraConfig)
+	outCS.ExtraConfig = util.OptionValues(ci.ExtraConfig).Diff(cs.ExtraConfig...)
 }
 
 // compareConsolePreferences compares the console preferences settings in the Config Spec.

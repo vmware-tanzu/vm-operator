@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere_test
@@ -16,6 +16,7 @@ var suite = builder.NewTestSuite()
 func vcSimTests() {
 	Describe("CPUFreq", cpuFreqTests)
 	Describe("InitOvfCacheAndLockPool", initOvfCacheAndLockPoolTests)
+	Describe("SyncVirtualMachineImage", syncVirtualMachineImageTests)
 	Describe("ResourcePolicyTests", resourcePolicyTests)
 	Describe("VirtualMachine", vmTests)
 	Describe("VirtualMachineE2E", vmE2ETests)

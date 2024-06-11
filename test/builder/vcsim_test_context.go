@@ -121,6 +121,7 @@ type TestContextForVCSim struct {
 	// When WithContentLibrary is true:
 	ContentLibraryImageName string
 	ContentLibraryID        string
+	ContentLibraryItemID    string
 
 	// When WithoutStorageClass is false:
 	StorageClassName string
@@ -432,14 +433,16 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	}
 	c.ContentLibraryImageName = libraryItem.Name
 
-	itemID := createContentLibraryItem(
+	itemID := CreateContentLibraryItem(
 		c,
 		libMgr,
 		libraryItem,
 		path.Join(
 			testutil.GetRootDirOrDie(),
 			"test", "builder", "testdata",
-			"images", "ttylinux-pc_i486-16.1.ovf"))
+			"images", "ttylinux-pc_i486-16.1.ovf"),
+	)
+	c.ContentLibraryItemID = itemID
 
 	// The image isn't quite as prod but sufficient for what we need here ATM.
 	clusterVMImage := DummyClusterVirtualMachineImage(c.ContentLibraryImageName)
@@ -487,7 +490,7 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 }
 
-func createContentLibraryItem(
+func CreateContentLibraryItem(
 	ctx context.Context,
 	libMgr *library.Manager,
 	libraryItem library.Item,
@@ -534,7 +537,9 @@ func createContentLibraryItem(
 
 		return libMgr.Client.Upload(ctx, f, u, &p)
 	}
-	Expect(uploadFunc(itemPath)).To(Succeed())
+	if itemPath != "" {
+		Expect(uploadFunc(itemPath)).To(Succeed())
+	}
 	Expect(libMgr.CompleteLibraryItemUpdateSession(ctx, sessionID)).To(Succeed())
 
 	return itemID

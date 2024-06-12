@@ -759,7 +759,6 @@ _Appears in:_
 - [VirtualMachineClass](#virtualmachineclass)
 
 
-
 ### VirtualMachineImageOSInfo
 
 

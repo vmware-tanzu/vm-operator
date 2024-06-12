@@ -182,26 +182,37 @@ func (vs *vSphereVMProvider) clearAndLogoutVcClient(ctx context.Context) {
 // SyncVirtualMachineImage syncs the vmi object with the OVF Envelope retrieved from the cli object.
 func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx context.Context, cli, vmi ctrlclient.Object) error {
 	var itemID, contentVersion string
+	var itemType imgregv1a1.ContentLibraryItemType
+
 	switch cli := cli.(type) {
 	case *imgregv1a1.ContentLibraryItem:
 		itemID = string(cli.Spec.UUID)
 		contentVersion = cli.Status.ContentVersion
+		itemType = cli.Status.Type
 	case *imgregv1a1.ClusterContentLibraryItem:
 		itemID = string(cli.Spec.UUID)
 		contentVersion = cli.Status.ContentVersion
+		itemType = cli.Status.Type
 	default:
-		return fmt.Errorf("unexpected content library item type %T", cli)
+		return fmt.Errorf("unexpected content library item K8s object type %T", cli)
+	}
+
+	logger := log.V(4).WithValues("vmiName", vmi.GetName(), "cliName", cli.GetName())
+
+	// Exit early if the library item type is not an OVF.
+	if itemType != imgregv1a1.ContentLibraryItemTypeOvf {
+		logger.Info("Skip syncing VMI content as the library item is not OVF",
+			"libraryItemType", itemType)
+		return nil
 	}
 
 	ovfEnvelope, err := vs.getOvfEnvelope(ctx, itemID, contentVersion)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get OVF envelope for library item %q: %w", itemID, err)
 	}
 
-	logger := log.V(4).WithValues("vmiName", vmi.GetName(), "cliName", cli.GetName())
 	if ovfEnvelope == nil {
-		logger.Error(nil, "skip syncing VMI as corresponding OVF envelope is nil")
-		return nil
+		return fmt.Errorf("OVF envelope is nil for library item %q", itemID)
 	}
 
 	contentlibrary.UpdateVmiWithOvfEnvelope(vmi, *ovfEnvelope)

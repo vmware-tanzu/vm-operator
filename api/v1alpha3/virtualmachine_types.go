@@ -139,7 +139,7 @@ const (
 
 	// VirtualMachineSameVMClassResizeAnnotation is an annotation that indicates the VM
 	// should be resized as the class it points to changes.
-	VirtualMachineSameVMClassResizeAnnotation = GroupName + "/same-vm-class-resize "
+	VirtualMachineSameVMClassResizeAnnotation = GroupName + "/same-vm-class-resize"
 )
 
 const (
@@ -161,6 +161,12 @@ const (
 	// PVCDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
 	// PVC disk data in JSON, compressed using gzip and base64-encoded.
 	PVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
+)
+
+const (
+	// ManagerID on a VirtualMachine contains the UUID of the
+	// VMware vCenter (VC) that is managing this virtual machine.
+	ManagerID = GroupName + "/manager-id"
 )
 
 const (

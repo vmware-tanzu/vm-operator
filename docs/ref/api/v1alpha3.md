@@ -94,6 +94,22 @@ VirtualMachine as a VirtualMachineImage to an image registry.
 | `spec` _[VirtualMachinePublishRequestSpec](#virtualmachinepublishrequestspec)_ |  |
 | `status` _[VirtualMachinePublishRequestStatus](#virtualmachinepublishrequeststatus)_ |  |
 
+### VirtualMachineReplicaSet
+
+
+
+VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets API
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
+| `kind` _string_ | `VirtualMachineReplicaSet`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineReplicaSetSpec](#virtualmachinereplicasetspec)_ |  |
+| `status` _[VirtualMachineReplicaSetStatus](#virtualmachinereplicasetstatus)_ |  |
+
 ### VirtualMachineService
 
 
@@ -760,7 +776,6 @@ VirtualMachineClassStatus defines the observed state of VirtualMachineClass.
 
 _Appears in:_
 - [VirtualMachineClass](#virtualmachineclass)
-
 
 
 
@@ -1810,6 +1825,55 @@ Defaults to 10 seconds. Minimum value is 1. |
 | `periodSeconds` _integer_ | PeriodSeconds specifics how often (in seconds) to perform the probe.
 Defaults to 10 seconds. Minimum value is 1. |
 
+### VirtualMachineReplicaSetSpec
+
+
+
+VirtualMachineReplicaSetSpec is the specification of a VirtualMachineReplicaSet.
+
+_Appears in:_
+- [VirtualMachineReplicaSet](#virtualmachinereplicaset)
+
+| Field | Description |
+| --- | --- |
+| `replicas` _integer_ | Replicas is the number of desired replicas.
+This is a pointer to distinguish between explicit zero and unspecified.
+Defaults to 1. |
+| `deletePolicy` _string_ | DeletePolicy defines the policy used to identify nodes to delete when downscaling.
+Only supported deletion policy is "Random". |
+| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#labelselector-v1-meta)_ | Selector is a label to query over virtual machines that should match the
+replica count. A virtual machine's label keys and values must match in order
+to be controlled by this VirtualMachineReplicaSet.
+
+
+It must match the VirtualMachine template's labels.
+More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors |
+| `template` _[VirtualMachineTemplateSpec](#virtualmachinetemplatespec)_ | Template is the object that describes the virtual machine that will be
+created if insufficient replicas are detected. |
+
+### VirtualMachineReplicaSetStatus
+
+
+
+VirtualMachineReplicaSetStatus represents the observed state of a
+VirtualMachineReplicaSet resource.
+
+_Appears in:_
+- [VirtualMachineReplicaSet](#virtualmachinereplicaset)
+
+| Field | Description |
+| --- | --- |
+| `replicas` _integer_ | Replicas is the most recently observed number of replicas. |
+| `fullyLabeledReplicas` _integer_ | FullyLabeledReplicas is the number of replicas that have labels matching the
+labels of the virtual machine template of the VirtualMachineReplicaSet. |
+| `readyReplicas` _integer_ | ReadyReplicas is the number of ready replicas for this VirtualMachineReplicaSet. A
+virtual machine is considered ready when it's "Ready" condition is marked as
+true. |
+| `observedGeneration` _integer_ | ObservedGeneration reflects the generation of the most recently observed
+VirtualMachineReplicaSet. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions represents the latest available observations of a
+VirtualMachineReplicaSet's current state. |
+
 ### VirtualMachineReservedSpec
 
 
@@ -1972,6 +2036,7 @@ VirtualMachineSpec defines the desired state of a VirtualMachine.
 
 _Appears in:_
 - [VirtualMachine](#virtualmachine)
+- [VirtualMachineTemplateSpec](#virtualmachinetemplatespec)
 
 | Field | Description |
 | --- | --- |
@@ -1985,7 +2050,13 @@ spec.image.name MUST be a Kubernetes object name.
 
 Please also note, when creating a new VirtualMachine, if this field and
 spec.imageName are both non-empty, then they must refer to the same
-resource or an error is returned. |
+resource or an error is returned.
+
+
+Please note, this field *may* be empty if the VM was imported instead of
+deployed by VM Operator. An imported VirtualMachine resource references
+an existing VM on the underlying platform that was not deployed from a
+VM image. |
 | `imageName` _string_ | ImageName describes the name of the image resource used to deploy this
 VM.
 
@@ -2010,9 +2081,21 @@ webhook denies the request and returns an error.
 
 Please also note, when creating a new VirtualMachine, if this field and
 spec.image are both non-empty, then they must refer to the same
-resource or an error is returned. |
+resource or an error is returned.
+
+
+Please note, this field *may* be empty if the VM was imported instead of
+deployed by VM Operator. An imported VirtualMachine resource references
+an existing VM on the underlying platform that was not deployed from a
+VM image. |
 | `className` _string_ | ClassName describes the name of the VirtualMachineClass resource used to
-deploy this VM. |
+deploy this VM.
+
+
+Please note, this field *may* be empty if the VM was imported instead of
+deployed by VM Operator. An imported VirtualMachine resource references
+an existing VM on the underlying platform that was not deployed from a
+VM class. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
 used to configure this VM's storage-related attributes.
 
@@ -2147,6 +2230,12 @@ downgraded and upgrading a VM deployed from an image based on an older
 hardware version to a more recent one may result in unpredictable
 behavior. In other words, please be careful when choosing to upgrade a
 VM to a newer hardware version. |
+| `instanceUUID` _string_ | InstanceUUID describes the desired Instance UUID for a VM.
+If omitted, this field defaults to a random UUID.
+This value is only used for the VM Instance UUID,
+it is not used within cloudInit.
+This identifier is used by VirtualCenter to uniquely identify all
+virtual machine instances, including those that may share the same BIOS UUID. |
 | `biosUUID` _string_ | BiosUUID describes the desired BIOS UUID for a VM.
 If omitted, this field defaults to a random UUID.
 When the bootstrap provider is Cloud-Init, this value is used as the
@@ -2195,6 +2284,21 @@ hardware version.
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
 
+
+### VirtualMachineTemplateSpec
+
+
+
+VirtualMachineTemplateSpec describes the data needed to create a VirtualMachine
+from a template.
+
+_Appears in:_
+- [VirtualMachineReplicaSetSpec](#virtualmachinereplicasetspec)
+
+| Field | Description |
+| --- | --- |
+| `metadata` _[ObjectMeta](#objectmeta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineSpec](#virtualmachinespec)_ | Specification of the desired behavior of each replica virtual machine. |
 
 ### VirtualMachineVolume
 

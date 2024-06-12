@@ -484,12 +484,25 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
-	createArgs *VMCreateArgs) error {
+	createArgs *VMCreateArgs) (retErr error) {
 
-	placementConfigSpec := virtualmachine.CreateConfigSpecForPlacement(
+	defer func() {
+		if retErr != nil {
+			conditions.MarkFalse(
+				vmCtx.VM,
+				vmopv1.VirtualMachineConditionPlacementReady,
+				"NotReady",
+				retErr.Error())
+		}
+	}()
+
+	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
 		createArgs.ConfigSpec,
 		createArgs.StorageClassesToIDs)
+	if err != nil {
+		return err
+	}
 
 	result, err := placement.Placement(
 		vmCtx,
@@ -498,7 +511,6 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		placementConfigSpec,
 		createArgs.ChildResourcePoolName)
 	if err != nil {
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionPlacementReady, "NotReady", err.Error())
 		return err
 	}
 
@@ -519,7 +531,6 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 
 		hostFQDN, err := vcenter.GetESXHostFQDN(vmCtx, vcClient.VimClient(), hostMoID)
 		if err != nil {
-			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionPlacementReady, "NotReady", err.Error())
 			return err
 		}
 

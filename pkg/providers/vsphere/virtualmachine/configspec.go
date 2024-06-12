@@ -124,7 +124,7 @@ func CreateConfigSpec(
 func CreateConfigSpecForPlacement(
 	vmCtx pkgctx.VirtualMachineContext,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	storageClassesToIDs map[string]string) vimtypes.VirtualMachineConfigSpec {
+	storageClassesToIDs map[string]string) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	deviceChangeCopy := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(configSpec.DeviceChange))
 	for _, devChange := range configSpec.DeviceChange {
@@ -181,6 +181,10 @@ func CreateConfigSpecForPlacement(
 		}
 	}
 
+	if err := util.EnsureDisksHaveControllers(&configSpec); err != nil {
+		return vimtypes.VirtualMachineConfigSpec{}, err
+	}
+
 	// TODO: Add more devices and fields
 	//  - boot disks from OVA
 	//  - storage profile/class
@@ -190,7 +194,7 @@ func CreateConfigSpecForPlacement(
 	//  - any way to do the cluster modules for anti-affinity?
 	//  - whatever else I'm forgetting
 
-	return configSpec
+	return configSpec, nil
 }
 
 // ConfigSpecFromVMClassDevices creates a ConfigSpec that adds the standalone hardware devices from

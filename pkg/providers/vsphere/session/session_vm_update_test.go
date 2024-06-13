@@ -1626,7 +1626,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 
 			When("VM.Spec.GuestID is changed", func() {
 
-				When("the guest ID is invalid", func() {
+				When("the guest ID value is invalid", func() {
 
 					BeforeEach(func() {
 						vm.Spec.GuestID = "invalid-guest-id"
@@ -1637,10 +1637,10 @@ var _ = Describe("UpdateVirtualMachine", func() {
 						err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
 						Expect(err).To(HaveOccurred())
 						Expect(err.Error()).To(ContainSubstring(errMsg))
-						c := conditions.Get(vm, vmopv1.GuestIDCondition)
+						c := conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)
 						Expect(c).ToNot(BeNil())
 						expectedCondition := conditions.FalseCondition(
-							vmopv1.GuestIDCondition,
+							vmopv1.GuestIDReconfiguredCondition,
 							"Invalid",
 							"The specified guest ID value is not supported: invalid-guest-id",
 						)
@@ -1648,21 +1648,35 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					})
 				})
 
-				When("the guest ID is valid", func() {
+				When("the guest ID value is valid", func() {
 
 					BeforeEach(func() {
 						vm.Spec.GuestID = "vmwarePhoton64Guest"
 					})
 
-					It("should power on the VM with the specified guest ID and set VM's PrePowerOnReconfigureReady condition true", func() {
+					It("should power on the VM with the specified guest ID", func() {
 						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
 						Expect(vmCtx.MoVM.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 						Expect(vmCtx.MoVM.Config.GuestId).To(Equal("vmwarePhoton64Guest"))
-						c := conditions.Get(vm, vmopv1.GuestIDCondition)
-						Expect(c).ToNot(BeNil())
-						expectedCondition := conditions.TrueCondition(vmopv1.GuestIDCondition)
-						Expect(*c).To(conditions.MatchCondition(*expectedCondition))
+					})
+				})
+
+				When("the guest ID spec is removed", func() {
+
+					BeforeEach(func() {
+						vm.Spec.GuestID = ""
+					})
+
+					It("should clear the VM guest ID condition if previously set", func() {
+						vm.Status.Conditions = []metav1.Condition{
+							{
+								Type:   vmopv1.GuestIDReconfiguredCondition,
+								Status: metav1.ConditionFalse,
+							},
+						}
+						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+						Expect(conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
 					})
 				})
 			})

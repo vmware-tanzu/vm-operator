@@ -17,15 +17,16 @@ import (
 // GuestIDProperty is the property name for the guest ID in the config spec.
 const GuestIDProperty = "configSpec.guestId"
 
-// UpdateVMGuestIDCondition updates the VM's GuestID condition to false if the
-// taskInfo contains an InvalidArgument fault with an invalid guest ID property.
-// Otherwise, it updates the condition to true.
-func UpdateVMGuestIDCondition(
+// UpdateVMGuestIDReconfiguredCondition deletes the VM's GuestIDReconfigured
+// condition if the configSpec doesn't contain a guestID, or if the taskInfo
+// does not contain an invalid guestID property error. Otherwise, it sets the
+// condition to false with the invalid guest ID property value in the reason.
+func UpdateVMGuestIDReconfiguredCondition(
 	vmctx pkgctx.VirtualMachineContext,
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	taskInfo *vimtypes.TaskInfo) {
-	// Return early if the current configSpec does not have a guest ID.
 	if configSpec.GuestId == "" {
+		conditions.Delete(vmctx.VM, vmopv1.GuestIDReconfiguredCondition)
 		return
 	}
 
@@ -33,11 +34,14 @@ func UpdateVMGuestIDCondition(
 
 	defer func() {
 		if invalidGuestID {
-			conditions.MarkFalse(vmctx.VM, vmopv1.GuestIDCondition, "Invalid",
+			conditions.MarkFalse(
+				vmctx.VM,
+				vmopv1.GuestIDReconfiguredCondition,
+				"Invalid",
 				fmt.Sprintf("The specified guest ID value is not supported: %s",
 					configSpec.GuestId))
 		} else {
-			conditions.MarkTrue(vmctx.VM, vmopv1.GuestIDCondition)
+			conditions.Delete(vmctx.VM, vmopv1.GuestIDReconfiguredCondition)
 		}
 	}()
 

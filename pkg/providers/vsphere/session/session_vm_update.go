@@ -607,7 +607,7 @@ func (s *Session) prePowerOnVMReconfigure(
 		}
 
 		taskInfo, err := resVM.Reconfigure(vmCtx, configSpec)
-		vmutil.UpdateVMGuestIDCondition(vmCtx, *configSpec, taskInfo)
+		vmutil.UpdateVMGuestIDReconfiguredCondition(vmCtx, *configSpec, taskInfo)
 		if err != nil {
 			vmCtx.Logger.Error(err, "pre power on reconfigure failed")
 			return err

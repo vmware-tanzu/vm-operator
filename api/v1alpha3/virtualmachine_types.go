@@ -50,9 +50,9 @@ const (
 	// the guest OS, when available.
 	GuestBootstrapCondition = "GuestBootstrap"
 
-	// GuestIDCondition exposes the status of the guest ID configuration, when
-	// specified in the VirtualMachineSpec.
-	GuestIDCondition = "GuestID"
+	// GuestIDReconfiguredCondition exposes the status of guest ID
+	// reconfiguration after a VM has been created, when available.
+	GuestIDReconfiguredCondition = "GuestIDReconfigured"
 )
 
 const (

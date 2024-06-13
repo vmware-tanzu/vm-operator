@@ -18,7 +18,7 @@ import (
 
 func guestIDTests() {
 
-	Context("UpdateVMGuestIDCondition", func() {
+	Context("UpdateVMGuestIDReconfiguredCondition", func() {
 
 		var (
 			vmCtx      pkgctx.VirtualMachineContext
@@ -28,7 +28,17 @@ func guestIDTests() {
 		)
 
 		BeforeEach(func() {
-			vmopVM = vmopv1.VirtualMachine{}
+			// Init VM with the condition set to verify it's actually deleted.
+			vmopVM = vmopv1.VirtualMachine{
+				Status: vmopv1.VirtualMachineStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   vmopv1.GuestIDReconfiguredCondition,
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			}
 			vmCtx = pkgctx.VirtualMachineContext{
 				VM: &vmopVM,
 			}
@@ -37,22 +47,17 @@ func guestIDTests() {
 		})
 
 		JustBeforeEach(func() {
-			vmutil.UpdateVMGuestIDCondition(vmCtx, configSpec, taskInfo)
+			vmutil.UpdateVMGuestIDReconfiguredCondition(vmCtx, configSpec, taskInfo)
 		})
 
 		Context("ConfigSpec doesn't have a guest ID", func() {
 
 			BeforeEach(func() {
 				configSpec.GuestId = ""
-				conditions.MarkFalse(&vmopVM, vmopv1.GuestIDCondition, "Invalid", "Invalid guest ID")
 			})
 
-			It("should not change the existing VM's guest ID condition", func() {
-				c := conditions.Get(&vmopVM, vmopv1.GuestIDCondition)
-				Expect(c).NotTo(BeNil())
-				Expect(c.Status).To(Equal(metav1.ConditionFalse))
-				Expect(c.Reason).To(Equal("Invalid"))
-				Expect(c.Message).To(Equal("Invalid guest ID"))
+			It("should delete the existing VM's guest ID condition", func() {
+				Expect(conditions.Get(&vmopVM, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
 			})
 		})
 
@@ -68,10 +73,8 @@ func guestIDTests() {
 					taskInfo = nil
 				})
 
-				It("should set the VM's guest ID condition to true", func() {
-					c := conditions.Get(&vmopVM, vmopv1.GuestIDCondition)
-					Expect(c).NotTo(BeNil())
-					Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				It("should delete the VM's guest ID condition", func() {
+					Expect(conditions.Get(&vmopVM, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
 				})
 			})
 
@@ -81,10 +84,8 @@ func guestIDTests() {
 					taskInfo.Error = nil
 				})
 
-				It("should set the VM's guest ID condition to true", func() {
-					c := conditions.Get(&vmopVM, vmopv1.GuestIDCondition)
-					Expect(c).NotTo(BeNil())
-					Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				It("should delete the VM's guest ID condition", func() {
+					Expect(conditions.Get(&vmopVM, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
 				})
 			})
 
@@ -98,14 +99,27 @@ func guestIDTests() {
 					}
 				})
 
-				It("should set the VM's guest ID condition to true", func() {
-					c := conditions.Get(&vmopVM, vmopv1.GuestIDCondition)
-					Expect(c).NotTo(BeNil())
-					Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				It("should delete the VM's guest ID condition", func() {
+					Expect(conditions.Get(&vmopVM, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
 				})
 			})
 
-			When("TaskInfo.Error contains an invalid property error", func() {
+			When("TaskInfo.Error contains an invalid property error NOT about guestID", func() {
+
+				BeforeEach(func() {
+					taskInfo.Error = &vimtypes.LocalizedMethodFault{
+						Fault: &vimtypes.InvalidArgument{
+							InvalidProperty: "config.version",
+						},
+					}
+				})
+
+				It("should delete the VM's guest ID condition", func() {
+					Expect(conditions.Get(&vmopVM, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
+				})
+			})
+
+			When("TaskInfo.Error contains an invalid property error of guestID", func() {
 
 				BeforeEach(func() {
 					taskInfo.Error = &vimtypes.LocalizedMethodFault{
@@ -115,8 +129,8 @@ func guestIDTests() {
 					}
 				})
 
-				It("should set the VM's guest ID condition to false", func() {
-					c := conditions.Get(&vmopVM, vmopv1.GuestIDCondition)
+				It("should set the VM's guest ID condition to false with the invalid value in the reason", func() {
+					c := conditions.Get(&vmopVM, vmopv1.GuestIDReconfiguredCondition)
 					Expect(c).NotTo(BeNil())
 					Expect(c.Status).To(Equal(metav1.ConditionFalse))
 					Expect(c.Reason).To(Equal("Invalid"))

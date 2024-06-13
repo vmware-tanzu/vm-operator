@@ -34,6 +34,7 @@ func CreateResizeConfigSpec(
 	compareCPUPerfCounter(ci, cs, &outCS)
 	compareLatencySensitivity(ci, cs, &outCS)
 	compareExtraConfig(ci, cs, &outCS)
+	compareConsolePreferences(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -293,6 +294,45 @@ func compareExtraConfig(
 
 	extraConfig := util.ExtraConfigToMap(cs.ExtraConfig)
 	outCS.ExtraConfig = util.MergeExtraConfig(ci.ExtraConfig, extraConfig)
+}
+
+// compareConsolePreferences compares the console preferences settings in the Config Spec.
+func compareConsolePreferences(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+
+	if cs.ConsolePreferences == nil {
+		return
+	}
+
+	if ci.ConsolePreferences == nil {
+		// If configInfo console preferences is nil, there is nothing to compare.
+		// set desired values from configSpec if they are non-nil.
+		if cs.ConsolePreferences.PowerOnWhenOpened != nil ||
+			cs.ConsolePreferences.CloseOnPowerOffOrSuspend != nil ||
+			cs.ConsolePreferences.EnterFullScreenOnPowerOn != nil {
+			outCS.ConsolePreferences = &vimtypes.VirtualMachineConsolePreferences{
+				PowerOnWhenOpened:        cs.ConsolePreferences.PowerOnWhenOpened,
+				EnterFullScreenOnPowerOn: cs.ConsolePreferences.EnterFullScreenOnPowerOn,
+				CloseOnPowerOffOrSuspend: cs.ConsolePreferences.CloseOnPowerOffOrSuspend,
+			}
+		}
+
+		return
+	}
+
+	// If both configInfo and configSpec have non-nil console preferences, compare and set
+	// the desired.
+	outCS.ConsolePreferences = &vimtypes.VirtualMachineConsolePreferences{}
+	cmpPtr(ci.ConsolePreferences.PowerOnWhenOpened, cs.ConsolePreferences.PowerOnWhenOpened, &outCS.ConsolePreferences.PowerOnWhenOpened)
+	cmpPtr(ci.ConsolePreferences.EnterFullScreenOnPowerOn, cs.ConsolePreferences.EnterFullScreenOnPowerOn, &outCS.ConsolePreferences.EnterFullScreenOnPowerOn)
+	cmpPtr(ci.ConsolePreferences.CloseOnPowerOffOrSuspend, cs.ConsolePreferences.CloseOnPowerOffOrSuspend, &outCS.ConsolePreferences.CloseOnPowerOffOrSuspend)
+
+	// if desired preferences has all nil (ie) there was no change, nil out the console preferences to prevent unwanted reconfigures.
+	if reflect.DeepEqual(outCS.ConsolePreferences, &vimtypes.VirtualMachineConsolePreferences{}) {
+		outCS.ConsolePreferences = nil
+	}
 }
 
 func cmp[T comparable](a, b T, c *T) {

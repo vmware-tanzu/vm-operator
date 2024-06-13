@@ -49,6 +49,10 @@ const (
 	// GuestBootstrapCondition exposes the status of guest bootstrap from within
 	// the guest OS, when available.
 	GuestBootstrapCondition = "GuestBootstrap"
+
+	// GuestIDCondition exposes the status of the guest ID configuration, when
+	// specified in the VirtualMachineSpec.
+	GuestIDCondition = "GuestID"
 )
 
 const (
@@ -484,6 +488,26 @@ type VirtualMachineSpec struct {
 	// When the bootstrap provider is Cloud-Init, this value is used as the
 	// default value for spec.bootstrap.cloudInit.instanceID if it is omitted.
 	BiosUUID string `json:"biosUUID,omitempty"`
+
+	// +optional
+
+	// GuestID describes the desired guest operating system identifier for a VM.
+	//
+	// The logic that determines the guest ID is as follows:
+	//
+	// 1. If this field is set, then its value is used.
+	// 2. Otherwise, if the VirtualMachineClass used to deploy the VM contains a
+	//    non-empty guest ID, then it is used.
+	// 3. Finally, if this field is still undetermined, and the VM is deployed
+	// from an OVF template that defines a guest ID, then that value is used.
+	//
+	// Please refer to https://bit.ly/4elnjP3 for a complete list of supported
+	// guest operating system identifiers.
+	//
+	// Please note that this field is immutable after the VM is powered on.
+	// To change the guest ID after the VM is powered on, the VM must be powered
+	// off and then powered on again with the updated guest ID spec.
+	GuestID string `json:"guestID,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options

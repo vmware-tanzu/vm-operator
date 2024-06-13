@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -964,6 +964,10 @@ func restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(
 	dst.Spec.Bootstrap.CloudInit.InstanceID = iid
 }
 
+func restore_v1alpha3_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.GuestID = src.Spec.GuestID
+}
+
 func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha3_Conditions(
 	dst *vmopv1.VirtualMachine) []metav1.Condition {
 
@@ -1184,6 +1188,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha3_VirtualMachineReadinessProbeSpec(dst, restored)
 	restore_v1alpha3_VirtualMachineBiosUUID(dst, restored)
 	restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
+	restore_v1alpha3_VirtualMachineInstanceUUID(dst, restored)
+	restore_v1alpha3_VirtualMachineGuestID(dst, restored)
 
 	// END RESTORE
 

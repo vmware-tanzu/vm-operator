@@ -494,6 +494,17 @@ func UpdateConfigSpecManagedBy(
 	}
 }
 
+// UpdateConfigSpecGuestID sets the given vmSpecGuestID in the ConfigSpec if it
+// is not empty and different from the current GuestID in the VM's ConfigInfo.
+func UpdateConfigSpecGuestID(
+	config *vimtypes.VirtualMachineConfigInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
+	vmSpecGuestID string) {
+	if vmSpecGuestID != "" && config.GuestId != vmSpecGuestID {
+		configSpec.GuestId = vmSpecGuestID
+	}
+}
+
 func UpdateConfigSpecFirmware(
 	config *vimtypes.VirtualMachineConfigInfo,
 	configSpec *vimtypes.VirtualMachineConfigSpec,
@@ -506,8 +517,8 @@ func UpdateConfigSpecFirmware(
 	}
 }
 
-// updateConfigSpec overlays the VM Class spec with the provided ConfigSpec to form a desired
-// ConfigSpec that will be used to reconfigure the VM.
+// updateConfigSpec overlays the VM Class spec with the provided ConfigSpec to
+// form a desired ConfigSpec that will be used to reconfigure the VM.
 func updateConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
@@ -524,6 +535,7 @@ func updateConfigSpec(
 	UpdateConfigSpecChangeBlockTracking(
 		vmCtx, config, configSpec, &updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
+	UpdateConfigSpecGuestID(config, configSpec, vmCtx.VM.Spec.GuestID)
 
 	return configSpec
 }
@@ -593,7 +605,10 @@ func (s *Session) prePowerOnVMReconfigure(
 		} else {
 			vmCtx.Logger.Info("Pre PowerOn Reconfigure", "configSpec", w.String())
 		}
-		if err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
+
+		taskInfo, err := resVM.Reconfigure(vmCtx, configSpec)
+		vmutil.UpdateVMGuestIDCondition(vmCtx, *configSpec, taskInfo)
+		if err != nil {
 			vmCtx.Logger.Error(err, "pre power on reconfigure failed")
 			return err
 		}
@@ -810,7 +825,7 @@ func (s *Session) poweredOnVMReconfigure(
 	defaultConfigSpec := &vimtypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
 		vmCtx.Logger.Info("PoweredOn Reconfigure", "configSpec", configSpec)
-		if err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
+		if _, err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
 			vmCtx.Logger.Error(err, "powered on reconfigure failed")
 			return false, err
 		}
@@ -885,7 +900,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	refetchProps := false
 	if !reflect.DeepEqual(configSpec, vimtypes.VirtualMachineConfigSpec{}) {
 		vmCtx.Logger.Info("Powered off resizing", "configSpec", configSpec)
-		if err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, &configSpec); err != nil {
+		if _, err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, &configSpec); err != nil {
 			vmCtx.Logger.Error(err, "powered off resize reconfigure failed")
 			return false, err
 		}

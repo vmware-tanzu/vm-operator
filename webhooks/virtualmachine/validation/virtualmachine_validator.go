@@ -157,6 +157,7 @@ func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Respo
 //
 // Following fields can only be changed when the VM is powered off.
 //   - Bootstrap
+//   - GuestID
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vm, err := v.vmFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -1024,6 +1025,10 @@ func (v validator) validateUpdatesWhenPoweredOn(ctx *pkgctx.WebhookRequestContex
 
 	if !equality.Semantic.DeepEqual(vm.Spec.Bootstrap, oldVM.Spec.Bootstrap) {
 		allErrs = append(allErrs, field.Forbidden(specPath.Child("bootstrap"), updatesNotAllowedWhenPowerOn))
+	}
+
+	if vm.Spec.GuestID != oldVM.Spec.GuestID {
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("guestID"), updatesNotAllowedWhenPowerOn))
 	}
 
 	// TODO: More checks.

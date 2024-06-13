@@ -193,6 +193,10 @@ func restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(
 	dst.Spec.Bootstrap.CloudInit.InstanceID = iid
 }
 
+func restore_v1alpha3_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.GuestID = src.Spec.GuestID
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -213,6 +217,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha3_VirtualMachineBiosUUID(dst, restored)
 	restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 	restore_v1alpha3_VirtualMachineSpecNetworkDomainName(dst, restored)
+	restore_v1alpha3_VirtualMachineGuestID(dst, restored)
 
 	// END RESTORE
 

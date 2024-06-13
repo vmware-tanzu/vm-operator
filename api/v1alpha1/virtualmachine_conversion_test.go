@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1_test
@@ -216,6 +216,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				MinHardwareVersion: 42,
 				InstanceUUID:       uuid.NewString(),
 				BiosUUID:           uuid.NewString(),
+				GuestID:            "my-guest-id",
 			},
 		}
 

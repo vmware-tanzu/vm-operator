@@ -35,6 +35,7 @@ func CreateResizeConfigSpec(
 	compareLatencySensitivity(ci, cs, &outCS)
 	compareExtraConfig(ci, cs, &outCS)
 	compareConsolePreferences(ci, cs, &outCS)
+	compareFlags(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -332,6 +333,24 @@ func compareConsolePreferences(
 	// if desired preferences has all nil (ie) there was no change, nil out the console preferences to prevent unwanted reconfigures.
 	if reflect.DeepEqual(outCS.ConsolePreferences, &vimtypes.VirtualMachineConsolePreferences{}) {
 		outCS.ConsolePreferences = nil
+	}
+}
+
+// compareFlags compares the flag info settings in the Config Spec.
+func compareFlags(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	if cs.Flags == nil {
+		return
+	}
+
+	outCS.Flags = &vimtypes.VirtualMachineFlagInfo{}
+	cmpPtr(ci.Flags.CbrcCacheEnabled, cs.Flags.CbrcCacheEnabled, &outCS.Flags.CbrcCacheEnabled)
+	// look at each flag from flagInfo and add based on requirements
+
+	if reflect.DeepEqual(outCS.Flags, &vimtypes.VirtualMachineFlagInfo{}) {
+		outCS.Flags = nil
 	}
 }
 

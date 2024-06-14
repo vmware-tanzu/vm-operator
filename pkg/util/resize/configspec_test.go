@@ -274,6 +274,33 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 					PowerOnWhenOpened:        falsePtr,
 				}},
 			ConfigSpec{}),
+
+		Entry("CbrcCacheEnabled flag does not need updating",
+			ConfigInfo{Flags: vimtypes.VirtualMachineFlagInfo{
+				CbrcCacheEnabled: truePtr,
+			}},
+			ConfigSpec{Flags: &vimtypes.VirtualMachineFlagInfo{
+				CbrcCacheEnabled: truePtr,
+			}},
+			ConfigSpec{}),
+		Entry("CbrcCacheEnabled flag needs updating -- configInfo has no flags",
+			ConfigInfo{},
+			ConfigSpec{Flags: &vimtypes.VirtualMachineFlagInfo{
+				CbrcCacheEnabled: truePtr,
+			}},
+			ConfigSpec{Flags: &vimtypes.VirtualMachineFlagInfo{
+				CbrcCacheEnabled: truePtr,
+			}}),
+		Entry("CbrcCacheEnabled flag needs updating",
+			ConfigInfo{Flags: vimtypes.VirtualMachineFlagInfo{
+				CbrcCacheEnabled: falsePtr,
+			}},
+			ConfigSpec{Flags: &vimtypes.VirtualMachineFlagInfo{
+				CbrcCacheEnabled: truePtr,
+			}},
+			ConfigSpec{Flags: &vimtypes.VirtualMachineFlagInfo{
+				CbrcCacheEnabled: truePtr,
+			}}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

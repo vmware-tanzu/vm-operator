@@ -103,6 +103,8 @@ func compareHardwareDevices(
 func comparePCIDevices(
 	currentPCIDevices, desiredPCIDevices []vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
 
+	currentPassthruPCIDevices := util.SelectVirtualPCIPassthrough(currentPCIDevices)
+
 	pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(desiredPCIDevices)
 	expectedPCIDevices := virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
 
@@ -113,7 +115,7 @@ func comparePCIDevices(
 		expectedBackingType := reflect.TypeOf(expectedBacking)
 
 		var matchingIdx = -1
-		for idx, curDev := range currentPCIDevices {
+		for idx, curDev := range currentPassthruPCIDevices {
 			curBacking := curDev.GetVirtualDevice().Backing
 			if curBacking == nil || reflect.TypeOf(curBacking) != expectedBackingType {
 				continue
@@ -152,12 +154,12 @@ func comparePCIDevices(
 			})
 		} else {
 			// There could be multiple vGPUs with same BackingInfo. Remove current device if matching found.
-			currentPCIDevices = append(currentPCIDevices[:matchingIdx], currentPCIDevices[matchingIdx+1:]...)
+			currentPassthruPCIDevices = append(currentPassthruPCIDevices[:matchingIdx], currentPassthruPCIDevices[matchingIdx+1:]...)
 		}
 	}
 	// Remove any unmatched existing devices.
-	removeDeviceChanges := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(currentPCIDevices))
-	for _, dev := range currentPCIDevices {
+	removeDeviceChanges := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(currentPassthruPCIDevices))
+	for _, dev := range currentPassthruPCIDevices {
 		removeDeviceChanges = append(removeDeviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
 			Device:    dev,

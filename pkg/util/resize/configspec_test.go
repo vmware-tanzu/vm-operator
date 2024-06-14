@@ -305,6 +305,13 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice
 
+	vmxnet3Device := func() giveMeDeviceFn {
+		return func() vimtypes.BaseVirtualDevice {
+			// Just a dummy device w/o backing until we need that.
+			return &vimtypes.VirtualVmxnet3{}
+		}
+	}
+
 	vGPUDevice := func(profileName string) giveMeDeviceFn {
 		return func() vimtypes.BaseVirtualDevice {
 			return &vimtypes.VirtualPCIPassthrough{
@@ -354,6 +361,10 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			})
 
 			JustBeforeEach(func() {
+				// Add another device so we can assert that it doesn't get removed.
+				d := vmxnet3Device()()
+				ci.Hardware.Device = append(ci.Hardware.Device, d)
+
 				actualCS, err := resize.CreateResizeConfigSpec(ctx, ci, cs)
 				Expect(err).ToNot(HaveOccurred())
 

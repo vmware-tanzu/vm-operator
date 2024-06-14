@@ -438,3 +438,20 @@ The value of `spec.biosUUID` is used to set the vSphere VM `config.uuid` field, 
 ``` bash
 govc vm.info -vm.uuid $(k get vm -o jsonpath='{.spec.biosUUID}' -n $ns $name)
 ```
+
+## Guest IDs
+
+The `spec.guestID` is an optional field that can be used to specify the guest operating system identifier when creating a new VM or powering on an existing VM.
+
+A complete list of supported guest IDs can be found [here](https://dp-downloads.broadcom.com/api-content/apis/API_VWSA_001/8.0U2/html/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html).
+
+The `govc` command can be used to query the currently supported guest IDs for a given vSphere environment:
+
+``` bash
+$ govc vm.option.info -cluster CLUSTER_NAME
+...
+almalinux_64Guest           AlmaLinux (64-bit)
+rockylinux_64Guest          Rocky Linux (64-bit)
+windows2022srvNext_64Guest  Microsoft Windows Server 2025 (64-bit)
+...
+```

@@ -5,6 +5,7 @@ package vmopv1
 
 import (
 	"net"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -74,15 +75,10 @@ func ValidateHostAndDomainName(vm vmopv1.VirtualMachine) *field.Error {
 			hostNameField, hostName, ErrInvalidHostNameIPWithDomainName)
 	}
 
-	//
-	// TODO(dilyar85) Please update this logic to also check for Windows via
-	//                spec.guestID when that is implemented.
-	//
+	isWindowsVM := strings.HasPrefix(vm.Spec.GuestID, "win") ||
+		(vm.Spec.Bootstrap != nil && vm.Spec.Bootstrap.Sysprep != nil)
 
-	if vm.Spec.Bootstrap != nil &&
-		vm.Spec.Bootstrap.Sysprep != nil &&
-		len(hostName) > 15 {
-
+	if isWindowsVM && len(hostName) > 15 {
 		return field.Invalid(
 			hostNameField, hostName, ErrInvalidHostNameWindows)
 	}

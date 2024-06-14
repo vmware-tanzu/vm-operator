@@ -236,7 +236,7 @@ func doReconfigure(
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
 		logConfigSpec(vmCtx, *configSpec)
 
-		if err := resources.NewVMFromObject(vcVM).Reconfigure(vmCtx, configSpec); err != nil {
+		if _, err := resources.NewVMFromObject(vcVM).Reconfigure(vmCtx, configSpec); err != nil {
 			vmCtx.Logger.Error(err, "customization reconfigure failed")
 			return err
 		}

@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -235,6 +236,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 					ResourcePolicyName: "my-resource-policy",
 				},
 				MinHardwareVersion: 42,
+				InstanceUUID:       uuid.NewString(),
+				BiosUUID:           uuid.NewString(),
+				GuestID:            "my-guest-id",
 			},
 		}
 

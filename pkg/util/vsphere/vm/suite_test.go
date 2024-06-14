@@ -16,6 +16,7 @@ func vcSimTests() {
 	Describe("Power State", Label(testlabels.VCSim), powerStateTests)
 	Describe("Hardware Version", Label(testlabels.VCSim), hardwareVersionTests)
 	Describe("Managed Object", managedObjectTests)
+	Describe("Guest ID", guestIDTests)
 }
 
 var suite = builder.NewTestSuite()

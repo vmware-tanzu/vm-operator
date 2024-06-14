@@ -2629,6 +2629,67 @@ func unitTestsValidateUpdate() {
 			),
 		)
 	})
+
+	Context("GuestID", func() {
+		const (
+			guestID      = "vmwarePhoton64Guest"
+			otherGuestID = "otherGuest64"
+		)
+
+		DescribeTable("GuestID update with different VM power states", doTest,
+
+			Entry("allow if powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.GuestID = guestID
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.GuestID = otherGuestID
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow if powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.GuestID = guestID
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.GuestID = otherGuestID
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.guestID: Forbidden: updates to this field is not allowed when VM power is on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow if powered on but updating to powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.GuestID = guestID
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.GuestID = otherGuestID
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow if powered off but updating to powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.GuestID = guestID
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.GuestID = otherGuestID
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateDelete() {

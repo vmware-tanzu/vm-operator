@@ -19,6 +19,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgctxfake "github.com/vmware-tanzu/vm-operator/pkg/context/fake"
@@ -1196,6 +1197,58 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 	})
+
+	Context("UpdateConfigSpecGuestID", func() {
+		const fakeGuestID = "fakeGuestID"
+		var vmSpecGuestID string
+
+		JustBeforeEach(func() {
+			session.UpdateConfigSpecGuestID(config, configSpec, vmSpecGuestID)
+		})
+
+		When("VM spec guestID is empty", func() {
+			BeforeEach(func() {
+				vmSpecGuestID = ""
+			})
+
+			It("should not set guestID in configSpec", func() {
+				Expect(configSpec.GuestId).To(BeEmpty())
+			})
+		})
+
+		When("VM spec guestID is not empty and VM ConfigInfo guestID is empty", func() {
+			BeforeEach(func() {
+				vmSpecGuestID = fakeGuestID
+				config.GuestId = ""
+			})
+
+			It("should set guestID in configSpec", func() {
+				Expect(configSpec.GuestId).To(Equal(vmSpecGuestID))
+			})
+		})
+
+		When("VM spec guestID is different from the VM ConfigInfo guestID", func() {
+			BeforeEach(func() {
+				vmSpecGuestID = fakeGuestID
+				config.GuestId = "some-other-guestID"
+			})
+
+			It("should set guestID in configSpec", func() {
+				Expect(configSpec.GuestId).To(Equal(vmSpecGuestID))
+			})
+		})
+
+		When("VM spec guestID already matches VM ConfigInfo guestID", func() {
+			BeforeEach(func() {
+				config.GuestId = fakeGuestID
+				vmSpecGuestID = fakeGuestID
+			})
+
+			It("should not set guestID in configSpec", func() {
+				Expect(configSpec.GuestId).To(BeEmpty())
+			})
+		})
+	})
 })
 
 var _ = Describe("UpdateVirtualMachine", func() {
@@ -1567,6 +1620,63 @@ var _ = Describe("UpdateVirtualMachine", func() {
 							Expect(nics).To(HaveLen(1))
 							Expect(nics[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualVmxnet3{}))
 						})
+					})
+				})
+			})
+
+			When("VM.Spec.GuestID is changed", func() {
+
+				When("the guest ID value is invalid", func() {
+
+					BeforeEach(func() {
+						vm.Spec.GuestID = "invalid-guest-id"
+					})
+
+					It("should return an error and set the VM's Guest ID condition false", func() {
+						errMsg := "reconfigure VM task failed"
+						err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring(errMsg))
+						c := conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)
+						Expect(c).ToNot(BeNil())
+						expectedCondition := conditions.FalseCondition(
+							vmopv1.GuestIDReconfiguredCondition,
+							"Invalid",
+							"The specified guest ID value is not supported: invalid-guest-id",
+						)
+						Expect(*c).To(conditions.MatchCondition(*expectedCondition))
+					})
+				})
+
+				When("the guest ID value is valid", func() {
+
+					BeforeEach(func() {
+						vm.Spec.GuestID = "vmwarePhoton64Guest"
+					})
+
+					It("should power on the VM with the specified guest ID", func() {
+						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+						Expect(vmCtx.MoVM.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						Expect(vmCtx.MoVM.Config.GuestId).To(Equal("vmwarePhoton64Guest"))
+					})
+				})
+
+				When("the guest ID spec is removed", func() {
+
+					BeforeEach(func() {
+						vm.Spec.GuestID = ""
+					})
+
+					It("should clear the VM guest ID condition if previously set", func() {
+						vm.Status.Conditions = []metav1.Condition{
+							{
+								Type:   vmopv1.GuestIDReconfiguredCondition,
+								Status: metav1.ConditionFalse,
+							},
+						}
+						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+						Expect(conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
 					})
 				})
 			})

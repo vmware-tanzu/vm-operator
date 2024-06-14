@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine_test
@@ -23,7 +23,10 @@ import (
 )
 
 var _ = Describe("CreateConfigSpec", func() {
-	const vmName = "dummy-vm"
+	const (
+		vmName      = "dummy-vm"
+		fakeGuestID = "fake-guest-id"
+	)
 
 	var (
 		vm              *vmopv1.VirtualMachine
@@ -135,6 +138,16 @@ var _ = Describe("CreateConfigSpec", func() {
 
 			It("config spec has expected version for PVCs", func() {
 				Expect(configSpec.Version).To(Equal(vimtypes.VMX15.String()))
+			})
+		})
+
+		When("VM spec has guestID set", func() {
+			BeforeEach(func() {
+				vm.Spec.GuestID = fakeGuestID
+			})
+
+			It("config spec has the expected guestID set", func() {
+				Expect(configSpec.GuestId).To(Equal(fakeGuestID))
 			})
 		})
 	})
@@ -332,6 +345,16 @@ var _ = Describe("CreateConfigSpec", func() {
 						Expect(configSpec.Version).To(Equal(vimtypes.MaxValidHardwareVersion.String()))
 					})
 				})
+			})
+		})
+
+		When("VM spec has guestID set", func() {
+			BeforeEach(func() {
+				vm.Spec.GuestID = fakeGuestID
+			})
+
+			It("config spec has the expected guestID set", func() {
+				Expect(configSpec.GuestId).To(Equal(fakeGuestID))
 			})
 		})
 	})

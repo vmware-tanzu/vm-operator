@@ -110,7 +110,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		configSpec := &vimtypes.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
 		}
-		if err := resVM.Reconfigure(opts.VMCtx, configSpec); err != nil {
+		if _, err := resVM.Reconfigure(opts.VMCtx, configSpec); err != nil {
 			opts.VMCtx.Logger.Error(err, "failed to update VM ExtraConfig with latest backup data")
 			return err
 		}

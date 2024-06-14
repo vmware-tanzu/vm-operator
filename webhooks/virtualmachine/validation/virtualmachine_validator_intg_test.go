@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -287,6 +287,19 @@ func intgTestsValidateUpdate() {
 
 			It("does not reject the request", func() {
 				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("GuestID is updated", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.GuestID = "vmwarePhoton64Guest"
+			})
+
+			It("rejects the request", func() {
+				expectedReason := field.Forbidden(field.NewPath("spec", "guestID"),
+					"updates to this field is not allowed when VM power is on").Error()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
 		})
 	})

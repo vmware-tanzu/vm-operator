@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -113,6 +113,13 @@ func CreateConfigSpec(
 			lim := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
 			configSpec.MemoryAllocation.Limit = &lim
 		}
+	}
+
+	// Initially set the guest ID in ConfigSpec to ensure VM is created with the expected guest ID.
+	// Afterwards, only update it if the VM spec guest ID differs from the VM's existing ConfigInfo.
+	// If the class also specifies a guest ID, it will be overridden by the VM spec guest ID.
+	if guestID := vmCtx.VM.Spec.GuestID; guestID != "" {
+		configSpec.GuestId = guestID
 	}
 
 	return configSpec

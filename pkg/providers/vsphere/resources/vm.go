@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package resources
@@ -75,20 +75,20 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 	return &ref, nil
 }
 
-func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *vimtypes.VirtualMachineConfigSpec) error {
+func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *vimtypes.VirtualMachineConfigSpec) (*vimtypes.TaskInfo, error) {
 	vm.logger.V(5).Info("Reconfiguring VM", "configSpec", configSpec)
 
 	reconfigureTask, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = reconfigureTask.WaitForResult(ctx, nil)
+	taskInfo, err := reconfigureTask.WaitForResult(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("reconfigure VM task failed: %w", err)
+		return taskInfo, fmt.Errorf("reconfigure VM task failed: %w", err)
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (vm *VirtualMachine) GetProperties(ctx context.Context, properties []string) (*mo.VirtualMachine, error) {

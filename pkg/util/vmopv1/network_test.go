@@ -112,7 +112,7 @@ var _ = Describe("ValidateHostAndDomainName", func() {
 			nil,
 		),
 		Entry(
-			"host name exceeds 15 characters on Windows",
+			"host name exceeds 15 characters on Windows (determined by sysprep)",
 			vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: vmName,
@@ -128,12 +128,21 @@ var _ = Describe("ValidateHostAndDomainName", func() {
 			},
 			field.Invalid(fieldHostName, a16, vmopv1util.ErrInvalidHostNameWindows),
 		),
-
-		//
-		// TODO(dilyar85) Please add a test that specifies Windows via
-		//                spec.guestID when that is implemented.
-		//
-
+		Entry(
+			"host name exceeds 15 characters on Windows (determined by guest ID)",
+			vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: vmName,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						HostName: a16,
+					},
+					GuestID: "windows2022srvNext_64Guest",
+				},
+			},
+			field.Invalid(fieldHostName, a16, vmopv1util.ErrInvalidHostNameWindows),
+		),
 		Entry(
 			"host name exceeds 63 characters",
 			vmopv1.VirtualMachine{

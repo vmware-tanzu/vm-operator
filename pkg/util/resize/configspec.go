@@ -349,7 +349,21 @@ func compareFlags(
 
 	outCS.Flags = &vimtypes.VirtualMachineFlagInfo{}
 	cmpPtr(ci.Flags.CbrcCacheEnabled, cs.Flags.CbrcCacheEnabled, &outCS.Flags.CbrcCacheEnabled)
-	// look at each flag from flagInfo and add based on requirements
+	cmpPtr(ci.Flags.DisableAcceleration, cs.Flags.DisableAcceleration, &outCS.Flags.DisableAcceleration)
+	cmpPtr(ci.Flags.DiskUuidEnabled, cs.Flags.DiskUuidEnabled, &outCS.Flags.DiskUuidEnabled)
+	cmpPtr(ci.Flags.EnableLogging, cs.Flags.EnableLogging, &outCS.Flags.EnableLogging)
+	cmpPtr(ci.Flags.UseToe, cs.Flags.UseToe, &outCS.Flags.UseToe)
+	// TODO: re-eval if VvtdEnabled, VbsEnabled is allowed. Setting them to true requires 'efi' firmware
+	cmpPtr(ci.Flags.VvtdEnabled, cs.Flags.VvtdEnabled, &outCS.Flags.VvtdEnabled)
+	cmpPtr(ci.Flags.VbsEnabled, cs.Flags.VbsEnabled, &outCS.Flags.VbsEnabled)
+
+	cmp(ci.Flags.MonitorType, cs.Flags.MonitorType, &outCS.Flags.MonitorType)
+	cmp(ci.Flags.VirtualMmuUsage, cs.Flags.VirtualMmuUsage, &outCS.Flags.VirtualMmuUsage)
+	cmp(ci.Flags.VirtualExecUsage, cs.Flags.VirtualExecUsage, &outCS.Flags.VirtualExecUsage)
+
+	// Note: Flags not yet supported on reconfigure via VM Service
+	// - SnapshotLocked, SnapshotPowerOffBehavior: Snapshotting is not yet supported on VM Service
+	// - FaultToleranceType: Flag not supported on VM Service.
 
 	if reflect.DeepEqual(outCS.Flags, &vimtypes.VirtualMachineFlagInfo{}) {
 		outCS.Flags = nil

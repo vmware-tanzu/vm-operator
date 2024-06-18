@@ -305,8 +305,9 @@ func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMa
 	}
 }
 
-// Set labels and annotations on the Service from the VirtualMachineService. Some loadbalancer providers (currently
-// only NCP) need to filter or translate labels and annotations too.
+// Set labels and annotations on the Service from the VirtualMachineService.
+// Some loadbalancer providers (currently only NCP) need to filter or translate
+// labels and annotations too.
 func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 	ctx *pkgctx.VirtualMachineServiceContext,
 	service *corev1.Service) error {

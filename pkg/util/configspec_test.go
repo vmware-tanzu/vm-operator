@@ -18,7 +18,7 @@ import (
 	"github.com/vmware/govmomi/vim25/xml"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -45,7 +45,7 @@ var _ = Describe("DevicesFromConfigSpec", func() {
 	})
 
 	JustBeforeEach(func() {
-		devOut = util.DevicesFromConfigSpec(configSpec)
+		devOut = pkgutil.DevicesFromConfigSpec(configSpec)
 	})
 
 	When("a ConfigSpec has a nil DeviceChange property", func() {
@@ -109,7 +109,7 @@ var _ = Describe("ConfigSpec Util", func() {
 	Context("MarshalConfigSpecToXML", func() {
 		It("marshals and unmarshal to the same spec", func() {
 			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
-			bytes, err := util.MarshalConfigSpecToXML(inputSpec)
+			bytes, err := pkgutil.MarshalConfigSpecToXML(inputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
 			var outputSpec vimtypes.VirtualMachineConfigSpec
 			err = xml.Unmarshal(bytes, &outputSpec)
@@ -119,7 +119,7 @@ var _ = Describe("ConfigSpec Util", func() {
 
 		It("marshals spec correctly to expected base64 encoded XML", func() {
 			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
-			bytes, err := util.MarshalConfigSpecToXML(inputSpec)
+			bytes, err := pkgutil.MarshalConfigSpecToXML(inputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(base64.StdEncoding.EncodeToString(bytes)).To(Equal("PG9iaiB4bWxuczp2aW0yNT0idXJuOnZpbTI1I" +
 				"iB4bWxuczp4c2k9Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvWE1MU2NoZW1hLWluc3RhbmNlIiB4c2k6dHlwZT0idmltMjU6Vmlyd" +
@@ -165,14 +165,14 @@ var _ = Describe("ConfigSpec Util", func() {
 		When("minimum hardware version is unset", func() {
 			It("does not change the existing value of the configSpec's version", func() {
 				configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "vmx-15"}
-				util.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
+				pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
 
 				Expect(configSpec.Version).To(Equal("vmx-15"))
 			})
 
 			It("does not set the configSpec's version", func() {
 				configSpec := &vimtypes.VirtualMachineConfigSpec{}
-				util.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
+				pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
 
 				Expect(configSpec.Version).To(BeEmpty())
 			})
@@ -180,21 +180,21 @@ var _ = Describe("ConfigSpec Util", func() {
 
 		It("overrides the hardware version if the existing version is lesser", func() {
 			configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "vmx-15"}
-			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
+			pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
 
 			Expect(configSpec.Version).To(Equal("vmx-17"))
 		})
 
 		It("sets the hardware version if the existing version is unset", func() {
 			configSpec := &vimtypes.VirtualMachineConfigSpec{}
-			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 16)
+			pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 16)
 
 			Expect(configSpec.Version).To(Equal("vmx-16"))
 		})
 
 		It("overrides the hardware version if the existing version is set incorrectly", func() {
 			configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "foo"}
-			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
+			pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
 
 			Expect(configSpec.Version).To(Equal("vmx-17"))
 		})
@@ -242,7 +242,7 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 		})
 
 		It("config spec deviceChanges empty", func() {
-			util.RemoveDevicesFromConfigSpec(configSpec, fn)
+			pkgutil.RemoveDevicesFromConfigSpec(configSpec, fn)
 			Expect(configSpec.DeviceChange).To(BeEmpty())
 		})
 	})
@@ -332,7 +332,7 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 	})
 
 	It("returns expected sanitized ConfigSpec", func() {
-		util.SanitizeVMClassConfigSpec(ctx, configSpec)
+		pkgutil.SanitizeVMClassConfigSpec(ctx, configSpec)
 
 		Expect(configSpec.Name).To(Equal("dummy-VM"))
 		Expect(configSpec.Annotation).ToNot(BeEmpty())

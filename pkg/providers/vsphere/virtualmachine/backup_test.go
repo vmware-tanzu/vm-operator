@@ -20,7 +20,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -86,7 +86,7 @@ func backupTests() {
 				oldVM.ObjectMeta.Generation = 1
 				oldVMYAML, err := yaml.Marshal(oldVM)
 				Expect(err).NotTo(HaveOccurred())
-				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
+				vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(oldVMYAML))
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
@@ -122,7 +122,7 @@ func backupTests() {
 				oldVM.ObjectMeta.Annotations = map[string]string{"foo": "bar"}
 				oldVMYAML, err := yaml.Marshal(oldVM)
 				Expect(err).NotTo(HaveOccurred())
-				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
+				vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(oldVMYAML))
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
@@ -157,7 +157,7 @@ func backupTests() {
 				oldVM.ObjectMeta.Labels = map[string]string{"foo": "bar"}
 				oldVMYAML, err := yaml.Marshal(oldVM)
 				Expect(err).NotTo(HaveOccurred())
-				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
+				vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(oldVMYAML))
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
@@ -194,7 +194,7 @@ func backupTests() {
 				vmYAML, err := yaml.Marshal(vmCtx.VM)
 				Expect(err).NotTo(HaveOccurred())
 				vmBackupStr = string(vmYAML)
-				vmYAMLEncoded, err := util.EncodeGzipBase64(vmBackupStr)
+				vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmBackupStr)
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
@@ -266,7 +266,7 @@ func backupTests() {
 				oldRes := secretRes.DeepCopy()
 				oldResYAML, err := yaml.Marshal(oldRes)
 				Expect(err).NotTo(HaveOccurred())
-				yamlEncoded, err := util.EncodeGzipBase64(string(oldResYAML))
+				yamlEncoded, err := pkgutil.EncodeGzipBase64(string(oldResYAML))
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
@@ -304,7 +304,7 @@ func backupTests() {
 				resYAML, err := yaml.Marshal(secretRes)
 				Expect(err).NotTo(HaveOccurred())
 				backupStr = string(resYAML)
-				yamlEncoded, err := util.EncodeGzipBase64(backupStr)
+				yamlEncoded, err := pkgutil.EncodeGzipBase64(backupStr)
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
@@ -414,7 +414,7 @@ func verifyBackupDataInExtraConfig(
 	Expect(objVM).NotTo(BeNil())
 	var moVM mo.VirtualMachine
 	Expect(objVM.Properties(ctx, objVM.Reference(), []string{"config.extraConfig"}, &moVM)).To(Succeed())
-	ecMap := util.OptionValues(moVM.Config.ExtraConfig).StringMap()
+	ecMap := pkgutil.OptionValues(moVM.Config.ExtraConfig).StringMap()
 
 	// Verify the expected key doesn't exist in ExtraConfig if the expected value is empty.
 	if expectedValDecoded == "" {
@@ -425,7 +425,7 @@ func verifyBackupDataInExtraConfig(
 	// Verify the expected key exists in ExtraConfig and the decoded values match.
 	Expect(ecMap).To(HaveKey(expectedKey))
 	ecValRaw := ecMap[expectedKey]
-	ecValDecoded, err := util.TryToDecodeBase64Gzip([]byte(ecValRaw))
+	ecValDecoded, err := pkgutil.TryToDecodeBase64Gzip([]byte(ecValRaw))
 	Expect(err).NotTo(HaveOccurred())
 	Expect(ecValDecoded).To(Equal(expectedValDecoded))
 }

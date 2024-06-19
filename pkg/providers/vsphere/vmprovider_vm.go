@@ -37,7 +37,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -1033,7 +1033,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
 		ecMap[k] = renderTemplateFn(k, v)
 	}
 
-	if util.HasVirtualPCIPassthroughDeviceChange(createArgs.ConfigSpec.DeviceChange) {
+	if pkgutil.HasVirtualPCIPassthroughDeviceChange(createArgs.ConfigSpec.DeviceChange) {
 		mmioSize := vmCtx.VM.Annotations[constants.PCIPassthruMMIOOverrideAnnotation]
 		if mmioSize == "" {
 			mmioSize = constants.PCIPassthruMMIOSizeDefault
@@ -1046,9 +1046,9 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
 
 	// The ConfigSpec's current ExtraConfig values (that came from the class)
 	// take precedence over what was set here.
-	createArgs.ConfigSpec.ExtraConfig = util.OptionValues(
+	createArgs.ConfigSpec.ExtraConfig = pkgutil.OptionValues(
 		createArgs.ConfigSpec.ExtraConfig).
-		Append(util.OptionValuesFromMap(ecMap)...)
+		Append(pkgutil.OptionValuesFromMap(ecMap)...)
 
 	// Leave constants.VMOperatorV1Alpha1ExtraConfigKey for the update path (if that's still even needed)
 
@@ -1076,7 +1076,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 	createArgs *VMCreateArgs) error {
 
 	if vmCtx.VM.Spec.Network == nil || vmCtx.VM.Spec.Network.Disabled {
-		util.RemoveDevicesFromConfigSpec(&createArgs.ConfigSpec, util.IsEthernetCard)
+		pkgutil.RemoveDevicesFromConfigSpec(&createArgs.ConfigSpec, pkgutil.IsEthernetCard)
 		return nil
 	}
 
@@ -1085,7 +1085,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 
 	for idx := range createArgs.ConfigSpec.DeviceChange {
 		spec := createArgs.ConfigSpec.DeviceChange[idx].GetVirtualDeviceConfigSpec()
-		if spec == nil || !util.IsEthernetCard(spec.Device) {
+		if spec == nil || !pkgutil.IsEthernetCard(spec.Device) {
 			continue
 		}
 

@@ -8,6 +8,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/capability"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
@@ -24,6 +25,9 @@ import (
 
 // AddToManager adds all controllers to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
+	if err := capability.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to initialize Capability controller: %w", err)
+	}
 	if err := contentlibrary.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize ContentLibrary controllers: %w", err)
 	}

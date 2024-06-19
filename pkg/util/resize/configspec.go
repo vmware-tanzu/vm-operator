@@ -37,6 +37,7 @@ func CreateResizeConfigSpec(
 	compareConsolePreferences(ci, cs, &outCS)
 	compareFlags(ci, cs, &outCS)
 	compareMemoryAllocation(ci, cs, &outCS)
+	compareMemoryHotAdd(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -394,20 +395,27 @@ func compareMemoryAllocation(
 	}
 
 	if memReservation != nil || memLimit != nil || memShares != nil {
-		outCS.CpuAllocation = &vimtypes.ResourceAllocationInfo{}
+		outCS.MemoryAllocation = &vimtypes.ResourceAllocationInfo{}
 
 		if memReservation != nil {
-			outCS.CpuAllocation.Reservation = memReservation
+			outCS.MemoryAllocation.Reservation = memReservation
 		}
 
 		if memLimit != nil {
-			outCS.CpuAllocation.Limit = memLimit
+			outCS.MemoryAllocation.Limit = memLimit
 		}
 
 		if memShares != nil {
-			outCS.CpuAllocation.Shares = memShares
+			outCS.MemoryAllocation.Shares = memShares
 		}
 	}
+}
+
+func compareMemoryHotAdd(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	cmpPtr(ci.MemoryHotAddEnabled, cs.MemoryHotAddEnabled, &outCS.MemoryHotAddEnabled)
 }
 
 func cmp[T comparable](a, b T, c *T) {

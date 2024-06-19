@@ -350,6 +350,19 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
 				}},
 			ConfigSpec{}),
+
+		Entry("Memory Hot Add needs updating false to true",
+			ConfigInfo{MemoryHotAddEnabled: falsePtr},
+			ConfigSpec{MemoryHotAddEnabled: truePtr},
+			ConfigSpec{MemoryHotAddEnabled: truePtr}),
+		Entry("Memory Hot Add needs updating nil to true",
+			ConfigInfo{},
+			ConfigSpec{MemoryHotAddEnabled: truePtr},
+			ConfigSpec{MemoryHotAddEnabled: truePtr}),
+		Entry("Memory Hot Add does not need updating",
+			ConfigInfo{MemoryHotAddEnabled: falsePtr},
+			ConfigSpec{MemoryHotAddEnabled: falsePtr},
+			ConfigSpec{}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

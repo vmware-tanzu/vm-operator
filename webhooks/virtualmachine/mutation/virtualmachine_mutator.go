@@ -134,6 +134,12 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
 
+		if ok, err := SetLastResizeAnnotation(ctx, modified, oldVM); err != nil {
+			return admission.Denied(err.Error())
+		} else if ok {
+			wasMutated = true
+		}
+
 		if ok, err := SetNextRestartTime(ctx, modified, oldVM); err != nil {
 			return admission.Denied(err.Error())
 		} else if ok {
@@ -441,7 +447,7 @@ func ResolveImageNameOnCreate(
 }
 
 func SetCreatedAtAnnotations(ctx context.Context, vm *vmopv1.VirtualMachine) {
-	// If this is the first time the VM has been create, then record the
+	// If this is the first time the VM has been created, then record the
 	// build version and storage schema version into the VM's annotations.
 	// This enables future work to know at what version a VM was "created."
 	if vm.Annotations == nil {
@@ -449,4 +455,30 @@ func SetCreatedAtAnnotations(ctx context.Context, vm *vmopv1.VirtualMachine) {
 	}
 	vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
 	vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = vmopv1.SchemeGroupVersion.Version
+}
+
+// SetLastResizeAnnotation sets the last resize annotation as needed when the class name changes.
+func SetLastResizeAnnotation(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) (bool, error) {
+
+	if !pkgcfg.FromContext(ctx).Features.VMResize {
+		return false, nil
+	}
+
+	if vm.Spec.ClassName == oldVM.Spec.ClassName {
+		return false, nil
+	}
+
+	if _, _, _, ok := vmopv1util.GetLastResizedAnnotation(*vm); !ok {
+		// This is an existing VM - since it does not have the last-resized annotation - that is
+		// now being resized. Save off the prior class name so we know the class has changed and
+		// we'll perform a resize.
+		if err := vmopv1util.SetLastResizedAnnotationClassName(vm, oldVM.Spec.ClassName); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	return false, nil
 }

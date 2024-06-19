@@ -36,6 +36,7 @@ func CreateResizeConfigSpec(
 	compareExtraConfig(ci, cs, &outCS)
 	compareConsolePreferences(ci, cs, &outCS)
 	compareFlags(ci, cs, &outCS)
+	compareMemoryAllocation(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -353,6 +354,59 @@ func compareFlags(
 
 	if reflect.DeepEqual(outCS.Flags, &vimtypes.VirtualMachineFlagInfo{}) {
 		outCS.Flags = nil
+	}
+}
+
+// compareMemoryAllocation compares Memory resource allocation.
+func compareMemoryAllocation(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	// nothing to change
+	if cs.MemoryAllocation == nil {
+		return
+	}
+
+	ciMemoryAllocation := ci.MemoryAllocation
+	csMemoryAllocation := cs.MemoryAllocation
+
+	var memReservation *int64
+	if csMemoryAllocation.Reservation != nil {
+		if ciMemoryAllocation == nil || ciMemoryAllocation.Reservation == nil || *ciMemoryAllocation.Reservation != *csMemoryAllocation.Reservation {
+			memReservation = csMemoryAllocation.Reservation
+		}
+	}
+
+	var memLimit *int64
+	if csMemoryAllocation.Limit != nil {
+		if ciMemoryAllocation == nil || ciMemoryAllocation.Limit == nil || *ciMemoryAllocation.Limit != *csMemoryAllocation.Limit {
+			memLimit = csMemoryAllocation.Limit
+		}
+	}
+
+	var memShares *vimtypes.SharesInfo
+	if csMemoryAllocation.Shares != nil {
+		if ciMemoryAllocation == nil || ciMemoryAllocation.Shares == nil ||
+			ciMemoryAllocation.Shares.Level != csMemoryAllocation.Shares.Level ||
+			(csMemoryAllocation.Shares.Level == vimtypes.SharesLevelCustom && ciMemoryAllocation.Shares.Shares != csMemoryAllocation.Shares.Shares) {
+			memShares = csMemoryAllocation.Shares
+		}
+	}
+
+	if memReservation != nil || memLimit != nil || memShares != nil {
+		outCS.CpuAllocation = &vimtypes.ResourceAllocationInfo{}
+
+		if memReservation != nil {
+			outCS.CpuAllocation.Reservation = memReservation
+		}
+
+		if memLimit != nil {
+			outCS.CpuAllocation.Limit = memLimit
+		}
+
+		if memShares != nil {
+			outCS.CpuAllocation.Shares = memShares
+		}
 	}
 }
 

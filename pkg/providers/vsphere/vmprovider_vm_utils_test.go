@@ -476,7 +476,6 @@ func vmUtilTests() {
 				BeforeEach(func() {
 					initObjects = append(initObjects, bootstrapCM, bootstrapSecret)
 					vmCtx.VM.Annotations = map[string]string{vmopv1.V1alpha1ConfigMapTransportAnnotation: "true"}
-
 				})
 
 				It("returns success", func() {
@@ -493,6 +492,21 @@ func vmUtilTests() {
 				})
 
 				When("Prefers Secret over ConfigMap", func() {
+					It("returns success", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).ToNot(HaveOccurred())
+						// Prefer Secret over ConfigMap.
+						Expect(bsData.Data).To(HaveKeyWithValue("foo1", "bar1"))
+						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+					})
+				})
+
+				When("v1a1 compat when there is no userdata but ssh-public-keys", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Key = "user-data"
+						bootstrapSecret.Data["ssh-public-keys"] = []byte("")
+					})
+
 					It("returns success", func() {
 						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 						Expect(err).ToNot(HaveOccurred())

@@ -318,6 +318,15 @@ func getSecretData(
 			}
 		}
 
+		if !found && isCloudInitSecret && resKey == "user-data" {
+			// Hack: If we didn't find the CloudInit userdata in any of secretKeys, look for
+			// ssh-public-keys. This is to allow v1a1 users that did not provide any userdata
+			// to continue to work. Note that in v1a2+, we use "user-data" as the key when
+			// converting from v1a1. In v1a2+ we have Bootstrap.CloudInit.SSHAuthorizedKeys as
+			// the formal way to specify this.
+			_, found = data["ssh-public-keys"]
+		}
+
 		if !found {
 			err := fmt.Errorf("required key %q not found in Secret %s", resKey, resName)
 			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err.Error())

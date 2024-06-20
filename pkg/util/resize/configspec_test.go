@@ -426,6 +426,42 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigInfo{MemoryHotAddEnabled: falsePtr},
 			ConfigSpec{MemoryHotAddEnabled: falsePtr},
 			ConfigSpec{}),
+
+		Entry("Fixed pass-through hot plug enabled setting does not need updating",
+			ConfigInfo{FixedPassthruHotPlugEnabled: falsePtr},
+			ConfigSpec{FixedPassthruHotPlugEnabled: falsePtr},
+			ConfigSpec{}),
+		Entry("Fixed pass-through hot plug enabled setting needs updating",
+			ConfigInfo{FixedPassthruHotPlugEnabled: falsePtr},
+			ConfigSpec{FixedPassthruHotPlugEnabled: truePtr},
+			ConfigSpec{FixedPassthruHotPlugEnabled: truePtr}),
+
+		Entry("Nested hardware-assisted virtualization setting does not need updating",
+			ConfigInfo{NestedHVEnabled: falsePtr},
+			ConfigSpec{NestedHVEnabled: falsePtr},
+			ConfigSpec{}),
+		Entry("Nested hardware-assisted virtualization setting needs updating",
+			ConfigInfo{NestedHVEnabled: falsePtr},
+			ConfigSpec{NestedHVEnabled: truePtr},
+			ConfigSpec{NestedHVEnabled: truePtr}),
+
+		Entry("SEV (Secure Encryption Virtualization) setting does not need updating",
+			ConfigInfo{SevEnabled: falsePtr},
+			ConfigSpec{SevEnabled: falsePtr},
+			ConfigSpec{}),
+		Entry("SEV (Secure Encryption Virtualization) setting needs updating",
+			ConfigInfo{SevEnabled: falsePtr},
+			ConfigSpec{SevEnabled: truePtr},
+			ConfigSpec{SevEnabled: truePtr}),
+
+		Entry("VMX stats collection setting does not need updating",
+			ConfigInfo{VmxStatsCollectionEnabled: falsePtr},
+			ConfigSpec{VmxStatsCollectionEnabled: falsePtr},
+			ConfigSpec{}),
+		Entry("VMX stats collection setting needs updating",
+			ConfigInfo{VmxStatsCollectionEnabled: falsePtr},
+			ConfigSpec{VmxStatsCollectionEnabled: truePtr},
+			ConfigSpec{VmxStatsCollectionEnabled: truePtr}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

@@ -6,6 +6,7 @@ package util
 import (
 	"fmt"
 	"reflect"
+	"slices"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
@@ -28,6 +29,13 @@ func OptionValuesFromMap[T any](in map[string]T) OptionValues {
 		i++
 	}
 	return out
+}
+
+// Delete removes elements with the given key, returning the new list.
+func (ov OptionValues) Delete(key string) OptionValues {
+	return slices.DeleteFunc(ov, func(optVal vimtypes.BaseOptionValue) bool {
+		return optVal.GetOptionValue() != nil && optVal.GetOptionValue().Key == key
+	})
 }
 
 // Get returns the value if exists, otherwise nil is returned. The second return
@@ -117,6 +125,10 @@ func (ov OptionValues) merge(in OptionValues, overwrite bool) OptionValues {
 		out        OptionValues
 		outOptVals = map[string]*vimtypes.OptionValue{}
 	)
+
+	if len(in) == 0 {
+		return ov
+	}
 
 	// Init the out slice from the left side.
 	if len(ov) > 0 {

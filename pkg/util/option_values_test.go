@@ -23,8 +23,6 @@ var _ = Describe("OptionValues", func() {
 		sz1   = "1"
 		sz2   = "2"
 		sz3   = "3"
-		sz4   = "4"
-		sz5   = "5"
 		i32_1 = int32(1)
 		u64_2 = uint64(2)
 		f32_3 = float32(3)
@@ -89,6 +87,63 @@ var _ = Describe("OptionValues", func() {
 					&vimtypes.OptionValue{Key: szb, Value: pu64_2},
 					&vimtypes.OptionValue{Key: szc, Value: pf32_3},
 				))
+			})
+		})
+	})
+
+	Context("Delete", func() {
+		When("receiver is nil", func() {
+			It("should return nil", func() {
+				var (
+					left, out pkgutil.OptionValues
+				)
+
+				left = nil
+
+				Expect(func() { out = left.Delete("") }).ToNot(Panic())
+				Expect(out).To(BeNil())
+			})
+		})
+
+		When("receiver is not nil", func() {
+			When("key does not exist", func() {
+				It("should return same list", func() {
+					var (
+						left, out pkgutil.OptionValues
+					)
+
+					left = pkgutil.OptionValues{
+						&vimtypes.OptionValue{Key: sza, Value: sz1},
+						&vimtypes.OptionValue{Key: szb, Value: sz2},
+						&vimtypes.OptionValue{Key: szc, Value: sz3},
+					}
+
+					out = left.Delete(szd)
+					Expect(out).To(ConsistOf(
+						&vimtypes.OptionValue{Key: sza, Value: sz1},
+						&vimtypes.OptionValue{Key: szb, Value: sz2},
+						&vimtypes.OptionValue{Key: szc, Value: sz3},
+					))
+				})
+			})
+			When("key does exist", func() {
+				It("should return list with key removed", func() {
+					var (
+						left, out pkgutil.OptionValues
+					)
+
+					left = pkgutil.OptionValues{
+						&vimtypes.OptionValue{Key: sza, Value: sz1},
+						&vimtypes.OptionValue{Key: szb, Value: sz2},
+						&vimtypes.OptionValue{Key: szc, Value: sz3},
+					}
+
+					out = left.Delete(sza)
+					Expect(out).To(ConsistOf(
+						&vimtypes.OptionValue{Key: szb, Value: sz2},
+						&vimtypes.OptionValue{Key: szc, Value: sz3},
+					))
+				})
 			})
 		})
 	})

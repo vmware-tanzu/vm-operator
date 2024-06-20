@@ -364,6 +364,68 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 				VirtualMmuUsage:     "off",
 				VirtualExecUsage:    "hvOn",
 			}}),
+
+		Entry("Memory allocation (reservation, limit, shares) settings needs updating",
+			ConfigInfo{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(1024)),
+					Limit:       ptr.To(int64(1024)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(2048)),
+					Limit:       ptr.To(int64(2048)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelCustom, Shares: 50},
+				}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(2048)),
+					Limit:       ptr.To(int64(2048)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelCustom, Shares: 50},
+				}}),
+		Entry("Memory allocation (reservation, limit, shares) settings needs updating - empty to values set ",
+			ConfigInfo{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(2048)),
+					Limit:       ptr.To(int64(2048)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(2048)),
+					Limit:       ptr.To(int64(2048)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}}),
+		Entry("Memory allocation (reservation,limit,shares) settings does not need updating",
+			ConfigInfo{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(1024)),
+					Limit:       ptr.To(int64(1024)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(1024)),
+					Limit:       ptr.To(int64(1024)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{}),
+
+		Entry("Memory Hot Add needs updating false to true",
+			ConfigInfo{MemoryHotAddEnabled: falsePtr},
+			ConfigSpec{MemoryHotAddEnabled: truePtr},
+			ConfigSpec{MemoryHotAddEnabled: truePtr}),
+		Entry("Memory Hot Add needs updating nil to true",
+			ConfigInfo{},
+			ConfigSpec{MemoryHotAddEnabled: truePtr},
+			ConfigSpec{MemoryHotAddEnabled: truePtr}),
+		Entry("Memory Hot Add does not need updating",
+			ConfigInfo{MemoryHotAddEnabled: falsePtr},
+			ConfigSpec{MemoryHotAddEnabled: falsePtr},
+			ConfigSpec{}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

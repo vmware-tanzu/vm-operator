@@ -35,7 +35,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -1256,7 +1256,8 @@ func vmTests() {
 
 				By("has expected backup ExtraConfig key", func() {
 					Expect(o.Config.ExtraConfig).ToNot(BeNil())
-					ecMap := util.ExtraConfigToMap(o.Config.ExtraConfig)
+
+					ecMap := pkgutil.OptionValues(o.Config.ExtraConfig).StringMap()
 					Expect(ecMap).To(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
 				})
 
@@ -1278,7 +1279,7 @@ func vmTests() {
 
 				By("does not have any backup ExtraConfig key", func() {
 					Expect(o.Config.ExtraConfig).ToNot(BeNil())
-					ecMap := util.ExtraConfigToMap(o.Config.ExtraConfig)
+					ecMap := pkgutil.OptionValues(o.Config.ExtraConfig).StringMap()
 					Expect(ecMap).ToNot(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
 				})
 			})

@@ -18,7 +18,7 @@ import (
 	"github.com/vmware/govmomi/vim25/xml"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -45,7 +45,7 @@ var _ = Describe("DevicesFromConfigSpec", func() {
 	})
 
 	JustBeforeEach(func() {
-		devOut = util.DevicesFromConfigSpec(configSpec)
+		devOut = pkgutil.DevicesFromConfigSpec(configSpec)
 	})
 
 	When("a ConfigSpec has a nil DeviceChange property", func() {
@@ -109,7 +109,7 @@ var _ = Describe("ConfigSpec Util", func() {
 	Context("MarshalConfigSpecToXML", func() {
 		It("marshals and unmarshal to the same spec", func() {
 			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
-			bytes, err := util.MarshalConfigSpecToXML(inputSpec)
+			bytes, err := pkgutil.MarshalConfigSpecToXML(inputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
 			var outputSpec vimtypes.VirtualMachineConfigSpec
 			err = xml.Unmarshal(bytes, &outputSpec)
@@ -119,7 +119,7 @@ var _ = Describe("ConfigSpec Util", func() {
 
 		It("marshals spec correctly to expected base64 encoded XML", func() {
 			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
-			bytes, err := util.MarshalConfigSpecToXML(inputSpec)
+			bytes, err := pkgutil.MarshalConfigSpecToXML(inputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(base64.StdEncoding.EncodeToString(bytes)).To(Equal("PG9iaiB4bWxuczp2aW0yNT0idXJuOnZpbTI1I" +
 				"iB4bWxuczp4c2k9Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvWE1MU2NoZW1hLWluc3RhbmNlIiB4c2k6dHlwZT0idmltMjU6Vmlyd" +
@@ -165,14 +165,14 @@ var _ = Describe("ConfigSpec Util", func() {
 		When("minimum hardware version is unset", func() {
 			It("does not change the existing value of the configSpec's version", func() {
 				configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "vmx-15"}
-				util.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
+				pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
 
 				Expect(configSpec.Version).To(Equal("vmx-15"))
 			})
 
 			It("does not set the configSpec's version", func() {
 				configSpec := &vimtypes.VirtualMachineConfigSpec{}
-				util.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
+				pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
 
 				Expect(configSpec.Version).To(BeEmpty())
 			})
@@ -180,21 +180,21 @@ var _ = Describe("ConfigSpec Util", func() {
 
 		It("overrides the hardware version if the existing version is lesser", func() {
 			configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "vmx-15"}
-			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
+			pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
 
 			Expect(configSpec.Version).To(Equal("vmx-17"))
 		})
 
 		It("sets the hardware version if the existing version is unset", func() {
 			configSpec := &vimtypes.VirtualMachineConfigSpec{}
-			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 16)
+			pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 16)
 
 			Expect(configSpec.Version).To(Equal("vmx-16"))
 		})
 
 		It("overrides the hardware version if the existing version is set incorrectly", func() {
 			configSpec := &vimtypes.VirtualMachineConfigSpec{Version: "foo"}
-			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
+			pkgutil.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
 
 			Expect(configSpec.Version).To(Equal("vmx-17"))
 		})
@@ -242,31 +242,9 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 		})
 
 		It("config spec deviceChanges empty", func() {
-			util.RemoveDevicesFromConfigSpec(configSpec, fn)
+			pkgutil.RemoveDevicesFromConfigSpec(configSpec, fn)
 			Expect(configSpec.DeviceChange).To(BeEmpty())
 		})
-	})
-})
-
-var _ = Describe("AppendNewExtraConfigValues", func() {
-
-	It("only adds new values not already in the ExtraConfig", func() {
-		ec := []vimtypes.BaseOptionValue{
-			&vimtypes.OptionValue{
-				Key:   "key1",
-				Value: "keep-me",
-			},
-		}
-
-		newECMap := map[string]string{
-			"key1": "should-be-ignored",
-			"key2": "add-me",
-		}
-
-		newExtraConfig := util.AppendNewExtraConfigValues(ec, newECMap)
-		Expect(newExtraConfig).To(HaveLen(2))
-		Expect(newExtraConfig).To(ContainElement(&vimtypes.OptionValue{Key: "key1", Value: "keep-me"}))
-		Expect(newExtraConfig).To(ContainElement(&vimtypes.OptionValue{Key: "key2", Value: "add-me"}))
 	})
 })
 
@@ -354,7 +332,7 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 	})
 
 	It("returns expected sanitized ConfigSpec", func() {
-		util.SanitizeVMClassConfigSpec(ctx, configSpec)
+		pkgutil.SanitizeVMClassConfigSpec(ctx, configSpec)
 
 		Expect(configSpec.Name).To(Equal("dummy-VM"))
 		Expect(configSpec.Annotation).ToNot(BeEmpty())
@@ -387,94 +365,6 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 		backing, ok := dev.Backing.(*vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo)
 		Expect(ok).To(BeTrue())
 		Expect(backing.LunUuid).To(Equal("dummy-uuid"))
-	})
-})
-
-var _ = Describe("ExtraConfigToMap", func() {
-	var (
-		extraConfig    []vimtypes.BaseOptionValue
-		extraConfigMap map[string]string
-	)
-	BeforeEach(func() {
-		extraConfig = []vimtypes.BaseOptionValue{}
-	})
-	JustBeforeEach(func() {
-		extraConfigMap = util.ExtraConfigToMap(extraConfig)
-	})
-
-	Context("Empty extraConfig", func() {
-		It("Return empty map", func() {
-			Expect(extraConfigMap).To(HaveLen(0))
-		})
-	})
-
-	Context("With extraConfig", func() {
-		BeforeEach(func() {
-			extraConfig = append(extraConfig, &vimtypes.OptionValue{Key: "key1", Value: "value1"})
-			extraConfig = append(extraConfig, &vimtypes.OptionValue{Key: "key2", Value: "value2"})
-		})
-		It("Return valid map", func() {
-			Expect(extraConfigMap).To(HaveLen(2))
-			Expect(extraConfigMap["key1"]).To(Equal("value1"))
-			Expect(extraConfigMap["key2"]).To(Equal("value2"))
-		})
-	})
-})
-
-var _ = Describe("MergeExtraConfig", func() {
-	var (
-		extraConfig []vimtypes.BaseOptionValue
-		newMap      map[string]string
-		merged      []vimtypes.BaseOptionValue
-	)
-	BeforeEach(func() {
-		extraConfig = []vimtypes.BaseOptionValue{
-			&vimtypes.OptionValue{Key: "existingkey1", Value: "existingvalue1"},
-			&vimtypes.OptionValue{Key: "existingkey2", Value: "existingvalue2"},
-		}
-		newMap = map[string]string{}
-	})
-	JustBeforeEach(func() {
-		merged = util.MergeExtraConfig(extraConfig, newMap)
-	})
-
-	Context("Empty newMap", func() {
-		It("Return empty merged", func() {
-			Expect(merged).To(BeEmpty())
-		})
-	})
-
-	Context("NewMap with existing key and same value", func() {
-		BeforeEach(func() {
-			newMap["existingkey1"] = "existingvalue1"
-		})
-		It("Return empty merged", func() {
-			Expect(merged).To(BeEmpty())
-		})
-	})
-
-	Context("NewMap with existing key and new value", func() {
-		BeforeEach(func() {
-			newMap["existingkey1"] = "newvalue1"
-		})
-		It("Return merged map", func() {
-			Expect(merged).To(HaveLen(1))
-			mergedMap := util.ExtraConfigToMap(merged)
-			Expect(mergedMap["existingkey1"]).To(Equal("newvalue1"))
-		})
-	})
-
-	Context("NewMap with new keys", func() {
-		BeforeEach(func() {
-			newMap["newkey1"] = "newvalue1"
-			newMap["newkey2"] = "newvalue2"
-		})
-		It("Return merged map", func() {
-			Expect(merged).To(HaveLen(2))
-			mergedMap := util.ExtraConfigToMap(merged)
-			Expect(mergedMap["newkey1"]).To(Equal("newvalue1"))
-			Expect(mergedMap["newkey2"]).To(Equal("newvalue2"))
-		})
 	})
 })
 

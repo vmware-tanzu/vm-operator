@@ -163,69 +163,6 @@ func RemoveDevicesFromConfigSpec(configSpec *vimtypes.VirtualMachineConfigSpec, 
 	configSpec.DeviceChange = targetDevChanges
 }
 
-// AppendNewExtraConfigValues add the new extra config values if not already present in the extra config.
-func AppendNewExtraConfigValues(
-	extraConfig []vimtypes.BaseOptionValue,
-	newECMap map[string]string) []vimtypes.BaseOptionValue {
-
-	ecMap := make(map[string]vimtypes.AnyType)
-	for _, opt := range extraConfig {
-		if optValue := opt.GetOptionValue(); optValue != nil {
-			ecMap[optValue.Key] = optValue.Value
-		}
-	}
-
-	// Only add fields that aren't already in the ExtraConfig.
-	var newExtraConfig []vimtypes.BaseOptionValue
-	for k, v := range newECMap {
-		if _, exists := ecMap[k]; !exists {
-			newExtraConfig = append(newExtraConfig, &vimtypes.OptionValue{Key: k, Value: v})
-		}
-	}
-
-	return append(extraConfig, newExtraConfig...)
-}
-
-// ExtraConfigToMap converts the ExtraConfig to a map with string values.
-func ExtraConfigToMap(input []vimtypes.BaseOptionValue) (output map[string]string) {
-	output = make(map[string]string)
-	for _, opt := range input {
-		if optValue := opt.GetOptionValue(); optValue != nil {
-			// Only set string type values
-			if val, ok := optValue.Value.(string); ok {
-				output[optValue.Key] = val
-			}
-		}
-	}
-	return
-}
-
-// MergeExtraConfig adds the key/value to the ExtraConfig if the key is not
-// present or the new value is different than the existing value.
-// It returns the newly added ExtraConfig.
-// Please note the result *may* include keys with empty values. This indicates
-// to vSphere to remove the key/value pair.
-func MergeExtraConfig(
-	existingExtraConfig []vimtypes.BaseOptionValue,
-	newKeyValuePairs map[string]string) []vimtypes.BaseOptionValue {
-
-	var mergedExtraConfig []vimtypes.BaseOptionValue
-	existingExtraConfigKeyValuePairs := ExtraConfigToMap(existingExtraConfig)
-
-	for nk, nv := range newKeyValuePairs {
-		if ev, ok := existingExtraConfigKeyValuePairs[nk]; !ok || nv != ev {
-			mergedExtraConfig = append(
-				mergedExtraConfig,
-				&vimtypes.OptionValue{
-					Key:   nk,
-					Value: nv,
-				})
-		}
-	}
-
-	return mergedExtraConfig
-}
-
 // EnsureMinHardwareVersionInConfigSpec ensures that the hardware version in the
 // ConfigSpec is at least equal to the passed minimum hardware version value.
 func EnsureMinHardwareVersionInConfigSpec(

@@ -28,7 +28,7 @@ import (
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
@@ -326,8 +326,9 @@ func UpdateConfigSpecExtraConfig(
 		// with the class config spec extra config (ie) class config spec extra
 		// config keys takes precedence over the desired config spec extra
 		// config keys.
-		combinedExtraConfig := util.AppendNewExtraConfigValues(classConfigSpec.ExtraConfig, extraConfig)
-		extraConfig = util.ExtraConfigToMap(combinedExtraConfig)
+		extraConfig = pkgutil.OptionValues(classConfigSpec.ExtraConfig).
+			Append(pkgutil.OptionValuesFromMap(extraConfig)...).
+			StringMap()
 	}
 
 	// Note if the VM uses both LinuxPrep and vAppConfig. This is used in the
@@ -367,7 +368,8 @@ func UpdateConfigSpecExtraConfig(
 	// Update the ConfigSpec's ExtraConfig property with the results from
 	// above. Please note this *may* include keys with empty values. This
 	// indicates to vSphere that a key/value pair should be removed.
-	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
+	configSpec.ExtraConfig = pkgutil.OptionValues(config.ExtraConfig).
+		Diff(pkgutil.OptionValuesFromMap(extraConfig)...)
 }
 
 func isLinuxPrepAndVAppConfig(vm *vmopv1.VirtualMachine) bool {
@@ -393,10 +395,10 @@ func hasvGPUOrDDPIODevicesInVM(config *vimtypes.VirtualMachineConfigInfo) bool {
 	if config == nil {
 		return false
 	}
-	if len(util.SelectNvidiaVgpu(config.Hardware.Device)) > 0 {
+	if len(pkgutil.SelectNvidiaVgpu(config.Hardware.Device)) > 0 {
 		return true
 	}
-	if len(util.SelectDynamicDirectPathIO(config.Hardware.Device)) > 0 {
+	if len(pkgutil.SelectDynamicDirectPathIO(config.Hardware.Device)) > 0 {
 		return true
 	}
 	return false
@@ -416,7 +418,7 @@ func hasvGPUOrDDPIODevicesInVMClass(
 	}
 
 	if configSpec != nil {
-		return util.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange)
+		return pkgutil.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange)
 	}
 
 	return false
@@ -570,8 +572,8 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	var expectedPCIDevices []vimtypes.BaseVirtualDevice
-	if configSpecDevs := util.DevicesFromConfigSpec(&updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
-		pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(configSpecDevs)
+	if configSpecDevs := pkgutil.DevicesFromConfigSpec(&updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
+		pciPassthruFromConfigSpec := pkgutil.SelectVirtualPCIPassthrough(configSpecDevs)
 		expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
 	}
 
@@ -631,9 +633,9 @@ func (s *Session) ensureNetworkInterfaces(
 
 	var networkDevices []vimtypes.BaseVirtualDevice
 	if configSpec != nil {
-		networkDevices = util.SelectDevices[vimtypes.BaseVirtualDevice](
-			util.DevicesFromConfigSpec(configSpec),
-			util.IsEthernetCard,
+		networkDevices = pkgutil.SelectDevices[vimtypes.BaseVirtualDevice](
+			pkgutil.DevicesFromConfigSpec(configSpec),
+			pkgutil.IsEthernetCard,
 		)
 	}
 

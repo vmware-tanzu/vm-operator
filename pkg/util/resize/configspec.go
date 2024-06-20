@@ -12,7 +12,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // CreateResizeConfigSpec takes the current VM state in the ConfigInfo and compares it to the
@@ -90,7 +90,7 @@ func compareHardwareDevices(
 	// The VM's current virtual devices.
 	deviceList := object.VirtualDeviceList(ci.Hardware.Device)
 	// The VM's desired virtual devices.
-	csDeviceList := util.DevicesFromConfigSpec(&cs)
+	csDeviceList := pkgutil.DevicesFromConfigSpec(&cs)
 
 	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 
@@ -103,9 +103,9 @@ func compareHardwareDevices(
 func comparePCIDevices(
 	currentPCIDevices, desiredPCIDevices []vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
 
-	currentPassthruPCIDevices := util.SelectVirtualPCIPassthrough(currentPCIDevices)
+	currentPassthruPCIDevices := pkgutil.SelectVirtualPCIPassthrough(currentPCIDevices)
 
-	pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(desiredPCIDevices)
+	pciPassthruFromConfigSpec := pkgutil.SelectVirtualPCIPassthrough(desiredPCIDevices)
 	expectedPCIDevices := virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
 
 	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
@@ -291,12 +291,7 @@ func compareExtraConfig(
 	cs vimtypes.VirtualMachineConfigSpec,
 	outCS *vimtypes.VirtualMachineConfigSpec) {
 
-	if len(cs.ExtraConfig) == 0 {
-		return
-	}
-
-	extraConfig := util.ExtraConfigToMap(cs.ExtraConfig)
-	outCS.ExtraConfig = util.MergeExtraConfig(ci.ExtraConfig, extraConfig)
+	outCS.ExtraConfig = pkgutil.OptionValues(ci.ExtraConfig).Diff(cs.ExtraConfig...)
 }
 
 // compareConsolePreferences compares the console preferences settings in the Config Spec.

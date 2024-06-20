@@ -26,7 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -273,7 +273,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				vm,
 				globalExtraConfig)
 
-			ecMap = util.ExtraConfigToMap(configSpec.ExtraConfig)
+			ecMap = pkgutil.OptionValues(configSpec.ExtraConfig).StringMap()
 		})
 
 		Context("Empty input", func() {

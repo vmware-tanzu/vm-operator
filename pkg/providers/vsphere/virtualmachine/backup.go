@@ -20,7 +20,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // BackupVirtualMachineOptions contains the options for BackupVirtualMachine.
@@ -54,10 +54,10 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		return err
 	}
 
-	curEcMap := util.ExtraConfigToMap(moVM.Config.ExtraConfig)
-	ecToUpdate := []vimtypes.BaseOptionValue{}
+	curExCfg := pkgutil.OptionValues(moVM.Config.ExtraConfig)
+	var ecToUpdate pkgutil.OptionValues
 
-	vmYAML, err := getDesiredVMResourceYAMLForBackup(opts.VMCtx.VM, curEcMap)
+	vmYAML, err := getDesiredVMResourceYAMLForBackup(opts.VMCtx.VM, curExCfg)
 	if err != nil {
 		opts.VMCtx.Logger.Error(err, "failed to get VM resource yaml for backup")
 		return err
@@ -73,7 +73,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 
 	additionalYAML, err := getDesiredAdditionalResourceYAMLForBackup(
 		opts.AdditionalResources,
-		curEcMap,
+		curExCfg,
 	)
 	if err != nil {
 		opts.VMCtx.Logger.Error(err, "failed to get additional resources yaml for backup")
@@ -89,7 +89,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		})
 	}
 
-	pvcDiskData, err := getDesiredPVCDiskDataForBackup(opts, curEcMap)
+	pvcDiskData, err := getDesiredPVCDiskDataForBackup(opts, curExCfg)
 	if err != nil {
 		opts.VMCtx.Logger.Error(err, "failed to get PVC disk data for backup")
 		return err
@@ -125,8 +125,9 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 // given VM, or an empty string if the existing backup is already up-to-date.
 func getDesiredVMResourceYAMLForBackup(
 	vm *vmopv1.VirtualMachine,
-	ecMap map[string]string) (string, error) {
-	curBackup := ecMap[vmopv1.VMResourceYAMLExtraConfigKey]
+	extraConfig pkgutil.OptionValues) (string, error) {
+
+	curBackup, _ := extraConfig.GetString(vmopv1.VMResourceYAMLExtraConfigKey)
 	isUpToDate, err := isVMBackupUpToDate(vm, curBackup)
 	if err != nil || isUpToDate {
 		return "", err
@@ -138,7 +139,7 @@ func getDesiredVMResourceYAMLForBackup(
 		return "", fmt.Errorf("failed to marshal VM into YAML %+v: %v", vm, err)
 	}
 
-	return util.EncodeGzipBase64(string(vmYAML))
+	return pkgutil.EncodeGzipBase64(string(vmYAML))
 }
 
 // isVMBackupUpToDate returns true if none of the following fields of the VM are
@@ -149,7 +150,7 @@ func isVMBackupUpToDate(vm *vmopv1.VirtualMachine, backup string) (bool, error) 
 		return false, nil
 	}
 
-	backupYAML, err := util.TryToDecodeBase64Gzip([]byte(backup))
+	backupYAML, err := pkgutil.TryToDecodeBase64Gzip([]byte(backup))
 	if err != nil {
 		return false, err
 	}
@@ -174,8 +175,9 @@ func isVMBackupUpToDate(vm *vmopv1.VirtualMachine, backup string) (bool, error) 
 // already up-to-date (checked by comparing the resource versions).
 func getDesiredAdditionalResourceYAMLForBackup(
 	resources []client.Object,
-	ecMap map[string]string) (string, error) {
-	curBackup := ecMap[vmopv1.AdditionalResourcesYAMLExtraConfigKey]
+	extraConfig pkgutil.OptionValues) (string, error) {
+
+	curBackup, _ := extraConfig.GetString(vmopv1.AdditionalResourcesYAMLExtraConfigKey)
 	backupVers, err := getBackupResourceVersions(curBackup)
 	if err != nil {
 		return "", err
@@ -206,7 +208,7 @@ func getDesiredAdditionalResourceYAMLForBackup(
 	}
 
 	resourcesYAML := strings.Join(marshaledStrs, "\n---\n")
-	return util.EncodeGzipBase64(resourcesYAML)
+	return pkgutil.EncodeGzipBase64(resourcesYAML)
 }
 
 // getBackupResourceVersions gets the resource version of each object in
@@ -216,7 +218,7 @@ func getBackupResourceVersions(ecResourceData string) (map[string]string, error)
 		return nil, nil
 	}
 
-	decoded, err := util.TryToDecodeBase64Gzip([]byte(ecResourceData))
+	decoded, err := pkgutil.TryToDecodeBase64Gzip([]byte(ecResourceData))
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +242,8 @@ func getBackupResourceVersions(ecResourceData string) (map[string]string, error)
 
 func getDesiredPVCDiskDataForBackup(
 	opts BackupVirtualMachineOptions,
-	ecMap map[string]string) (string, error) {
+	extraConfig pkgutil.OptionValues) (string, error) {
+
 	// Return an empty string to skip backup if no disk uuid to PVC is specified.
 	if len(opts.DiskUUIDToPVC) == 0 {
 		return "", nil
@@ -270,13 +273,14 @@ func getDesiredPVCDiskDataForBackup(
 	if err != nil {
 		return "", err
 	}
-	diskDataBackup, err := util.EncodeGzipBase64(string(diskDataJSON))
+	diskDataBackup, err := pkgutil.EncodeGzipBase64(string(diskDataJSON))
 	if err != nil {
 		return "", err
 	}
 
 	// Return an empty string to skip the backup if the data is unchanged.
-	if diskDataBackup == ecMap[vmopv1.PVCDiskDataExtraConfigKey] {
+	curDiskDataBackup, _ := extraConfig.GetString(vmopv1.PVCDiskDataExtraConfigKey)
+	if diskDataBackup == curDiskDataBackup {
 		return "", nil
 	}
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // CreateResizeConfigSpec takes the current VM state in the ConfigInfo and compares it to the
@@ -42,6 +43,7 @@ func CreateResizeConfigSpec(
 	compareNestedHVEnabled(ci, cs, &outCS)
 	compareSevEnabled(ci, cs, &outCS)
 	compareVmxStatsCollectionEnabled(ci, cs, &outCS)
+	compareMemoryReservationLockedToMax(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -424,6 +426,7 @@ func compareMemoryAllocation(
 	}
 }
 
+// compareMemoryHotAdd compares Memory hot add enablement.
 func compareMemoryHotAdd(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs vimtypes.VirtualMachineConfigSpec,
@@ -461,6 +464,23 @@ func compareVmxStatsCollectionEnabled(
 	cs vimtypes.VirtualMachineConfigSpec,
 	outCS *vimtypes.VirtualMachineConfigSpec) {
 	cmpPtr(ci.VmxStatsCollectionEnabled, cs.VmxStatsCollectionEnabled, &outCS.VmxStatsCollectionEnabled)
+}
+
+// compareMemoryReservationLockedToMax compares full memory reservation settings from config spec.
+func compareMemoryReservationLockedToMax(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+
+	memLockedMax := cs.MemoryReservationLockedToMax
+	if memLockedMax != nil && !*memLockedMax {
+		// memoryReservationLockedToMax must be true when desired config spec has PCI pass-through devices.
+		if pkgutil.HasDeviceChangeDeviceByType[*vimtypes.VirtualPCIPassthrough](cs.DeviceChange) {
+			memLockedMax = ptr.To(true)
+		}
+	}
+
+	cmpPtr(ci.MemoryReservationLockedToMax, memLockedMax, &outCS.MemoryReservationLockedToMax)
 }
 
 func cmp[T comparable](a, b T, c *T) {

@@ -462,6 +462,85 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigInfo{VmxStatsCollectionEnabled: falsePtr},
 			ConfigSpec{VmxStatsCollectionEnabled: truePtr},
 			ConfigSpec{VmxStatsCollectionEnabled: truePtr}),
+
+		Entry("Memory Reservation Locked to Max needs updating",
+			ConfigInfo{MemoryReservationLockedToMax: falsePtr},
+			ConfigSpec{MemoryReservationLockedToMax: truePtr},
+			ConfigSpec{MemoryReservationLockedToMax: truePtr}),
+		Entry("Memory Reservation Locked to Max needs updating -- not set in config info",
+			ConfigInfo{},
+			ConfigSpec{MemoryReservationLockedToMax: truePtr},
+			ConfigSpec{MemoryReservationLockedToMax: truePtr}),
+		Entry("Memory Reservation Locked to Max does not need updating",
+			ConfigInfo{MemoryReservationLockedToMax: falsePtr},
+			ConfigSpec{MemoryReservationLockedToMax: falsePtr},
+			ConfigSpec{}),
+		Entry("Memory Reservation Locked to Max cannot be false with PCI pass-through devices in spec",
+			ConfigInfo{},
+			ConfigSpec{
+				MemoryReservationLockedToMax: falsePtr,
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -200,
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "profile-from-configspec",
+								},
+							},
+						},
+					},
+				},
+			},
+			ConfigSpec{
+				MemoryReservationLockedToMax: truePtr,
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -200,
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "profile-from-configspec",
+								},
+							},
+						},
+					},
+				},
+			}),
+		Entry("Memory Reservation Locked to Max can be unset with PCI pass-through devices in spec",
+			ConfigInfo{MemoryReservationLockedToMax: truePtr},
+			ConfigSpec{
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -200,
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "profile-from-configspec",
+								},
+							},
+						},
+					},
+				},
+			},
+			ConfigSpec{
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -200,
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "profile-from-configspec",
+								},
+							},
+						},
+					},
+				},
+			}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

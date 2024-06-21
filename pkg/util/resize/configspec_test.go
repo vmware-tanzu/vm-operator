@@ -541,6 +541,47 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 					},
 				},
 			}),
+
+		Entry("GMM needs updating -- config info GMM empty",
+			ConfigInfo{},
+			ConfigSpec{
+				GuestMonitoringModeInfo: &vimtypes.VirtualMachineGuestMonitoringModeInfo{
+					GmmFile:      "foo",
+					GmmAppliance: "bar",
+				}},
+			ConfigSpec{
+				GuestMonitoringModeInfo: &vimtypes.VirtualMachineGuestMonitoringModeInfo{
+					GmmFile:      "foo",
+					GmmAppliance: "bar",
+				}}),
+		Entry("GMM needs updating",
+			ConfigInfo{
+				GuestMonitoringModeInfo: &vimtypes.VirtualMachineGuestMonitoringModeInfo{
+					GmmFile:      "bat",
+					GmmAppliance: "man",
+				}},
+			ConfigSpec{
+				GuestMonitoringModeInfo: &vimtypes.VirtualMachineGuestMonitoringModeInfo{
+					GmmFile:      "foo",
+					GmmAppliance: "bar",
+				}},
+			ConfigSpec{
+				GuestMonitoringModeInfo: &vimtypes.VirtualMachineGuestMonitoringModeInfo{
+					GmmFile:      "foo",
+					GmmAppliance: "bar",
+				}}),
+		Entry("GMM does not need updating",
+			ConfigInfo{
+				GuestMonitoringModeInfo: &vimtypes.VirtualMachineGuestMonitoringModeInfo{
+					GmmFile:      "foo",
+					GmmAppliance: "bar",
+				}},
+			ConfigSpec{
+				GuestMonitoringModeInfo: &vimtypes.VirtualMachineGuestMonitoringModeInfo{
+					GmmFile:      "foo",
+					GmmAppliance: "bar",
+				}},
+			ConfigSpec{}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

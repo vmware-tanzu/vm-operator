@@ -44,6 +44,7 @@ func CreateResizeConfigSpec(
 	compareSevEnabled(ci, cs, &outCS)
 	compareVmxStatsCollectionEnabled(ci, cs, &outCS)
 	compareMemoryReservationLockedToMax(ci, cs, &outCS)
+	compareGMM(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -481,6 +482,24 @@ func compareMemoryReservationLockedToMax(
 	}
 
 	cmpPtr(ci.MemoryReservationLockedToMax, memLockedMax, &outCS.MemoryReservationLockedToMax)
+}
+
+func compareGMM(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	if cs.GuestMonitoringModeInfo == nil {
+		return
+	}
+
+	if ci.GuestMonitoringModeInfo == nil ||
+		ci.GuestMonitoringModeInfo.GmmFile != cs.GuestMonitoringModeInfo.GmmFile ||
+		ci.GuestMonitoringModeInfo.GmmAppliance != cs.GuestMonitoringModeInfo.GmmAppliance {
+		outCS.GuestMonitoringModeInfo = &vimtypes.VirtualMachineGuestMonitoringModeInfo{
+			GmmFile:      cs.GuestMonitoringModeInfo.GmmFile,
+			GmmAppliance: cs.GuestMonitoringModeInfo.GmmAppliance,
+		}
+	}
 }
 
 func cmp[T comparable](a, b T, c *T) {

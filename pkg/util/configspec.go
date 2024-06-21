@@ -11,6 +11,8 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 )
 
 // MarshalConfigSpecToXML returns a byte slice of the provided ConfigSpec
@@ -142,6 +144,10 @@ func SanitizeVMClassConfigSpec(
 	configSpec.Files = nil
 	// Empty VmProfiles as storage profiles are disk specific
 	configSpec.VmProfile = []vimtypes.BaseVirtualMachineProfileSpec{}
+
+	configSpec.ExtraConfig = OptionValues(configSpec.ExtraConfig).Delete(
+		constants.MMPowerOffVMExtraConfigKey,
+	)
 
 	// Remove all virtual disks except disks with raw device mapping backings.
 	RemoveDevicesFromConfigSpec(configSpec, isNonRDMDisk)

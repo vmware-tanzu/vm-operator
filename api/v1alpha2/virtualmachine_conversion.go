@@ -197,6 +197,10 @@ func restore_v1alpha3_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
 
+func restore_v1alpha3_VirtualMachineCdrom(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Cdrom = src.Spec.Cdrom
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -218,6 +222,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 	restore_v1alpha3_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha3_VirtualMachineGuestID(dst, restored)
+	restore_v1alpha3_VirtualMachineCdrom(dst, restored)
 
 	// END RESTORE
 

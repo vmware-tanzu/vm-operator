@@ -61,11 +61,43 @@ spec:
                   pointing to a VM image template.
                   Source and Target will be immutable if the SourceValid and TargetValid conditions are true.
                 properties:
+                  checksum:
+                    description: |-
+                      Checksum contains the checksum algorithm and value calculated for the
+                      file specified in the URL. If omitted, the import request will not verify
+                      the checksum of the file.
+                    properties:
+                      algorithm:
+                        default: SHA256
+                        description: |-
+                          Algorithm is the algorithm used to calculate the checksum. Supported
+                          algorithms are "SHA256" and "SHA512". If omitted, "SHA256" will be used
+                          as the default algorithm.
+                        enum:
+                        - SHA256
+                        - SHA512
+                        type: string
+                      value:
+                        description: Value is the checksum value calculated by the
+                          specified algorithm.
+                        type: string
+                    required:
+                    - value
+                    type: object
+                  sslCertificate:
+                    description: |-
+                      PEM encoded SSL Certificate for this endpoint specified by the URL. It is only used for HTTPS connections.
+                      If set, the remote endpoint's SSL certificate is only accepted if it matches this certificate, and no other
+                      certificate validation is performed.
+                      If unset, the remote endpoint's SSL certificate must be trusted by vSphere trusted root CA certificates,
+                      otherwise the SSL certification verification may fail and thus fail the import request.
+                    type: string
                   url:
                     description: |-
-                      URL is the endpoint that points to an OVF/OVA template that
-                      is to be imported as a new Content Library Item in a
-                      vSphere Content Library.
+                      URL is the endpoint that points to a file that is to be imported as a new Content Library Item in
+                      the target vSphere Content Library. If the target item type is ContentLibraryItemTypeOvf, the URL
+                      should point to an OVF descriptor file (.ovf), an OVA file (.ova), or an ISO file (.iso). Otherwise,
+                      the SourceValid condition will become false in the status.
                     type: string
                 required:
                 - url
@@ -96,6 +128,15 @@ spec:
                           of the image specified in the spec.source.url in the specified vSphere Content Library.
                           If an item with the same name already exists in the specified vSphere Content Library,
                           the TargetValid condition will become false in the status.
+                        type: string
+                      type:
+                        description: |-
+                          Type is the type of the new content library item that will be created in vSphere.
+                          Currently only ContentLibraryItemTypeOvf is supported, if it is omitted or other item type
+                          is specified, the TargetValid condition will become false in the status. For the item type
+                          of ContentLibraryItemTypeOvf, it is required that the default OVF security policy is configured
+                          on the target content library for the import request, otherwise the TargetValid condition will
+                          become false in the status.
                         type: string
                     type: object
                   library:
@@ -211,24 +252,45 @@ spec:
                 description: FileUpload indicates the upload status of files belonging
                   to the template.
                 properties:
-                  completed:
-                    description: Completed lists the names of files that have been
-                      successfully imported into vSphere.
+                  fileUploads:
+                    description: FileUploads list the transfer statuses of files being
+                      uploaded and tracked by the upload session.
                     items:
-                      type: string
+                      description: FileTransferStatus indicates the transfer status
+                        of a file belonging to a library item.
+                      properties:
+                        bytesTransferred:
+                          description: BytesTransferred indicates the number of bytes
+                            of this file that have been received by the server.
+                          format: int64
+                          type: integer
+                        errorMessage:
+                          description: ErrorMessage describes the details about the
+                            transfer error if the transfer status is error.
+                          type: string
+                        name:
+                          description: Name specifies the name of the file that is
+                            transferred.
+                          type: string
+                        size:
+                          description: |-
+                            Size indicates the file size in bytes as received by the server, this won't be available
+                            until the transfer status is ready.
+                          format: int64
+                          type: integer
+                        transferStatus:
+                          description: Status indicates the transfer status of the
+                            file.
+                          type: string
+                      required:
+                      - name
+                      - transferStatus
+                      type: object
                     type: array
-                  failed:
-                    description: Failed lists the names of files that failed to be
-                      imported into vSphere.
-                    items:
-                      type: string
-                    type: array
-                  inProgress:
-                    description: InProgress lists the names of files that are being
-                      imported into vSphere.
-                    items:
-                      type: string
-                    type: array
+                  sessionUUID:
+                    description: SessionUUID is the identifier that uniquely identifies
+                      the file upload session on the library item in vSphere.
+                    type: string
                 type: object
               itemRef:
                 description: |-

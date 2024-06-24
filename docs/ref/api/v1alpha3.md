@@ -681,6 +681,49 @@ key/value pair.
 
 Please note this field and Properties are mutually exclusive. |
 
+### VirtualMachineCdromSpec
+
+
+
+VirtualMachineCdromSpec describes the desired state of a CD-ROM device.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name describes the unique and immutable name of this CD-ROM device.
+If omitted or empty, the controller will generate it as "cdrom" + "num",
+where "num" is the device's index in the spec.cdrom list. |
+| `image` _[VirtualMachineImageRef](#virtualmachineimageref)_ | Image describes the reference to an ISO type VirtualMachineImage or
+ClusterVirtualMachineImage resource used as the backing for the CD-ROM.
+If the image kind is omitted, it defaults to VirtualMachineImage.
+
+
+This field is immutable when the VM is powered on.
+
+
+Please note, unlike the spec.imageName field, the value of this
+spec.cdrom.image.name MUST be a Kubernetes object name. |
+| `connected` _boolean_ | Connected describes the desired connection state of the CD-ROM device.
+
+
+When true, the CD-ROM device is added and connected to the VM.
+If the device already exists, it is updated to a connected state.
+
+
+When explicitly set to false, the CD-ROM device is added but remains
+disconnected from the VM. If the CD-ROM device already exists, it is
+updated to a disconnected state.
+
+
+Defaults to true if omitted. |
+| `allowGuestControl` _boolean_ | AllowGuestControl describes whether or not a web console connection
+may be used to connect/disconnect the CD-ROM device.
+
+
+Defaults to true if omitted. |
+
 ### VirtualMachineClassHardware
 
 
@@ -829,6 +872,7 @@ _Appears in:_
 
 
 _Appears in:_
+- [VirtualMachineCdromSpec](#virtualmachinecdromspec)
 - [VirtualMachineSpec](#virtualmachinespec)
 
 | Field | Description |
@@ -2041,6 +2085,18 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
+| `cdrom` _[VirtualMachineCdromSpec](#virtualmachinecdromspec) array_ | Cdrom describes the desired state of the VM's CD-ROM devices.
+
+
+Each CD-ROM device requires a reference to an ISO-type
+VirtualMachineImage or ClusterVirtualMachineImage resource as backing.
+More than one CD-ROM device with the backing image is disallowed.
+
+
+CD-ROM devices can be added, updated, or removed when the VM is powered
+off. When the VM is powered on, only the connection state of existing
+CD-ROM devices can be changed.
+CD-ROM devices are attached to the VM in the specified list-order. |
 | `image` _[VirtualMachineImageRef](#virtualmachineimageref)_ | Image describes the reference to the VirtualMachineImage or
 ClusterVirtualMachineImage resource used to deploy this VM.
 

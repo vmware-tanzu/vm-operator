@@ -7,7 +7,7 @@ package capability_test
 import (
 	"testing"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/capability"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/capability"
 
 	. "github.com/onsi/ginkgo/v2"
 
@@ -28,8 +28,8 @@ var suite = builder.NewTestSuiteForController(
 	},
 )
 
-func TestCapabilityConfigMapController(t *testing.T) {
-	suite.Register(t, "Capability ConfigMap Controller suite", intgTests, unitTests)
+func TestClusterCapabilityController(t *testing.T) {
+	suite.Register(t, "Cluster Capability Controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

@@ -10,8 +10,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/capability"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/capability"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -48,12 +49,10 @@ func intgTestsReconcile() {
 		var obj *corev1.ConfigMap
 
 		BeforeEach(func() {
-			var err error
-			obj, err = capability.NewWcpClusterCapabilitiesConfigMap(
+			obj = newWCPClusterCapabilitiesConfigMap(
 				map[string]string{
 					capability.TKGMultipleCLCapabilityKey: "false",
 				})
-			Expect(err).ToNot(HaveOccurred())
 			Expect(obj).NotTo(BeNil())
 		})
 
@@ -82,4 +81,14 @@ func intgTestsReconcile() {
 			})
 		})
 	})
+}
+
+func newWCPClusterCapabilitiesConfigMap(wcpClusterConfig map[string]string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      capability.WCPClusterCapabilitiesConfigMapName,
+			Namespace: capability.WCPClusterCapabilitiesNamespace,
+		},
+		Data: wcpClusterConfig,
+	}
 }

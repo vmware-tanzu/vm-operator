@@ -7,10 +7,10 @@ package capability
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -29,6 +29,18 @@ import (
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
+const (
+	// WCPClusterCapabilitiesConfigMapName is the name of the wcp-cluster-capabilities ConfigMap.
+	WCPClusterCapabilitiesConfigMapName = "wcp-cluster-capabilities"
+
+	// WCPClusterCapabilitiesNamespace is the namespace of the wcp-cluster-capabilities
+	// ConfigMap.
+	WCPClusterCapabilitiesNamespace = "kube-system"
+
+	// TKGMultipleCLCapabilityKey is the name of capability key defined in wcp-cluster-capabilities ConfigMap.
+	TKGMultipleCLCapabilityKey = "MultipleCL_For_TKG_Supported"
+)
+
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
@@ -43,7 +55,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		ctx.Namespace,
 		ctx.VMProvider,
 	)
 
@@ -56,7 +67,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr,
 		&ctx.SyncPeriod,
 		controlledType,
-		WcpClusterCapabilitiesNamespace)
+		WCPClusterCapabilitiesNamespace)
 	if err != nil {
 		return err
 	}
@@ -67,10 +78,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		&handler.TypedEnqueueRequestForObject[*corev1.ConfigMap]{},
 		predicate.TypedFuncs[*corev1.ConfigMap]{
 			CreateFunc: func(e event.TypedCreateEvent[*corev1.ConfigMap]) bool {
-				return e.Object.GetName() == WcpClusterCapabilitiesConfigMapName
+				return e.Object.GetName() == WCPClusterCapabilitiesConfigMapName
 			},
 			UpdateFunc: func(e event.TypedUpdateEvent[*corev1.ConfigMap]) bool {
-				return e.ObjectOld.GetName() == WcpClusterCapabilitiesConfigMapName
+				return e.ObjectOld.GetName() == WCPClusterCapabilitiesConfigMapName
 			},
 			DeleteFunc: func(e event.TypedDeleteEvent[*corev1.ConfigMap]) bool {
 				return false
@@ -88,25 +99,22 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmOpNamespace string,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
-		Context:       ctx,
-		Client:        client,
-		Logger:        logger,
-		Recorder:      recorder,
-		vmOpNamespace: vmOpNamespace,
-		VMProvider:    vmProvider,
+		Context:    ctx,
+		Client:     client,
+		Logger:     logger,
+		Recorder:   recorder,
+		VMProvider: vmProvider,
 	}
 }
 
 type Reconciler struct {
 	client.Client
-	Context       context.Context
-	Logger        logr.Logger
-	Recorder      record.Recorder
-	vmOpNamespace string
-	VMProvider    providers.VirtualMachineProviderInterface
+	Context    context.Context
+	Logger     logr.Logger
+	Recorder   record.Recorder
+	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
@@ -114,7 +122,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
-	if req.Name == WcpClusterCapabilitiesConfigMapName && req.Namespace == WcpClusterCapabilitiesNamespace {
+	if req.Name == WCPClusterCapabilitiesConfigMapName && req.Namespace == WCPClusterCapabilitiesNamespace {
 		return ctrl.Result{}, r.reconcileWcpClusterCapabilitiesConfig(ctx, req)
 	}
 
@@ -127,22 +135,22 @@ func (r *Reconciler) reconcileWcpClusterCapabilitiesConfig(ctx context.Context, 
 
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-		return nil
-	}
-	isTKGMultipleCLSupported, err := IsTKGMultipleCLSupported(cm.Data)
-	if err != nil {
-		r.Logger.Error(err, "error in parsing the WCP capabilities config")
-		return nil
+		return client.IgnoreNotFound(err)
 	}
 
-	if pkgcfg.FromContext(ctx).Features.TKGMultipleCL != isTKGMultipleCLSupported {
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.Features.TKGMultipleCL = isTKGMultipleCLSupported
-		})
-	}
+	// The SetContext call impacts the configuration available to contexts throughout the process,
+	// not just *this* context or its children. Please refer to the pkg/config package for more information
+	// on SetContext and its behavior.
+	pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+		config.Features.TKGMultipleCL = isTKGMultipleCLSupported(cm.Data)
+	})
 
 	return nil
+}
+
+// isTKGMultipleCLSupported returns if MultipleCL_For_TKG_Supported is enabled or not in the
+// wcp-cluster-capabilities ConfigMap.
+func isTKGMultipleCLSupported(data map[string]string) bool {
+	ok, _ := strconv.ParseBool(data[TKGMultipleCLCapabilityKey])
+	return ok
 }

@@ -582,6 +582,19 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 					GmmAppliance: "bar",
 				}},
 			ConfigSpec{}),
+
+		Entry("Encrypted vMotion mode does not need updating",
+			ConfigInfo{MigrateEncryption: "disabled"},
+			ConfigSpec{MigrateEncryption: "disabled"},
+			ConfigSpec{}),
+		Entry("Encrypted vMotion mode needs updating",
+			ConfigInfo{MigrateEncryption: "disabled"},
+			ConfigSpec{MigrateEncryption: "opportunistic"},
+			ConfigSpec{MigrateEncryption: "opportunistic"}),
+		Entry("Encrypted vMotion mode needs updating -- configInfo migrate encryption unset",
+			ConfigInfo{},
+			ConfigSpec{MigrateEncryption: "required"},
+			ConfigSpec{MigrateEncryption: "required"}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

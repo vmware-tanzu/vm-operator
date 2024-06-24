@@ -6,6 +6,7 @@ package vmlifecycle
 import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -28,11 +29,12 @@ type CreateArgs struct {
 func CreateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	restClient *rest.Client,
+	vimClient *vim25.Client,
 	finder *find.Finder,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
 	if createArgs.UseContentLibrary {
-		return deployFromContentLibrary(vmCtx, restClient, createArgs)
+		return deployFromContentLibrary(vmCtx, restClient, vimClient, createArgs)
 	}
 
 	return cloneVMFromInventory(vmCtx, finder, createArgs)

@@ -45,6 +45,7 @@ func CreateResizeConfigSpec(
 	compareVmxStatsCollectionEnabled(ci, cs, &outCS)
 	compareMemoryReservationLockedToMax(ci, cs, &outCS)
 	compareGMM(ci, cs, &outCS)
+	compareEncryptionModes(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -427,7 +428,7 @@ func compareMemoryAllocation(
 	}
 }
 
-// compareMemoryHotAdd compares Memory hot add enablement.
+// compareMemoryHotAdd compares the memory hot add enabled settings.
 func compareMemoryHotAdd(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs vimtypes.VirtualMachineConfigSpec,
@@ -484,6 +485,7 @@ func compareMemoryReservationLockedToMax(
 	cmpPtr(ci.MemoryReservationLockedToMax, memLockedMax, &outCS.MemoryReservationLockedToMax)
 }
 
+// compareGMM compares the guest monitoring mode.
 func compareGMM(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs vimtypes.VirtualMachineConfigSpec,
@@ -500,6 +502,25 @@ func compareGMM(
 			GmmAppliance: cs.GuestMonitoringModeInfo.GmmAppliance,
 		}
 	}
+}
+
+// compareEncryptionModes compares the encrypted vMotion modes in the config spec.
+func compareEncryptionModes(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	if cs.MigrateEncryption == "" && cs.FtEncryptionMode == "" {
+		return
+	}
+
+	if cs.MigrateEncryption != "" {
+		cmp(ci.MigrateEncryption, cs.MigrateEncryption, &outCS.MigrateEncryption)
+	}
+
+	// SKN: Should encrypted fault tolerance modes be supported?
+	// if cs.FtEncryptionMode != "" {
+	//	cmp(ci.FtEncryptionMode, cs.FtEncryptionMode, &outCS.FtEncryptionMode)
+	//}
 }
 
 func cmp[T comparable](a, b T, c *T) {

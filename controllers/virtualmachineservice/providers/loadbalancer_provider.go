@@ -16,12 +16,9 @@ import (
 
 const (
 	NSXTLoadBalancer = "nsx-t-lb"
-	NSXTServiceProxy = "nsx-t"
 
-	NCPHealthCheckNodePortKey      = "ncp/healthCheckNodePort"
-	NCPHealthCheckProtocolKey      = "ncp/healthCheckProtocol"
-	NCPHealthCheckProtocolValueTCP = "tcp"
-
+	ServiceLoadBalancerHealthCheckNodePortTagKey = "ncp/healthCheckNodePort"
+	NSXTServiceProxy                             = "nsx-t"
 	// LabelServiceProxyName indicates that an alternative service proxy will implement
 	// this Service. Copied from kubernetes pkg/proxy/apis/well_known_labels.go to avoid
 	// k8s dependency.
@@ -142,11 +139,7 @@ func (nl *NsxtLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, v
 	res := make(map[string]string)
 
 	if healthCheckNodePortString, ok := vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]; ok {
-		res[NCPHealthCheckNodePortKey] = healthCheckNodePortString
-
-		// If a health check port is specified then also specify the protocol as
-		// TCP.
-		res[NCPHealthCheckProtocolKey] = NCPHealthCheckProtocolValueTCP
+		res[ServiceLoadBalancerHealthCheckNodePortTagKey] = healthCheckNodePortString
 	}
 
 	return res, nil
@@ -160,8 +153,7 @@ func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context
 	// When healthCheckNodePort is NOT present, the corresponding NSX-T
 	// annotation should be cleared as well
 	if _, ok := vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]; !ok {
-		res[NCPHealthCheckNodePortKey] = ""
-		res[NCPHealthCheckProtocolKey] = ""
+		res[ServiceLoadBalancerHealthCheckNodePortTagKey] = ""
 	}
 
 	return res, nil

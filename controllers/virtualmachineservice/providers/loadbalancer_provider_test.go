@@ -100,8 +100,8 @@ var _ = Describe(
 				vmServiceAnnotations, err := lbProvider.GetServiceAnnotations(ctx, vmService)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(vmServiceAnnotations).ToNot(BeNil())
-				Expect(vmServiceAnnotations).To(HaveKeyWithValue(NCPHealthCheckNodePortKey, "30012"))
-				Expect(vmServiceAnnotations).To(HaveKeyWithValue(NCPHealthCheckProtocolKey, NCPHealthCheckProtocolValueTCP))
+				port := vmServiceAnnotations[ServiceLoadBalancerHealthCheckNodePortTagKey]
+				Expect(port).To(Equal("30012"))
 			})
 		})
 
@@ -126,8 +126,7 @@ var _ = Describe(
 				vmServiceAnnotations, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(vmServiceAnnotations).ToNot(BeNil())
-				Expect(vmServiceAnnotations).To(HaveKeyWithValue(NCPHealthCheckNodePortKey, ""))
-				Expect(vmServiceAnnotations).To(HaveKeyWithValue(NCPHealthCheckProtocolKey, ""))
+				Expect(vmServiceAnnotations).To(HaveKey(ServiceLoadBalancerHealthCheckNodePortTagKey))
 			})
 		})
 

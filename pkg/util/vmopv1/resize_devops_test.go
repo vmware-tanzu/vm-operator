@@ -14,6 +14,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -79,4 +80,87 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 			ConfigSpec{ChangeTrackingEnabled: falsePtr},
 			ConfigSpec{}),
 	)
+
+	Context("MMIO ExtraConfig", func() {
+		const mmIOValue = "42"
+
+		var (
+			vm vmopv1.VirtualMachine
+			ci ConfigInfo
+			cs ConfigSpec
+
+			mmIOOptVal     = &vimtypes.OptionValue{Key: constants.PCIPassthruMMIOExtraConfigKey, Value: constants.ExtraConfigTrue}
+			mmIOSizeOptVal = &vimtypes.OptionValue{Key: constants.PCIPassthruMMIOSizeExtraConfigKey, Value: mmIOValue}
+		)
+
+		BeforeEach(func() {
+			vm = *builder.DummyVirtualMachine()
+			vm.Annotations[constants.PCIPassthruMMIOOverrideAnnotation] = mmIOValue
+
+			ci = ConfigInfo{}
+			cs = ConfigSpec{}
+
+			ci.Hardware.Device = append(ci.Hardware.Device, &vimtypes.VirtualPCIPassthrough{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+						Vgpu: "my-vgpu",
+					},
+				},
+			})
+		})
+
+		JustBeforeEach(func() {
+			err := vmopv1util.OverwriteResizeConfigSpec(ctx, vm, ci, &cs)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		Context("VM already has expected MMIO EC values", func() {
+			BeforeEach(func() {
+				ci.ExtraConfig = append(ci.ExtraConfig, mmIOOptVal, mmIOSizeOptVal)
+			})
+
+			It("no updates", func() {
+				Expect(cs.ExtraConfig).To(BeEmpty())
+			})
+		})
+
+		Context("VM ConfigSpec already has expected MMIO EC values", func() {
+			BeforeEach(func() {
+				cs.ExtraConfig = append(ci.ExtraConfig, mmIOOptVal, mmIOSizeOptVal)
+			})
+
+			It("same changes", func() {
+				Expect(cs.ExtraConfig).To(ConsistOf(mmIOOptVal, mmIOSizeOptVal))
+			})
+		})
+
+		Context("VM has none of expected MMIO EC values", func() {
+			It("adds updates", func() {
+				Expect(cs.ExtraConfig).To(ConsistOf(mmIOOptVal, mmIOSizeOptVal))
+			})
+		})
+
+		Context("VM has different MMIO EC value than expected", func() {
+			BeforeEach(func() {
+				ov := *mmIOOptVal
+				ov.Value = constants.ExtraConfigFalse
+				ci.ExtraConfig = append(ci.ExtraConfig, &ov, mmIOSizeOptVal)
+			})
+
+			It("updates it", func() {
+				Expect(cs.ExtraConfig).To(ConsistOf(mmIOOptVal))
+			})
+		})
+
+		Context("VM and ConfigSpec already have expected MMIO EC values", func() {
+			BeforeEach(func() {
+				ci.ExtraConfig = append(ci.ExtraConfig, mmIOOptVal, mmIOSizeOptVal)
+				cs.ExtraConfig = append(cs.ExtraConfig, mmIOOptVal, mmIOSizeOptVal)
+			})
+
+			It("removes updates", func() {
+				Expect(cs.ExtraConfig).To(BeEmpty())
+			})
+		})
+	})
 })

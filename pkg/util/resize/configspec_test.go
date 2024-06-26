@@ -595,6 +595,86 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigInfo{},
 			ConfigSpec{MigrateEncryption: "required"},
 			ConfigSpec{MigrateEncryption: "required"}),
+
+		Entry("N_Port ID Virtualization temporarily disabled, non-RDM disk flags does not need updating",
+			ConfigInfo{NpivTemporaryDisabled: falsePtr, NpivOnNonRdmDisks: falsePtr},
+			ConfigSpec{NpivTemporaryDisabled: falsePtr, NpivOnNonRdmDisks: falsePtr},
+			ConfigSpec{}),
+		Entry("N_Port ID Virtualization temporarily disabled, non-RDM disk flags needs updating",
+			ConfigInfo{NpivTemporaryDisabled: falsePtr, NpivOnNonRdmDisks: falsePtr},
+			ConfigSpec{NpivTemporaryDisabled: truePtr, NpivOnNonRdmDisks: truePtr},
+			ConfigSpec{NpivTemporaryDisabled: truePtr, NpivOnNonRdmDisks: truePtr}),
+
+		Entry("N_Port ID Virtualization does not need updating -- remove",
+			ConfigInfo{},
+			ConfigSpec{NpivWorldWideNameOp: string(vimtypes.VirtualMachineConfigSpecNpivWwnOpRemove)},
+			ConfigSpec{}),
+		Entry("N_Port ID Virtualization does not need updating -- generate with desired WW names equal in length",
+			ConfigInfo{
+				NpivNodeWorldWideName: []int64{100, 200},
+				NpivPortWorldWideName: []int64{300, 400},
+			},
+			ConfigSpec{
+				NpivWorldWideNameOp: string(vimtypes.VirtualMachineConfigSpecNpivWwnOpGenerate),
+				NpivDesiredNodeWwns: int16(2),
+				NpivDesiredPortWwns: int16(2),
+			},
+			ConfigSpec{}),
+		Entry("N_Port ID Virtualization does not need updating -- set",
+			ConfigInfo{
+				NpivNodeWorldWideName: []int64{100, 200},
+				NpivPortWorldWideName: []int64{300, 400},
+			},
+			ConfigSpec{
+				NpivWorldWideNameOp:   string(vimtypes.VirtualMachineConfigSpecNpivWwnOpSet),
+				NpivDesiredPortWwns:   int16(2),
+				NpivDesiredNodeWwns:   int16(2),
+				NpivNodeWorldWideName: []int64{100, 200},
+				NpivPortWorldWideName: []int64{300, 400},
+			},
+			ConfigSpec{}),
+
+		Entry("N_Port ID Virtualization needs updating -- remove",
+			ConfigInfo{
+				NpivNodeWorldWideName: []int64{100, 200},
+				NpivPortWorldWideName: []int64{300, 400},
+			},
+			ConfigSpec{NpivWorldWideNameOp: string(vimtypes.VirtualMachineConfigSpecNpivWwnOpRemove)},
+			ConfigSpec{NpivWorldWideNameOp: string(vimtypes.VirtualMachineConfigSpecNpivWwnOpRemove)}),
+		Entry("N_Port ID Virtualization needs updating -- generate with desired WW names greater in length",
+			ConfigInfo{
+				NpivNodeWorldWideName: []int64{100, 200},
+				NpivPortWorldWideName: []int64{300, 400},
+			},
+			ConfigSpec{
+				NpivWorldWideNameOp: string(vimtypes.VirtualMachineConfigSpecNpivWwnOpGenerate),
+				NpivDesiredNodeWwns: int16(3),
+				NpivDesiredPortWwns: int16(3),
+			},
+			ConfigSpec{
+				NpivWorldWideNameOp: string(vimtypes.VirtualMachineConfigSpecNpivWwnOpGenerate),
+				NpivDesiredNodeWwns: int16(3),
+				NpivDesiredPortWwns: int16(3),
+			}),
+		Entry("N_Port ID Virtualization needs updating -- set with new values",
+			ConfigInfo{
+				NpivNodeWorldWideName: []int64{101, 201},
+				NpivPortWorldWideName: []int64{301, 401},
+			},
+			ConfigSpec{
+				NpivWorldWideNameOp:   string(vimtypes.VirtualMachineConfigSpecNpivWwnOpSet),
+				NpivDesiredPortWwns:   int16(2),
+				NpivDesiredNodeWwns:   int16(2),
+				NpivNodeWorldWideName: []int64{100, 200},
+				NpivPortWorldWideName: []int64{300, 400},
+			},
+			ConfigSpec{
+				NpivWorldWideNameOp:   string(vimtypes.VirtualMachineConfigSpecNpivWwnOpSet),
+				NpivDesiredPortWwns:   int16(2),
+				NpivDesiredNodeWwns:   int16(2),
+				NpivNodeWorldWideName: []int64{100, 200},
+				NpivPortWorldWideName: []int64{300, 400},
+			}),
 	)
 
 	type giveMeDeviceFn = func() vimtypes.BaseVirtualDevice

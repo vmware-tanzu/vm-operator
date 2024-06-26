@@ -46,6 +46,7 @@ func CreateResizeConfigSpec(
 	compareMemoryReservationLockedToMax(ci, cs, &outCS)
 	compareGMM(ci, cs, &outCS)
 	compareEncryptionModes(ci, cs, &outCS)
+	compareNPIV(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -521,6 +522,54 @@ func compareEncryptionModes(
 	// if cs.FtEncryptionMode != "" {
 	//	cmp(ci.FtEncryptionMode, cs.FtEncryptionMode, &outCS.FtEncryptionMode)
 	//}
+}
+
+// compareNPIV compares N_Port ID virtualization settings in the config spec.
+func compareNPIV(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	// N_Port ID Virtualization can be temporarily disabled via config spec.
+	cmpPtr(ci.NpivTemporaryDisabled, cs.NpivTemporaryDisabled, &outCS.NpivTemporaryDisabled)
+	// Indicates NPIV support on VMs with non-RDM disks.
+	cmpPtr(ci.NpivOnNonRdmDisks, cs.NpivOnNonRdmDisks, &outCS.NpivOnNonRdmDisks)
+
+	// Empty represents left unchanged
+	if cs.NpivWorldWideNameOp == "" {
+		return
+	}
+
+	// Remove only when there are any existing WW node/port names
+	if cs.NpivWorldWideNameOp == string(vimtypes.VirtualMachineConfigSpecNpivWwnOpRemove) {
+		if len(ci.NpivNodeWorldWideName) != 0 && len(ci.NpivPortWorldWideName) != 0 {
+			outCS.NpivWorldWideNameOp = cs.NpivWorldWideNameOp
+		}
+		return
+	}
+
+	// Generate only when the desired WW node/port names are greater than the length of existing WW node/port names
+	// TODO: need support for Op="extend"?.
+	if cs.NpivWorldWideNameOp == string(vimtypes.VirtualMachineConfigSpecNpivWwnOpGenerate) {
+		if cs.NpivDesiredNodeWwns > int16(len(ci.NpivNodeWorldWideName)) &&
+			cs.NpivDesiredPortWwns > int16(len(ci.NpivPortWorldWideName)) {
+			outCS.NpivWorldWideNameOp = cs.NpivWorldWideNameOp
+			outCS.NpivDesiredNodeWwns = cs.NpivDesiredNodeWwns
+			outCS.NpivDesiredPortWwns = cs.NpivDesiredPortWwns
+		}
+		return
+	}
+
+	if cs.NpivWorldWideNameOp == string(vimtypes.VirtualMachineConfigSpecNpivWwnOpSet) {
+		if !reflect.DeepEqual(ci.NpivNodeWorldWideName, cs.NpivNodeWorldWideName) &&
+			!reflect.DeepEqual(ci.NpivPortWorldWideName, cs.NpivPortWorldWideName) {
+			outCS.NpivWorldWideNameOp = cs.NpivWorldWideNameOp
+			outCS.NpivNodeWorldWideName = cs.NpivNodeWorldWideName
+			outCS.NpivPortWorldWideName = cs.NpivPortWorldWideName
+			outCS.NpivDesiredNodeWwns = cs.NpivDesiredNodeWwns
+			outCS.NpivDesiredPortWwns = cs.NpivDesiredPortWwns
+		}
+		return
+	}
 }
 
 func cmp[T comparable](a, b T, c *T) {

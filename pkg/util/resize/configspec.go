@@ -38,6 +38,10 @@ func CreateResizeConfigSpec(
 	compareFlags(ci, cs, &outCS)
 	compareMemoryAllocation(ci, cs, &outCS)
 	compareMemoryHotAdd(ci, cs, &outCS)
+	compareFixedPassthruHotPlug(ci, cs, &outCS)
+	compareNestedHVEnabled(ci, cs, &outCS)
+	compareSevEnabled(ci, cs, &outCS)
+	compareVmxStatsCollectionEnabled(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -425,6 +429,38 @@ func compareMemoryHotAdd(
 	cs vimtypes.VirtualMachineConfigSpec,
 	outCS *vimtypes.VirtualMachineConfigSpec) {
 	cmpPtr(ci.MemoryHotAddEnabled, cs.MemoryHotAddEnabled, &outCS.MemoryHotAddEnabled)
+}
+
+// compareFixedPassthruHotPlug compares the fixed pass-through hot plug enabled setting in the config spec.
+func compareFixedPassthruHotPlug(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	cmpPtr(ci.FixedPassthruHotPlugEnabled, cs.FixedPassthruHotPlugEnabled, &outCS.FixedPassthruHotPlugEnabled)
+}
+
+// compareNestedHVEnabled compares the nested hardware-assisted virtualization setting in the config spec.
+func compareNestedHVEnabled(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	cmpPtr(ci.NestedHVEnabled, cs.NestedHVEnabled, &outCS.NestedHVEnabled)
+}
+
+// compareSevEnabled compare the SEV (Secure Encryption Virtualization) setting in the config spec.
+func compareSevEnabled(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	cmpPtr(ci.SevEnabled, cs.SevEnabled, &outCS.SevEnabled)
+}
+
+// compareVmxStatsCollectionEnabled compares the VMX stats collection setting in the config spec.
+func compareVmxStatsCollectionEnabled(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	cmpPtr(ci.VmxStatsCollectionEnabled, cs.VmxStatsCollectionEnabled, &outCS.VmxStatsCollectionEnabled)
 }
 
 func cmp[T comparable](a, b T, c *T) {

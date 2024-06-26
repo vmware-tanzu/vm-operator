@@ -8,6 +8,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/capability"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/node"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/secret"
@@ -16,6 +17,9 @@ import (
 
 // AddToManager adds the controllers to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
+	if err := capability.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to initialize infra capability controller: %w", err)
+	}
 	if err := configmap.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize infra configmap controller: %w", err)
 	}

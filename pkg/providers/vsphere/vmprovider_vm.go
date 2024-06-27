@@ -367,11 +367,6 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 	}
 
 	vmCtx.VM.Status.UniqueID = moRef.Reference().Value
-	vmCtx.VM.Status.Class = &common.LocalObjectRef{
-		APIVersion: vmopv1.SchemeGroupVersion.String(),
-		Kind:       createArgs.VMClass.Kind,
-		Name:       createArgs.VMClass.Name,
-	}
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
 
 	return object.NewVirtualMachine(vcClient.VimClient(), *moRef), createArgs, nil
@@ -752,15 +747,16 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		return nil, apierrorsutil.NewAggregate(prereqErrs)
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.VMResize {
-		if createArgs.VMClass.Name != "" {
+	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {
+		// Only set VM Class field for non-synthesized classes.
+		if pkgcfg.FromContext(vmCtx).Features.VMResize {
 			vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, createArgs.VMClass)
 		}
-	}
-	vmCtx.VM.Status.Class = &common.LocalObjectRef{
-		APIVersion: createArgs.VMClass.APIVersion,
-		Kind:       createArgs.VMClass.Kind,
-		Name:       createArgs.VMClass.Name,
+		vmCtx.VM.Status.Class = &common.LocalObjectRef{
+			APIVersion: vmopv1.SchemeGroupVersion.String(),
+			Kind:       createArgs.VMClass.Kind,
+			Name:       createArgs.VMClass.Name,
+		}
 	}
 
 	return createArgs, nil

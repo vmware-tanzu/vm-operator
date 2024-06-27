@@ -60,7 +60,6 @@ func GetVirtualMachineClass(
 	}
 
 	obj, err := getVirtualMachineClassFromClassName(vmCtx, k8sClient)
-
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
 		conditions.MarkFalse(
@@ -76,8 +75,6 @@ func GetVirtualMachineClass(
 func getVirtualMachineClassFromVM(
 	vmCtx pkgctx.VirtualMachineContext) (vmopv1.VirtualMachineClass, error) {
 
-	var obj vmopv1.VirtualMachineClass
-
 	if vmCtx.MoVM.Config == nil {
 		return vmopv1.VirtualMachineClass{},
 			fmt.Errorf("cannot synthesize class from nil ConfigInfo")
@@ -88,10 +85,10 @@ func getVirtualMachineClassFromVM(
 	if err != nil {
 		return vmopv1.VirtualMachineClass{}, err
 	}
+
+	var obj vmopv1.VirtualMachineClass
 	obj.Spec.ConfigSpec = rawConfigSpec
-
 	obj.Spec.Hardware.Cpus = int64(vmCtx.MoVM.Config.Hardware.NumCPU)
-
 	// Please note that the VMODL (https://via.vmw.com/vm-configinfo-memorymb)
 	// for a VM's hardware.memoryMB does not indicate this is the scientific
 	// MiB. The name of the property has the suffix "MB", which certainly

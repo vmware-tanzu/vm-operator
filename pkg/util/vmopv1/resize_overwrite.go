@@ -27,9 +27,23 @@ func OverwriteResizeConfigSpec(
 		ptr.OverwriteWithUser(&cs.ChangeTrackingEnabled, adv.ChangeBlockTracking, ci.ChangeTrackingEnabled)
 	}
 
+	overwriteGuestID(vm, ci, cs)
 	overwriteExtraConfig(vm, ci, cs)
 
 	return nil
+}
+
+func overwriteGuestID(
+	vm vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec) {
+
+	// After the VM has been created, don't use the VM Class ConfigSpec's GuestID.
+	// Only update if the VM Spec.GuestID is set. Note GuestID is not a part of
+	// CreateResizeConfigSpec() so it should always already be empty here.
+	cs.GuestId = ""
+
+	overwrite(&cs.GuestId, vm.Spec.GuestID, ci.GuestId)
 }
 
 func overwriteExtraConfig(
@@ -139,4 +153,31 @@ func hasvGPUOrDDPIODevicesInVM(
 		return true
 	}
 	return false
+}
+
+func overwrite[T comparable](dst *T, user, current T) {
+	if dst == nil {
+		panic("dst is nil")
+	}
+
+	// Determine what the ultimate desired value is. If set the user
+	// value takes precedence.
+	var desired, empty T
+	switch {
+	case user != empty:
+		desired = user
+	case *dst != empty:
+		desired = *dst
+	default:
+		// Leave *dst as-is.
+		return
+	}
+
+	if current == empty || current != desired {
+		// An update is required to the desired value.
+		*dst = desired
+	} else if current == desired {
+		// Already at the desired value so no update is required.
+		*dst = empty
+	}
 }

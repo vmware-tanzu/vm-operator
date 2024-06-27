@@ -282,7 +282,9 @@ func createNetOPNetworkInterface(
 		networkRefName string
 		networkRefType metav1.TypeMeta
 	)
+
 	if netRef := interfaceSpec.Network; netRef != nil {
+		// If Name is empty, NetOP will try to select the namespace default.
 		networkRefName = netRef.Name
 		networkRefType = netRef.TypeMeta
 	}
@@ -291,7 +293,6 @@ func createNetOPNetworkInterface(
 		return nil, fmt.Errorf("network kind %q is not supported for VDS", kind)
 	}
 
-	// If empty, NetOP will try to select a namespace default.
 	netIf := &netopv1alpha1.NetworkInterface{}
 	netIfKey := types.NamespacedName{
 		Namespace: vmCtx.VM.Namespace,
@@ -448,7 +449,9 @@ func createNCPNetworkInterface(
 		networkRefName string
 		networkRefType metav1.TypeMeta
 	)
+
 	if netRef := interfaceSpec.Network; netRef != nil {
+		// If Name is empty, NCP will use the namespace default.
 		networkRefName = netRef.Name
 		networkRefType = netRef.TypeMeta
 	}
@@ -458,7 +461,6 @@ func createNCPNetworkInterface(
 		return nil, fmt.Errorf("network kind %q is not supported for NCP", kind)
 	}
 
-	// If empty, NCP will use the namespace default.
 	vnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
 	vnetIfKey := types.NamespacedName{
 		Namespace: vmCtx.VM.Namespace,

@@ -33,11 +33,9 @@ func unitTests() {
 func unitTestsReconcile() {
 	var (
 		ctx *builder.UnitTestContextForController
-		obj client.ObjectKey
 
 		reconciler *capability.Reconciler
 		configMap  *corev1.ConfigMap
-		data       map[string]string
 	)
 
 	const (
@@ -68,13 +66,12 @@ func unitTestsReconcile() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		data = nil
 	})
 
 	Context("Reconcile", func() {
 		When("configmap with different name enters the reconcile", func() {
 			It("should not reconcile wcp cluster capabilities config and return back", func() {
-				obj = client.ObjectKey{Namespace: dummyWCPClusterCapabilitiesNamespace, Name: dummyWCPClusterCapabilitiesConfigMapName}
+				obj := client.ObjectKey{Namespace: dummyWCPClusterCapabilitiesNamespace, Name: dummyWCPClusterCapabilitiesConfigMapName}
 				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: obj})
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -83,7 +80,7 @@ func unitTestsReconcile() {
 		When("configmap does not exists", func() {
 			It("should return false", func() {
 				Expect(ctx.Client.Delete(ctx, configMap)).To(Succeed())
-				obj = client.ObjectKey{Namespace: configMap.Namespace, Name: configMap.Name}
+				obj := client.ObjectKey{Namespace: configMap.Namespace, Name: configMap.Name}
 				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: obj})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
@@ -92,7 +89,7 @@ func unitTestsReconcile() {
 
 		When("configmap Data is empty", func() {
 			It("should return false", func() {
-				obj = client.ObjectKey{Namespace: configMap.Namespace, Name: configMap.Name}
+				obj := client.ObjectKey{Namespace: configMap.Namespace, Name: configMap.Name}
 				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: obj})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
@@ -101,7 +98,7 @@ func unitTestsReconcile() {
 
 		When("configmap Data is invalid", func() {
 			BeforeEach(func() {
-				data = map[string]string{
+				data := map[string]string{
 					capability.TKGMultipleCLCapabilityKey: "not-valid",
 				}
 				configMap.Data = data
@@ -109,7 +106,7 @@ func unitTestsReconcile() {
 			})
 
 			It("should return false", func() {
-				obj = client.ObjectKey{Namespace: configMap.Namespace, Name: configMap.Name}
+				obj := client.ObjectKey{Namespace: configMap.Namespace, Name: configMap.Name}
 				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: obj})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
@@ -118,7 +115,7 @@ func unitTestsReconcile() {
 
 		When("configmap data is valid", func() {
 			BeforeEach(func() {
-				data = map[string]string{
+				data := map[string]string{
 					capability.TKGMultipleCLCapabilityKey: "true",
 				}
 				configMap.Data = data
@@ -126,7 +123,7 @@ func unitTestsReconcile() {
 			})
 
 			It("should return true", func() {
-				obj = client.ObjectKey{Namespace: configMap.Namespace, Name: configMap.Name}
+				obj := client.ObjectKey{Namespace: configMap.Namespace, Name: configMap.Name}
 				_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: obj})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())

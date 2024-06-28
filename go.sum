@@ -454,8 +454,8 @@ github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0 h1:y
 github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0/go.mod h1:w6QJGm3crIA16ZIz1FVQXD2NVeJhOgGXxW05RbVTSTo=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20240424021250-778eb97fa048 h1:dNjyb0tpct5XqYEuEGhAQbFCiIxRcXBu7mxopOCHl5g=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20240424021250-778eb97fa048/go.mod h1:Q4JzNkNMvjo7pXtlB5/R3oME4Nhah7fAObWgghVmtxk=
-github.com/vmware/govmomi v0.38.0 h1:UvQpLAOjDpO0JUxoPCXnEzOlEa/9kejO6K58qOFr6cM=
-github.com/vmware/govmomi v0.38.0/go.mod h1:mtGWtM+YhTADHlCgJBiskSRPOZRsN9MSjPzaZLte/oQ=
+github.com/vmware/govmomi v0.31.1-0.20240702213206-29b1bce99c32 h1:v5juP9ow534Y+OPWNxViMVHncpOydt9dnUKWxapy370=
+github.com/vmware/govmomi v0.31.1-0.20240702213206-29b1bce99c32/go.mod h1:mtGWtM+YhTADHlCgJBiskSRPOZRsN9MSjPzaZLte/oQ=
 github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q53MR2AWcXfiuqkDkRtnGDLqkBTpCHuJHxtU=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

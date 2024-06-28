@@ -299,7 +299,9 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	if ctx.VM.Status.BiosUUID == "" {
 		// CSI requires the BiosUUID to match up the attachment request with the VM. Defer here
 		// until it is set by the VirtualMachine controller.
-		ctx.Logger.Info("VM Status does not yet have BiosUUID. Deferring volume attachment")
+		if len(ctx.VM.Spec.Volumes) != 0 {
+			ctx.Logger.Info("VM Status does not yet have BiosUUID. Deferring volume attachment")
+		}
 		return nil
 	}
 

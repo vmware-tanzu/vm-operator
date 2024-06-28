@@ -47,6 +47,7 @@ func CreateResizeConfigSpec(
 	compareSgx(ci, cs, &outCS)
 	compareVirtualPMem(ci, cs, &outCS)
 	compareVirtualMachineToolsConfig(ci, cs, &outCS)
+	compareVirtualNuma(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -528,6 +529,38 @@ func compareVirtualMachineToolsConfig(
 
 	if reflect.DeepEqual(outCS.Tools, &vimtypes.ToolsConfigInfo{}) {
 		outCS.Tools = nil
+	}
+}
+
+// compareVirtualNuma compares the virtual NUMA configurations set in the config spec.
+func compareVirtualNuma(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	if cs.VirtualNuma == nil {
+		return
+	}
+
+	if ci.NumaInfo == nil {
+		outCS.VirtualNuma = &vimtypes.VirtualMachineVirtualNuma{
+			CoresPerNumaNode:       cs.VirtualNuma.CoresPerNumaNode,
+			ExposeVnumaOnCpuHotadd: cs.VirtualNuma.ExposeVnumaOnCpuHotadd,
+		}
+	} else {
+		outCS.VirtualNuma = &vimtypes.VirtualMachineVirtualNuma{}
+		cmpPtr(ci.NumaInfo.VnumaOnCpuHotaddExposed, cs.VirtualNuma.ExposeVnumaOnCpuHotadd, &outCS.VirtualNuma.ExposeVnumaOnCpuHotadd)
+		// If autoCorePerNumaNode setting is
+		// - false/nil, check for differences in coresPerNumaNode and set if different. A zero value for coresPerNumaNode will clear any manual overrides and autosize NUMA nodes.
+		// - true, check if coresPerNumaNode is non-zero in the config spec to set the manual override. The VM config info's corePerNumaNode is ignored when autoCorePerNumaNode is true.
+		if ((ci.NumaInfo.AutoCoresPerNumaNode == nil || !*ci.NumaInfo.AutoCoresPerNumaNode) && !ptrEqual(ci.NumaInfo.CoresPerNumaNode, cs.VirtualNuma.CoresPerNumaNode)) ||
+			((ci.NumaInfo.AutoCoresPerNumaNode != nil && *ci.NumaInfo.AutoCoresPerNumaNode) && cs.VirtualNuma.CoresPerNumaNode != nil && *cs.VirtualNuma.CoresPerNumaNode != 0) {
+			outCS.VirtualNuma.CoresPerNumaNode = cs.VirtualNuma.CoresPerNumaNode
+		}
+	}
+
+	// At this point, if desired has all nil (ie) there was no change, nil out numa settings to prevent unwanted reconfigures.
+	if reflect.DeepEqual(outCS.VirtualNuma, &vimtypes.VirtualMachineVirtualNuma{}) {
+		outCS.VirtualNuma = nil
 	}
 }
 

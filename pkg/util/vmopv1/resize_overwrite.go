@@ -14,7 +14,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-// OverwriteResizeConfigSpec applies any set fields in the VM Spec to the ConfigSpec.
+// OverwriteResizeConfigSpec applies any set fields in the VM Spec or changes required from
+// the current VM state to the ConfigSpec. These are fields that we can change without the
+// VM Class.
 func OverwriteResizeConfigSpec(
 	_ context.Context,
 	vm vmopv1.VirtualMachine,
@@ -25,12 +27,12 @@ func OverwriteResizeConfigSpec(
 		ptr.OverwriteWithUser(&cs.ChangeTrackingEnabled, adv.ChangeBlockTracking, ci.ChangeTrackingEnabled)
 	}
 
-	overrideExtraConfig(vm, ci, cs)
+	overwriteExtraConfig(vm, ci, cs)
 
 	return nil
 }
 
-func overrideExtraConfig(
+func overwriteExtraConfig(
 	vm vmopv1.VirtualMachine,
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs *vimtypes.VirtualMachineConfigSpec) {
@@ -38,6 +40,8 @@ func overrideExtraConfig(
 	var toMerge []vimtypes.BaseOptionValue
 
 	toMerge = append(toMerge, overrideMMIOSize(vm, ci, cs)...)
+	toMerge = append(toMerge, clearMMPowerOffEC(vm, ci, cs)...)
+	toMerge = append(toMerge, updateV1Alpha1CompatibleEC(vm, ci, cs)...)
 
 	cs.ExtraConfig = util.OptionValues(cs.ExtraConfig).Merge(toMerge...)
 }
@@ -83,6 +87,46 @@ func overrideMMIOSize(
 	}
 
 	return out
+}
+
+func clearMMPowerOffEC(
+	_ vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	_ *vimtypes.VirtualMachineConfigSpec) []vimtypes.BaseOptionValue {
+
+	// Ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig as
+	// setting it to an empty value removes it.
+
+	v, ok := util.OptionValues(ci.ExtraConfig).GetString(constants.MMPowerOffVMExtraConfigKey)
+	if !ok || v == "" {
+		return nil
+	}
+
+	return []vimtypes.BaseOptionValue{
+		&vimtypes.OptionValue{Key: constants.MMPowerOffVMExtraConfigKey, Value: ""},
+	}
+}
+
+func updateV1Alpha1CompatibleEC(
+	vm vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	_ *vimtypes.VirtualMachineConfigSpec) []vimtypes.BaseOptionValue {
+
+	// This special EC field was just for a handful of custom spun images that used the
+	// old v1a1 OvfEnv bootstrap method.
+	bs := vm.Spec.Bootstrap
+	if bs == nil || bs.LinuxPrep == nil || bs.VAppConfig == nil {
+		return nil
+	}
+
+	v, ok := util.OptionValues(ci.ExtraConfig).GetString(constants.VMOperatorV1Alpha1ExtraConfigKey)
+	if !ok || v != constants.VMOperatorV1Alpha1ConfigReady {
+		return nil
+	}
+
+	return []vimtypes.BaseOptionValue{
+		&vimtypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled},
+	}
 }
 
 func hasvGPUOrDDPIODevicesInVM(

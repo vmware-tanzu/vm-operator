@@ -18,6 +18,7 @@ import (
 	"github.com/vmware/govmomi/vim25/xml"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -268,6 +269,10 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 					ProfileId: "dummy-id",
 				},
 			},
+			ExtraConfig: []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{Key: "my-key", Value: "my-value"},
+				&vimtypes.OptionValue{Key: constants.MMPowerOffVMExtraConfigKey, Value: "deprecated"},
+			},
 			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
 				&vimtypes.VirtualDeviceConfigSpec{
 					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
@@ -341,6 +346,10 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 		Expect(configSpec.InstanceUuid).To(BeEmpty())
 		Expect(configSpec.Files).To(BeNil())
 		Expect(configSpec.VmProfile).To(BeEmpty())
+
+		ecMap := pkgutil.OptionValues(configSpec.ExtraConfig).StringMap()
+		Expect(ecMap).To(HaveKeyWithValue("my-key", "my-value"))
+		Expect(ecMap).ToNot(HaveKey(constants.MMPowerOffVMExtraConfigKey))
 
 		Expect(configSpec.DeviceChange).To(HaveLen(6))
 		dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()

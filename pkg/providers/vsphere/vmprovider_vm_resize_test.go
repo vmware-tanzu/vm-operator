@@ -190,6 +190,33 @@ func vmResizeTests() {
 			})
 		})
 
+		Context("Powering On VM", func() {
+			BeforeEach(func() {
+				configSpec.NumCPUs = 2
+				configSpec.MemoryMB = 1024
+			})
+
+			It("Resizes", func() {
+				cs := configSpec
+				cs.NumCPUs = 42
+				cs.MemoryMB = 8192
+				newVMClass := createVMClass(cs)
+				vm.Spec.ClassName = newVMClass.Name
+
+				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+				Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
+				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+
+				assertExpectedLastResizeAnnotation(vm, newVMClass)
+			})
+		})
+
 		Context("Same Class Resize Annotation", func() {
 			BeforeEach(func() {
 				configSpec.MemoryMB = 1024

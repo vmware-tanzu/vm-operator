@@ -33,6 +33,12 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 		return *vm
 	}
 
+	vmGuestID := func(guestID string) vmopv1.VirtualMachine {
+		vm := builder.DummyVirtualMachine()
+		vm.Spec.GuestID = guestID
+		return *vm
+	}
+
 	DescribeTable("Resize Overrides",
 		func(vm vmopv1.VirtualMachine,
 			ci ConfigInfo,
@@ -43,8 +49,8 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 			Expect(reflect.DeepEqual(cs, expectedCS)).To(BeTrue(), cmp.Diff(cs, expectedCS))
 		},
 
-		Entry("Empty AdvancedSpec",
-			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{}),
+		Entry("Empty VM",
+			vmopv1.VirtualMachine{},
 			ConfigInfo{},
 			ConfigSpec{},
 			ConfigSpec{}),
@@ -78,6 +84,37 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{ChangeBlockTracking: truePtr}),
 			ConfigInfo{ChangeTrackingEnabled: truePtr},
 			ConfigSpec{ChangeTrackingEnabled: falsePtr},
+			ConfigSpec{}),
+
+		Entry("Guest not set in VM Spec but in ConfigSpec is ignored",
+			vmGuestID(""),
+			ConfigInfo{},
+			ConfigSpec{GuestId: "foo"},
+			ConfigSpec{}),
+		Entry("GuestID set in VM Spec takes precedence over ConfigSpec",
+			vmGuestID("foo"),
+			ConfigInfo{},
+			ConfigSpec{GuestId: "bar"},
+			ConfigSpec{GuestId: "foo"}),
+		Entry("GuestID set in VM Spec but not in ConfigSpec",
+			vmGuestID("foo"),
+			ConfigInfo{},
+			ConfigSpec{},
+			ConfigSpec{GuestId: "foo"}),
+		Entry("GuestID set in VM Spec with same value in ConfigInfo",
+			vmGuestID("foo"),
+			ConfigInfo{GuestId: "foo"},
+			ConfigSpec{},
+			ConfigSpec{}),
+		Entry("GuestID set in ConfigSpec with same value in ConfigInfo",
+			vmGuestID(""),
+			ConfigInfo{GuestId: "foo"},
+			ConfigSpec{GuestId: "foo"},
+			ConfigSpec{}),
+		Entry("GuestID set in VM Spec with same value in ConfigInfo but different value in ConfigSpec",
+			vmGuestID("foo"),
+			ConfigInfo{GuestId: "foo"},
+			ConfigSpec{GuestId: "bar"},
 			ConfigSpec{}),
 	)
 

@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
@@ -436,6 +437,31 @@ var _ = Describe("UpdateStatus", func() {
 			Expect(status.HardwareVersion).To(Equal(int32(19)))
 		})
 	})
+
+	Context("Misc Status fields", func() {
+		It("Back fills created Condition", func() {
+			Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+		})
+
+		Context("Has Class", func() {
+			It("Back fills Status.Class", func() {
+				Expect(vmCtx.VM.Status.Class).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.Class.Name).To(Equal(builder.DummyClassName))
+			})
+		})
+
+		Context("Does not have Class", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.ClassName = ""
+				vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{Name: "foo"}
+			})
+
+			It("VM Status.Class is cleared", func() {
+				Expect(vmCtx.VM.Status.Class).To(BeNil())
+			})
+		})
+	})
+
 })
 
 var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {

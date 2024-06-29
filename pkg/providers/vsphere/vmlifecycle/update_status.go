@@ -24,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 var (
@@ -50,15 +51,19 @@ func UpdateStatus(
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
 	// TODO: Might set other "prereq" conditions too for version conversion but we'd have to fib a little.
 
-	if vm.Status.Class == nil {
-		// In v1a2 we know this will always be the namespace scoped class since v1a2 doesn't have
-		// the bindings. Our handling of this field will be more complicated once we really
-		// support class changes and resizing/reconfiguring the VM the fly in response.
-		vm.Status.Class = &common.LocalObjectRef{
-			Kind:       "VirtualMachineClass",
-			APIVersion: vmopv1.SchemeGroupVersion.String(),
-			Name:       vm.Spec.ClassName,
+	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {
+		if vm.Status.Class == nil {
+			// In v1a2 we know this will always be the namespace scoped class since v1a2 doesn't have
+			// the bindings. Our handling of this field will be more complicated once we really
+			// support class changes and resizing/reconfiguring the VM the fly in response.
+			vm.Status.Class = &common.LocalObjectRef{
+				APIVersion: vmopv1.SchemeGroupVersion.String(),
+				Kind:       "VirtualMachineClass",
+				Name:       vm.Spec.ClassName,
+			}
 		}
+	} else {
+		vm.Status.Class = nil
 	}
 
 	if refetchProperties {

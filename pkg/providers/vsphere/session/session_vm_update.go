@@ -592,7 +592,15 @@ func (s *Session) prePowerOnVMReconfigure(
 	config *vimtypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) error {
 
-	configSpec, err := s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
+	var configSpec *vimtypes.VirtualMachineConfigSpec
+	var err error
+
+	vmResizeEnabled := pkgcfg.FromContext(vmCtx).Features.VMResize
+	if vmResizeEnabled {
+		configSpec, err = s.prePowerOnVMResizeConfigSpec(vmCtx, config, updateArgs)
+	} else {
+		configSpec, err = s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
+	}
 	if err != nil {
 		return err
 	}
@@ -613,6 +621,10 @@ func (s *Session) prePowerOnVMReconfigure(
 		if err != nil {
 			vmCtx.Logger.Error(err, "pre power on reconfigure failed")
 			return err
+		}
+
+		if vmResizeEnabled {
+			vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, updateArgs.VMClass)
 		}
 	}
 
@@ -915,6 +927,30 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	}
 
 	return refetchProps, nil
+}
+
+func (s *Session) prePowerOnVMResizeConfigSpec(
+	vmCtx pkgctx.VirtualMachineContext,
+	config *vimtypes.VirtualMachineConfigInfo,
+	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
+
+	var configSpec vimtypes.VirtualMachineConfigSpec
+
+	needsResize := vmopv1util.ResizeNeeded(*vmCtx.VM, updateArgs.VMClass)
+	if needsResize {
+		cs, err := resize.CreateResizeConfigSpec(vmCtx, *config, updateArgs.ConfigSpec)
+		if err != nil {
+			return nil, err
+		}
+
+		configSpec = cs
+	}
+
+	if err := vmopv1util.OverwriteResizeConfigSpec(vmCtx, *vmCtx.VM, *config, &configSpec); err != nil {
+		return nil, err
+	}
+
+	return &configSpec, nil
 }
 
 func (s *Session) updateVMDesiredPowerStateOff(

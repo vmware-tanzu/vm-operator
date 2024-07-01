@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -18,11 +18,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -132,29 +133,29 @@ func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLib
 	}
 }
 
-func DummyStoragePolicyQuota(quotaName, quotaNs, className string) *cnsstoragev1.StoragePolicyQuota {
-	return &cnsstoragev1.StoragePolicyQuota{
+func DummyStoragePolicyQuota(quotaName, quotaNs, className string) *spqv1.StoragePolicyQuota {
+	return &spqv1.StoragePolicyQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      quotaName,
 			Namespace: quotaNs,
 		},
-		Spec: cnsstoragev1.StoragePolicyQuotaSpec{StoragePolicyId: "uuid-abcd-1234"},
-		Status: cnsstoragev1.StoragePolicyQuotaStatus{
-			SCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{
+		Spec: spqv1.StoragePolicyQuotaSpec{StoragePolicyId: "uuid-abcd-1234"},
+		Status: spqv1.StoragePolicyQuotaStatus{
+			SCLevelQuotaStatuses: []spqv1.SCLevelQuotaStatus{
 				{
 					StorageClassName: className,
 				},
 			},
-			ResourceTypeLevelQuotaStatuses: []cnsstoragev1.ResourceTypeLevelQuotaStatus{
+			ResourceTypeLevelQuotaStatuses: []spqv1.ResourceTypeLevelQuotaStatus{
 				{
 					ResourceExtensionName: "volume.cns.vsphere.vmware.com",
-					ResourceTypeSCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{{
+					ResourceTypeSCLevelQuotaStatuses: []spqv1.SCLevelQuotaStatus{{
 						StorageClassName: className,
 					}},
 				},
 				{
 					ResourceExtensionName: "volume.cns.vsphere.vmware.com",
-					ResourceTypeSCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{{
+					ResourceTypeSCLevelQuotaStatuses: []spqv1.SCLevelQuotaStatus{{
 						StorageClassName: className + "-abcde",
 					}},
 				},

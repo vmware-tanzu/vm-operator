@@ -15,10 +15,10 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsapis "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
-	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -50,7 +50,9 @@ func KnownObjectTypes() []client.Object {
 		&vmopv1.VirtualMachineWebConsoleRequest{},
 		&vmopv1a1.WebConsoleRequest{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
-		&cnsstoragev1.StoragePolicyQuota{},
+		&spqv1.StoragePolicyQuota{},
+		&spqv1.StoragePolicyUsage{},
+		&spqv1.StorageQuota{},
 		&ncpv1alpha1.VirtualNetworkInterface{},
 		&netopv1alpha1.NetworkInterface{},
 		&vpcv1alpha1.Subnet{},
@@ -73,6 +75,7 @@ func NewScheme() *runtime.Scheme {
 	_ = vmopv1.AddToScheme(scheme)
 	_ = ncpv1alpha1.AddToScheme(scheme)
 	_ = cnsapis.AddToScheme(scheme)
+	_ = spqv1.AddToScheme(scheme)
 	_ = netopv1alpha1.AddToScheme(scheme)
 	_ = topologyv1.AddToScheme(scheme)
 	_ = imgregv1a1.AddToScheme(scheme)

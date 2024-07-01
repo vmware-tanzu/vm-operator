@@ -1,16 +1,11 @@
 // Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// +k8s:deepcopy-gen=package
-// +k8s:defaulter-gen=TypeMeta
-// +groupName=cns.vmware.com
 package v1alpha1
 
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 )
 
 // QuotaUsageDetails gives reserved and used quota details
@@ -95,5 +90,5 @@ type StoragePolicyQuotaList struct {
 }
 
 func init() {
-	apis.SchemeBuilder.Register(&StoragePolicyQuota{}, &StoragePolicyQuotaList{})
+	SchemeBuilder.Register(&StoragePolicyQuota{}, &StoragePolicyQuotaList{})
 }

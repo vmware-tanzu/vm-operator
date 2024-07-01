@@ -7,6 +7,7 @@ replace (
 	github.com/envoyproxy/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v0.1.0
 	github.com/vmware-tanzu/vm-operator/api => ./api
 	github.com/vmware-tanzu/vm-operator/external/ncp => ./external/ncp
+	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota => ./external/storage-policy-quota
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ./external/tanzu-topology
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ./pkg/constants/testlabels
 )
@@ -24,6 +25,7 @@ require (
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20240424021250-778eb97fa048
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000
 	github.com/vmware/govmomi v0.31.1-0.20240520223415-3550ac2646bd

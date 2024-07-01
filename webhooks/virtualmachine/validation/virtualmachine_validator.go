@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
+	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
@@ -433,7 +433,7 @@ func (v validator) validateStorageClass(ctx *pkgctx.WebhookRequestContext, vm *v
 
 	// This is what enforces that the storage policy has been associated with this namespace.
 	if pkgcfg.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
-		storagePolicyQuotas := &cnsstoragev1.StoragePolicyQuotaList{}
+		storagePolicyQuotas := &spqv1.StoragePolicyQuotaList{}
 		if err := v.client.List(ctx, storagePolicyQuotas, client.InNamespace(vm.Namespace)); err != nil {
 			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
 		}

@@ -45,9 +45,10 @@ const (
 	WebhookSecretNamespace
 	FSSInstanceStorage
 	FSSIsoSupport
+	FSSK8sWorkloadMgmtAPI
 	FSSPodVMOnStretchedSupervisor
 	FSSTKGMultipleCL
-	FSSK8sWorkloadMgmtAPI
+	FSSUnifiedStorageQuota
 	FSSVMResize
 	FSSVMImportNewNet
 
@@ -148,6 +149,8 @@ func (n VarName) String() string {
 		return "FSS_PODVMONSTRETCHEDSUPERVISOR"
 	case FSSTKGMultipleCL:
 		return "FSS_WCP_TKG_Multiple_CL"
+	case FSSUnifiedStorageQuota:
+		return "FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA"
 	case FSSVMResize:
 		return "FSS_WCP_VMSERVICE_RESIZE"
 	case FSSVMImportNewNet:

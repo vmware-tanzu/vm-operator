@@ -26,6 +26,7 @@ func Default() Config {
 			InstanceStorage:            true,
 			PodVMOnStretchedSupervisor: false,
 			TKGMultipleCL:              false,
+			UnifiedStorageQuota:        false,
 		},
 		InstanceStorage: InstanceStorage{
 			JitterMaxFactor:      1.0,

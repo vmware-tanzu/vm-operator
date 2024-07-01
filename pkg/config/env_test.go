@@ -91,6 +91,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_ISO_SUPPORT", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_TKG_Multiple_CL", "false")).To(Succeed())
+					Expect(os.Setenv("FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", "true")).To(Succeed())
 					Expect(os.Setenv("CREATE_VM_REQUEUE_DELAY", "125h")).To(Succeed())
@@ -129,11 +130,12 @@ var _ = Describe(
 						WebhookSecretNamespace:       "124",
 						WebhookSecretVolumeMountPath: pkgcfg.Default().WebhookSecretVolumeMountPath,
 						Features: pkgcfg.FeatureStates{
-							InstanceStorage:    false,
-							IsoSupport:         true,
-							K8sWorkloadMgmtAPI: true,
-							VMResize:           true,
-							VMImportNewNet:     true,
+							InstanceStorage:     false,
+							IsoSupport:          true,
+							K8sWorkloadMgmtAPI:  true,
+							UnifiedStorageQuota: true,
+							VMResize:            true,
+							VMImportNewNet:      true,
 						},
 						CreateVMRequeueDelay:         125 * time.Hour,
 						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,

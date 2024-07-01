@@ -116,11 +116,14 @@ func (c Config) GetMaxDeployThreadsOnProvider() int {
 type FeatureStates struct {
 	IsoSupport                 bool // FSS_WCP_VMSERVICE_ISO_SUPPORT
 	InstanceStorage            bool // FSS_WCP_INSTANCE_STORAGE
+	K8sWorkloadMgmtAPI         bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR
 	TKGMultipleCL              bool // FSS_WCP_TKG_Multiple_CL
-	K8sWorkloadMgmtAPI         bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
-	VMResize                   bool // FSS_WCP_VMSERVICE_RESIZE
-	VMImportNewNet             bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
+	// TODO(akutz) This FSS is a placeholder until leadership can figure out the
+	//             plan for FSSs going forward.
+	UnifiedStorageQuota bool // FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA
+	VMResize            bool // FSS_WCP_VMSERVICE_RESIZE
+	VMImportNewNet      bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
 }
 
 type InstanceStorage struct {

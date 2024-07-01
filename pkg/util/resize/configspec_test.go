@@ -675,6 +675,103 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 				NpivNodeWorldWideName: []int64{100, 200},
 				NpivPortWorldWideName: []int64{300, 400},
 			}),
+
+		Entry("Software Guard Extension (SGX) needs updating -- config info has nil sgx info",
+			ConfigInfo{},
+			ConfigSpec{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode:            string(vimtypes.VirtualMachineSgxInfoFlcModesLocked),
+					EpcSize:            int64(200),
+					LePubKeyHash:       "foo",
+					RequireAttestation: truePtr,
+				},
+			},
+			ConfigSpec{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode:            string(vimtypes.VirtualMachineSgxInfoFlcModesLocked),
+					EpcSize:            int64(200),
+					LePubKeyHash:       "foo",
+					RequireAttestation: truePtr,
+				},
+			}),
+
+		Entry("Software Guard Extension (SGX) needs updating -- some fields have changed",
+			ConfigInfo{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode:            string(vimtypes.VirtualMachineSgxInfoFlcModesUnlocked),
+					EpcSize:            int64(100),
+					RequireAttestation: falsePtr,
+				},
+			},
+			ConfigSpec{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					EpcSize:            int64(200),
+					RequireAttestation: truePtr,
+				},
+			},
+			ConfigSpec{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					EpcSize:            int64(200),
+					RequireAttestation: truePtr,
+				},
+			}),
+
+		Entry("Software Guard Extension (SGX) needs updating -- all fields have changed",
+			ConfigInfo{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode:            string(vimtypes.VirtualMachineSgxInfoFlcModesUnlocked),
+					EpcSize:            int64(100),
+					RequireAttestation: falsePtr,
+				},
+			},
+			ConfigSpec{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode:            string(vimtypes.VirtualMachineSgxInfoFlcModesLocked),
+					EpcSize:            int64(200),
+					LePubKeyHash:       "foo",
+					RequireAttestation: truePtr,
+				},
+			},
+			ConfigSpec{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode:            string(vimtypes.VirtualMachineSgxInfoFlcModesLocked),
+					EpcSize:            int64(200),
+					LePubKeyHash:       "foo",
+					RequireAttestation: truePtr,
+				},
+			}),
+
+		Entry("Software Guard Extension (SGX) does not need updating",
+			ConfigInfo{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode:            string(vimtypes.VirtualMachineSgxInfoFlcModesLocked),
+					EpcSize:            int64(200),
+					LePubKeyHash:       "foo",
+					RequireAttestation: falsePtr,
+				},
+			},
+			ConfigSpec{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode:            string(vimtypes.VirtualMachineSgxInfoFlcModesLocked),
+					EpcSize:            int64(200),
+					LePubKeyHash:       "foo",
+					RequireAttestation: falsePtr,
+				},
+			},
+			ConfigSpec{}),
+		Entry("Software Guard Extension (SGX) does not need updating - flc mode from unlocked to empty",
+			ConfigInfo{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					FlcMode: string(vimtypes.VirtualMachineSgxInfoFlcModesUnlocked),
+					EpcSize: int64(200),
+				},
+			},
+			ConfigSpec{
+				SgxInfo: &vimtypes.VirtualMachineSgxInfo{
+					EpcSize: int64(200),
+				},
+			},
+			ConfigSpec{}),
 	)
 
 })

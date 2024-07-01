@@ -45,6 +45,7 @@ func CreateResizeConfigSpec(
 	compareGMM(ci, cs, &outCS)
 	compareEncryptionModes(ci, cs, &outCS)
 	compareNPIV(ci, cs, &outCS)
+	compareSgx(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -482,6 +483,34 @@ func compareNPIV(
 	}
 }
 
+// compareSgx compare the virtual software guard extension configuration.
+func compareSgx(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	if cs.SgxInfo == nil {
+		return
+	}
+
+	// SgxInfo details
+	// - vEpc (Enclave Page Cache) size is mandatory
+	// - Flexible Launch Enclave (flcMode) is automatically set to "unlocked" when not set.
+	//   (ie) A vm config with flcMode "unlocked" is equivalent to a config spec with flcMode unset.
+	// - Launch Enclave public key (lePubKeyHash) is only considered when flc mode is "locked"
+	if ci.SgxInfo == nil ||
+		ci.SgxInfo.EpcSize != cs.SgxInfo.EpcSize ||
+		(ci.SgxInfo.FlcMode != string(vimtypes.VirtualMachineSgxInfoFlcModesUnlocked) && cs.SgxInfo.FlcMode != "" && ci.SgxInfo.FlcMode != cs.SgxInfo.FlcMode) ||
+		(cs.SgxInfo.FlcMode == string(vimtypes.VirtualMachineSgxInfoFlcModesLocked) && cs.SgxInfo.LePubKeyHash != ci.SgxInfo.LePubKeyHash) ||
+		!ptrEqual(ci.SgxInfo.RequireAttestation, cs.SgxInfo.RequireAttestation) {
+		outCS.SgxInfo = &vimtypes.VirtualMachineSgxInfo{
+			EpcSize:            cs.SgxInfo.EpcSize,
+			FlcMode:            cs.SgxInfo.FlcMode,
+			LePubKeyHash:       cs.SgxInfo.LePubKeyHash,
+			RequireAttestation: cs.SgxInfo.RequireAttestation,
+		}
+	}
+}
+
 func cmp[T comparable](a, b T, c *T) {
 	if a != b {
 		*c = b
@@ -492,4 +521,12 @@ func cmpPtr[T comparable](a *T, b *T, c **T) {
 	if (a == nil || b == nil) || *a != *b {
 		*c = b
 	}
+}
+
+func ptrEqual[T comparable](a *T, b *T) bool {
+	if (a == nil && b == nil) || (a != nil && b != nil && *a == *b) {
+		return true
+	}
+
+	return false
 }

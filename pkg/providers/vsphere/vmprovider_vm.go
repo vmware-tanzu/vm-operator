@@ -91,6 +91,14 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 		return err
 	}
 
+	// Set the VC UUID annotation on the VM before attempting creation or
+	// update. Among other things, the annotation facilitates differential handling
+	// of restore and fail-over operations.
+	if vm.Annotations == nil {
+		vm.Annotations = make(map[string]string)
+	}
+	vm.Annotations[vmopv1.ManagerID] = client.VimClient().ServiceContent.About.InstanceUuid
+
 	vcVM, err := vs.getVM(vmCtx, client, false)
 	if err != nil {
 		return err

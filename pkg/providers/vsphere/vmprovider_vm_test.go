@@ -1180,6 +1180,10 @@ func vmTests() {
 				var o mo.VirtualMachine
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
+				By("has VC UUID annotation set", func() {
+					Expect(vm.Annotations).Should(HaveKeyWithValue(vmopv1.ManagerID, ctx.VCClient.Client.ServiceContent.About.InstanceUuid))
+				})
+
 				By("has expected Status values", func() {
 					Expect(vm.Status.PowerState).To(Equal(vm.Spec.PowerState))
 					Expect(vm.Status.Host).ToNot(BeEmpty())

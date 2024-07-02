@@ -1,6 +1,6 @@
 module github.com/vmware-tanzu/vm-operator/api
 
-go 1.22.4
+go 1.22.5
 
 replace github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ../pkg/constants/testlabels
 

@@ -123,6 +123,9 @@ type TestContextForVCSim struct {
 	ContentLibraryID        string
 	ContentLibraryItemID    string
 
+	ContentLibraryIsoImageName string
+	ContentLibraryIsoItemID    string
+
 	// When WithoutStorageClass is false:
 	StorageClassName string
 	StorageProfileID string
@@ -426,9 +429,10 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	Expect(clID).ToNot(BeEmpty())
 	c.ContentLibraryID = clID
 
+	// OVA
 	libraryItem := library.Item{
 		Name:      "test-image-ovf",
-		Type:      "ovf",
+		Type:      library.ItemTypeOVF,
 		LibraryID: clID,
 	}
 	c.ContentLibraryImageName = libraryItem.Name
@@ -446,6 +450,35 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 
 	// The image isn't quite as prod but sufficient for what we need here ATM.
 	clusterVMImage := DummyClusterVirtualMachineImage(c.ContentLibraryImageName)
+	clusterVMImage.Spec.ProviderRef = &common.LocalObjectRef{
+		Kind: "ClusterContentLibraryItem",
+	}
+	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
+	clusterVMImage.Status.ProviderItemID = itemID
+	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
+	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
+
+	// ISO
+	libraryItem = library.Item{
+		Name:      "test-image-iso",
+		Type:      library.ItemTypeISO,
+		LibraryID: clID,
+	}
+	c.ContentLibraryIsoImageName = libraryItem.Name
+
+	itemID = CreateContentLibraryItem(
+		c,
+		libMgr,
+		libraryItem,
+		path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "ttylinux-pc_i486-16.1.iso"),
+	)
+	c.ContentLibraryIsoItemID = itemID
+
+	// The image isn't quite as prod but sufficient for what we need here ATM.
+	clusterVMImage = DummyClusterVirtualMachineImage(c.ContentLibraryIsoImageName)
 	clusterVMImage.Spec.ProviderRef = &common.LocalObjectRef{
 		Kind: "ClusterContentLibraryItem",
 	}

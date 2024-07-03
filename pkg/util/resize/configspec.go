@@ -46,6 +46,7 @@ func CreateResizeConfigSpec(
 	compareNPIV(ci, cs, &outCS)
 	compareSgx(ci, cs, &outCS)
 	compareVirtualPMem(ci, cs, &outCS)
+	compareVirtualMachineToolsConfig(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -483,6 +484,50 @@ func compareVirtualPMem(
 
 	if ci.Pmem == nil || ci.Pmem.SnapshotMode != cs.Pmem.SnapshotMode {
 		outCS.Pmem = &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: cs.Pmem.SnapshotMode}
+	}
+}
+
+// compareVirtualMachineToolsConfig compares virtual machine tools config for the config spec.
+func compareVirtualMachineToolsConfig(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	if cs.Tools == nil {
+		return
+	}
+
+	if ci.Tools == nil {
+		outCS.Tools = &vimtypes.ToolsConfigInfo{
+			BeforeGuestReboot:       cs.Tools.BeforeGuestReboot,
+			BeforeGuestShutdown:     cs.Tools.BeforeGuestShutdown,
+			BeforeGuestStandby:      cs.Tools.BeforeGuestStandby,
+			AfterResume:             cs.Tools.AfterResume,
+			AfterPowerOn:            cs.Tools.AfterPowerOn,
+			ToolsInstallType:        cs.Tools.ToolsInstallType,
+			ToolsUpgradePolicy:      cs.Tools.ToolsUpgradePolicy,
+			PendingCustomization:    cs.Tools.PendingCustomization,
+			SyncTimeWithHost:        cs.Tools.SyncTimeWithHost,
+			SyncTimeWithHostAllowed: cs.Tools.SyncTimeWithHostAllowed,
+			CustomizationKeyId:      cs.Tools.CustomizationKeyId,
+		}
+
+	} else {
+		outCS.Tools = &vimtypes.ToolsConfigInfo{}
+		cmpPtr(ci.Tools.BeforeGuestReboot, cs.Tools.BeforeGuestReboot, &outCS.Tools.BeforeGuestReboot)
+		cmpPtr(ci.Tools.BeforeGuestShutdown, cs.Tools.BeforeGuestShutdown, &outCS.Tools.BeforeGuestShutdown)
+		cmpPtr(ci.Tools.BeforeGuestStandby, cs.Tools.BeforeGuestStandby, &outCS.Tools.BeforeGuestStandby)
+		cmpPtr(ci.Tools.AfterResume, cs.Tools.AfterResume, &outCS.Tools.AfterResume)
+		cmpPtr(ci.Tools.AfterPowerOn, cs.Tools.AfterPowerOn, &outCS.Tools.AfterPowerOn)
+		cmpPtr(ci.Tools.SyncTimeWithHostAllowed, cs.Tools.SyncTimeWithHostAllowed, &outCS.Tools.SyncTimeWithHostAllowed)
+		cmpPtr(ci.Tools.SyncTimeWithHost, cs.Tools.SyncTimeWithHost, &outCS.Tools.SyncTimeWithHost)
+		cmpPtr(ci.Tools.CustomizationKeyId, cs.Tools.CustomizationKeyId, &outCS.Tools.CustomizationKeyId)
+		cmp(ci.Tools.ToolsInstallType, cs.Tools.ToolsInstallType, &outCS.Tools.ToolsInstallType)
+		cmp(ci.Tools.ToolsUpgradePolicy, cs.Tools.ToolsUpgradePolicy, &outCS.Tools.ToolsUpgradePolicy)
+		cmp(ci.Tools.PendingCustomization, cs.Tools.PendingCustomization, &outCS.Tools.PendingCustomization)
+	}
+
+	if reflect.DeepEqual(outCS.Tools, &vimtypes.ToolsConfigInfo{}) {
+		outCS.Tools = nil
 	}
 }
 

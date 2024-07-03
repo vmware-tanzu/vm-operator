@@ -262,6 +262,7 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 			Name:         "dummy-VM",
 			Annotation:   "test-annotation",
 			Uuid:         "uuid",
+			GuestId:      "dummy-guestID",
 			InstanceUuid: "instanceUUID",
 			Files:        &vimtypes.VirtualMachineFileInfo{},
 			VmProfile: []vimtypes.BaseVirtualMachineProfileSpec{
@@ -344,6 +345,7 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 		Expect(configSpec.Annotation).To(Equal("test-annotation"))
 		Expect(configSpec.Uuid).To(BeEmpty())
 		Expect(configSpec.InstanceUuid).To(BeEmpty())
+		Expect(configSpec.GuestId).To(BeEmpty())
 		Expect(configSpec.Files).To(BeNil())
 		Expect(configSpec.VmProfile).To(BeEmpty())
 

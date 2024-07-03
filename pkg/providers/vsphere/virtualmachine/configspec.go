@@ -115,9 +115,8 @@ func CreateConfigSpec(
 		}
 	}
 
-	// Initially set the guest ID in ConfigSpec to ensure VM is created with the expected guest ID.
+	// If VM Spec guestID is specified, initially set the guest ID in ConfigSpec to ensure VM is created with the expected guest ID.
 	// Afterwards, only update it if the VM spec guest ID differs from the VM's existing ConfigInfo.
-	// If the class also specifies a guest ID, it will be overridden by the VM spec guest ID.
 	if guestID := vmCtx.VM.Spec.GuestID; guestID != "" {
 		configSpec.GuestId = guestID
 	}

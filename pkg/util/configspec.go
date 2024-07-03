@@ -139,6 +139,7 @@ func SanitizeVMClassConfigSpec(
 	// These are unique for each VM.
 	configSpec.Uuid = ""
 	configSpec.InstanceUuid = ""
+	configSpec.GuestId = ""
 
 	// Empty Files as they usually ref files in disk
 	configSpec.Files = nil

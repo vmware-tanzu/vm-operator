@@ -45,6 +45,7 @@ func CreateResizeConfigSpec(
 	compareEncryptionModes(ci, cs, &outCS)
 	compareNPIV(ci, cs, &outCS)
 	compareSgx(ci, cs, &outCS)
+	compareVirtualPMem(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -468,6 +469,20 @@ func compareSgx(
 			LePubKeyHash:       cs.SgxInfo.LePubKeyHash,
 			RequireAttestation: cs.SgxInfo.RequireAttestation,
 		}
+	}
+}
+
+// compareVirtualPMem compares virtual PMem snapshot modes for virtual machines with NVDIMM devices.
+func compareVirtualPMem(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+	if cs.Pmem == nil {
+		return
+	}
+
+	if ci.Pmem == nil || ci.Pmem.SnapshotMode != cs.Pmem.SnapshotMode {
+		outCS.Pmem = &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: cs.Pmem.SnapshotMode}
 	}
 }
 

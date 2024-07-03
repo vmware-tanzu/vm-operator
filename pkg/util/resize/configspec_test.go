@@ -731,7 +731,18 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 					EpcSize: int64(200),
 				},
 			},
-			ConfigSpec{}),
-	)
 
+			Entry("Virtual Pmem snapshot modes needs updating -- config info virtual pmem is nil ",
+				ConfigInfo{},
+				ConfigSpec{Pmem: &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: string(vimtypes.VirtualMachineVirtualPMemSnapshotModeIndependent_persistent)}},
+				ConfigSpec{Pmem: &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: string(vimtypes.VirtualMachineVirtualPMemSnapshotModeIndependent_persistent)}}),
+			Entry("",
+				ConfigInfo{Pmem: &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: string(vimtypes.VirtualMachineVirtualPMemSnapshotModeIndependent_eraseonrevert)}},
+				ConfigSpec{Pmem: &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: string(vimtypes.VirtualMachineVirtualPMemSnapshotModeIndependent_persistent)}},
+				ConfigSpec{Pmem: &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: string(vimtypes.VirtualMachineVirtualPMemSnapshotModeIndependent_persistent)}}),
+			Entry("Virtual Pmem snapshot modes does not need updating",
+				ConfigInfo{Pmem: &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: string(vimtypes.VirtualMachineVirtualPMemSnapshotModeIndependent_persistent)}},
+				ConfigSpec{Pmem: &vimtypes.VirtualMachineVirtualPMem{SnapshotMode: string(vimtypes.VirtualMachineVirtualPMemSnapshotModeIndependent_persistent)}},
+				ConfigSpec{}),
+		))
 })

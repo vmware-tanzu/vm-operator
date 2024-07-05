@@ -7,11 +7,14 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math/rand"
 	"strings"
 	"sync"
 	"text/template"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/pbm"
+	"github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -325,6 +328,62 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 	return vimtypes.ParseHardwareVersion(o.Config.Version)
 }
 
+func (vs *vSphereVMProvider) vmCreatePathName(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	createArgs *VMCreateArgs) error {
+
+	if createArgs.StorageProfileID == "" {
+		return nil
+	}
+	if createArgs.ConfigSpec.Files == nil {
+		createArgs.ConfigSpec.Files = &vimtypes.VirtualMachineFileInfo{}
+	}
+	if createArgs.ConfigSpec.Files.VmPathName != "" {
+		return nil
+	}
+
+	// TODO: we should only do this when deploying ISO library items
+
+	vc := vcClient.VimClient()
+
+	pc, err := pbm.NewClient(vmCtx, vc)
+	if err != nil {
+		return err
+	}
+
+	ds, err := pc.DatastoreMap(vmCtx, vc, createArgs.ClusterMoRef)
+	if err != nil {
+		return err
+	}
+
+	req := []types.BasePbmPlacementRequirement{
+		&types.PbmPlacementCapabilityProfileRequirement{
+			ProfileId: types.PbmProfileId{UniqueId: createArgs.StorageProfileID},
+		},
+	}
+
+	res, err := pc.CheckRequirements(vmCtx, ds.PlacementHub, nil, req)
+	if err != nil {
+		return err
+	}
+
+	hubs := res.CompatibleDatastores()
+	if len(hubs) == 0 {
+		return nil
+	}
+
+	hub := hubs[rand.Intn(len(hubs))] //nolint:gosec
+
+	createArgs.ConfigSpec.Files.VmPathName = (&object.DatastorePath{
+		Datastore: ds.Name[hub.HubId],
+	}).String()
+
+	vmCtx.Logger.Info("vmCreatePathName", "VmPathName", createArgs.ConfigSpec.Files.VmPathName)
+
+	return nil
+}
+
 func (vs *vSphereVMProvider) createVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (*object.VirtualMachine, *VMCreateArgs, error) {
@@ -340,6 +399,11 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 	}
 
 	err = vs.vmCreateGetFolderAndRPMoIDs(vmCtx, vcClient, createArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = vs.vmCreatePathName(vmCtx, vcClient, createArgs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -366,6 +430,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 	moRef, err := vmlifecycle.CreateVirtualMachine(
 		vmCtx,
 		vcClient.RestClient(),
+		vcClient.VimClient(),
 		vcClient.Finder(),
 		&createArgs.CreateArgs)
 	if err != nil {

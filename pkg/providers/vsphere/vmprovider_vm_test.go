@@ -2065,6 +2065,54 @@ func vmTests() {
 			})
 		})
 	})
+
+	Context("Create/Update/Delete ISO backed VirtualMachine", func() {
+		var (
+			vm      *vmopv1.VirtualMachine
+			vmClass *vmopv1.VirtualMachineClass
+		)
+
+		BeforeEach(func() {
+			vmClass = builder.DummyVirtualMachineClassGenName()
+			vm = builder.DummyBasicVirtualMachine("test-vm", "")
+
+			// Reduce diff from old tests: by default don't create an NIC.
+			if vm.Spec.Network == nil {
+				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+			}
+			vm.Spec.Network.Disabled = true
+		})
+
+		JustBeforeEach(func() {
+			vmClass.Namespace = nsInfo.Namespace
+			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+
+			clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryIsoImageName}, clusterVMImage)).To(Succeed())
+
+			vm.Namespace = nsInfo.Namespace
+			vm.Spec.ClassName = vmClass.Name
+			vm.Spec.ImageName = clusterVMImage.Name
+			vm.Spec.Image.Kind = cvmiKind
+			vm.Spec.Image.Name = clusterVMImage.Name
+			vm.Spec.StorageClass = ctx.StorageClassName
+		})
+
+		Context("return config", func() {
+			JustBeforeEach(func() {
+				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+			})
+
+			It("return config.files", func() {
+				vmPathName := "config.files.vmPathName"
+				props, err := vmProvider.GetVirtualMachineProperties(ctx, vm, []string{vmPathName})
+				Expect(err).NotTo(HaveOccurred())
+				var path object.DatastorePath
+				path.FromString(props[vmPathName].(string))
+				Expect(path.Datastore).NotTo(BeEmpty())
+			})
+		})
+	})
 }
 
 // getVMHomeDisk gets the VM's "home" disk. It makes some assumptions about the backing and disk name.

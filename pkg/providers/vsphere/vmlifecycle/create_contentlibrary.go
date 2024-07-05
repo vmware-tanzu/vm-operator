@@ -7,9 +7,11 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
+	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -60,6 +62,34 @@ func deployOVF(
 	return vcenter.NewManager(restClient).DeployLibraryItem(vmCtx, item.ID, deploy)
 }
 
+func createVM(
+	vmCtx pkgctx.VirtualMachineContext,
+	vimClient *vim25.Client,
+	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
+
+	createConfigSpec := createArgs.ConfigSpec
+	createConfigSpec.GuestId = vmCtx.VM.Spec.GuestID
+
+	vmFolder := object.NewFolder(vimClient, vimtypes.ManagedObjectReference{Type: "Folder", Value: createArgs.FolderMoID})
+	resourcePool := object.NewResourcePool(vimClient, vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: createArgs.ResourcePoolMoID})
+
+	vmCtx.Logger.Info("Creating VM with params", "vmFolder", vmFolder.Reference(), "resourcePool", resourcePool.Reference(), "createConfigSpec", createConfigSpec)
+	task, err := vmFolder.CreateVM(vmCtx, createConfigSpec, resourcePool, nil)
+	if err != nil {
+		vmCtx.Logger.Error(err, "Failed to create VM")
+		return nil, err
+	}
+	taskInfo, err := task.WaitForResultEx(vmCtx)
+	if err != nil {
+		vmCtx.Logger.Error(err, "Task failed to create VM")
+		return nil, err
+	}
+
+	vmCtx.Logger.Info("Successfully Created the VM")
+	vmRef := taskInfo.Result.(vimtypes.ManagedObjectReference)
+	return &vmRef, nil
+}
+
 func deployVMTX(
 	vmCtx pkgctx.VirtualMachineContext,
 	restClient *rest.Client,
@@ -80,6 +110,7 @@ func deployVMTX(
 func deployFromContentLibrary(
 	vmCtx pkgctx.VirtualMachineContext,
 	restClient *rest.Client,
+	vimClient *vim25.Client,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
 	// This call is needed to get the item type. We could avoid going to CL here, and
@@ -95,6 +126,8 @@ func deployFromContentLibrary(
 		return deployOVF(vmCtx, restClient, item, createArgs)
 	case library.ItemTypeVMTX:
 		return deployVMTX(vmCtx, restClient, item, createArgs)
+	case library.ItemTypeISO:
+		return createVM(vmCtx, vimClient, createArgs)
 	default:
 		return nil, fmt.Errorf("item %s not a supported type: %s", item.Name, item.Type)
 	}

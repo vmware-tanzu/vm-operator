@@ -58,6 +58,7 @@ func FromEnv() Config {
 	setBool(env.FSSUnifiedStorageQuota, &config.Features.UnifiedStorageQuota)
 	setBool(env.FSSVMResize, &config.Features.VMResize)
 	setBool(env.FSSVMImportNewNet, &config.Features.VMImportNewNet)
+	setBool(env.FSSWorkloadDomainIsolation, &config.Features.WorkloadDomainIsolation)
 
 	return config
 }

@@ -25,6 +25,8 @@ spec:
           value: "false"
         - name: FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
           value: "false"
+        - name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
+          value: "false"
 
         #
         # Feature state switch flags beneath this line are enabled on main and

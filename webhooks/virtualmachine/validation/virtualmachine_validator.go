@@ -134,6 +134,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, nil)...)
+	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -158,6 +159,7 @@ func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Respo
 // Following fields can only be changed when the VM is powered off.
 //   - Bootstrap
 //   - GuestID
+//   - CD-ROM (updating connection state is allowed regardless of power state)
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	vm, err := v.vmFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -192,6 +194,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1031,6 +1034,8 @@ func (v validator) validateUpdatesWhenPoweredOn(ctx *pkgctx.WebhookRequestContex
 		allErrs = append(allErrs, field.Forbidden(specPath.Child("guestID"), updatesNotAllowedWhenPowerOn))
 	}
 
+	allErrs = append(allErrs, validateCdromWhenPoweredOn(vm.Spec.Cdrom, oldVM.Spec.Cdrom)...)
+
 	// TODO: More checks.
 
 	return allErrs
@@ -1276,4 +1281,79 @@ func (v validator) validateNetworkHostAndDomainName(
 	}
 
 	return nil
+}
+
+func (v *validator) validateCdrom(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if len(vm.Spec.Cdrom) == 0 {
+		return allErrs
+	}
+
+	f := field.NewPath("spec", "cdrom")
+	if !pkgcfg.FromContext(ctx).Features.IsoSupport {
+		return append(allErrs, field.Forbidden(f, fmt.Sprintf(featureNotEnabled, "CD-ROM (ISO) support")))
+	}
+
+	var (
+		vmiNames  = make(map[string]struct{}, len(vm.Spec.Cdrom))
+		cvmiNames = make(map[string]struct{}, len(vm.Spec.Cdrom))
+	)
+
+	for i, c := range vm.Spec.Cdrom {
+		imgPath := f.Index(i).Child("image")
+		imgName := c.Image.Name
+		switch c.Image.Kind {
+		case vmiKind:
+			if _, ok := vmiNames[imgName]; ok {
+				allErrs = append(allErrs, field.Duplicate(imgPath, imgName))
+			} else {
+				vmiNames[imgName] = struct{}{}
+			}
+		case cvmiKind:
+			if _, ok := cvmiNames[imgName]; ok {
+				allErrs = append(allErrs, field.Duplicate(imgPath, imgName))
+			} else {
+				cvmiNames[imgName] = struct{}{}
+			}
+		default:
+			allErrs = append(allErrs, field.NotSupported(imgPath.Child("kind"), c.Image.Kind, []string{vmiKind, cvmiKind}))
+		}
+	}
+
+	return allErrs
+}
+
+func validateCdromWhenPoweredOn(
+	cdrom, oldCdrom []vmopv1.VirtualMachineCdromSpec) field.ErrorList {
+
+	var (
+		allErrs field.ErrorList
+		f       = field.NewPath("spec", "cdrom")
+	)
+
+	if len(cdrom) != len(oldCdrom) {
+		// Adding or removing CD-ROMs is not allowed when VM is powered on.
+		allErrs = append(allErrs, field.Forbidden(f, updatesNotAllowedWhenPowerOn))
+		return allErrs
+	}
+
+	oldCdromNameToImage := make(map[string]vmopv1.VirtualMachineImageRef, len(oldCdrom))
+	for _, c := range oldCdrom {
+		oldCdromNameToImage[c.Name] = c.Image
+	}
+
+	for i, c := range cdrom {
+		if oldImage, ok := oldCdromNameToImage[c.Name]; !ok {
+			// CD-ROM name is changed.
+			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("name"), updatesNotAllowedWhenPowerOn))
+		} else if !reflect.DeepEqual(c.Image, oldImage) {
+			// CD-ROM image is changed.
+			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("image"), updatesNotAllowedWhenPowerOn))
+		}
+	}
+
+	return allErrs
 }

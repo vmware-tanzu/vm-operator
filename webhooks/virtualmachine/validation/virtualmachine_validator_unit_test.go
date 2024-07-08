@@ -42,6 +42,10 @@ const (
 	dummyCreatedAtBuildVersionVal  = "dummy-created-at-build-version"
 	dummyCreatedAtSchemaVersionVal = "dummy-created-at-schema-version"
 	dummyPausedVMLabelVal          = "dummy-devops"
+	dummyVmiName                   = "vmi-dummy"
+	vmiKind                        = "VirtualMachineImage"
+	cvmiKind                       = "Cluster" + vmiKind
+	invalidImageKind               = "supported: " + vmiKind + "; " + cvmiKind
 )
 
 type testParams struct {
@@ -127,12 +131,6 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 func unitTestsValidateCreate() {
 
-	const (
-		vmiKind          = "VirtualMachineImage"
-		cvmiKind         = "Cluster" + vmiKind
-		invalidImageKind = "supported: " + vmiKind + "; " + cvmiKind
-	)
-
 	var (
 		ctx *unitValidatingWebhookContext
 	)
@@ -215,6 +213,9 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.IsoSupport = true
+		})
 	})
 
 	AfterEach(func() {
@@ -1946,6 +1947,102 @@ func unitTestsValidateCreate() {
 			),
 		)
 	})
+
+	Context("CD-ROM", func() {
+
+		DescribeTable("CD-ROM create", doTest,
+
+			Entry("allow creating a VM with empty CD-ROM",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow creating a VM with CD-ROM when FSS is not enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.IsoSupport = false
+						})
+						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: "cdrom",
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom: Forbidden: the CD-ROM (ISO) support feature is not enabled`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow creating a VM with invalid CD-ROM image ref kind",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: "cdromInvalidImgKind",
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: dummyVmiName,
+									Kind: "InvalidKind",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom[0].image.kind: Unsupported value: "InvalidKind": supported values: "VirtualMachineImage"`,
+						`"ClusterVirtualMachineImage"`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow creating a VM with duplicate CD-ROM image ref from VMI kind",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: "cdromDupVmi",
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: dummyVmiName,
+									Kind: vmiKind,
+								},
+							},
+						}
+						ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, ctx.vm.Spec.Cdrom[0])
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom[1].image: Duplicate value: "vmi-dummy"`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow creating a VM with duplicate CD-ROM image ref from CVMI kind",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: "cdromDupCvmi",
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: dummyVmiName,
+									Kind: cvmiKind,
+								},
+							},
+						}
+						ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, ctx.vm.Spec.Cdrom[0])
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom[1].image: Duplicate value: "vmi-dummy"`),
+					expectAllowed: false,
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateUpdate() {
@@ -2070,6 +2167,9 @@ func unitTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.IsoSupport = true
+		})
 	})
 
 	AfterEach(func() {
@@ -2686,6 +2786,172 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("CD-ROM", func() {
+
+		DescribeTable("CD-ROM update", doTest,
+
+			Entry("allow adding CD-ROM when VM is powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, vmopv1.VirtualMachineCdromSpec{
+							Name: "cdromNew",
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: "vmi-new",
+								Kind: vmiKind,
+							},
+						})
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow adding CD-ROM when VM is powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, vmopv1.VirtualMachineCdromSpec{
+							Name: "cdromNew",
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: "vmi-new",
+								Kind: vmiKind,
+							},
+						})
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom: Forbidden: updates to this field is not allowed when VM power is on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("alow removing CD-ROM when VM is powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow removing CD-ROM when VM is powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom: Forbidden: updates to this field is not allowed when VM power is on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow changing CD-ROM name when VM is powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom[0].Name = "cdromNew"
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow changing CD-ROM name when VM is powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom[0].Name = "cdromNew"
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom[0].name: Forbidden: updates to this field is not allowed when VM power is on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow changing CD-ROM image ref when VM is powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom[0].Image = vmopv1.VirtualMachineImageRef{
+							Name: "cvmi-new",
+							Kind: cvmiKind,
+						}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow changing CD-ROM image ref when VM is powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom[0].Image = vmopv1.VirtualMachineImageRef{
+							Name: "cvmi-new",
+							Kind: cvmiKind,
+						}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom[0].image: Forbidden: updates to this field is not allowed when VM power is on`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow changing CD-ROM connection when VM is powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom[0].Connected = !ctx.vm.Spec.Cdrom[0].Connected
+						ctx.vm.Spec.Cdrom[0].AllowGuestControl = !ctx.vm.Spec.Cdrom[0].AllowGuestControl
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow changing CD-ROM connection when VM is powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom[0].Connected = !ctx.vm.Spec.Cdrom[0].Connected
+						ctx.vm.Spec.Cdrom[0].AllowGuestControl = !ctx.vm.Spec.Cdrom[0].AllowGuestControl
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow updating CD-ROM with invalid image ref kind when VM is powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom[0].Image.Kind = "InvalidKind"
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom[0].image.kind: Unsupported value: "InvalidKind": supported values: "VirtualMachineImage"`,
+						`"ClusterVirtualMachineImage"`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow updating CD-ROM with duplicate image ref when VM is powered off",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom[1].Image.Name = ctx.vm.Spec.Cdrom[0].Image.Name
+						ctx.vm.Spec.Cdrom[1].Image.Kind = ctx.vm.Spec.Cdrom[0].Image.Kind
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom[1].image: Duplicate value: "vmi-0123456789"`,
+					),
+					expectAllowed: false,
 				},
 			),
 		)

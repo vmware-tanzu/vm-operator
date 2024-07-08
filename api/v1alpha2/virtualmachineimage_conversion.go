@@ -4,10 +4,16 @@
 package v1alpha2
 
 import (
+	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
+
+func Convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(
+	in *vmopv1.VirtualMachineImageStatus, out *VirtualMachineImageStatus, s apiconversion.Scope) error {
+	return autoConvert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(in, out, s)
+}
 
 // ConvertTo converts this VirtualMachineImage to the Hub version.
 func (src *VirtualMachineImage) ConvertTo(dstRaw ctrlconversion.Hub) error {

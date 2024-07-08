@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package clustercontentlibraryitem_test
@@ -320,6 +320,7 @@ func assertCVMImageFromCCLItem(
 		Expect(cvmi.Status.Name).To(Equal(cclItem.Status.Name))
 		Expect(cvmi.Status.ProviderItemID).To(BeEquivalentTo(cclItem.Spec.UUID))
 		Expect(cvmi.Status.ProviderContentVersion).To(Equal(cclItem.Status.ContentVersion))
+		Expect(cvmi.Status.Type).To(BeEquivalentTo(cclItem.Status.Type))
 
 		Expect(conditions.IsTrue(cvmi, vmopv1.ReadyConditionType)).To(BeTrue())
 	})

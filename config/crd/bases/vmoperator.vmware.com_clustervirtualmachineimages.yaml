@@ -596,6 +596,9 @@ spec:
     - jsonPath: .status.name
       name: Display Name
       type: string
+    - jsonPath: .status.type
+      name: Type
+      type: string
     - jsonPath: .status.productInfo.version
       name: Image Version
       type: string
@@ -867,6 +870,10 @@ spec:
                   ProviderItemID describes the ID of the provider item that this image corresponds to.
                   If the provider of this image is a Content Library, this ID will be that of the
                   corresponding Content Library item.
+                type: string
+              type:
+                description: Type describes the content library item type (OVF or
+                  ISO) of the image.
                 type: string
               vmwareSystemProperties:
                 description: |-

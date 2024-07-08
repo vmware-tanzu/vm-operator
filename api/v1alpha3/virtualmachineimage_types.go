@@ -218,6 +218,11 @@ type VirtualMachineImageStatus struct {
 
 	// Conditions describes the observed conditions for this image.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// +optional
+	//
+	// Type describes the content library item type (OVF or ISO) of the image.
+	Type string `json:"type,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -225,6 +230,7 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Display Name",type="string",JSONPath=".status.name"
+// +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".status.type"
 // +kubebuilder:printcolumn:name="Image Version",type="string",JSONPath=".status.productInfo.version"
 // +kubebuilder:printcolumn:name="OS Name",type="string",JSONPath=".status.osInfo.type"
 // +kubebuilder:printcolumn:name="OS Version",type="string",JSONPath=".status.osInfo.version"
@@ -262,6 +268,7 @@ type VirtualMachineImageList struct {
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Display Name",type="string",JSONPath=".status.name"
+// +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".status.type"
 // +kubebuilder:printcolumn:name="Image Version",type="string",JSONPath=".status.productInfo.version"
 // +kubebuilder:printcolumn:name="OS Name",type="string",JSONPath=".status.osInfo.type"
 // +kubebuilder:printcolumn:name="OS Version",type="string",JSONPath=".status.osInfo.version"

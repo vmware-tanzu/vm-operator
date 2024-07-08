@@ -1430,6 +1430,7 @@ func autoConvert_v1alpha3_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineIm
 	} else {
 		out.Conditions = nil
 	}
+	// WARNING: in.Type requires manual conversion: does not exist in peer-type
 	return nil
 }
 

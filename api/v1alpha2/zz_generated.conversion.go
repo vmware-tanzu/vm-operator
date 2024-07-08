@@ -404,11 +404,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha3.VirtualMachineImageStatus)(nil), (*VirtualMachineImageStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(a.(*v1alpha3.VirtualMachineImageStatus), b.(*VirtualMachineImageStatus), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineList)(nil), (*v1alpha3.VirtualMachineList)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_VirtualMachineList_To_v1alpha3_VirtualMachineList(a.(*VirtualMachineList), b.(*v1alpha3.VirtualMachineList), scope)
 	}); err != nil {
@@ -914,6 +909,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*v1alpha3.VirtualMachineImageStatus)(nil), (*VirtualMachineImageStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(a.(*v1alpha3.VirtualMachineImageStatus), b.(*VirtualMachineImageStatus), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*v1alpha3.VirtualMachineNetworkConfigDNSStatus)(nil), (*VirtualMachineNetworkConfigDNSStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(a.(*v1alpha3.VirtualMachineNetworkConfigDNSStatus), b.(*VirtualMachineNetworkConfigDNSStatus), scope)
 	}); err != nil {
@@ -971,7 +971,17 @@ func Convert_v1alpha3_ClusterVirtualMachineImage_To_v1alpha2_ClusterVirtualMachi
 
 func autoConvert_v1alpha2_ClusterVirtualMachineImageList_To_v1alpha3_ClusterVirtualMachineImageList(in *ClusterVirtualMachineImageList, out *v1alpha3.ClusterVirtualMachineImageList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1alpha3.ClusterVirtualMachineImage)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1alpha3.ClusterVirtualMachineImage, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha2_ClusterVirtualMachineImage_To_v1alpha3_ClusterVirtualMachineImage(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -982,7 +992,17 @@ func Convert_v1alpha2_ClusterVirtualMachineImageList_To_v1alpha3_ClusterVirtualM
 
 func autoConvert_v1alpha3_ClusterVirtualMachineImageList_To_v1alpha2_ClusterVirtualMachineImageList(in *v1alpha3.ClusterVirtualMachineImageList, out *ClusterVirtualMachineImageList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]ClusterVirtualMachineImage)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]ClusterVirtualMachineImage, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha3_ClusterVirtualMachineImage_To_v1alpha2_ClusterVirtualMachineImage(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1811,7 +1831,17 @@ func Convert_v1alpha3_VirtualMachineImage_To_v1alpha2_VirtualMachineImage(in *v1
 
 func autoConvert_v1alpha2_VirtualMachineImageList_To_v1alpha3_VirtualMachineImageList(in *VirtualMachineImageList, out *v1alpha3.VirtualMachineImageList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1alpha3.VirtualMachineImage)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1alpha3.VirtualMachineImage, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha2_VirtualMachineImage_To_v1alpha3_VirtualMachineImage(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1822,7 +1852,17 @@ func Convert_v1alpha2_VirtualMachineImageList_To_v1alpha3_VirtualMachineImageLis
 
 func autoConvert_v1alpha3_VirtualMachineImageList_To_v1alpha2_VirtualMachineImageList(in *v1alpha3.VirtualMachineImageList, out *VirtualMachineImageList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]VirtualMachineImage)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]VirtualMachineImage, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha3_VirtualMachineImage_To_v1alpha2_VirtualMachineImage(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1941,12 +1981,8 @@ func autoConvert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineIm
 	out.ProviderContentVersion = in.ProviderContentVersion
 	out.ProviderItemID = in.ProviderItemID
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
+	// WARNING: in.Type requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus is an autogenerated conversion function.
-func Convert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(in *v1alpha3.VirtualMachineImageStatus, out *VirtualMachineImageStatus, s conversion.Scope) error {
-	return autoConvert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(in, out, s)
 }
 
 func autoConvert_v1alpha2_VirtualMachineList_To_v1alpha3_VirtualMachineList(in *VirtualMachineList, out *v1alpha3.VirtualMachineList, s conversion.Scope) error {

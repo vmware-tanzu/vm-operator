@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package clustercontentlibraryitem
@@ -293,6 +293,7 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *pkgctx.ClusterContentLibraryItemC
 
 	cvmi.Status.Name = cclItem.Status.Name
 	cvmi.Status.ProviderItemID = string(cclItem.Spec.UUID)
+	cvmi.Status.Type = string(cclItem.Status.Type)
 
 	return utils.AddContentLibraryRefToAnnotation(cvmi, ctx.CCLItem.Status.ContentLibraryRef)
 }

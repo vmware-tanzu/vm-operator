@@ -4,7 +4,9 @@
 package resize
 
 import (
+	"fmt"
 	"reflect"
+	"slices"
 
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -28,13 +30,181 @@ func compareHardwareDevices(
 	pciDeviceChanges := comparePCIDevices(deviceList, csDeviceList)
 	deviceChanges = append(deviceChanges, pciDeviceChanges...)
 
+	simpleChanges := compareDevicesSimple(deviceList, csDeviceList)
+	deviceChanges = append(deviceChanges, simpleChanges...)
+
 	outCS.DeviceChange = deviceChanges
 }
 
-func comparePCIDevices(
-	currentPCIDevices, desiredPCIDevices []vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
+// selectByTypes returns a new list with devices that are equal to or extend the given type.
+func selectByTypes(deviceTypes []vimtypes.BaseVirtualDevice) func(device vimtypes.BaseVirtualDevice) bool {
+	// Modeled off of VirtualDeviceList::SelectByType.
 
-	currentPassthruPCIDevices := pkgutil.SelectVirtualPCIPassthrough(currentPCIDevices)
+	dtypes := map[reflect.Type]struct{}{}
+	dnames := map[string]struct{}{}
+	for _, deviceType := range deviceTypes {
+		dtype := reflect.TypeOf(deviceType)
+		if dtype != nil {
+			dtypes[dtype] = struct{}{}
+			dname := dtype.Elem().Name()
+			dnames[dname] = struct{}{}
+		}
+	}
+
+	return func(device vimtypes.BaseVirtualDevice) bool {
+		t := reflect.TypeOf(device)
+
+		if _, ok := dtypes[t]; ok {
+			return true
+		}
+
+		for dname := range dnames {
+			_, ok := t.Elem().FieldByName(dname)
+			if ok {
+				return true
+			}
+		}
+
+		return false
+	}
+}
+
+func compareDevicesSimple(
+	currentDevices, expectedDevices []vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
+
+	devTypes := []vimtypes.BaseVirtualDevice{
+		// vimtypes.VirtualSoundCard{}:
+		&vimtypes.VirtualEnsoniq1371{},
+		&vimtypes.VirtualHdAudioCard{},
+		&vimtypes.VirtualSoundBlaster16{},
+
+		&vimtypes.VirtualUSBController{},
+		&vimtypes.VirtualUSBXHCIController{},
+	}
+	selectFunc := selectByTypes(devTypes)
+
+	currentDevices = object.VirtualDeviceList(currentDevices).Select(selectFunc)
+	expectedDevices = object.VirtualDeviceList(expectedDevices).Select(selectFunc)
+
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec //nolint:prealloc
+	for _, expectedDev := range expectedDevices {
+		expectedDevType := reflect.TypeOf(expectedDev)
+		matchingIdx := -1
+		var editDeviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+
+		for idx, curDev := range currentDevices {
+			curDevType := reflect.TypeOf(curDev)
+			if expectedDevType != curDevType {
+				continue
+			}
+
+			match := false
+
+			switch d := expectedDev.(type) {
+			case vimtypes.BaseVirtualSoundCard:
+				match, editDeviceChanges = matchSoundCards(d, curDev.(vimtypes.BaseVirtualSoundCard))
+			case *vimtypes.VirtualUSBController:
+				match, editDeviceChanges = matchUSBControllers(d, curDev.(*vimtypes.VirtualUSBController))
+			case *vimtypes.VirtualUSBXHCIController:
+				match, editDeviceChanges = matchUSBSHCIController(d, curDev.(*vimtypes.VirtualUSBXHCIController))
+			default:
+				panic(fmt.Sprintf("case for type %T missing in devTypes", d))
+			}
+
+			if match {
+				matchingIdx = idx
+				break
+			}
+		}
+
+		if matchingIdx == -1 {
+			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				Device:    expectedDev,
+			})
+		} else {
+			deviceChanges = append(deviceChanges, editDeviceChanges...)
+			currentDevices = slices.Delete(currentDevices, matchingIdx, matchingIdx+1)
+		}
+	}
+
+	for _, curDev := range currentDevices {
+		deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+			Device:    curDev,
+		})
+	}
+
+	return deviceChanges
+}
+
+func matchSoundCards(
+	_, _ vimtypes.BaseVirtualSoundCard) (bool, []vimtypes.BaseVirtualDeviceConfigSpec) {
+	// All sound cards are just VirtualSoundCards without any options so just the types matter.
+	return true, nil
+}
+
+func matchUSBControllers(
+	expectedDev, curDev *vimtypes.VirtualUSBController) (bool, []vimtypes.BaseVirtualDeviceConfigSpec) {
+
+	edit := false
+
+	// TODO: Handle the VirtualController
+
+	if expectedDev.AutoConnectDevices != nil {
+		if curDev.AutoConnectDevices == nil || *expectedDev.AutoConnectDevices != *curDev.AutoConnectDevices {
+			curDev.AutoConnectDevices = expectedDev.AutoConnectDevices
+			edit = true
+		}
+	}
+
+	if expectedDev.EhciEnabled != nil {
+		if curDev.EhciEnabled == nil || *expectedDev.EhciEnabled != *curDev.EhciEnabled {
+			curDev.EhciEnabled = expectedDev.EhciEnabled
+			edit = true
+		}
+	}
+
+	var deviceEdits []vimtypes.BaseVirtualDeviceConfigSpec
+	if edit {
+		deviceEdits = append(deviceEdits, &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+			Device:    curDev,
+		})
+	}
+
+	return true, deviceEdits
+}
+
+func matchUSBSHCIController(
+	expectedDev, curDev *vimtypes.VirtualUSBXHCIController) (bool, []vimtypes.BaseVirtualDeviceConfigSpec) {
+
+	edit := false
+
+	// TODO: Handle the VirtualController
+
+	if expectedDev.AutoConnectDevices != nil {
+		if curDev.AutoConnectDevices == nil || *expectedDev.AutoConnectDevices != *curDev.AutoConnectDevices {
+			curDev.AutoConnectDevices = expectedDev.AutoConnectDevices
+			edit = true
+		}
+	}
+
+	var deviceEdits []vimtypes.BaseVirtualDeviceConfigSpec
+	if edit {
+		deviceEdits = append(deviceEdits, &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+			Device:    curDev,
+		})
+	}
+
+	return true, deviceEdits
+}
+
+func comparePCIDevices(
+	currentDevices, desiredPCIDevices []vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
+
+	currentPassthruPCIDevices := pkgutil.SelectVirtualPCIPassthrough(currentDevices)
 
 	pciPassthruFromConfigSpec := pkgutil.SelectVirtualPCIPassthrough(desiredPCIDevices)
 	expectedPCIDevices := virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)

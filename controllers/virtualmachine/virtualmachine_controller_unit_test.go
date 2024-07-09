@@ -113,6 +113,13 @@ func unitTestsReconcile() {
 				vm.Finalizers = nil
 			})
 
+			It("will not set the finalizer when the VM contains the pause annotation", func() {
+				vm.Annotations[vmopv1.PauseAnnotation] = "true"
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vm.GetFinalizers()).ToNot(ContainElement(finalizer))
+			})
+
 			It("will set finalizer", func() {
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(err).NotTo(HaveOccurred())

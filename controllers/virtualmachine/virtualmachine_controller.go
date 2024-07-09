@@ -303,10 +303,9 @@ func requeueDelay(ctx *pkgctx.VirtualMachineContext) time.Duration {
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr error) {
 	ctx.Logger.Info("Reconciling VirtualMachine Deletion")
 
-	// If the VM reconciliation has been paused by the developer,
-	// skip deletion and return.
+	// Return early if the VM reconciliation is paused.
 	if _, exists := ctx.VM.Annotations[vmopv1.PauseAnnotation]; exists {
-		ctx.Logger.Info("VirtualMachine is not deleted because devops paused this VM")
+		ctx.Logger.Info("Skipping deletion since VirtualMachine contains the pause annotation")
 		return nil
 	}
 
@@ -341,6 +340,12 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 // ReconcileNormal processes a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr error) {
+	// Return early if the VM reconciliation is paused.
+	if _, exists := ctx.VM.Annotations[vmopv1.PauseAnnotation]; exists {
+		ctx.Logger.Info("Skipping reconciliation since VirtualMachine contains the pause annotation")
+		return nil
+	}
+
 	if !controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
 
 		// If the object has the deprecated finalizer, remove it.

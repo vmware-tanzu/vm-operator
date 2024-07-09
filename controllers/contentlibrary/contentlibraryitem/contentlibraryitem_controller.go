@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentlibraryitem
@@ -261,6 +261,7 @@ func (r *Reconciler) setUpVMIFromCLItem(ctx *pkgctx.ContentLibraryItemContext) e
 	}
 	vmi.Status.Name = clItem.Status.Name
 	vmi.Status.ProviderItemID = string(clItem.Spec.UUID)
+	vmi.Status.Type = string(clItem.Status.Type)
 
 	return utils.AddContentLibraryRefToAnnotation(vmi, ctx.CLItem.Status.ContentLibraryRef)
 }

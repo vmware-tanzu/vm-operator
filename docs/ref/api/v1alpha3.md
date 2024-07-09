@@ -905,6 +905,7 @@ Library, this will be the version of the corresponding Content Library item. |
 If the provider of this image is a Content Library, this ID will be that of the
 corresponding Content Library item. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions for this image. |
+| `type` _string_ | Type describes the content library item type (OVF or ISO) of the image. |
 
 ### VirtualMachineNetworkConfigDHCPOptionsStatus
 

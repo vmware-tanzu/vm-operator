@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentlibraryitem_test
@@ -298,6 +298,7 @@ func assertVMImageFromCLItem(
 		Expect(vmi.Status.Name).To(Equal(clItem.Status.Name))
 		Expect(vmi.Status.ProviderItemID).To(BeEquivalentTo(clItem.Spec.UUID))
 		Expect(vmi.Status.ProviderContentVersion).To(Equal(clItem.Status.ContentVersion))
+		Expect(vmi.Status.Type).To(BeEquivalentTo(clItem.Status.Type))
 
 		Expect(conditions.IsTrue(vmi, vmopv1.ReadyConditionType)).To(BeTrue())
 	})

@@ -2047,6 +2047,7 @@ func autoConvert_v1alpha1_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *
 }
 
 func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *v1alpha3.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
+	// WARNING: in.Cdrom requires manual conversion: does not exist in peer-type
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName

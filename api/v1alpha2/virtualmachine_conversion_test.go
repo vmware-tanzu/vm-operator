@@ -239,6 +239,17 @@ func TestVirtualMachineConversion(t *testing.T) {
 				InstanceUUID:       uuid.NewString(),
 				BiosUUID:           uuid.NewString(),
 				GuestID:            "my-guest-id",
+				Cdrom: []vmopv1.VirtualMachineCdromSpec{
+					{
+						Name: "cdrom1",
+						Image: vmopv1.VirtualMachineImageRef{
+							Name: "my-cdrom-image",
+							Kind: "VirtualMachineImage",
+						},
+						AllowGuestControl: true,
+						Connected:         true,
+					},
+				},
 			},
 		}
 

@@ -968,6 +968,10 @@ func restore_v1alpha3_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
 
+func restore_v1alpha3_VirtualMachineCdrom(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Cdrom = src.Spec.Cdrom
+}
+
 func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha3_Conditions(
 	dst *vmopv1.VirtualMachine) []metav1.Condition {
 
@@ -1190,6 +1194,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha3_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 	restore_v1alpha3_VirtualMachineInstanceUUID(dst, restored)
 	restore_v1alpha3_VirtualMachineGuestID(dst, restored)
+	restore_v1alpha3_VirtualMachineCdrom(dst, restored)
 
 	// END RESTORE
 

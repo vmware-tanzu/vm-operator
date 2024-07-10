@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
@@ -515,4 +516,67 @@ func DummyVirtualMachineWebConsoleRequest(namespace, wcrName, vmName, pubKey str
 			PublicKey: pubKey,
 		},
 	}
+}
+
+func DummyImageAndItemObjectsForCdromBacking(
+	name, ns, kind, storageURI string,
+	imgHasProviderRef, itemObjExists bool,
+	itemType imgregv1a1.ContentLibraryItemType) []ctrlclient.Object {
+	var imageObj, itemObj ctrlclient.Object
+
+	// Populate minimal fields in image and content library item objects to
+	// retrieve CD-ROM backing file name.
+	imgSpec := vmopv1.VirtualMachineImageSpec{}
+	if imgHasProviderRef {
+		imgSpec.ProviderRef = &vmopv1common.LocalObjectRef{
+			Name: name,
+		}
+	}
+
+	itemStatus := imgregv1a1.ContentLibraryItemStatus{
+		Type: itemType,
+		FileInfo: []imgregv1a1.FileInfo{
+			{
+				StorageURI: storageURI,
+			},
+		},
+	}
+
+	if kind == "VirtualMachineImage" {
+		imageObj = &vmopv1.VirtualMachineImage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+			},
+			Spec: imgSpec,
+		}
+
+		itemObj = &imgregv1a1.ContentLibraryItem{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+			},
+			Status: itemStatus,
+		}
+	} else {
+		imageObj = &vmopv1.ClusterVirtualMachineImage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+			},
+			Spec: imgSpec,
+		}
+
+		itemObj = &imgregv1a1.ClusterContentLibraryItem{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+			},
+			Status: itemStatus,
+		}
+	}
+
+	if itemObjExists {
+		return []ctrlclient.Object{imageObj, itemObj}
+	}
+
+	return []ctrlclient.Object{imageObj}
 }

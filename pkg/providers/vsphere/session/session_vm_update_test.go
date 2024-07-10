@@ -1680,6 +1680,61 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					})
 				})
 			})
+
+			Context("ISO FSS is enabled", func() {
+
+				const (
+					vmiName     = "vmi-iso"
+					vmiKind     = "VirtualMachineImage"
+					vmiFileName = "dummy.iso"
+				)
+
+				JustBeforeEach(func() {
+					vmCtx.Context = pkgcfg.UpdateContext(vmCtx.Context, func(config *pkgcfg.Config) {
+						config.Features.IsoSupport = true
+					})
+
+					// Add required objects to get CD-ROM backing file name.
+					objs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, vmCtx.VM.Namespace, vmiKind, vmiFileName, true, true, "ISO")
+					for _, obj := range objs {
+						Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+					}
+				})
+
+				When("there are CD-ROM device changes", func() {
+
+					BeforeEach(func() {
+						vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: "cdrom-1",
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: true,
+								Connected:         true,
+							},
+						}
+					})
+
+					It("should power on the VM with expected CD-ROM device", func() {
+						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+						cdromDeviceList := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device).SelectByType(&vimtypes.VirtualCdrom{})
+						Expect(cdromDeviceList).To(HaveLen(1))
+						cdrom := cdromDeviceList[0].(*vimtypes.VirtualCdrom)
+						Expect(cdrom.Connectable.StartConnected).To(BeTrue())
+						Expect(cdrom.Connectable.Connected).To(BeTrue())
+						Expect(cdrom.Connectable.AllowGuestControl).To(BeTrue())
+						Expect(cdrom.ControllerKey).ToNot(BeZero())
+						Expect(cdrom.UnitNumber).ToNot(BeNil())
+						Expect(cdrom.Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualCdromIsoBackingInfo{}))
+						backing := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo)
+						Expect(backing.FileName).To(Equal(vmiFileName))
+					})
+				})
+			})
 		})
 
 		When("suspending the VM", func() {

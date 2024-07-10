@@ -12,7 +12,7 @@ spec:
     listKind: ContentLibraryList
     plural: contentlibraries
     shortNames:
-    - cl
+    - clib
     singular: contentlibrary
   scope: Namespaced
   versions:

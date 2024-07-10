@@ -12,7 +12,7 @@ spec:
     listKind: ClusterContentLibraryList
     plural: clustercontentlibraries
     shortNames:
-    - ccl
+    - cclib
     singular: clustercontentlibrary
   scope: Cluster
   versions:

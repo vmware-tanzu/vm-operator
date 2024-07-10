@@ -196,6 +196,8 @@ func syncVirtualMachineImageTests() {
 			Expect(*vmi.Status.HardwareVersion).To(Equal(int32(9)))
 			Expect(vmi.Status.OSInfo.ID).To(Equal("36"))
 			Expect(vmi.Status.OSInfo.Type).To(Equal("otherLinuxGuest"))
+			Expect(vmi.Status.DiskInfo.Capacity.String()).To(Equal("30Mi"))
+			Expect(vmi.Status.DiskInfo.Size.String()).To(Equal("18304Ki"))
 		})
 	})
 }

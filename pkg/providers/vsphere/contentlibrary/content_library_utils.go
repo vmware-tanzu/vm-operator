@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/vmware/govmomi/ovf"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -59,6 +60,10 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 				conditions.Delete(setter, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
 			}
 		}
+	}
+
+	if ovfEnvelope.Disk != nil && len(ovfEnvelope.Disk.Disks) > 0 {
+		populateImageStatusFromOVFDiskSection(status, ovfEnvelope.Disk)
 	}
 }
 
@@ -129,6 +134,28 @@ func initImageStatusFromOVFVirtualSystem(
 	}
 }
 
+func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineImageStatus, diskSection *ovf.DiskSection) {
+	bootDisk := diskSection.Disks[0]
+
+	diskInfo := &imageStatus.DiskInfo
+	diskInfo.DiskID = bootDisk.DiskID
+	diskInfo.FileRef = bootDisk.FileRef
+	diskInfo.Format = bootDisk.Format
+	diskInfo.ParentRef = bootDisk.ParentRef
+
+	if bootDisk.PopulatedSize != nil {
+		populatedSize := int64(*bootDisk.PopulatedSize)
+		diskInfo.Size = resource.NewQuantity(populatedSize, getQuantityFormat(populatedSize))
+	}
+
+	capacity, _ := strconv.ParseInt(bootDisk.Capacity, 10, 64)
+	if capacityAllocationUnits := bootDisk.CapacityAllocationUnits; capacityAllocationUnits != nil && capacity != 0 {
+		bytesMultiplier := ovf.ParseCapacityAllocationUnits(*capacityAllocationUnits)
+		capacity *= bytesMultiplier
+	}
+	diskInfo.Capacity = resource.NewQuantity(capacity, getQuantityFormat(capacity))
+}
+
 func getVmwareSystemPropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[string]string {
 	properties := make(map[string]string)
 
@@ -170,4 +197,14 @@ func getFirmwareType(hardware ovf.VirtualHardwareSection) string {
 		}
 	}
 	return ""
+}
+
+// getQuantityFormat returns the appropriate resource.Format based upon the divisibility of the input val.
+func getQuantityFormat(val int64) resource.Format {
+	format := resource.DecimalSI
+
+	if val%1024 == 0 {
+		format = resource.BinarySI
+	}
+	return format
 }

@@ -60,7 +60,8 @@ func TestVirtualMachineImageConversion(t *testing.T) {
 		g.Expect(spoke.Spec.ProviderRef.Name).To(Equal("my-image"))
 		g.Expect(spoke.Spec.ProviderRef.Namespace).To(Equal("my-namespace"))
 
-		g.Expect(spoke.Annotations).To(HaveLen(3))
+		// Expect 4 instead of 3 to account for the conversion annotation
+		g.Expect(spoke.Annotations).To(HaveLen(4))
 		g.Expect(spoke.Annotations).To(HaveKeyWithValue(sysAnnotationKey("foo"), "foo-val"))
 		g.Expect(spoke.Annotations).To(HaveKeyWithValue(sysAnnotationKey("bar"), "bar-val"))
 	})

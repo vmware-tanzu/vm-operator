@@ -4,6 +4,7 @@
 package v1alpha3
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
@@ -79,6 +80,40 @@ type VirtualMachineImageProductInfo struct {
 
 	// FullVersion describes the long-form version of the image.
 	FullVersion string `json:"fullVersion,omitempty"`
+}
+
+// VirtualMachineImageDiskInfo describes disk information for an image taken from DiskSection
+// of an OVF Envelope.
+type VirtualMachineImageDiskInfo struct {
+	// +optional
+
+	// DiskID is the identifier for the virtual disk.
+	DiskID string `json:"diskID,omitempty"`
+
+	// +optional
+
+	// Capacity is the virtual disk capacity in bytes.
+	Capacity *resource.Quantity `json:"capacity,omitempty"`
+
+	// +optional
+
+	// Size is the estimated populated size of the virtual disk in bytes.
+	Size *resource.Quantity `json:"size,omitempty"`
+
+	// +optional
+
+	// FileRef is the reference to the virtual disk content.
+	FileRef *string `json:"fileRef,omitempty"`
+
+	// +optional
+
+	// Format is the format of virtual disk given as a URI that identifies the disk type
+	Format *string `json:"format,omitempty"`
+
+	// +optional
+
+	// Parent ref is the reference to a potential parent disk
+	ParentRef *string `json:"parentRef,omitempty"`
 }
 
 // VirtualMachineImageOSInfo describes the image's guest operating system.
@@ -197,6 +232,11 @@ type VirtualMachineImageStatus struct {
 
 	// ProductInfo describes the observed product information for this image.
 	ProductInfo VirtualMachineImageProductInfo `json:"productInfo,omitempty"`
+
+	// +optional
+
+	// DiskInfo describes the observed disk information for this image.
+	DiskInfo VirtualMachineImageDiskInfo `json:"diskInfo,omitempty"`
 
 	// +optional
 

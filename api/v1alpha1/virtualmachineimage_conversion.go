@@ -12,6 +12,7 @@ import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
+	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 )
@@ -390,6 +391,14 @@ func (src *VirtualMachineImage) ConvertTo(dstRaw ctrlconversion.Hub) error {
 		return err
 	}
 
+	// Manually restore data.
+	restored := &vmopv1.VirtualMachineImage{}
+	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
+		return err
+	}
+
+	dst.Status.DiskInfo = restored.Status.DiskInfo
+
 	return nil
 }
 
@@ -417,7 +426,8 @@ func (dst *VirtualMachineImage) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	}
 	dst.Status.ContentLibraryRef = readContentLibRefConversionAnnotation(src)
 
-	return nil
+	// Preserve Hub data on down-conversion except for metadata
+	return utilconversion.MarshalData(src, dst)
 }
 
 // ConvertTo converts this VirtualMachineImageList to the Hub version.
@@ -448,6 +458,14 @@ func (src *ClusterVirtualMachineImage) ConvertTo(dstRaw ctrlconversion.Hub) erro
 		return err
 	}
 
+	// Manually restore data.
+	restored := &vmopv1.ClusterVirtualMachineImage{}
+	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
+		return err
+	}
+
+	dst.Status.DiskInfo = restored.Status.DiskInfo
+
 	return nil
 }
 
@@ -469,7 +487,8 @@ func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw ctrlconversion.Hub) er
 
 	dst.Status.ContentLibraryRef = readContentLibRefConversionAnnotation(src)
 
-	return nil
+	// Preserve Hub data on down-conversion except for metadata
+	return utilconversion.MarshalData(src, dst)
 }
 
 func readContentLibRefConversionAnnotation(from metav1.Object) (objRef *corev1.TypedLocalObjectReference) {

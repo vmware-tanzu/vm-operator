@@ -148,13 +148,16 @@ func CreateConfigSpecForPlacement(
 
 	// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
 	// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.
+	// Note: UnitNumber is required for PlaceVmsXCluster w/ VpxdVmxGeneration fss enabled.
+	// PlaceVmsXCluster is not used with Instance Storage, so UnitNumber is not required for volumes below.
 	configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 		Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
 		FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
 		Device: &vimtypes.VirtualDisk{
 			CapacityInBytes: 1024 * 1024,
 			VirtualDevice: vimtypes.VirtualDevice{
-				Key: -42,
+				Key:        -42,
+				UnitNumber: ptr.To[int32](0),
 				Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
 					ThinProvisioned: ptr.To(true),
 				},

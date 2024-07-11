@@ -4876,8 +4876,9 @@ spec:
                   hardware identifier.
                 type: string
               changeBlockTracking:
-                description: ChangeBlockTracking describes the CBT enablement status
-                  on the VM.
+                description: |-
+                  ChangeBlockTracking describes whether or not change block tracking is
+                  enabled for the VirtualMachine.
                 type: boolean
               class:
                 description: |-
@@ -5651,6 +5652,37 @@ spec:
                 - PoweredOn
                 - Suspended
                 type: string
+              storage:
+                description: Storage describes the observed state of the VirtualMachine's
+                  storage.
+                properties:
+                  committed:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: Committed is the total storage space committed to
+                      this VirtualMachine.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  uncommitted:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Uncommitted is the total storage space potentially used by this
+                      VirtualMachine.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  unshared:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Unshared is the total storage space occupied by this VirtualMachine that
+                      is not shared with any other VirtualMachine.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                type: object
               uniqueID:
                 description: |-
                   UniqueID describes a unique identifier that is provided by the underlying
@@ -5658,8 +5690,8 @@ spec:
                 type: string
               volumes:
                 description: |-
-                  Volumes describes a list of current status information for each Volume
-                  that is desired to be attached to the VM.
+                  Volumes describes the observed state of the volumes that are intended to
+                  be attached to the VirtualMachine.
                 items:
                   description: |-
                     VirtualMachineVolumeStatus defines the observed state of a
@@ -5680,15 +5712,45 @@ spec:
                         Error represents the last error seen when attaching or detaching a
                         volume.  Error will be empty if attachment succeeds.
                       type: string
+                    limit:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: |-
+                        Limit describes the storage limit for the volume.
+                        Please note, this is only available for Classic volumes. For Managed
+                        volumes, please refer to the PersistentVolumeClaim resource for the
+                        requested capacity.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
                     name:
                       description: Name is the name of the attached volume.
                       type: string
+                    type:
+                      default: Managed
+                      description: Type is the type of the attached volume.
+                      enum:
+                      - Classic
+                      - Managed
+                      type: string
+                    used:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: |-
+                        Used describes the observed, non-shared size of the volume on disk.
+                        For example, if this is a linked-clone's boot volume, this value
+                        represents the space consumed by the linked clone, not the parent.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
                   required:
                   - name
+                  - type
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
                 - name
+                - type
                 x-kubernetes-list-type: map
               zone:
                 description: |-

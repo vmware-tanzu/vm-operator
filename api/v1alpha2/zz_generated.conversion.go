@@ -809,11 +809,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha3.VirtualMachineStatus)(nil), (*VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(a.(*v1alpha3.VirtualMachineStatus), b.(*VirtualMachineStatus), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineTemplate)(nil), (*v1alpha3.VirtualMachineTemplate)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_VirtualMachineTemplate_To_v1alpha3_VirtualMachineTemplate(a.(*VirtualMachineTemplate), b.(*v1alpha3.VirtualMachineTemplate), scope)
 	}); err != nil {
@@ -841,16 +836,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1alpha3.VirtualMachineVolumeSource)(nil), (*VirtualMachineVolumeSource)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VirtualMachineVolumeSource_To_v1alpha2_VirtualMachineVolumeSource(a.(*v1alpha3.VirtualMachineVolumeSource), b.(*VirtualMachineVolumeSource), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineVolumeStatus)(nil), (*v1alpha3.VirtualMachineVolumeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(a.(*VirtualMachineVolumeStatus), b.(*v1alpha3.VirtualMachineVolumeStatus), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha3.VirtualMachineVolumeStatus)(nil), (*VirtualMachineVolumeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(a.(*v1alpha3.VirtualMachineVolumeStatus), b.(*VirtualMachineVolumeStatus), scope)
 	}); err != nil {
 		return err
 	}
@@ -899,6 +884,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*VirtualMachineVolumeStatus)(nil), (*v1alpha3.VirtualMachineVolumeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(a.(*VirtualMachineVolumeStatus), b.(*v1alpha3.VirtualMachineVolumeStatus), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*VirtualMachine)(nil), (*v1alpha3.VirtualMachine)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(a.(*VirtualMachine), b.(*v1alpha3.VirtualMachine), scope)
 	}); err != nil {
@@ -926,6 +916,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*v1alpha3.VirtualMachineSpec)(nil), (*VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(a.(*v1alpha3.VirtualMachineSpec), b.(*VirtualMachineSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha3.VirtualMachineStatus)(nil), (*VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(a.(*v1alpha3.VirtualMachineStatus), b.(*VirtualMachineStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha3.VirtualMachineVolumeStatus)(nil), (*VirtualMachineVolumeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(a.(*v1alpha3.VirtualMachineVolumeStatus), b.(*VirtualMachineVolumeStatus), scope)
 	}); err != nil {
 		return err
 	}
@@ -3227,7 +3227,17 @@ func autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
 	out.UniqueID = in.UniqueID
 	out.BiosUUID = in.BiosUUID
 	out.InstanceUUID = in.InstanceUUID
-	out.Volumes = *(*[]v1alpha3.VirtualMachineVolumeStatus)(unsafe.Pointer(&in.Volumes))
+	if in.Volumes != nil {
+		in, out := &in.Volumes, &out.Volumes
+		*out = make([]v1alpha3.VirtualMachineVolumeStatus, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Volumes = nil
+	}
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	out.Zone = in.Zone
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
@@ -3252,17 +3262,23 @@ func autoConvert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	out.UniqueID = in.UniqueID
 	out.BiosUUID = in.BiosUUID
 	out.InstanceUUID = in.InstanceUUID
-	out.Volumes = *(*[]VirtualMachineVolumeStatus)(unsafe.Pointer(&in.Volumes))
+	if in.Volumes != nil {
+		in, out := &in.Volumes, &out.Volumes
+		*out = make([]VirtualMachineVolumeStatus, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Volumes = nil
+	}
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	out.Zone = in.Zone
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
 	out.HardwareVersion = in.HardwareVersion
+	// WARNING: in.Storage requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus is an autogenerated conversion function.
-func Convert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(in *v1alpha3.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
-	return autoConvert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(in, out, s)
 }
 
 func autoConvert_v1alpha2_VirtualMachineTemplate_To_v1alpha3_VirtualMachineTemplate(in *VirtualMachineTemplate, out *v1alpha3.VirtualMachineTemplate, s conversion.Scope) error {
@@ -3361,22 +3377,15 @@ func autoConvert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineV
 	return nil
 }
 
-// Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus is an autogenerated conversion function.
-func Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in *VirtualMachineVolumeStatus, out *v1alpha3.VirtualMachineVolumeStatus, s conversion.Scope) error {
-	return autoConvert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in, out, s)
-}
-
 func autoConvert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(in *v1alpha3.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s conversion.Scope) error {
 	out.Name = in.Name
+	// WARNING: in.Type requires manual conversion: does not exist in peer-type
+	// WARNING: in.Limit requires manual conversion: does not exist in peer-type
+	// WARNING: in.Used requires manual conversion: does not exist in peer-type
 	out.Attached = in.Attached
 	out.DiskUUID = in.DiskUUID
 	out.Error = in.Error
 	return nil
-}
-
-// Convert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus is an autogenerated conversion function.
-func Convert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(in *v1alpha3.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s conversion.Scope) error {
-	return autoConvert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(in, out, s)
 }
 
 func autoConvert_v1alpha2_VirtualMachineWebConsoleRequest_To_v1alpha3_VirtualMachineWebConsoleRequest(in *VirtualMachineWebConsoleRequest, out *v1alpha3.VirtualMachineWebConsoleRequest, s conversion.Scope) error {

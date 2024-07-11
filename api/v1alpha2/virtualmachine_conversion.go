@@ -46,10 +46,54 @@ func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	return nil
 }
 
+func Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(
+	in *VirtualMachineVolumeStatus, out *vmopv1.VirtualMachineVolumeStatus, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in, out, s); err != nil {
+		return err
+	}
+
+	if out.Type == "" {
+		out.Type = vmopv1.VirtualMachineStorageDiskTypeManaged
+	}
+
+	return nil
+}
+
+func Convert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
+	in *vmopv1.VirtualMachineStatus, out *VirtualMachineStatus, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(in, out, s); err != nil {
+		return err
+	}
+
+	out.Volumes = nil
+	for i := range in.Volumes {
+		if in.Volumes[i].Type != vmopv1.VirtualMachineStorageDiskTypeClassic {
+
+			// Only down-convert volume statuses if the volume is managed.
+			var vol VirtualMachineVolumeStatus
+			if err := Convert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(
+				&in.Volumes[i], &vol, s); err != nil {
+				return err
+			}
+			out.Volumes = append(out.Volumes, vol)
+		}
+	}
+
+	return nil
+}
+
 func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
 	in *VirtualMachineStatus, out *vmopv1.VirtualMachineStatus, s apiconversion.Scope) error {
 
 	return autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(in, out, s)
+}
+
+func Convert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(
+	in *vmopv1.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(in, out, s)
 }
 
 func Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(

@@ -677,6 +677,9 @@ func Convert_v1alpha1_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolum
 	in *VirtualMachineVolumeStatus, out *vmopv1.VirtualMachineVolumeStatus, s apiconversion.Scope) error {
 
 	out.DiskUUID = in.DiskUuid
+	if out.Type == "" {
+		out.Type = vmopv1.VirtualMachineStorageDiskTypeManaged
+	}
 
 	return autoConvert_v1alpha1_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in, out, s)
 }
@@ -798,6 +801,20 @@ func Convert_v1alpha3_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	out.VmIp, out.NetworkInterfaces = convert_v1alpha3_NetworkStatus_To_v1alpha1_Network(in.Network)
 	out.LastRestartTime = in.LastRestartTime
 	out.Conditions = translate_v1alpha3_Conditions_To_v1alpha1_Conditions(out.Conditions)
+
+	out.Volumes = nil
+	for i := range in.Volumes {
+		if in.Volumes[i].Type != vmopv1.VirtualMachineStorageDiskTypeClassic {
+
+			// Only down-convert volume statuses if the volume is managed.
+			var vol VirtualMachineVolumeStatus
+			if err := Convert_v1alpha3_VirtualMachineVolumeStatus_To_v1alpha1_VirtualMachineVolumeStatus(
+				&in.Volumes[i], &vol, s); err != nil {
+				return err
+			}
+			out.Volumes = append(out.Volumes, vol)
+		}
+	}
 
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type

@@ -7,11 +7,16 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"path"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vmdk"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -34,7 +40,9 @@ var (
 	VMStatusPropertiesSelector = []string{
 		"config.changeTrackingEnabled",
 		"config.extraConfig",
+		"config.hardware.device",
 		"guest",
+		"layoutEx",
 		"summary",
 	}
 )
@@ -98,6 +106,7 @@ func UpdateStatus(
 	hardwareVersion, _ := vimtypes.ParseHardwareVersion(summary.Config.HwVersion)
 	vm.Status.HardwareVersion = int32(hardwareVersion)
 	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest)
+	updateStorageStatus(vmCtx.VM, vmCtx.MoVM)
 
 	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {
@@ -108,12 +117,6 @@ func UpdateStatus(
 	MarkVMToolsRunningStatusCondition(vmCtx.VM, vmCtx.MoVM.Guest)
 	MarkCustomizationInfoCondition(vmCtx.VM, vmCtx.MoVM.Guest)
 	MarkBootstrapCondition(vmCtx.VM, vmCtx.MoVM.Config)
-
-	if config := vmCtx.MoVM.Config; config != nil {
-		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled
-	} else {
-		vm.Status.ChangeBlockTracking = nil
-	}
 
 	zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
 	if zoneName == "" {
@@ -677,4 +680,142 @@ func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *vimtypes.GuestInfo)
 			vm.Status.Network = nil
 		}
 	}
+}
+
+// updateStorageStatus updates the status for all storage-related fields.
+func updateStorageStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
+	updateChangeBlockTracking(vm, moVM)
+	updateStorageUsage(vm, moVM)
+	updateVolumeStatus(vm, moVM)
+}
+
+func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
+	if moVM.Config != nil {
+		vm.Status.ChangeBlockTracking = moVM.Config.ChangeTrackingEnabled
+	} else {
+		vm.Status.ChangeBlockTracking = nil
+	}
+}
+
+func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
+	if moVM.Summary.Storage == nil {
+		return
+	}
+	if vm.Status.Storage == nil {
+		vm.Status.Storage = &vmopv1.VirtualMachineStorageStatus{}
+	}
+
+	vm.Status.Storage.Committed = BytesToResourceGiB(
+		moVM.Summary.Storage.Committed)
+
+	vm.Status.Storage.Uncommitted = BytesToResourceGiB(
+		moVM.Summary.Storage.Uncommitted)
+
+	vm.Status.Storage.Unshared = BytesToResourceGiB(
+		moVM.Summary.Storage.Unshared)
+}
+
+func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
+	if moVM.Config == nil ||
+		moVM.LayoutEx == nil ||
+		len(moVM.LayoutEx.Disk) == 0 ||
+		len(moVM.LayoutEx.File) == 0 ||
+		len(moVM.Config.Hardware.Device) == 0 {
+
+		return
+	}
+
+	existingDisksInStatus := map[string]int{}
+	for i := range vm.Status.Volumes {
+		if vol := vm.Status.Volumes[i]; vol.DiskUUID != "" {
+			existingDisksInStatus[vol.DiskUUID] = i
+		}
+	}
+
+	existingDisksInConfig := map[string]struct{}{}
+
+	for i := range moVM.Config.Hardware.Device {
+		vd, ok := moVM.Config.Hardware.Device[i].(*vimtypes.VirtualDisk)
+		if !ok {
+			continue
+		}
+
+		var (
+			diskUUID string
+			fileName string
+		)
+
+		switch tb := vd.Backing.(type) {
+		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+			diskUUID = tb.Uuid
+			fileName = tb.FileName
+		case *vimtypes.VirtualDiskSeSparseBackingInfo:
+			diskUUID = tb.Uuid
+			fileName = tb.FileName
+		case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
+			diskUUID = tb.Uuid
+			fileName = tb.FileName
+		case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+			diskUUID = tb.Uuid
+			fileName = tb.FileName
+		case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
+			diskUUID = tb.Uuid
+			fileName = tb.DescriptorFileName
+		}
+
+		var diskPath object.DatastorePath
+		if !diskPath.FromString(fileName) {
+			continue
+		}
+
+		existingDisksInConfig[diskUUID] = struct{}{}
+
+		ctx := context.TODO()
+
+		if diskIndex, ok := existingDisksInStatus[diskUUID]; ok {
+			// The disk is already in the list of volume statuses, so update the
+			// existing status with the usage information.
+			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
+			vm.Status.Volumes[diskIndex].Used = BytesToResourceGiB(di.UniqueSize)
+		} else if !strings.HasPrefix(diskPath.Path, "fcd/") {
+			// The disk is a classic, non-FCD that must be added to the list of
+			// volume statuses.
+			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
+			dp := diskPath.Path
+			vm.Status.Volumes = append(
+				vm.Status.Volumes,
+				vmopv1.VirtualMachineVolumeStatus{
+					Name:     strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
+					Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+					Attached: true,
+					DiskUUID: diskUUID,
+					Limit:    BytesToResourceGiB(di.CapacityInBytes),
+					Used:     BytesToResourceGiB(di.UniqueSize),
+				})
+		}
+	}
+
+	// Remove any status entries for classic disks that no longer exist in
+	// config.hardware.device.
+	vm.Status.Volumes = slices.DeleteFunc(vm.Status.Volumes,
+		func(e vmopv1.VirtualMachineVolumeStatus) bool {
+			switch e.Type {
+			case vmopv1.VirtualMachineStorageDiskTypeClassic:
+				_, keep := existingDisksInConfig[e.DiskUUID]
+				return !keep
+			default:
+				return false
+			}
+		})
+
+	// This sort order is consistent with the logic from the volumes controller.
+	vmopv1.SortVirtualMachineVolumeStatuses(vm.Status.Volumes)
+}
+
+const byteToGiB = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
+
+// BytesToResourceGiB returns the resource.Quantity GiB value for the specified
+// number of bytes.
+func BytesToResourceGiB(b int64) *resource.Quantity {
+	return ptr.To(resource.MustParse(fmt.Sprintf("%dGi", b/byteToGiB)))
 }

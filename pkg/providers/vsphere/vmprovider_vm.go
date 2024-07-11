@@ -465,6 +465,7 @@ func (vs *vSphereVMProvider) createdVirtualMachineFallthroughUpdate(
 var VMUpdatePropertiesSelector = []string{
 	"config",
 	"guest",
+	"layoutEx",
 	"summary",
 }
 

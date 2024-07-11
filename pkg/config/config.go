@@ -121,9 +121,10 @@ type FeatureStates struct {
 	TKGMultipleCL              bool // FSS_WCP_TKG_Multiple_CL
 	// TODO(akutz) This FSS is a placeholder until leadership can figure out the
 	//             plan for FSSs going forward.
-	UnifiedStorageQuota bool // FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA
-	VMResize            bool // FSS_WCP_VMSERVICE_RESIZE
-	VMImportNewNet      bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
+	UnifiedStorageQuota     bool // FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA
+	VMResize                bool // FSS_WCP_VMSERVICE_RESIZE
+	VMImportNewNet          bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
+	WorkloadDomainIsolation bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
 }
 
 type InstanceStorage struct {

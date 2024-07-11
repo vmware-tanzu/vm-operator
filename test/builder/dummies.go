@@ -41,6 +41,11 @@ const (
 	DummyAvailabilityZoneName = "dummy-availability-zone"
 )
 
+const (
+	vmiKind  = "VirtualMachineImage"
+	cvmiKind = "Cluster" + vmiKind
+)
+
 func DummyStorageClass() *storagev1.StorageClass {
 	return &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
@@ -282,7 +287,7 @@ func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 		},
 		Spec: vmopv1.VirtualMachineSpec{
 			Image: &vmopv1.VirtualMachineImageRef{
-				Kind: "VirtualMachineImage",
+				Kind: vmiKind,
 				Name: DummyVMIID,
 			},
 			ImageName:    DummyImageName,
@@ -306,7 +311,7 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 		},
 		Spec: vmopv1.VirtualMachineSpec{
 			Image: &vmopv1.VirtualMachineImageRef{
-				Kind: "VirtualMachineImage",
+				Kind: vmiKind,
 				Name: DummyVMIID,
 			},
 			ImageName:          DummyImageName,
@@ -332,6 +337,26 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 					{
 						Name: "eth0",
 					},
+				},
+			},
+			Cdrom: []vmopv1.VirtualMachineCdromSpec{
+				{
+					Name: "cdrom1",
+					Image: vmopv1.VirtualMachineImageRef{
+						Kind: vmiKind,
+						Name: DummyVMIID,
+					},
+					Connected:         true,
+					AllowGuestControl: true,
+				},
+				{
+					Name: "cdrom2",
+					Image: vmopv1.VirtualMachineImageRef{
+						Kind: cvmiKind,
+						Name: DummyVMIID,
+					},
+					Connected:         true,
+					AllowGuestControl: true,
 				},
 			},
 		},
@@ -360,7 +385,7 @@ func DummyVirtualMachineReplicaSet() *vmopv1.VirtualMachineReplicaSet {
 				},
 				Spec: vmopv1.VirtualMachineSpec{
 					Image: &vmopv1.VirtualMachineImageRef{
-						Kind: "VirtualMachineImage",
+						Kind: vmiKind,
 						Name: DummyVMIID,
 					},
 					ImageName:  DummyImageName,
@@ -542,7 +567,7 @@ func DummyImageAndItemObjectsForCdromBacking(
 		},
 	}
 
-	if kind == "VirtualMachineImage" {
+	if kind == vmiKind {
 		imageObj = &vmopv1.VirtualMachineImage{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,

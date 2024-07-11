@@ -1155,4 +1155,67 @@ func unitTestsMutating() {
 			})
 		})
 	})
+
+	Describe("SetDefaultCdromNameAndImgKind", func() {
+
+		BeforeEach(func() {
+			ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+				{
+					Image: vmopv1.VirtualMachineImageRef{
+						Name: "vmi-1",
+					},
+				},
+				{
+					Image: vmopv1.VirtualMachineImageRef{
+						Name: "vmi-2",
+					},
+				},
+			}
+		})
+
+		It("should set the default cdrom name and image kind", func() {
+			mutation.SetDefaultCdromNameAndImgKind(&ctx.WebhookRequestContext, ctx.vm)
+			Expect(ctx.vm.Spec.Cdrom[0].Name).To(Equal("cdrom1"))
+			Expect(ctx.vm.Spec.Cdrom[0].Image.Kind).To(Equal("VirtualMachineImage"))
+			Expect(ctx.vm.Spec.Cdrom[1].Name).To(Equal("cdrom2"))
+			Expect(ctx.vm.Spec.Cdrom[1].Image.Kind).To(Equal("VirtualMachineImage"))
+		})
+	})
+
+	Describe("SetImageNameFromCdrom", func() {
+
+		BeforeEach(func() {
+			ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+				{
+					Image: vmopv1.VirtualMachineImageRef{
+						Name: "vmi-cdrom",
+					},
+				},
+			}
+		})
+
+		It("should not set the image name from CD-ROM if already set", func() {
+			ctx.vm.Spec.ImageName = "vmi-original"
+			mutation.SetImageNameFromCdrom(&ctx.WebhookRequestContext, ctx.vm)
+			Expect(ctx.vm.Spec.ImageName).To(Equal("vmi-original"))
+		})
+
+		It("should set the image name from CD-ROM if not set", func() {
+			ctx.vm.Spec.ImageName = ""
+			mutation.SetImageNameFromCdrom(&ctx.WebhookRequestContext, ctx.vm)
+			Expect(ctx.vm.Spec.ImageName).To(Equal("vmi-cdrom"))
+		})
+
+		It("should set to the first connected CD-ROM if multiple exist", func() {
+			ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, vmopv1.VirtualMachineCdromSpec{
+				Image: vmopv1.VirtualMachineImageRef{
+					Name: "vmi-cdrom2",
+				},
+				Connected: true,
+			})
+			ctx.vm.Spec.ImageName = ""
+			mutation.SetImageNameFromCdrom(&ctx.WebhookRequestContext, ctx.vm)
+			Expect(ctx.vm.Spec.ImageName).To(Equal("vmi-cdrom2"))
+		})
+	})
 }

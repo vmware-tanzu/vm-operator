@@ -12,6 +12,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -61,6 +62,9 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	ctx := &intgValidatingWebhookContext{
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),
 	}
+	pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
+		config.Features.IsoSupport = true
+	})
 
 	ctx.vm = builder.DummyVirtualMachine()
 	ctx.vm.Namespace = ctx.Namespace

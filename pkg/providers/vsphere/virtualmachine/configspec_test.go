@@ -445,8 +445,10 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			Expect(ok).To(BeTrue())
 			*/
 			dSpec2 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
-			_, ok = dSpec2.Device.(*vimtypes.VirtualDisk)
+			disk, ok := dSpec2.Device.(*vimtypes.VirtualDisk)
 			Expect(ok).To(BeTrue())
+			Expect(disk.UnitNumber).ToNot(BeNil())
+			Expect(*disk.UnitNumber).To(Equal(int32(0)))
 
 			dSpec3 := configSpec.DeviceChange[2].GetVirtualDeviceConfigSpec()
 			_, ok = dSpec3.Device.(*vimtypes.VirtualPCIController)

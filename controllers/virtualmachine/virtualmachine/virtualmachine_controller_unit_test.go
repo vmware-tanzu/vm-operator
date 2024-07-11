@@ -16,7 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"

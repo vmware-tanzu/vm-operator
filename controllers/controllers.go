@@ -18,7 +18,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
-	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
@@ -50,9 +49,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 	if err := virtualmachinewebconsolerequest.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize VirtualMachineWebConsoleRequest controller: %w", err)
-	}
-	if err := volume.AddToManager(ctx, mgr); err != nil {
-		return fmt.Errorf("failed to initialize Volume controller: %w", err)
 	}
 	if err := virtualmachinepublishrequest.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize VirtualMachinePublishRequest controller: %w", err)

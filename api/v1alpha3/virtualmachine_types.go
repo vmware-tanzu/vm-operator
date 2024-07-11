@@ -610,14 +610,16 @@ type VirtualMachineStatus struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=name
+	// +listMapKey=type
 
-	// Volumes describes a list of current status information for each Volume
-	// that is desired to be attached to the VM.
+	// Volumes describes the observed state of the volumes that are intended to
+	// be attached to the VirtualMachine.
 	Volumes []VirtualMachineVolumeStatus `json:"volumes,omitempty"`
 
 	// +optional
 
-	// ChangeBlockTracking describes the CBT enablement status on the VM.
+	// ChangeBlockTracking describes whether or not change block tracking is
+	// enabled for the VirtualMachine.
 	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 
 	// +optional
@@ -641,6 +643,11 @@ type VirtualMachineStatus struct {
 	// Please refer to VirtualMachineSpec.MinHardwareVersion for more
 	// information on the topic of a VM's hardware version.
 	HardwareVersion int32 `json:"hardwareVersion,omitempty"`
+
+	// +optional
+
+	// Storage describes the observed state of the VirtualMachine's storage.
+	Storage *VirtualMachineStorageStatus `json:"storage,omitempty"`
 }
 
 // +kubebuilder:object:root=true

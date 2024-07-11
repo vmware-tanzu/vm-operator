@@ -1588,4 +1588,107 @@ func TestVirtualMachineConversion(t *testing.T) {
 		}
 		hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
 	})
+
+	t.Run("VirtualMachine status.storage", func(t *testing.T) {
+		t.Run("hub-spoke-hub", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				Status: vmopv1.VirtualMachineStatus{
+					Storage: &vmopv1.VirtualMachineStorageStatus{
+						Committed:   ptrOf(resource.MustParse("10Gi")),
+						Uncommitted: ptrOf(resource.MustParse("20Gi")),
+						Unshared:    ptrOf(resource.MustParse("9Gi")),
+					},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
+		})
+	})
+
+	t.Run("VirtualMachine status.volumes", func(t *testing.T) {
+		t.Run("hub-spoke-hub", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				Status: vmopv1.VirtualMachineStatus{
+					Volumes: []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name: "vol1",
+							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+						},
+						{
+							Name: "vol2",
+							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+						},
+					},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
+		})
+		t.Run("hub-spoke", func(t *testing.T) {
+			hub := vmopv1.VirtualMachine{
+				Status: vmopv1.VirtualMachineStatus{
+					Volumes: []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name: "vol1",
+							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+						},
+						{
+							Name: "vol2",
+							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+						},
+					},
+				},
+			}
+
+			expectedSpoke := vmopv1a1.VirtualMachine{
+				Status: vmopv1a1.VirtualMachineStatus{
+					Phase: vmopv1a1.Unknown,
+					Volumes: []vmopv1a1.VirtualMachineVolumeStatus{
+						{
+							Name: "vol1",
+						},
+					},
+				},
+			}
+
+			g := NewWithT(t)
+			g.Expect(utilconversion.MarshalData(&hub, &expectedSpoke)).To(Succeed())
+
+			var spoke vmopv1a1.VirtualMachine
+			g.Expect(spoke.ConvertFrom(hub.DeepCopy())).To(Succeed())
+			g.Expect(apiequality.Semantic.DeepEqual(spoke, expectedSpoke)).To(BeTrue(), cmp.Diff(spoke, expectedSpoke))
+		})
+
+		t.Run("spoke-hub", func(t *testing.T) {
+
+			spoke := vmopv1a1.VirtualMachine{
+				Status: vmopv1a1.VirtualMachineStatus{
+					Volumes: []vmopv1a1.VirtualMachineVolumeStatus{
+						{
+							Name: "vol1",
+						},
+					},
+				},
+			}
+
+			expectedHub := vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Status: vmopv1.VirtualMachineStatus{
+					Volumes: []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name: "vol1",
+							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+						},
+					},
+				},
+			}
+
+			g := NewWithT(t)
+			var hub vmopv1.VirtualMachine
+			g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
+			g.Expect(apiequality.Semantic.DeepEqual(hub, expectedHub)).To(BeTrue(), cmp.Diff(hub, expectedHub))
+		})
+	})
 }

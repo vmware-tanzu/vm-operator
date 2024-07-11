@@ -4,6 +4,8 @@
 package v1alpha3
 
 import (
+	"slices"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -66,11 +68,47 @@ type InstanceVolumeClaimVolumeSource struct {
 	Size resource.Quantity `json:"size"`
 }
 
+// +kubebuilder:validation:Enum=Classic;Managed
+
+// VirtualMachineVolumeType describes the type of a VirtualMachine volume.
+type VirtualMachineVolumeType string
+
+const (
+	// VirtualMachineStorageDiskTypeClassic describes a classic virtual disk,
+	// such as the boot disk for a VirtualMachine deployed from a VM Image of
+	// type OVF.
+	VirtualMachineStorageDiskTypeClassic VirtualMachineVolumeType = "Classic"
+
+	// VirtualMachineStorageDiskTypeManaged describes a managed virtual disk,
+	// such as persistent volumes.
+	VirtualMachineStorageDiskTypeManaged VirtualMachineVolumeType = "Managed"
+)
+
 // VirtualMachineVolumeStatus defines the observed state of a
 // VirtualMachineVolume instance.
 type VirtualMachineVolumeStatus struct {
 	// Name is the name of the attached volume.
 	Name string `json:"name"`
+
+	// +kubebuilder:default=Managed
+
+	// Type is the type of the attached volume.
+	Type VirtualMachineVolumeType `json:"type"`
+
+	// +optional
+
+	// Limit describes the storage limit for the volume.
+	// Please note, this is only available for Classic volumes. For Managed
+	// volumes, please refer to the PersistentVolumeClaim resource for the
+	// requested capacity.
+	Limit *resource.Quantity `json:"limit,omitempty"`
+
+	// +optional
+
+	// Used describes the observed, non-shared size of the volume on disk.
+	// For example, if this is a linked-clone's boot volume, this value
+	// represents the space consumed by the linked clone, not the parent.
+	Used *resource.Quantity `json:"used,omitempty"`
 
 	// +optional
 
@@ -89,4 +127,41 @@ type VirtualMachineVolumeStatus struct {
 	// Error represents the last error seen when attaching or detaching a
 	// volume.  Error will be empty if attachment succeeds.
 	Error string `json:"error,omitempty"`
+}
+
+// SortVirtualMachineVolumeStatuses sorts the provided list of
+// VirtualMachineVolumeStatus objects.
+func SortVirtualMachineVolumeStatuses(s []VirtualMachineVolumeStatus) {
+	slices.SortFunc(s, func(a, b VirtualMachineVolumeStatus) int {
+		switch {
+		case a.DiskUUID < b.DiskUUID:
+			return -1
+		case a.DiskUUID > b.DiskUUID:
+			return 1
+		default:
+			return 0
+		}
+	})
+}
+
+// VirtualMachineStorageStatus defines the observed state of a VirtualMachine's
+// storage.
+type VirtualMachineStorageStatus struct {
+
+	// +optional
+
+	// Committed is the total storage space committed to this VirtualMachine.
+	Committed *resource.Quantity `json:"committed,omitempty"`
+
+	// +optional
+
+	// Uncommitted is the total storage space potentially used by this
+	// VirtualMachine.
+	Uncommitted *resource.Quantity `json:"uncommitted,omitempty"`
+
+	// +optional
+
+	// Unshared is the total storage space occupied by this VirtualMachine that
+	// is not shared with any other VirtualMachine.
+	Unshared *resource.Quantity `json:"unshared,omitempty"`
 }

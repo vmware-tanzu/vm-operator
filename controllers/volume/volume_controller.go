@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -69,6 +69,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		ctrl.Log.WithName("controllers").WithName("volume"),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.VMProvider,
@@ -175,12 +176,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 func NewReconciler(
 	ctx context.Context,
 	client client.Client,
+	reader client.Reader,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
 		Context:    ctx,
 		Client:     client,
+		reader:     reader,
 		logger:     logger,
 		recorder:   recorder,
 		VMProvider: vmProvider,
@@ -191,6 +194,7 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
+	reader     client.Reader
 	Context    context.Context
 	logger     logr.Logger
 	recorder   record.Recorder
@@ -616,7 +620,17 @@ func (r *Reconciler) processAttachments(
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
 	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) error {
 
-	var volumeStatus []vmopv1.VirtualMachineVolumeStatus
+	// Record the usage information from any existing status for managed
+	// volumes.
+	existingManagedVolUsage := map[string]*resource.Quantity{}
+	for i := range ctx.VM.Status.Volumes {
+		vol := ctx.VM.Status.Volumes[i]
+		if vol.Type != vmopv1.VirtualMachineStorageDiskTypeClassic {
+			existingManagedVolUsage[vol.Name] = vol.Used
+		}
+	}
+
+	var volumeStatuses []vmopv1.VirtualMachineVolumeStatus
 	var createErrs []error
 	var hasPendingAttachment bool
 
@@ -643,7 +657,12 @@ func (r *Reconciler) processAttachments(
 			// CNS noop reconciles of an attachment that is already attached so we must delete the existing
 			// attachment and create a new one.
 			if volume.PersistentVolumeClaim.ClaimName == attachment.Spec.VolumeName {
-				volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volume.Name, attachment))
+				volumeStatus := attachmentToVolumeStatus(volume.Name, attachment)
+				volumeStatus.Used = existingManagedVolUsage[volume.Name]
+				if err := updateVolumeStatusWithLimit(ctx, r.reader, *volume.PersistentVolumeClaim, &volumeStatus); err != nil {
+					ctx.Logger.Error(err, "failed to get volume status limit")
+				}
+				volumeStatuses = append(volumeStatuses, volumeStatus)
 				hasPendingAttachment = hasPendingAttachment || !attachment.Status.Attached
 				continue
 			}
@@ -677,7 +696,7 @@ func (r *Reconciler) processAttachments(
 		// We used to deny requests if a PVC is specified in the VM spec while VMI hardware version is not supported.
 		// In this case, no attachments can be created if VM hardware version doesn't meet the requirement.
 		// So if a VM has volume attached, we can safely assume that it has passed the hardware version check.
-		if len(volumeStatus) == 0 && len(attachments) == 0 {
+		if len(volumeStatuses) == 0 && len(attachments) == 0 {
 			hardwareVersion, err := r.VMProvider.GetVirtualMachineHardwareVersion(ctx, ctx.VM)
 			if err != nil {
 				return fmt.Errorf("failed to get VM hardware version: %w", err)
@@ -699,7 +718,12 @@ func (r *Reconciler) processAttachments(
 		} else {
 			// Add a placeholder Status entry for this volume. We'll populate it fully on a later
 			// reconcile after the CNS attachment controller updates it.
-			volumeStatus = append(volumeStatus, vmopv1.VirtualMachineVolumeStatus{Name: volume.Name})
+			volumeStatuses = append(
+				volumeStatuses,
+				vmopv1.VirtualMachineVolumeStatus{
+					Name: volume.Name,
+					Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+				})
 		}
 
 		// Always true even if the creation failed above to try to keep volumes attached in order.
@@ -708,13 +732,20 @@ func (r *Reconciler) processAttachments(
 
 	// Fix up the Volume Status so that attachments that are no longer referenced in the Spec but
 	// still exist are included in the Status. This is more than a little odd.
-	volumeStatus = append(volumeStatus, r.preserveOrphanedAttachmentStatus(ctx, orphanedAttachments)...)
+	volumeStatuses = append(volumeStatuses, r.preserveOrphanedAttachmentStatus(ctx, orphanedAttachments)...)
 
-	// This is how the previous code sorted, but IMO keeping in Spec order makes more sense.
-	sort.Slice(volumeStatus, func(i, j int) bool {
-		return volumeStatus[i].DiskUUID < volumeStatus[j].DiskUUID
-	})
-	ctx.VM.Status.Volumes = volumeStatus
+	// Remove any managed volumes volumes from the existing status.
+	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
+		func(e vmopv1.VirtualMachineVolumeStatus) bool {
+			return e.Type != vmopv1.VirtualMachineStorageDiskTypeClassic
+		})
+
+	// Update the existing status with the new list of managed volumes.
+	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, volumeStatuses...)
+
+	// This is how the previous code sorted, but IMO keeping in Spec order makes
+	// more sense.
+	vmopv1.SortVirtualMachineVolumeStatuses(ctx.VM.Status.Volumes)
 
 	return apierrorsutil.NewAggregate(createErrs)
 }
@@ -823,7 +854,7 @@ func (r *Reconciler) preserveOrphanedAttachmentStatus(
 	var volumeStatus []vmopv1.VirtualMachineVolumeStatus
 	for _, volume := range ctx.VM.Status.Volumes {
 		if attachment, ok := uuidAttachments[volume.DiskUUID]; ok {
-			volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volume.Name, attachment))
+			volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volume.Name+":detaching", attachment))
 		}
 	}
 
@@ -892,10 +923,50 @@ func sanitizeCNSErrorMessage(msg string) string {
 func attachmentToVolumeStatus(
 	volumeName string,
 	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1.VirtualMachineVolumeStatus {
+
 	return vmopv1.VirtualMachineVolumeStatus{
 		Name:     volumeName, // Name of the volume as in the Spec
 		Attached: attachment.Status.Attached,
 		DiskUUID: attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],
 		Error:    sanitizeCNSErrorMessage(attachment.Status.Error),
+		Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
 	}
+}
+
+func updateVolumeStatusWithLimit(
+	ctx *pkgctx.VolumeContext,
+	c client.Reader,
+	pvcSpec vmopv1.PersistentVolumeClaimVolumeSource,
+	status *vmopv1.VirtualMachineVolumeStatus) error {
+
+	// See if the volume is an instance storage volume.
+	if pvcSpec.InstanceVolumeClaim != nil {
+		// Short-cut the rest of the function since instance storage
+		// volumes already have the requested size and the PVC does
+		// not need to be fetched.
+		status.Limit = &pvcSpec.InstanceVolumeClaim.Size
+		return nil
+	}
+
+	var (
+		pvc    corev1.PersistentVolumeClaim
+		pvcKey = client.ObjectKey{
+			Namespace: ctx.VM.Namespace,
+			Name:      pvcSpec.ClaimName,
+		}
+	)
+
+	if err := c.Get(ctx, pvcKey, &pvc); err != nil {
+		return err
+	}
+
+	if v, ok := pvc.Spec.Resources.Limits[corev1.ResourceStorage]; ok {
+		// Use the limit if it exists.
+		status.Limit = &v
+	} else if v, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+		// Otherwise use the requested capacity.
+		status.Limit = &v
+	}
+
+	return nil
 }

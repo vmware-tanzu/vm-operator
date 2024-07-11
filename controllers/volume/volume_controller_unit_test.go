@@ -32,6 +32,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -169,6 +170,7 @@ func unitTestsReconcile() {
 		reconciler = volume.NewReconciler(
 			ctx,
 			noPVCClient,
+			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
 			ctx.VMProvider,
@@ -821,7 +823,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 				By("Orphaned CNS volume preserved in Status.Volumes", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
-					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+					assertVMVolStatusFromAttachmentDetaching(vmVol, attachment, vm.Status.Volumes[0])
 
 					// Not in VM Spec so should be deleted.
 					Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
@@ -899,6 +901,203 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 						Expect(vm.Status.Volumes).To(HaveLen(2))
 						assertVMVolStatusFromAttachment(vmVol2, attachment2, vm.Status.Volumes[0])
 						assertVMVolStatusFromAttachment(vmVol1, attachment1, vm.Status.Volumes[1])
+					})
+				})
+
+				When("Collecting limit and usage information", func() {
+
+					classicDisk1 := func() vmopv1.VirtualMachineVolumeStatus {
+						return vmopv1.VirtualMachineVolumeStatus{
+							Name:     "my-disk-0",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Limit:    ptr.To(resource.MustParse("10Gi")),
+							Used:     ptr.To(resource.MustParse("9.1Gi")),
+							Attached: true,
+							DiskUUID: "100",
+						}
+					}
+
+					classicDisk2 := func() vmopv1.VirtualMachineVolumeStatus {
+						return vmopv1.VirtualMachineVolumeStatus{
+							Name:     "my-disk-1",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Limit:    ptr.To(resource.MustParse("15Gi")),
+							Used:     ptr.To(resource.MustParse("5Gi")),
+							Attached: true,
+							DiskUUID: "101",
+						}
+					}
+
+					BeforeEach(func() {
+						vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							classicDisk1(),
+							classicDisk2(),
+						}
+					})
+					AfterEach(func() {
+						vm.Status.Volumes = nil
+					})
+
+					assertBaselineVolStatus := func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+						ExpectWithOffset(1, vm.Status.Volumes).To(HaveLen(4))
+
+						attachment1 := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
+						ExpectWithOffset(1, attachment1).ToNot(BeNil())
+						assertAttachmentSpecFromVMVol(vm, vmVol1, attachment1)
+
+						attachment2 := getCNSAttachmentForVolumeName(vm, vmVol2.Name)
+						ExpectWithOffset(1, attachment2).ToNot(BeNil())
+						assertAttachmentSpecFromVMVol(vm, vmVol2, attachment2)
+
+						By("VM Status.Volumes are sorted by DiskUUID", func() {
+							ExpectWithOffset(1, vm.Status.Volumes[0]).To(Equal(classicDisk1()))
+							ExpectWithOffset(1, vm.Status.Volumes[1]).To(Equal(classicDisk2()))
+							assertVMVolStatusFromAttachment(vmVol2, attachment2, vm.Status.Volumes[2])
+							assertVMVolStatusFromAttachment(vmVol1, attachment1, vm.Status.Volumes[3])
+						})
+					}
+
+					It("does not remove any existing classic disks", func() {
+						assertBaselineVolStatus()
+					})
+
+					When("Existing status has usage info for a PVC", func() {
+
+						assertPVCHasUsage := func() {
+							ExpectWithOffset(1, vm.Status.Volumes[3].Used).To(Equal(ptr.To(resource.MustParse("1Gi"))))
+						}
+
+						BeforeEach(func() {
+							vm.Status.Volumes = append(vm.Status.Volumes,
+								vmopv1.VirtualMachineVolumeStatus{
+									Name: vmVol1.Name,
+									Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+									Used: ptr.To(resource.MustParse("1Gi")),
+								},
+							)
+						})
+						It("includes the PVC usage in the result", func() {
+							assertBaselineVolStatus()
+							assertPVCHasUsage()
+						})
+
+						When("Existing status has stale PVC", func() {
+							BeforeEach(func() {
+								vm.Status.Volumes = append(vm.Status.Volumes,
+									vmopv1.VirtualMachineVolumeStatus{
+										Name: "non-existing-pvc",
+										Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+										Used: ptr.To(resource.MustParse("1Gi")),
+									},
+								)
+							})
+							It("should be removed from the result", func() {
+								assertBaselineVolStatus()
+								assertPVCHasUsage()
+							})
+
+							When("The first PVC is an instance storage volume", func() {
+								assertIPVCHasLimit := func() {
+									ExpectWithOffset(1, vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("15Gi"))))
+								}
+
+								BeforeEach(func() {
+									vm.Spec.Volumes[0].PersistentVolumeClaim.InstanceVolumeClaim = &vmopv1.InstanceVolumeClaimVolumeSource{
+										Size: resource.MustParse("15Gi"),
+									}
+								})
+								It("should include the limit in the result", func() {
+									assertBaselineVolStatus()
+									assertPVCHasUsage()
+									assertIPVCHasLimit()
+								})
+							})
+						})
+
+						When("PVC resource exists with limit or request", func() {
+
+							assertPVCHasLimit := func() {
+								ExpectWithOffset(1, vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("20Gi"))))
+							}
+
+							When("PVC has limit", func() {
+								BeforeEach(func() {
+									initObjects = append(initObjects,
+										&corev1.PersistentVolumeClaim{
+											ObjectMeta: metav1.ObjectMeta{
+												Namespace: vm.Namespace,
+												Name:      vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName,
+											},
+											Spec: corev1.PersistentVolumeClaimSpec{
+												Resources: corev1.VolumeResourceRequirements{
+													Limits: corev1.ResourceList{
+														corev1.ResourceStorage: resource.MustParse("20Gi"),
+													},
+												},
+											},
+										})
+								})
+								It("should report its limit", func() {
+									assertBaselineVolStatus()
+									assertPVCHasUsage()
+									assertPVCHasLimit()
+								})
+							})
+
+							When("PVC has request", func() {
+								BeforeEach(func() {
+									initObjects = append(initObjects,
+										&corev1.PersistentVolumeClaim{
+											ObjectMeta: metav1.ObjectMeta{
+												Namespace: vm.Namespace,
+												Name:      vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName,
+											},
+											Spec: corev1.PersistentVolumeClaimSpec{
+												Resources: corev1.VolumeResourceRequirements{
+													Requests: corev1.ResourceList{
+														corev1.ResourceStorage: resource.MustParse("20Gi"),
+													},
+												},
+											},
+										})
+								})
+								It("should report its request", func() {
+									assertBaselineVolStatus()
+									assertPVCHasUsage()
+									assertPVCHasLimit()
+								})
+							})
+
+							When("PVC has limit and request", func() {
+								BeforeEach(func() {
+									initObjects = append(initObjects,
+										&corev1.PersistentVolumeClaim{
+											ObjectMeta: metav1.ObjectMeta{
+												Namespace: vm.Namespace,
+												Name:      vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName,
+											},
+											Spec: corev1.PersistentVolumeClaimSpec{
+												Resources: corev1.VolumeResourceRequirements{
+													Limits: corev1.ResourceList{
+														corev1.ResourceStorage: resource.MustParse("20Gi"),
+													},
+													Requests: corev1.ResourceList{
+														corev1.ResourceStorage: resource.MustParse("10Gi"),
+													},
+												},
+											},
+										})
+								})
+								It("should report its limit", func() {
+									assertBaselineVolStatus()
+									assertPVCHasUsage()
+									assertPVCHasLimit()
+								})
+							})
+						})
 					})
 				})
 			})
@@ -1048,6 +1247,18 @@ func assertVMVolStatusFromAttachment(
 	diskUUID := attachment.Status.AttachmentMetadata[volume.AttributeFirstClassDiskUUID]
 
 	ExpectWithOffset(1, vmVolStatus.Name).To(Equal(vmVol.Name))
+	ExpectWithOffset(1, vmVolStatus.Attached).To(Equal(attachment.Status.Attached))
+	ExpectWithOffset(1, vmVolStatus.DiskUUID).To(Equal(diskUUID))
+	ExpectWithOffset(1, vmVolStatus.Error).To(Equal(attachment.Status.Error))
+}
+
+func assertVMVolStatusFromAttachmentDetaching(
+	vmVol vmopv1.VirtualMachineVolume,
+	attachment *cnsv1alpha1.CnsNodeVmAttachment,
+	vmVolStatus vmopv1.VirtualMachineVolumeStatus) {
+	diskUUID := attachment.Status.AttachmentMetadata[volume.AttributeFirstClassDiskUUID]
+
+	ExpectWithOffset(1, vmVolStatus.Name).To(Equal(vmVol.Name + ":detaching"))
 	ExpectWithOffset(1, vmVolStatus.Attached).To(Equal(attachment.Status.Attached))
 	ExpectWithOffset(1, vmVolStatus.DiskUUID).To(Equal(diskUUID))
 	ExpectWithOffset(1, vmVolStatus.Error).To(Equal(attachment.Status.Error))

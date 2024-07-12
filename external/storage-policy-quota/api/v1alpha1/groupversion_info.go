@@ -1,6 +1,9 @@
 // Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// Package v1alpha1 contains API Schema definitions for the cns v1alpha1 API group
+// +kubebuilder:object:generate=true
+// +groupName=cns.vmware.com
 package v1alpha1
 
 import (
@@ -17,4 +20,13 @@ var (
 
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
+)
+
+const (
+	StoragePolicyQuota_CRDPlural   = "storagepolicyquotas"
+	StoragePolicyQuota_CRDSingular = "storagepolicyquota"
+	StorageQuota_CRDPlural         = "storagequotas"
+	StorageQuota_CRDSingular       = "storagequota"
+	StoragePolicyUsage_CRDPlural   = "storagepolicyusages"
+	StoragePolicyUsage_CRDSingular = "storagepolicyusage"
 )

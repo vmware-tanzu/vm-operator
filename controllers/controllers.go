@@ -10,6 +10,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra"
+	spq "github.com/vmware-tanzu/vm-operator/controllers/storagepolicyquota"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
@@ -29,6 +30,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 	if err := infra.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize Infra controllers: %w", err)
+	}
+	if err := spq.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to initialize StoragePolicyQuota controller: %w", err)
 	}
 	if err := virtualmachine.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize VirtualMachine controller: %w", err)

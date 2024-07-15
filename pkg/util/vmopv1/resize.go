@@ -109,8 +109,10 @@ func ResizeNeeded(
 	if !exists || lra.Name == "" {
 		// The VM does not have the last resized annotation. Most likely this is an existing VM
 		// and the VM Spec.ClassName hasn't been changed (because the mutation webhook sets the
-		// annotation when it changes).
-		return false
+		// annotation when it changes). However, if the same class opt-in annotation is set, do
+		// a resize to sync this VM to its class.
+		_, ok := vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation]
+		return ok
 	}
 
 	if vm.Spec.ClassName != lra.Name {
@@ -120,7 +122,7 @@ func ResizeNeeded(
 
 	// Resizing as the class itself changes is only performed with an opt-in annotation
 	// because a change in the class could break existing VMs.
-	if _, exists := vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation]; exists {
+	if _, ok := vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation]; ok {
 		same := vmClass.UID == lra.UID && vmClass.Generation == lra.Generation
 		return !same
 	}

@@ -246,6 +246,37 @@ func vmResizeTests() {
 
 				assertExpectedLastResizeAnnotation(vm, vmClass)
 			})
+
+			It("Resizes brownfield VM", func() {
+				cs := configSpec
+				cs.MemoryMB = 8192
+				updateVMClass(vmClass, cs)
+
+				// Remove annotation so the VM appears to be from before this feature.
+				Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
+				delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
+
+				By("Does not resize without same class annotation", func() {
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
+
+					Expect(vm.Annotations).ToNot(HaveKey(vmopv1util.LastResizedAnnotationKey))
+				})
+
+				vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+
+				assertExpectedLastResizeAnnotation(vm, vmClass)
+			})
 		})
 
 		Context("Devops Overrides", func() {

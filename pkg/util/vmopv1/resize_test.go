@@ -131,6 +131,16 @@ var _ = Describe("ResizeNeeded", func() {
 		It("returns false", func() {
 			Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeFalse())
 		})
+
+		When("same-class annotation is present", func() {
+			BeforeEach(func() {
+				vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
+			})
+
+			It("returns true", func() {
+				Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeTrue())
+			})
+		})
 	})
 
 	Context("Resize annotation is present", func() {

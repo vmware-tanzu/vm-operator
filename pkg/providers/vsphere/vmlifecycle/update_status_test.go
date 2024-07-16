@@ -17,6 +17,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -1013,10 +1014,18 @@ var _ = Describe("UpdateStatus", func() {
 			Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
 		})
 
-		Context("Has Class", func() {
-			It("Back fills Status.Class", func() {
-				Expect(vmCtx.VM.Status.Class).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.Class.Name).To(Equal(builder.DummyClassName))
+		Context("When FSS_WCP_VMSERVICE_RESIZE is not enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMResize = false
+				})
+			})
+
+			Context("Has Class", func() {
+				It("Back fills Status.Class", func() {
+					Expect(vmCtx.VM.Status.Class).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Class.Name).To(Equal(builder.DummyClassName))
+				})
 			})
 		})
 

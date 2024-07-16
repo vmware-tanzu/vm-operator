@@ -24,6 +24,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
@@ -60,14 +61,18 @@ func UpdateStatus(
 	// TODO: Might set other "prereq" conditions too for version conversion but we'd have to fib a little.
 
 	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {
-		if vm.Status.Class == nil {
-			// In v1a2 we know this will always be the namespace scoped class since v1a2 doesn't have
-			// the bindings. Our handling of this field will be more complicated once we really
-			// support class changes and resizing/reconfiguring the VM the fly in response.
-			vm.Status.Class = &common.LocalObjectRef{
-				APIVersion: vmopv1.SchemeGroupVersion.String(),
-				Kind:       "VirtualMachineClass",
-				Name:       vm.Spec.ClassName,
+		// When resize is enabled, don't backfill the class from the Spec since we don't know if the
+		// Spec class has been applied to the VM. When resize is enabled, this field is updated after
+		// a successful resize.
+		if !pkgcfg.FromContext(vmCtx).Features.VMResize {
+			if vm.Status.Class == nil {
+				// In v1a2 we know this will always be the namespace scoped class since v1a2 doesn't have
+				// the bindings.
+				vm.Status.Class = &common.LocalObjectRef{
+					APIVersion: vmopv1.SchemeGroupVersion.String(),
+					Kind:       "VirtualMachineClass",
+					Name:       vm.Spec.ClassName,
+				}
 			}
 		}
 	} else {
@@ -81,7 +86,7 @@ func UpdateStatus(
 		// that MO is still entirely valid here.
 		//
 		// NOTE: The properties must have been retrieved with at least
-		//       vmStatusPropertiesSelector.
+		//       VMStatusPropertiesSelector.
 		if err := vcVM.Properties(
 			vmCtx,
 			vcVM.Reference(),

@@ -19,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -633,6 +634,12 @@ func (s *Session) prePowerOnVMReconfigure(
 
 		if vmResizeEnabled {
 			vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, updateArgs.VMClass)
+
+			vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
+				APIVersion: vmopv1.SchemeGroupVersion.String(),
+				Kind:       "VirtualMachineClass",
+				Name:       updateArgs.VMClass.Name,
+			}
 		}
 	}
 
@@ -938,6 +945,14 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 
 	if needsResize {
 		vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, *resizeArgs.VMClass)
+	}
+
+	if resizeArgs.VMClass != nil {
+		vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
+			APIVersion: vmopv1.SchemeGroupVersion.String(),
+			Kind:       "VirtualMachineClass",
+			Name:       resizeArgs.VMClass.Name,
+		}
 	}
 
 	return refetchProps, nil

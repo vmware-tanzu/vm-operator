@@ -62,7 +62,7 @@ func vmResizeTests() {
 	encodedConfigSpec := func(cs vimtypes.VirtualMachineConfigSpec) []byte {
 		var w bytes.Buffer
 		enc := vimtypes.NewJSONEncoder(&w)
-		Expect(enc.Encode(cs)).To(Succeed())
+		ExpectWithOffset(2, enc.Encode(cs)).To(Succeed())
 		return w.Bytes()
 	}
 
@@ -104,12 +104,17 @@ func vmResizeTests() {
 		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
 	}
 
-	assertExpectedLastResizeAnnotation := func(vm *vmopv1.VirtualMachine, class *vmopv1.VirtualMachineClass) {
+	assertExpectedResizedClassFields := func(vm *vmopv1.VirtualMachine, class *vmopv1.VirtualMachineClass) {
 		name, uid, generation, exists := vmopv1util.GetLastResizedAnnotation(*vm)
 		ExpectWithOffset(1, exists).To(BeTrue())
 		ExpectWithOffset(1, name).To(Equal(class.Name))
 		ExpectWithOffset(1, uid).To(BeEquivalentTo(class.UID))
 		ExpectWithOffset(1, generation).To(Equal(class.Generation))
+
+		ExpectWithOffset(1, vm.Status.Class).ToNot(BeNil())
+		ExpectWithOffset(1, vm.Status.Class.APIVersion).To(Equal(vmopv1.SchemeGroupVersion.String()))
+		ExpectWithOffset(1, vm.Status.Class.Kind).To(Equal("VirtualMachineClass"))
+		ExpectWithOffset(1, vm.Status.Class.Name).To(Equal(class.Name))
 	}
 
 	Context("Resize VM", func() {
@@ -164,7 +169,7 @@ func vmResizeTests() {
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 				Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
 
-				assertExpectedLastResizeAnnotation(vm, newVMClass)
+				assertExpectedResizedClassFields(vm, newVMClass)
 			})
 		})
 
@@ -186,7 +191,7 @@ func vmResizeTests() {
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
 
-				assertExpectedLastResizeAnnotation(vm, newVMClass)
+				assertExpectedResizedClassFields(vm, newVMClass)
 			})
 		})
 
@@ -213,7 +218,7 @@ func vmResizeTests() {
 				Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
 				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
 
-				assertExpectedLastResizeAnnotation(vm, newVMClass)
+				assertExpectedResizedClassFields(vm, newVMClass)
 			})
 		})
 
@@ -244,7 +249,7 @@ func vmResizeTests() {
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
 
-				assertExpectedLastResizeAnnotation(vm, vmClass)
+				assertExpectedResizedClassFields(vm, vmClass)
 			})
 
 			It("Resizes brownfield VM", func() {
@@ -275,7 +280,7 @@ func vmResizeTests() {
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
 
-				assertExpectedLastResizeAnnotation(vm, vmClass)
+				assertExpectedResizedClassFields(vm, vmClass)
 			})
 		})
 
@@ -293,7 +298,7 @@ func vmResizeTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 					Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
 
-					assertExpectedLastResizeAnnotation(vm, vmClass)
+					assertExpectedResizedClassFields(vm, vmClass)
 				})
 			})
 
@@ -315,6 +320,9 @@ func vmResizeTests() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 					Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
+
+					// BMV: TBD exactly what we should do in this case.
+					// Expect(vm.Status.Class).To(BeNil())
 				})
 			})
 
@@ -335,6 +343,8 @@ func vmResizeTests() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 					Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
+
+					Expect(vm.Status.Class).To(BeNil())
 				})
 			})
 		})

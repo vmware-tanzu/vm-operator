@@ -123,6 +123,7 @@ type FeatureStates struct {
 	//             plan for FSSs going forward.
 	UnifiedStorageQuota     bool // FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA
 	VMResize                bool // FSS_WCP_VMSERVICE_RESIZE
+	VMResizeCPUMemory       bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
 	VMImportNewNet          bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
 	WorkloadDomainIsolation bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
 }

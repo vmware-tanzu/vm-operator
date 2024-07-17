@@ -1029,6 +1029,21 @@ var _ = Describe("UpdateStatus", func() {
 			})
 		})
 
+		Context("When FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY is not enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMResizeCPUMemory = false
+				})
+			})
+
+			Context("Has Class", func() {
+				It("Back fills Status.Class", func() {
+					Expect(vmCtx.VM.Status.Class).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Class.Name).To(Equal(builder.DummyClassName))
+				})
+			})
+		})
+
 		Context("Does not have Class", func() {
 			BeforeEach(func() {
 				vmCtx.VM.Spec.ClassName = ""

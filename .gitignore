@@ -4,6 +4,8 @@ config/crd/external-crds/netoperator.vmware.com_*
 
 # Do not vendor the storage-policy-quota CRDs.
 config/crd/external-crds/cns.vmware.com_*
+!config/crd/external-crds/cns.vmware.com_storagepolicyquotas.yaml
+!config/crd/external-crds/cns.vmware.com_storagepolicyusages.yaml
 
 .DS_Store
 .cache

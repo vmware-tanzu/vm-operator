@@ -118,9 +118,36 @@ rules:
   resources:
   - storagepolicyquotas
   verbs:
+  - delete
   - get
   - list
   - watch
+- apiGroups:
+  - cns.vmware.com
+  resources:
+  - storagepolicyquotas/status
+  verbs:
+  - get
+- apiGroups:
+  - cns.vmware.com
+  resources:
+  - storagepolicyusages
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cns.vmware.com
+  resources:
+  - storagepolicyusages/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - imageregistry.vmware.com
   resources:

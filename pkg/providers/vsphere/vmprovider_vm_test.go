@@ -1298,6 +1298,27 @@ func vmTests() {
 					Expect(ecMap).ToNot(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
 				})
 			})
+			It("TKG VM that has opt-in annotation gets the backup EC", func() {
+				if vm.Labels == nil {
+					vm.Labels = make(map[string]string)
+				}
+				vm.Labels[kubeutil.CAPVClusterRoleLabelKey] = ""
+				vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = ""
+
+				vm.Annotations[vmopv1.ForceEnableBackupAnnotation] = "true"
+
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+				By("has backup ExtraConfig key", func() {
+					Expect(o.Config.ExtraConfig).ToNot(BeNil())
+					ecMap := pkgutil.OptionValues(o.Config.ExtraConfig).StringMap()
+					Expect(ecMap).To(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
+				})
+			})
 
 			Context("VM Class with PCI passthrough devices", func() {
 				BeforeEach(func() {

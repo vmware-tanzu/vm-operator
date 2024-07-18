@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -518,9 +519,10 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		}
 	}
 
-	// Back up the VM at the end after a successful update.
-	// Skip TKG VMs since they are backed up differently than VM Service VMs.
-	if !kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
+	// Back up the VM at the end after a successful update.  TKG nodes are skipped
+	// from backup unless they specify the annotation to opt into backup.
+	if !kubeutil.HasCAPILabels(vmCtx.VM.Labels) ||
+		annotations.HasForceEnableBackup(vmCtx.VM) {
 		vmCtx.Logger.V(4).Info("Backing up VM Service managed VM")
 
 		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)

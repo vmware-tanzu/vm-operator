@@ -177,6 +177,16 @@ const (
 	// specifying this key, backup/restore and/or disaster recovery solutions are
 	// responsible to register the VM with Supervisor.
 	DisableAutoRegistrationExtraConfigKey = "vmservice.virtualmachine.disableAutomaticRegistration"
+
+	// ForceEnableBackupAnnotation is an annotation that instructs VM operator to
+	// ignore all exclusion rules and persist the configuration of the resource in
+	// virtual machine in relevant ExtraConfig fields.
+	//
+	// This is an experimental flag which only guarantees that the configuration
+	// of the VirtualMachine resource will be persisted in the virtual machine on
+	// vSphere.  There is no guarantee that the registration of the VM will be
+	// successful post a restore or failover operation.
+	ForceEnableBackupAnnotation = GroupName + "/force-enable-backup"
 )
 
 const (

@@ -333,6 +333,9 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
+	if len(vmCtx.VM.Spec.Cdrom) == 0 {
+		return nil // only needed when deploying ISO library items
+	}
 	if createArgs.StorageProfileID == "" {
 		return nil
 	}
@@ -342,8 +345,6 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 	if createArgs.ConfigSpec.Files.VmPathName != "" {
 		return nil
 	}
-
-	// TODO: we should only do this when deploying ISO library items
 
 	vc := vcClient.VimClient()
 

@@ -332,6 +332,7 @@ func vmTests() {
 					propName        = "config.name"
 					propPowerState  = "runtime.powerState"
 					propExtraConfig = "config.extraConfig"
+					propPathName    = "config.files.vmPathName"
 				)
 				var (
 					err           error
@@ -380,6 +381,16 @@ func vmTests() {
 						default:
 							panic(fmt.Sprintf("invalid power state: %s", vm.Spec.PowerState))
 						}
+					})
+				})
+				When("getting "+propPathName, func() {
+					BeforeEach(func() {
+						propertyPaths = []string{propPathName}
+					})
+					It("should not be set", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(HaveLen(1))
+						Expect(result[propName]).To(BeNil()) // should only be set if cdrom is present
 					})
 				})
 			})
@@ -2096,6 +2107,13 @@ func vmTests() {
 			vm.Spec.Image.Kind = cvmiKind
 			vm.Spec.Image.Name = clusterVMImage.Name
 			vm.Spec.StorageClass = ctx.StorageClassName
+			vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{{
+				Name: "cdrom0",
+				Image: vmopv1.VirtualMachineImageRef{
+					Name: cvmiKind,
+					Kind: clusterVMImage.Name,
+				},
+			}}
 		})
 
 		Context("return config", func() {

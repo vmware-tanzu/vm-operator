@@ -883,3 +883,42 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigSpec{}),
 	)
 })
+
+var _ = Describe("CreateResizeCPUMemoryConfigSpec", func() {
+
+	ctx := context.Background()
+
+	DescribeTable("ConfigInfo",
+		func(
+			ci vimtypes.VirtualMachineConfigInfo,
+			cs, expectedCS vimtypes.VirtualMachineConfigSpec) {
+
+			actualCS, err := resize.CreateResizeCPUMemoryConfigSpec(ctx, ci, cs)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(reflect.DeepEqual(actualCS, expectedCS)).To(BeTrue(), cmp.Diff(actualCS, expectedCS))
+		},
+
+		Entry("Empty needs no updating",
+			ConfigInfo{},
+			ConfigSpec{},
+			ConfigSpec{}),
+
+		Entry("NumCPUs needs updating",
+			ConfigInfo{Hardware: vimtypes.VirtualHardware{NumCPU: 2}},
+			ConfigSpec{NumCPUs: 4},
+			ConfigSpec{NumCPUs: 4}),
+		Entry("NumCpus does not need updating",
+			ConfigInfo{Hardware: vimtypes.VirtualHardware{NumCPU: 4}},
+			ConfigSpec{NumCPUs: 4},
+			ConfigSpec{}),
+
+		Entry("MemoryMB needs updating",
+			ConfigInfo{Hardware: vimtypes.VirtualHardware{MemoryMB: 512}},
+			ConfigSpec{MemoryMB: 1024},
+			ConfigSpec{MemoryMB: 1024}),
+		Entry("MemoryMB does not need updating",
+			ConfigInfo{Hardware: vimtypes.VirtualHardware{MemoryMB: 1024}},
+			ConfigSpec{MemoryMB: 1024},
+			ConfigSpec{}),
+	)
+})

@@ -39,5 +39,5 @@ type ContentSourceBindingList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ContentSourceBinding{}, &ContentSourceBindingList{})
+	objectTypes = append(objectTypes, &ContentSourceBinding{}, &ContentSourceBindingList{})
 }

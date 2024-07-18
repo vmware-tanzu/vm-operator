@@ -229,7 +229,7 @@ type ClusterVirtualMachineImageList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(
+	objectTypes = append(objectTypes,
 		&VirtualMachineImage{},
 		&VirtualMachineImageList{},
 		&ClusterVirtualMachineImage{},

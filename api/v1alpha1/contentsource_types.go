@@ -52,5 +52,5 @@ type ContentSourceList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ContentSource{}, &ContentSourceList{})
+	objectTypes = append(objectTypes, &ContentSource{}, &ContentSourceList{})
 }

@@ -112,7 +112,7 @@ func vmResizeTests() {
 		ExpectWithOffset(1, generation).To(Equal(class.Generation))
 
 		ExpectWithOffset(1, vm.Status.Class).ToNot(BeNil())
-		ExpectWithOffset(1, vm.Status.Class.APIVersion).To(Equal(vmopv1.SchemeGroupVersion.String()))
+		ExpectWithOffset(1, vm.Status.Class.APIVersion).To(Equal(vmopv1.GroupVersion.String()))
 		ExpectWithOffset(1, vm.Status.Class.Kind).To(Equal("VirtualMachineClass"))
 		ExpectWithOffset(1, vm.Status.Class.Name).To(Equal(class.Name))
 	}

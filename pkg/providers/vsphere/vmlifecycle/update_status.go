@@ -69,7 +69,7 @@ func UpdateStatus(
 				// In v1a2 we know this will always be the namespace scoped class since v1a2 doesn't have
 				// the bindings.
 				vm.Status.Class = &common.LocalObjectRef{
-					APIVersion: vmopv1.SchemeGroupVersion.String(),
+					APIVersion: vmopv1.GroupVersion.String(),
 					Kind:       "VirtualMachineClass",
 					Name:       vm.Spec.ClassName,
 				}

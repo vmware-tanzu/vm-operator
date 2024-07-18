@@ -56,7 +56,7 @@ type validator struct {
 }
 
 func (v validator) For() schema.GroupVersionKind {
-	return vmopv1a1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1a1.WebConsoleRequest{}).Name())
+	return vmopv1a1.GroupVersion.WithKind(reflect.TypeOf(vmopv1a1.WebConsoleRequest{}).Name())
 }
 
 func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {

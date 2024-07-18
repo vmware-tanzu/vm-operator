@@ -1069,7 +1069,7 @@ func unitTestsMutating() {
 						config.BuildVersion = "v1"
 					}), vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
-				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
 		})
 
@@ -1081,7 +1081,7 @@ func unitTestsMutating() {
 						config.BuildVersion = "v1"
 					}), vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
-				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
 		})
 
@@ -1096,7 +1096,7 @@ func unitTestsMutating() {
 						config.BuildVersion = "v1"
 					}), vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
-				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
 		})
 	})

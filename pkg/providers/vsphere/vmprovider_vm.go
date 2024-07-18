@@ -827,7 +827,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 			vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, createArgs.VMClass)
 		}
 		vmCtx.VM.Status.Class = &common.LocalObjectRef{
-			APIVersion: vmopv1.SchemeGroupVersion.String(),
+			APIVersion: vmopv1.GroupVersion.String(),
 			Kind:       createArgs.VMClass.Kind,
 			Name:       createArgs.VMClass.Name,
 		}

@@ -169,7 +169,7 @@ type VirtualMachineServiceList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(
+	objectTypes = append(objectTypes,
 		&VirtualMachineService{},
 		&VirtualMachineServiceList{},
 	)

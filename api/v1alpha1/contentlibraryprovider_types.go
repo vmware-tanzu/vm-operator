@@ -42,5 +42,5 @@ type ContentLibraryProviderList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ContentLibraryProvider{}, &ContentLibraryProviderList{})
+	objectTypes = append(objectTypes, &ContentLibraryProvider{}, &ContentLibraryProviderList{})
 }

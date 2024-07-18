@@ -19,8 +19,8 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -61,7 +61,7 @@ type validator struct {
 }
 
 func (v validator) For() schema.GroupVersionKind {
-	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachinePublishRequest{}).Name())
+	return vmopv1.GroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachinePublishRequest{}).Name())
 }
 
 func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
@@ -116,7 +116,7 @@ func (v validator) validateSource(ctx *pkgctx.WebhookRequestContext, vmpub *vmop
 
 	sourcePath := field.NewPath("spec").Child("source")
 	if apiVersion := vmpub.Spec.Source.APIVersion; apiVersion != "" {
-		v1a1GV, v1a2GV, vmopv1 := v1alpha1.SchemeGroupVersion.String(), v1alpha2.SchemeGroupVersion.String(), vmopv1.SchemeGroupVersion.String()
+		v1a1GV, v1a2GV, vmopv1 := vmopv1a1.GroupVersion.String(), vmopv1a2.GroupVersion.String(), vmopv1.GroupVersion.String()
 		switch apiVersion {
 		case v1a1GV, v1a2GV, vmopv1:
 		default:

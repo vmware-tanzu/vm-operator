@@ -59,7 +59,7 @@ type validator struct {
 }
 
 func (v validator) For() schema.GroupVersionKind {
-	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineClass{}).Name())
+	return vmopv1.GroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineClass{}).Name())
 }
 
 func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {

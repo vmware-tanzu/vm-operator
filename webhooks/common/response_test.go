@@ -30,7 +30,7 @@ var _ = Describe(
 	func() {
 
 		var (
-			gr  = schema.GroupResource{Group: vmopv1a1.SchemeGroupVersion.Group, Resource: "VirtualMachine"}
+			gr  = schema.GroupResource{Group: vmopv1a1.GroupVersion.Group, Resource: "VirtualMachine"}
 			ctx *pkgctx.WebhookRequestContext
 		)
 

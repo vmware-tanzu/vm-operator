@@ -454,7 +454,7 @@ func intgTestsMutating() {
 				vm := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
-				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
 		})
 
@@ -471,14 +471,14 @@ func intgTestsMutating() {
 				vm := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
-				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 
 				pkg.BuildVersion = "v2"
 
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
-				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
 		})
 	})

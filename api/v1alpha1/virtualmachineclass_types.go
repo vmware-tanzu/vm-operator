@@ -164,5 +164,5 @@ type VirtualMachineClassList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&VirtualMachineClass{}, &VirtualMachineClassList{})
+	objectTypes = append(objectTypes, &VirtualMachineClass{}, &VirtualMachineClassList{})
 }

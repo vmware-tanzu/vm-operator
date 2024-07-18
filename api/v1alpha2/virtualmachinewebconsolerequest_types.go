@@ -77,7 +77,7 @@ type VirtualMachineWebConsoleRequestList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(
+	objectTypes = append(objectTypes,
 		&VirtualMachineWebConsoleRequest{},
 		&VirtualMachineWebConsoleRequestList{},
 	)

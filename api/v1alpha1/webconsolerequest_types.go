@@ -75,5 +75,5 @@ type WebConsoleRequestList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&WebConsoleRequest{}, &WebConsoleRequestList{})
+	objectTypes = append(objectTypes, &WebConsoleRequest{}, &WebConsoleRequestList{})
 }

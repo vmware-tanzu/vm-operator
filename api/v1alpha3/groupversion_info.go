@@ -4,20 +4,32 @@
 package v1alpha3
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
 // GroupName specifies the group name used to register the objects.
 const GroupName = "vmoperator.vmware.com"
 
 var (
-	// SchemeGroupVersion is group version used to register these objects
-	SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha3"}
+	// GroupVersion is group version used to register these objects.
+	GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha3"}
 
-	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
-	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
+	// schemeBuilder is used to add go types to the GroupVersionKind scheme.
+	schemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 
 	// AddToScheme adds the types in this group-version to the given scheme.
-	AddToScheme = SchemeBuilder.AddToScheme
+	AddToScheme = schemeBuilder.AddToScheme
+
+	objectTypes = []runtime.Object{}
+
+	// localSchemeBuilder is used for type conversions.
+	localSchemeBuilder = schemeBuilder
 )
+
+func addKnownTypes(scheme *runtime.Scheme) error {
+	scheme.AddKnownTypes(GroupVersion, objectTypes...)
+	metav1.AddToGroupVersion(scheme, GroupVersion)
+	return nil
+}

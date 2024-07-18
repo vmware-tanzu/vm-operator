@@ -16,10 +16,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 )
 
-var _ = Describe("FuzzyConversion", Label(testlabels.API, testlabels.Fuzz), func() {
+var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 
 	var (
 		scheme *runtime.Scheme

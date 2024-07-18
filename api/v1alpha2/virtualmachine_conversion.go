@@ -106,7 +106,7 @@ func Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(
 	// Copy in.spec.image into out.status.image on down-convert.
 	if i := in.Spec.Image; i != nil {
 		out.Status.Image = &vmopv1a2common.LocalObjectRef{
-			APIVersion: vmopv1.SchemeGroupVersion.String(),
+			APIVersion: vmopv1.GroupVersion.String(),
 			Kind:       i.Kind,
 			Name:       i.Name,
 		}

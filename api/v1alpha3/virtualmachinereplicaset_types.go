@@ -166,5 +166,5 @@ type VirtualMachineReplicaSetList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&VirtualMachineReplicaSet{}, &VirtualMachineReplicaSetList{})
+	objectTypes = append(objectTypes, &VirtualMachineReplicaSet{}, &VirtualMachineReplicaSetList{})
 }

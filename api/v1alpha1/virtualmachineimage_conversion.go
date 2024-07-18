@@ -10,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -473,7 +472,7 @@ func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw ctrlconversion.Hub) er
 	return nil
 }
 
-func readContentLibRefConversionAnnotation(from ctrlclient.Object) (objRef *corev1.TypedLocalObjectReference) {
+func readContentLibRefConversionAnnotation(from metav1.Object) (objRef *corev1.TypedLocalObjectReference) {
 	if data, ok := from.GetAnnotations()[vmopv1.VMIContentLibRefAnnotation]; ok {
 		objRef = &corev1.TypedLocalObjectReference{}
 		_ = json.Unmarshal([]byte(data), objRef)

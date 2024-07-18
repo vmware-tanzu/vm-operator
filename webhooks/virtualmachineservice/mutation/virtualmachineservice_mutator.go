@@ -70,7 +70,7 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 }
 
 func (m mutator) For() schema.GroupVersionKind {
-	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineService{}).Name())
+	return vmopv1.GroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineService{}).Name())
 }
 
 // vmServiceFromUnstructured returns the VirtualMachineService from the unstructured object.

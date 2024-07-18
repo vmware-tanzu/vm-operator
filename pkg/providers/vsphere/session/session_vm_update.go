@@ -636,7 +636,7 @@ func (s *Session) prePowerOnVMReconfigure(
 			vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, updateArgs.VMClass)
 
 			vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
-				APIVersion: vmopv1.SchemeGroupVersion.String(),
+				APIVersion: vmopv1.GroupVersion.String(),
 				Kind:       "VirtualMachineClass",
 				Name:       updateArgs.VMClass.Name,
 			}
@@ -949,7 +949,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 
 	if resizeArgs.VMClass != nil {
 		vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
-			APIVersion: vmopv1.SchemeGroupVersion.String(),
+			APIVersion: vmopv1.GroupVersion.String(),
 			Kind:       "VirtualMachineClass",
 			Name:       resizeArgs.VMClass.Name,
 		}

@@ -163,7 +163,7 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 }
 
 func (m mutator) For() schema.GroupVersionKind {
-	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachine{}).Name())
+	return vmopv1.GroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachine{}).Name())
 }
 
 // vmFromUnstructured returns the VirtualMachine from the unstructured object.
@@ -457,7 +457,7 @@ func SetCreatedAtAnnotations(ctx context.Context, vm *vmopv1.VirtualMachine) {
 		vm.Annotations = map[string]string{}
 	}
 	vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
-	vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = vmopv1.SchemeGroupVersion.Version
+	vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
 }
 
 // SetLastResizeAnnotation sets the last resize annotation as needed when the class name changes.

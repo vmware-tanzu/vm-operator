@@ -63,7 +63,7 @@ var (
 	stateConfirmationInterval = 100 * time.Millisecond
 
 	// replicaSetKind contains the schema.GroupVersionKind for the VirtualMachineReplicaSet type.
-	replicaSetKind = vmopv1.SchemeGroupVersion.WithKind("VirtualMachineReplicaSet")
+	replicaSetKind = vmopv1.GroupVersion.WithKind("VirtualMachineReplicaSet")
 )
 
 const (
@@ -266,7 +266,7 @@ func (r *Reconciler) adoptOrphan(
 	vm *vmopv1.VirtualMachine) error {
 
 	patch := client.MergeFrom(vm.DeepCopy())
-	newRef := *metav1.NewControllerRef(rs, vmopv1.SchemeGroupVersion.WithKind("VirtualMachineReplicaSet"))
+	newRef := *metav1.NewControllerRef(rs, vmopv1.GroupVersion.WithKind("VirtualMachineReplicaSet"))
 	vm.OwnerReferences = append(vm.OwnerReferences, newRef)
 	return r.Client.Patch(ctx, vm, patch)
 }

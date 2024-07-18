@@ -366,5 +366,5 @@ type VirtualMachinePublishRequestList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&VirtualMachinePublishRequest{}, &VirtualMachinePublishRequestList{})
+	objectTypes = append(objectTypes, &VirtualMachinePublishRequest{}, &VirtualMachinePublishRequestList{})
 }

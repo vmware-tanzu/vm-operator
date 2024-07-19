@@ -14,6 +14,23 @@ import (
 )
 
 var _ = DescribeTable(
+	"HasPaused",
+	func(in map[string]string, out bool) {
+		vm := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: in,
+			},
+		}
+		actual := annotations.HasPaused(vm)
+		Expect(actual).To(Equal(out))
+	},
+	Entry("nil", nil, false),
+	Entry("not present", map[string]string{"foo": "bar"}, false),
+	Entry("present but empty ", map[string]string{vmopv1.PauseAnnotation: ""}, true),
+	Entry("present and not empty ", map[string]string{vmopv1.PauseAnnotation: "true"}, true),
+)
+
+var _ = DescribeTable(
 	"HasForceEnableBackup",
 	func(in map[string]string, out bool) {
 		vm := &vmopv1.VirtualMachine{

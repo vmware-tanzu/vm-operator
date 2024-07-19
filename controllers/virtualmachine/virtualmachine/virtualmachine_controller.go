@@ -35,6 +35,7 @@ import (
 	vspherevm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -318,9 +319,11 @@ func requeueDelay(ctx *pkgctx.VirtualMachineContext) time.Duration {
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr error) {
 	ctx.Logger.Info("Reconciling VirtualMachine Deletion")
 
-	// Return early if the VM reconciliation is paused.
-	if _, exists := ctx.VM.Annotations[vmopv1.PauseAnnotation]; exists {
+	// If the VM reconciliation has been paused by the developer,
+	// skip deletion and return.
+	if annotations.HasPaused(ctx.VM) {
 		ctx.Logger.Info("Skipping deletion since VirtualMachine contains the pause annotation")
+
 		return nil
 	}
 

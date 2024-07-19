@@ -13,6 +13,10 @@ func HasForceEnableBackup(o metav1.Object) bool {
 	return hasAnnotation(o, vmopv1.ForceEnableBackupAnnotation)
 }
 
+func HasPaused(o metav1.Object) bool {
+	return hasAnnotation(o, vmopv1.PauseAnnotation)
+}
+
 func hasAnnotation(o metav1.Object, annotation string) bool {
 	annotations := o.GetAnnotations()
 	if annotations == nil {

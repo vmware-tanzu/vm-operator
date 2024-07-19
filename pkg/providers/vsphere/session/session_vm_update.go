@@ -30,6 +30,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
@@ -1233,11 +1234,10 @@ func (s *Session) UpdateVirtualMachine(
 
 // Source of truth is EC and Annotation.
 func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
-
 	vm := vmCtx.VM
 
 	adminPaused := vmutil.IsPausedByAdmin(vmCtx.MoVM)
-	_, devopsPaused := vm.Annotations[vmopv1.PauseAnnotation]
+	devopsPaused := annotations.HasPaused(vm)
 
 	if adminPaused || devopsPaused {
 		if vm.Labels == nil {

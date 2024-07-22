@@ -25,11 +25,12 @@ const (
 	folderMoID = "folder-moid"
 )
 
-var _ = Describe("Availability Zones", func() {
+var _ = Describe("Availability Zones and Zones", func() {
 	var (
 		ctx                       context.Context
 		client                    ctrlclient.Client
 		numberOfAvailabilityZones int
+		numberOfZonesPerNamespace int
 		numberOfNamespaces        int
 		specCCRID                 bool
 	)
@@ -44,6 +45,7 @@ var _ = Describe("Availability Zones", func() {
 		ctx = nil
 		client = nil
 		numberOfAvailabilityZones = 0
+		numberOfZonesPerNamespace = 0
 		numberOfNamespaces = 0
 	})
 
@@ -70,12 +72,37 @@ var _ = Describe("Availability Zones", func() {
 			}
 			Expect(client.Create(ctx, obj)).To(Succeed())
 		}
+		for i := 0; i < numberOfNamespaces; i++ {
+			for j := 0; j < numberOfZonesPerNamespace; j++ {
+				obj := &topologyv1.Zone{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: fmt.Sprintf("ns-%d", i),
+						Name:      fmt.Sprintf("zone-%d", j),
+					},
+					Spec: topologyv1.ZoneSpec{
+						ManagedVMs: topologyv1.VSphereEntityInfo{
+							PoolMoIDs:  []string{poolMoID},
+							FolderMoID: folderMoID,
+						},
+					},
+				}
+				Expect(client.Create(ctx, obj)).To(Succeed())
+			}
+		}
 	})
 
 	assertGetAvailabilityZonesSuccess := func() {
 		zones, err := topology.GetAvailabilityZones(ctx, client)
 		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		ExpectWithOffset(1, zones).To(HaveLen(numberOfAvailabilityZones))
+	}
+
+	assertGetZonesSuccess := func() {
+		for i := 0; i < numberOfNamespaces; i++ {
+			zones, err := topology.GetZones(ctx, client, fmt.Sprintf("ns-%d", i))
+			ExpectWithOffset(1, err).ToNot(HaveOccurred())
+			ExpectWithOffset(1, zones).To(HaveLen(numberOfZonesPerNamespace))
+		}
 	}
 
 	assertGetAvailabilityZoneSuccess := func() {
@@ -85,9 +112,25 @@ var _ = Describe("Availability Zones", func() {
 		}
 	}
 
+	assertGetZoneSuccess := func() {
+		for i := 0; i < numberOfNamespaces; i++ {
+			for j := 0; j < numberOfZonesPerNamespace; j++ {
+				_, err := topology.GetZone(ctx, client, fmt.Sprintf("zone-%d", j), fmt.Sprintf("ns-%d", i))
+				ExpectWithOffset(1, err).ToNot(HaveOccurred())
+			}
+		}
+	}
+
 	assertGetAvailabilityZonesErrNoAvailabilityZones := func() {
 		_, err := topology.GetAvailabilityZones(ctx, client)
 		ExpectWithOffset(1, err).To(MatchError(topology.ErrNoAvailabilityZones))
+	}
+
+	assertGetZonesErrNoZones := func() {
+		for i := 0; i < numberOfNamespaces; i++ {
+			_, err := topology.GetZones(ctx, client, fmt.Sprintf("ns-%d", i))
+			ExpectWithOffset(1, err).To(MatchError(topology.ErrNoZones))
+		}
 	}
 
 	assertGetAvailabilityZoneValidNamesErrNotFound := func() {
@@ -102,9 +145,23 @@ var _ = Describe("Availability Zones", func() {
 		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 	}
 
+	assertGetZoneInvalidNameErrNotFound := func() {
+		for i := 0; i < numberOfNamespaces; i++ {
+			_, err := topology.GetZone(ctx, client, "invalid", fmt.Sprintf("ns-%d", i))
+			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
+		}
+	}
+
 	assertGetAvailabilityZoneEmptyNameErrNotFound := func() {
 		_, err := topology.GetAvailabilityZone(ctx, client, "")
 		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
+	}
+
+	assertGetZoneEmptyNameErrNotFound := func() {
+		for i := 0; i < numberOfNamespaces; i++ {
+			_, err := topology.GetZone(ctx, client, "", fmt.Sprintf("ns-%d", i))
+			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
+		}
 	}
 
 	assertGetNamespaceFolderAndRPMoIDInvalidNameErrNotFound := func() {
@@ -124,6 +181,9 @@ var _ = Describe("Availability Zones", func() {
 	assertGetNamespaceFolderAndRPMoIDSuccess := func() {
 		for i := 0; i < numberOfAvailabilityZones; i++ {
 			assertGetNamespaceFolderAndRPMoIDSuccessForAZ(fmt.Sprintf("az-%d", i))
+		}
+		for i := 0; i < numberOfZonesPerNamespace; i++ {
+			assertGetNamespaceFolderAndRPMoIDSuccessForAZ(fmt.Sprintf("zone-%d", i))
 		}
 	}
 
@@ -241,7 +301,63 @@ var _ = Describe("Availability Zones", func() {
 		})
 	})
 
-	When("Availability zones do not exist", func() {
+	When("Two Zone resources exist per namespace", func() {
+		BeforeEach(func() {
+			numberOfZonesPerNamespace = 2
+			pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.WorkloadDomainIsolation = true
+			})
+		})
+		When("Three DevOps Namespace resources exist", func() {
+			BeforeEach(func() {
+				numberOfNamespaces = 3
+			})
+			Context("GetZones", func() {
+				It("Should return the two Zone resources per namespace", assertGetZonesSuccess)
+			})
+			Context("GetZone", func() {
+				Context("With a valid Zone name", func() {
+					It("Should return the AvailabilityZone resource", assertGetZoneSuccess)
+				})
+				Context("With an invalid Zone name", func() {
+					It("Should return an apierrors.NotFound error", assertGetZoneInvalidNameErrNotFound)
+				})
+				Context("With an empty Zone name", func() {
+					It("Should return an apierrors.NotFound error", assertGetZoneEmptyNameErrNotFound)
+				})
+			})
+			Context("GetNamespaceFolderAndRPMoID", func() {
+				Context("With an invalid Zone name", assertGetNamespaceFolderAndRPMoIDInvalidAZErrNotFound)
+				Context("With a valid Zone name", func() {
+					It("Should return the RP and Folder resources", assertGetNamespaceFolderAndRPMoIDSuccess)
+				})
+				Context("With an invalid Zone name", func() {
+					It("Should return an apierrors.NotFound error", assertGetNamespaceFolderAndRPMoIDInvalidNameErrNotFound)
+				})
+				Context("With an invalid Namespace name", func() {
+					It("Should return an error", assertGetNamespaceFolderAndRPMoIDInvalidNamespaceErrNotFound)
+				})
+			})
+			Context("GetNamespaceFolderMoID", func() {
+				Context("With an invalid Namespace name", func() {
+					It("Should return NotFound", assertGetNamespaceFolderMoIDInvalidNamespaceErrNotFound)
+				})
+				Context("With a valid Namespace name", func() {
+					It("Should return the RP and Folder resources", assertGetNamespaceFolderMoIDSuccess)
+				})
+			})
+			Context("GetNamespaceFolderAndRPMoIDs", func() {
+				Context("With an invalid Namespace name", func() {
+					It("Should return NotFound", assertGetNamespaceFolderAndRPMoIDsInvalidNamespaceNoErr)
+				})
+				Context("With a valid Namespace name", func() {
+					It("Should return the RP and Folder resources", assertGetNamespaceFolderAndRPMoIDsSuccess)
+				})
+			})
+		})
+	})
+
+	When("Availability zones and zones do not exist", func() {
 		When("DevOps Namespaces exist", func() {
 			BeforeEach(func() {
 				numberOfNamespaces = 3
@@ -260,7 +376,19 @@ var _ = Describe("Availability Zones", func() {
 					})
 				})
 			})
+			Context("GetZones", func() {
+				It("Should return an ErrNoZones", assertGetZonesErrNoZones)
+			})
+			Context("GetZone", func() {
+				Context("With an invalid Zone name", func() {
+					It("Should return an apierrors.NotFound error", assertGetZoneInvalidNameErrNotFound)
+				})
+				Context("With an empty Zone name", func() {
+					It("Should return an apierrors.NotFound error", assertGetZoneEmptyNameErrNotFound)
+				})
+			})
 		})
+
 		When("DevOps Namespaces do not exist", func() {
 			Context("GetAvailabilityZones", func() {
 				It("Should return an ErrNoAvailabilityZones", assertGetAvailabilityZonesErrNoAvailabilityZones)
@@ -311,7 +439,7 @@ var _ = Describe("Availability Zones", func() {
 			})
 		})
 
-		When("there are no zones", func() {
+		When("there are no availability zones", func() {
 			BeforeEach(func() {
 				numberOfAvailabilityZones = 0
 			})

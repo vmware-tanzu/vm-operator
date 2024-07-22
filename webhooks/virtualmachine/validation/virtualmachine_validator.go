@@ -1127,9 +1127,17 @@ func (v validator) validateAvailabilityZone(ctx *pkgctx.WebhookRequestContext, v
 	}
 
 	// Validate the name of the provided availability zone.
-	if zone := vm.Labels[topology.KubernetesTopologyZoneLabelKey]; zone != "" {
-		if _, err := topology.GetAvailabilityZone(ctx.Context, v.client, zone); err != nil {
-			return append(allErrs, field.Invalid(zoneLabelPath, zone, err.Error()))
+	zoneLabelVal := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+	if zoneLabelVal != "" {
+		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+			// Validate the name of the provided zone.
+			// It is the same name as az.
+			if _, err := topology.GetZone(ctx.Context, v.client, zoneLabelVal, vm.Namespace); err != nil {
+				return append(allErrs, field.Invalid(zoneLabelPath, zoneLabelVal, err.Error()))
+			}
+		}
+		if _, err := topology.GetAvailabilityZone(ctx.Context, v.client, zoneLabelVal); err != nil {
+			return append(allErrs, field.Invalid(zoneLabelPath, zoneLabelVal, err.Error()))
 		}
 	}
 

@@ -29,16 +29,16 @@ import (
 )
 
 const (
-	DummyVMIID                = "vmi-0123456789"
-	DummyImageName            = "dummy-image-name"
-	DummyClassName            = "dummyClassName"
-	DummyVolumeName           = "dummy-volume-name"
-	DummyPVCName              = "dummyPVCName"
-	DummyDistroVersion        = "dummyDistroVersion"
-	DummyOSType               = "centosGuest"
-	DummyStorageClassName     = "dummy-storage-class"
-	DummyResourceQuotaName    = "dummy-resource-quota"
-	DummyAvailabilityZoneName = "dummy-availability-zone"
+	DummyVMIID             = "vmi-0123456789"
+	DummyImageName         = "dummy-image-name"
+	DummyClassName         = "dummyClassName"
+	DummyVolumeName        = "dummy-volume-name"
+	DummyPVCName           = "dummyPVCName"
+	DummyDistroVersion     = "dummyDistroVersion"
+	DummyOSType            = "centosGuest"
+	DummyStorageClassName  = "dummy-storage-class"
+	DummyResourceQuotaName = "dummy-resource-quota"
+	DummyZoneName          = "dummy-zone"
 )
 
 const (
@@ -73,7 +73,7 @@ func DummyResourceQuota(namespace, rlName string) *corev1.ResourceQuota {
 }
 
 func DummyAvailabilityZone() *topologyv1.AvailabilityZone {
-	return DummyNamedAvailabilityZone(DummyAvailabilityZoneName)
+	return DummyNamedAvailabilityZone(DummyZoneName)
 }
 
 func DummyNamedAvailabilityZone(name string) *topologyv1.AvailabilityZone {
@@ -85,6 +85,21 @@ func DummyNamedAvailabilityZone(name string) *topologyv1.AvailabilityZone {
 			ClusterComputeResourceMoIDs: []string{"cluster"},
 			Namespaces:                  map[string]topologyv1.NamespaceInfo{},
 		},
+	}
+}
+
+// DummyZone uses the same name with AZ.
+func DummyZone(namespace string) *topologyv1.Zone {
+	return DummyNamedZone(DummyZoneName, namespace)
+}
+
+func DummyNamedZone(name, namespace string) *topologyv1.Zone {
+	return &topologyv1.Zone{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: topologyv1.ZoneSpec{},
 	}
 }
 

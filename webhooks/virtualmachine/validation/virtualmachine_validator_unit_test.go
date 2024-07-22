@@ -43,6 +43,7 @@ const (
 	dummyCreatedAtSchemaVersionVal = "dummy-created-at-schema-version"
 	dummyPausedVMLabelVal          = "dummy-devops"
 	dummyVmiName                   = "vmi-dummy"
+	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
 	vmiKind                        = "VirtualMachineImage"
 	cvmiKind                       = "Cluster" + vmiKind
 	invalidImageKind               = "supported: " + vmiKind + "; " + cvmiKind
@@ -106,7 +107,7 @@ type unitValidatingWebhookContext struct {
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
 	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm"
-	vm.Namespace = "dummy-vm-namespace-for-webhook-validation"
+	vm.Namespace = dummyNamespaceName
 	obj, err := builder.ToUnstructured(vm)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -119,8 +120,9 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 		Expect(err).ToNot(HaveOccurred())
 	}
 
-	zone := builder.DummyAvailabilityZone()
-	initObjects := []client.Object{zone}
+	az := builder.DummyAvailabilityZone()
+	zone := builder.DummyZone(dummyNamespaceName)
+	initObjects := []client.Object{az, zone}
 
 	return &unitValidatingWebhookContext{
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...),
@@ -143,9 +145,6 @@ func unitTestsValidateCreate() {
 		invalidPVCName             bool
 		invalidPVCReadOnly         bool
 		withInstanceStorageVolumes bool
-		isNoAvailabilityZones      bool
-		isInvalidAvailabilityZone  bool
-		isEmptyAvailabilityZone    bool
 		powerState                 vmopv1.VirtualMachinePowerState
 		nextRestartTime            string
 		instanceUUID               string
@@ -179,19 +178,6 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
 		}
 
-		if args.isNoAvailabilityZones {
-			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
-		}
-		//nolint:gocritic // Ignore linter complaint about converting to switch case since the following is more readable.
-		if args.isEmptyAvailabilityZone {
-			delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
-		} else if args.isInvalidAvailabilityZone {
-			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
-		} else {
-			zoneName := builder.DummyAvailabilityZoneName
-			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
-		}
-
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 		ctx.vm.Spec.InstanceUUID = args.instanceUUID
@@ -215,6 +201,9 @@ func unitTestsValidateCreate() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.IsoSupport = true
+		})
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.WorkloadDomainIsolation = true
 		})
 	})
 
@@ -243,13 +232,6 @@ func unitTestsValidateCreate() {
 		Entry("should deny when there are instance storage volumes and user is SSO user", createArgs{withInstanceStorageVolumes: true}, false,
 			field.Forbidden(volPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
 		Entry("should allow when there are instance storage volumes and user is service user", createArgs{isServiceUser: true, withInstanceStorageVolumes: true}, true, nil, nil),
-
-		Entry("should allow when VM specifies no availability zone, there are availability zones", createArgs{isEmptyAvailabilityZone: true}, true, nil, nil),
-		Entry("should allow when VM specifies no availability zone, there are no availability zones", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
-		Entry("should allow when VM specifies valid availability zone, there are availability zones", createArgs{}, true, nil, nil),
-		Entry("should deny when VM specifies invalid availability zone, there are availability zones", createArgs{isInvalidAvailabilityZone: true}, false, nil, nil),
-		Entry("should deny when VM specifies invalid availability zone, there are no availability zones", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true}, false, nil, nil),
-		Entry("should deny when there are no availability zones and WCP FaultDomains FSS is enabled", createArgs{isNoAvailabilityZones: true}, false, nil, nil),
 
 		Entry("should disallow creating VM with suspended power state", createArgs{powerState: vmopv1.VirtualMachinePowerStateSuspended}, false,
 			field.Invalid(specPath.Child("powerState"), vmopv1.VirtualMachinePowerStateSuspended, "cannot set a new VM's power state to Suspended").Error(), nil),
@@ -282,6 +264,90 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	Context("availability zone and zone", func() {
+		DescribeTable("create", doTest,
+			Entry("should allow when VM specifies no availability zone, there are availability zones and zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow when VM specifies no availability zone, there are no availability zones or zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should allow when VM specifies valid availability zone, there are availability zones and zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("when Workload Domain Isolation FSS disabled, should allow when VM specifies valid availability zone, there are availability zones but no zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.WorkloadDomainIsolation = false
+						})
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("when Workload Domain Isolation FSS enabled, should deny when VM specifies valid availability zone, there are availability zones but no zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
+					},
+					expectAllowed: false,
+				},
+			),
+			Entry("should deny when VM specifies valid availability zone, there are no availability zones or zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
+					},
+					expectAllowed: false,
+				},
+			),
+			Entry("should deny when VM specifies invalid availability zone, there are availability zones and zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
+					},
+					expectAllowed: false,
+				},
+			),
+			Entry("should deny when VM specifies invalid availability zone, there are no availability zones or zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
+						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
+					},
+					expectAllowed: false,
+				},
+			),
+		)
+	})
 
 	DescribeTable(
 		"spec.className",
@@ -2111,11 +2177,11 @@ func unitTestsValidateUpdate() {
 			ctx.vm.Spec.Reserved.ResourcePolicyName = "policy" + updateSuffix
 		}
 		if args.assignZoneName {
-			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyAvailabilityZoneName
+			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName
 		}
 		if args.changeZoneName {
-			ctx.oldVM.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyAvailabilityZoneName
-			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyAvailabilityZoneName + updateSuffix
+			ctx.oldVM.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName
+			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName + updateSuffix
 		}
 
 		if args.withInstanceStorageVolumes {

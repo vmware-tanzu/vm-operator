@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
-	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/nsx.vmware.com/v1alpha1"
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/crd.nsx.vmware.com/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -384,7 +384,7 @@ func vmE2ETests() {
 							Name: networkName,
 							TypeMeta: metav1.TypeMeta{
 								Kind:       "Subnet",
-								APIVersion: "nsx.vmware.com/v1alpha1",
+								APIVersion: "crd.nsx.vmware.com/v1alpha1",
 							},
 						},
 					},

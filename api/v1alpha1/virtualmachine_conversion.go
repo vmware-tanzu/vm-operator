@@ -278,10 +278,10 @@ func convert_v1alpha1_NetworkInterface_To_v1alpha3_NetworkInterfaceSpec(
 		out.Network.TypeMeta.APIVersion = "vmware.com/v1alpha1"
 		out.Network.TypeMeta.Kind = "VirtualNetwork"
 	case "nsx-t-subnet":
-		out.Network.TypeMeta.APIVersion = "nsx.vmware.com/v1alpha1"
+		out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
 		out.Network.TypeMeta.Kind = "Subnet"
 	case "nsx-t-subnetset":
-		out.Network.TypeMeta.APIVersion = "nsx.vmware.com/v1alpha1"
+		out.Network.TypeMeta.APIVersion = "crd.nsx.vmware.com/v1alpha1"
 		out.Network.TypeMeta.Kind = "SubnetSet"
 	}
 

@@ -2451,6 +2451,49 @@ func unitTestsValidateUpdate() {
 					validate: doValidateWithMsg("spec.className: Required value"),
 				},
 			),
+
+			Entry("disallow changing class name when FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.ClassName = "class"
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ClassName = "new-class"
+					},
+					validate: doValidateWithMsg(
+						`spec.className: Invalid value: "new-class": field is immutable`),
+				},
+			),
+
+			Entry("allow changing class name when FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMResizeCPUMemory = true
+						})
+
+						ctx.oldVM.Spec.ClassName = "xsmall-class"
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ClassName = "big-class"
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow changing class name to empty string when FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMResizeCPUMemory = true
+						})
+
+						ctx.oldVM.Spec.ClassName = "xsmall-class"
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ClassName = ""
+					},
+					validate: doValidateWithMsg("spec.className: Required value"),
+				},
+			),
 		)
 	})
 

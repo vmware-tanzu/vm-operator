@@ -50,6 +50,7 @@ const (
 	FSSTKGMultipleCL
 	FSSUnifiedStorageQuota
 	FSSVMResize
+	FSSVMResizeCPUMemory
 	FSSVMImportNewNet
 	FSSWorkloadDomainIsolation
 
@@ -154,6 +155,8 @@ func (n VarName) String() string {
 		return "FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA"
 	case FSSVMResize:
 		return "FSS_WCP_VMSERVICE_RESIZE"
+	case FSSVMResizeCPUMemory:
+		return "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
 	case FSSVMImportNewNet:
 		return "FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET"
 	case FSSWorkloadDomainIsolation:

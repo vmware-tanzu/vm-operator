@@ -93,6 +93,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_TKG_Multiple_CL", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE", "true")).To(Succeed())
+					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_WORKLOAD_DOMAIN_ISOLATION", "true")).To(Succeed())
 					Expect(os.Setenv("CREATE_VM_REQUEUE_DELAY", "125h")).To(Succeed())
@@ -136,6 +137,7 @@ var _ = Describe(
 							K8sWorkloadMgmtAPI:      true,
 							UnifiedStorageQuota:     true,
 							VMResize:                true,
+							VMResizeCPUMemory:       true,
 							VMImportNewNet:          true,
 							WorkloadDomainIsolation: true,
 						},

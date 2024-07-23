@@ -19,6 +19,8 @@ spec:
           value: "false"
         - name: FSS_WCP_VMSERVICE_RESIZE
           value: "false"
+        - name: FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
+          value: "false"
         - name: FSS_PODVMONSTRETCHEDSUPERVISOR
           value: "false"
         - name: FSS_WCP_TKG_Multiple_CL

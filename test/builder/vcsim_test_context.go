@@ -80,6 +80,8 @@ type VCSimTestConfig struct {
 
 	// WithVMResize enables the FSS_WCP_VMSERVICE_RESIZE FSS.
 	WithVMResize bool
+	// WithVMResize enables the FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY FSS.
+	WithVMResizeCPUMemory bool
 
 	// WithoutStorageClass disables the storage class required, meaning that the
 	// Datastore will be used instead. In WCP production the storage class is
@@ -306,6 +308,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 
 		cc.Features.InstanceStorage = config.WithInstanceStorage
 		cc.Features.VMResize = config.WithVMResize
+		cc.Features.VMResizeCPUMemory = config.WithVMResizeCPUMemory
 	})
 }
 

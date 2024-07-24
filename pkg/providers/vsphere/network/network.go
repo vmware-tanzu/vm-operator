@@ -626,7 +626,7 @@ func createVPCNetworkInterface(
 		if vpcSubnetPort.Annotations == nil {
 			vpcSubnetPort.Annotations = make(map[string]string)
 		}
-		vpcSubnetPort.Annotations[constants.VPCAttachmentRef] = "virtualmachine/" + vmCtx.VM.Name
+		vpcSubnetPort.Annotations[constants.VPCAttachmentRef] = "virtualmachine/" + vmCtx.VM.Name + "/" + interfaceSpec.Name
 		return nil
 	})
 

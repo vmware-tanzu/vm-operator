@@ -659,7 +659,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							Namespace: vm.Namespace,
 						},
 					}
-					annotationVal := "virtualmachine/" + vm.Name
+					annotationVal := "virtualmachine/" + vm.Name + "/" + interfaceName
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
 					Expect(subnetPort.Spec.SubnetSet).To(Equal(networkName))
 					Expect(subnetPort.Annotations).To(HaveKeyWithValue(constants.VPCAttachmentRef, annotationVal))

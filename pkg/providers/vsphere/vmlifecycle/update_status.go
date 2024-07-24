@@ -16,6 +16,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vmdk"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -61,13 +62,11 @@ func UpdateStatus(
 	// TODO: Might set other "prereq" conditions too for version conversion but we'd have to fib a little.
 
 	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {
-		// When resize is enabled, don't backfill the class from the Spec since we don't know if the
-		// Spec class has been applied to the VM. When resize is enabled, this field is updated after
-		// a successful resize.
-		if !pkgcfg.FromContext(vmCtx).Features.VMResize {
-			if vm.Status.Class == nil {
-				// In v1a2 we know this will always be the namespace scoped class since v1a2 doesn't have
-				// the bindings.
+		if vm.Status.Class == nil {
+			// When resize is enabled, don't backfill the class from the Spec since we don't know if the
+			// Spec class has been applied to the VM. When resize is enabled, this field is updated after
+			// a successful resize.
+			if f := pkgcfg.FromContext(vmCtx).Features; !f.VMResize && !f.VMResizeCPUMemory {
 				vm.Status.Class = &common.LocalObjectRef{
 					APIVersion: vmopv1.GroupVersion.String(),
 					Kind:       "VirtualMachineClass",
@@ -122,6 +121,10 @@ func UpdateStatus(
 	MarkVMToolsRunningStatusCondition(vmCtx.VM, vmCtx.MoVM.Guest)
 	MarkCustomizationInfoCondition(vmCtx.VM, vmCtx.MoVM.Guest)
 	MarkBootstrapCondition(vmCtx.VM, vmCtx.MoVM.Config)
+
+	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
+		MarkVMClassConfigurationSynced(vmCtx, vmCtx.VM, k8sClient)
+	}
 
 	zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
 	if zoneName == "" {
@@ -429,6 +432,64 @@ func MarkBootstrapCondition(
 		conditions.Set(vm, c)
 	} else {
 		conditions.MarkFalse(vm, vmopv1.GuestBootstrapCondition, reason, msg)
+	}
+}
+
+func MarkVMClassConfigurationSynced(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	k8sClient ctrlclient.Client) {
+
+	className := vm.Spec.ClassName
+	if className == "" {
+		conditions.Delete(vm, vmopv1.VirtualMachineConfigurationSynced)
+		return
+	}
+
+	// NOTE: This performs the same checks as vmopv1util.ResizeNeeded() but we can't use
+	// just the return value of that function because we need more details, and we want
+	// to avoid having to fetch the class if we can.
+
+	lraName, lraUID, lraGeneration, exists := vmopv1util.GetLastResizedAnnotation(*vm)
+	if !exists || lraName == "" {
+		_, sameClassResize := vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation]
+		if sameClassResize {
+			conditions.MarkFalse(vm, vmopv1.VirtualMachineConfigurationSynced, "SameClassResize", "")
+		} else {
+			// Brownfield VM so just marked as synced.
+			conditions.MarkTrue(vm, vmopv1.VirtualMachineConfigurationSynced)
+		}
+		return
+	}
+
+	if vm.Spec.ClassName != lraName {
+		// Most common need resize case.
+		conditions.MarkFalse(vm, vmopv1.VirtualMachineConfigurationSynced, "ClassNameChanged", "")
+		return
+	}
+
+	// Depending on what we did in the prior session update code for this VM, we might already
+	// have fetched the class but the way the code is structured today, it isn't very easy for
+	// us to pass that to here. So just refetch it again.
+	//
+	// Note that for this situation we'll only do a resize if the SameVMClassResizeAnnotation
+	// is present but use this condition to inform if the class has changed and a user could
+	// opt-in to a resize.
+
+	vmClass := vmopv1.VirtualMachineClass{}
+	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: className, Namespace: vm.Namespace}, &vmClass); err != nil {
+		if apierrors.IsNotFound(err) {
+			conditions.MarkUnknown(vm, vmopv1.VirtualMachineConfigurationSynced, "ClassNotFound", "")
+		} else {
+			conditions.MarkUnknown(vm, vmopv1.VirtualMachineConfigurationSynced, err.Error(), "")
+		}
+		return
+	}
+
+	if string(vmClass.UID) == lraUID && vmClass.Generation == lraGeneration {
+		conditions.MarkTrue(vm, vmopv1.VirtualMachineConfigurationSynced)
+	} else {
+		conditions.MarkFalse(vm, vmopv1.VirtualMachineConfigurationSynced, "ClassUpdated", "")
 	}
 }
 

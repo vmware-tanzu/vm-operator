@@ -14,9 +14,11 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
@@ -103,17 +105,25 @@ func vmResizeTests() {
 		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
 	}
 
-	assertExpectedResizedClassFields := func(vm *vmopv1.VirtualMachine, class *vmopv1.VirtualMachineClass) {
-		name, uid, generation, exists := vmopv1util.GetLastResizedAnnotation(*vm)
-		ExpectWithOffset(1, exists).To(BeTrue())
-		ExpectWithOffset(1, name).To(Equal(class.Name))
-		ExpectWithOffset(1, uid).To(BeEquivalentTo(class.UID))
-		ExpectWithOffset(1, generation).To(Equal(class.Generation))
+	assertExpectedResizedClassFields := func(vm *vmopv1.VirtualMachine, class *vmopv1.VirtualMachineClass, synced ...bool) {
+		inSync := len(synced) == 0 || synced[0]
 
-		ExpectWithOffset(1, vm.Status.Class).ToNot(BeNil())
-		ExpectWithOffset(1, vm.Status.Class.APIVersion).To(Equal(vmopv1.GroupVersion.String()))
-		ExpectWithOffset(1, vm.Status.Class.Kind).To(Equal("VirtualMachineClass"))
-		ExpectWithOffset(1, vm.Status.Class.Name).To(Equal(class.Name))
+		name, uid, generation, exists := vmopv1util.GetLastResizedAnnotation(*vm)
+		ExpectWithOffset(1, exists).To(BeTrue(), "LRA present")
+		ExpectWithOffset(1, name).To(Equal(class.Name), "LRA ClassName")
+		ExpectWithOffset(1, uid).To(BeEquivalentTo(class.UID), "LRA UID")
+		if inSync {
+			ExpectWithOffset(1, generation).To(Equal(class.Generation), "LRA Generation")
+		}
+
+		ExpectWithOffset(1, vm.Status.Class).ToNot(BeNil(), "Status.Class")
+		ExpectWithOffset(1, vm.Status.Class.APIVersion).To(Equal(vmopv1.GroupVersion.String()), "Status.Class.APIVersion")
+		ExpectWithOffset(1, vm.Status.Class.Kind).To(Equal("VirtualMachineClass"), "Status.Class.Kind")
+		ExpectWithOffset(1, vm.Status.Class.Name).To(Equal(class.Name), "Status.Class.Name")
+
+		if inSync {
+			ExpectWithOffset(1, conditions.IsTrue(vm, vmopv1.VirtualMachineConfigurationSynced)).To(BeTrue(), "Synced Condition")
+		}
 	}
 
 	DescribeTableSubtree("Resize VM",
@@ -174,6 +184,7 @@ func vmResizeTests() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
+					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(512))
 
 					assertExpectedResizedClassFields(vm, newVMClass)
 				})
@@ -195,6 +206,7 @@ func vmResizeTests() {
 
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
 					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
 
 					assertExpectedResizedClassFields(vm, newVMClass)
@@ -225,6 +237,70 @@ func vmResizeTests() {
 					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
 
 					assertExpectedResizedClassFields(vm, newVMClass)
+				})
+			})
+
+			Context("Powered On VM", func() {
+
+				It("Resize Pending", func() {
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					_, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+
+					cs := configSpec
+					cs.NumCPUs = 42
+					cs.MemoryMB = 8192
+					newVMClass := createVMClass(cs)
+					vm.Spec.ClassName = newVMClass.Name
+
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					By("Does not resize powered on VM", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(512))
+					})
+
+					assertExpectedResizedClassFields(vm, vmClass, false)
+
+					c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal("ClassNameChanged"))
+				})
+
+				It("Has Same Class Resize Annotation", func() {
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					_, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+
+					cs := configSpec
+					cs.MemoryMB = 8192
+					updateVMClass(vmClass, cs)
+
+					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					By("Does not resize powered on VM", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(512))
+					})
+
+					assertExpectedResizedClassFields(vm, vmClass, false)
+
+					c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal("ClassUpdated"))
 				})
 			})
 
@@ -273,9 +349,11 @@ func vmResizeTests() {
 
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
 						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
 
 						Expect(vm.Annotations).ToNot(HaveKey(vmopv1util.LastResizedAnnotationKey))
+						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConfigurationSynced)).To(BeTrue())
 					})
 
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
@@ -284,9 +362,38 @@ func vmResizeTests() {
 
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
 					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
 
 					assertExpectedResizedClassFields(vm, vmClass)
+				})
+
+				It("Powered On brownfield VM", func() {
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					_, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+
+					// Remove annotation so the VM appears to be from before this feature.
+					Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
+					delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
+
+					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					By("Does not resize powered on VM", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
+					})
+
+					c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal("SameClassResize"))
 				})
 			})
 
@@ -329,6 +436,11 @@ func vmResizeTests() {
 
 						// BMV: TBD exactly what we should do in this case.
 						// Expect(vm.Status.Class).To(BeNil())
+
+						c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+						Expect(c.Reason).To(Equal("ClassNotFound"))
 					})
 				})
 
@@ -351,6 +463,7 @@ func vmResizeTests() {
 						Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
 
 						Expect(vm.Status.Class).To(BeNil())
+						Expect(conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)).To(BeNil())
 					})
 				})
 			})

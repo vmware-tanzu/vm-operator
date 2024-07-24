@@ -1055,7 +1055,6 @@ var _ = Describe("UpdateStatus", func() {
 			})
 		})
 	})
-
 })
 
 var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {

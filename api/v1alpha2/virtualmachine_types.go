@@ -41,6 +41,10 @@ const (
 
 	// VirtualMachineConditionCreated indicates that the VM has been created.
 	VirtualMachineConditionCreated = "VirtualMachineCreated"
+
+	// VirtualMachineConfigurationSynced indicates that the VM's current configuration is synced to the
+	// current version of its VirtualMachineClass.
+	VirtualMachineConfigurationSynced = "VirtualMachineConfigurationSynced"
 )
 
 const (

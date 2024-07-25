@@ -52,6 +52,21 @@ func CreateResizeConfigSpec(
 	return outCS, nil
 }
 
+// CreateResizeCPUMemoryConfigSpec takes the current VM CPU and Memory state in the ConfigInfo and
+// compares it to the desired state in the ConfigSpec, returning a ConfigSpec with any required
+// changes to drive the desired state.
+func CreateResizeCPUMemoryConfigSpec(
+	_ context.Context,
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec) (vimtypes.VirtualMachineConfigSpec, error) {
+
+	outCS := vimtypes.VirtualMachineConfigSpec{}
+	cmp(ci.Hardware.NumCPU, cs.NumCPUs, &outCS.NumCPUs)
+	cmp(int64(ci.Hardware.MemoryMB), cs.MemoryMB, &outCS.MemoryMB)
+
+	return outCS, nil
+}
+
 // compareAnnotation compares the ConfigInfo.Annotation.
 func compareAnnotation(
 	ci vimtypes.VirtualMachineConfigInfo,

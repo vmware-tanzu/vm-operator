@@ -824,7 +824,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 
 	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {
 		// Only set VM Class field for non-synthesized classes.
-		if pkgcfg.FromContext(vmCtx).Features.VMResize {
+		if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
 			vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, createArgs.VMClass)
 		}
 		vmCtx.VM.Status.Class = &common.LocalObjectRef{

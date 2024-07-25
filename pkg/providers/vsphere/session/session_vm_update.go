@@ -540,6 +540,10 @@ func updateConfigSpec(
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 	UpdateConfigSpecGuestID(config, configSpec, vmCtx.VM.Spec.GuestID)
 
+	if pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory {
+		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
+	}
+
 	return configSpec
 }
 
@@ -604,8 +608,8 @@ func (s *Session) prePowerOnVMReconfigure(
 	var configSpec *vimtypes.VirtualMachineConfigSpec
 	var err error
 
-	vmResizeEnabled := pkgcfg.FromContext(vmCtx).Features.VMResize
-	if vmResizeEnabled {
+	features := pkgcfg.FromContext(vmCtx).Features
+	if features.VMResize {
 		configSpec, err = s.prePowerOnVMResizeConfigSpec(vmCtx, config, updateArgs)
 	} else {
 		configSpec, err = s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
@@ -631,15 +635,15 @@ func (s *Session) prePowerOnVMReconfigure(
 			vmCtx.Logger.Error(err, "pre power on reconfigure failed")
 			return err
 		}
+	}
 
-		if vmResizeEnabled {
-			vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, updateArgs.VMClass)
+	if features.VMResize || features.VMResizeCPUMemory {
+		vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, updateArgs.VMClass)
 
-			vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
-				APIVersion: vmopv1.GroupVersion.String(),
-				Kind:       "VirtualMachineClass",
-				Name:       updateArgs.VMClass.Name,
-			}
+		vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
+			APIVersion: vmopv1.GroupVersion.String(),
+			Kind:       "VirtualMachineClass",
+			Name:       updateArgs.VMClass.Name,
 		}
 	}
 
@@ -919,12 +923,14 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	if resizeArgs.VMClass != nil {
 		needsResize = vmopv1util.ResizeNeeded(*vmCtx.VM, *resizeArgs.VMClass)
 		if needsResize {
-			cs, err := resize.CreateResizeConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
+			if pkgcfg.FromContext(vmCtx).Features.VMResize {
+				configSpec, err = resize.CreateResizeConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
+			} else {
+				configSpec, err = resize.CreateResizeCPUMemoryConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
+			}
 			if err != nil {
 				return false, err
 			}
-
-			configSpec = cs
 		}
 	}
 
@@ -1022,7 +1028,7 @@ func (s *Session) updateVMDesiredPowerStateOff(
 		refetchProps = true
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.VMResize {
+	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
 		refetchProps, err = s.resizeVMWhenPoweredStateOff(
 			vmCtx,
 			vcVM,

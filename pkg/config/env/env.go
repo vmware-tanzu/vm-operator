@@ -53,6 +53,7 @@ const (
 	FSSVMResizeCPUMemory
 	FSSVMImportNewNet
 	FSSWorkloadDomainIsolation
+	FSSVMIncrementalRestore
 
 	_varNameEnd
 )
@@ -161,6 +162,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET"
 	case FSSWorkloadDomainIsolation:
 		return "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
+	case FSSVMIncrementalRestore:
+		return "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
 	}
 	panic("unknown environment variable")
 }

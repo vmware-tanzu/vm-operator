@@ -127,6 +127,20 @@ func Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(
 		}
 	}
 
+	// Handle the renaming of pause annotation on down convert.
+	if val, ok := in.Annotations[vmopv1.PauseAnnotation]; ok {
+		annotations := out.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+		annotations[PauseAnnotation] = val
+		// Remove the pause annotation corresponding to the Hub.
+		// This would also remove the annotation if someone created a
+		// v1a2 VM with "paused" annotation. The alternative is to leave
+		// both the annotations.
+		delete(annotations, vmopv1.PauseAnnotation)
+	}
+
 	return nil
 }
 
@@ -201,6 +215,21 @@ func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 				}
 			}
 		}
+	}
+
+	// Handle the renaming of pause annotation on up convert.
+	if val, ok := in.Annotations[PauseAnnotation]; ok {
+		annotations := out.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+		annotations[vmopv1.PauseAnnotation] = val
+
+		// Remove the pause annotation from v1alpha1.
+		// This would also remove the annotation if someone created a
+		// v1a1 VM with "pause-reconcile" annotation. The alternative is
+		// to leave both the annotations.
+		delete(annotations, PauseAnnotation)
 	}
 
 	return nil

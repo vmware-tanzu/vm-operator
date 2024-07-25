@@ -29,6 +29,8 @@ spec:
           value: "false"
         - name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
           value: "false"
+        - name: FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
+          value: "false"
 
         #
         # Feature state switch flags beneath this line are enabled on main and

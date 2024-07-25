@@ -126,6 +126,7 @@ type FeatureStates struct {
 	VMResizeCPUMemory       bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
 	VMImportNewNet          bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
 	WorkloadDomainIsolation bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
+	VMIncrementalRestore    bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
 }
 
 type InstanceStorage struct {

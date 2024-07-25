@@ -96,6 +96,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_WORKLOAD_DOMAIN_ISOLATION", "true")).To(Succeed())
+					Expect(os.Setenv("FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE", "true")).To(Succeed())
 					Expect(os.Setenv("CREATE_VM_REQUEUE_DELAY", "125h")).To(Succeed())
 					Expect(os.Setenv("POWERED_ON_VM_HAS_IP_REQUEUE_DELAY", "126h")).To(Succeed())
 				})
@@ -140,6 +141,7 @@ var _ = Describe(
 							VMResizeCPUMemory:       true,
 							VMImportNewNet:          true,
 							WorkloadDomainIsolation: true,
+							VMIncrementalRestore:    true,
 						},
 						CreateVMRequeueDelay:         125 * time.Hour,
 						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,

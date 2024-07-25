@@ -60,6 +60,7 @@ func FromEnv() Config {
 	setBool(env.FSSVMResizeCPUMemory, &config.Features.VMResizeCPUMemory)
 	setBool(env.FSSVMImportNewNet, &config.Features.VMImportNewNet)
 	setBool(env.FSSWorkloadDomainIsolation, &config.Features.WorkloadDomainIsolation)
+	setBool(env.FSSVMIncrementalRestore, &config.Features.VMIncrementalRestore)
 
 	return config
 }

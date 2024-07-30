@@ -88,6 +88,9 @@ type VCSimTestConfig struct {
 	// always required; the Datastore is only needed for gce2e.
 	WithoutStorageClass bool
 
+	// WithWorkloadIsolation enables FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
+	WithWorkloadIsolation bool
+
 	// WithJSONExtraConfig enables additional ExtraConfig that is included when
 	// creating a VM.
 	WithJSONExtraConfig string
@@ -218,7 +221,7 @@ func (c *TestContextForVCSim) AfterEach() {
 	c.UnitTestContext.AfterEach()
 }
 
-func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
+func (c *TestContextForVCSim) CreateWorkloadNamespace(config VCSimTestConfig) WorkloadNamespaceInfo {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "workload-",
@@ -249,14 +252,31 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		for _, rp := range nsRPs {
 			nsInfo.PoolMoIDs = append(nsInfo.PoolMoIDs, rp.Reference().Value)
 		}
-
-		az := &topologyv1.AvailabilityZone{}
-		Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
-		if az.Spec.Namespaces == nil {
-			az.Spec.Namespaces = map[string]topologyv1.NamespaceInfo{}
+		// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is disabled, AvailabilityZone stores namespace info.
+		if !config.WithWorkloadIsolation {
+			az := &topologyv1.AvailabilityZone{}
+			Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
+			if az.Spec.Namespaces == nil {
+				az.Spec.Namespaces = map[string]topologyv1.NamespaceInfo{}
+			}
+			az.Spec.Namespaces[ns.Name] = nsInfo
+			Expect(c.Client.Update(c, az)).To(Succeed())
+			// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is enabled, Namespaced Zone stores namespace info.
+		} else {
+			zone := &topologyv1.Zone{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      azName,
+					Namespace: ns.Name,
+				},
+				Spec: topologyv1.ZoneSpec{
+					ManagedVMs: topologyv1.VSphereEntityInfo{
+						FolderMoID: nsInfo.FolderMoId,
+						PoolMoIDs:  nsInfo.PoolMoIDs,
+					},
+				},
+			}
+			Expect(c.Client.Create(c, zone)).To(Succeed())
 		}
-		az.Spec.Namespaces[ns.Name] = nsInfo
-		Expect(c.Client.Update(c, az)).To(Succeed())
 	}
 
 	resourceQuota := &corev1.ResourceQuota{
@@ -309,6 +329,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.Features.InstanceStorage = config.WithInstanceStorage
 		cc.Features.VMResize = config.WithVMResize
 		cc.Features.VMResizeCPUMemory = config.WithVMResizeCPUMemory
+		cc.Features.WorkloadDomainIsolation = config.WithWorkloadIsolation
 	})
 }
 

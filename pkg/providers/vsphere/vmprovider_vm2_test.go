@@ -59,7 +59,8 @@ func vmE2ETests() {
 		network.RetryTimeout = 1 * time.Millisecond
 
 		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
+			WithContentLibrary:    true,
+			WithWorkloadIsolation: true,
 		}
 
 		vm = builder.DummyBasicVirtualMachine("test-vm", "")
@@ -72,7 +73,7 @@ func vmE2ETests() {
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace()
+		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
 
 		vmClass.Namespace = nsInfo.Namespace
 		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())

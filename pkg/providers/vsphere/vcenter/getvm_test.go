@@ -26,15 +26,20 @@ func getVM() {
 	const vcVMName = "DC0_C0_RP0_VM0"
 
 	var (
-		ctx    *builder.TestContextForVCSim
-		nsInfo builder.WorkloadNamespaceInfo
+		ctx        *builder.TestContextForVCSim
+		nsInfo     builder.WorkloadNamespaceInfo
+		testConfig builder.VCSimTestConfig
 
 		vmCtx pkgctx.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
-		nsInfo = ctx.CreateWorkloadNamespace()
+		testConfig = builder.VCSimTestConfig{
+			WithWorkloadIsolation: true,
+		}
+
+		ctx = suite.NewTestContextForVCSim(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
 
 		vm := builder.DummyVirtualMachine()
 		vm.Name = "getvm-test"

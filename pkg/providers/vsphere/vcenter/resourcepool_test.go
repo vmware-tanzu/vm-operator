@@ -22,14 +22,19 @@ func resourcePoolTests() {
 
 func getResourcePoolTests() {
 	var (
-		ctx    *builder.TestContextForVCSim
-		nsInfo builder.WorkloadNamespaceInfo
-		nsRP   *object.ResourcePool
+		ctx        *builder.TestContextForVCSim
+		nsInfo     builder.WorkloadNamespaceInfo
+		nsRP       *object.ResourcePool
+		testConfig builder.VCSimTestConfig
 	)
 
 	BeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
-		nsInfo = ctx.CreateWorkloadNamespace()
+		testConfig = builder.VCSimTestConfig{
+			WithWorkloadIsolation: true,
+		}
+
+		ctx = suite.NewTestContextForVCSim(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
 		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 	})
 
@@ -98,17 +103,22 @@ func getResourcePoolTests() {
 func createDeleteExistResourcePoolChild() {
 
 	var (
-		ctx    *builder.TestContextForVCSim
-		nsInfo builder.WorkloadNamespaceInfo
-		nsRP   *object.ResourcePool
+		ctx        *builder.TestContextForVCSim
+		nsInfo     builder.WorkloadNamespaceInfo
+		nsRP       *object.ResourcePool
+		testConfig builder.VCSimTestConfig
 
 		parentRPMoID   string
 		resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 	)
 
 	BeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
-		nsInfo = ctx.CreateWorkloadNamespace()
+		testConfig = builder.VCSimTestConfig{
+			WithWorkloadIsolation: true,
+		}
+
+		ctx = suite.NewTestContextForVCSim(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
 		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 
 		parentRPMoID = nsRP.Reference().Value

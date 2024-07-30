@@ -36,8 +36,9 @@ func vmResizeTests() {
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
-			WithNetworkEnv:     builder.NetworkEnvNamed,
+			WithContentLibrary:    true,
+			WithNetworkEnv:        builder.NetworkEnvNamed,
+			WithWorkloadIsolation: true,
 		}
 	})
 
@@ -47,7 +48,7 @@ func vmResizeTests() {
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace()
+		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
 	})
 
 	AfterEach(func() {

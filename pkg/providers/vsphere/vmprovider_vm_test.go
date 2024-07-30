@@ -61,7 +61,8 @@ func vmTests() {
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
+			WithContentLibrary:    true,
+			WithWorkloadIsolation: true,
 		}
 	})
 
@@ -71,7 +72,7 @@ func vmTests() {
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace()
+		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
 	})
 
 	AfterEach(func() {

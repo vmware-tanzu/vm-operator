@@ -153,7 +153,7 @@ func (n VarName) String() string {
 	case FSSTKGMultipleCL:
 		return "FSS_WCP_TKG_Multiple_CL"
 	case FSSUnifiedStorageQuota:
-		return "FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA"
+		return "FSS_STORAGE_QUOTA_M2"
 	case FSSVMResize:
 		return "FSS_WCP_VMSERVICE_RESIZE"
 	case FSSVMResizeCPUMemory:

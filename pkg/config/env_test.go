@@ -91,7 +91,7 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_ISO_SUPPORT", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_TKG_Multiple_CL", "false")).To(Succeed())
-					Expect(os.Setenv("FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA", "true")).To(Succeed())
+					Expect(os.Setenv("FSS_STORAGE_QUOTA_M2", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", "true")).To(Succeed())

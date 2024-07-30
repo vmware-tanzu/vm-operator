@@ -404,7 +404,7 @@ func (v validator) validateClassOnCreate(ctx *pkgctx.WebhookRequestContext, vm *
 func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	if !pkgcfg.FromContext(ctx).Features.VMResize && !pkgcfg.FromContext(ctx).Features.VMResizeCPUMemory {
+	if f := pkgcfg.FromContext(ctx).Features; !f.VMResize && !f.VMResizeCPUMemory {
 		return append(allErrs,
 			validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, field.NewPath("spec", "className"))...)
 	}

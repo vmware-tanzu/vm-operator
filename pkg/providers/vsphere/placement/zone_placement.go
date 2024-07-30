@@ -93,30 +93,63 @@ func getPlacementCandidates(
 	zonePlacement bool,
 	childRPName string) (map[string][]string, error) {
 
-	var zones []topologyv1.AvailabilityZone
-
-	if zonePlacement {
-		z, err := topology.GetAvailabilityZones(vmCtx, client)
-		if err != nil {
-			return nil, err
-		}
-
-		zones = z
-	} else {
-		// Consider candidates only within the already assigned zone.
-		// NOTE: GetAvailabilityZone() will return a "default" AZ when the FSS is not enabled.
-		zone, err := topology.GetAvailabilityZone(vmCtx, client, vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey])
-		if err != nil {
-			return nil, err
-		}
-
-		zones = append(zones, zone)
-	}
-
 	candidates := map[string][]string{}
 
-	for _, zone := range zones {
-		nsInfo, ok := zone.Spec.Namespaces[vmCtx.VM.Namespace]
+	// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is enabled, use namespaced Zone CR to get candidate resource pools.
+	if pkgcfg.FromContext(vmCtx).Features.WorkloadDomainIsolation {
+		var zones []topologyv1.Zone
+		if zonePlacement {
+			z, err := topology.GetZones(vmCtx, client, vmCtx.VM.Namespace)
+			if err != nil {
+				return nil, err
+			}
+			zones = z
+		} else {
+			zone, err := topology.GetZone(vmCtx, client, vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey], vmCtx.VM.Namespace)
+			if err != nil {
+				return nil, err
+			}
+			zones = append(zones, zone)
+		}
+		for _, zone := range zones {
+			rpMoIDs := zone.Spec.ManagedVMs.PoolMoIDs
+			if childRPName != "" {
+				childRPMoIDs := lookupChildRPs(vmCtx, vcClient, rpMoIDs, zone.Name, childRPName)
+				if len(childRPMoIDs) == 0 {
+					vmCtx.Logger.Info("Zone had no candidates after looking up children ResourcePools",
+						"zone", zone.Name, "rpMoIDs", rpMoIDs, "childRPName", childRPName)
+					continue
+				}
+				rpMoIDs = childRPMoIDs
+			}
+
+			candidates[zone.Name] = rpMoIDs
+		}
+		return candidates, nil
+	}
+
+	// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is disabled, use cluster scoped AvailabilityZone CR to get candidate resource pools.
+	var azs []topologyv1.AvailabilityZone
+	if zonePlacement {
+		az, err := topology.GetAvailabilityZones(vmCtx, client)
+		if err != nil {
+			return nil, err
+		}
+
+		azs = az
+	} else {
+		// Consider candidates only within the already assigned zone.
+		// NOTE: GetAvailabilityZone() will return a "default" AZ when WCP_FaultDomains FSS is not enabled.
+		az, err := topology.GetAvailabilityZone(vmCtx, client, vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey])
+		if err != nil {
+			return nil, err
+		}
+
+		azs = append(azs, az)
+	}
+
+	for _, az := range azs {
+		nsInfo, ok := az.Spec.Namespaces[vmCtx.VM.Namespace]
 		if !ok {
 			continue
 		}
@@ -129,16 +162,16 @@ func getPlacementCandidates(
 		}
 
 		if childRPName != "" {
-			childRPMoIDs := lookupChildRPs(vmCtx, vcClient, rpMoIDs, zone.Name, childRPName)
+			childRPMoIDs := lookupChildRPs(vmCtx, vcClient, rpMoIDs, az.Name, childRPName)
 			if len(childRPMoIDs) == 0 {
-				vmCtx.Logger.Info("Zone had no candidates after looking up children ResourcePools",
-					"zone", zone.Name, "rpMoIDs", rpMoIDs, "childRPName", childRPName)
+				vmCtx.Logger.Info("AvailabilityZone had no candidates after looking up children ResourcePools",
+					"az", az.Name, "rpMoIDs", rpMoIDs, "childRPName", childRPName)
 				continue
 			}
 			rpMoIDs = childRPMoIDs
 		}
 
-		candidates[zone.Name] = rpMoIDs
+		candidates[az.Name] = rpMoIDs
 	}
 
 	return candidates, nil

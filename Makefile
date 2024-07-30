@@ -287,6 +287,9 @@ generate-go: ## Generate golang sources
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/tanzu-topology/... \
+		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 	$(MAKE) -C ./pkg/util/cloudinit/schema $@
 
 .PHONY: generate-manifests

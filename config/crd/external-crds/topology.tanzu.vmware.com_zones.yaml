@@ -67,19 +67,62 @@ spec:
                 - apiVersion
                 - name
                 type: object
-              folderMoID:
+              managedVMs:
                 description: |-
-                  FolderMoID is the managed object ID of the vSphere Folder for a
-                  Namespace.
-                type: string
-              poolMoIDs:
+                  ManagedVMs contains ResourcePool and folder moIDs to represent managedVMs
+                  entity within the namespace
+                properties:
+                  folderMoID:
+                    description: |-
+                      FolderMoID is the managed object ID of the vSphere Folder for a
+                      Namespace.
+                    type: string
+                  poolMoIDs:
+                    description: |-
+                      PoolMoIDs are the managed object ID of the vSphere ResourcePools
+                      in an individual vSphere Zone. A zone may be comprised of
+                      multiple ResourcePools.
+                    items:
+                      type: string
+                    type: array
+                type: object
+              namespace:
+                description: Namespace contains ResourcePool and folder moIDs to represent
+                  the namespace
+                properties:
+                  folderMoID:
+                    description: |-
+                      FolderMoID is the managed object ID of the vSphere Folder for a
+                      Namespace.
+                    type: string
+                  poolMoIDs:
+                    description: |-
+                      PoolMoIDs are the managed object ID of the vSphere ResourcePools
+                      in an individual vSphere Zone. A zone may be comprised of
+                      multiple ResourcePools.
+                    items:
+                      type: string
+                    type: array
+                type: object
+              vSpherePods:
                 description: |-
-                  PoolMoIDs are the managed object ID of the vSphere ResourcePools for a
-                  Namespace in an individual vSphere Zone. A zone may be comprised of
-                  multiple ResourcePools.
-                items:
-                  type: string
-                type: array
+                  VSpherePods contains ResourcePool and folder moIDs to represent vSpherePods
+                  entity within the namespace
+                properties:
+                  folderMoID:
+                    description: |-
+                      FolderMoID is the managed object ID of the vSphere Folder for a
+                      Namespace.
+                    type: string
+                  poolMoIDs:
+                    description: |-
+                      PoolMoIDs are the managed object ID of the vSphere ResourcePools
+                      in an individual vSphere Zone. A zone may be comprised of
+                      multiple ResourcePools.
+                    items:
+                      type: string
+                    type: array
+                type: object
             required:
             - availabilityZoneReference
             type: object

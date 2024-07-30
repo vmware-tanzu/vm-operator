@@ -18,13 +18,12 @@ type AvailabilityZoneReference struct {
 	Name string `json:"name"`
 }
 
-// ZoneSpec contains identifying information about the
-// vSphere resources used to represent a Kubernetes namespace on individual
-// vSphere Zones.
-type ZoneSpec struct {
+// VSphereEntityInfo contains the managed object IDs associated with
+// a vSphere entity
+type VSphereEntityInfo struct {
 	// +optional
-	// PoolMoIDs are the managed object ID of the vSphere ResourcePools for a
-	// Namespace in an individual vSphere Zone. A zone may be comprised of
+	// PoolMoIDs are the managed object ID of the vSphere ResourcePools
+	// in an individual vSphere Zone. A zone may be comprised of
 	// multiple ResourcePools.
 	PoolMoIDs []string `json:"poolMoIDs,omitempty"`
 
@@ -32,6 +31,22 @@ type ZoneSpec struct {
 	// FolderMoID is the managed object ID of the vSphere Folder for a
 	// Namespace.
 	FolderMoID string `json:"folderMoID,omitempty"`
+}
+
+// ZoneSpec contains identifying information about the
+// vSphere resources used to represent a Kubernetes namespace on individual
+// vSphere Zones.
+type ZoneSpec struct {
+	// Namespace contains ResourcePool and folder moIDs to represent the namespace
+	Namespace VSphereEntityInfo `json:"namespace,omitempty"`
+
+	// VSpherePods contains ResourcePool and folder moIDs to represent vSpherePods
+	// entity within the namespace
+	VSpherePods VSphereEntityInfo `json:"vSpherePods,omitempty"`
+
+	// ManagedVMs contains ResourcePool and folder moIDs to represent managedVMs
+	// entity within the namespace
+	ManagedVMs VSphereEntityInfo `json:"managedVMs,omitempty"`
 
 	// Zone is a reference to the cluster scoped AvailabilityZone this
 	// Zone is derived from.

@@ -11,6 +11,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 const (
@@ -22,10 +23,14 @@ const (
 var (
 	// ErrNoAvailabilityZones occurs when no availability zones are detected.
 	ErrNoAvailabilityZones = errors.New("no availability zones")
+
+	ErrNoZones = errors.New("no zones in specified namespace")
 )
 
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones,verbs=get;list;watch
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones/status,verbs=get;list;watch
+// +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=zones,verbs=get;list;watch
+// +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=zones/status,verbs=get;list;watch
 
 // LookupZoneForClusterMoID returns the zone for the given Cluster MoID.
 func LookupZoneForClusterMoID(
@@ -59,6 +64,17 @@ func GetNamespaceFolderAndRPMoID(
 	client ctrlclient.Client,
 	availabilityZoneName, namespace string) (string, string, error) {
 
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+		zone, err := GetZone(ctx, client, availabilityZoneName, namespace)
+		if err != nil {
+			return "", "", err
+		}
+		if len(zone.Spec.ManagedVMs.PoolMoIDs) != 0 {
+			return zone.Spec.ManagedVMs.FolderMoID, zone.Spec.ManagedVMs.PoolMoIDs[0], nil
+		}
+		return zone.Spec.ManagedVMs.FolderMoID, "", nil
+	}
+
 	availabilityZone, err := GetAvailabilityZone(ctx, client, availabilityZoneName)
 	if err != nil {
 		return "", "", err
@@ -84,13 +100,26 @@ func GetNamespaceFolderAndRPMoIDs(
 	client ctrlclient.Client,
 	namespace string) (string, []string, error) {
 
+	var folderMoID string
+	var rpMoIDs []string
+
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+		zones, err := GetZones(ctx, client, namespace)
+		// If no Zones found in namespace, do not return err.
+		if err != nil && !errors.Is(err, ErrNoZones) {
+			return "", nil, err
+		}
+		for _, zone := range zones {
+			folderMoID = zone.Spec.ManagedVMs.FolderMoID
+			rpMoIDs = append(rpMoIDs, zone.Spec.ManagedVMs.PoolMoIDs...)
+		}
+		return folderMoID, rpMoIDs, nil
+	}
+
 	availabilityZones, err := GetAvailabilityZones(ctx, client)
 	if err != nil {
 		return "", nil, err
 	}
-
-	var folderMoID string
-	var rpMoIDs []string
 
 	for _, az := range availabilityZones {
 		if nsInfo, ok := az.Spec.Namespaces[namespace]; ok {
@@ -111,6 +140,20 @@ func GetNamespaceFolderMoID(
 	ctx context.Context,
 	client ctrlclient.Client,
 	namespace string) (string, error) {
+
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+		zones, err := GetZones(ctx, client, namespace)
+		// If no Zones found in namespace, do not return err here.
+		if err != nil && !errors.Is(err, ErrNoZones) {
+			return "", err
+		}
+		// Note that the Folder is VC-scoped, but we store the Folder MoID in each Zone CR
+		// so we can return the first match.
+		for _, zone := range zones {
+			return zone.Spec.ManagedVMs.FolderMoID, nil
+		}
+		return "", fmt.Errorf("unable to get FolderMoID for namespace %s", namespace)
+	}
 
 	availabilityZones, err := GetAvailabilityZones(ctx, client)
 	if err != nil {
@@ -155,4 +198,34 @@ func GetAvailabilityZone(
 	var availabilityZone topologyv1.AvailabilityZone
 	err := client.Get(ctx, ctrlclient.ObjectKey{Name: availabilityZoneName}, &availabilityZone)
 	return availabilityZone, err
+}
+
+// GetZones returns a list of the Zone resources in a namespace.
+func GetZones(
+	ctx context.Context,
+	client ctrlclient.Client,
+	namespace string) ([]topologyv1.Zone, error) {
+
+	zoneList := &topologyv1.ZoneList{}
+	if err := client.List(ctx, zoneList, ctrlclient.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+
+	if len(zoneList.Items) == 0 {
+		return nil, ErrNoZones
+	}
+
+	return zoneList.Items, nil
+}
+
+// GetZone returns a namespaced Zone resource.
+func GetZone(
+	ctx context.Context,
+	client ctrlclient.Client,
+	zoneName string,
+	namespace string) (topologyv1.Zone, error) {
+
+	var zone topologyv1.Zone
+	err := client.Get(ctx, ctrlclient.ObjectKey{Name: zoneName, Namespace: namespace}, &zone)
+	return zone, err
 }

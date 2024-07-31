@@ -166,6 +166,15 @@ const (
 	// PVC disk data in JSON, compressed using gzip and base64-encoded.
 	PVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
 
+	// BackupVersionExtraConfigKey is the ExtraConfig key that indicates
+	// the version of the VM's last backup. It is a monotonically increasing counter and
+	// is only supposed to be used by IaaS control plane and vCenter for virtual machine registration
+	// post a restore operation.
+	//
+	// The BackupVersionExtraConfigKey on the vSphere VM and the VirtualMachineBackupVersionAnnotation
+	// on the VM resource in Supervisor indicate whether the backups are in sync.
+	BackupVersionExtraConfigKey = "vmservice.virtualmachine.backupVersion"
+
 	// DisableAutoRegistrationExtraConfigKey is the ExtraConfig key that can be
 	// set to "true" (case insensitive) on a virtual machine to opt-out of the
 	// automatic registration workflow.
@@ -191,6 +200,15 @@ const (
 	// vSphere.  There is no guarantee that the registration of the VM will be
 	// successful post a restore or failover operation.
 	ForceEnableBackupAnnotation = GroupName + "/force-enable-backup"
+
+	// VirtualMachineBackupVersionAnnotation is an annotation that indicates the VM's
+	// last backup version. It is a monotonically increasing counter and
+	// is only supposed to be used by IaaS control plane and vCenter for virtual machine registration
+	// post a restore operation.
+	//
+	// The VirtualMachineBackupVersionAnnotation on the VM resource in Supervisor and the BackupVersionExtraConfigKey on the vSphere VM
+	// indicate whether the backups are in sync.
+	VirtualMachineBackupVersionAnnotation = GroupName + "/backup-version"
 )
 
 const (

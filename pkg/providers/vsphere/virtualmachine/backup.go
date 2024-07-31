@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/vmware/govmomi/object"
@@ -19,6 +20,7 @@ import (
 	k8syaml "sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
@@ -31,6 +33,7 @@ type BackupVirtualMachineOptions struct {
 	VcVM                *object.VirtualMachine
 	DiskUUIDToPVC       map[string]corev1.PersistentVolumeClaim
 	AdditionalResources []client.Object
+	BackupVersion       string
 }
 
 // PVCDiskData contains the data of a disk attached to VM backed by a PVC.
@@ -55,22 +58,36 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		opts.VMCtx.Logger.Error(err, "failed to get VM properties for backup")
 		return err
 	}
-
 	curExCfg := pkgutil.OptionValues(moVM.Config.ExtraConfig)
 	var ecToUpdate pkgutil.OptionValues
 
-	vmYAML, err := getDesiredVMResourceYAMLForBackup(opts.VMCtx.VM, curExCfg)
-	if err != nil {
-		opts.VMCtx.Logger.Error(err, "failed to get VM resource yaml for backup")
-		return err
-	}
-	if vmYAML == "" {
-		opts.VMCtx.Logger.V(4).Info("Skipping VM resource yaml backup as unchanged")
-	} else {
-		ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
-			Key:   vmopv1.VMResourceYAMLExtraConfigKey,
-			Value: vmYAML,
-		})
+	/*
+	 * When VMIncrementalRestore FSS is enabled, perform backups when
+	 * - no backup version annotation is present.
+	 * - the backup version annotation matches the current backup version in extraConfig.
+	 * - the backup version annotation is older than the extraConfig backup version key. This can only happen when reconfigure succeeds to add a new
+	 *   extraConfig backup version but the next reconcile failed to update the annotation on the VM resource.
+	 */
+	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
+		if backupVersionAnnotation, ok := opts.VMCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]; ok && backupVersionAnnotation != "" {
+			if backupVersionEcVal, _ := curExCfg.GetString(vmopv1.BackupVersionExtraConfigKey); backupVersionEcVal != "" {
+				canBackup, err := canPerformBackup(opts, backupVersionEcVal, backupVersionAnnotation)
+				if err != nil {
+					return err
+				}
+
+				/* TODO: Improvements to fetch the backupVersion extraConfig again right before doing the backup reconfigure?.
+				 *  There is a minor chance for a race if a restore is triggered by a vendor between !canBackup check
+				 *  and the backup reconfigure call below. Chances are low since the vm reconcile only does a backup when it detects
+				 *  changes to the keys and a restore needs to be triggered around that exact time.
+				 */
+				// restore is detected if doBackup is false with no errors. wait for vm registration.
+				if !canBackup {
+					// TODO: add a condition to indicate backup is paused
+					return nil
+				}
+			}
+		}
 	}
 
 	additionalYAML, err := getDesiredAdditionalResourceYAMLForBackup(
@@ -106,6 +123,58 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		})
 	}
 
+	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
+		curBackup, _ := curExCfg.GetString(vmopv1.VMResourceYAMLExtraConfigKey)
+		vmBackupInSync, err := isVMBackupUpToDate(opts.VMCtx.VM, curBackup)
+		if err != nil {
+			opts.VMCtx.Logger.Error(err, "failed to check if VM resource is in sync with backup")
+			return err
+		}
+
+		// When VMIncrementalRestore FSS is enabled,
+		// Update extraConfig with new backup version
+		// - no last backup version annotation is present on VM resource (or)
+		// - the current backup's extraConfig keys are not in sync with existing resource data.
+		backupVersionAnnotation, ok := opts.VMCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]
+		if (!ok || backupVersionAnnotation == "") || len(ecToUpdate) != 0 || !vmBackupInSync {
+			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
+				Key:   vmopv1.BackupVersionExtraConfigKey,
+				Value: opts.BackupVersion,
+			})
+
+			// Update the VMResourceYAMLExtraConfigKey to account for the new backup version annotation
+			// Use a copy of the VM object since the actual VM obj will be annotated if and once reconfigure succeeds.
+			copyVM := opts.VMCtx.VM.DeepCopy()
+			setLastBackupVersionAnnotation(copyVM, opts.BackupVersion)
+			// Backup the updated VM's YAML with encoding and compression.
+			encodedVMYaml, err := getEncodedVMYaml(copyVM)
+			if err != nil {
+				opts.VMCtx.Logger.Error(err, "failed to get VM resource yaml for backup")
+				return err
+			}
+
+			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
+				Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+				Value: encodedVMYaml,
+			})
+		}
+
+	} else {
+		vmYAML, err := getDesiredVMResourceYAMLForBackup(opts.VMCtx.VM, curExCfg)
+		if err != nil {
+			opts.VMCtx.Logger.Error(err, "failed to get VM resource yaml for backup")
+			return err
+		}
+		if vmYAML == "" {
+			opts.VMCtx.Logger.V(4).Info("Skipping VM resource yaml backup as unchanged")
+		} else {
+			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
+				Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+				Value: vmYAML,
+			})
+		}
+	}
+
 	if len(ecToUpdate) != 0 {
 		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with latest backup data",
 			"ExtraConfigToUpdate", ecToUpdate)
@@ -123,10 +192,47 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 			return err
 		}
 
+		// Set the VirtualMachine's backup version annotation once reconfigure succeeds.
+		if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
+			setLastBackupVersionAnnotation(opts.VMCtx.VM, opts.BackupVersion)
+			// TODO: add a condition to indicate backup has resumed
+		}
+
 		opts.VMCtx.Logger.Info("Successfully updated VM ExtraConfig with latest backup data")
 	}
 
 	return nil
+}
+
+// canPerformBackup checks if a backup can be performed. The method returns true when
+// the backup version annotation matches (or) is older (lesser) than the backup version in extraConfig.
+// It returns false when the backup version annotation is newer (greater) than the backup extraConfig version which indicates a vendor
+// triggered restore in progress.
+func canPerformBackup(opts BackupVirtualMachineOptions, backupVersionEcVal, backupVersionAnnotation string) (bool, error) {
+	if backupVersionEcVal == backupVersionAnnotation {
+		return true, nil
+	}
+
+	storedVersion, err := strconv.ParseInt(backupVersionEcVal, 10, 64)
+	if err != nil {
+		opts.VMCtx.Logger.Error(err, fmt.Sprintf("failed to parse backup version extraConfig key to int64 : %v", backupVersionEcVal))
+		return false, err
+	}
+
+	currVersion, err := strconv.ParseInt(backupVersionAnnotation, 10, 64)
+	if err != nil {
+		opts.VMCtx.Logger.Error(err, fmt.Sprintf("failed to parse backup version annotation to int64: %v", backupVersionAnnotation))
+		return false, err
+	}
+
+	// if the storedVersion in the backup is older than the annotation, this is a restore.
+	if currVersion > storedVersion {
+		opts.VMCtx.Logger.Info(fmt.Sprintf("Skipping VM backup as a restore is detected: current version: %s greater than backup extraconfig version: %s, wait for VM registration",
+			backupVersionAnnotation, backupVersionEcVal))
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // getDesiredVMResourceYAMLForBackup returns the encoded and gzipped YAML of the
@@ -141,6 +247,11 @@ func getDesiredVMResourceYAMLForBackup(
 		return "", err
 	}
 
+	// Backup the updated VM's YAML with encoding and compression.
+	return getEncodedVMYaml(vm)
+}
+
+func getEncodedVMYaml(vm *vmopv1.VirtualMachine) (string, error) {
 	// Backup the updated VM's YAML with encoding and compression.
 	vmYAML, err := k8syaml.Marshal(vm)
 	if err != nil {
@@ -293,4 +404,12 @@ func getDesiredPVCDiskDataForBackup(
 	}
 
 	return diskDataBackup, nil
+}
+
+func setLastBackupVersionAnnotation(vm *vmopv1.VirtualMachine, version string) {
+	if vm.Annotations == nil {
+		vm.Annotations = map[string]string{}
+	}
+
+	vm.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = version
 }

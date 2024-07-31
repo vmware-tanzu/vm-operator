@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/pbm"
@@ -543,6 +544,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			VcVM:                vcVM,
 			DiskUUIDToPVC:       diskUUIDToPVC,
 			AdditionalResources: additionalResources,
+			BackupVersion:       fmt.Sprint(time.Now().Unix()),
 		}
 		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
 			vmCtx.Logger.Error(err, "failed to backup VM")

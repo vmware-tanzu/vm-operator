@@ -934,8 +934,11 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		}
 	}
 
-	if err := vmopv1util.OverwriteResizeConfigSpec(vmCtx, *vmCtx.VM, *moVM.Config, &configSpec); err != nil {
-		return false, err
+	if pkgcfg.FromContext(vmCtx).Features.VMResize {
+		err := vmopv1util.OverwriteResizeConfigSpec(vmCtx, *vmCtx.VM, *moVM.Config, &configSpec)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	refetchProps := false

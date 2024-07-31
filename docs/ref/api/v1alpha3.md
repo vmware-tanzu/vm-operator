@@ -2345,9 +2345,10 @@ infrastructure provider that is exposed to the Guest OS BIOS as a unique
 hardware identifier. |
 | `instanceUUID` _string_ | InstanceUUID describes the unique instance UUID provided by the
 underlying infrastructure provider, such as vSphere. |
-| `volumes` _[VirtualMachineVolumeStatus](#virtualmachinevolumestatus) array_ | Volumes describes a list of current status information for each Volume
-that is desired to be attached to the VM. |
-| `changeBlockTracking` _boolean_ | ChangeBlockTracking describes the CBT enablement status on the VM. |
+| `volumes` _[VirtualMachineVolumeStatus](#virtualmachinevolumestatus) array_ | Volumes describes the observed state of the volumes that are intended to
+be attached to the VirtualMachine. |
+| `changeBlockTracking` _boolean_ | ChangeBlockTracking describes whether or not change block tracking is
+enabled for the VirtualMachine. |
 | `zone` _string_ | Zone describes the availability zone where the VirtualMachine has been
 scheduled.
 
@@ -2360,6 +2361,25 @@ hardware version.
 
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
+| `storage` _[VirtualMachineStorageStatus](#virtualmachinestoragestatus)_ | Storage describes the observed state of the VirtualMachine's storage. |
+
+### VirtualMachineStorageStatus
+
+
+
+VirtualMachineStorageStatus defines the observed state of a VirtualMachine's
+storage.
+
+_Appears in:_
+- [VirtualMachineStatus](#virtualmachinestatus)
+
+| Field | Description |
+| --- | --- |
+| `committed` _[Quantity](#quantity)_ | Committed is the total storage space committed to this VirtualMachine. |
+| `uncommitted` _[Quantity](#quantity)_ | Uncommitted is the total storage space potentially used by this
+VirtualMachine. |
+| `unshared` _[Quantity](#quantity)_ | Unshared is the total storage space occupied by this VirtualMachine that
+is not shared with any other VirtualMachine. |
 
 
 ### VirtualMachineTemplateSpec
@@ -2440,12 +2460,30 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `name` _string_ | Name is the name of the attached volume. |
+| `type` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | Type is the type of the attached volume. |
+| `limit` _[Quantity](#quantity)_ | Limit describes the storage limit for the volume.
+Please note, this is only available for Classic volumes. For Managed
+volumes, please refer to the PersistentVolumeClaim resource for the
+requested capacity. |
+| `used` _[Quantity](#quantity)_ | Used describes the observed, non-shared size of the volume on disk.
+For example, if this is a linked-clone's boot volume, this value
+represents the space consumed by the linked clone, not the parent. |
 | `attached` _boolean_ | Attached represents whether a volume has been successfully attached to
 the VirtualMachine or not. |
 | `diskUUID` _string_ | DiskUUID represents the underlying virtual disk UUID and is present when
 attachment succeeds. |
 | `error` _string_ | Error represents the last error seen when attaching or detaching a
 volume.  Error will be empty if attachment succeeds. |
+
+### VirtualMachineVolumeType
+
+_Underlying type:_ `string`
+
+VirtualMachineVolumeType describes the type of a VirtualMachine volume.
+
+_Appears in:_
+- [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
+
 
 ### VirtualMachineWebConsoleRequestSpec
 

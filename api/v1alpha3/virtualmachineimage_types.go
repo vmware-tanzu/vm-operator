@@ -82,8 +82,8 @@ type VirtualMachineImageProductInfo struct {
 	FullVersion string `json:"fullVersion,omitempty"`
 }
 
-// VirtualMachineImageDiskInfo describes disk information for an image taken from DiskSection
-// of an OVF Envelope.
+// VirtualMachineImageDiskInfo describes information about any disks associated with
+// this image.
 type VirtualMachineImageDiskInfo struct {
 	// +optional
 

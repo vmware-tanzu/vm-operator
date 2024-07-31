@@ -784,20 +784,6 @@ spec:
                     description: Capacity is the virtual disk capacity in bytes.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
-                  diskID:
-                    description: DiskID is the identifier for the virtual disk.
-                    type: string
-                  fileRef:
-                    description: FileRef is the reference to the virtual disk content.
-                    type: string
-                  format:
-                    description: Format is the format of virtual disk given as a URI
-                      that identifies the disk type
-                    type: string
-                  parentRef:
-                    description: Parent ref is the reference to a potential parent
-                      disk
-                    type: string
                   size:
                     anyOf:
                     - type: integer

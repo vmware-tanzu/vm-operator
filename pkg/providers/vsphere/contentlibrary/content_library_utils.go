@@ -138,10 +138,6 @@ func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineIma
 	bootDisk := diskSection.Disks[0]
 
 	diskInfo := &imageStatus.DiskInfo
-	diskInfo.DiskID = bootDisk.DiskID
-	diskInfo.FileRef = bootDisk.FileRef
-	diskInfo.Format = bootDisk.Format
-	diskInfo.ParentRef = bootDisk.ParentRef
 
 	if bootDisk.PopulatedSize != nil {
 		populatedSize := int64(*bootDisk.PopulatedSize)

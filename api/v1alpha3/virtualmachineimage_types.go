@@ -87,11 +87,6 @@ type VirtualMachineImageProductInfo struct {
 type VirtualMachineImageDiskInfo struct {
 	// +optional
 
-	// DiskID is the identifier for the virtual disk.
-	DiskID string `json:"diskID,omitempty"`
-
-	// +optional
-
 	// Capacity is the virtual disk capacity in bytes.
 	Capacity *resource.Quantity `json:"capacity,omitempty"`
 
@@ -99,21 +94,6 @@ type VirtualMachineImageDiskInfo struct {
 
 	// Size is the estimated populated size of the virtual disk in bytes.
 	Size *resource.Quantity `json:"size,omitempty"`
-
-	// +optional
-
-	// FileRef is the reference to the virtual disk content.
-	FileRef *string `json:"fileRef,omitempty"`
-
-	// +optional
-
-	// Format is the format of virtual disk given as a URI that identifies the disk type
-	Format *string `json:"format,omitempty"`
-
-	// +optional
-
-	// Parent ref is the reference to a potential parent disk
-	ParentRef *string `json:"parentRef,omitempty"`
 }
 
 // VirtualMachineImageOSInfo describes the image's guest operating system.

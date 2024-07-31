@@ -105,6 +105,32 @@ var _ = Describe(
 			})
 		})
 
+		Context("GetServiceAnnotations when VMService has endpointHealthCheckEnabled defined", func() {
+			BeforeEach(func() {
+				vmService = &vmopv1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "dummy-vmservice",
+						Namespace:   dummyNamespace,
+						Annotations: make(map[string]string),
+					},
+					Spec: vmopv1.VirtualMachineServiceSpec{
+						Type:         vmopv1.VirtualMachineServiceTypeClusterIP,
+						ClusterIP:    "TEST",
+						ExternalName: "TEST",
+					},
+				}
+				vmService.Annotations[utils.AnnotationServiceEndpointHealthCheckEnabledKey] = ""
+				lbProvider = NsxtLoadBalancerProvider()
+			})
+
+			It("should get nsx.vmware.com/lb-health-check in the annotation", func() {
+				vmServiceAnnotations, err := lbProvider.GetServiceAnnotations(ctx, vmService)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmServiceAnnotations).ToNot(BeNil())
+				Expect(vmServiceAnnotations).To(HaveKey(ServiceLoadBalancerEndpointHealthCheckEnabledTagKey))
+			})
+		})
+
 		Context("GetToBeRemovedServiceAnnotations when VMService does not have healthCheckNodePort defined", func() {
 			BeforeEach(func() {
 				vmService = &vmopv1.VirtualMachineService{
@@ -127,6 +153,31 @@ var _ = Describe(
 				Expect(err).ToNot(HaveOccurred())
 				Expect(vmServiceAnnotations).ToNot(BeNil())
 				Expect(vmServiceAnnotations).To(HaveKey(ServiceLoadBalancerHealthCheckNodePortTagKey))
+			})
+		})
+
+		Context("GetToBeRemovedServiceAnnotations when VMService does not have endpointHealthCheckEnabled defined", func() {
+			BeforeEach(func() {
+				vmService = &vmopv1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "dummy-vmservice",
+						Namespace:   dummyNamespace,
+						Annotations: make(map[string]string),
+					},
+					Spec: vmopv1.VirtualMachineServiceSpec{
+						Type:         vmopv1.VirtualMachineServiceTypeClusterIP,
+						ClusterIP:    "TEST",
+						ExternalName: "TEST",
+					},
+				}
+				lbProvider = NsxtLoadBalancerProvider()
+			})
+
+			It("should get nsx.vmware.com/lb-health-check in the to be removed annotation", func() {
+				vmServiceAnnotations, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmServiceAnnotations).ToNot(BeNil())
+				Expect(vmServiceAnnotations).To(HaveKey(ServiceLoadBalancerEndpointHealthCheckEnabledTagKey))
 			})
 		})
 

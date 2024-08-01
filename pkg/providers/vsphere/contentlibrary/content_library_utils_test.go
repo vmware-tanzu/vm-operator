@@ -119,6 +119,14 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 						PopulatedSize:           ptr.To(18743296),
 						Format:                  ptr.To("some/uri"),
 					},
+					{
+						DiskID:                  "vmdisk2",
+						FileRef:                 ptr.To("file1"),
+						Capacity:                "10737418240",
+						CapacityAllocationUnits: ptr.To("byte"),
+						PopulatedSize:           ptr.To(0),
+						Format:                  ptr.To("some/uri"),
+					},
 				},
 			},
 		}
@@ -162,8 +170,12 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 
 		Expect(conditions.Has(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeFalse())
 
-		Expect(image.Status.DiskInfo.Size.String()).To(Equal("18304Ki"))
-		Expect(image.Status.DiskInfo.Capacity.String()).To(Equal("30Mi"))
+		Expect(len(image.Status.DiskInfo)).To(Equal(2))
+		Expect(image.Status.DiskInfo[0].Size.String()).To(Equal("18304Ki"))
+		Expect(image.Status.DiskInfo[0].Capacity.String()).To(Equal("30Mi"))
+
+		Expect(image.Status.DiskInfo[1].Size.String()).To(Equal("0"))
+		Expect(image.Status.DiskInfo[1].Capacity.String()).To(Equal("10Gi"))
 	})
 
 	Context("Image is V1Alpha1Compatible", func() {

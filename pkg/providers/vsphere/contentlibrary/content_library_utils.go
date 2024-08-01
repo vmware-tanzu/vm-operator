@@ -135,21 +135,24 @@ func initImageStatusFromOVFVirtualSystem(
 }
 
 func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineImageStatus, diskSection *ovf.DiskSection) {
-	bootDisk := diskSection.Disks[0]
+	imageStatus.DiskInfo = make([]vmopv1.VirtualMachineImageDiskInfo, len(diskSection.Disks))
 
-	diskInfo := &imageStatus.DiskInfo
+	for i, disk := range diskSection.Disks {
+		diskDetail := vmopv1.VirtualMachineImageDiskInfo{}
+		if disk.PopulatedSize != nil {
+			populatedSize := int64(*disk.PopulatedSize)
+			diskDetail.Size = resource.NewQuantity(populatedSize, getQuantityFormat(populatedSize))
+		}
 
-	if bootDisk.PopulatedSize != nil {
-		populatedSize := int64(*bootDisk.PopulatedSize)
-		diskInfo.Size = resource.NewQuantity(populatedSize, getQuantityFormat(populatedSize))
+		capacity, _ := strconv.ParseInt(disk.Capacity, 10, 64)
+		if capacityAllocationUnits := disk.CapacityAllocationUnits; capacityAllocationUnits != nil && capacity != 0 {
+			bytesMultiplier := ovf.ParseCapacityAllocationUnits(*capacityAllocationUnits)
+			capacity *= bytesMultiplier
+		}
+		diskDetail.Capacity = resource.NewQuantity(capacity, getQuantityFormat(capacity))
+
+		imageStatus.DiskInfo[i] = diskDetail
 	}
-
-	capacity, _ := strconv.ParseInt(bootDisk.Capacity, 10, 64)
-	if capacityAllocationUnits := bootDisk.CapacityAllocationUnits; capacityAllocationUnits != nil && capacity != 0 {
-		bytesMultiplier := ovf.ParseCapacityAllocationUnits(*capacityAllocationUnits)
-		capacity *= bytesMultiplier
-	}
-	diskInfo.Capacity = resource.NewQuantity(capacity, getQuantityFormat(capacity))
 }
 
 func getVmwareSystemPropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[string]string {

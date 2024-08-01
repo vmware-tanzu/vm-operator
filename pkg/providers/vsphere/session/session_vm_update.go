@@ -231,69 +231,6 @@ func UpdatePCIDeviceChanges(
 	return append(removeDeviceChanges, deviceChanges...), nil
 }
 
-func UpdateConfigSpecCPUAllocation(
-	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec,
-	minCPUFreq uint64) {
-
-	cpuAllocation := config.CpuAllocation
-	var cpuReservation *int64
-	var cpuLimit *int64
-
-	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := virtualmachine.CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minCPUFreq)
-		if cpuAllocation == nil || cpuAllocation.Reservation == nil || *cpuAllocation.Reservation != rsv {
-			cpuReservation = &rsv
-		}
-	}
-
-	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := virtualmachine.CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minCPUFreq)
-		if cpuAllocation == nil || cpuAllocation.Limit == nil || *cpuAllocation.Limit != lim {
-			cpuLimit = &lim
-		}
-	}
-
-	if cpuReservation != nil || cpuLimit != nil {
-		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
-			Reservation: cpuReservation,
-			Limit:       cpuLimit,
-		}
-	}
-}
-
-func UpdateConfigSpecMemoryAllocation(
-	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec) {
-
-	memAllocation := config.MemoryAllocation
-	var memoryReservation *int64
-	var memoryLimit *int64
-
-	if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() {
-		rsv := virtualmachine.MemoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
-		if memAllocation == nil || memAllocation.Reservation == nil || *memAllocation.Reservation != rsv {
-			memoryReservation = &rsv
-		}
-	}
-
-	if !vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
-		lim := virtualmachine.MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
-		if memAllocation == nil || memAllocation.Limit == nil || *memAllocation.Limit != lim {
-			memoryLimit = &lim
-		}
-	}
-
-	if memoryReservation != nil || memoryLimit != nil {
-		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
-			Reservation: memoryReservation,
-			Limit:       memoryLimit,
-		}
-	}
-}
-
 // UpdateConfigSpecExtraConfig updates the ExtraConfig of the given ConfigSpec.
 // At a minimum, config and configSpec must be non-nil, in which case it will
 // just ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig.
@@ -542,6 +479,8 @@ func updateConfigSpec(
 
 	if pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory {
 		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
+		resize.CompareCPUAllocation(*config, updateArgs.ConfigSpec, configSpec)
+		resize.CompareMemoryAllocation(*config, updateArgs.ConfigSpec, configSpec)
 	}
 
 	return configSpec

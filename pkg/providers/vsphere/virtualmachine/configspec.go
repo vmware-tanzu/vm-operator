@@ -93,6 +93,12 @@ func CreateConfigSpec(
 			lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
 			configSpec.CpuAllocation.Limit = &lim
 		}
+	} else if configSpec.CpuAllocation == nil {
+		// Default to best effort.
+		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+			Reservation: ptr.To[int64](0),
+			Limit:       ptr.To[int64](-1),
+		}
 	}
 
 	// Populate the memory reservation and limits in the ConfigSpec if VAPI fields specify any.
@@ -112,6 +118,12 @@ func CreateConfigSpec(
 		if !res.Limits.Memory.IsZero() {
 			lim := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
 			configSpec.MemoryAllocation.Limit = &lim
+		}
+	} else if configSpec.MemoryAllocation == nil {
+		// Default to best effort.
+		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+			Reservation: ptr.To[int64](0),
+			Limit:       ptr.To[int64](-1),
 		}
 	}
 

@@ -920,5 +920,103 @@ var _ = Describe("CreateResizeCPUMemoryConfigSpec", func() {
 			ConfigInfo{Hardware: vimtypes.VirtualHardware{MemoryMB: 1024}},
 			ConfigSpec{MemoryMB: 1024},
 			ConfigSpec{}),
+
+		Entry("CPU allocation (reservation, limit, shares) settings needs updating",
+			ConfigInfo{
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(100)),
+					Limit:       ptr.To(int64(100)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(200)),
+					Limit:       ptr.To(int64(200)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelCustom, Shares: 50},
+				}},
+			ConfigSpec{
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(200)),
+					Limit:       ptr.To(int64(200)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelCustom, Shares: 50},
+				}}),
+		Entry("CPU allocation (reservation, limit, shares) settings needs updating - empty to values set ",
+			ConfigInfo{
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{}},
+			ConfigSpec{
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(200)),
+					Limit:       ptr.To(int64(200)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(200)),
+					Limit:       ptr.To(int64(200)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}}),
+		Entry("CPU allocation (reservation,limit,shares) settings does not need updating",
+			ConfigInfo{
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(100)),
+					Limit:       ptr.To(int64(100)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(100)),
+					Limit:       ptr.To(int64(100)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{}),
+
+		Entry("Memory allocation (reservation, limit, shares) settings needs updating",
+			ConfigInfo{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(1024)),
+					Limit:       ptr.To(int64(1024)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(2048)),
+					Limit:       ptr.To(int64(2048)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelCustom, Shares: 50},
+				}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(2048)),
+					Limit:       ptr.To(int64(2048)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelCustom, Shares: 50},
+				}}),
+		Entry("Memory allocation (reservation, limit, shares) settings needs updating - empty to values set ",
+			ConfigInfo{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(2048)),
+					Limit:       ptr.To(int64(2048)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(2048)),
+					Limit:       ptr.To(int64(2048)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}}),
+		Entry("Memory allocation (reservation,limit,shares) settings does not need updating",
+			ConfigInfo{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(1024)),
+					Limit:       ptr.To(int64(1024)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(1024)),
+					Limit:       ptr.To(int64(1024)),
+					Shares:      &vimtypes.SharesInfo{Level: vimtypes.SharesLevelNormal},
+				}},
+			ConfigSpec{}),
 	)
 })

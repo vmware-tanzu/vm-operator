@@ -34,7 +34,7 @@ func getResourcePoolTests() {
 		}
 
 		ctx = suite.NewTestContextForVCSim(testConfig)
-		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace()
 		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 	})
 
@@ -118,7 +118,7 @@ func createDeleteExistResourcePoolChild() {
 		}
 
 		ctx = suite.NewTestContextForVCSim(testConfig)
-		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace()
 		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 
 		parentRPMoID = nsRP.Reference().Value

@@ -72,7 +72,7 @@ func vmTests() {
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace()
 	})
 
 	AfterEach(func() {

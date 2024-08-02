@@ -118,10 +118,12 @@ type TestContextForVCSim struct {
 	RestClient     *rest.Client
 	Recorder       record.Recorder
 
-	// When WithFaultDomains is true:
 	ZoneCount       int
 	ClustersPerZone int
 	ZoneNames       []string
+
+	// withWorkloadIsolation stores VCSimTestConfig WithWorkloadIsolation value.
+	withWorkloadIsolation bool
 
 	// When WithContentLibrary is true:
 	ContentLibraryImageName string
@@ -195,7 +197,8 @@ func newTestContextForVCSim(
 	}
 
 	ctx.ClustersPerZone = clustersPerZone
-
+	// TODO: this can be removed once FSS_WCP_WORKLOAD_DOMAIN_ISOLATION enabled.
+	ctx.withWorkloadIsolation = config.WithWorkloadIsolation
 	return ctx
 }
 
@@ -221,7 +224,7 @@ func (c *TestContextForVCSim) AfterEach() {
 	c.UnitTestContext.AfterEach()
 }
 
-func (c *TestContextForVCSim) CreateWorkloadNamespace(config VCSimTestConfig) WorkloadNamespaceInfo {
+func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "workload-",
@@ -253,7 +256,7 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace(config VCSimTestConfig) Wo
 			nsInfo.PoolMoIDs = append(nsInfo.PoolMoIDs, rp.Reference().Value)
 		}
 		// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is disabled, AvailabilityZone stores namespace info.
-		if !config.WithWorkloadIsolation {
+		if !c.withWorkloadIsolation {
 			az := &topologyv1.AvailabilityZone{}
 			Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
 			if az.Spec.Namespaces == nil {
@@ -261,8 +264,8 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace(config VCSimTestConfig) Wo
 			}
 			az.Spec.Namespaces[ns.Name] = nsInfo
 			Expect(c.Client.Update(c, az)).To(Succeed())
-			// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is enabled, Namespaced Zone stores namespace info.
 		} else {
+			// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is enabled, Namespaced Zone stores namespace info.
 			zone := &topologyv1.Zone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      azName,

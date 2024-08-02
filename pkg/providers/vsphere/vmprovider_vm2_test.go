@@ -73,7 +73,7 @@ func vmE2ETests() {
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace()
 
 		vmClass.Namespace = nsInfo.Namespace
 		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())

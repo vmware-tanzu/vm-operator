@@ -60,7 +60,7 @@ func resourcePolicyTests() {
 			ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
 			vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
 
-			nsInfo = ctx.CreateWorkloadNamespace(testConfig)
+			nsInfo = ctx.CreateWorkloadNamespace()
 		})
 
 		AfterEach(func() {

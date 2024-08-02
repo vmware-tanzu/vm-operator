@@ -89,7 +89,7 @@ func vcSimPlacement() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
-		nsInfo = ctx.CreateWorkloadNamespace(testConfig)
+		nsInfo = ctx.CreateWorkloadNamespace()
 
 		vm.Namespace = nsInfo.Namespace
 

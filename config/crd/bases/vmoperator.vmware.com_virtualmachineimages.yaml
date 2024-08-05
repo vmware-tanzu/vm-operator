@@ -773,6 +773,31 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              disks:
+                description: Disks describes the observed disk information for this
+                  image.
+                items:
+                  description: |-
+                    VirtualMachineImageDiskInfo describes information about any disks associated with
+                    this image.
+                  properties:
+                    capacity:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Capacity is the virtual disk capacity in bytes.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    size:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Size is the estimated populated size of the virtual
+                        disk in bytes.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                  type: object
+                type: array
               firmware:
                 description: Firmware describe the firmware type used by this image,
                   ex. BIOS, EFI.

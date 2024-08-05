@@ -4,6 +4,7 @@
 package v1alpha3
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
@@ -79,6 +80,20 @@ type VirtualMachineImageProductInfo struct {
 
 	// FullVersion describes the long-form version of the image.
 	FullVersion string `json:"fullVersion,omitempty"`
+}
+
+// VirtualMachineImageDiskInfo describes information about any disks associated with
+// this image.
+type VirtualMachineImageDiskInfo struct {
+	// +optional
+
+	// Capacity is the virtual disk capacity in bytes.
+	Capacity *resource.Quantity `json:"capacity,omitempty"`
+
+	// +optional
+
+	// Size is the estimated populated size of the virtual disk in bytes.
+	Size *resource.Quantity `json:"size,omitempty"`
 }
 
 // VirtualMachineImageOSInfo describes the image's guest operating system.
@@ -197,6 +212,11 @@ type VirtualMachineImageStatus struct {
 
 	// ProductInfo describes the observed product information for this image.
 	ProductInfo VirtualMachineImageProductInfo `json:"productInfo,omitempty"`
+
+	// +optional
+
+	// Disks describes the observed disk information for this image.
+	Disks []VirtualMachineImageDiskInfo `json:"disks,omitempty"`
 
 	// +optional
 

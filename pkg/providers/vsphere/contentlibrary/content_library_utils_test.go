@@ -109,6 +109,26 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 					},
 				},
 			},
+			Disk: &ovf.DiskSection{
+				Disks: []ovf.VirtualDiskDesc{
+					{
+						DiskID:                  "vmdisk1",
+						FileRef:                 ptr.To("file1"),
+						Capacity:                "30",
+						CapacityAllocationUnits: ptr.To("byte * 2^20"),
+						PopulatedSize:           ptr.To(18743296),
+						Format:                  ptr.To("some/uri"),
+					},
+					{
+						DiskID:                  "vmdisk2",
+						FileRef:                 ptr.To("file1"),
+						Capacity:                "10737418240",
+						CapacityAllocationUnits: ptr.To("byte"),
+						PopulatedSize:           ptr.To(0),
+						Format:                  ptr.To("some/uri"),
+					},
+				},
+			},
 		}
 
 		image = builder.DummyVirtualMachineImage("dummy-image")
@@ -149,6 +169,13 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 		Expect(image.Status.VMwareSystemProperties[0].Value).Should(Equal(versionVal))
 
 		Expect(conditions.Has(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeFalse())
+
+		Expect(image.Status.Disks).To(HaveLen(2))
+		Expect(image.Status.Disks[0].Size.String()).To(Equal("18304Ki"))
+		Expect(image.Status.Disks[0].Capacity.String()).To(Equal("30Mi"))
+
+		Expect(image.Status.Disks[1].Size.String()).To(Equal("0"))
+		Expect(image.Status.Disks[1].Capacity.String()).To(Equal("10Gi"))
 	})
 
 	Context("Image is V1Alpha1Compatible", func() {

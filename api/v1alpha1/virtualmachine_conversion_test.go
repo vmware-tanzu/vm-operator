@@ -113,7 +113,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 							Network: &vmopv1common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "Subnet",
-									APIVersion: "nsx.vmware.com/v1alpha1",
+									APIVersion: "crd.nsx.vmware.com/v1alpha1",
 								},
 								Name: "segment-subnet",
 							},
@@ -124,7 +124,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 							Network: &vmopv1common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "SubnetSet",
-									APIVersion: "nsx.vmware.com/v1alpha1",
+									APIVersion: "crd.nsx.vmware.com/v1alpha1",
 								},
 								Name: "segment-subnetset",
 							},

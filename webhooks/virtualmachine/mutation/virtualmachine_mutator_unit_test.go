@@ -158,7 +158,7 @@ func unitTestsMutating() {
 					Expect(ctx.vm.Spec.Network.Interfaces[0].Name).Should(Equal("eth0"))
 					Expect(ctx.vm.Spec.Network.Interfaces[0].Network).ShouldNot(BeNil())
 					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).Should(Equal("SubnetSet"))
-					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.APIVersion).Should(Equal("nsx.vmware.com/v1alpha1"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.APIVersion).Should(Equal("crd.nsx.vmware.com/v1alpha1"))
 				})
 			})
 

@@ -149,6 +149,26 @@ rules:
   - patch
   - update
 - apiGroups:
+  - crd.nsx.vmware.com
+  resources:
+  - subnetports
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - crd.nsx.vmware.com
+  resources:
+  - subnetports/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - imageregistry.vmware.com
   resources:
   - clustercontentlibraryitems
@@ -208,26 +228,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - nsx.vmware.com
-  resources:
-  - subnetports
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - nsx.vmware.com
-  resources:
-  - subnetports/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - storage.k8s.io
   resources:

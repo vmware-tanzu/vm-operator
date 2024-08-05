@@ -27,14 +27,14 @@ func CreateResizeConfigSpec(
 	compareAnnotation(ci, cs, &outCS)
 	compareManagedBy(ci, cs, &outCS)
 	compareHardware(ci, cs, &outCS)
-	compareCPUAllocation(ci, cs, &outCS)
+	CompareCPUAllocation(ci, cs, &outCS)
 	compareCPUHotAddOrRemove(ci, cs, &outCS)
 	compareCPUAffinity(ci, cs, &outCS)
 	compareCPUPerfCounter(ci, cs, &outCS)
 	compareLatencySensitivity(ci, cs, &outCS)
 	compareExtraConfig(ci, cs, &outCS)
 	compareFlags(ci, cs, &outCS)
-	compareMemoryAllocation(ci, cs, &outCS)
+	CompareMemoryAllocation(ci, cs, &outCS)
 	compareMemoryHotAdd(ci, cs, &outCS)
 	compareFixedPassthruHotPlug(ci, cs, &outCS)
 	compareNestedHVEnabled(ci, cs, &outCS)
@@ -63,6 +63,9 @@ func CreateResizeCPUMemoryConfigSpec(
 	outCS := vimtypes.VirtualMachineConfigSpec{}
 	cmp(ci.Hardware.NumCPU, cs.NumCPUs, &outCS.NumCPUs)
 	cmp(int64(ci.Hardware.MemoryMB), cs.MemoryMB, &outCS.MemoryMB)
+
+	CompareCPUAllocation(ci, cs, &outCS)
+	CompareMemoryAllocation(ci, cs, &outCS)
 
 	return outCS, nil
 }
@@ -109,12 +112,13 @@ func compareHardware(
 	compareHardwareDevices(ci, cs, outCS)
 }
 
-// compareCPUAllocation compares CPU resource allocation.
-func compareCPUAllocation(
+// CompareCPUAllocation compares CPU resource allocation.
+func CompareCPUAllocation(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs vimtypes.VirtualMachineConfigSpec,
 	outCS *vimtypes.VirtualMachineConfigSpec) {
-	// nothing to change
+
+	// Nothing to change.
 	if cs.CpuAllocation == nil {
 		return
 	}
@@ -265,12 +269,13 @@ func compareFlags(
 	}
 }
 
-// compareMemoryAllocation compares Memory resource allocation.
-func compareMemoryAllocation(
+// CompareMemoryAllocation compares Memory resource allocation.
+func CompareMemoryAllocation(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs vimtypes.VirtualMachineConfigSpec,
 	outCS *vimtypes.VirtualMachineConfigSpec) {
-	// nothing to change
+
+	// Nothing to change.
 	if cs.MemoryAllocation == nil {
 		return
 	}

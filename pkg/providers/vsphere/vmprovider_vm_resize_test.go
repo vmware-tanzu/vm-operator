@@ -93,6 +93,7 @@ func vmResizeTests() {
 		class.Spec.ConfigSpec = encodedConfigSpec(cs)
 		class.Spec.Hardware.Cpus = int64(cs.NumCPUs)
 		class.Spec.Hardware.Memory = resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB))
+		class.Spec.Policies = vmopv1.VirtualMachineClassPolicies{}
 		ExpectWithOffset(1, ctx.Client.Create(ctx, class)).To(Succeed())
 		return class
 	}
@@ -101,6 +102,12 @@ func vmResizeTests() {
 		class.Spec.ConfigSpec = encodedConfigSpec(cs)
 		class.Spec.Hardware.Cpus = int64(cs.NumCPUs)
 		class.Spec.Hardware.Memory = resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB))
+		class.Generation++ // Fake client doesn't increment this.
+		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
+	}
+
+	updateVMClassPolicies := func(class *vmopv1.VirtualMachineClass, polices vmopv1.VirtualMachineClassPolicies) {
+		class.Spec.Policies = polices
 		class.Generation++ // Fake client doesn't increment this.
 		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
 	}
@@ -124,6 +131,18 @@ func vmResizeTests() {
 		if inSync {
 			ExpectWithOffset(1, conditions.IsTrue(vm, vmopv1.VirtualMachineConfigurationSynced)).To(BeTrue(), "Synced Condition")
 		}
+	}
+
+	assertExpectedReservationFields := func(o mo.VirtualMachine, cpuReservation, cpuLimit, memReservation, memLimit int64) {
+		cpuAllocation, memAllocation := o.Config.CpuAllocation, o.Config.MemoryAllocation
+
+		ExpectWithOffset(1, cpuAllocation).ToNot(BeNil(), "cpuAllocation")
+		ExpectWithOffset(1, cpuAllocation.Reservation).To(HaveValue(BeEquivalentTo(cpuReservation)), "cpu reservation")
+		ExpectWithOffset(1, cpuAllocation.Limit).To(HaveValue(BeEquivalentTo(cpuLimit)), "cpu limit")
+
+		ExpectWithOffset(1, memAllocation).ToNot(BeNil(), "memoryAllocation")
+		ExpectWithOffset(1, memAllocation.Reservation).To(HaveValue(BeEquivalentTo(memReservation)), "mem reservation")
+		ExpectWithOffset(1, memAllocation.Limit).To(HaveValue(BeEquivalentTo(memLimit)), "mem limit")
 	}
 
 	DescribeTableSubtree("Resize VM",
@@ -213,6 +232,63 @@ func vmResizeTests() {
 				})
 			})
 
+			Context("CPU/Memory Reservations", func() {
+
+				Context("No reservations", func() {
+
+					It("Resizes", func() {
+						cs := configSpec
+						newVMClass := createVMClass(cs)
+						vm.Spec.ClassName = newVMClass.Name
+
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						assertExpectedReservationFields(o, 0, -1, 0, -1)
+
+						assertExpectedResizedClassFields(vm, newVMClass)
+					})
+				})
+
+				Context("With Reservations", func() {
+
+					It("Resizes", func() {
+						cs := configSpec
+						cs.NumCPUs = 42
+						cs.MemoryMB = 8192
+						newVMClass := createVMClass(cs)
+						vm.Spec.ClassName = newVMClass.Name
+
+						polices := vmopv1.VirtualMachineClassPolicies{
+							Resources: vmopv1.VirtualMachineClassResources{
+								Limits: vmopv1.VirtualMachineResourceSpec{
+									Cpu:    resource.MustParse("2"),
+									Memory: resource.MustParse("8192Mi"),
+								},
+								Requests: vmopv1.VirtualMachineResourceSpec{
+									Cpu:    resource.MustParse("1"),
+									Memory: resource.MustParse("4096Mi"),
+								},
+							},
+						}
+						updateVMClassPolicies(newVMClass, polices)
+
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+						assertExpectedReservationFields(o, 1*vcsimCPUFreq, 2*vcsimCPUFreq, 4096, 8192)
+
+						assertExpectedResizedClassFields(vm, newVMClass)
+					})
+				})
+			})
+
 			Context("Powering On VM", func() {
 				BeforeEach(func() {
 					configSpec.NumCPUs = 2
@@ -235,8 +311,46 @@ func vmResizeTests() {
 					Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
 					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+					assertExpectedReservationFields(o, 0, -1, 0, -1)
 
 					assertExpectedResizedClassFields(vm, newVMClass)
+				})
+
+				Context("With Reservations", func() {
+
+					It("Resizes", func() {
+						cs := configSpec
+						cs.NumCPUs = 42
+						cs.MemoryMB = 8192
+						newVMClass := createVMClass(cs)
+						vm.Spec.ClassName = newVMClass.Name
+
+						polices := vmopv1.VirtualMachineClassPolicies{
+							Resources: vmopv1.VirtualMachineClassResources{
+								Limits: vmopv1.VirtualMachineResourceSpec{
+									Cpu:    resource.MustParse("2"),
+									Memory: resource.MustParse("8192Mi"),
+								},
+								Requests: vmopv1.VirtualMachineResourceSpec{
+									Cpu:    resource.MustParse("1"),
+									Memory: resource.MustParse("4096Mi"),
+								},
+							},
+						}
+						updateVMClassPolicies(newVMClass, polices)
+
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+						assertExpectedReservationFields(o, 1*vcsimCPUFreq, 2*vcsimCPUFreq, 4096, 8192)
+
+						assertExpectedResizedClassFields(vm, newVMClass)
+					})
 				})
 			})
 

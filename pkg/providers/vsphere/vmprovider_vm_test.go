@@ -41,12 +41,14 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+const (
+	// Hardcoded vcsim CPU frequency.
+	vcsimCPUFreq = 2294
+)
+
 func vmTests() {
 
 	const (
-		// Hardcoded vcsim CPU frequency.
-		vcsimCPUFreq = 2294
-
 		// Default network created for free by vcsim.
 		dvpgName = "DC0_DVPG0"
 	)

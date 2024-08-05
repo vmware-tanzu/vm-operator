@@ -49,7 +49,7 @@ var _ = Describe("CreateConfigSpec", func() {
 	)
 
 	BeforeEach(func() {
-		vmClass := builder.DummyVirtualMachineClassGenName()
+		vmClass := builder.DummyVirtualMachineClass("my-class")
 		vmClassSpec = vmClass.Spec
 		vmImageStatus = vmopv1.VirtualMachineImageStatus{Firmware: "efi"}
 		minCPUFreq = 2500
@@ -93,9 +93,24 @@ var _ = Describe("CreateConfigSpec", func() {
 				Expect(configSpec.Annotation).ToNot(BeEmpty())
 				Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
 				Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
-				Expect(configSpec.CpuAllocation).ToNot(BeNil())
-				Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+				Expect(configSpec.CpuAllocation.Limit).To(HaveValue(BeEquivalentTo(5368709120000)))
+				Expect(configSpec.CpuAllocation.Reservation).To(HaveValue(BeEquivalentTo(2684354560000)))
+				Expect(configSpec.MemoryAllocation.Limit).To(HaveValue(BeEquivalentTo(4096)))
+				Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(2048)))
 				Expect(configSpec.Firmware).To(Equal(vmImageStatus.Firmware))
+			})
+
+			Context("VM Class has no requests/limits (best effort)", func() {
+				BeforeEach(func() {
+					vmClassSpec.Policies = vmopv1.VirtualMachineClassPolicies{}
+				})
+
+				It("returns expected config spec", func() {
+					Expect(configSpec.CpuAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
+					Expect(configSpec.CpuAllocation.Reservation).To(HaveValue(BeEquivalentTo(0)))
+					Expect(configSpec.MemoryAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
+					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(0)))
+				})
 			})
 		})
 

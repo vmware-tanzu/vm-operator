@@ -63,7 +63,8 @@ func vmTests() {
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
+			WithContentLibrary:    true,
+			WithWorkloadIsolation: true,
 		}
 	})
 

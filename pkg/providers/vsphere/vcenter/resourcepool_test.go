@@ -22,13 +22,18 @@ func resourcePoolTests() {
 
 func getResourcePoolTests() {
 	var (
-		ctx    *builder.TestContextForVCSim
-		nsInfo builder.WorkloadNamespaceInfo
-		nsRP   *object.ResourcePool
+		ctx        *builder.TestContextForVCSim
+		nsInfo     builder.WorkloadNamespaceInfo
+		nsRP       *object.ResourcePool
+		testConfig builder.VCSimTestConfig
 	)
 
 	BeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		testConfig = builder.VCSimTestConfig{
+			WithWorkloadIsolation: true,
+		}
+
+		ctx = suite.NewTestContextForVCSim(testConfig)
 		nsInfo = ctx.CreateWorkloadNamespace()
 		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 	})
@@ -98,16 +103,21 @@ func getResourcePoolTests() {
 func createDeleteExistResourcePoolChild() {
 
 	var (
-		ctx    *builder.TestContextForVCSim
-		nsInfo builder.WorkloadNamespaceInfo
-		nsRP   *object.ResourcePool
+		ctx        *builder.TestContextForVCSim
+		nsInfo     builder.WorkloadNamespaceInfo
+		nsRP       *object.ResourcePool
+		testConfig builder.VCSimTestConfig
 
 		parentRPMoID   string
 		resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 	)
 
 	BeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		testConfig = builder.VCSimTestConfig{
+			WithWorkloadIsolation: true,
+		}
+
+		ctx = suite.NewTestContextForVCSim(testConfig)
 		nsInfo = ctx.CreateWorkloadNamespace()
 		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 

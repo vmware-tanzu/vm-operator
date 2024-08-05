@@ -135,7 +135,7 @@ func initImageStatusFromOVFVirtualSystem(
 }
 
 func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineImageStatus, diskSection *ovf.DiskSection) {
-	imageStatus.DiskInfo = make([]vmopv1.VirtualMachineImageDiskInfo, len(diskSection.Disks))
+	imageStatus.Disks = make([]vmopv1.VirtualMachineImageDiskInfo, len(diskSection.Disks))
 
 	for i, disk := range diskSection.Disks {
 		diskDetail := vmopv1.VirtualMachineImageDiskInfo{}
@@ -151,7 +151,7 @@ func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineIma
 		}
 		diskDetail.Capacity = resource.NewQuantity(capacity, getQuantityFormat(capacity))
 
-		imageStatus.DiskInfo[i] = diskDetail
+		imageStatus.Disks[i] = diskDetail
 	}
 }
 

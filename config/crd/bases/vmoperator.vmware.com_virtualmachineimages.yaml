@@ -773,7 +773,7 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              diskInfo:
+              disks:
                 description: Disks describes the observed disk information for this
                   image.
                 items:

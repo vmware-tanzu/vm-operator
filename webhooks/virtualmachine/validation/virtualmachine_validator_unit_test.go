@@ -24,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -32,6 +33,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -316,6 +318,41 @@ func unitTestsValidateCreate() {
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
 					expectAllowed: false,
+				},
+			),
+			Entry("when Workload Domain Isolation FSS enabled, should deny when VM created by SSO user that specifies a zone being deleted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.WorkloadDomainIsolation = true
+						})
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						zone := &topologyv1.Zone{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone))
+						zone.Finalizers = []string{"test"}
+						Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+					},
+					expectAllowed: false,
+				},
+			),
+			Entry("when Workload Domain Isolation FSS enabled, should allow when VM created by admin that specifies a zone being deleted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.WorkloadDomainIsolation = true
+							ctx.IsPrivilegedAccount = true
+						})
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						zone := &topologyv1.Zone{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone))
+						zone.Finalizers = []string{"test"}
+						Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+					},
+					expectAllowed: true,
 				},
 			),
 			Entry("should deny when VM specifies valid availability zone, there are no availability zones or zones",

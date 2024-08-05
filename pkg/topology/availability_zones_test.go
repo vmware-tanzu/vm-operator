@@ -169,6 +169,24 @@ var _ = Describe("Availability Zones and Zones", func() {
 		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 	}
 
+	assertGetNamespaceFolderAndRPMoIDZoneToDelete := func() {
+		obj := &topologyv1.Zone{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:  "ns-1",
+				Name:       "zone-to-delete",
+				Finalizers: []string{"test"},
+			},
+		}
+		err := client.Create(ctx, obj)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		_, err = topology.GetZone(ctx, client, "zone-to-delete", "ns-1")
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		err = client.Delete(ctx, obj)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		_, _, err = topology.GetNamespaceFolderAndRPMoID(ctx, client, "zone-to-delete", "ns-1")
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	}
+
 	assertGetNamespaceFolderAndRPMoIDSuccessForAZ := func(azName string) {
 		for i := 0; i < numberOfNamespaces; i++ {
 			folder, rp, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, azName, fmt.Sprintf("ns-%d", i))
@@ -333,6 +351,9 @@ var _ = Describe("Availability Zones and Zones", func() {
 				})
 				Context("With an invalid Zone name", func() {
 					It("Should return an apierrors.NotFound error", assertGetNamespaceFolderAndRPMoIDInvalidNameErrNotFound)
+				})
+				Context("With an Zone that is being deleted", func() {
+					It("Should return no error", assertGetNamespaceFolderAndRPMoIDZoneToDelete)
 				})
 				Context("With an invalid Namespace name", func() {
 					It("Should return an error", assertGetNamespaceFolderAndRPMoIDInvalidNamespaceErrNotFound)

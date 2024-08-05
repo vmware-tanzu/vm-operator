@@ -8,9 +8,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
@@ -111,41 +113,78 @@ func vcSimPlacement() {
 			testConfig = builder.VCSimTestConfig{
 				WithWorkloadIsolation: true,
 			}
+		})
 
-			Context("Zone placement", func() {
+		Context("Zone placement", func() {
 
-				Context("zone already assigned", func() {
-					zoneName := "in the zone"
+			Context("zone already assigned", func() {
+				zoneName := "in the zone"
+				zone := &topologyv1.Zone{}
 
-					JustBeforeEach(func() {
-						vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
-					})
-
-					It("returns success with same zone", func() {
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
-						Expect(err).ToNot(HaveOccurred())
-						Expect(result).ToNot(BeNil())
-						Expect(result.ZonePlacement).To(BeTrue())
-						Expect(result.ZoneName).To(Equal(zoneName))
-						Expect(result.HostMoRef).To(BeNil())
-						Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
-
-						// Current contract is the caller must look this up based on the pre-assigned zone but
-						// we might want to change that later.
-						Expect(result.PoolMoRef.Value).To(BeEmpty())
-					})
+				JustBeforeEach(func() {
+					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+					obj := &topologyv1.Zone{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace:  vm.Namespace,
+							Name:       zoneName,
+							Finalizers: []string{"test"},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: vm.Namespace}, zone)).To(Succeed())
 				})
 
-				Context("no placement candidates", func() {
-					JustBeforeEach(func() {
-						vm.Namespace = "does-not-exist"
-					})
+				It("returns success with same zone", func() {
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).ToNot(BeNil())
+					Expect(result.ZonePlacement).To(BeTrue())
+					Expect(result.ZoneName).To(Equal(zoneName))
+					Expect(result.HostMoRef).To(BeNil())
+					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
 
-					It("returns an error", func() {
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
-						Expect(err).To(MatchError("no placement candidates available"))
-						Expect(result).To(BeNil())
-					})
+					// Current contract is the caller must look this up based on the pre-assigned zone but
+					// we might want to change that later.
+					Expect(result.PoolMoRef.Value).To(BeEmpty())
+				})
+
+				It("returns success even if assigned zone is being deleted", func() {
+					Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+					Expect(err).To(BeNil())
+					Expect(result).NotTo(BeNil())
+				})
+			})
+
+			Context("no placement candidates", func() {
+				JustBeforeEach(func() {
+					vm.Namespace = "does-not-exist"
+				})
+
+				It("returns an error", func() {
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+					Expect(err).To(MatchError("no zones in specified namespace"))
+					Expect(result).To(BeNil())
+				})
+			})
+
+			It("no zone assigned, returns success", func() {
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(result.ZonePlacement).To(BeTrue())
+				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+				Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
+				Expect(result.HostMoRef).To(BeNil())
+
+				nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
+				Expect(nsRP).ToNot(BeNil())
+				Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
+			})
+
+			Context("Only one zone exists", func() {
+				BeforeEach(func() {
+					testConfig.NumFaultDomains = 1
 				})
 
 				It("returns success", func() {
@@ -153,7 +192,7 @@ func vcSimPlacement() {
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.ZonePlacement).To(BeTrue())
-					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+					Expect(result.ZoneName).To(Equal(ctx.ZoneNames[0]))
 					Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
 					Expect(result.HostMoRef).To(BeNil())
 
@@ -162,46 +201,37 @@ func vcSimPlacement() {
 					Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
 				})
 
-				Context("Only one zone exists", func() {
-					BeforeEach(func() {
-						testConfig.NumFaultDomains = 1
-					})
-
-					It("returns success", func() {
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
-						Expect(err).ToNot(HaveOccurred())
-
-						Expect(result.ZonePlacement).To(BeTrue())
-						Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
-						Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
-						Expect(result.HostMoRef).To(BeNil())
-
-						nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
-						Expect(nsRP).ToNot(BeNil())
-						Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
-					})
+				It("returns no placement candidates error if the only zone is being deleted", func() {
+					zone := &topologyv1.Zone{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ZoneNames[0], Namespace: vm.Namespace}, zone)).To(Succeed())
+					zone.Finalizers = []string{"test"}
+					Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
+					Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+					Expect(err).To(MatchError("no placement candidates available"))
+					Expect(result).To(BeNil())
 				})
+			})
 
-				Context("VM is in child RP via ResourcePolicy", func() {
-					It("returns success", func() {
-						resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
-						Expect(resourcePolicy).ToNot(BeNil())
-						childRPName := resourcePolicy.Spec.ResourcePool.Name
-						Expect(childRPName).ToNot(BeEmpty())
-						vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
-							ResourcePolicyName: resourcePolicy.Name,
-						}
+			Context("VM is in child RP via ResourcePolicy", func() {
+				It("returns success", func() {
+					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+					Expect(resourcePolicy).ToNot(BeNil())
+					childRPName := resourcePolicy.Spec.ResourcePool.Name
+					Expect(childRPName).ToNot(BeEmpty())
+					vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
+						ResourcePolicyName: resourcePolicy.Name,
+					}
 
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
-						Expect(err).ToNot(HaveOccurred())
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
+					Expect(err).ToNot(HaveOccurred())
 
-						Expect(result.ZonePlacement).To(BeTrue())
-						Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+					Expect(result.ZonePlacement).To(BeTrue())
+					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 
-						childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
-						Expect(childRP).ToNot(BeNil())
-						Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
-					})
+					childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
+					Expect(childRP).ToNot(BeNil())
+					Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
 				})
 			})
 
@@ -281,41 +311,61 @@ func vcSimPlacement() {
 			testConfig = builder.VCSimTestConfig{
 				WithWorkloadIsolation: false,
 			}
+		})
 
-			Context("Zone placement", func() {
+		Context("Zone placement", func() {
 
-				Context("zone already assigned", func() {
-					zoneName := "in the zone"
+			Context("zone already assigned", func() {
+				zoneName := "in the zone"
 
-					JustBeforeEach(func() {
-						vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
-					})
-
-					It("returns success with same zone", func() {
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
-						Expect(err).ToNot(HaveOccurred())
-						Expect(result).ToNot(BeNil())
-						Expect(result.ZonePlacement).To(BeTrue())
-						Expect(result.ZoneName).To(Equal(zoneName))
-						Expect(result.HostMoRef).To(BeNil())
-						Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
-
-						// Current contract is the caller must look this up based on the pre-assigned zone but
-						// we might want to change that later.
-						Expect(result.PoolMoRef.Value).To(BeEmpty())
-					})
+				JustBeforeEach(func() {
+					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 				})
 
-				Context("no placement candidates", func() {
-					JustBeforeEach(func() {
-						vm.Namespace = "does-not-exist"
-					})
+				It("returns success with same zone", func() {
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).ToNot(BeNil())
+					Expect(result.ZonePlacement).To(BeTrue())
+					Expect(result.ZoneName).To(Equal(zoneName))
+					Expect(result.HostMoRef).To(BeNil())
+					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
 
-					It("returns an error", func() {
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
-						Expect(err).To(MatchError("no placement candidates available"))
-						Expect(result).To(BeNil())
-					})
+					// Current contract is the caller must look this up based on the pre-assigned zone but
+					// we might want to change that later.
+					Expect(result.PoolMoRef.Value).To(BeEmpty())
+				})
+			})
+
+			Context("no placement candidates", func() {
+				JustBeforeEach(func() {
+					vm.Namespace = "does-not-exist"
+				})
+
+				It("returns an error", func() {
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+					Expect(err).To(MatchError("no placement candidates available"))
+					Expect(result).To(BeNil())
+				})
+			})
+
+			It("returns success", func() {
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(result.ZonePlacement).To(BeTrue())
+				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+				Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
+				Expect(result.HostMoRef).To(BeNil())
+
+				nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
+				Expect(nsRP).ToNot(BeNil())
+				Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
+			})
+
+			Context("Only one zone exists", func() {
+				BeforeEach(func() {
+					testConfig.NumFaultDomains = 1
 				})
 
 				It("returns success", func() {
@@ -331,116 +381,96 @@ func vcSimPlacement() {
 					Expect(nsRP).ToNot(BeNil())
 					Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
 				})
-
-				Context("Only one zone exists", func() {
-					BeforeEach(func() {
-						testConfig.NumFaultDomains = 1
-					})
-
-					It("returns success", func() {
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
-						Expect(err).ToNot(HaveOccurred())
-
-						Expect(result.ZonePlacement).To(BeTrue())
-						Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
-						Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
-						Expect(result.HostMoRef).To(BeNil())
-
-						nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
-						Expect(nsRP).ToNot(BeNil())
-						Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
-					})
-				})
-
-				Context("VM is in child RP via ResourcePolicy", func() {
-					It("returns success", func() {
-						resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
-						Expect(resourcePolicy).ToNot(BeNil())
-						childRPName := resourcePolicy.Spec.ResourcePool.Name
-						Expect(childRPName).ToNot(BeEmpty())
-						vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
-							ResourcePolicyName: resourcePolicy.Name,
-						}
-
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
-						Expect(err).ToNot(HaveOccurred())
-
-						Expect(result.ZonePlacement).To(BeTrue())
-						Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
-
-						childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
-						Expect(childRP).ToNot(BeNil())
-						Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
-					})
-				})
 			})
 
-			Context("Instance Storage Placement", func() {
-
-				BeforeEach(func() {
-					testConfig.WithInstanceStorage = true
-					builder.AddDummyInstanceStorageVolume(vm)
-					testConfig.NumFaultDomains = 1 // Only support for non-HA "HA"
-				})
-
-				When("host already assigned", func() {
-					const hostMoID = "foobar-host-42"
-
-					BeforeEach(func() {
-						vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "my-zone"
-						vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
-					})
-
-					It("returns success with same host", func() {
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
-						Expect(err).ToNot(HaveOccurred())
-
-						Expect(result.InstanceStoragePlacement).To(BeTrue())
-						Expect(result.HostMoRef).ToNot(BeNil())
-						Expect(result.HostMoRef.Value).To(Equal(hostMoID))
-					})
-				})
-
+			Context("VM is in child RP via ResourcePolicy", func() {
 				It("returns success", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+					Expect(resourcePolicy).ToNot(BeNil())
+					childRPName := resourcePolicy.Spec.ResourcePool.Name
+					Expect(childRPName).ToNot(BeEmpty())
+					vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
+						ResourcePolicyName: resourcePolicy.Name,
+					}
+
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.ZonePlacement).To(BeTrue())
-					Expect(result.ZoneName).ToNot(BeEmpty())
+					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+
+					childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
+					Expect(childRP).ToNot(BeNil())
+					Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
+				})
+			})
+		})
+
+		Context("Instance Storage Placement", func() {
+
+			BeforeEach(func() {
+				testConfig.WithInstanceStorage = true
+				builder.AddDummyInstanceStorageVolume(vm)
+				testConfig.NumFaultDomains = 1 // Only support for non-HA "HA"
+			})
+
+			When("host already assigned", func() {
+				const hostMoID = "foobar-host-42"
+
+				BeforeEach(func() {
+					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "my-zone"
+					vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
+				})
+
+				It("returns success with same host", func() {
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(result.InstanceStoragePlacement).To(BeTrue())
+					Expect(result.HostMoRef).ToNot(BeNil())
+					Expect(result.HostMoRef.Value).To(Equal(hostMoID))
+				})
+			})
+
+			It("returns success", func() {
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(result.ZonePlacement).To(BeTrue())
+				Expect(result.ZoneName).ToNot(BeEmpty())
+
+				Expect(result.InstanceStoragePlacement).To(BeTrue())
+				Expect(result.HostMoRef).ToNot(BeNil())
+				Expect(result.HostMoRef.Value).ToNot(BeEmpty())
+
+				nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
+				Expect(nsRP).ToNot(BeNil())
+				Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
+			})
+
+			Context("VM is in child RP via ResourcePolicy", func() {
+				It("returns success", func() {
+					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+					Expect(resourcePolicy).ToNot(BeNil())
+					childRPName := resourcePolicy.Spec.ResourcePool.Name
+					Expect(childRPName).ToNot(BeEmpty())
+					vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
+						ResourcePolicyName: resourcePolicy.Name,
+					}
+
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(result.ZonePlacement).To(BeTrue())
+					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 
 					Expect(result.InstanceStoragePlacement).To(BeTrue())
 					Expect(result.HostMoRef).ToNot(BeNil())
 					Expect(result.HostMoRef.Value).ToNot(BeEmpty())
 
-					nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
-					Expect(nsRP).ToNot(BeNil())
-					Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
-				})
-
-				Context("VM is in child RP via ResourcePolicy", func() {
-					It("returns success", func() {
-						resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
-						Expect(resourcePolicy).ToNot(BeNil())
-						childRPName := resourcePolicy.Spec.ResourcePool.Name
-						Expect(childRPName).ToNot(BeEmpty())
-						vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
-							ResourcePolicyName: resourcePolicy.Name,
-						}
-
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
-						Expect(err).ToNot(HaveOccurred())
-
-						Expect(result.ZonePlacement).To(BeTrue())
-						Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
-
-						Expect(result.InstanceStoragePlacement).To(BeTrue())
-						Expect(result.HostMoRef).ToNot(BeNil())
-						Expect(result.HostMoRef.Value).ToNot(BeEmpty())
-
-						childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
-						Expect(childRP).ToNot(BeNil())
-						Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
-					})
+					childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
+					Expect(childRP).ToNot(BeNil())
+					Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
 				})
 			})
 		})

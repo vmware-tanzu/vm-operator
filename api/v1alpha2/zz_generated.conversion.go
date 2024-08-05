@@ -1978,7 +1978,7 @@ func autoConvert_v1alpha3_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineIm
 	if err := Convert_v1alpha3_VirtualMachineImageProductInfo_To_v1alpha2_VirtualMachineImageProductInfo(&in.ProductInfo, &out.ProductInfo, s); err != nil {
 		return err
 	}
-	// WARNING: in.DiskInfo requires manual conversion: does not exist in peer-type
+	// WARNING: in.Disks requires manual conversion: does not exist in peer-type
 	out.ProviderContentVersion = in.ProviderContentVersion
 	out.ProviderItemID = in.ProviderItemID
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))

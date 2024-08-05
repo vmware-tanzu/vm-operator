@@ -215,8 +215,8 @@ type VirtualMachineImageStatus struct {
 
 	// +optional
 
-	// DiskInfo describes the observed disk information for this image.
-	DiskInfo []VirtualMachineImageDiskInfo `json:"diskInfo,omitempty"`
+	// Disks describes the observed disk information for this image.
+	Disks []VirtualMachineImageDiskInfo `json:"diskInfo,omitempty"`
 
 	// +optional
 

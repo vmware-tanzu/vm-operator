@@ -771,8 +771,8 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               diskInfo:
-                description: DiskInfo describes the observed disk information for
-                  this image.
+                description: Disks describes the observed disk information for this
+                  image.
                 items:
                   description: |-
                     VirtualMachineImageDiskInfo describes information about any disks associated with

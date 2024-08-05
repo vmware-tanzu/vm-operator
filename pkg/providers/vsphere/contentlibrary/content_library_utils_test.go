@@ -170,12 +170,12 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 
 		Expect(conditions.Has(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeFalse())
 
-		Expect(len(image.Status.DiskInfo)).To(Equal(2))
-		Expect(image.Status.DiskInfo[0].Size.String()).To(Equal("18304Ki"))
-		Expect(image.Status.DiskInfo[0].Capacity.String()).To(Equal("30Mi"))
+		Expect(image.Status.Disks).To(HaveLen(2))
+		Expect(image.Status.Disks[0].Size.String()).To(Equal("18304Ki"))
+		Expect(image.Status.Disks[0].Capacity.String()).To(Equal("30Mi"))
 
-		Expect(image.Status.DiskInfo[1].Size.String()).To(Equal("0"))
-		Expect(image.Status.DiskInfo[1].Capacity.String()).To(Equal("10Gi"))
+		Expect(image.Status.Disks[1].Size.String()).To(Equal("0"))
+		Expect(image.Status.Disks[1].Capacity.String()).To(Equal("10Gi"))
 	})
 
 	Context("Image is V1Alpha1Compatible", func() {

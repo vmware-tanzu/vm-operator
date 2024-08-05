@@ -908,8 +908,8 @@ func (in *VirtualMachineImageStatus) DeepCopyInto(out *VirtualMachineImageStatus
 		copy(*out, *in)
 	}
 	out.ProductInfo = in.ProductInfo
-	if in.DiskInfo != nil {
-		in, out := &in.DiskInfo, &out.DiskInfo
+	if in.Disks != nil {
+		in, out := &in.Disks, &out.Disks
 		*out = make([]VirtualMachineImageDiskInfo, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])

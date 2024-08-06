@@ -102,6 +102,9 @@ type VCSimTestConfig struct {
 
 	// WithNetworkEnv is the network environment type.
 	WithNetworkEnv NetworkEnv
+
+	// WithISOSupport enables the FSS_WCP_VMSERVICE_ISO_SUPPORT FSS.
+	WithISOSupport bool
 }
 
 type TestContextForVCSim struct {
@@ -117,6 +120,7 @@ type TestContextForVCSim struct {
 	Finder         *find.Finder
 	RestClient     *rest.Client
 	Recorder       record.Recorder
+	Datastore      *object.Datastore
 
 	ZoneCount       int
 	ClustersPerZone int
@@ -145,8 +149,7 @@ type TestContextForVCSim struct {
 	tlsServerCertPath string
 	tlsServerKeyPath  string
 
-	folder    *object.Folder
-	datastore *object.Datastore
+	folder *object.Folder
 
 	azCCRs map[string][]*object.ClusterComputeResource
 }
@@ -333,6 +336,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.Features.VMResize = config.WithVMResize
 		cc.Features.VMResizeCPUMemory = config.WithVMResizeCPUMemory
 		cc.Features.WorkloadDomainIsolation = config.WithWorkloadIsolation
+		cc.Features.IsoSupport = config.WithISOSupport
 	})
 }
 
@@ -383,7 +387,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 
 	datastore, err := c.Finder.DefaultDatastore(c)
 	Expect(err).ToNot(HaveOccurred())
-	c.datastore = datastore
+	c.Datastore = datastore
 
 	if config.WithInstanceStorage {
 		// Instance storage (because of CSI) apparently needs the hosts' FQDN to be populated.
@@ -445,9 +449,13 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 		Type: "LOCAL",
 		Storage: []library.StorageBacking{
 			{
-				DatastoreID: c.datastore.Reference().Value,
+				DatastoreID: c.Datastore.Reference().Value,
 				Type:        "DATASTORE",
 			},
+		},
+		// Making it published to be able to verify SyncLibraryItem() API.
+		Publication: &library.Publication{
+			Published: vimtypes.NewBool(true),
 		},
 	}
 
@@ -631,7 +639,7 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 	if config.WithoutStorageClass {
 		// Only used in gce2e (LocalDS_0)
 		data["StorageClassRequired"] = "false"
-		data["Datastore"] = c.datastore.Name()
+		data["Datastore"] = c.Datastore.Name()
 	} else {
 		data["StorageClassRequired"] = "true"
 

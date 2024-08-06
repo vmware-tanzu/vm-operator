@@ -17,7 +17,7 @@ func vcSimTests() {
 	Describe("Hardware Version", Label(testlabels.VCSim), hardwareVersionTests)
 	Describe("Managed Object", managedObjectTests)
 	Describe("Guest ID", guestIDTests)
-	Describe("CD ROM", cdromTests)
+	Describe("CD ROM", Label(testlabels.VCSim), cdromTests)
 }
 
 var suite = builder.NewTestSuite()

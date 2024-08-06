@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vapi/rest"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -27,20 +29,28 @@ const (
 // device changes required to update the CD-ROM devices.
 func UpdateCdromDeviceChanges(
 	vmCtx pkgctx.VirtualMachineContext,
-	client ctrlclient.Client,
+	restClient *rest.Client,
+	k8sClient ctrlclient.Client,
 	curDevices object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 
 	var (
 		deviceChanges                  = make([]vimtypes.BaseVirtualDeviceConfigSpec, 0)
 		curCdromBackingFileNameToSpec  = make(map[string]vmopv1.VirtualMachineCdromSpec)
 		expectedBackingFileNameToCdrom = make(map[string]vimtypes.BaseVirtualDevice, len(vmCtx.VM.Spec.Cdrom))
+		libManager                     = library.NewManager(restClient)
 	)
 
 	for _, specCdrom := range vmCtx.VM.Spec.Cdrom {
 		imageRef := specCdrom.Image
-		cdrom, bFileName, err := getCdromAndBackingByImgRef(vmCtx, client, imageRef, curDevices)
+		// Sync the content library file if needed to connect the CD-ROM device.
+		syncFile := specCdrom.Connected
+		bFileName, err := getBackingFileNameByImageRef(vmCtx, libManager, k8sClient, syncFile, imageRef)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get CD-ROM device by image ref %s: %w", imageRef, err)
+			return nil, fmt.Errorf("error getting backing file name by image ref %s: %w", imageRef, err)
+		}
+		cdrom, err := getCdromByBackingFileName(bFileName, curDevices)
+		if err != nil {
+			return nil, fmt.Errorf("error getting CD-ROM device by backing file name %s: %w", bFileName, err)
 		}
 
 		if cdrom != nil {
@@ -96,7 +106,8 @@ func UpdateCdromDeviceChanges(
 // VM's existing CD-ROM devices to match what specifies in VM.Spec.Cdrom list.
 func UpdateConfigSpecCdromDeviceConnection(
 	vmCtx pkgctx.VirtualMachineContext,
-	client ctrlclient.Client,
+	restClient *rest.Client,
+	k8sClient ctrlclient.Client,
 	config *vimtypes.VirtualMachineConfigInfo,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
@@ -105,13 +116,20 @@ func UpdateConfigSpecCdromDeviceConnection(
 		curDevices                   = object.VirtualDeviceList(config.Hardware.Device)
 		backingFileNameToCdromSpec   = make(map[string]vmopv1.VirtualMachineCdromSpec, len(cdromSpec))
 		backingFileNameToCdromDevice = make(map[string]vimtypes.BaseVirtualDevice, len(cdromSpec))
+		libManager                   = library.NewManager(restClient)
 	)
 
 	for _, specCdrom := range cdromSpec {
 		imageRef := specCdrom.Image
-		cdrom, bFileName, err := getCdromAndBackingByImgRef(vmCtx, client, imageRef, curDevices)
+		// Sync the content library file if needed to connect the CD-ROM device.
+		syncFile := specCdrom.Connected
+		bFileName, err := getBackingFileNameByImageRef(vmCtx, libManager, k8sClient, syncFile, imageRef)
 		if err != nil {
-			return fmt.Errorf("failed to get CD-ROM device by image ref %s: %w", imageRef, err)
+			return fmt.Errorf("error getting backing file name by image ref %s: %w", imageRef, err)
+		}
+		cdrom, err := getCdromByBackingFileName(bFileName, curDevices)
+		if err != nil {
+			return fmt.Errorf("error getting CD-ROM device by backing file name %s: %w", bFileName, err)
 		}
 
 		if cdrom == nil {
@@ -134,18 +152,86 @@ func UpdateConfigSpecCdromDeviceConnection(
 	return nil
 }
 
-// getCdromAndBackingByImgRef returns the CD-ROM device and its backing file
-// name from the given image reference.
-func getCdromAndBackingByImgRef(
+// getBackingFileNameByImageRef syncs and returns the ISO type content library
+// file name based on the given VirtualMachineImageRef.
+// If a namespace scope VirtualMachineImage is provided, it checks the
+// ContentLibraryItem status, otherwise, a ClusterVirtualMachineImage status,
+// and returns the backing file name from the StorageURI field.
+func getBackingFileNameByImageRef(
 	vmCtx pkgctx.VirtualMachineContext,
+	libManager *library.Manager,
 	client ctrlclient.Client,
-	imageRef vmopv1.VirtualMachineImageRef,
-	curDevices object.VirtualDeviceList) (vimtypes.BaseVirtualDevice, string, error) {
+	syncFile bool,
+	imageRef vmopv1.VirtualMachineImageRef) (string, error) {
 
-	fileName, err := getIsoFilenameFromImageRef(vmCtx, client, imageRef)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get ISO file name from image ref %s: %w", imageRef, err)
+	var (
+		libItemUUID string
+		itemStatus  imgregv1a1.ContentLibraryItemStatus
+	)
+
+	switch imageRef.Kind {
+	case vmiKind:
+		ns := vmCtx.VM.Namespace
+		var vmi vmopv1.VirtualMachineImage
+		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: imageRef.Name, Namespace: ns}, &vmi); err != nil {
+			return "", err
+		}
+		if vmi.Spec.ProviderRef == nil {
+			return "", fmt.Errorf("provider ref is nil for VirtualMachineImage: %q", vmi.Name)
+		}
+		var clitem imgregv1a1.ContentLibraryItem
+		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: vmi.Spec.ProviderRef.Name, Namespace: ns}, &clitem); err != nil {
+			return "", err
+		}
+		libItemUUID = string(clitem.Spec.UUID)
+		itemStatus = clitem.Status
+	case cvmiKind:
+		var cvmi vmopv1.ClusterVirtualMachineImage
+		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: imageRef.Name}, &cvmi); err != nil {
+			return "", err
+		}
+		if cvmi.Spec.ProviderRef == nil {
+			return "", fmt.Errorf("provider ref is nil for ClusterVirtualMachineImage: %q", cvmi.Name)
+		}
+		var cclitem imgregv1a1.ClusterContentLibraryItem
+		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: cvmi.Spec.ProviderRef.Name}, &cclitem); err != nil {
+			return "", err
+		}
+		libItemUUID = string(cclitem.Spec.UUID)
+		itemStatus = cclitem.Status
+
+	default:
+		return "", fmt.Errorf("unsupported image kind: %q", imageRef.Kind)
 	}
+
+	if itemStatus.Type != imgregv1a1.ContentLibraryItemTypeIso {
+		return "", fmt.Errorf("expected ISO type image, got %s", itemStatus.Type)
+	}
+	if len(itemStatus.FileInfo) == 0 || itemStatus.FileInfo[0].StorageURI == "" {
+		return "", fmt.Errorf("no storage URI found in the content library item status: %v", itemStatus)
+	}
+
+	// Subscribed content library item file may not always be stored in VC.
+	// Sync the item to ensure the file is available for CD-ROM connection.
+	if syncFile && (!itemStatus.Cached || itemStatus.SizeInBytes.Size() == 0) {
+		vmCtx.Logger.Info("Syncing content library item", "libItemUUID", libItemUUID)
+		libItem, err := libManager.GetLibraryItem(vmCtx, libItemUUID)
+		if err != nil {
+			return "", fmt.Errorf("error getting library item %s to sync: %w", libItemUUID, err)
+		}
+		if err := libManager.SyncLibraryItem(vmCtx, libItem, true); err != nil {
+			return "", fmt.Errorf("error syncing library item %s: %w", libItemUUID, err)
+		}
+	}
+
+	return itemStatus.FileInfo[0].StorageURI, nil
+}
+
+// getCdromByBackingFileName returns the CD-ROM device from the current devices
+// by matching the given backing file name.
+func getCdromByBackingFileName(
+	fileName string,
+	curDevices object.VirtualDeviceList) (vimtypes.BaseVirtualDevice, error) {
 
 	backing := &vimtypes.VirtualCdromIsoBackingInfo{
 		VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
@@ -156,11 +242,11 @@ func getCdromAndBackingByImgRef(
 	curCdroms := curDevices.SelectByBackingInfo(backing)
 	switch len(curCdroms) {
 	case 0:
-		return nil, fileName, nil
+		return nil, nil
 	case 1:
-		return curCdroms[0], fileName, nil
+		return curCdroms[0], nil
 	default:
-		return nil, fileName, fmt.Errorf("found multiple CD-ROMs with same backing from image ref: %v", imageRef)
+		return nil, fmt.Errorf("found multiple CD-ROMs with same backing file name: %s", fileName)
 	}
 }
 
@@ -275,61 +361,6 @@ func addNewAHCIController(curDevices object.VirtualDeviceList) (
 	curDevices = append(curDevices, ahciController)
 
 	return ahciController, deviceChanges, curDevices
-}
-
-// getIsoFilenameFromImageRef returns the ISO type content library file name
-// based on the given VirtualMachineImageRef.
-// If a namespace scope VirtualMachineImage is provided, it checks the
-// ContentLibraryItem status, otherwise, a ClusterVirtualMachineImage status,
-// and gets the ISO file storage URI with the server ID suffix dropped.
-func getIsoFilenameFromImageRef(
-	vmCtx pkgctx.VirtualMachineContext,
-	client ctrlclient.Client,
-	imageRef vmopv1.VirtualMachineImageRef) (string, error) {
-
-	var itemStatus imgregv1a1.ContentLibraryItemStatus
-
-	switch imageRef.Kind {
-	case vmiKind:
-		ns := vmCtx.VM.Namespace
-		var vmi vmopv1.VirtualMachineImage
-		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: imageRef.Name, Namespace: ns}, &vmi); err != nil {
-			return "", err
-		}
-		if vmi.Spec.ProviderRef == nil {
-			return "", fmt.Errorf("provider ref is nil for VirtualMachineImage: %q", vmi.Name)
-		}
-		var clitem imgregv1a1.ContentLibraryItem
-		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: vmi.Spec.ProviderRef.Name, Namespace: ns}, &clitem); err != nil {
-			return "", err
-		}
-		itemStatus = clitem.Status
-	case cvmiKind:
-		var cvmi vmopv1.ClusterVirtualMachineImage
-		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: imageRef.Name}, &cvmi); err != nil {
-			return "", err
-		}
-		if cvmi.Spec.ProviderRef == nil {
-			return "", fmt.Errorf("provider ref is nil for ClusterVirtualMachineImage: %q", cvmi.Name)
-		}
-		var cclitem imgregv1a1.ClusterContentLibraryItem
-		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: cvmi.Spec.ProviderRef.Name}, &cclitem); err != nil {
-			return "", err
-		}
-		itemStatus = cclitem.Status
-
-	default:
-		return "", fmt.Errorf("unsupported image kind: %q", imageRef.Kind)
-	}
-
-	if itemStatus.Type != imgregv1a1.ContentLibraryItemTypeIso {
-		return "", fmt.Errorf("expected ISO type image, got %s", itemStatus.Type)
-	}
-	if len(itemStatus.FileInfo) == 0 || itemStatus.FileInfo[0].StorageURI == "" {
-		return "", fmt.Errorf("no storage URI found in the content library item status: %v", itemStatus)
-	}
-
-	return itemStatus.FileInfo[0].StorageURI, nil
 }
 
 // updateCurCdromsConnectionState updates the connection state of the given

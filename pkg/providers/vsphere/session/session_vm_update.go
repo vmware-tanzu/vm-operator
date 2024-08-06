@@ -528,9 +528,9 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
 	if pkgcfg.FromContext(vmCtx).Features.IsoSupport {
-		cdromDeviceChanges, err := vmutil.UpdateCdromDeviceChanges(vmCtx, s.K8sClient, virtualDevices)
+		cdromDeviceChanges, err := vmutil.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
 		if err != nil {
-			return nil, fmt.Errorf("failed to update CD-ROM device changes: %w", err)
+			return nil, fmt.Errorf("update CD-ROM device changes error: %w", err)
 		}
 		configSpec.DeviceChange = append(configSpec.DeviceChange, cdromDeviceChanges...)
 	}
@@ -793,8 +793,8 @@ func (s *Session) poweredOnVMReconfigure(
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
 	if pkgcfg.FromContext(vmCtx).Features.IsoSupport {
-		if err := vmutil.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.K8sClient, config, configSpec); err != nil {
-			return false, fmt.Errorf("failed to update CD-ROM device connection: %w", err)
+		if err := vmutil.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
+			return false, fmt.Errorf("update CD-ROM device connection error: %w", err)
 		}
 	}
 

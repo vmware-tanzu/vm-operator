@@ -809,6 +809,7 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		var (
 			diskUUID string
 			fileName string
+			isFCD    = vd.VDiskId != nil && vd.VDiskId.Id != ""
 		)
 
 		switch tb := vd.Backing.(type) {
@@ -843,7 +844,7 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 			// existing status with the usage information.
 			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
 			vm.Status.Volumes[diskIndex].Used = BytesToResourceGiB(di.UniqueSize)
-		} else if !strings.HasPrefix(diskPath.Path, "fcd/") {
+		} else if !isFCD {
 			// The disk is a classic, non-FCD that must be added to the list of
 			// volume statuses.
 			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)

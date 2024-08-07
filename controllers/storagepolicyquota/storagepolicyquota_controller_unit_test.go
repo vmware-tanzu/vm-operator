@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,8 +19,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/controllers/storagepolicyquota"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -35,29 +37,65 @@ func unitTests() {
 }
 
 func unitTestsReconcile() {
-	var (
-		initObjects []client.Object
-		ctx         *builder.UnitTestContextForController
 
-		reconciler *storagepolicyquota.Reconciler
-		src        *spqv1.StoragePolicyQuota
+	const (
+		namespaceName    = "default"
+		storageQuotaName = "my-storage-quota"
+		storageClassName = "my-storage-class"
+		storagePolicyID  = "my-storage-policy"
+	)
+
+	var (
+		ctx         *builder.UnitTestContextForController
+		withObjects []client.Object
+
+		reconciler         *storagepolicyquota.Reconciler
+		storagePolicyQuota *spqv1.StoragePolicyQuota
 	)
 
 	BeforeEach(func() {
-		initObjects = nil
-		src = &spqv1.StoragePolicyQuota{
+		withObjects = []client.Object{
+			&storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: storageClassName,
+				},
+				Provisioner: "fake",
+				Parameters: map[string]string{
+					"storagePolicyID": storagePolicyID,
+				},
+			},
+		}
+
+		storagePolicyQuota = &spqv1.StoragePolicyQuota{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-quota",
-				Namespace: "dummy-namespace",
+				Name:      storageQuotaName,
+				Namespace: namespaceName,
+			},
+			Spec: spqv1.StoragePolicyQuotaSpec{
+				StoragePolicyId: storagePolicyID,
+			},
+			Status: spqv1.StoragePolicyQuotaStatus{
+				SCLevelQuotaStatuses: spqv1.SCLevelQuotaStatusList{
+					{
+						StorageClassName: storageClassName,
+					},
+				},
 			},
 		}
 	})
 
 	JustBeforeEach(func() {
-		initObjects = append(initObjects, src)
-		ctx = suite.NewUnitTestContextForController(initObjects...)
+		withObjects = append(withObjects, storagePolicyQuota)
+
+		ctx = suite.NewUnitTestContextForController(withObjects...)
+
 		reconciler = storagepolicyquota.NewReconciler(
-			ctx,
+			pkgcfg.UpdateContext(
+				ctx,
+				func(config *pkgcfg.Config) {
+					config.Features.PodVMOnStretchedSupervisor = true
+				},
+			),
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
@@ -73,8 +111,8 @@ func unitTestsReconcile() {
 
 		BeforeEach(func() {
 			err = nil
-			name = src.Name
-			namespace = src.Namespace
+			name = storageQuotaName
+			namespace = namespaceName
 		})
 
 		JustBeforeEach(func() {
@@ -83,6 +121,10 @@ func unitTestsReconcile() {
 					Namespace: namespace,
 					Name:      name,
 				}})
+			Expect(ctx.Client.Get(
+				ctx,
+				client.ObjectKeyFromObject(storagePolicyQuota),
+				storagePolicyQuota)).To(Succeed())
 		})
 
 		// Please note it is not possible to validate garbage collection with
@@ -90,8 +132,8 @@ func unitTestsReconcile() {
 		// the Kubernetes garbage collector.
 		When("Deleted", func() {
 			BeforeEach(func() {
-				src.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-				src.Finalizers = append(src.Finalizers, "fake.com/finalizer")
+				storagePolicyQuota.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+				storagePolicyQuota.Finalizers = append(storagePolicyQuota.Finalizers, "fake.com/finalizer")
 			})
 			It("returns success", func() {
 				Expect(err).ToNot(HaveOccurred())
@@ -101,19 +143,19 @@ func unitTestsReconcile() {
 		When("Normal", func() {
 			assertStoragePolicyUsage := func(err error) {
 				ExpectWithOffset(1, err).ToNot(HaveOccurred())
-				var dst spqv1.StoragePolicyUsage
+				var obj spqv1.StoragePolicyUsage
 				ExpectWithOffset(1, ctx.Client.Get(
 					ctx,
 					types.NamespacedName{
 						Namespace: namespace,
-						Name:      kubeutil.StoragePolicyUsageNameFromQuotaName(name),
+						Name:      spqutil.StoragePolicyUsageName(storageClassName),
 					},
-					&dst)).To(Succeed())
-				ExpectWithOffset(1, dst.Spec.ResourceAPIgroup).To(Equal(ptr.To(spqv1.GroupVersion.Group)))
-				ExpectWithOffset(1, dst.Spec.ResourceExtensionName).To(Equal("vmservice.cns.vsphere.vmware.com"))
-				ExpectWithOffset(1, dst.Spec.ResourceKind).To(Equal("StoragePolicyQuota"))
-				ExpectWithOffset(1, dst.Spec.StorageClassName).To(Equal(src.Name))
-				ExpectWithOffset(1, dst.Spec.StoragePolicyId).To(Equal(src.Spec.StoragePolicyId))
+					&obj)).To(Succeed())
+				ExpectWithOffset(1, obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
+				ExpectWithOffset(1, obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
+				ExpectWithOffset(1, obj.Spec.ResourceKind).To(Equal("VirtualMachine"))
+				ExpectWithOffset(1, obj.Spec.StorageClassName).To(Equal(storageClassName))
+				ExpectWithOffset(1, obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
 			}
 
 			When("a StoragePolicyUsage resource does not exist", func() {
@@ -128,13 +170,13 @@ func unitTestsReconcile() {
 					dst = &spqv1.StoragePolicyUsage{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace: namespace,
-							Name:      kubeutil.StoragePolicyUsageNameFromQuotaName(name),
+							Name:      spqutil.StoragePolicyUsageName(storageClassName),
 						},
 						Spec: spqv1.StoragePolicyUsageSpec{
-							StoragePolicyId: src.Spec.StoragePolicyId,
+							StoragePolicyId: storagePolicyID,
 						},
 					}
-					initObjects = append(initObjects, dst)
+					withObjects = append(withObjects, dst)
 				})
 
 				When("the resource does not have a controller reference", func() {
@@ -171,9 +213,9 @@ func unitTestsReconcile() {
 							dst.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 								{
 									APIVersion:         spqv1.GroupVersion.String(),
-									Kind:               "StoragePolicyQuota",
-									Name:               src.Name,
-									UID:                src.UID,
+									Kind:               spqutil.StoragePolicyQuotaKind,
+									Name:               storageQuotaName,
+									UID:                storagePolicyQuota.UID,
 									Controller:         ptr.To(true),
 									BlockOwnerDeletion: ptr.To(true),
 								},
@@ -185,6 +227,7 @@ func unitTestsReconcile() {
 					})
 				})
 			})
+
 		})
 
 		When("Object not found", func() {

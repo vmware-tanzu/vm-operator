@@ -35,6 +35,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -235,6 +237,10 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
+	if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota {
+		ctx = cource.JoinContext(ctx, r.Context)
+	}
+
 	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -252,6 +258,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	defer func() {
+		if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota {
+			vmopv1util.SyncStorageUsageForNamespace(
+				ctx,
+				vm.Namespace,
+				vm.Spec.StorageClass)
+		}
 		if err := patchHelper.Patch(ctx, vm); err != nil {
 			if reterr == nil {
 				reterr = err

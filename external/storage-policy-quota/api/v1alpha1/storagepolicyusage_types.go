@@ -65,7 +65,6 @@ type StoragePolicyUsage struct {
 }
 
 //+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
 
 // StoragePolicyUsageList contains a list of StoragePolicyUsage
 type StoragePolicyUsageList struct {

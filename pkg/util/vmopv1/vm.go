@@ -12,11 +12,14 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 )
 
 const (
@@ -212,4 +215,28 @@ func IsClasslessVM(vm vmopv1.VirtualMachine) bool {
 // image.
 func IsImagelessVM(vm vmopv1.VirtualMachine) bool {
 	return vm.Spec.Image == nil && vm.Spec.ImageName == ""
+}
+
+// SyncStorageUsageForNamespace updates the StoragePolicyUsage resource for
+// the given namespace and storage class with the reported usage information
+// for VMs in that namespace that use the specified storage class.
+func SyncStorageUsageForNamespace(
+	ctx context.Context,
+	namespace, storageClass string) {
+
+	go func() {
+		if namespace == "" || storageClass == "" {
+			return
+		}
+		spqutil.FromContext(ctx) <- event.GenericEvent{
+			Object: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"namespace": namespace,
+						"name":      storageClass,
+					},
+				},
+			},
+		}
+	}()
 }

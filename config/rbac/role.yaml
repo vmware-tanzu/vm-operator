@@ -121,6 +121,8 @@ rules:
   - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - cns.vmware.com
@@ -128,6 +130,8 @@ rules:
   - storagepolicyquotas/status
   verbs:
   - get
+  - patch
+  - update
 - apiGroups:
   - cns.vmware.com
   resources:

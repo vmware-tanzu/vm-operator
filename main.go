@@ -23,6 +23,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/webhooks"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -204,7 +205,13 @@ func main() {
 	setupLog.Info("creating controller manager")
 	managerOpts.InitializeProviders = pkgmgrinit.InitializeProviders
 	managerOpts.AddToManager = addToManager
-	mgr, err := pkgmgr.New(pkgcfg.WithConfig(defaultConfig), managerOpts)
+
+	ctx := pkgcfg.WithConfig(defaultConfig)
+	if defaultConfig.Features.UnifiedStorageQuota {
+		ctx = cource.WithContext(ctx)
+	}
+
+	mgr, err := pkgmgr.New(ctx, managerOpts)
 	if err != nil {
 		setupLog.Error(err, "problem creating controller manager")
 		os.Exit(1)

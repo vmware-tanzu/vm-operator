@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -304,6 +305,16 @@ func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, r
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForController(initObjects ...client.Object) *UnitTestContextForController {
 	return NewUnitTestContextForController(initObjects)
+}
+
+// NewUnitTestContextForControllerWithFuncs returns a new unit test context for this
+// suite's reconciler.
+//
+// Returns nil if unit testing is disabled.
+func (s *TestSuite) NewUnitTestContextForControllerWithFuncs(
+	funcs interceptor.Funcs, initObjects ...client.Object) *UnitTestContextForController {
+
+	return NewUnitTestContextForControllerWithFuncs(funcs, initObjects)
 }
 
 // NewUnitTestContextForValidatingWebhook returns a new unit test context for this

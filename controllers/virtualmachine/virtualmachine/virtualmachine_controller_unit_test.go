@@ -16,12 +16,13 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -63,8 +64,9 @@ func unitTestsReconcile() {
 				Finalizers:  []string{finalizer},
 			},
 			Spec: vmopv1.VirtualMachineSpec{
-				ClassName: "dummy-class",
-				ImageName: "dummy-image",
+				ClassName:    "dummy-class",
+				ImageName:    "dummy-image",
+				StorageClass: "my-storage-class",
 			},
 		}
 	})
@@ -78,7 +80,14 @@ func unitTestsReconcile() {
 		fakeProbeManagerIf := proberfake.NewFakeProberManager()
 
 		reconciler = virtualmachine.NewReconciler(
-			ctx,
+			cource.WithContext(
+				pkgcfg.UpdateContext(
+					ctx,
+					func(config *pkgcfg.Config) {
+						config.Features.PodVMOnStretchedSupervisor = true
+					},
+				),
+			),
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,

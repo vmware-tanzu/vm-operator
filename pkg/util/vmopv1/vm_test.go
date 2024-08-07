@@ -14,9 +14,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -492,3 +495,46 @@ var _ = DescribeTable("IsImageLessVM",
 		false,
 	),
 )
+
+var _ = Describe("SyncStorageUsageForNamespace", func() {
+	var (
+		ctx          context.Context
+		namespace    string
+		storageClass string
+		chanEvent    chan event.GenericEvent
+	)
+	BeforeEach(func() {
+		ctx = cource.NewContext()
+		namespace = "my-namespace"
+		storageClass = "my-storage-class"
+		chanEvent = spqutil.FromContext(ctx)
+	})
+	JustBeforeEach(func() {
+		vmopv1util.SyncStorageUsageForNamespace(ctx, namespace, storageClass)
+	})
+	When("namespace is empty", func() {
+		BeforeEach(func() {
+			namespace = ""
+		})
+		Specify("no event should be received", func() {
+			Consistently(chanEvent).ShouldNot(Receive())
+		})
+	})
+	When("storageClassName is empty", func() {
+		BeforeEach(func() {
+			storageClass = ""
+		})
+		Specify("no event should be received", func() {
+			Consistently(chanEvent).ShouldNot(Receive())
+		})
+	})
+	When("namespace and storageClassName are both non-empty", func() {
+		Specify("an event should be received", func() {
+			e := <-chanEvent
+			Expect(e).ToNot(BeNil())
+			Expect(e.Object).ToNot(BeNil())
+			Expect(e.Object.GetNamespace()).To(Equal(namespace))
+			Expect(e.Object.GetName()).To(Equal(storageClass))
+		})
+	})
+})

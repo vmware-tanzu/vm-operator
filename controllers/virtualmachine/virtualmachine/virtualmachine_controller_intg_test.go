@@ -52,9 +52,10 @@ func intgTestsReconcile() {
 				Name:      "dummy-vm",
 			},
 			Spec: vmopv1.VirtualMachineSpec{
-				ImageName:  "dummy-image",
-				ClassName:  "dummy-class",
-				PowerState: vmopv1.VirtualMachinePowerStateOn,
+				ImageName:    "dummy-image",
+				ClassName:    "dummy-class",
+				StorageClass: "my-storage-class",
+				PowerState:   vmopv1.VirtualMachinePowerStateOn,
 			},
 		}
 		vmKey = types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}

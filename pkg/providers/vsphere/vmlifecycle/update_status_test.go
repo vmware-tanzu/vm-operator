@@ -598,11 +598,14 @@ var _ = Describe("UpdateStatus", func() {
 									VirtualDevice: vimtypes.VirtualDevice{
 										Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
 											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-												FileName: "[datastore] fcd/my-disk-105.vmdk",
+												FileName: "[datastore] vm/my-disk-105.vmdk",
 											},
 											Uuid: "105",
 										},
 										Key: 105,
+									},
+									VDiskId: &vimtypes.ID{
+										Id: "my-fcd-1",
 									},
 								},
 							},

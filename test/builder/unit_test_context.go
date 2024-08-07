@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -70,10 +71,13 @@ type UnitTestContextForValidatingWebhook struct {
 	builder.Validator
 }
 
-// NewUnitTestContextForController returns a new UnitTestContextForController
-// for unit testing controllers.
-func NewUnitTestContextForController(initObjects []client.Object) *UnitTestContextForController {
-	fakeClient := NewFakeClient(initObjects...)
+// NewUnitTestContextForControllerWithFuncs returns a new
+// UnitTestContextForController for unit testing controllers.
+func NewUnitTestContextForControllerWithFuncs(
+	funcs interceptor.Funcs,
+	initObjects []client.Object) *UnitTestContextForController {
+
+	fakeClient := NewFakeClientWithInterceptors(funcs, initObjects...)
 	fakeControllerManagerContext := fake.NewControllerManagerContext()
 	recorder, events := NewFakeRecorder()
 	fakeControllerManagerContext.Recorder = recorder
@@ -84,6 +88,15 @@ func NewUnitTestContextForController(initObjects []client.Object) *UnitTestConte
 	}
 
 	return ctx
+}
+
+// NewUnitTestContextForController returns a new  UnitTestContextForController
+// for unit testing controllers.
+func NewUnitTestContextForController(
+	initObjects []client.Object) *UnitTestContextForController {
+
+	return NewUnitTestContextForControllerWithFuncs(
+		interceptor.Funcs{}, initObjects)
 }
 
 // AfterEach should be invoked by ginkgo.AfterEach to cleanup.

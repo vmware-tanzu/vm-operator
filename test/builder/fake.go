@@ -9,6 +9,7 @@ import (
 	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/crd.nsx.vmware.com/v1alpha1"
@@ -27,9 +28,17 @@ import (
 )
 
 func NewFakeClient(objs ...client.Object) client.Client {
+	return NewFakeClientWithInterceptors(interceptor.Funcs{}, objs...)
+}
+
+func NewFakeClientWithInterceptors(
+	funcs interceptor.Funcs,
+	objs ...client.Object) client.Client {
+
 	scheme := NewScheme()
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
+		WithInterceptorFuncs(funcs).
 		WithObjects(objs...).
 		WithStatusSubresource(KnownObjectTypes()...).
 		Build()
@@ -51,7 +60,12 @@ func KnownObjectTypes() []client.Object {
 		&vmopv1a1.WebConsoleRequest{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
 		&spqv1.StoragePolicyQuota{},
-		&spqv1.StoragePolicyUsage{},
+		//
+		// This resource *should* have a status sub-resource, but due to an
+		// issue the CSI team could not solve, they made the status a part of
+		// the normal resource.
+		//
+		// &spqv1.StoragePolicyUsage{},
 		&spqv1.StorageQuota{},
 		&ncpv1alpha1.VirtualNetworkInterface{},
 		&netopv1alpha1.NetworkInterface{},

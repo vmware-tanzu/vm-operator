@@ -16,11 +16,13 @@ import (
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -75,8 +77,8 @@ type Reconciler struct {
 // delete on the owner, then a 422 (unprocessable entity) is returned.
 //
 
-// +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyquotas,verbs=get;list;watch;delete
-// +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyquotas/status,verbs=get
+// +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyquotas,verbs=get;list;watch;update;patch;delete
+// +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyquotas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyusages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyusages/status,verbs=get;update;patch
 
@@ -88,19 +90,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	logger := ctrl.Log.WithName("StoragePolicyQuota").WithValues("name", req.NamespacedName)
+	logger := ctrl.Log.WithName(spqutil.StoragePolicyQuotaKind).WithValues(
+		"name", req.NamespacedName)
 
 	// Ensure the GVK for the object is synced back into the object since
 	// the object's APIVersion and Kind fields may be used later.
 	kubeutil.MustSyncGVKToObject(&obj, r.Scheme())
 
 	if !obj.DeletionTimestamp.IsZero() {
-		// Noop.
+		// No-op
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.ReconcileNormal(ctx, logger, obj); err != nil {
-		logger.Error(err, "Failed to reconcile StoragePolicyQuota")
+	if err := r.ReconcileNormal(ctx, logger, &obj); err != nil {
+		logger.Error(err, "Failed to ReconcileNormal StoragePolicyQuota")
 		return ctrl.Result{}, err
 	}
 
@@ -110,32 +113,52 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
 	logger logr.Logger,
-	src spqv1.StoragePolicyQuota) error {
+	src *spqv1.StoragePolicyQuota) error {
 
-	dst := spqv1.StoragePolicyUsage{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      kubeutil.StoragePolicyUsageNameFromQuotaName(src.Name),
-			Namespace: src.Namespace,
-		},
+	// Get the list of storage classes for the provided policy ID.
+	objs, err := spqutil.GetStorageClassesForPolicy(
+		ctx,
+		r.Client,
+		src.Namespace,
+		src.Spec.StoragePolicyId)
+	if err != nil {
+		return err
 	}
 
-	fn := func() error {
-		if err := ctrlutil.SetControllerReference(
-			&src, &dst, r.Scheme()); err != nil {
+	// Create the StoragePolicyUsage resources.
+	for i := range objs {
+		dst := spqv1.StoragePolicyUsage{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: src.Namespace,
+				Name:      spqutil.StoragePolicyUsageName(objs[i].Name),
+			},
+		}
+
+		fn := func() error {
+			if err := ctrlutil.SetControllerReference(
+				src, &dst, r.Scheme()); err != nil {
+
+				return err
+			}
+
+			dst.Spec.StorageClassName = objs[i].Name
+			dst.Spec.StoragePolicyId = src.Spec.StoragePolicyId
+			dst.Spec.ResourceAPIgroup = ptr.To(vmopv1.GroupVersion.Group)
+			dst.Spec.ResourceKind = "VirtualMachine"
+			dst.Spec.ResourceExtensionName = spqutil.StoragePolicyQuotaExtensionName
+
+			return nil
+		}
+
+		if _, err := ctrlutil.CreateOrPatch(
+			ctx,
+			r.Client,
+			&dst,
+			fn); err != nil {
 
 			return err
 		}
-
-		dst.Spec.StorageClassName = src.Name
-		dst.Spec.StoragePolicyId = src.Spec.StoragePolicyId
-		dst.Spec.ResourceAPIgroup = ptr.To(spqv1.GroupVersion.Group)
-		dst.Spec.ResourceKind = "StoragePolicyQuota"
-		dst.Spec.ResourceExtensionName = "vmservice.cns.vsphere.vmware.com"
-
-		return nil
 	}
-
-	_, err := ctrlutil.CreateOrPatch(ctx, r.Client, &dst, fn)
 
 	return err
 }

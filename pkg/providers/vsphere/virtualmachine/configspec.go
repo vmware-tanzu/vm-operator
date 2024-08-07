@@ -96,6 +96,9 @@ func CreateConfigSpec(
 	} else if configSpec.CpuAllocation == nil {
 		// Default to best effort.
 		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+			Shares: &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
+			},
 			Reservation: ptr.To[int64](0),
 			Limit:       ptr.To[int64](-1),
 		}
@@ -122,6 +125,9 @@ func CreateConfigSpec(
 	} else if configSpec.MemoryAllocation == nil {
 		// Default to best effort.
 		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+			Shares: &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
+			},
 			Reservation: ptr.To[int64](0),
 			Limit:       ptr.To[int64](-1),
 		}

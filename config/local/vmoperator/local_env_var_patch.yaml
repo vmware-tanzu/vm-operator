@@ -31,6 +31,8 @@ spec:
           value: "false"
         - name: FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
           value: "false"
+        - name: FSS_STORAGE_QUOTA_M2
+          value: "false"
 
         #
         # Feature state switch flags beneath this line are enabled on main and

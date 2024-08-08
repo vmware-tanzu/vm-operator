@@ -87,6 +87,13 @@
   value:
     name: FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
     value: "<FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_STORAGE_QUOTA_M2
+    value: "<FSS_STORAGE_QUOTA_M2>"
+
 #
 # Feature state switch flags beneath this line are enabled on main and only
 # retained in this file because it is used by internal testing to determine the

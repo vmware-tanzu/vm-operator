@@ -1553,8 +1553,8 @@ var _ = Describe("UpdateVirtualMachine", func() {
 									Name: vmiName,
 									Kind: vmiKind,
 								},
-								AllowGuestControl: true,
-								Connected:         true,
+								AllowGuestControl: &[]bool{true}[0],
+								Connected:         &[]bool{true}[0],
 							},
 						}
 					})

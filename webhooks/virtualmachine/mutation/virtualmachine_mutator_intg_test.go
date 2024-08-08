@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation_test
@@ -62,7 +62,7 @@ func intgTestsMutating() {
 	BeforeEach(func() {
 		ctx = newIntgMutatingWebhookContext()
 
-		img = builder.DummyVirtualMachineImage(builder.DummyVMIID)
+		img = builder.DummyVirtualMachineImage(builder.DummyVMIName)
 		img.Namespace = ctx.vm.Namespace
 		Expect(ctx.Client.Create(ctx, img)).To(Succeed())
 		img.Status.Name = ctx.vm.Spec.ImageName
@@ -289,7 +289,7 @@ func intgTestsMutating() {
 			ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
 			ExpectWithOffset(1, modified.Spec.Image).ToNot(BeNil())
 			ExpectWithOffset(1, modified.Spec.Image.Kind).To(Equal(vmiKind))
-			ExpectWithOffset(1, modified.Spec.Image.Name).To(Equal(builder.DummyVMIID))
+			ExpectWithOffset(1, modified.Spec.Image.Name).To(Equal(builder.DummyVMIName))
 			ExpectWithOffset(1, modified.Spec.ImageName).To(Equal(ctx.vm.Spec.ImageName))
 		}
 
@@ -308,7 +308,7 @@ func intgTestsMutating() {
 				})
 				When("spec.imageName is vmi", func() {
 					BeforeEach(func() {
-						ctx.vm.Spec.ImageName = builder.DummyVMIID
+						ctx.vm.Spec.ImageName = builder.DummyVMIName
 					})
 					It("Should mutate Image but not ImageName", func() {
 						shouldMutateImageButNotImageName()
@@ -335,7 +335,7 @@ func intgTestsMutating() {
 			When("spec.image is non-empty", func() {
 				BeforeEach(func() {
 					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
-						Name: builder.DummyVMIID,
+						Name: builder.DummyVMIName,
 						Kind: vmiKind,
 					}
 				})
@@ -479,6 +479,79 @@ func intgTestsMutating() {
 				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
+			})
+		})
+	})
+
+	Context("CD-ROM", func() {
+
+		When("creating a VM", func() {
+
+			When("spec.cdrom.image.kind is empty", func() {
+
+				BeforeEach(func() {
+					for i, c := range ctx.vm.Spec.Cdrom {
+						c.Image.Kind = ""
+						ctx.vm.Spec.Cdrom[i] = c
+					}
+				})
+
+				It("should set default kind to VirtualMachineImage", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					for _, c := range vm.Spec.Cdrom {
+						Expect(c.Image.Kind).To(Equal("VirtualMachineImage"))
+					}
+				})
+			})
+
+			When("spec.imageName is empty", func() {
+
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = ""
+				})
+
+				It("should set the spec.imageName to the first connected CD-ROM image name", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					Expect(vm.Spec.ImageName).To(Equal(ctx.vm.Spec.Cdrom[0].Image.Name))
+				})
+			})
+		})
+
+		When("updating a VM", func() {
+
+			var imgNameToOldKind map[string]string
+
+			BeforeEach(func() {
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+				imgNameToOldKind = make(map[string]string, len(ctx.vm.Spec.Cdrom))
+			})
+
+			When("spec.cdrom.image.kind is reset", func() {
+
+				BeforeEach(func() {
+					for i, c := range ctx.vm.Spec.Cdrom {
+						imgNameToOldKind[c.Image.Name] = c.Image.Kind
+						ctx.vm.Spec.Cdrom[i].Image.Kind = ""
+					}
+				})
+
+				It("should repopulate the default kind only if it was previously set to default", func() {
+					Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+					defaultKind := "VirtualMachineImage"
+					for _, c := range vm.Spec.Cdrom {
+						if imgNameToOldKind[c.Image.Name] == defaultKind {
+							Expect(c.Image.Kind).To(Equal(defaultKind))
+						} else {
+							Expect(c.Image.Kind).To(BeEmpty())
+						}
+					}
+				})
 			})
 		})
 	})

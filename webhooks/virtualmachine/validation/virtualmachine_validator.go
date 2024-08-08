@@ -1305,29 +1305,26 @@ func (v *validator) validateCdrom(
 		return append(allErrs, field.Forbidden(f, fmt.Sprintf(featureNotEnabled, "CD-ROM (ISO) support")))
 	}
 
-	var (
-		vmiNames  = make(map[string]struct{}, len(vm.Spec.Cdrom))
-		cvmiNames = make(map[string]struct{}, len(vm.Spec.Cdrom))
-	)
+	// GuestID must be set when deploying an ISO VM with CD-ROMs.
+	if vm.Spec.GuestID == "" {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "guestID"), "when deploying a VM with CD-ROMs"))
+	}
 
+	// Validate image kind and uniqueness for each CD-ROM.
+	// Namespace and cluster scope images with the same name are considered
+	// duplicates since they come from the same content library item file.
+	imgNames := make(map[string]struct{}, len(vm.Spec.Cdrom))
 	for i, c := range vm.Spec.Cdrom {
 		imgPath := f.Index(i).Child("image")
+		imgKind := c.Image.Kind
+		if imgKind != vmiKind && imgKind != cvmiKind {
+			allErrs = append(allErrs, field.NotSupported(imgPath.Child("kind"), imgKind, []string{vmiKind, cvmiKind}))
+		}
 		imgName := c.Image.Name
-		switch c.Image.Kind {
-		case vmiKind:
-			if _, ok := vmiNames[imgName]; ok {
-				allErrs = append(allErrs, field.Duplicate(imgPath, imgName))
-			} else {
-				vmiNames[imgName] = struct{}{}
-			}
-		case cvmiKind:
-			if _, ok := cvmiNames[imgName]; ok {
-				allErrs = append(allErrs, field.Duplicate(imgPath, imgName))
-			} else {
-				cvmiNames[imgName] = struct{}{}
-			}
-		default:
-			allErrs = append(allErrs, field.NotSupported(imgPath.Child("kind"), c.Image.Kind, []string{vmiKind, cvmiKind}))
+		if _, ok := imgNames[imgName]; ok {
+			allErrs = append(allErrs, field.Duplicate(imgPath.Child("name"), imgName))
+		} else {
+			imgNames[imgName] = struct{}{}
 		}
 	}
 

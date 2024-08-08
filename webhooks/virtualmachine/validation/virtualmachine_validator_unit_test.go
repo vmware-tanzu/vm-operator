@@ -46,7 +46,8 @@ const (
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
 	vmiKind                        = "VirtualMachineImage"
 	cvmiKind                       = "Cluster" + vmiKind
-	invalidImageKind               = "supported: " + vmiKind + "; " + cvmiKind
+	invalidKind                    = "InvalidKind"
+	invalidImageKindMsg            = "supported: " + vmiKind + "; " + cvmiKind
 )
 
 type testParams struct {
@@ -464,7 +465,7 @@ func unitTestsValidateCreate() {
 					})
 				},
 				validate: doValidateWithMsg(
-					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKind).Error(),
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKindMsg).Error(),
 				),
 			},
 		),
@@ -479,7 +480,7 @@ func unitTestsValidateCreate() {
 					})
 				},
 				validate: doValidateWithMsg(
-					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKind).Error(),
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKindMsg).Error(),
 				),
 			},
 		),
@@ -496,7 +497,7 @@ func unitTestsValidateCreate() {
 					})
 				},
 				validate: doValidateWithMsg(
-					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKind).Error(),
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKindMsg).Error(),
 				),
 			},
 		),
@@ -513,7 +514,7 @@ func unitTestsValidateCreate() {
 					})
 				},
 				validate: doValidateWithMsg(
-					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKind).Error(),
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKindMsg).Error(),
 				),
 			},
 		),
@@ -545,7 +546,7 @@ func unitTestsValidateCreate() {
 					})
 				},
 				validate: doValidateWithMsg(
-					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKind).Error(),
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKindMsg).Error(),
 				),
 			},
 		),
@@ -575,7 +576,7 @@ func unitTestsValidateCreate() {
 					})
 				},
 				validate: doValidateWithMsg(
-					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKind).Error(),
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKindMsg).Error(),
 				),
 			},
 		),
@@ -592,7 +593,7 @@ func unitTestsValidateCreate() {
 					})
 				},
 				validate: doValidateWithMsg(
-					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKind).Error(),
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKindMsg).Error(),
 				),
 			},
 		),
@@ -609,7 +610,7 @@ func unitTestsValidateCreate() {
 					})
 				},
 				validate: doValidateWithMsg(
-					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKind).Error(),
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKindMsg).Error(),
 				),
 			},
 		),
@@ -2046,6 +2047,18 @@ func unitTestsValidateCreate() {
 				},
 			),
 
+			Entry("disallow creating a VM with CD-ROM and empty guest ID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.GuestID = ""
+					},
+					validate: doValidateWithMsg(
+						`spec.guestID: Required value: when deploying a VM with CD-ROMs`,
+					),
+					expectAllowed: false,
+				},
+			),
+
 			Entry("disallow creating a VM with invalid CD-ROM image ref kind",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -2082,7 +2095,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, ctx.vm.Spec.Cdrom[0])
 					},
 					validate: doValidateWithMsg(
-						`spec.cdrom[1].image: Duplicate value: "vmi-dummy"`,
+						`spec.cdrom[1].image.name: Duplicate value: "vmi-dummy"`,
 					),
 					expectAllowed: false,
 				},
@@ -2103,7 +2116,33 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, ctx.vm.Spec.Cdrom[0])
 					},
 					validate: doValidateWithMsg(
-						`spec.cdrom[1].image: Duplicate value: "vmi-dummy"`),
+						`spec.cdrom[1].image.name: Duplicate value: "vmi-dummy"`),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow creating a VM with duplicate CD-ROM image ref from VMI and CVMI kinds",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: "cdromDupVmi",
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: dummyVmiName,
+									Kind: vmiKind,
+								},
+							},
+							{
+								Name: "cdromDupCvmi",
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: dummyVmiName,
+									Kind: cvmiKind,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.cdrom[1].image.name: Duplicate value: "vmi-dummy"`),
 					expectAllowed: false,
 				},
 			),
@@ -2908,7 +2947,7 @@ func unitTestsValidateUpdate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, vmopv1.VirtualMachineCdromSpec{
-							Name: "cdromNew",
+							Name: "new",
 							Image: vmopv1.VirtualMachineImageRef{
 								Name: "vmi-new",
 								Kind: vmiKind,
@@ -2924,7 +2963,7 @@ func unitTestsValidateUpdate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Cdrom = append(ctx.vm.Spec.Cdrom, vmopv1.VirtualMachineCdromSpec{
-							Name: "cdromNew",
+							Name: "new2",
 							Image: vmopv1.VirtualMachineImageRef{
 								Name: "vmi-new",
 								Kind: vmiKind,
@@ -2975,7 +3014,7 @@ func unitTestsValidateUpdate() {
 			Entry("disallow changing CD-ROM name when VM is powered on",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Cdrom[0].Name = "cdromNew"
+						ctx.vm.Spec.Cdrom[0].Name = "new3"
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
@@ -3017,8 +3056,10 @@ func unitTestsValidateUpdate() {
 			Entry("allow changing CD-ROM connection when VM is powered on",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Cdrom[0].Connected = !ctx.vm.Spec.Cdrom[0].Connected
-						ctx.vm.Spec.Cdrom[0].AllowGuestControl = !ctx.vm.Spec.Cdrom[0].AllowGuestControl
+						oldConnected := ptr.Deref(ctx.oldVM.Spec.Cdrom[0].Connected)
+						oldAllowGuestControl := ptr.Deref(ctx.oldVM.Spec.Cdrom[0].AllowGuestControl)
+						ctx.vm.Spec.Cdrom[0].Connected = ptr.To(!oldConnected)
+						ctx.vm.Spec.Cdrom[0].AllowGuestControl = ptr.To(!oldAllowGuestControl)
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					expectAllowed: true,
@@ -3028,8 +3069,10 @@ func unitTestsValidateUpdate() {
 			Entry("allow changing CD-ROM connection when VM is powered off",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Cdrom[0].Connected = !ctx.vm.Spec.Cdrom[0].Connected
-						ctx.vm.Spec.Cdrom[0].AllowGuestControl = !ctx.vm.Spec.Cdrom[0].AllowGuestControl
+						oldConnected := ptr.Deref(ctx.oldVM.Spec.Cdrom[0].Connected)
+						oldAllowGuestControl := ptr.Deref(ctx.oldVM.Spec.Cdrom[0].AllowGuestControl)
+						ctx.vm.Spec.Cdrom[0].Connected = ptr.To(!oldConnected)
+						ctx.vm.Spec.Cdrom[0].AllowGuestControl = ptr.To(!oldAllowGuestControl)
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 					},
 					expectAllowed: true,
@@ -3058,7 +3101,7 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 					},
 					validate: doValidateWithMsg(
-						`spec.cdrom[1].image: Duplicate value: "vmi-0123456789"`,
+						`spec.cdrom[1].image.name: Duplicate value: "vmi-0123456789"`,
 					),
 					expectAllowed: false,
 				},

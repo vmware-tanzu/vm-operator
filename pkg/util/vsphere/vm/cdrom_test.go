@@ -21,6 +21,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -110,8 +111,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -243,8 +244,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 						{
 							Name: cdromName2,
@@ -252,8 +253,8 @@ func cdromTests() {
 								Name: cvmiName,
 								Kind: cvmiKind,
 							},
-							AllowGuestControl: false,
-							Connected:         false,
+							AllowGuestControl: ptr.To(false),
+							Connected:         ptr.To(false),
 						},
 					}
 
@@ -307,8 +308,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 					curDevices = object.VirtualDeviceList{
@@ -353,8 +354,8 @@ func cdromTests() {
 								Kind: vmiKind,
 							},
 							// Disconnect the CD-ROM device and disallow guest control.
-							AllowGuestControl: false,
-							Connected:         false,
+							AllowGuestControl: ptr.To(false),
+							Connected:         ptr.To(false),
 						},
 					}
 					curDevices = object.VirtualDeviceList{
@@ -407,8 +408,8 @@ func cdromTests() {
 								Name: "non-existent-vmi",
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -430,8 +431,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -453,8 +454,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -474,8 +475,8 @@ func cdromTests() {
 								Name: "non-existent-cvmi",
 								Kind: cvmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -497,8 +498,8 @@ func cdromTests() {
 								Name: cvmiName,
 								Kind: cvmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -520,8 +521,8 @@ func cdromTests() {
 								Name: cvmiName,
 								Kind: cvmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -541,8 +542,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: "invalid-kind",
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -564,8 +565,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -587,8 +588,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -610,8 +611,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -673,8 +674,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -702,8 +703,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 
@@ -815,8 +816,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -863,8 +864,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: false,
-							Connected:         false,
+							AllowGuestControl: ptr.To(false),
+							Connected:         ptr.To(false),
 						},
 					}
 				})
@@ -900,8 +901,8 @@ func cdromTests() {
 								Name: "non-existent-vmi",
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -951,8 +952,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -974,8 +975,8 @@ func cdromTests() {
 								Name: vmiName,
 								Kind: vmiKind,
 							},
-							AllowGuestControl: true,
-							Connected:         true,
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
 					}
 				})

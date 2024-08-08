@@ -30,6 +30,8 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 	vmAdvSpec := func(advSpec vmopv1.VirtualMachineAdvancedSpec) vmopv1.VirtualMachine {
 		vm := builder.DummyVirtualMachine()
 		vm.Spec.Advanced = &advSpec
+		// Empty guestID to avoid it being set in the ConfigSpec.
+		vm.Spec.GuestID = ""
 		return *vm
 	}
 

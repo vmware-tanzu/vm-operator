@@ -207,10 +207,10 @@ func vmUtilTests() {
 		)
 
 		BeforeEach(func() {
-			nsVMImage = builder.DummyVirtualMachineImage(builder.DummyVMIID)
+			nsVMImage = builder.DummyVirtualMachineImage(builder.DummyVMIName)
 			nsVMImage.Namespace = vmCtx.VM.Namespace
 			conditions.MarkTrue(nsVMImage, vmopv1.ReadyConditionType)
-			clusterVMImage = builder.DummyClusterVirtualMachineImage(builder.DummyVMIID)
+			clusterVMImage = builder.DummyClusterVirtualMachineImage(builder.DummyCVMIName)
 			conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 		})
 

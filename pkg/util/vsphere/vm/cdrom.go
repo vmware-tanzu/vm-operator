@@ -17,6 +17,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 const (
@@ -43,7 +44,7 @@ func UpdateCdromDeviceChanges(
 	for _, specCdrom := range vmCtx.VM.Spec.Cdrom {
 		imageRef := specCdrom.Image
 		// Sync the content library file if needed to connect the CD-ROM device.
-		syncFile := specCdrom.Connected
+		syncFile := ptr.Deref(specCdrom.Connected)
 		bFileName, err := getBackingFileNameByImageRef(vmCtx, libManager, k8sClient, syncFile, imageRef)
 		if err != nil {
 			return nil, fmt.Errorf("error getting backing file name by image ref %s: %w", imageRef, err)
@@ -122,7 +123,7 @@ func UpdateConfigSpecCdromDeviceConnection(
 	for _, specCdrom := range cdromSpec {
 		imageRef := specCdrom.Image
 		// Sync the content library file if needed to connect the CD-ROM device.
-		syncFile := specCdrom.Connected
+		syncFile := ptr.Deref(specCdrom.Connected)
 		bFileName, err := getBackingFileNameByImageRef(vmCtx, libManager, k8sClient, syncFile, imageRef)
 		if err != nil {
 			return fmt.Errorf("error getting backing file name by image ref %s: %w", imageRef, err)
@@ -265,9 +266,9 @@ func createNewCdrom(
 		VirtualDevice: vimtypes.VirtualDevice{
 			Backing: backing,
 			Connectable: &vimtypes.VirtualDeviceConnectInfo{
-				AllowGuestControl: cdromSpec.AllowGuestControl,
-				StartConnected:    cdromSpec.Connected,
-				Connected:         cdromSpec.Connected,
+				AllowGuestControl: ptr.Deref(cdromSpec.AllowGuestControl),
+				StartConnected:    ptr.Deref(cdromSpec.Connected),
+				Connected:         ptr.Deref(cdromSpec.Connected),
 			},
 		},
 	}
@@ -378,10 +379,10 @@ func updateCurCdromsConnectionState(
 	for b, spec := range backingFileNameToCdromSpec {
 		if cdrom, ok := backingFileNameToCdrom[b]; ok {
 			if c := cdrom.GetVirtualDevice().Connectable; c != nil &&
-				(c.Connected != spec.Connected || c.AllowGuestControl != spec.AllowGuestControl) {
-				c.StartConnected = spec.Connected
-				c.Connected = spec.Connected
-				c.AllowGuestControl = spec.AllowGuestControl
+				(c.Connected != ptr.Deref(spec.Connected) || c.AllowGuestControl != ptr.Deref(spec.AllowGuestControl)) {
+				c.StartConnected = ptr.Deref(spec.Connected)
+				c.Connected = ptr.Deref(spec.Connected)
+				c.AllowGuestControl = ptr.Deref(spec.AllowGuestControl)
 
 				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 					Device:    cdrom,

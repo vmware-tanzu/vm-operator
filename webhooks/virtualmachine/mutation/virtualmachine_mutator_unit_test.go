@@ -1156,16 +1156,18 @@ func unitTestsMutating() {
 		})
 	})
 
-	Describe("SetDefaultCdromNameAndImgKind", func() {
+	Describe("SetDefaultCdromImgKindOnCreate", func() {
 
 		BeforeEach(func() {
 			ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 				{
+					Name: "cdrom1",
 					Image: vmopv1.VirtualMachineImageRef{
 						Name: "vmi-1",
 					},
 				},
 				{
+					Name: "cdrom2",
 					Image: vmopv1.VirtualMachineImageRef{
 						Name: "vmi-2",
 					},
@@ -1173,12 +1175,43 @@ func unitTestsMutating() {
 			}
 		})
 
-		It("should set the default cdrom name and image kind", func() {
-			mutation.SetDefaultCdromNameAndImgKind(&ctx.WebhookRequestContext, ctx.vm)
-			Expect(ctx.vm.Spec.Cdrom[0].Name).To(Equal("cdrom1"))
+		It("should set the default image kind as VirtualMachineImage", func() {
+			mutation.SetDefaultCdromImgKindOnCreate(&ctx.WebhookRequestContext, ctx.vm)
 			Expect(ctx.vm.Spec.Cdrom[0].Image.Kind).To(Equal("VirtualMachineImage"))
-			Expect(ctx.vm.Spec.Cdrom[1].Name).To(Equal("cdrom2"))
 			Expect(ctx.vm.Spec.Cdrom[1].Image.Kind).To(Equal("VirtualMachineImage"))
+		})
+	})
+
+	Describe("SetDefaultCdromImgKindOnUpdate", func() {
+
+		var oldVM *vmopv1.VirtualMachine
+
+		BeforeEach(func() {
+			ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+				{
+					Name: "cdrom1",
+					Image: vmopv1.VirtualMachineImageRef{
+						Name: "vmi-1",
+						Kind: "VirtualMachineImage",
+					},
+				},
+				{
+					Name: "cdrom2",
+					Image: vmopv1.VirtualMachineImageRef{
+						Name: "vmi-2",
+						Kind: "ClusterVirtualMachineImage",
+					},
+				},
+			}
+			oldVM = ctx.vm.DeepCopy()
+			ctx.vm.Spec.Cdrom[0].Image.Kind = ""
+			ctx.vm.Spec.Cdrom[1].Image.Kind = ""
+		})
+
+		It("should set the default image kind if previously set to default", func() {
+			mutation.SetDefaultCdromImgKindOnUpdate(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+			Expect(ctx.vm.Spec.Cdrom[0].Image.Kind).To(Equal("VirtualMachineImage"))
+			Expect(ctx.vm.Spec.Cdrom[1].Image.Kind).To(BeEmpty())
 		})
 	})
 
@@ -1211,7 +1244,7 @@ func unitTestsMutating() {
 				Image: vmopv1.VirtualMachineImageRef{
 					Name: "vmi-cdrom2",
 				},
-				Connected: true,
+				Connected: &[]bool{true}[0],
 			})
 			ctx.vm.Spec.ImageName = ""
 			mutation.SetImageNameFromCdrom(&ctx.WebhookRequestContext, ctx.vm)

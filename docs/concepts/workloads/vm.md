@@ -356,9 +356,9 @@ The field `spec.powerState` controls the power state of a VM and may be set to o
 
 | Power State | Description |
 |-------------|-------------|
-| `poweredOn` | Powers on a powered off VM or resumes a suspended VM |
-| `poweredOff` | Powers off a powered on or suspended VM (controlled by `spec.powerOffMode`) |
-| `suspended` | Suspends a powered on VM (controlled by `spec.suspendMode`) |
+| `PoweredOn` | Powers on a powered off VM or resumes a suspended VM |
+| `PoweredOff` | Powers off a powered on or suspended VM (controlled by `spec.powerOffMode`) |
+| `Suspended` | Suspends a powered on VM (controlled by `spec.suspendMode`) |
 
 ### Restart
 
@@ -369,7 +369,7 @@ Please note that it is not possible to schedule future restarts by assigning an 
 
 ### Default Power State on Create
 
-When updating a VM's power state, an empty string is not allowed -- the desired power state must be specified explicitly. However, on create, the VM's power state may be omitted. When this occurs, the power state defaults to `poweredOn`.
+When updating a VM's power state, an empty string is not allowed -- the desired power state must be specified explicitly. However, on create, the VM's power state may be omitted. When this occurs, the power state defaults to `PoweredOn`.
 
 
 ### Transitions
@@ -390,21 +390,21 @@ Please note that there are supported power state transitions, and if a power sta
             <th style="text-align:center;">Restart</th>
         </tr>
         <tr>
-            <th style="text-align:center;"><code>poweredOn</code></th>
+            <th style="text-align:center;"><code>PoweredOn</code></th>
             <td style="text-align:center;"><code>NA</code></td>
             <td style="text-align:center;">✓</td>
             <td style="text-align:center;">✓</td>
             <td style="text-align:center;">✓</td>
         </tr>
         <tr>
-            <th style="text-align:center;"><code>poweredOff</code></th>
+            <th style="text-align:center;"><code>PoweredOff</code></th>
             <td style="text-align:center;">✓</td>
             <td style="text-align:center;"><code>NA</code></td>
-            <td style="text-align:center;">✓<br /><em>if <code>spec.powerOffMode: hard</code></em></td>
+            <td style="text-align:center;">✓<br /><em>if <code>spec.powerOffMode: Hard</code></em></td>
             <td style="text-align:center;">❌</td>
         </tr>
         <tr>
-            <th style="text-align:center;"><code>suspended</code></th>
+            <th style="text-align:center;"><code>Suspended</code></th>
             <td style="text-align:center;">✓</td>
             <td style="text-align:center;">❌</td>
             <td style="text-align:center;"><code>NA</code></td>

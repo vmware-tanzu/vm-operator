@@ -53,8 +53,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	)
 
 	lbProviderType := pkgcfg.FromContext(ctx).LoadBalancerProvider
+	networkProvider := pkgcfg.FromContext(ctx).NetworkProviderType
 	if lbProviderType == "" {
-		if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeNSXT {
+		if networkProvider == pkgcfg.NetworkProviderTypeNSXT || networkProvider == pkgcfg.NetworkProviderTypeVPC {
 			lbProviderType = providers.NSXTLoadBalancer
 		}
 	}
@@ -367,7 +368,7 @@ func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 	}
 
 	// Explicitly remove vm service managed annotations if needed
-	for _, k := range []string{utils.AnnotationServiceExternalTrafficPolicyKey, utils.AnnotationServiceHealthCheckNodePortKey} {
+	for _, k := range []string{utils.AnnotationServiceExternalTrafficPolicyKey, utils.AnnotationServiceHealthCheckNodePortKey, utils.AnnotationServiceEndpointHealthCheckEnabledKey} {
 		if _, exist := vmService.Annotations[k]; !exist {
 			if v, exist := service.Annotations[k]; exist {
 				ctx.Logger.V(5).Info("Removing annotation from Service", "key", k, "value", v)

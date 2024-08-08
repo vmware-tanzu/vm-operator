@@ -17,8 +17,11 @@ import (
 const (
 	NSXTLoadBalancer = "nsx-t-lb"
 
+	// ServiceLoadBalancerHealthCheckNodePortTagKey is the key of annotation which tell NSX to perform HTTP health check on the healthCheckNodePort. This only applies to TKG LoadBalancer type services with externalTrafficPolicy set to Local.
 	ServiceLoadBalancerHealthCheckNodePortTagKey = "ncp/healthCheckNodePort"
-	NSXTServiceProxy                             = "nsx-t"
+	// ServiceLoadBalancerEndpointHealthCheckEnabledTagKey is the key of annotation which tell NSX to enable health check on the Service targetPort.
+	ServiceLoadBalancerEndpointHealthCheckEnabledTagKey = "nsx.vmware.com/lb-health-check"
+	NSXTServiceProxy                                    = "nsx-t"
 	// LabelServiceProxyName indicates that an alternative service proxy will implement
 	// this Service. Copied from kubernetes pkg/proxy/apis/well_known_labels.go to avoid
 	// k8s dependency.
@@ -142,6 +145,9 @@ func (nl *NsxtLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, v
 		res[ServiceLoadBalancerHealthCheckNodePortTagKey] = healthCheckNodePortString
 	}
 
+	if _, ok := vmService.Annotations[utils.AnnotationServiceEndpointHealthCheckEnabledKey]; ok {
+		res[ServiceLoadBalancerEndpointHealthCheckEnabledTagKey] = ""
+	}
 	return res, nil
 }
 
@@ -156,5 +162,10 @@ func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context
 		res[ServiceLoadBalancerHealthCheckNodePortTagKey] = ""
 	}
 
+	// When endpointHealthCheckEnable is NOT present, the corresponding NSX-T
+	// annotation should be cleared as well
+	if _, ok := vmService.Annotations[utils.AnnotationServiceEndpointHealthCheckEnabledKey]; !ok {
+		res[ServiceLoadBalancerEndpointHealthCheckEnabledTagKey] = ""
+	}
 	return res, nil
 }

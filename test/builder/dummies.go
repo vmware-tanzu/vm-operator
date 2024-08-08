@@ -559,18 +559,22 @@ func DummyVirtualMachineWebConsoleRequest(namespace, wcrName, vmName, pubKey str
 }
 
 func DummyImageAndItemObjectsForCdromBacking(
-	name, ns, kind, storageURI string,
+	name, ns, kind, storageURI, libItemUUID string,
 	imgHasProviderRef, itemObjExists bool,
 	itemType imgregv1a1.ContentLibraryItemType) []ctrlclient.Object {
 	var imageObj, itemObj ctrlclient.Object
 
 	// Populate minimal fields in image and content library item objects to
-	// retrieve CD-ROM backing file name.
+	// be able to sync and retrieve CD-ROM backing file name.
 	imgSpec := vmopv1.VirtualMachineImageSpec{}
 	if imgHasProviderRef {
 		imgSpec.ProviderRef = &vmopv1common.LocalObjectRef{
 			Name: name,
 		}
+	}
+
+	itemSpec := imgregv1a1.ContentLibraryItemSpec{
+		UUID: types.UID(libItemUUID),
 	}
 
 	itemStatus := imgregv1a1.ContentLibraryItemStatus{
@@ -596,6 +600,7 @@ func DummyImageAndItemObjectsForCdromBacking(
 				Name:      name,
 				Namespace: ns,
 			},
+			Spec:   itemSpec,
 			Status: itemStatus,
 		}
 	} else {
@@ -610,6 +615,7 @@ func DummyImageAndItemObjectsForCdromBacking(
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name,
 			},
+			Spec:   itemSpec,
 			Status: itemStatus,
 		}
 	}

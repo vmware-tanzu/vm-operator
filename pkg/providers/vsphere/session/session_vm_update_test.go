@@ -22,7 +22,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	pkgctxfake "github.com/vmware-tanzu/vm-operator/pkg/context/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
@@ -1139,10 +1138,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		Expect(vmList).ToNot(BeEmpty())
 		vcVM = vmList[0]
 
-		parentCtx := pkgctxfake.NewControllerManagerContext()
 		vmCtx = pkgctx.VirtualMachineContext{
-			Context: parentCtx,
-			Logger:  parentCtx.Logger.WithName(vcVM.Name()),
+			Context: ctx,
+			Logger:  suite.GetLogger().WithName(vcVM.Name()),
 			VM:      vm,
 		}
 		pkgcfg.UpdateContext(vmCtx, func(config *pkgcfg.Config) {
@@ -1532,13 +1530,14 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					vmiFileName = "dummy.iso"
 				)
 
-				JustBeforeEach(func() {
-					vmCtx.Context = pkgcfg.UpdateContext(vmCtx.Context, func(config *pkgcfg.Config) {
-						config.Features.IsoSupport = true
-					})
+				BeforeEach(func() {
+					testConfig.WithContentLibrary = true
+					testConfig.WithISOSupport = true
+				})
 
+				JustBeforeEach(func() {
 					// Add required objects to get CD-ROM backing file name.
-					objs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, vmCtx.VM.Namespace, vmiKind, vmiFileName, true, true, "ISO")
+					objs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, vmCtx.VM.Namespace, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, "ISO")
 					for _, obj := range objs {
 						Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
 					}

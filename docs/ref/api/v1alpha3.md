@@ -692,7 +692,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name consist of at least two lowercase letters or digits of this CD-ROM.
+| `name` _string_ | Name consists of at least two lowercase letters or digits of this CD-ROM.
 It must be unique among all CD-ROM devices attached to the VM.
 
 

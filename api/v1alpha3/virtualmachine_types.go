@@ -276,7 +276,7 @@ type VirtualMachineImageRef struct {
 type VirtualMachineCdromSpec struct {
 	// +kubebuilder:validation:Pattern="^[a-z0-9]{2,}$"
 
-	// Name consist of at least two lowercase letters or digits of this CD-ROM.
+	// Name consists of at least two lowercase letters or digits of this CD-ROM.
 	// It must be unique among all CD-ROM devices attached to the VM.
 	//
 	// This field is immutable when the VM is powered on.

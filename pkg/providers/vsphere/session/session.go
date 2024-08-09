@@ -4,6 +4,8 @@
 package session
 
 import (
+	"fmt"
+
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,13 +30,11 @@ func (s *Session) invokeFsrVirtualMachine(vmCtx pkgctx.VirtualMachineContext, re
 
 	task, err := internal.VirtualMachineFSR(vmCtx, resVM.MoRef(), s.Client.VimClient())
 	if err != nil {
-		vmCtx.Logger.Error(err, "InvokeFSR call failed")
-		return err
+		return fmt.Errorf("failed to invoke FSR: %w", err)
 	}
 
 	if err = task.Wait(vmCtx); err != nil {
-		vmCtx.Logger.Error(err, "InvokeFSR task failed")
-		return err
+		return fmt.Errorf("failed to wait on FSR task: %w", err)
 	}
 
 	return nil

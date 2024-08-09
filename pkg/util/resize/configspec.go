@@ -25,7 +25,6 @@ func CreateResizeConfigSpec(
 	outCS := vimtypes.VirtualMachineConfigSpec{}
 
 	compareAnnotation(ci, cs, &outCS)
-	compareManagedBy(ci, cs, &outCS)
 	compareHardware(ci, cs, &outCS)
 	CompareCPUAllocation(ci, cs, &outCS)
 	compareCPUHotAddOrRemove(ci, cs, &outCS)
@@ -79,18 +78,6 @@ func compareAnnotation(
 	if ci.Annotation == "" {
 		// Only change the Annotation if it is currently unset.
 		outCS.Annotation = cs.Annotation
-	}
-}
-
-// compareManagedBy compares the ConfigInfo.ManagedBy.
-func compareManagedBy(
-	ci vimtypes.VirtualMachineConfigInfo,
-	cs vimtypes.VirtualMachineConfigSpec,
-	outCS *vimtypes.VirtualMachineConfigSpec) {
-
-	if ci.ManagedBy == nil {
-		// Only change the ManagedBy if it is currently unset.
-		outCS.ManagedBy = cs.ManagedBy
 	}
 }
 

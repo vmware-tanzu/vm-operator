@@ -18,10 +18,14 @@ import (
 // the current VM state to the ConfigSpec. These are fields that we can change without the
 // VM Class.
 func OverwriteResizeConfigSpec(
-	_ context.Context,
+	ctx context.Context,
 	vm vmopv1.VirtualMachine,
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs *vimtypes.VirtualMachineConfigSpec) error {
+
+	if err := OverwriteAlwaysResizeConfigSpec(ctx, vm, ci, cs); err != nil {
+		return err
+	}
 
 	if adv := vm.Spec.Advanced; adv != nil {
 		ptr.OverwriteWithUser(&cs.ChangeTrackingEnabled, adv.ChangeBlockTracking, ci.ChangeTrackingEnabled)
@@ -29,6 +33,21 @@ func OverwriteResizeConfigSpec(
 
 	overwriteGuestID(vm, ci, cs)
 	overwriteExtraConfig(vm, ci, cs)
+
+	return nil
+}
+
+// OverwriteAlwaysResizeConfigSpec applies any set fields in the VM Spec or
+// changes required from the current VM state to the ConfigSpec. These are
+// fields that change without the VM Class.
+func OverwriteAlwaysResizeConfigSpec(
+	_ context.Context,
+	vm vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec) error {
+
+	overwriteManagedBy(vm, ci, cs)
+	overwriteExtraConfigNamespaceName(vm, ci, cs)
 
 	return nil
 }
@@ -53,11 +72,92 @@ func overwriteExtraConfig(
 
 	var toMerge []vimtypes.BaseOptionValue
 
+	toMerge = append(toMerge, ensureNamespaceName(vm, ci, cs)...)
 	toMerge = append(toMerge, overrideMMIOSize(vm, ci, cs)...)
 	toMerge = append(toMerge, clearMMPowerOffEC(vm, ci, cs)...)
 	toMerge = append(toMerge, updateV1Alpha1CompatibleEC(vm, ci, cs)...)
 
 	cs.ExtraConfig = util.OptionValues(cs.ExtraConfig).Merge(toMerge...)
+}
+
+func overwriteExtraConfigNamespaceName(
+	vm vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec) {
+
+	var toMerge []vimtypes.BaseOptionValue
+
+	toMerge = append(toMerge, ensureNamespaceName(vm, ci, cs)...)
+
+	cs.ExtraConfig = util.OptionValues(cs.ExtraConfig).Merge(toMerge...)
+}
+
+func overwriteManagedBy(
+	_ vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec) {
+
+	var current vimtypes.ManagedByInfo
+	if ci.ManagedBy != nil {
+		current = *ci.ManagedBy
+	}
+
+	if cs.ManagedBy == nil {
+		cs.ManagedBy = &vimtypes.ManagedByInfo{}
+	}
+
+	user := vimtypes.ManagedByInfo{
+		ExtensionKey: vmopv1.ManagedByExtensionKey,
+		Type:         vmopv1.ManagedByExtensionType,
+	}
+
+	overwrite(cs.ManagedBy, user, current)
+
+	var empty vimtypes.ManagedByInfo
+	if *cs.ManagedBy == empty {
+		cs.ManagedBy = nil
+	}
+}
+
+func ensureNamespaceName(
+	vm vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec) []vimtypes.BaseOptionValue {
+
+	outEC := []vimtypes.BaseOptionValue{}
+	curEC := util.OptionValues(ci.ExtraConfig).StringMap()
+	inEC := util.OptionValues(cs.ExtraConfig).StringMap()
+
+	fn := func(key string, expectedVal string) {
+		// Does the VM have the key set in EC?
+		if v, ok := curEC[key]; ok {
+			if v == expectedVal {
+				// The key is present and correct; is the ConfigSpec trying to
+				// set it again?
+				if _, ok := inEC[key]; ok {
+					// Remove the entry from the ConfigSpec.
+					cs.ExtraConfig = util.OptionValues(cs.ExtraConfig).Delete(key)
+				}
+			} else {
+				// The key is present but incorrect.
+				outEC = append(outEC, &vimtypes.OptionValue{
+					Key:   key,
+					Value: expectedVal,
+				})
+			}
+		} else {
+			// The key is not present.
+			outEC = append(outEC, &vimtypes.OptionValue{
+				Key:   key,
+				Value: expectedVal,
+			})
+		}
+	}
+
+	fn(constants.ExtraConfigVMServiceNamespace, vm.Namespace)
+	fn(constants.ExtraConfigVMServiceName, vm.Name)
+
+	return outEC
 }
 
 func overrideMMIOSize(

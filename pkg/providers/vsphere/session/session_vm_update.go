@@ -4,7 +4,6 @@
 package session
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"maps"
@@ -21,6 +20,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
@@ -423,17 +423,6 @@ func UpdateConfigSpecAnnotation(
 	}
 }
 
-func UpdateConfigSpecManagedBy(
-	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec *vimtypes.VirtualMachineConfigSpec) {
-	if config.ManagedBy == nil {
-		configSpec.ManagedBy = &vimtypes.ManagedByInfo{
-			ExtensionKey: vmopv1.ManagedByExtensionKey,
-			Type:         vmopv1.ManagedByExtensionType,
-		}
-	}
-}
-
 // UpdateConfigSpecGuestID sets the given vmSpecGuestID in the ConfigSpec if it
 // is not empty and different from the current GuestID in the VM's ConfigInfo.
 func UpdateConfigSpecGuestID(
@@ -462,16 +451,24 @@ func UpdateConfigSpecFirmware(
 func updateConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) *vimtypes.VirtualMachineConfigSpec {
+	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
 
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 	vmClassSpec := updateArgs.VMClass.Spec
 
-	UpdateConfigSpecAnnotation(config, configSpec)
-	UpdateConfigSpecManagedBy(config, configSpec)
+	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
+		vmCtx,
+		*vmCtx.VM,
+		*config,
+		configSpec); err != nil {
+
+		return nil, err
+	}
+
 	UpdateConfigSpecExtraConfig(
 		vmCtx, config, configSpec, &updateArgs.ConfigSpec,
 		&vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
+	UpdateConfigSpecAnnotation(config, configSpec)
 	UpdateConfigSpecChangeBlockTracking(
 		vmCtx, config, configSpec, &updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
@@ -483,7 +480,7 @@ func updateConfigSpec(
 		resize.CompareMemoryAllocation(*config, updateArgs.ConfigSpec, configSpec)
 	}
 
-	return configSpec
+	return configSpec, nil
 }
 
 func (s *Session) prePowerOnVMConfigSpec(
@@ -491,7 +488,10 @@ func (s *Session) prePowerOnVMConfigSpec(
 	config *vimtypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
 
-	configSpec := updateConfigSpec(vmCtx, config, updateArgs)
+	configSpec, err := updateConfigSpec(vmCtx, config, updateArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
 	currentDisks := virtualDevices.SelectByType((*vimtypes.VirtualDisk)(nil))
@@ -557,23 +557,16 @@ func (s *Session) prePowerOnVMReconfigure(
 		return err
 	}
 
-	defaultConfigSpec := &vimtypes.VirtualMachineConfigSpec{}
-	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
-		var w bytes.Buffer
-		enc := vimtypes.NewJSONEncoder(&w)
-		if err := enc.Encode(configSpec); err != nil {
-			vmCtx.Logger.Error(err, "Failed to marshal ConfigSpec to JSON")
-			vmCtx.Logger.Info("Pre PowerOn Reconfigure", "configSpec", configSpec)
-		} else {
-			vmCtx.Logger.Info("Pre PowerOn Reconfigure", "configSpec", w.String())
-		}
+	if _, err := doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("prePowerOnVMReconfigure"),
+		),
+		vmCtx.VM,
+		resVM.VcVM(),
+		*configSpec); err != nil {
 
-		taskInfo, err := resVM.Reconfigure(vmCtx, configSpec)
-		vmutil.UpdateVMGuestIDReconfiguredCondition(vmCtx, *configSpec, taskInfo)
-		if err != nil {
-			vmCtx.Logger.Error(err, "pre power on reconfigure failed")
-			return err
-		}
+		return err
 	}
 
 	if features.VMResize || features.VMResizeCPUMemory {
@@ -789,7 +782,16 @@ func (s *Session) poweredOnVMReconfigure(
 
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 
-	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, nil, nil)
+	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
+		vmCtx,
+		*vmCtx.VM,
+		*config,
+		configSpec); err != nil {
+
+		return false, err
+	}
+
+	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, vmCtx.VM, nil)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
 	if pkgcfg.FromContext(vmCtx).Features.IsoSupport {
@@ -798,27 +800,26 @@ func (s *Session) poweredOnVMReconfigure(
 		}
 	}
 
-	var refetchProps bool
+	refetchProps, err := doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("poweredOnVMReconfigure"),
+		),
+		vmCtx.VM,
+		resVM.VcVM(),
+		*configSpec)
 
-	defaultConfigSpec := &vimtypes.VirtualMachineConfigSpec{}
-	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
-		vmCtx.Logger.Info("PoweredOn Reconfigure", "configSpec", configSpec)
-		if _, err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
-			vmCtx.Logger.Error(err, "powered on reconfigure failed")
-			return false, err
+	if err != nil {
+		return false, err
+	}
+
+	// Special case for CBT: in order for CBT change take effect for a powered
+	// on VM, a checkpoint save/restore is needed. The FSR call allows CBT to
+	// take effect for powered-on VMs.
+	if configSpec.ChangeTrackingEnabled != nil {
+		if err := s.invokeFsrVirtualMachine(vmCtx, resVM); err != nil {
+			return refetchProps, fmt.Errorf("failed to invoke FSR for CBT update")
 		}
-
-		// Special case for CBT: in order for CBT change take effect for a powered on VM,
-		// a checkpoint save/restore is needed.  tracks the implementation of
-		// this FSR internally to vSphere.
-		if configSpec.ChangeTrackingEnabled != nil {
-			if err := s.invokeFsrVirtualMachine(vmCtx, resVM); err != nil {
-				vmCtx.Logger.Error(err, "Failed to invoke FSR for CBT update")
-				return false, err
-			}
-		}
-
-		refetchProps = true
 	}
 
 	return refetchProps, nil
@@ -874,21 +875,34 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	}
 
 	if pkgcfg.FromContext(vmCtx).Features.VMResize {
-		err := vmopv1util.OverwriteResizeConfigSpec(vmCtx, *vmCtx.VM, *moVM.Config, &configSpec)
-		if err != nil {
+		if err := vmopv1util.OverwriteResizeConfigSpec(
+			vmCtx,
+			*vmCtx.VM,
+			*moVM.Config,
+			&configSpec); err != nil {
+
 			return false, err
 		}
+	} else if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
+		vmCtx,
+		*vmCtx.VM,
+		*moVM.Config,
+		&configSpec); err != nil {
+
+		return false, err
 	}
 
-	refetchProps := false
-	if !reflect.DeepEqual(configSpec, vimtypes.VirtualMachineConfigSpec{}) {
-		vmCtx.Logger.Info("Powered off resizing", "configSpec", configSpec)
-		if _, err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, &configSpec); err != nil {
-			vmCtx.Logger.Error(err, "powered off resize reconfigure failed")
-			return false, err
-		}
+	refetchProps, err := doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("resizeVMWhenPoweredStateOff"),
+		),
+		vmCtx.VM,
+		vcVM,
+		configSpec)
 
-		refetchProps = true
+	if err != nil {
+		return false, err
 	}
 
 	if needsResize {
@@ -934,9 +948,13 @@ func (s *Session) updateVMDesiredPowerStateOff(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	getResizeArgsFn func() (*VMResizeArgs, error),
-	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
+	existingPowerState vmopv1.VirtualMachinePowerState) (bool, error) {
 
-	var powerOff bool
+	var (
+		powerOff     bool
+		refetchProps bool
+	)
+
 	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
 		powerOff = true
 	} else if existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
@@ -944,13 +962,13 @@ func (s *Session) updateVMDesiredPowerStateOff(
 			vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeTrySoft
 	}
 	if powerOff {
-		err = res.NewVMFromObject(vcVM).SetPowerState(
+		if err := res.NewVMFromObject(vcVM).SetPowerState(
 			logr.NewContext(vmCtx, vmCtx.Logger),
 			existingPowerState,
 			vmCtx.VM.Spec.PowerState,
-			vmCtx.VM.Spec.PowerOffMode)
-		if err != nil {
-			return refetchProps, err
+			vmCtx.VM.Spec.PowerOffMode); err != nil {
+
+			return false, err
 		}
 
 		refetchProps = true
@@ -971,13 +989,24 @@ func (s *Session) updateVMDesiredPowerStateOff(
 	}
 
 	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
-		refetchProps, err = s.resizeVMWhenPoweredStateOff(
+		refetch, err := s.resizeVMWhenPoweredStateOff(
 			vmCtx,
 			vcVM,
 			vmCtx.MoVM,
 			getResizeArgsFn)
 		if err != nil {
 			return refetchProps, err
+		}
+		if refetch {
+			refetchProps = true
+		}
+	} else {
+		refetch, err := defaultReconfigure(vmCtx, vcVM, *vmCtx.MoVM.Config)
+		if err != nil {
+			return refetchProps, err
+		}
+		if refetch {
+			refetchProps = true
 		}
 	}
 
@@ -987,22 +1016,33 @@ func (s *Session) updateVMDesiredPowerStateOff(
 func (s *Session) updateVMDesiredPowerStateSuspended(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
+	existingPowerState vmopv1.VirtualMachinePowerState) (bool, error) {
+
+	var (
+		refetchProps bool
+	)
 
 	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
-		err = res.NewVMFromObject(vcVM).SetPowerState(
+		if err := res.NewVMFromObject(vcVM).SetPowerState(
 			logr.NewContext(vmCtx, vmCtx.Logger),
 			existingPowerState,
 			vmCtx.VM.Spec.PowerState,
-			vmCtx.VM.Spec.SuspendMode)
-		if err != nil {
-			return refetchProps, err
+			vmCtx.VM.Spec.SuspendMode); err != nil {
+			return false, err
 		}
 
 		refetchProps = true
 	}
 
-	return
+	refetch, err := defaultReconfigure(vmCtx, vcVM, *vmCtx.MoVM.Config)
+	if err != nil {
+		return refetchProps, err
+	}
+	if refetch {
+		refetchProps = true
+	}
+
+	return refetchProps, nil
 }
 
 func (s *Session) updateVMDesiredPowerStateOn(
@@ -1168,6 +1208,7 @@ func (s *Session) UpdateVirtualMachine(
 		}
 	} else {
 		vmCtx.Logger.Info("VirtualMachine is paused. PowerState is not updated.")
+		refetchProps, err = defaultReconfigure(vmCtx, vcVM, *vmCtx.MoVM.Config)
 	}
 
 	if refetchProps {
@@ -1214,4 +1255,77 @@ func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 	}
 	delete(vm.Labels, vmopv1.PausedVMLabelKey)
 	return false
+}
+
+func defaultReconfigure(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	configInfo vimtypes.VirtualMachineConfigInfo) (bool, error) {
+
+	var configSpec vimtypes.VirtualMachineConfigSpec
+	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
+		vmCtx,
+		*vmCtx.VM,
+		configInfo,
+		&configSpec); err != nil {
+
+		return false, err
+	}
+
+	return doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("defaultReconfigure"),
+		),
+		vmCtx.VM,
+		vcVM,
+		configSpec)
+}
+
+func doReconfigure(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	configSpec vimtypes.VirtualMachineConfigSpec) (bool, error) {
+
+	var defaultConfigSpec vimtypes.VirtualMachineConfigSpec
+	if apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
+		return false, nil
+	}
+
+	resVM := res.NewVMFromObject(vcVM)
+	taskInfo, err := resVM.Reconfigure(ctx, &configSpec)
+
+	UpdateVMGuestIDReconfiguredCondition(vm, configSpec, taskInfo)
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, err
+}
+
+// UpdateVMGuestIDReconfiguredCondition deletes the VM's GuestIDReconfigured
+// condition if the configSpec doesn't contain a guestID, or if the taskInfo
+// does not contain an invalid guestID property error. Otherwise, it sets the
+// condition to false with the invalid guest ID property value in the reason.
+func UpdateVMGuestIDReconfiguredCondition(
+	vm *vmopv1.VirtualMachine,
+	configSpec vimtypes.VirtualMachineConfigSpec,
+	taskInfo *vimtypes.TaskInfo) {
+
+	if configSpec.GuestId != "" && vmutil.IsTaskInfoErrorInvalidGuestID(taskInfo) {
+		conditions.MarkFalse(
+			vm,
+			vmopv1.GuestIDReconfiguredCondition,
+			"Invalid",
+			fmt.Sprintf(
+				"The specified guest ID value is not supported: %s",
+				configSpec.GuestId,
+			),
+		)
+		return
+	}
+
+	conditions.Delete(vm, vmopv1.GuestIDReconfiguredCondition)
 }

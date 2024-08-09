@@ -822,6 +822,21 @@ _Appears in:_
 
 
 
+### VirtualMachineImageDiskInfo
+
+
+
+VirtualMachineImageDiskInfo describes information about any disks associated with
+this image.
+
+_Appears in:_
+- [VirtualMachineImageStatus](#virtualmachineimagestatus)
+
+| Field | Description |
+| --- | --- |
+| `capacity` _[Quantity](#quantity)_ | Capacity is the virtual disk capacity in bytes. |
+| `size` _[Quantity](#quantity)_ | Size is the estimated populated size of the virtual disk in bytes. |
+
 ### VirtualMachineImageOSInfo
 
 
@@ -942,6 +957,7 @@ image. |
 | `vmwareSystemProperties` _KeyValuePair array_ | VMwareSystemProperties describes the observed VMware system properties defined for
 this image. |
 | `productInfo` _[VirtualMachineImageProductInfo](#virtualmachineimageproductinfo)_ | ProductInfo describes the observed product information for this image. |
+| `disks` _[VirtualMachineImageDiskInfo](#virtualmachineimagediskinfo) array_ | Disks describes the observed disk information for this image. |
 | `providerContentVersion` _string_ | ProviderContentVersion describes the content version from the provider item
 that this image corresponds to. If the provider of this image is a Content
 Library, this will be the version of the corresponding Content Library item. |

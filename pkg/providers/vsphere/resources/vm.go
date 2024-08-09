@@ -4,6 +4,7 @@
 package resources
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -75,8 +76,20 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 	return &ref, nil
 }
 
-func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *vimtypes.VirtualMachineConfigSpec) (*vimtypes.TaskInfo, error) {
-	vm.logger.V(5).Info("Reconfiguring VM", "configSpec", configSpec)
+func (vm *VirtualMachine) Reconfigure(
+	ctx context.Context,
+	configSpec *vimtypes.VirtualMachineConfigSpec) (*vimtypes.TaskInfo, error) {
+
+	logger := logr.FromContextOrDiscard(ctx)
+
+	var w bytes.Buffer
+	enc := vimtypes.NewJSONEncoder(&w)
+	if err := enc.Encode(configSpec); err != nil {
+		logger.Error(err, "Failed to marshal ConfigSpec to JSON")
+		logger.Info("Reconfiguring VM", "configSpec", configSpec)
+	} else {
+		logger.Info("Reconfiguring VM", "configSpec", w.String())
+	}
 
 	reconfigureTask, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
 	if err != nil {

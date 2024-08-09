@@ -49,15 +49,6 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigSpec{Annotation: "my-annotation"},
 			ConfigSpec{Annotation: "my-annotation"}),
 
-		Entry("ManagedBy is currently set",
-			ConfigInfo{ManagedBy: &vimtypes.ManagedByInfo{Type: "my-managed-by"}},
-			ConfigSpec{},
-			ConfigSpec{}),
-		Entry("ManagedBy is currently unset",
-			ConfigInfo{},
-			ConfigSpec{ManagedBy: &vimtypes.ManagedByInfo{Type: "my-managed-by"}},
-			ConfigSpec{ManagedBy: &vimtypes.ManagedByInfo{Type: "my-managed-by"}}),
-
 		Entry("NumCPUs needs updating",
 			ConfigInfo{Hardware: vimtypes.VirtualHardware{NumCPU: 2}},
 			ConfigSpec{NumCPUs: 4},

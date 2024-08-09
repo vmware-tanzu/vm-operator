@@ -42,6 +42,19 @@ func CreateConfigSpec(
 		Type:         vmopv1.ManagedByExtensionType,
 	}
 
+	// Ensure ExtraConfig contains the name/namespace of the VM's Kubernetes
+	// resource.
+	configSpec.ExtraConfig = util.OptionValues(configSpec.ExtraConfig).Merge(
+		&vimtypes.OptionValue{
+			Key:   constants.ExtraConfigVMServiceName,
+			Value: vmCtx.VM.Name,
+		},
+		&vimtypes.OptionValue{
+			Key:   constants.ExtraConfigVMServiceNamespace,
+			Value: vmCtx.VM.Namespace,
+		},
+	)
+
 	// spec.biosUUID is only set when creating a VM and is immutable.
 	// This field should not be updated for existing VMs.
 	if id := vmCtx.VM.Spec.BiosUUID; id != "" {

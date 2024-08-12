@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"regexp"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
@@ -65,9 +67,15 @@ func (gip guestInfoProber) Probe(ctx *context.ProbeContext) (Result, error) {
 			continue
 		}
 
-		val, ok := valObj.(string)
+		obj, ok := valObj.(vimtypes.OptionValue)
 		if !ok {
-			val = fmt.Sprintf("%s", valObj)
+			return Failure, nil
+		}
+
+		// If the value is not a string, then format it as a string.
+		val, ok := obj.Value.(string)
+		if !ok {
+			val = fmt.Sprintf("%v", obj.Value)
 		}
 
 		if !expectedValRx.MatchString(val) {

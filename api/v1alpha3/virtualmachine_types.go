@@ -276,9 +276,10 @@ type VirtualMachineImageRef struct {
 type VirtualMachineCdromSpec struct {
 	// +kubebuilder:validation:Pattern="^[a-z0-9]{2,}$"
 
-	// Name describes the unique and immutable name of this CD-ROM device.
-	// If omitted or empty, the controller will generate it as "cdrom" + "num",
-	// where "num" is the device's index in the spec.cdrom list.
+	// Name consists of at least two lowercase letters or digits of this CD-ROM.
+	// It must be unique among all CD-ROM devices attached to the VM.
+	//
+	// This field is immutable when the VM is powered on.
 	Name string `json:"name"`
 
 	// Image describes the reference to an ISO type VirtualMachineImage or
@@ -303,8 +304,11 @@ type VirtualMachineCdromSpec struct {
 	// disconnected from the VM. If the CD-ROM device already exists, it is
 	// updated to a disconnected state.
 	//
+	// Please note that disconnecting a CD-ROM during guest OS installation may
+	// not work since the CD-ROM might be locked by the guest.
+	//
 	// Defaults to true if omitted.
-	Connected bool `json:"connected,omitempty"`
+	Connected *bool `json:"connected,omitempty"`
 
 	// +optional
 	// +kubebuilder:default=true
@@ -313,7 +317,7 @@ type VirtualMachineCdromSpec struct {
 	// may be used to connect/disconnect the CD-ROM device.
 	//
 	// Defaults to true if omitted.
-	AllowGuestControl bool `json:"allowGuestControl,omitempty"`
+	AllowGuestControl *bool `json:"allowGuestControl,omitempty"`
 }
 
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
@@ -326,7 +330,9 @@ type VirtualMachineSpec struct {
 	//
 	// Each CD-ROM device requires a reference to an ISO-type
 	// VirtualMachineImage or ClusterVirtualMachineImage resource as backing.
-	// More than one CD-ROM device with the backing image is disallowed.
+	//
+	// Multiple CD-ROM devices using the same backing image, regardless of image
+	// kinds (namespace or cluster scope), are not allowed.
 	//
 	// CD-ROM devices can be added, updated, or removed when the VM is powered
 	// off. When the VM is powered on, only the connection state of existing
@@ -590,11 +596,10 @@ type VirtualMachineSpec struct {
 	//
 	// The logic that determines the guest ID is as follows:
 	//
-	// 1. If this field is set, then its value is used.
-	// 2. Otherwise, if the VirtualMachineClass used to deploy the VM contains a
-	//    non-empty guest ID, then it is used.
-	// 3. Finally, if this field is still undetermined, and the VM is deployed
-	// from an OVF template that defines a guest ID, then that value is used.
+	// If this field is set, then its value is used.
+	// Otherwise, if the VM is deployed from an OVF template that defines a
+	// guest ID, then that value is used.
+	// The guest ID from VirtualMachineClass used to deploy the VM is ignored.
 	//
 	// Please refer to https://bit.ly/4elnjP3 for a complete list of supported
 	// guest operating system identifiers.
@@ -602,6 +607,8 @@ type VirtualMachineSpec struct {
 	// Please note that this field is immutable after the VM is powered on.
 	// To change the guest ID after the VM is powered on, the VM must be powered
 	// off and then powered on again with the updated guest ID spec.
+	//
+	// This field is required when the VM has any CD-ROM devices attached.
 	GuestID string `json:"guestID,omitempty"`
 }
 

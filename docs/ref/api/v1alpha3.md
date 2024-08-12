@@ -692,9 +692,11 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name describes the unique and immutable name of this CD-ROM device.
-If omitted or empty, the controller will generate it as "cdrom" + "num",
-where "num" is the device's index in the spec.cdrom list. |
+| `name` _string_ | Name consists of at least two lowercase letters or digits of this CD-ROM.
+It must be unique among all CD-ROM devices attached to the VM.
+
+
+This field is immutable when the VM is powered on. |
 | `image` _[VirtualMachineImageRef](#virtualmachineimageref)_ | Image describes the reference to an ISO type VirtualMachineImage or
 ClusterVirtualMachineImage resource used as the backing for the CD-ROM.
 If the image kind is omitted, it defaults to VirtualMachineImage.
@@ -715,6 +717,10 @@ If the device already exists, it is updated to a connected state.
 When explicitly set to false, the CD-ROM device is added but remains
 disconnected from the VM. If the CD-ROM device already exists, it is
 updated to a disconnected state.
+
+
+Please note that disconnecting a CD-ROM during guest OS installation may
+not work since the CD-ROM might be locked by the guest.
 
 
 Defaults to true if omitted. |
@@ -821,6 +827,21 @@ _Appears in:_
 - [VirtualMachineClass](#virtualmachineclass)
 
 
+
+### VirtualMachineImageDiskInfo
+
+
+
+VirtualMachineImageDiskInfo describes information about any disks associated with
+this image.
+
+_Appears in:_
+- [VirtualMachineImageStatus](#virtualmachineimagestatus)
+
+| Field | Description |
+| --- | --- |
+| `capacity` _[Quantity](#quantity)_ | Capacity is the virtual disk capacity in bytes. |
+| `size` _[Quantity](#quantity)_ | Size is the estimated populated size of the virtual disk in bytes. |
 
 ### VirtualMachineImageOSInfo
 
@@ -942,6 +963,7 @@ image. |
 | `vmwareSystemProperties` _KeyValuePair array_ | VMwareSystemProperties describes the observed VMware system properties defined for
 this image. |
 | `productInfo` _[VirtualMachineImageProductInfo](#virtualmachineimageproductinfo)_ | ProductInfo describes the observed product information for this image. |
+| `disks` _[VirtualMachineImageDiskInfo](#virtualmachineimagediskinfo) array_ | Disks describes the observed disk information for this image. |
 | `providerContentVersion` _string_ | ProviderContentVersion describes the content version from the provider item
 that this image corresponds to. If the provider of this image is a Content
 Library, this will be the version of the corresponding Content Library item. |
@@ -2090,7 +2112,10 @@ _Appears in:_
 
 Each CD-ROM device requires a reference to an ISO-type
 VirtualMachineImage or ClusterVirtualMachineImage resource as backing.
-More than one CD-ROM device with the backing image is disallowed.
+
+
+Multiple CD-ROM devices using the same backing image, regardless of image
+kinds (namespace or cluster scope), are not allowed.
 
 
 CD-ROM devices can be added, updated, or removed when the VM is powered
@@ -2303,11 +2328,10 @@ default value for spec.bootstrap.cloudInit.instanceID if it is omitted. |
 The logic that determines the guest ID is as follows:
 
 
-1. If this field is set, then its value is used.
-2. Otherwise, if the VirtualMachineClass used to deploy the VM contains a
-   non-empty guest ID, then it is used.
-3. Finally, if this field is still undetermined, and the VM is deployed
-from an OVF template that defines a guest ID, then that value is used.
+If this field is set, then its value is used.
+Otherwise, if the VM is deployed from an OVF template that defines a
+guest ID, then that value is used.
+The guest ID from VirtualMachineClass used to deploy the VM is ignored.
 
 
 Please refer to https://bit.ly/4elnjP3 for a complete list of supported
@@ -2316,7 +2340,10 @@ guest operating system identifiers.
 
 Please note that this field is immutable after the VM is powered on.
 To change the guest ID after the VM is powered on, the VM must be powered
-off and then powered on again with the updated guest ID spec. |
+off and then powered on again with the updated guest ID spec.
+
+
+This field is required when the VM has any CD-ROM devices attached. |
 
 ### VirtualMachineStatus
 

@@ -74,13 +74,6 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 
 func intgTestsValidateCreate() {
 
-	const (
-		invalid          = "invalid"
-		vmiKind          = "VirtualMachineImage"
-		cvmiKind         = "Cluster" + vmiKind
-		invalidImageKind = "supported: " + vmiKind + "; " + cvmiKind
-	)
-
 	var (
 		ctx *intgValidatingWebhookContext
 	)
@@ -99,7 +92,7 @@ func intgTestsValidateCreate() {
 			ctx.vm.Spec.Image.Kind = ""
 		}
 		if args.invalidImageKind {
-			ctx.vm.Spec.Image.Kind = invalid
+			ctx.vm.Spec.Image.Kind = invalidKind
 		}
 
 		err := ctx.Client.Create(ctx, ctx.vm)
@@ -129,15 +122,17 @@ func intgTestsValidateCreate() {
 		Entry("should not work for empty image", createArgs{emptyImage: true}, false,
 			field.Required(specPath.Child("image"), "").Error(), nil),
 		Entry("should not work for empty image kind", createArgs{emptyImageKind: true}, false,
-			field.Required(specPath.Child("image").Child("kind"), invalidImageKind).Error(), nil),
+			field.Required(specPath.Child("image").Child("kind"), invalidImageKindMsg).Error(), nil),
 		Entry("should not work for invalid image kind", createArgs{invalidImageKind: true}, false,
-			field.Invalid(specPath.Child("image").Child("kind"), invalid, invalidImageKind).Error(), nil),
+			field.Invalid(specPath.Child("image").Child("kind"), invalidKind, invalidImageKindMsg).Error(), nil),
 	)
 }
 
 func intgTestsValidateUpdate() {
 	const (
 		immutableFieldMsg = "field is immutable"
+		unsupportedValMsg = "Unsupported value"
+		duplicateValMsg   = "Duplicate value"
 	)
 
 	var (
@@ -232,6 +227,31 @@ func intgTestsValidateUpdate() {
 		})
 	})
 
+	When("update is performed with changed cd-rom", func() {
+		When("cd-rom image kind is invalid", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Cdrom[0].Image.Kind = invalidKind
+			})
+			It("should deny the request", func() {
+				Expect(err).To(HaveOccurred())
+				expectedPath := field.NewPath("spec", "cdrom[0]", "image", "kind")
+				Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
+				Expect(err.Error()).To(ContainSubstring(unsupportedValMsg))
+			})
+		})
+		When("cd-rom image name is duplicate with others", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Cdrom[0].Image.Name = ctx.vm.Spec.Cdrom[1].Image.Name
+			})
+			It("should deny the request", func() {
+				Expect(err).To(HaveOccurred())
+				expectedPath := field.NewPath("spec", "cdrom[1]", "image", "name")
+				Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
+				Expect(err.Error()).To(ContainSubstring(duplicateValMsg))
+			})
+		})
+	})
+
 	Context("VirtualMachine update while VM is powered on", func() {
 		BeforeEach(func() {
 			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
@@ -301,6 +321,33 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				expectedReason := field.Forbidden(field.NewPath("spec", "guestID"),
+					"updates to this field is not allowed when VM power is on").Error()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedReason))
+			})
+		})
+
+		When("CD-ROM name is updated", func() {
+			BeforeEach(func() {
+				// Name can only consist of lowercase letters and digits.
+				ctx.vm.Spec.Cdrom[0].Name = "dummy2"
+			})
+
+			It("rejects the request", func() {
+				expectedReason := field.Forbidden(field.NewPath("spec", "cdrom[0]", "name"),
+					"updates to this field is not allowed when VM power is on").Error()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedReason))
+			})
+		})
+
+		When("CD-ROM image ref is updated", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Cdrom[0].Image.Name = "dummy-new-image-name"
+			})
+
+			It("rejects the request", func() {
+				expectedReason := field.Forbidden(field.NewPath("spec", "cdrom[0]", "image"),
 					"updates to this field is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))

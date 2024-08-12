@@ -29,7 +29,8 @@ import (
 )
 
 const (
-	DummyVMIID             = "vmi-0123456789"
+	DummyVMIName           = "vmi-0123456789"
+	DummyCVMIName          = "vmi-9876543210"
 	DummyImageName         = "dummy-image-name"
 	DummyClassName         = "dummyClassName"
 	DummyVolumeName        = "dummy-volume-name"
@@ -303,7 +304,7 @@ func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 		Spec: vmopv1.VirtualMachineSpec{
 			Image: &vmopv1.VirtualMachineImageRef{
 				Kind: vmiKind,
-				Name: DummyVMIID,
+				Name: DummyVMIName,
 			},
 			ImageName:    DummyImageName,
 			ClassName:    DummyClassName,
@@ -327,7 +328,7 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 		Spec: vmopv1.VirtualMachineSpec{
 			Image: &vmopv1.VirtualMachineImageRef{
 				Kind: vmiKind,
-				Name: DummyVMIID,
+				Name: DummyVMIName,
 			},
 			ImageName:          DummyImageName,
 			ClassName:          DummyClassName,
@@ -359,21 +360,22 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 					Name: "cdrom1",
 					Image: vmopv1.VirtualMachineImageRef{
 						Kind: vmiKind,
-						Name: DummyVMIID,
+						Name: DummyVMIName,
 					},
-					Connected:         true,
-					AllowGuestControl: true,
+					Connected:         ptr.To(true),
+					AllowGuestControl: ptr.To(true),
 				},
 				{
 					Name: "cdrom2",
 					Image: vmopv1.VirtualMachineImageRef{
 						Kind: cvmiKind,
-						Name: DummyVMIID,
+						Name: DummyCVMIName,
 					},
-					Connected:         true,
-					AllowGuestControl: true,
+					Connected:         ptr.To(true),
+					AllowGuestControl: ptr.To(true),
 				},
 			},
+			GuestID: DummyOSType,
 		},
 	}
 }
@@ -401,7 +403,7 @@ func DummyVirtualMachineReplicaSet() *vmopv1.VirtualMachineReplicaSet {
 				Spec: vmopv1.VirtualMachineSpec{
 					Image: &vmopv1.VirtualMachineImageRef{
 						Kind: vmiKind,
-						Name: DummyVMIID,
+						Name: DummyVMIName,
 					},
 					ImageName:  DummyImageName,
 					ClassName:  DummyClassName,

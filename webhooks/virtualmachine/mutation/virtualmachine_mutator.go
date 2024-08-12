@@ -120,7 +120,7 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		SetCreatedAtAnnotations(ctx, modified)
 		AddDefaultNetworkInterface(ctx, m.client, modified)
 		SetDefaultPowerState(ctx, m.client, modified)
-		SetDefaultCdromNameAndImgKind(ctx, modified)
+		SetDefaultCdromImgKindOnCreate(ctx, modified)
 		SetImageNameFromCdrom(ctx, modified)
 		if _, err := SetDefaultInstanceUUID(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
@@ -146,6 +146,10 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		if ok, err := SetNextRestartTime(ctx, modified, oldVM); err != nil {
 			return admission.Denied(err.Error())
 		} else if ok {
+			wasMutated = true
+		}
+
+		if ok := SetDefaultCdromImgKindOnUpdate(ctx, modified, oldVM); ok {
 			wasMutated = true
 		}
 	}
@@ -486,20 +490,41 @@ func SetLastResizeAnnotation(
 	return false, nil
 }
 
-func SetDefaultCdromNameAndImgKind(
+func SetDefaultCdromImgKindOnCreate(
 	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) {
 
 	for i, c := range vm.Spec.Cdrom {
-		if c.Name == "" {
-			// Name has a required pattern ("^[a-z0-9]{2,}$") in the CRD schema.
-			vm.Spec.Cdrom[i].Name = fmt.Sprintf("%s%d", defaultCdromNamePrefix, i+1)
-		}
-
 		if c.Image.Kind == "" {
 			vm.Spec.Cdrom[i].Image.Kind = vmiKind
 		}
 	}
+}
+
+func SetDefaultCdromImgKindOnUpdate(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) bool {
+
+	var (
+		mutated          bool
+		imgNameToOldKind = make(map[string]string, len(oldVM.Spec.Cdrom))
+	)
+
+	for _, c := range oldVM.Spec.Cdrom {
+		imgNameToOldKind[c.Image.Name] = c.Image.Kind
+	}
+
+	for i, c := range vm.Spec.Cdrom {
+		// Repopulate the image kind only if it was previously set to default.
+		// This ensures an error is returned if the image kind was reset from
+		// a different value other than the default VirtualMachineImage kind.
+		if c.Image.Kind == "" && imgNameToOldKind[c.Image.Name] == vmiKind {
+			vm.Spec.Cdrom[i].Image.Kind = vmiKind
+			mutated = true
+		}
+	}
+
+	return mutated
 }
 
 func SetImageNameFromCdrom(
@@ -514,7 +539,7 @@ func SetImageNameFromCdrom(
 	var cdromImageName string
 	for _, cdrom := range vm.Spec.Cdrom {
 		// Set the image name to the first connected CD-ROM image name.
-		if cdrom.Connected {
+		if cdrom.Connected != nil && *cdrom.Connected {
 			cdromImageName = cdrom.Image.Name
 			break
 		}

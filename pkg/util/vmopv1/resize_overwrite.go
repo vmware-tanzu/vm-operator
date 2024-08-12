@@ -128,34 +128,35 @@ func ensureNamespaceName(
 	curEC := util.OptionValues(ci.ExtraConfig).StringMap()
 	inEC := util.OptionValues(cs.ExtraConfig).StringMap()
 
-	fn := func(key string, expectedVal string) {
-		// Does the VM have the key set in EC?
-		if v, ok := curEC[key]; ok {
-			if v == expectedVal {
-				// The key is present and correct; is the ConfigSpec trying to
-				// set it again?
-				if _, ok := inEC[key]; ok {
-					// Remove the entry from the ConfigSpec.
-					cs.ExtraConfig = util.OptionValues(cs.ExtraConfig).Delete(key)
-				}
-			} else {
-				// The key is present but incorrect.
-				outEC = append(outEC, &vimtypes.OptionValue{
-					Key:   key,
-					Value: expectedVal,
-				})
-			}
-		} else {
-			// The key is not present.
-			outEC = append(outEC, &vimtypes.OptionValue{
-				Key:   key,
-				Value: expectedVal,
-			})
-		}
+	key := constants.ExtraConfigVMServiceNamespacedName
+	val := vm.NamespacedName()
+	if val == "/" {
+		val = ""
 	}
 
-	fn(constants.ExtraConfigVMServiceNamespace, vm.Namespace)
-	fn(constants.ExtraConfigVMServiceName, vm.Name)
+	// Does the VM have the key set in EC?
+	if v, ok := curEC[key]; ok {
+		if v == val {
+			// The key is present and correct; is the ConfigSpec trying to
+			// set it again?
+			if _, ok := inEC[key]; ok {
+				// Remove the entry from the ConfigSpec.
+				cs.ExtraConfig = util.OptionValues(cs.ExtraConfig).Delete(key)
+			}
+		} else {
+			// The key is present but incorrect.
+			outEC = append(outEC, &vimtypes.OptionValue{
+				Key:   key,
+				Value: val,
+			})
+		}
+	} else {
+		// The key is not present.
+		outEC = append(outEC, &vimtypes.OptionValue{
+			Key:   key,
+			Value: val,
+		})
+	}
 
 	return outEC
 }

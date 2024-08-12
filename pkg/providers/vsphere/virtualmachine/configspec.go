@@ -46,12 +46,8 @@ func CreateConfigSpec(
 	// resource.
 	configSpec.ExtraConfig = util.OptionValues(configSpec.ExtraConfig).Merge(
 		&vimtypes.OptionValue{
-			Key:   constants.ExtraConfigVMServiceName,
-			Value: vmCtx.VM.Name,
-		},
-		&vimtypes.OptionValue{
-			Key:   constants.ExtraConfigVMServiceNamespace,
-			Value: vmCtx.VM.Namespace,
+			Key:   constants.ExtraConfigVMServiceNamespacedName,
+			Value: vmCtx.VM.NamespacedName(),
 		},
 	)
 

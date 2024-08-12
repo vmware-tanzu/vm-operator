@@ -68,27 +68,11 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 		return cs
 	}
 
-	configInfoNamespaceName := func(ci ConfigInfo, args ...string) ConfigInfo {
-		var (
-			namespace string
-			name      string
-		)
-
-		if len(args) > 0 {
-			namespace = args[0]
-		}
-		if len(args) > 1 {
-			name = args[1]
-		}
-
+	configInfoNamespaceName := func(ci ConfigInfo) ConfigInfo {
 		ci.ExtraConfig = pkgutil.OptionValues(ci.ExtraConfig).Merge(
 			&vimtypes.OptionValue{
-				Key:   constants.ExtraConfigVMServiceNamespace,
-				Value: namespace,
-			},
-			&vimtypes.OptionValue{
-				Key:   constants.ExtraConfigVMServiceName,
-				Value: name,
+				Key:   constants.ExtraConfigVMServiceNamespacedName,
+				Value: "",
 			},
 		)
 		return ci
@@ -222,17 +206,18 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 
 	Context("ExtraConfig", func() {
 		var (
-			vm vmopv1.VirtualMachine
-			ci ConfigInfo
-			cs ConfigSpec
-
-			nameVal      = &vimtypes.OptionValue{Key: constants.ExtraConfigVMServiceName, Value: vm.Name}
-			namespaceVal = &vimtypes.OptionValue{Key: constants.ExtraConfigVMServiceNamespace, Value: vm.Namespace}
+			vm                vmopv1.VirtualMachine
+			ci                ConfigInfo
+			cs                ConfigSpec
+			namespacedNameVal *vimtypes.OptionValue
 		)
 
 		BeforeEach(func() {
 			vm = *builder.DummyVirtualMachine()
-
+			namespacedNameVal = &vimtypes.OptionValue{
+				Key:   constants.ExtraConfigVMServiceNamespacedName,
+				Value: "",
+			}
 			ci = configInfoWithNamespaceName()
 			cs = ConfigSpec{}
 		})
@@ -249,7 +234,7 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 
 			When("VM already has expected EC values", func() {
 				BeforeEach(func() {
-					ci.ExtraConfig = append(ci.ExtraConfig, nameVal, namespaceVal)
+					ci.ExtraConfig = append(ci.ExtraConfig, namespacedNameVal)
 				})
 				It("no updates", func() {
 					Expect(cs.ExtraConfig).To(BeEmpty())
@@ -257,32 +242,31 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 			})
 			When("VM ConfigSpec already has expected EC values", func() {
 				BeforeEach(func() {
-					cs.ExtraConfig = append(cs.ExtraConfig, nameVal, namespaceVal)
+					cs.ExtraConfig = append(cs.ExtraConfig, namespacedNameVal)
 				})
 				It("same changes", func() {
-					Expect(cs.ExtraConfig).To(ConsistOf(nameVal, namespaceVal))
+					Expect(cs.ExtraConfig).To(ConsistOf(namespacedNameVal))
 				})
 			})
 			When("VM has none of expected EC values", func() {
 				It("adds it", func() {
-					Expect(cs.ExtraConfig).To(ConsistOf(nameVal, namespaceVal))
+					Expect(cs.ExtraConfig).To(ConsistOf(namespacedNameVal))
 				})
 			})
 			When("VM has different than expected EC values", func() {
 				BeforeEach(func() {
-					ov1, ov2 := *nameVal, *namespaceVal
-					ov1.Value = "fake"
-					ov2.Value = "fake"
-					ci.ExtraConfig = append(ci.ExtraConfig, &ov1, &ov2)
+					ov := *namespacedNameVal
+					ov.Value = "fake/fake"
+					ci.ExtraConfig = append(ci.ExtraConfig, &ov)
 				})
 				It("updates it", func() {
-					Expect(cs.ExtraConfig).To(ConsistOf(nameVal, namespaceVal))
+					Expect(cs.ExtraConfig).To(ConsistOf(namespacedNameVal))
 				})
 			})
 			Context("VM and ConfigSpec already have expected values", func() {
 				BeforeEach(func() {
-					ci.ExtraConfig = append(ci.ExtraConfig, nameVal, namespaceVal)
-					cs.ExtraConfig = append(cs.ExtraConfig, nameVal, namespaceVal)
+					ci.ExtraConfig = append(ci.ExtraConfig, namespacedNameVal)
+					cs.ExtraConfig = append(cs.ExtraConfig, namespacedNameVal)
 				})
 
 				It("removes updates", func() {

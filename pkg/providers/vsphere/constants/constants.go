@@ -8,13 +8,12 @@ import (
 )
 
 const (
-	ExtraConfigTrue               = "TRUE"
-	ExtraConfigFalse              = "FALSE"
-	ExtraConfigUnset              = ""
-	ExtraConfigGuestInfoPrefix    = "guestinfo."
-	ExtraConfigRunContainerKey    = "RUN.container"
-	ExtraConfigVMServiceName      = "vmservice.name"
-	ExtraConfigVMServiceNamespace = "vmservice.namespace"
+	ExtraConfigTrue                    = "TRUE"
+	ExtraConfigFalse                   = "FALSE"
+	ExtraConfigUnset                   = ""
+	ExtraConfigGuestInfoPrefix         = "guestinfo."
+	ExtraConfigRunContainerKey         = "RUN.container"
+	ExtraConfigVMServiceNamespacedName = "vmservice.namespacedName"
 
 	// VCVMAnnotation Annotation placed on the VM.
 	VCVMAnnotation = "Virtual Machine managed by the vSphere Virtual Machine service"

@@ -332,10 +332,12 @@ func vmTests() {
 
 			Context("GetVirtualMachineProperties", func() {
 				const (
-					propName        = "config.name"
-					propPowerState  = "runtime.powerState"
-					propExtraConfig = "config.extraConfig"
-					propPathName    = "config.files.vmPathName"
+					propName              = "config.name"
+					propPowerState        = "runtime.powerState"
+					propExtraConfig       = "config.extraConfig"
+					propPathName          = "config.files.vmPathName"
+					propExtraConfigKeyKey = "vmservice.example"
+					propExtraConfigKey    = `config.extraConfig["` + propExtraConfigKeyKey + `"]`
 				)
 				var (
 					err           error
@@ -346,7 +348,9 @@ func vmTests() {
 					propertyPaths = nil
 				})
 				JustBeforeEach(func() {
-					result, err = vmProvider.GetVirtualMachineProperties(ctx, vm, propertyPaths)
+					if len(propertyPaths) > 0 {
+						result, err = vmProvider.GetVirtualMachineProperties(ctx, vm, propertyPaths)
+					}
 				})
 				When("getting "+propExtraConfig, func() {
 					BeforeEach(func() {
@@ -357,6 +361,38 @@ func vmTests() {
 						Expect(result).ToNot(HaveLen(0))
 					})
 				})
+				DescribeTable("getting "+propExtraConfigKey,
+					func(val any) {
+						t, err := vcVM.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+							ExtraConfig: []vimtypes.BaseOptionValue{
+								&vimtypes.OptionValue{
+									Key:   propExtraConfigKeyKey,
+									Value: val,
+								},
+							},
+						})
+						Expect(err).ToNot(HaveOccurred())
+						Expect(t.Wait(ctx)).To(Succeed())
+
+						result, err := vmProvider.GetVirtualMachineProperties(
+							ctx,
+							vm,
+							[]string{propExtraConfigKey})
+
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(HaveKeyWithValue(
+							propExtraConfigKey,
+							vimtypes.OptionValue{
+								Key:   propExtraConfigKeyKey,
+								Value: val,
+							}))
+					},
+					Entry("value is a string", "Hello, world."),
+					Entry("value is a uint8", uint8(8)),
+					Entry("value is an int32", int32(32)),
+					Entry("value is a float64", float64(64)),
+					Entry("value is a bool", true),
+				)
 				When("getting "+propName, func() {
 					BeforeEach(func() {
 						propertyPaths = []string{propName}

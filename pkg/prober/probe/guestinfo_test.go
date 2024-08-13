@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -96,11 +97,17 @@ var _ = Describe("Guest info probe", func() {
 		toKey := func(s string) string {
 			return fmt.Sprintf(`config.extraConfig["guestinfo.%s"]`, s)
 		}
+		toVal := func(k, v string) vimtypes.OptionValue {
+			return vimtypes.OptionValue{
+				Key:   toKey(k),
+				Value: v,
+			}
+		}
 
 		Context("Key does not exist in GuestInfo", func() {
 			BeforeEach(func() {
 				fakeProvider.guestInfo = map[string]any{
-					toKey("key1"): "ignored-because-no-value-in-action",
+					toKey("key1"): toVal("key1", "ignored-because-no-value-in-action"),
 				}
 
 				guestInfoAction = []vmopv1.GuestInfoAction{
@@ -119,7 +126,7 @@ var _ = Describe("Guest info probe", func() {
 		Context("Matches key when value is not set", func() {
 			BeforeEach(func() {
 				fakeProvider.guestInfo = map[string]any{
-					toKey("key1"): "ignored-because-no-value-in-action",
+					toKey("key1"): toVal("key1", "ignored-because-no-value-in-action"),
 				}
 
 				guestInfoAction = []vmopv1.GuestInfoAction{
@@ -137,7 +144,9 @@ var _ = Describe("Guest info probe", func() {
 
 		Context("Matches key and has plain string value", func() {
 			BeforeEach(func() {
-				fakeProvider.guestInfo = map[string]any{toKey("key2"): "vmware"}
+				fakeProvider.guestInfo = map[string]any{
+					toKey("key2"): toVal("key2", "vmware"),
+				}
 			})
 
 			Context("Values match", func() {
@@ -176,7 +185,7 @@ var _ = Describe("Guest info probe", func() {
 		Context("Matches key and has regex value", func() {
 			BeforeEach(func() {
 				fakeProvider.guestInfo = map[string]any{
-					toKey("key3"): "aaaaa",
+					toKey("key3"): toVal("key3", "aaaaa"),
 				}
 
 			})

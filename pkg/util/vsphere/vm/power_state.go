@@ -19,6 +19,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm/internal"
 )
 
@@ -526,6 +527,8 @@ func restart(
 		log.Info("Will not restart VM as desiredLastRestartTime is in the future")
 		return PowerOpResultNone, nil
 	}
+
+	ctxop.MarkUpdate(ctx)
 
 	switch powerOpBehavior {
 	case PowerOpBehaviorHard:

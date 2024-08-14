@@ -27,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
@@ -241,6 +242,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		ctx = cource.JoinContext(ctx, r.Context)
 	}
 
+	ctx = ctxop.WithContext(ctx)
+
 	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -398,8 +401,16 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	// Upgrade schema fields where needed
 	upgradeSchema(ctx)
 
-	if err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM); err != nil {
-		r.Recorder.EmitEvent(ctx.VM, "CreateOrUpdate", err, false)
+	err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM)
+
+	if ctxop.IsCreate(ctx) {
+		r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
+	} else if ctxop.IsUpdate(ctx) {
+		r.Recorder.EmitEvent(ctx.VM, "Update", err, false)
+	}
+
+	if err != nil {
+		r.Recorder.EmitEvent(ctx.VM, "CreateOrUpdate", err, true)
 		return err
 	}
 

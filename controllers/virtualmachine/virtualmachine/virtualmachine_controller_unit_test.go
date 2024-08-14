@@ -6,6 +6,7 @@ package virtualmachine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -20,6 +21,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -79,15 +81,18 @@ func unitTestsReconcile() {
 
 		fakeProbeManagerIf := proberfake.NewFakeProberManager()
 
-		reconciler = virtualmachine.NewReconciler(
-			cource.WithContext(
-				pkgcfg.UpdateContext(
-					ctx,
-					func(config *pkgcfg.Config) {
-						config.Features.PodVMOnStretchedSupervisor = true
-					},
-				),
+		plainContext := cource.WithContext(
+			pkgcfg.UpdateContext(
+				ctx,
+				func(config *pkgcfg.Config) {
+					config.Features.PodVMOnStretchedSupervisor = true
+				},
 			),
+		)
+		plainContext = ctxop.WithContext(plainContext)
+
+		reconciler = virtualmachine.NewReconciler(
+			plainContext,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
@@ -97,7 +102,7 @@ func unitTestsReconcile() {
 		fakeProbeManager = fakeProbeManagerIf.(*proberfake.ProberManager)
 
 		vmCtx = &pkgctx.VirtualMachineContext{
-			Context: ctx,
+			Context: plainContext,
 			Logger:  ctx.Logger.WithName(vm.Name),
 			VM:      vm,
 		}
@@ -142,17 +147,6 @@ func unitTestsReconcile() {
 			Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
 		})
 
-		It("will return error when provider fails to CreateOrUpdate VM", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				return errors.New(providerError)
-			}
-
-			err := reconciler.ReconcileNormal(vmCtx)
-			Expect(err).To(HaveOccurred())
-			Expect(err).To(MatchError(providerError))
-			expectEvent(ctx, "CreateOrUpdateFailure")
-		})
-
 		It("can be called multiple times", func() {
 			err := reconciler.ReconcileNormal(vmCtx)
 			Expect(err).ToNot(HaveOccurred())
@@ -180,6 +174,48 @@ func unitTestsReconcile() {
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
 			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeTrue())
+		})
+
+		It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation", func() {
+			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+				ctxop.MarkCreate(ctx)
+				return nil
+			}
+
+			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+			expectEvent(ctx, "CreateSuccess")
+		})
+
+		It("Should emit CreateFailure and CreateOrUpdateFailure events if ReconcileNormal causes a failed VM create", func() {
+			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+				ctxop.MarkCreate(ctx)
+				return fmt.Errorf("fake")
+			}
+
+			Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
+			expectEvent(ctx, "CreateFailure")
+			expectEvent(ctx, "CreateOrUpdateFailure")
+		})
+
+		It("Should emit an UpdateSuccess event if ReconcileNormal causes a successful VM update", func() {
+			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+				ctxop.MarkUpdate(ctx)
+				return nil
+			}
+
+			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+			expectEvent(ctx, "UpdateSuccess")
+		})
+
+		It("Should emit UpdateFailure and CreateOrUpdateFailure events if ReconcileNormal causes a failed VM update", func() {
+			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+				ctxop.MarkUpdate(ctx)
+				return fmt.Errorf("fake")
+			}
+
+			Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
+			expectEvent(ctx, "UpdateFailure")
+			expectEvent(ctx, "CreateOrUpdateFailure")
 		})
 	})
 

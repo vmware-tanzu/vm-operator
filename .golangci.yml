@@ -70,6 +70,8 @@ linters-settings:
         pkg: github.com/vmware-tanzu/vm-operator/pkg/config
       - alias: pkgctx
         pkg: github.com/vmware-tanzu/vm-operator/pkg/context
+      - alias: ctxop
+        pkg: github.com/vmware-tanzu/vm-operator/pkg/context/operation
       - alias: pkgmgr
         pkg: github.com/vmware-tanzu/vm-operator/pkg/manager
       - alias: pkgutil

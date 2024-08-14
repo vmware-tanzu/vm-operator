@@ -19,6 +19,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -112,6 +113,10 @@ func backupTests() {
 				newVMYAML, err := yaml.Marshal(vmCtx.VM)
 				Expect(err).NotTo(HaveOccurred())
 				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(newVMYAML))
+
+				// Backing up the YAML should not result in an update op being
+				// flagged.
+				Expect(ctxop.IsUpdate(vmCtx)).To(BeFalse())
 			})
 		})
 

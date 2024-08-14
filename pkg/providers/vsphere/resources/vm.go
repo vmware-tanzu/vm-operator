@@ -15,6 +15,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
 
@@ -79,6 +80,8 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 func (vm *VirtualMachine) Reconfigure(
 	ctx context.Context,
 	configSpec *vimtypes.VirtualMachineConfigSpec) (*vimtypes.TaskInfo, error) {
+
+	ctxop.MarkUpdate(ctx)
 
 	logger := logr.FromContextOrDiscard(ctx)
 
@@ -156,6 +159,8 @@ func (vm *VirtualMachine) SetPowerState(
 	desiredPowerState vmopv1.VirtualMachinePowerState,
 	desiredPowerOpMode vmopv1.VirtualMachinePowerOpMode) error {
 
+	ctxop.MarkUpdate(ctx)
+
 	_, err := vmutil.SetAndWaitOnPowerState(
 		ctx,
 		vm.VcVM().Client(),
@@ -215,6 +220,8 @@ func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.Virtual
 
 func (vm *VirtualMachine) Customize(ctx context.Context, spec vimtypes.CustomizationSpec) error {
 	vm.logger.V(5).Info("Customize", "spec", spec)
+
+	ctxop.MarkUpdate(ctx)
 
 	customizeTask, err := vm.vcVirtualMachine.Customize(ctx, spec)
 	if err != nil {

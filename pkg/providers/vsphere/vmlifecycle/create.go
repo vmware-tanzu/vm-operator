@@ -10,6 +10,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 )
 
 // CreateArgs contains the arguments needed to create a VM.
@@ -32,6 +33,8 @@ func CreateVirtualMachine(
 	vimClient *vim25.Client,
 	finder *find.Finder,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
+
+	ctxop.MarkCreate(vmCtx)
 
 	if createArgs.UseContentLibrary {
 		return deployFromContentLibrary(vmCtx, restClient, vimClient, createArgs)

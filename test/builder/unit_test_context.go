@@ -16,6 +16,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/context/fake"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 )
 
 // UnitTestContext is used for general purpose unit testing.
@@ -29,7 +30,7 @@ type UnitTestContext struct {
 func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
 	fakeClient := NewFakeClient(initObjects...)
 	return &UnitTestContext{
-		Context: pkgcfg.NewContext(),
+		Context: ctxop.WithContext(pkgcfg.NewContext()),
 		Client:  fakeClient,
 		Scheme:  fakeClient.Scheme(),
 	}

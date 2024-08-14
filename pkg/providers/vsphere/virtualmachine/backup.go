@@ -4,6 +4,7 @@
 package virtualmachine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
@@ -110,7 +112,13 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		configSpec := &vimtypes.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
 		}
-		if _, err := resVM.Reconfigure(opts.VMCtx, configSpec); err != nil {
+
+		// This ensures that the reconfigure done for storing the backup data
+		// does not indicate an update operation was triggered. While this does
+		// reconfigure the VM, it is not what "update" means to a user.
+		ctx := ctxop.JoinContext(opts.VMCtx, ctxop.WithContext(context.TODO()))
+
+		if _, err := resVM.Reconfigure(ctx, configSpec); err != nil {
 			opts.VMCtx.Logger.Error(err, "failed to update VM ExtraConfig with latest backup data")
 			return err
 		}

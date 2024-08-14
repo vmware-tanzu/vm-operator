@@ -435,6 +435,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 		vcClient.VimClient(),
 		vcClient.Finder(),
 		&createArgs.CreateArgs)
+
 	if err != nil {
 		vmCtx.Logger.Error(err, "CreateVirtualMachine failed")
 		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionCreated, "Error", err.Error())

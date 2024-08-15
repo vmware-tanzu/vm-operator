@@ -84,6 +84,7 @@ func intgTestsReconcile() {
 				Namespace: webconsolerequest.ProxyAddrServiceNamespace,
 			},
 			Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
 				Ports: []corev1.ServicePort{
 					{
 						Name: "dummy-proxy-port",

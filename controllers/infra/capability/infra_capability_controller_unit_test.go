@@ -50,7 +50,6 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			ctx.VMProvider,
 		)
 
 		configMap = &corev1.ConfigMap{

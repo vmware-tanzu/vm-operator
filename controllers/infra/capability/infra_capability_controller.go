@@ -24,9 +24,9 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 const (
@@ -50,24 +50,29 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	r := NewReconciler(
-		ctx,
-		mgr.GetClient(),
-		ctrl.Log.WithName("controllers").WithName(controllerName),
-		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		ctx.VMProvider,
-	)
-
-	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
-	if err != nil {
-		return err
-	}
-
 	cache, err := pkgmgr.NewNamespacedCacheForObject(
 		mgr,
 		&ctx.SyncPeriod,
 		controlledType,
 		WCPClusterCapabilitiesNamespace)
+	if err != nil {
+		return err
+	}
+
+	r := NewReconciler(
+		ctx,
+		cache,
+		ctrl.Log.WithName("controllers").WithName(controllerName),
+		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+	)
+
+	// This controller is also run on the non-leaders (webhooks) pods too
+	// so capabilities updates are reflected there.
+	c, err := controller.New(controllerName, mgr, controller.Options{
+		Reconciler:              r,
+		MaxConcurrentReconciles: 1,
+		NeedLeaderElection:      ptr.To(false),
+	})
 	if err != nil {
 		return err
 	}
@@ -96,25 +101,23 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 func NewReconciler(
 	ctx context.Context,
-	client client.Client,
+	cache client.Reader,
 	logger logr.Logger,
-	recorder record.Recorder,
-	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
+	recorder record.Recorder) *Reconciler {
+
 	return &Reconciler{
-		Context:    ctx,
-		Client:     client,
-		Logger:     logger,
-		Recorder:   recorder,
-		VMProvider: vmProvider,
+		Context:  ctx,
+		Cache:    cache,
+		Logger:   logger,
+		Recorder: recorder,
 	}
 }
 
 type Reconciler struct {
-	client.Client
-	Context    context.Context
-	Logger     logr.Logger
-	Recorder   record.Recorder
-	VMProvider providers.VirtualMachineProviderInterface
+	Context  context.Context
+	Cache    client.Reader
+	Logger   logr.Logger
+	Recorder record.Recorder
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
@@ -134,7 +137,7 @@ func (r *Reconciler) reconcileWcpClusterCapabilitiesConfig(ctx context.Context, 
 	r.Logger.Info("Reconciling WCP Cluster Capabilities Config", "configMap", req.NamespacedName)
 
 	cm := &corev1.ConfigMap{}
-	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
+	if err := r.Cache.Get(ctx, req.NamespacedName, cm); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 

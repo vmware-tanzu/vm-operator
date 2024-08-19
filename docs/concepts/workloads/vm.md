@@ -77,9 +77,9 @@ It is possible to update parts of an existing `VirtualMachine` resource. Some fi
 | Update | Description | While Powered On | While Powered Off | Not Already Set |
 |--------|-------------|:----------------:|:-----------------:|:---------------:|
 | `spec.imageName` | The name of the `VirtualMachineImage` that supplies the VM's disk(s) | ✗ | ✗ | _NA_ |
-| `spec.className` | The name of the `VirtualMachineClass` that supplies the VM's virtual hardware | ✗ | ✗ | _NA_ |
+| `spec.className` | The name of the `VirtualMachineClass` that supplies the VM's virtual hardware | ✓ | ✓ | _NA_ |
 | `spec.powerState` | The VM's desired power state | ✓ | ✓ | _NA_ |
-| `metadata.labels.topology.kubernetes.io/zone` | The desired availability zone in which to schedule the VM | ✓ | ✓ | ✓ |
+| `metadata.labels.topology.kubernetes.io/zone` | The desired availability zone in which to schedule the VM | x | x | ✓ |
 
 Some of a VM's hardware resources are derived from the policies defined by your infrastructure administrator, others may be influenced directly by a user.
 
@@ -118,9 +118,21 @@ A VM created with this VM class will have 2 CPUs and 4 GiB of memory. Additional
 
     Please note that the units for CPU are different in hardware and reservations/limits. Virtual hardware is specified in units of vCPUs, whereas CPU reservations/limits are in MHz. Memory can be specified in MiB, GiB, whereas memory reservations/limits are always in MB.
 
+### Resizing
+
+The VM's `spec.ClassName` field can be edited to point to a different class, causing the VM's virtual hardware configuration to be updated to the new class.
+
+!!! note "CPU/Memory Resize Only"
+
+   Currently, only CPU and Memory, and their associated limits and reservations, are updated during a resize. This may change in the future, but at this time, other fields from the class ConfigSpec are not updated during a resize.
+
+The VM must either be powered off or transitioning from powered off to powered on to be resized.
+
+By default, the VM will be resized once to reflect the new class. That is, if the `VirtualMachineClass` itself is later updated, the VM will not be resized again. The `vmoperator.vmware.com/same-vm-class-resize` annotation can be added to a VM to resize the VM as the class itself changes.
+
 ## Networking
 
-The field `spec.network` may be used to configure networking for a `VirtualMachine` resource.
+The `spec.network` field may be used to configure networking for a `VirtualMachine` resource.
 
 !!! note "Immutable Network Configuration"
 

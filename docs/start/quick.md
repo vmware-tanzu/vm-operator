@@ -11,7 +11,7 @@ Currently VM Operator is only available with VMware vSphere 7.0+ and VM Service 
 
 The following steps will also assume there is a `Namespace` ([7.0](https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-tanzu/GUID-1544C9FE-0B23-434E-B823-C59EFC2F7309.html), [8.0](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-with-tanzu-installation-configuration/GUID-1544C9FE-0B23-434E-B823-C59EFC2F7309.html)) named `my-namespace` and:
 
-* You have have write permissions in this namespace
+* You have write permissions in this namespace
 * There is an NSX-T network or vSphere Distributed network available to this namespace
 * There is a VM Class named `small` available to this namespace
 * There is a VM Image named `photon4` available to this namespace

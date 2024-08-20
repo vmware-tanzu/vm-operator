@@ -586,6 +586,20 @@ func GetAttachedDiskUUIDToPVC(
 	return diskUUIDToPVC, nil
 }
 
+func GetAttachedClassicDiskUUIDs(vmCtx pkgctx.VirtualMachineContext) map[string]struct{} {
+	diskUUIDs := map[string]struct{}{}
+
+	for _, vol := range vmCtx.VM.Status.Volumes {
+		if vol.Attached &&
+			vol.DiskUUID != "" &&
+			vol.Type == vmopv1.VirtualMachineStorageDiskTypeClassic {
+			diskUUIDs[vol.DiskUUID] = struct{}{}
+		}
+	}
+
+	return diskUUIDs
+}
+
 // GetAdditionalResourcesForBackup returns a list of Kubernetes client objects
 // that are relevant for VM backup (e.g. bootstrap referenced resources).
 func GetAdditionalResourcesForBackup(

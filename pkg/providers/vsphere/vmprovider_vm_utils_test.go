@@ -980,7 +980,7 @@ func vmUtilTests() {
 		)
 
 		BeforeEach(func() {
-			// Create multiple PVCs to verity only the expected one is returned.
+			// Create multiple PVCs to verify only the expected one is returned.
 			unusedPVC := builder.DummyPersistentVolumeClaim()
 			unusedPVC.Name = "unused-pvc"
 			unusedPVC.Namespace = vmCtx.VM.Namespace
@@ -1037,6 +1037,44 @@ func vmUtilTests() {
 			pvc := diskUUIDToPVCMap[attachedDiskUUID]
 			Expect(pvc.Name).To(Equal(attachedPVC.Name))
 			Expect(pvc.Namespace).To(Equal(attachedPVC.Namespace))
+		})
+	})
+
+	Context("GetAttachedClassicDiskUUIDs", func() {
+
+		var (
+			attachedClassicVolStatus = vmopv1.VirtualMachineVolumeStatus{
+				Name:     "attached-vol",
+				DiskUUID: "attached-classic-disk-uuid",
+				Attached: true,
+				Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+			}
+			unattachedClassicVolStatus = vmopv1.VirtualMachineVolumeStatus{
+				Name:     "unattached-vol",
+				DiskUUID: "unattached-classic-disk-uuid",
+				Attached: false,
+				Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+			}
+			pvcVolStatus = vmopv1.VirtualMachineVolumeStatus{
+				Name:     "attached-pvc-vol",
+				DiskUUID: "attached-pvc-disk-uuid",
+				Attached: true,
+				Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+			}
+		)
+
+		BeforeEach(func() {
+			vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+				attachedClassicVolStatus,
+				unattachedClassicVolStatus,
+				pvcVolStatus,
+			}
+		})
+
+		It("Should return only the attached classic disk UUID", func() {
+			diskUUIDs := vsphere.GetAttachedClassicDiskUUIDs(vmCtx)
+			Expect(diskUUIDs).To(HaveLen(1))
+			Expect(diskUUIDs).To(HaveKey(attachedClassicVolStatus.DiskUUID))
 		})
 	})
 

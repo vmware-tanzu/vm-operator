@@ -545,6 +545,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			DiskUUIDToPVC:       diskUUIDToPVC,
 			AdditionalResources: additionalResources,
 			BackupVersion:       fmt.Sprint(time.Now().Unix()),
+			ClassicDiskUUIDs:    GetAttachedClassicDiskUUIDs(vmCtx),
 		}
 		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
 			vmCtx.Logger.Error(err, "failed to backup VM")

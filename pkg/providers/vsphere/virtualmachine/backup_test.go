@@ -76,20 +76,16 @@ func backupTests() {
 				vmCtx = pkgctx.VirtualMachineContext{
 					Context: ctx,
 					Logger:  suite.GetLogger().WithValues("vmName", vcVM.Name()),
-					VM:      &vmopv1.VirtualMachine{},
+					VM:      builder.DummyVirtualMachine(),
 				}
 			})
 
 			AfterEach(func() {
-				vmCtx = pkgctx.VirtualMachineContext{}
-				vcVM = nil
+				// Backing up the YAML should not result in an update op being flagged.
+				Expect(ctxop.IsUpdate(vmCtx)).To(BeFalse())
 			})
 
 			Context("Backup VM Resource YAML", func() {
-				JustBeforeEach(func() {
-					vm := builder.DummyVirtualMachine()
-					vmCtx.VM = vm
-				})
 
 				When("No VM resource is stored in ExtraConfig", func() {
 					It("Should backup the current VM resource YAML in ExtraConfig", func() {
@@ -104,16 +100,13 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
-						if IncrementalRestore {
-							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
-						}
-
 						vmYAML, err := yaml.Marshal(vmCtx.VM)
 						Expect(err).NotTo(HaveOccurred())
 						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(vmYAML), true)
 
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
+							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
 						}
 					})
 				})
@@ -169,9 +162,6 @@ func backupTests() {
 						vmYAML, err := yaml.Marshal(vmCtx.VM)
 						Expect(err).NotTo(HaveOccurred())
 						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(vmYAML), true)
-						// Backing up the YAML should not result in an update op being
-						// flagged.
-						Expect(ctxop.IsUpdate(vmCtx)).To(BeFalse())
 
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
@@ -183,12 +173,12 @@ func backupTests() {
 				When("VM resource exists in ExtraConfig and gets an annotation change", func() {
 
 					JustBeforeEach(func() {
-						oldVM := vmCtx.VM.DeepCopy()
-						oldVM.ObjectMeta.Annotations = map[string]string{"foo": "bar"}
-
 						if IncrementalRestore {
-							oldVM.ObjectMeta.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
+							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
 						}
+
+						oldVM := vmCtx.VM.DeepCopy()
+						oldVM.Annotations["foo"] = "bar"
 
 						oldVMYAML, err := yaml.Marshal(oldVM)
 						Expect(err).NotTo(HaveOccurred())
@@ -216,11 +206,7 @@ func backupTests() {
 					})
 
 					It("Should backup VM resource YAML with the latest version in ExtraConfig", func() {
-						vmCtx.VM.ObjectMeta.Annotations = map[string]string{"foo": "bar", "new-key": "new-val"}
-
-						if IncrementalRestore {
-							vmCtx.VM.ObjectMeta.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
-						}
+						vmCtx.VM.Annotations["foo"] = "baz"
 
 						backupOpts := virtualmachine.BackupVirtualMachineOptions{
 							VMCtx: vmCtx,
@@ -246,13 +232,12 @@ func backupTests() {
 				When("VM resource exists in ExtraConfig and gets a label change", func() {
 
 					JustBeforeEach(func() {
-						oldVM := vmCtx.VM.DeepCopy()
-						oldVM.ObjectMeta.Labels = map[string]string{"foo": "bar"}
-
 						if IncrementalRestore {
-							oldVM.ObjectMeta.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
+							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
 						}
 
+						oldVM := vmCtx.VM.DeepCopy()
+						oldVM.ObjectMeta.Labels = map[string]string{"foo": "bar"}
 						oldVMYAML, err := yaml.Marshal(oldVM)
 						Expect(err).NotTo(HaveOccurred())
 						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(oldVMYAML))
@@ -280,9 +265,7 @@ func backupTests() {
 
 					It("Should backup VM resource YAML with the latest version in ExtraConfig", func() {
 						vmCtx.VM.ObjectMeta.Labels = map[string]string{"foo": "bar", "new-key": "new-val"}
-						if IncrementalRestore {
-							vmCtx.VM.ObjectMeta.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
-						}
+
 						backupOpts := virtualmachine.BackupVirtualMachineOptions{
 							VMCtx: vmCtx,
 							VcVM:  vcVM,
@@ -358,6 +341,7 @@ func backupTests() {
 						if IncrementalRestore {
 							// verify it doesn't get updated to vT3 and stays at vT2
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
+							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 						}
 					})
 				})
@@ -378,10 +362,6 @@ func backupTests() {
 						},
 					}
 				)
-				JustBeforeEach(func() {
-					vm := builder.DummyVirtualMachine()
-					vmCtx.VM = vm
-				})
 
 				When("No additional resource is stored in ExtraConfig", func() {
 
@@ -623,9 +603,6 @@ func backupTests() {
 				When("VM has disks that are attached from PVCs", func() {
 
 					JustBeforeEach(func() {
-						vm := builder.DummyVirtualMachine()
-						vmCtx.VM = vm
-
 						if IncrementalRestore {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
 						}
@@ -693,11 +670,7 @@ func backupTests() {
 			})
 
 			if IncrementalRestore {
-				Context("Incremental Restore only", func() {
-					JustBeforeEach(func() {
-						vm := builder.DummyVirtualMachine()
-						vmCtx.VM = vm
-					})
+				Context("Backup Version", func() {
 
 					When("backup versions (ie) vm annotation and extra config key don't match", func() {
 						JustBeforeEach(func() {
@@ -763,7 +736,7 @@ func backupTests() {
 						})
 					})
 
-					When("When backup versions (ie) vm annotation and extra config key match", func() {
+					When("backup versions (ie) vm annotation and extra config key match", func() {
 						JustBeforeEach(func() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
 							vmYAML, err := yaml.Marshal(vmCtx.VM)
@@ -809,7 +782,7 @@ func backupTests() {
 						})
 					})
 
-					When("When vm has no backup version annotation", func() {
+					When("vm has no backup version annotation", func() {
 						JustBeforeEach(func() {
 							vmYAML, err := yaml.Marshal(vmCtx.VM)
 							Expect(err).NotTo(HaveOccurred())
@@ -842,7 +815,7 @@ func backupTests() {
 						})
 					})
 
-					When("When vm has invalid backup version annotation", func() {
+					When("vm has invalid backup version annotation", func() {
 						JustBeforeEach(func() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = "invalid"
 							vmYAML, err := yaml.Marshal(vmCtx.VM)
@@ -880,7 +853,7 @@ func backupTests() {
 						})
 					})
 
-					When("When vm has invalid backup version extraConfig key", func() {
+					When("vm has invalid backup version extraConfig key", func() {
 						JustBeforeEach(func() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
 							vmYAML, err := yaml.Marshal(vmCtx.VM)
@@ -915,6 +888,69 @@ func backupTests() {
 							err := virtualmachine.BackupVirtualMachine(backupOpts)
 							Expect(err).To(HaveOccurred())
 							Expect(err.Error()).To(Equal(`strconv.ParseInt: parsing "invalid": invalid syntax`))
+						})
+					})
+				})
+
+				Context("Backup Classic Disk Data", func() {
+					When("VM has no static disks attached", func() {
+						It("Should skip backing up classic disk data", func() {
+							backupOpts := virtualmachine.BackupVirtualMachineOptions{
+								VMCtx:            vmCtx,
+								VcVM:             vcVM,
+								ClassicDiskUUIDs: nil,
+							}
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.ClassicDiskDataExtraConfigKey, "", false)
+						})
+					})
+
+					When("VM has classic disks attached", func() {
+						It("Should backup classic disk data", func() {
+							backupOpts := virtualmachine.BackupVirtualMachineOptions{
+								VMCtx:            vmCtx,
+								VcVM:             vcVM,
+								ClassicDiskUUIDs: map[string]struct{}{vcSimDiskUUID: {}},
+								BackupVersion:    vT1,
+							}
+
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							diskData := []virtualmachine.ClassicDiskData{
+								{
+									FileName: vcSimDiskFileName,
+								},
+							}
+							diskDataJSON, err := json.Marshal(diskData)
+							Expect(err).NotTo(HaveOccurred())
+							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.ClassicDiskDataExtraConfigKey, string(diskDataJSON), true)
+							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
+							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
+						})
+					})
+
+					When("VM already has classic disk data backup in ExtraConfig", func() {
+						JustBeforeEach(func() {
+							backupOpts := virtualmachine.BackupVirtualMachineOptions{
+								VMCtx:            vmCtx,
+								VcVM:             vcVM,
+								ClassicDiskUUIDs: map[string]struct{}{vcSimDiskUUID: {}},
+								BackupVersion:    vT1,
+							}
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						})
+
+						It("Should skip backing up classic disk data", func() {
+							backupOpts := virtualmachine.BackupVirtualMachineOptions{
+								VMCtx:            vmCtx,
+								VcVM:             vcVM,
+								ClassicDiskUUIDs: map[string]struct{}{vcSimDiskUUID: {}},
+								BackupVersion:    vT2,
+							}
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+
+							// Verify the backup version remains the same which indicates the backup was skipped.
+							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
+							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
 						})
 					})
 				})

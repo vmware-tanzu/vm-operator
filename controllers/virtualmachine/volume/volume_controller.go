@@ -854,7 +854,11 @@ func (r *Reconciler) preserveOrphanedAttachmentStatus(
 	var volumeStatus []vmopv1.VirtualMachineVolumeStatus
 	for _, volume := range ctx.VM.Status.Volumes {
 		if attachment, ok := uuidAttachments[volume.DiskUUID]; ok {
-			volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volume.Name+":detaching", attachment))
+			volName := volume.Name
+			if !strings.HasSuffix(volName, ":detaching") {
+				volName += ":detaching"
+			}
+			volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volName, attachment))
 		}
 	}
 

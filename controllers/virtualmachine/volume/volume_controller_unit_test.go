@@ -809,7 +809,9 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				})
 
 				attachment = cnsAttachmentForVMVolume(vm, vmVol)
+				attachment.Finalizers = append(attachment.Finalizers, "simulate-orphaned-volume")
 				attachment.Status.Attached = true
+				attachment.Status.Error = "slowness"
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
 				}
@@ -824,8 +826,24 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				By("Orphaned CNS volume preserved in Status.Volumes", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
 					assertVMVolStatusFromAttachmentDetaching(vmVol, attachment, vm.Status.Volumes[0])
+				})
 
-					// Not in VM Spec so should be deleted.
+				By("Orphaned CNS volume is still preserved in Status.Volumes after another reconcile", func() {
+					Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					assertVMVolStatusFromAttachmentDetaching(vmVol, attachment, vm.Status.Volumes[0])
+				})
+
+				By("CNS attachment is finally deleted", func() {
+					attachment1 := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+					Expect(attachment1).ToNot(BeNil())
+					Expect(attachment1.DeletionTimestamp.IsZero()).To(BeFalse())
+					attachment1.Finalizers = nil
+					Expect(ctx.Client.Update(ctx, attachment1)).To(Succeed())
+
+					Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+					Expect(vm.Status.Volumes).To(BeEmpty())
 					Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
 				})
 			})

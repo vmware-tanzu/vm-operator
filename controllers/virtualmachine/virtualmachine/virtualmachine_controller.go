@@ -403,19 +403,23 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 	err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM)
 
-	if ctxop.IsCreate(ctx) {
+	switch {
+	case ctxop.IsCreate(ctx):
 		r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
-	} else if ctxop.IsUpdate(ctx) {
+	case ctxop.IsUpdate(ctx):
 		r.Recorder.EmitEvent(ctx.VM, "Update", err, false)
+	case err != nil:
+		// Catch all event for neither create nor update op.
+		r.Recorder.EmitEvent(ctx.VM, "ReconcileNormal", err, true)
 	}
+
+	// Always check if this VM needs to be in the probe queue. We want to do this even if
+	// the VM hasn't been created yet so the condition is updated.
+	r.Prober.AddToProberManager(ctx.VM)
 
 	if err != nil {
-		r.Recorder.EmitEvent(ctx.VM, "CreateOrUpdate", err, true)
 		return err
 	}
-
-	// Add this VM to prober manager if ReconcileNormal succeeds.
-	r.Prober.AddToProberManager(ctx.VM)
 
 	return nil
 }

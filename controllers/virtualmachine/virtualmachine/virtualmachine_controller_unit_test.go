@@ -157,23 +157,26 @@ func unitTestsReconcile() {
 			Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
 		})
 
-		It("Should not call add to Prober Manager if CreateOrUpdate fails", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				return errors.New(providerError)
-			}
+		Context("ProberManager", func() {
 
-			err := reconciler.ReconcileNormal(vmCtx)
-			Expect(err).To(HaveOccurred())
-			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeFalse())
-		})
+			It("Should call add to Prober Manager if ReconcileNormal fails", func() {
+				fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					return errors.New(providerError)
+				}
 
-		It("Should call add to Prober Manager if ReconcileNormal succeeds", func() {
-			fakeProbeManager.AddToProberManagerFn = func(vm *vmopv1.VirtualMachine) {
-				fakeProbeManager.IsAddToProberManagerCalled = true
-			}
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeFalse())
+			})
 
-			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
-			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeTrue())
+			It("Should call add to Prober Manager if ReconcileNormal succeeds", func() {
+				fakeProbeManager.AddToProberManagerFn = func(vm *vmopv1.VirtualMachine) {
+					fakeProbeManager.IsAddToProberManagerCalled = true
+				}
+
+				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeTrue())
+			})
 		})
 
 		It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation", func() {
@@ -183,39 +186,46 @@ func unitTestsReconcile() {
 			}
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
-			expectEvent(ctx, "CreateSuccess")
+			expectEvents(ctx, "CreateSuccess")
 		})
 
-		It("Should emit CreateFailure and CreateOrUpdateFailure events if ReconcileNormal causes a failed VM create", func() {
+		It("Should emit CreateFailure event if ReconcileNormal causes a failed VM create", func() {
 			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 				ctxop.MarkCreate(ctx)
 				return fmt.Errorf("fake")
 			}
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
-			expectEvent(ctx, "CreateFailure")
-			expectEvent(ctx, "CreateOrUpdateFailure")
+			expectEvents(ctx, "CreateFailure")
 		})
 
-		It("Should emit an UpdateSuccess event if ReconcileNormal causes a successful VM update", func() {
+		It("Should emit UpdateSuccess event if ReconcileNormal causes a successful VM update", func() {
 			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 				ctxop.MarkUpdate(ctx)
 				return nil
 			}
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
-			expectEvent(ctx, "UpdateSuccess")
+			expectEvents(ctx, "UpdateSuccess")
 		})
 
-		It("Should emit UpdateFailure and CreateOrUpdateFailure events if ReconcileNormal causes a failed VM update", func() {
+		It("Should emit UpdateFailure event if ReconcileNormal causes a failed VM update", func() {
 			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 				ctxop.MarkUpdate(ctx)
 				return fmt.Errorf("fake")
 			}
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
-			expectEvent(ctx, "UpdateFailure")
-			expectEvent(ctx, "CreateOrUpdateFailure")
+			expectEvents(ctx, "UpdateFailure")
+		})
+
+		It("Should emit ReconcileNormalFailure if ReconcileNormal fails for neither create or update op", func() {
+			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+				return fmt.Errorf("fake")
+			}
+
+			Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
+			expectEvents(ctx, "ReconcileNormalFailure")
 		})
 	})
 
@@ -241,7 +251,7 @@ func unitTestsReconcile() {
 			err := reconciler.ReconcileDelete(vmCtx)
 			Expect(err).NotTo(HaveOccurred())
 
-			expectEvent(ctx, "DeleteSuccess")
+			expectEvents(ctx, "DeleteSuccess")
 		})
 
 		It("will emit corresponding event during delete failure", func() {
@@ -252,7 +262,7 @@ func unitTestsReconcile() {
 			err := reconciler.ReconcileDelete(vmCtx)
 			Expect(err).To(HaveOccurred())
 
-			expectEvent(ctx, "DeleteFailure")
+			expectEvents(ctx, "DeleteFailure")
 		})
 
 		It("Should not remove from Prober Manager if ReconcileDelete fails", func() {
@@ -277,10 +287,12 @@ func unitTestsReconcile() {
 	})
 }
 
-func expectEvent(ctx *builder.UnitTestContextForController, eventStr string) {
-	var event string
-	// This does not work if we have more than one event and the first one does not match.
-	EventuallyWithOffset(1, ctx.Events).Should(Receive(&event))
-	eventComponents := strings.Split(event, " ")
-	ExpectWithOffset(1, eventComponents[1]).To(Equal(eventStr))
+func expectEvents(ctx *builder.UnitTestContextForController, eventStrs ...string) {
+	for _, s := range eventStrs {
+		var event string
+		EventuallyWithOffset(1, ctx.Events).Should(Receive(&event), "receive expected event: "+s)
+		eventComponents := strings.Split(event, " ")
+		ExpectWithOffset(1, eventComponents[1]).To(Equal(s))
+	}
+	ConsistentlyWithOffset(1, ctx.Events).ShouldNot(Receive())
 }

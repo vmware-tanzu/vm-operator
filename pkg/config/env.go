@@ -61,6 +61,7 @@ func FromEnv() Config {
 	setBool(env.FSSVMImportNewNet, &config.Features.VMImportNewNet)
 	setBool(env.FSSWorkloadDomainIsolation, &config.Features.WorkloadDomainIsolation)
 	setBool(env.FSSVMIncrementalRestore, &config.Features.VMIncrementalRestore)
+	setBool(env.FSSBringYourOwnEncryptionKey, &config.Features.BringYourOwnEncryptionKey)
 
 	return config
 }

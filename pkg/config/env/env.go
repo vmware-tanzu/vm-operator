@@ -54,6 +54,7 @@ const (
 	FSSVMImportNewNet
 	FSSWorkloadDomainIsolation
 	FSSVMIncrementalRestore
+	FSSBringYourOwnEncryptionKey
 
 	_varNameEnd
 )
@@ -164,6 +165,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
 	case FSSVMIncrementalRestore:
 		return "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
+	case FSSBringYourOwnEncryptionKey:
+		return "FSS_WCP_VMSERVICE_BYOK"
 	}
 	panic("unknown environment variable")
 }

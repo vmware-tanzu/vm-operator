@@ -6,6 +6,7 @@ replace (
 	github.com/envoyproxy/go-control-plane => github.com/envoyproxy/go-control-plane v0.9.4
 	github.com/envoyproxy/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v0.1.0
 	github.com/vmware-tanzu/vm-operator/api => ./api
+	github.com/vmware-tanzu/vm-operator/external/byok => ./external/byok
 	github.com/vmware-tanzu/vm-operator/external/ncp => ./external/ncp
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota => ./external/storage-policy-quota
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ./external/tanzu-topology
@@ -24,6 +25,7 @@ require (
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20240730023032-0784c0791081
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000

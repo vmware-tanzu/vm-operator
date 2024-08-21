@@ -12,9 +12,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/crd.nsx.vmware.com/v1alpha1"
 
-	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -72,6 +73,7 @@ func KnownObjectTypes() []client.Object {
 		&vpcv1alpha1.Subnet{},
 		&vpcv1alpha1.SubnetSet{},
 		&vpcv1alpha1.SubnetPort{},
+		&byokv1.EncryptionClass{},
 	}
 }
 
@@ -87,6 +89,7 @@ func NewScheme() *runtime.Scheme {
 	_ = vmopv1a1.AddToScheme(scheme)
 	_ = vmopv1a2.AddToScheme(scheme)
 	_ = vmopv1.AddToScheme(scheme)
+	_ = byokv1.AddToScheme(scheme)
 	_ = ncpv1alpha1.AddToScheme(scheme)
 	_ = cnsapis.AddToScheme(scheme)
 	_ = spqv1.AddToScheme(scheme)

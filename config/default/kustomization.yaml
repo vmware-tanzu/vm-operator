@@ -11,6 +11,7 @@ resources:
 - ../rbac
 - ../webhook
 - ../certmanager
+- ../crd/external-crds/vmencryption.vmware.com_encryptionclasses.yaml
 
 patchesStrategicMerge:
 - manager_default_container_patch.yaml

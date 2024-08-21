@@ -7,13 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/serializer/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -274,19 +275,15 @@ func isVMBackupUpToDate(vm *vmopv1.VirtualMachine, backup string) (bool, error) 
 		return false, err
 	}
 
-	backupUnstructured := &unstructured.Unstructured{}
+	backupVM := metav1.PartialObjectMetadata{}
 	decUnstructured := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
-	if _, _, err := decUnstructured.Decode([]byte(backupYAML), nil, backupUnstructured); err != nil {
+	if _, _, err := decUnstructured.Decode([]byte(backupYAML), nil, &backupVM); err != nil {
 		return false, err
 	}
 
-	if vm.GetGeneration() != backupUnstructured.GetGeneration() ||
-		!equality.Semantic.DeepEqual(vm.Labels, backupUnstructured.GetLabels()) ||
-		!equality.Semantic.DeepEqual(vm.Annotations, backupUnstructured.GetAnnotations()) {
-		return false, nil
-	}
-
-	return true, nil
+	return vm.Generation == backupVM.Generation &&
+		maps.Equal(vm.Labels, backupVM.Labels) &&
+		maps.Equal(vm.Annotations, backupVM.Annotations), nil
 }
 
 // getDesiredAdditionalResourceYAMLForBackup returns the encoded and gzipped

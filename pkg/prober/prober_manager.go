@@ -49,7 +49,7 @@ type Manager interface {
 // manager represents the probe manager, which implements the ManagerInterface.
 type manager struct {
 	client         client.Client
-	readinessQueue workqueue.DelayingInterface
+	readinessQueue worker.DelayingInterface
 	prober         *probe.Prober
 	log            logr.Logger
 	recorder       vmoprecord.Recorder
@@ -210,7 +210,7 @@ func (m *manager) processVMProbe(w worker.Worker, ctx *proberctx.ProbeContext) e
 
 // addItemToQueue adds the vm to the queue. If immediate is true, immediately add the item.
 // Otherwise, add to queue after a time period.
-func (m *manager) addItemToQueue(queue workqueue.DelayingInterface, ctx *proberctx.ProbeContext, item client.ObjectKey, immediate bool) {
+func (m *manager) addItemToQueue(queue worker.DelayingInterface, ctx *proberctx.ProbeContext, item client.ObjectKey, immediate bool) {
 	if immediate {
 		queue.Add(item)
 	} else {

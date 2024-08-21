@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"sync"
 
-	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -26,10 +25,10 @@ type funcs struct {
 type FakeWorker struct {
 	sync.Mutex
 	funcs
-	queue workqueue.DelayingInterface
+	queue worker.DelayingInterface
 }
 
-func NewFakeWorker(queue workqueue.DelayingInterface) worker.Worker {
+func NewFakeWorker(queue worker.DelayingInterface) worker.Worker {
 	return &FakeWorker{
 		queue: queue,
 	}
@@ -42,7 +41,7 @@ func (w *FakeWorker) Reset() {
 	w.funcs = funcs{}
 }
 
-func (w *FakeWorker) GetQueue() workqueue.DelayingInterface {
+func (w *FakeWorker) GetQueue() worker.DelayingInterface {
 	return w.queue
 }
 

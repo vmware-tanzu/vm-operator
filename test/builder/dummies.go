@@ -136,8 +136,9 @@ func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrar
 		Status: imgregv1a1.ContentLibraryStatus{
 			Conditions: []imgregv1a1.Condition{
 				{
-					Type:   imgregv1a1.ReadyCondition,
-					Status: corev1.ConditionTrue,
+					Type:               imgregv1a1.ReadyCondition,
+					Status:             corev1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
 				},
 			},
 		},

@@ -708,6 +708,8 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 }
 
 // updateVMService syncs the VirtualMachineService Status from the Service status.
+//
+//nolint:unparam
 func (r *ReconcileVirtualMachineService) updateVMService(ctx *pkgctx.VirtualMachineServiceContext, service *corev1.Service) error {
 	vmService := ctx.VMService
 

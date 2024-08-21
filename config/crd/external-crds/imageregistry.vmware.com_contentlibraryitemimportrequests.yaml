@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.15.0
+    controller-gen.kubebuilder.io/version: v0.16.1
   name: contentlibraryitemimportrequests.imageregistry.vmware.com
 spec:
   group: imageregistry.vmware.com
@@ -244,6 +244,7 @@ spec:
                         can be useful (see .node.status.conditions), the ability to deconflict is important.
                       type: string
                   required:
+                  - lastTransitionTime
                   - status
                   - type
                   type: object
@@ -291,6 +292,8 @@ spec:
                     description: SessionUUID is the identifier that uniquely identifies
                       the file upload session on the library item in vSphere.
                     type: string
+                required:
+                - sessionUUID
                 type: object
               itemRef:
                 description: |-

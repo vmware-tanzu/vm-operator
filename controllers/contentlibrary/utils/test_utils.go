@@ -41,8 +41,9 @@ func DummyClusterContentLibraryItem(name string) *imgregv1a1.ClusterContentLibra
 			},
 			Conditions: []imgregv1a1.Condition{
 				{
-					Type:   imgregv1a1.ReadyCondition,
-					Status: corev1.ConditionTrue,
+					Type:               imgregv1a1.ReadyCondition,
+					Status:             corev1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
 				},
 			},
 			SecurityCompliance: &[]bool{true}[0],
@@ -75,8 +76,9 @@ func DummyContentLibraryItem(name, namespace string) *imgregv1a1.ContentLibraryI
 			},
 			Conditions: []imgregv1a1.Condition{
 				{
-					Type:   imgregv1a1.ReadyCondition,
-					Status: corev1.ConditionTrue,
+					Type:               imgregv1a1.ReadyCondition,
+					Status:             corev1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
 				},
 			},
 			SecurityCompliance: &[]bool{true}[0],

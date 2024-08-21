@@ -8,27 +8,10 @@ rules:
   - ""
   resources:
   - configmaps
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - configmaps
-  - events
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - endpoints
+  - events
+  - persistentvolumeclaims
+  - services
   verbs:
   - create
   - delete
@@ -41,50 +24,12 @@ rules:
   - ""
   resources:
   - namespaces
-  - resourcequotas
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - nodes
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumeclaims
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
+  - resourcequotas
   - secrets
   verbs:
   - get
   - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - services
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - ""
@@ -98,6 +43,7 @@ rules:
   - cns.vmware.com
   resources:
   - cnsnodevmattachments
+  - storagepolicyusages
   verbs:
   - create
   - delete
@@ -128,25 +74,6 @@ rules:
   - cns.vmware.com
   resources:
   - storagepolicyquotas/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - cns.vmware.com
-  resources:
-  - storagepolicyusages
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cns.vmware.com
-  resources:
   - storagepolicyusages/status
   verbs:
   - get
@@ -176,36 +103,6 @@ rules:
   - imageregistry.vmware.com
   resources:
   - clustercontentlibraryitems
-  verbs:
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - imageregistry.vmware.com
-  resources:
-  - clustercontentlibraryitems/status
-  verbs:
-  - get
-- apiGroups:
-  - imageregistry.vmware.com
-  resources:
-  - contentlibraries
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - imageregistry.vmware.com
-  resources:
-  - contentlibraries/status
-  verbs:
-  - get
-- apiGroups:
-  - imageregistry.vmware.com
-  resources:
   - contentlibraryitems
   verbs:
   - delete
@@ -217,9 +114,19 @@ rules:
 - apiGroups:
   - imageregistry.vmware.com
   resources:
+  - clustercontentlibraryitems/status
+  - contentlibraries/status
   - contentlibraryitems/status
   verbs:
   - get
+- apiGroups:
+  - imageregistry.vmware.com
+  resources:
+  - contentlibraries
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - netoperator.vmware.com
   resources:
@@ -244,29 +151,8 @@ rules:
   - topology.tanzu.vmware.com
   resources:
   - availabilityzones
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - topology.tanzu.vmware.com
-  resources:
   - availabilityzones/status
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - topology.tanzu.vmware.com
-  resources:
   - zones
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - topology.tanzu.vmware.com
-  resources:
   - zones/status
   verbs:
   - get
@@ -276,6 +162,14 @@ rules:
   - vmoperator.vmware.com
   resources:
   - clustervirtualmachineimages
+  - virtualmachineclasses
+  - virtualmachineimages
+  - virtualmachinepublishrequests
+  - virtualmachines
+  - virtualmachineservices
+  - virtualmachinesetresourcepolicies
+  - virtualmachinewebconsolerequests
+  - webconsolerequests
   verbs:
   - create
   - delete
@@ -288,47 +182,6 @@ rules:
   - vmoperator.vmware.com
   resources:
   - clustervirtualmachineimages/status
-  verbs:
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachineclasses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachineclasses/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachineimages
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
   - virtualmachineimages/status
   verbs:
   - get
@@ -339,19 +192,14 @@ rules:
 - apiGroups:
   - vmoperator.vmware.com
   resources:
-  - virtualmachinepublishrequests
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
+  - virtualmachineclasses/status
   - virtualmachinepublishrequests/status
+  - virtualmachinereplicasets/status
+  - virtualmachines/status
+  - virtualmachineservices/status
+  - virtualmachinesetresourcepolicies/status
+  - virtualmachinewebconsolerequests/status
+  - webconsolerequests/status
   verbs:
   - get
   - patch
@@ -367,114 +215,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachinereplicasets/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachines
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachines/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachineservices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachineservices/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachinesetresourcepolicies
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachinesetresourcepolicies/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachinewebconsolerequests
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachinewebconsolerequests/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - webconsolerequests
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - webconsolerequests/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - vmware.com
   resources:

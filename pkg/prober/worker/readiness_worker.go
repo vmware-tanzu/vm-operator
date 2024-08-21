@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -29,7 +28,7 @@ const (
 
 // readinessWorker implements Worker interface.
 type readinessWorker struct {
-	queue    workqueue.DelayingInterface
+	queue    DelayingInterface
 	prober   *probe.Prober
 	client   client.Client
 	recorder vmoprecord.Recorder
@@ -37,7 +36,7 @@ type readinessWorker struct {
 
 // NewReadinessWorker creates a new readiness worker to run readiness probes.
 func NewReadinessWorker(
-	queue workqueue.DelayingInterface,
+	queue DelayingInterface,
 	prober *probe.Prober,
 	client client.Client,
 	recorder vmoprecord.Recorder,
@@ -50,7 +49,7 @@ func NewReadinessWorker(
 	}
 }
 
-func (w *readinessWorker) GetQueue() workqueue.DelayingInterface {
+func (w *readinessWorker) GetQueue() DelayingInterface {
 	return w.queue
 }
 

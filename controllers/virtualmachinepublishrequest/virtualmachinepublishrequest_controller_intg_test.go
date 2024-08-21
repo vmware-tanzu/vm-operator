@@ -104,8 +104,9 @@ func intgTestsReconcile() {
 				Expect(ctx.Client.Create(ctx, cl)).To(Succeed())
 				cl.Status.Conditions = []imgregv1a1.Condition{
 					{
-						Type:   imgregv1a1.ReadyCondition,
-						Status: corev1.ConditionTrue,
+						Type:               imgregv1a1.ReadyCondition,
+						Status:             corev1.ConditionTrue,
+						LastTransitionTime: metav1.Now(),
 					},
 				}
 				Expect(ctx.Client.Status().Update(ctx, cl)).To(Succeed())

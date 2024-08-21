@@ -12,9 +12,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 )
 
+type DelayingInterface = workqueue.TypedDelayingInterface[any]
+
 // Worker represents a prober worker interface.
 type Worker interface {
-	GetQueue() workqueue.DelayingInterface
+	GetQueue() DelayingInterface
 	CreateProbeContext(vm *vmopv1.VirtualMachine) (*context.ProbeContext, error)
 	DoProbe(ctx *context.ProbeContext) error
 	ProcessProbeResult(ctx *context.ProbeContext, res probe.Result, resErr error) error

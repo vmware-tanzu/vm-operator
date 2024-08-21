@@ -200,6 +200,9 @@ issues:
   - linters:
     - staticcheck
     text: "^SA1019: .*TCPSocket is deprecated"
+  - linters:
+    - govet
+    text: "printf: non-constant format string in call"
   # Dot imports for gomega or ginkgo are allowed within test files.
   - path: test/builder/intg_test_context.go
     text: should not use dot imports

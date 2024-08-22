@@ -50,6 +50,10 @@ type Options struct {
 	// for serving health probes
 	HealthProbeBindAddress string
 
+	// PprofBindAddress is the address that the controller should bind to for
+	// serving pprof endpoints.
+	PprofBindAddress string
+
 	// SyncPeriod is the amount of time to wait between syncing the local
 	// object cache with the API server.
 	SyncPeriod time.Duration

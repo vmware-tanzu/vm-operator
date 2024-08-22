@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vmopbackup "github.com/vmware-tanzu/vm-operator/api/backup"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
@@ -650,7 +651,7 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
-						diskData := []virtualmachine.PVCDiskData{
+						diskData := []vmopbackup.PVCDiskData{
 							{
 								FileName:    vcSimDiskFileName,
 								PVCName:     dummyPVC.Name,
@@ -915,7 +916,7 @@ func backupTests() {
 							}
 
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-							diskData := []virtualmachine.ClassicDiskData{
+							diskData := []vmopbackup.ClassicDiskData{
 								{
 									FileName: vcSimDiskFileName,
 								},

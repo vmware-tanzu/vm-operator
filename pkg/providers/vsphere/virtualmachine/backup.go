@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	k8syaml "sigs.k8s.io/yaml"
 
+	vmopbackup "github.com/vmware-tanzu/vm-operator/api/backup"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -36,22 +37,6 @@ type BackupVirtualMachineOptions struct {
 	AdditionalResources []client.Object
 	BackupVersion       string
 	ClassicDiskUUIDs    map[string]struct{}
-}
-
-// PVCDiskData contains the data of a disk attached to VM backed by a PVC.
-type PVCDiskData struct {
-	// Filename contains the datastore path to the virtual disk.
-	FileName string
-	// PVCName is the name of the PVC backed by the virtual disk.
-	PVCName string
-	// AccessMode is the access modes of the PVC backed by the virtual disk.
-	AccessModes []corev1.PersistentVolumeAccessMode
-}
-
-// ClassicDiskData contains the data of a classic (static) disk attached to VM.
-type ClassicDiskData struct {
-	// Filename contains the datastore path to the virtual disk.
-	FileName string
 }
 
 // BackupVirtualMachine backs up the required data of a VM into its ExtraConfig.
@@ -391,21 +376,21 @@ func getDesiredDiskDataForBackup(
 	}
 
 	var (
-		pvcDiskData     []PVCDiskData
-		classicDiskData []ClassicDiskData
+		pvcDiskData     []vmopbackup.PVCDiskData
+		classicDiskData []vmopbackup.ClassicDiskData
 	)
 
 	for _, device := range deviceList.SelectByType((*vimtypes.VirtualDisk)(nil)) {
 		if disk, ok := device.(*vimtypes.VirtualDisk); ok {
 			if b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
 				if pvc, ok := opts.DiskUUIDToPVC[b.Uuid]; ok {
-					pvcDiskData = append(pvcDiskData, PVCDiskData{
+					pvcDiskData = append(pvcDiskData, vmopbackup.PVCDiskData{
 						FileName:    b.FileName,
 						PVCName:     pvc.Name,
 						AccessModes: pvc.Spec.AccessModes,
 					})
 				} else if _, ok := opts.ClassicDiskUUIDs[b.Uuid]; ok {
-					classicDiskData = append(classicDiskData, ClassicDiskData{
+					classicDiskData = append(classicDiskData, vmopbackup.ClassicDiskData{
 						FileName: b.FileName,
 					})
 				}

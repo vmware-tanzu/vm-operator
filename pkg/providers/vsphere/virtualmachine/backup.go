@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	k8syaml "sigs.k8s.io/yaml"
 
+	vmopbackup "github.com/vmware-tanzu/vm-operator/api/backup"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -35,16 +36,7 @@ type BackupVirtualMachineOptions struct {
 	DiskUUIDToPVC       map[string]corev1.PersistentVolumeClaim
 	AdditionalResources []client.Object
 	BackupVersion       string
-}
-
-// PVCDiskData contains the data of a disk attached to VM backed by a PVC.
-type PVCDiskData struct {
-	// Filename contains the datastore path to the virtual disk.
-	FileName string
-	// PVCName is the name of the PVC backed by the virtual disk.
-	PVCName string
-	// AccessMode is the access modes of the PVC backed by the virtual disk.
-	AccessModes []corev1.PersistentVolumeAccessMode
+	ClassicDiskUUIDs    map[string]struct{}
 }
 
 // BackupVirtualMachine backs up the required data of a VM into its ExtraConfig.
@@ -109,9 +101,9 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		})
 	}
 
-	pvcDiskData, err := getDesiredPVCDiskDataForBackup(opts, curExCfg)
+	pvcDiskData, classicDiskData, err := getDesiredDiskDataForBackup(opts, curExCfg)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, "failed to get PVC disk data for backup")
+		opts.VMCtx.Logger.Error(err, "failed to get disk data for backup")
 		return err
 	}
 
@@ -122,6 +114,17 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 			Key:   vmopv1.PVCDiskDataExtraConfigKey,
 			Value: pvcDiskData,
 		})
+	}
+
+	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
+		if classicDiskData == "" {
+			opts.VMCtx.Logger.V(4).Info("Skipping classic disk data backup as unchanged")
+		} else {
+			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
+				Key:   vmopv1.ClassicDiskDataExtraConfigKey,
+				Value: classicDiskData,
+			})
+		}
 	}
 
 	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
@@ -358,51 +361,77 @@ func getBackupResourceVersions(ecResourceData string) (map[string]string, error)
 	return resourceVersions, nil
 }
 
-func getDesiredPVCDiskDataForBackup(
+func getDesiredDiskDataForBackup(
 	opts BackupVirtualMachineOptions,
-	extraConfig pkgutil.OptionValues) (string, error) {
+	extraConfig pkgutil.OptionValues) (string, string, error) {
 
-	// Return an empty string to skip backup if no disk uuid to PVC is specified.
-	if len(opts.DiskUUIDToPVC) == 0 {
-		return "", nil
+	// Return an empty string to skip backup if no disk data is specified.
+	if len(opts.DiskUUIDToPVC) == 0 && len(opts.ClassicDiskUUIDs) == 0 {
+		return "", "", nil
 	}
 
 	deviceList, err := opts.VcVM.Device(opts.VMCtx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	var diskData []PVCDiskData
+	var (
+		pvcDiskData     []vmopbackup.PVCDiskData
+		classicDiskData []vmopbackup.ClassicDiskData
+	)
+
 	for _, device := range deviceList.SelectByType((*vimtypes.VirtualDisk)(nil)) {
 		if disk, ok := device.(*vimtypes.VirtualDisk); ok {
 			if b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
 				if pvc, ok := opts.DiskUUIDToPVC[b.Uuid]; ok {
-					diskData = append(diskData, PVCDiskData{
+					pvcDiskData = append(pvcDiskData, vmopbackup.PVCDiskData{
 						FileName:    b.FileName,
 						PVCName:     pvc.Name,
 						AccessModes: pvc.Spec.AccessModes,
+					})
+				} else if _, ok := opts.ClassicDiskUUIDs[b.Uuid]; ok {
+					classicDiskData = append(classicDiskData, vmopbackup.ClassicDiskData{
+						FileName: b.FileName,
 					})
 				}
 			}
 		}
 	}
 
-	diskDataJSON, err := json.Marshal(diskData)
+	pvcDiskDataJSON, err := json.Marshal(pvcDiskData)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	diskDataBackup, err := pkgutil.EncodeGzipBase64(string(diskDataJSON))
+	pvcDiskDataBackup, err := pkgutil.EncodeGzipBase64(string(pvcDiskDataJSON))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	// Return an empty string to skip the backup if the data is unchanged.
-	curDiskDataBackup, _ := extraConfig.GetString(vmopv1.PVCDiskDataExtraConfigKey)
-	if diskDataBackup == curDiskDataBackup {
-		return "", nil
+	// Return an empty string to skip backup if PVC disk data is unchanged.
+	curBackup, _ := extraConfig.GetString(vmopv1.PVCDiskDataExtraConfigKey)
+	if pvcDiskDataBackup == curBackup {
+		pvcDiskDataBackup = ""
 	}
 
-	return diskDataBackup, nil
+	var classicDiskDataBackup string
+	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
+		classicDiskDataJSON, err := json.Marshal(classicDiskData)
+		if err != nil {
+			return "", "", err
+		}
+		classicDiskDataBackup, err = pkgutil.EncodeGzipBase64(string(classicDiskDataJSON))
+		if err != nil {
+			return "", "", err
+		}
+
+		// Return an empty string to skip backup if classic disk data is unchanged.
+		curBackup, _ := extraConfig.GetString(vmopv1.ClassicDiskDataExtraConfigKey)
+		if classicDiskDataBackup == curBackup {
+			classicDiskDataBackup = ""
+		}
+	}
+
+	return pvcDiskDataBackup, classicDiskDataBackup, nil
 }
 
 func setLastBackupVersionAnnotation(vm *vmopv1.VirtualMachine, version string) {

@@ -166,6 +166,10 @@ const (
 	// PVC disk data in JSON, compressed using gzip and base64-encoded.
 	PVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
 
+	// ClassicDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
+	// classic (static) disk data in JSON, compressed using gzip and base64-encoded.
+	ClassicDiskDataExtraConfigKey = "vmservice.virtualmachine.classicDiskData"
+
 	// BackupVersionExtraConfigKey is the ExtraConfig key that indicates
 	// the version of the VM's last backup. It is a monotonically increasing counter and
 	// is only supposed to be used by IaaS control plane and vCenter for virtual machine registration

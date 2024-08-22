@@ -43,6 +43,9 @@ linters-settings:
       - alias: vimtypes
         pkg: github.com/vmware/govmomi/vim25/types
 
+      - alias: vmopbackup
+        pkg: github.com/vmware-tanzu/vm-operator/api/backup
+
       - alias: vmopv1a1
         pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha1
 

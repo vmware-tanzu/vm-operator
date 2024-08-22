@@ -317,17 +317,19 @@ func getDesiredAdditionalResourceYAMLForBackup(
 
 	// Backup the given resources YAML with encoding and compression.
 	// Use "---" as the separator if more than one resource is passed.
-	marshaledStrs := []string{}
-	for _, res := range resources {
-		marshaledYaml, err := k8syaml.Marshal(res)
+	var sb strings.Builder
+	for i, resource := range resources {
+		marshaledYaml, err := k8syaml.Marshal(resource)
 		if err != nil {
-			return "", fmt.Errorf("failed to marshal object %q: %v", res.GetName(), err)
+			return "", fmt.Errorf("failed to marshal object %q: %v", resource.GetName(), err)
 		}
-		marshaledStrs = append(marshaledStrs, string(marshaledYaml))
+		sb.Write(marshaledYaml)
+		if i != len(resources)-1 {
+			sb.WriteString("\n---\n")
+		}
 	}
 
-	resourcesYAML := strings.Join(marshaledStrs, "\n---\n")
-	return pkgutil.EncodeGzipBase64(resourcesYAML)
+	return pkgutil.EncodeGzipBase64(sb.String())
 }
 
 // getBackupResourceVersions gets the resource version of each object in

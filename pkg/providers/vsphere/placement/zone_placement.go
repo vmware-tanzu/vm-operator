@@ -112,6 +112,10 @@ func getPlacementCandidates(
 			zones = append(zones, zone)
 		}
 		for _, zone := range zones {
+			// Filter out the zone that is to be deleted, so we don't have it as a candidate when doing placement.
+			if zonePlacement && !zone.DeletionTimestamp.IsZero() {
+				continue
+			}
 			rpMoIDs := zone.Spec.ManagedVMs.PoolMoIDs
 			if childRPName != "" {
 				childRPMoIDs := lookupChildRPs(vmCtx, vcClient, rpMoIDs, zone.Name, childRPName)

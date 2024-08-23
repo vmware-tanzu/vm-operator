@@ -121,7 +121,7 @@ const (
 	// VM back to its intended state.
 	//
 	// The VM will not be reconciled again until this annotation is removed.
-	PauseAnnotation = GroupName + "/pause-reconcile"
+	PauseAnnotation = GroupName + "/paused"
 
 	// InstanceIDAnnotation is an annotation that can be applied to set Cloud-Init metadata Instance ID.
 	//

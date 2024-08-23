@@ -899,6 +899,7 @@ func nsxtLBProviderTestsReconcile() {
 				vmService.Spec.LoadBalancerSourceRanges = []string{"1.1.1.0/24", "2.2.2.2/28"}
 				vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
 				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
+				vmService.Annotations[utils.AnnotationServiceEndpointHealthCheckEnabledKey] = ""
 				vmService.Labels[LabelServiceProxyName] = providers.NSXTServiceProxy
 
 				err := reconciler.ReconcileNormal(vmServiceCtx)
@@ -912,8 +913,10 @@ func nsxtLBProviderTestsReconcile() {
 				Expect(newService.Spec.ExternalName).To(Equal(newExternalName))
 				Expect(newService.Spec.LoadBalancerIP).To(Equal(newLoadBalancerIP))
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
+				Expect(newService.Annotations[providers.ServiceLoadBalancerHealthCheckNodePortTagKey]).To(Equal("30012"))
 				Expect(newService.Labels[LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
 				Expect(newService.Spec.LoadBalancerSourceRanges).To(Equal([]string{"1.1.1.0/24", "2.2.2.2/28"}))
+				Expect(newService.Annotations).To(HaveKey(providers.ServiceLoadBalancerEndpointHealthCheckEnabledTagKey))
 			})
 
 			It("Should update the k8s Service to match with the VirtualMachineService when LoadBalancerSourceRanges is cleared", func() {
@@ -958,7 +961,35 @@ func nsxtLBProviderTestsReconcile() {
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeCluster))
 				Expect(newService.Annotations).ToNot(HaveKey(utils.AnnotationServiceExternalTrafficPolicyKey))
 				Expect(newService.Annotations).ToNot(HaveKey(utils.AnnotationServiceHealthCheckNodePortKey))
+				Expect(newService.Annotations).ToNot(HaveKey(providers.ServiceLoadBalancerHealthCheckNodePortTagKey))
 				Expect(newService.Labels).ToNot(HaveKey(LabelServiceProxyName))
+			})
+
+			It("Should update the k8s Service to match with the VirtualMachineService when endpointHealthCheckEnabled is cleared", func() {
+				if service.Annotations == nil {
+					service.Annotations = make(map[string]string)
+				}
+				if service.Labels == nil {
+					service.Labels = make(map[string]string)
+				}
+
+				By("applying endpointHealthCheckEnabled annotations")
+				service.Annotations[utils.AnnotationServiceEndpointHealthCheckEnabledKey] = ""
+				service.Annotations[providers.ServiceLoadBalancerEndpointHealthCheckEnabledTagKey] = ""
+				By("applying service-proxy label")
+				Expect(ctx.Client.Update(ctx, service)).To(Succeed())
+
+				delete(vmService.Annotations, utils.AnnotationServiceEndpointHealthCheckEnabledKey)
+
+				err := reconciler.ReconcileNormal(vmServiceCtx)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
+
+				newService := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, objKey, newService)).To(Succeed())
+				Expect(newService.Annotations).ToNot(HaveKey(utils.AnnotationServiceEndpointHealthCheckEnabledKey))
+				Expect(newService.Annotations).ToNot(HaveKey(providers.ServiceLoadBalancerEndpointHealthCheckEnabledTagKey))
 			})
 
 			It("Should update the k8s Service to remove the provider specific annotations regarding healthCheckNodePort", func() {

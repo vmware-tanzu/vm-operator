@@ -4,7 +4,6 @@
 package resources
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 
@@ -16,6 +15,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
 
@@ -85,14 +85,7 @@ func (vm *VirtualMachine) Reconfigure(
 
 	logger := logr.FromContextOrDiscard(ctx)
 
-	var w bytes.Buffer
-	enc := vimtypes.NewJSONEncoder(&w)
-	if err := enc.Encode(configSpec); err != nil {
-		logger.Error(err, "Failed to marshal ConfigSpec to JSON")
-		logger.Info("Reconfiguring VM", "configSpec", configSpec)
-	} else {
-		logger.Info("Reconfiguring VM", "configSpec", w.String())
-	}
+	logger.Info("Reconfiguring VM", "configSpec", pkgutil.SafeConfigSpecToString(configSpec))
 
 	reconfigureTask, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
 	if err != nil {

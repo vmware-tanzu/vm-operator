@@ -71,7 +71,7 @@ func GetOVFVAppConfigForConfigSpec(
 // GetMergedvAppConfigSpec prepares a vApp VmConfigSpec which will set the provided key/value fields.
 // Only fields marked userConfigurable and pre-existing on the VM (ie. originated from the OVF Image)
 // will be set, and all others will be ignored.
-func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimtypes.VAppPropertyInfo) *vimtypes.VmConfigSpec {
+func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimtypes.VAppPropertyInfo) vimtypes.BaseVmConfigSpec {
 	outProps := make([]vimtypes.VAppPropertySpec, 0)
 
 	for _, vmProp := range vmProps {

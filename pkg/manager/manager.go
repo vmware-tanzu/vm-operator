@@ -95,6 +95,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 			Port:    opts.WebhookServiceContainerPort,
 		}),
 		HealthProbeBindAddress:  opts.HealthProbeBindAddress,
+		PprofBindAddress:        opts.PprofBindAddress,
 		LeaderElection:          opts.LeaderElectionEnabled,
 		LeaderElectionID:        opts.LeaderElectionID,
 		LeaderElectionNamespace: opts.PodNamespace,

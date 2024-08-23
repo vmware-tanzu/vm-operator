@@ -6,8 +6,6 @@ package main
 import (
 	"crypto/tls"
 	"flag"
-	"net/http"
-	"net/http/pprof"
 	"os"
 	"path"
 	"time"
@@ -52,11 +50,6 @@ func main() {
 	setupLog.Info("Starting VM Operator controller", "version", pkg.BuildVersion,
 		"buildnumber", pkg.BuildNumber, "buildtype", pkg.BuildType, "commit", pkg.BuildCommit)
 
-	profilerAddress := flag.String(
-		"profiler-address",
-		defaultConfig.ProfilerAddr,
-		"Bind address to expose the pprof profiler.",
-	)
 	rateLimiterQPS := flag.Int(
 		"rate-limit-requests-per-second",
 		defaultConfig.RateLimitQPS,
@@ -80,6 +73,11 @@ func main() {
 		"health-addr",
 		":9445",
 		"The address the health probe endpoint binds to.")
+	flag.StringVar(
+		&managerOpts.PprofBindAddress,
+		"profiler-address",
+		defaultConfig.ProfilerAddr,
+		"Bind address to expose the pprof profiler.")
 	flag.BoolVar(
 		&managerOpts.LeaderElectionEnabled,
 		"enable-leader-election",
@@ -183,13 +181,6 @@ func main() {
 		managerOpts.KubeConfig = cfg
 	}
 
-	if *profilerAddress != "" {
-		setupLog.Info(
-			"Profiler listening for requests",
-			"profiler-address", *profilerAddress)
-		go runProfiler(*profilerAddress)
-	}
-
 	setupLog.Info("wait for webhook certificates")
 	waitForWebhookCertificates(setupLog, managerOpts)
 
@@ -287,21 +278,4 @@ func certDirReady(certDir string) <-chan struct{} {
 		}
 	}()
 	return done
-}
-
-func runProfiler(addr string) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-
-	server := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	_ = server.ListenAndServe()
 }

@@ -5,6 +5,7 @@ package virtualmachine_test
 
 import (
 	"encoding/json"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,6 +20,7 @@ import (
 
 	vmopbackup "github.com/vmware-tanzu/vm-operator/api/backup"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
@@ -38,6 +40,8 @@ func backupTests() {
 		vT1 = "1001"
 		vT2 = "1002"
 		vT3 = "1003"
+
+		backupVersionMsg = "Backup version: %s"
 	)
 
 	var (
@@ -101,13 +105,24 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
-						vmYAML, err := yaml.Marshal(vmCtx.VM)
+						if IncrementalRestore {
+							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
+						}
+
+						copyVM := vmCtx.VM.DeepCopy()
+						// ignore the status
+						copyVM.Status = vmopv1.VirtualMachineStatus{}
+						expectedVMYAML, err := yaml.Marshal(copyVM)
 						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(vmYAML), true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(expectedVMYAML), true)
 
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
+							Expect(c.Message).To(Equal(fmt.Sprintf(backupVersionMsg, vT1)))
 						}
 					})
 				})
@@ -160,13 +175,22 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
-						vmYAML, err := yaml.Marshal(vmCtx.VM)
+						copyVM := vmCtx.VM.DeepCopy()
+						// ignore the status
+						copyVM.Status = vmopv1.VirtualMachineStatus{}
+						expectedVMYAML, err := yaml.Marshal(copyVM)
 						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(vmYAML), true)
-
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(expectedVMYAML), true)
+						// Backing up the YAML should not result in an update op being
+						// flagged.
+						Expect(ctxop.IsUpdate(vmCtx)).To(BeFalse())
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
+							Expect(c.Message).To(Equal(fmt.Sprintf(backupVersionMsg, vT3)))
 						}
 					})
 				})
@@ -219,13 +243,20 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						newVMYAML, err := yaml.Marshal(vmCtx.VM)
+						copyVM := vmCtx.VM.DeepCopy()
+						// ignore the status
+						copyVM.Status = vmopv1.VirtualMachineStatus{}
+						expectedVMYAML, err := yaml.Marshal(copyVM)
 						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(newVMYAML), true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(expectedVMYAML), true)
 
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
+							Expect(c.Message).To(Equal(fmt.Sprintf(backupVersionMsg, vT3)))
 						}
 					})
 				})
@@ -277,12 +308,19 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						newVMYAML, err := yaml.Marshal(vmCtx.VM)
+						copyVM := vmCtx.VM.DeepCopy()
+						// ignore the status
+						copyVM.Status = vmopv1.VirtualMachineStatus{}
+						expectedVMYAML, err := yaml.Marshal(copyVM)
 						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(newVMYAML), true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(expectedVMYAML), true)
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
+							Expect(c.Message).To(Equal(fmt.Sprintf(backupVersionMsg, vT3)))
 						}
 					})
 				})
@@ -716,6 +754,11 @@ func backupTests() {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
 							// verify annotation doesn't get updated to "t4" and stays at "t3"
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(vmopv1.VirtualMachineBackupPausedReason))
+							Expect(c.Message).To(Equal("A restore was detected"))
 						})
 
 						It("do backup if annotation is older than backup extra config version", func() {
@@ -734,6 +777,10 @@ func backupTests() {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, "1004", false)
 							// verify annotation gets updated to "t4"
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal("1004"))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
+							Expect(c.Message).To(Equal(fmt.Sprintf(backupVersionMsg, "1004")))
 						})
 					})
 
@@ -780,6 +827,10 @@ func backupTests() {
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
+							Expect(c.Message).To(Equal(fmt.Sprintf(backupVersionMsg, vT3)))
 						})
 					})
 
@@ -813,6 +864,10 @@ func backupTests() {
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionTrue))
+							Expect(c.Message).To(Equal(fmt.Sprintf(backupVersionMsg, vT2)))
 						})
 					})
 
@@ -851,6 +906,11 @@ func backupTests() {
 							err := virtualmachine.BackupVirtualMachine(backupOpts)
 							Expect(err).To(HaveOccurred())
 							Expect(err.Error()).To(Equal(`strconv.ParseInt: parsing "invalid": invalid syntax`))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(vmopv1.VirtualMachineBackupFailedReason))
+							Expect(c.Message).To(Equal(`Failed to backup VM. err: strconv.ParseInt: parsing "invalid": invalid syntax`))
 						})
 					})
 
@@ -889,6 +949,11 @@ func backupTests() {
 							err := virtualmachine.BackupVirtualMachine(backupOpts)
 							Expect(err).To(HaveOccurred())
 							Expect(err.Error()).To(Equal(`strconv.ParseInt: parsing "invalid": invalid syntax`))
+							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
+							Expect(c).NotTo(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(vmopv1.VirtualMachineBackupFailedReason))
+							Expect(c.Message).To(Equal(`Failed to backup VM. err: strconv.ParseInt: parsing "invalid": invalid syntax`))
 						})
 					})
 				})

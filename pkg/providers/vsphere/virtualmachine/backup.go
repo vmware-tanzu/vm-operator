@@ -23,6 +23,7 @@ import (
 
 	vmopbackup "github.com/vmware-tanzu/vm-operator/api/backup"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
@@ -45,7 +46,18 @@ type BackupVirtualMachineOptions struct {
 // - VM Kubernetes resource in YAMl.
 // - Additional VM-relevant Kubernetes resources in YAML, separated by "---".
 // - PVC disk data in JSON format (if DiskUUIDToPVC is not empty).
-func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
+func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
+	defer func() {
+		if result != nil {
+			conditions.MarkFalse(
+				opts.VMCtx.VM,
+				vmopv1.VirtualMachineBackupUpToDateCondition,
+				vmopv1.VirtualMachineBackupFailedReason,
+				fmt.Sprintf("Failed to backup VM. err: %v", result.Error()),
+			)
+		}
+	}()
+
 	resVM := res.NewVMFromObject(opts.VcVM)
 	moVM, err := resVM.GetProperties(opts.VMCtx, []string{"config.extraConfig"})
 	if err != nil {
@@ -77,7 +89,12 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 				 */
 				// restore is detected if doBackup is false with no errors. wait for vm registration.
 				if !canBackup {
-					// TODO: add a condition to indicate backup is paused
+					conditions.MarkFalse(
+						opts.VMCtx.VM,
+						vmopv1.VirtualMachineBackupUpToDateCondition,
+						vmopv1.VirtualMachineBackupPausedReason,
+						"A restore was detected",
+					)
 					return nil
 				}
 			}
@@ -150,7 +167,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 			// Update the VMResourceYAMLExtraConfigKey to account for the new backup version annotation
 			// Use a copy of the VM object since the actual VM obj will be annotated if and once reconfigure succeeds.
 			copyVM := opts.VMCtx.VM.DeepCopy()
-			setLastBackupVersionAnnotation(copyVM, opts.BackupVersion)
+			setBackupVersionAnnotation(copyVM, opts.BackupVersion)
 			// Backup the updated VM's YAML with encoding and compression.
 			encodedVMYaml, err := getEncodedVMYaml(copyVM)
 			if err != nil {
@@ -199,8 +216,10 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 
 		// Set the VirtualMachine's backup version annotation once reconfigure succeeds.
 		if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
-			setLastBackupVersionAnnotation(opts.VMCtx.VM, opts.BackupVersion)
-			// TODO: add a condition to indicate backup has resumed
+			setBackupVersionAnnotation(opts.VMCtx.VM, opts.BackupVersion)
+			c := conditions.TrueCondition(vmopv1.VirtualMachineBackupUpToDateCondition)
+			c.Message = fmt.Sprintf("Backup version: %s", opts.BackupVersion)
+			conditions.Set(opts.VMCtx.VM, c)
 		}
 
 		opts.VMCtx.Logger.Info("Successfully updated VM ExtraConfig with latest backup data")
@@ -460,7 +479,7 @@ func getDesiredDiskDataForBackup(
 	return pvcDiskDataBackup, classicDiskDataBackup, nil
 }
 
-func setLastBackupVersionAnnotation(vm *vmopv1.VirtualMachine, version string) {
+func setBackupVersionAnnotation(vm *vmopv1.VirtualMachine, version string) {
 	if vm.Annotations == nil {
 		vm.Annotations = map[string]string{}
 	}

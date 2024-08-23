@@ -154,6 +154,20 @@ const (
 	ManagedByExtensionType = "VirtualMachine"
 )
 
+const (
+	// VirtualMachineBackupUpToDateCondition exposes the status of the latest VirtualMachine Backup, when available.
+	VirtualMachineBackupUpToDateCondition = "VirtualMachineBackupUpToDate"
+
+	// VirtualMachineBackupPaused documents that VirtualMachine backup is paused.
+	// This can happen after the backing virtual machine is restored by a backup/restore vendor, or a failover operation
+	// by a data protection solution. In either of these operations, VM operator does not persist backup information and
+	// waits for the virtual machine to be (re)-registered with VM Service.
+	VirtualMachineBackupPausedReason = "VirtualMachineBackupPaused"
+
+	// VirtualMachineBackupFailed documents that the VirtualMachine backup failed due to an error.
+	VirtualMachineBackupFailedReason = "VirtualMachineBackupFailed"
+)
+
 // VirtualMachine backup/restore related constants.
 const (
 	// VMResourceYAMLExtraConfigKey is the ExtraConfig key to persist VM

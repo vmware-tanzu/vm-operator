@@ -204,10 +204,11 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 
 	DescribeTable("returns expected props",
 		func(inProps map[string]string, vmProps []vimtypes.VAppPropertyInfo, expected *vimtypes.VmConfigSpec) {
-			vAppConfigSpec := vmlifecycle.GetMergedvAppConfigSpec(inProps, vmProps)
+			baseVAppConfigSpec := vmlifecycle.GetMergedvAppConfigSpec(inProps, vmProps)
 			if expected == nil {
-				Expect(vAppConfigSpec).To(BeNil())
+				Expect(baseVAppConfigSpec).To(BeNil())
 			} else {
+				vAppConfigSpec := baseVAppConfigSpec.GetVmConfigSpec()
 				Expect(vAppConfigSpec.Property).To(HaveLen(len(expected.Property)))
 				for i := range vAppConfigSpec.Property {
 					Expect(vAppConfigSpec.Property[i].Info.Key).To(Equal(expected.Property[i].Info.Key))

@@ -879,3 +879,27 @@ var virtualMachineConfigInfoForTests vimtypes.VirtualMachineConfigInfo = vimtype
 	Pmem:         nil,
 	DeviceGroups: &vimtypes.VirtualMachineVirtualDeviceGroups{},
 }
+
+var _ = DescribeTable(
+	"SafeConfigSpecToString",
+	func(in *vimtypes.VirtualMachineConfigSpec, expected string) {
+		Expect(pkgutil.SafeConfigSpecToString(in)).To(Equal(expected))
+	},
+	Entry(
+		"nil ConfigSpec",
+		nil,
+		`null`,
+	),
+	Entry(
+		"empty ConfigSpec",
+		&vimtypes.VirtualMachineConfigSpec{},
+		`{"_typeName":"VirtualMachineConfigSpec"}`,
+	),
+	Entry(
+		"w interface field set to nil pointer",
+		&vimtypes.VirtualMachineConfigSpec{
+			VAppConfig: (*vimtypes.VmConfigSpec)(nil),
+		},
+		`{"vAppConfig":null}`,
+	),
+)

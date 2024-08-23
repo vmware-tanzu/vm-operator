@@ -23,6 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -340,7 +341,7 @@ func logConfigSpec(
 		configSpec = SanitizeConfigSpec(configSpec)
 	}
 
-	vmCtx.Logger.Info("Customization Reconfigure", "configSpec", configSpec)
+	vmCtx.Logger.Info("Customization Reconfigure", "configSpec", pkgutil.SafeConfigSpecToString(&configSpec))
 }
 
 func SanitizeConfigSpec(cs vimtypes.VirtualMachineConfigSpec) vimtypes.VirtualMachineConfigSpec {

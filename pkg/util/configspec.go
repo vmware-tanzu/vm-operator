@@ -6,6 +6,8 @@ package util
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"reflect"
 
 	"github.com/vmware/govmomi/vim25"
@@ -189,4 +191,47 @@ func EnsureMinHardwareVersionInConfigSpec(
 		configSpecHwVersion = minHwVersion
 	}
 	configSpec.Version = configSpecHwVersion.String()
+}
+
+// SafeConfigSpecToString returns the string-ified version of the provided
+// ConfigSpec, first trying to use the special JSON encoder, then defaulting to
+// the normal JSON encoder.
+//
+// Please note, this function is not intended to replace marshaling the data
+// to JSON using the normal workflows. This function is for when a string-ified
+// version of the data is needed for things like logging.
+func SafeConfigSpecToString(
+	in *vimtypes.VirtualMachineConfigSpec) (s string) {
+
+	if in == nil {
+		return "null"
+	}
+
+	marshalWithStdlibJSONEncoder := func() string {
+		data, err := json.Marshal(in)
+		if err != nil {
+			return fmt.Sprintf("%v", in)
+		}
+		return string(data)
+	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			s = marshalWithStdlibJSONEncoder()
+		}
+	}()
+
+	var w bytes.Buffer
+	enc := vimtypes.NewJSONEncoder(&w)
+	if err := enc.Encode(in); err != nil {
+		return marshalWithStdlibJSONEncoder()
+	}
+
+	s = w.String()
+	if len(s) == 0 {
+		return s
+	}
+
+	// Do not include the newline character added by the vimtype JSON encoder.
+	return s[:len(s)-1]
 }

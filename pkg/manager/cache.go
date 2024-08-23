@@ -13,6 +13,17 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
+type implHasCache struct {
+	ctrlcache.Cache
+}
+
+// GetCache implements the ctrl-runtime manager hasCache interface so these caches
+// end up on the managers Cache runnable list and get started along with the other
+// caches.
+func (c *implHasCache) GetCache() ctrlcache.Cache {
+	return c
+}
+
 // NewLabelSelectorCacheForObject creates a new cache that watches the specified
 // object type selected by the label selector in all namespaces . The cache is
 // added to the manager and starts alongside the other leader-election runnables.
@@ -39,7 +50,9 @@ func NewLabelSelectorCacheForObject(
 		return nil, fmt.Errorf("failed to create label selector cache for %T for namespaces: %w", object, err)
 	}
 
-	if err := mgr.Add(cache); err != nil {
+	c := &implHasCache{Cache: cache}
+
+	if err := mgr.Add(c); err != nil {
 		return nil, fmt.Errorf("failed to add label selector cache for %T: %w", object, err)
 	}
 
@@ -74,7 +87,9 @@ func NewNamespacedCacheForObject(
 			object, namespaces, err)
 	}
 
-	if err := mgr.Add(cache); err != nil {
+	c := &implHasCache{Cache: cache}
+
+	if err := mgr.Add(c); err != nil {
 		return nil, fmt.Errorf(
 			"failed to add cache for %T for namespaces %v: %w",
 			object, namespaces, err)

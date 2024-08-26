@@ -603,13 +603,12 @@ func (s *Session) ensureNetworkInterfaces(
 		)
 	}
 
-	clusterMoRef := s.Cluster.Reference()
 	results, err := network2.CreateAndWaitForNetworkInterfaces(
 		vmCtx,
 		s.K8sClient,
 		s.Client.VimClient(),
 		s.Finder,
-		&clusterMoRef,
+		&s.ClusterMoRef,
 		networkSpec.Interfaces)
 	if err != nil {
 		return network2.NetworkInterfaceResults{}, err
@@ -838,7 +837,7 @@ func (s *Session) attachClusterModule(
 	}
 
 	// Find ClusterModule UUID from the ResourcePolicy.
-	_, moduleUUID := clustermodules.FindClusterModuleUUID(vmCtx, clusterModuleName, s.Cluster.Reference(), resourcePolicy)
+	_, moduleUUID := clustermodules.FindClusterModuleUUID(vmCtx, clusterModuleName, s.ClusterMoRef, resourcePolicy)
 	if moduleUUID == "" {
 		return fmt.Errorf("ClusterModule %s not found", clusterModuleName)
 	}

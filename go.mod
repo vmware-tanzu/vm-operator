@@ -23,7 +23,7 @@ require (
 	github.com/prometheus/client_golang v1.19.1
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20240509202721-f6552612433a
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0
-	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20240730023032-0784c0791081
+	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20240812063009-106e8b213b74
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000

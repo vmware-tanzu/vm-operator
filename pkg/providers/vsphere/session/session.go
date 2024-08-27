@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/vmware/govmomi/find"
-	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -17,12 +17,10 @@ import (
 )
 
 type Session struct {
-	Client    *pkgclient.Client
-	K8sClient ctrlclient.Client
-	Finder    *find.Finder
-
-	// Fields only used during Update
-	Cluster *object.ClusterComputeResource
+	Client       *pkgclient.Client
+	K8sClient    ctrlclient.Client
+	Finder       *find.Finder
+	ClusterMoRef types.ManagedObjectReference
 }
 
 func (s *Session) invokeFsrVirtualMachine(vmCtx pkgctx.VirtualMachineContext, resVM *res.VirtualMachine) error {

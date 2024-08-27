@@ -28,7 +28,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -43,8 +43,9 @@ var (
 		"config.changeTrackingEnabled",
 		"config.extraConfig",
 		"config.hardware.device",
-		"guest",
+		"resourcePool",
 		"layoutEx",
+		"guest",
 		"summary",
 	}
 )
@@ -128,11 +129,11 @@ func UpdateStatus(
 
 	zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
 	if zoneName == "" {
-		cluster, err := virtualmachine.GetVMClusterComputeResource(vmCtx, vcVM)
+		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(vmCtx, vcVM.Client(), vmCtx.MoVM.ResourcePool.Value)
 		if err != nil {
 			errs = append(errs, err)
 		} else {
-			zoneName, err = topology.LookupZoneForClusterMoID(vmCtx, k8sClient, cluster.Reference().Value)
+			zoneName, err = topology.LookupZoneForClusterMoID(vmCtx, k8sClient, clusterMoRef.Value)
 			if err != nil {
 				errs = append(errs, err)
 			} else {

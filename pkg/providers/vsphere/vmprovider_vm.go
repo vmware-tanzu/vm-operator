@@ -463,13 +463,14 @@ func (vs *vSphereVMProvider) createdVirtualMachineFallthroughUpdate(
 
 // VMUpdatePropertiesSelector is the set of VM properties fetched at the start
 // of UpdateVirtualMachine,
-// It must be a super set of vmlifecycle.vmStatusPropertiesSelector[] since we
+// It must be a super set of vmlifecycle.VMStatusPropertiesSelector[] since we
 // may pass the properties collected here to vmlifecycle.UpdateStatus to avoid a
 // second fetch of the VM properties.
 var VMUpdatePropertiesSelector = []string{
 	"config",
-	"guest",
 	"layoutEx",
+	"resourcePool",
+	"guest",
 	"summary",
 }
 
@@ -484,18 +485,6 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	{
 		// Hack - create just enough of the Session that's needed for update
 
-		cluster, err := virtualmachine.GetVMClusterComputeResource(vmCtx, vcVM)
-		if err != nil {
-			return err
-		}
-
-		ses := &session.Session{
-			K8sClient: vs.k8sClient,
-			Client:    vcClient.Client,
-			Finder:    vcClient.Finder(),
-			Cluster:   cluster,
-		}
-
 		if err := vcVM.Properties(
 			vmCtx,
 			vcVM.Reference(),
@@ -503,6 +492,26 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			&vmCtx.MoVM); err != nil {
 
 			return err
+		}
+
+		if vmCtx.MoVM.ResourcePool == nil {
+			// Same error as govmomi VirtualMachine::ResourcePool().
+			return fmt.Errorf("VM doesn't have a resourcePool")
+		}
+
+		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(
+			vmCtx,
+			vcVM.Client(),
+			vmCtx.MoVM.ResourcePool.Value)
+		if err != nil {
+			return err
+		}
+
+		ses := &session.Session{
+			K8sClient:    vs.k8sClient,
+			Client:       vcClient.Client,
+			Finder:       vcClient.Finder(),
+			ClusterMoRef: clusterMoRef,
 		}
 
 		getUpdateArgsFn := func() (*vmUpdateArgs, error) {

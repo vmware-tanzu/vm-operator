@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -68,6 +69,12 @@ var _ = Describe("UpdateStatus", func() {
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).ToNot(HaveOccurred())
 
+		// Initialize with the expected properties. Tests can overwrite this if needed.
+		Expect(vcVM.Properties(
+			ctx,
+			vcVM.Reference(),
+			vmlifecycle.VMStatusPropertiesSelector,
+			&vmCtx.MoVM)).To(Succeed())
 		refetchProps = false
 	})
 
@@ -83,18 +90,17 @@ var _ = Describe("UpdateStatus", func() {
 
 	When("properties are refetched", func() {
 		BeforeEach(func() {
+			vmCtx.MoVM = mo.VirtualMachine{}
 			refetchProps = true
 		})
 		Specify("the status is created from the properties fetched from vsphere", func() {
-			Expect(vcVM.Properties(
-				ctx,
-				vcVM.Reference(),
-				vmlifecycle.VMStatusPropertiesSelector,
-				&vmCtx.MoVM)).To(Succeed())
-			Expect(vmCtx.VM.Status.BiosUUID).To(Equal(vmCtx.MoVM.Summary.Config.Uuid))
-			Expect(vmCtx.VM.Status.InstanceUUID).To(Equal(vmCtx.MoVM.Summary.Config.InstanceUuid))
+			moVM := mo.VirtualMachine{}
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), vmlifecycle.VMStatusPropertiesSelector, &moVM)).To(Succeed())
+
+			Expect(vmCtx.VM.Status.BiosUUID).To(Equal(moVM.Summary.Config.Uuid))
+			Expect(vmCtx.VM.Status.InstanceUUID).To(Equal(moVM.Summary.Config.InstanceUuid))
 			Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
-			Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(vmCtx.MoVM.Guest.IpAddress))
+			Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(moVM.Guest.IpAddress))
 		})
 	})
 
@@ -362,6 +368,7 @@ var _ = Describe("UpdateStatus", func() {
 
 			When("nil Guest property", func() {
 				BeforeEach(func() {
+					vmCtx.MoVM.Guest = nil
 					vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
 				})
 

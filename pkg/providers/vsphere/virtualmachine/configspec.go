@@ -175,8 +175,6 @@ func CreateConfigSpecForPlacement(
 
 	// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
 	// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.
-	// Note: UnitNumber is required for PlaceVmsXCluster w/ VpxdVmxGeneration fss enabled.
-	// PlaceVmsXCluster is not used with Instance Storage, so UnitNumber is not required for volumes below.
 	configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 		Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
 		FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
@@ -225,7 +223,6 @@ func CreateConfigSpecForPlacement(
 	//  - boot disks from OVA
 	//  - storage profile/class
 	//  - PVC volumes
-	//  - Network devices (meh for now b/c of wcp constraints)
 	//  - anything in ExtraConfig matter here?
 	//  - any way to do the cluster modules for anti-affinity?
 	//  - whatever else I'm forgetting

@@ -496,8 +496,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		})
 		It("ConfigSpec contains expected InstanceStorage devices", func() {
 			Expect(configSpec.DeviceChange).To(HaveLen(5))
-			assertInstanceStorageDeviceChange(configSpec.DeviceChange[1], 256, storagePolicyID)
-			assertInstanceStorageDeviceChange(configSpec.DeviceChange[2], 512, storagePolicyID)
+			assertInstanceStorageDeviceChange(configSpec.DeviceChange[1], 1, 256, storagePolicyID)
+			assertInstanceStorageDeviceChange(configSpec.DeviceChange[2], 2, 512, storagePolicyID)
 		})
 	})
 
@@ -584,6 +584,7 @@ var _ = Describe("ConfigSpecFromVMClassDevices", func() {
 
 func assertInstanceStorageDeviceChange(
 	deviceChange vimtypes.BaseVirtualDeviceConfigSpec,
+	expectedUnitNumber int32,
 	expectedSizeGB int,
 	expectedStoragePolicyID string) {
 
@@ -593,6 +594,8 @@ func assertInstanceStorageDeviceChange(
 
 	dev, ok := dc.Device.(*vimtypes.VirtualDisk)
 	Expect(ok).To(BeTrue())
+	Expect(dev.UnitNumber).ToNot(BeNil())
+	Expect(*dev.UnitNumber).To(Equal(expectedUnitNumber))
 	Expect(dev.CapacityInBytes).To(BeEquivalentTo(expectedSizeGB * 1024 * 1024 * 1024))
 
 	Expect(dc.Profile).To(HaveLen(1))

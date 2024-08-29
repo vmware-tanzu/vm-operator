@@ -5,15 +5,18 @@ package util
 
 import (
 	"fmt"
+	"maps"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"golang.org/x/tools/container/intsets"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // EnsureDisksHaveControllers ensures that all disks in the provided
-// ConfigSpec point to a controller. If no controller exists, LSILogic SCSI
-// controllers are added to the ConfigSpec as necessary for the disks.
+// ConfigSpec point to a controller. If no controller exists, new (in
+// order of preference) PVSCSI, AHCI, or NVME controllers are added
+// to the ConfigSpec as necessary for the disks.
 //
 // Please note the following table for the number of controllers of each type
 // that are supported as well as how many disks (per controller) each supports:
@@ -45,8 +48,7 @@ func EnsureDisksHaveControllers(
 		newDeviceKey    int32
 		pciController   *vimtypes.VirtualPCIController
 		diskControllers = ensureDiskControllerData{
-			controllerKeys:                map[int32]vimtypes.BaseVirtualController{},
-			controllerKeysToAttachedDisks: map[int32]int{},
+			keyToDiskControllers: map[int32]*diskController{},
 		}
 	)
 
@@ -107,12 +109,12 @@ func EnsureDisksHaveControllers(
 			disks = append(disks, tvd)
 
 			if controllerKey := d.ControllerKey; controllerKey != 0 {
-				// If the disk points to a controller key, then increment
-				// the number of devices attached to that controller.
-				//
-				// Please note that at this point it is not yet known if the
-				// controller key is a *valid* controller.
-				diskControllers.attach(controllerKey)
+				// If the disk points to a controller key, then add a placeholder
+				// entry for the controller. Please note that at this point it is
+				// not yet known if the controller key is a *valid* controller.
+				// validateAttachments() will remove placeholder entries that did
+				// not have a corresponding controller device.
+				diskControllers.addDisk(controllerKey, tvd.UnitNumber)
 			}
 		}
 
@@ -165,7 +167,7 @@ func EnsureDisksHaveControllers(
 			diskControllers.add(bvd)
 
 		case *vimtypes.VirtualDisk:
-			diskControllers.attach(tvd.ControllerKey)
+			diskControllers.addDisk(tvd.ControllerKey, tvd.UnitNumber)
 		}
 	}
 
@@ -194,19 +196,30 @@ func EnsureDisksHaveControllers(
 			})
 	}
 
-	// Ensure all the recorded controller keys that point to disks are actually
-	// valid controller keys.
+	// Ensure all the recorded controller keys that disks pointed to are valid
+	// controller keys.
 	diskControllers.validateAttachments()
 
-	for i := range disks {
-		disk := disks[i]
-
-		// If the disk already points to a controller then skip to the next
-		// disk.
-		if diskControllers.exists(disk.ControllerKey) {
+	// For any disks that specified a valid controller but not a unit number,
+	// try to allocate a unit number now. These disks need to get first dibs
+	// on available unit numbers.
+	var disksWithoutController []*vimtypes.VirtualDisk
+	for _, disk := range disks {
+		if !diskControllers.exists(disk.ControllerKey) {
+			disksWithoutController = append(disksWithoutController, disk)
 			continue
 		}
 
+		if disk.UnitNumber == nil {
+			unitNumber, ok := diskControllers.getNextUnitNumber(disk.ControllerKey)
+			if !ok {
+				return fmt.Errorf("no available unit number for controller key %d", disk.ControllerKey)
+			}
+			disk.UnitNumber = &unitNumber
+		}
+	}
+
+	for _, disk := range disksWithoutController {
 		// The disk does not point to a controller, so try to locate one.
 		if ensureDiskControllerFind(disk, &diskControllers) {
 			// A controller was located for the disk, so go ahead and skip to
@@ -227,10 +240,8 @@ func EnsureDisksHaveControllers(
 
 		// Point the disk to the new controller.
 		disk.ControllerKey = newDeviceKey
-
-		// Add the controller key to the map that tracks how many disks are
-		// attached to a given controller.
-		diskControllers.attach(newDeviceKey)
+		unitNumber := diskControllers.mustGetNextUnitNumber(disk.ControllerKey)
+		disk.UnitNumber = &unitNumber
 
 		// Decrement the newDeviceKey so the next device has a unique key.
 		newDeviceKey--
@@ -280,13 +291,36 @@ func (d *ensureDiskControllerBusNumbers) set(busNumber int32) {
 	}
 }
 
+type diskController struct {
+	dev vimtypes.BaseVirtualController
+
+	// Disk unit number allocation:
+	curUN, maxUN int32
+	reservedUN   intsets.Sparse
+}
+
+func (dc *diskController) reserveUnitNumber(unitNumber int32) {
+	// TODO: check !dc.reservedUN.Has()?
+	dc.reservedUN.Insert(int(unitNumber))
+}
+
+func (dc *diskController) nextUnitNumber() (int32, bool) {
+	for un := dc.curUN; un < dc.maxUN; un++ {
+		if dc.reservedUN.IsEmpty() || !dc.reservedUN.Has(int(un)) {
+			dc.curUN = un + 1
+			return un, true
+		}
+	}
+
+	return -1, false
+}
+
 type ensureDiskControllerData struct {
 	// TODO(akutz) Use the hardware version when calculating the max disks for
 	//             a given controller type.
 	// hardwareVersion int
 
-	controllerKeys                map[int32]vimtypes.BaseVirtualController
-	controllerKeysToAttachedDisks map[int32]int
+	keyToDiskControllers map[int32]*diskController
 
 	// SCSI
 	scsiBusNumbers             ensureDiskControllerBusNumbers
@@ -322,26 +356,24 @@ func (d ensureDiskControllerData) numNVMEControllers() int {
 	return len(d.nvmeControllerKeys)
 }
 
-// validateAttachments ensures the attach numbers are correct by removing any
-// keys from controllerKeysToAttachedDisks that do not also exist in
-// controllerKeys.
+// validateAttachments removes any controllers that do not have a device
+// associated with it.
 func (d ensureDiskControllerData) validateAttachments() {
-	// Remove any invalid controllers from controllerKeyToNumDiskMap.
-	for key := range d.controllerKeysToAttachedDisks {
-		if _, ok := d.controllerKeys[key]; !ok {
-			delete(d.controllerKeysToAttachedDisks, key)
-		}
-	}
+	maps.DeleteFunc(d.keyToDiskControllers, func(_ int32, dc *diskController) bool {
+		return dc.dev == nil
+	})
 }
 
 // exists returns true if a controller with the provided key exists.
 func (d ensureDiskControllerData) exists(key int32) bool {
-	return d.controllerKeys[key] != nil
+	_, ok := d.keyToDiskControllers[key]
+	return ok
 }
 
 // add records the provided controller in the map that relates keys to
 // controllers as well as appends the key to the list of controllers of that
 // given type.
+// TODO(akutz) Consider the hardware version for the max number of disks.
 func (d *ensureDiskControllerData) add(controller vimtypes.BaseVirtualDevice) {
 
 	// Get the controller's device key.
@@ -349,90 +381,95 @@ func (d *ensureDiskControllerData) add(controller vimtypes.BaseVirtualDevice) {
 	key := bvc.GetVirtualController().Key
 	busNumber := bvc.GetVirtualController().BusNumber
 
-	// Record the controller's device key in the controller key map.
-	d.controllerKeys[key] = bvc
+	dc, ok := d.keyToDiskControllers[key]
+	if !ok {
+		dc = &diskController{}
+		d.keyToDiskControllers[key] = dc
+	}
+
+	// TODO: Check dc.dev == nil?
+	dc.dev = bvc
 
 	// Record the controller's device key in the list for that type of
 	// controller.
 	switch controller.(type) {
 
 	// SCSI
+	// TODO: Shouldn't we reserve the scsiCtlrUnitNumber?
 	case *vimtypes.ParaVirtualSCSIController:
 		d.pvSCSIControllerKeys = append(d.pvSCSIControllerKeys, key)
 		d.scsiBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerSCSIController // TODO: maxDisksPerPVSCSIControllerHWVersion14
 	case *vimtypes.VirtualBusLogicController:
 		d.busLogicSCSIControllerKeys = append(d.busLogicSCSIControllerKeys, key)
 		d.scsiBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerSCSIController
 	case *vimtypes.VirtualLsiLogicController:
 		d.lsiLogicControllerKeys = append(d.lsiLogicControllerKeys, key)
 		d.scsiBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerSCSIController
 	case *vimtypes.VirtualLsiLogicSASController:
 		d.lsiLogicSASControllerKeys = append(d.lsiLogicSASControllerKeys, key)
 		d.scsiBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerSCSIController
 	case *vimtypes.VirtualSCSIController:
 		d.scsiControllerKeys = append(d.scsiControllerKeys, key)
 		d.scsiBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerSCSIController
 
 	// SATA
 	case *vimtypes.VirtualSATAController:
 		d.sataControllerKeys = append(d.sataControllerKeys, key)
 		d.sataBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerSATAController
 	case *vimtypes.VirtualAHCIController:
 		d.ahciControllerKeys = append(d.ahciControllerKeys, key)
 		d.sataBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerSATAController
 
 	// NVME
 	case *vimtypes.VirtualNVMEController:
 		d.nvmeControllerKeys = append(d.nvmeControllerKeys, key)
 		d.nvmeBusNumbers.set(busNumber)
+		dc.maxUN = maxDisksPerNVMEController // TODO: maxDisksPerNVMEControllerHWVersion21
+
+	default:
+		panic(fmt.Sprintf("unexpected controller type: %T", controller))
 	}
 }
 
-// attach increments the number of disks attached to the controller identified
-// by the provided controller key.
-func (d *ensureDiskControllerData) attach(controllerKey int32) {
-	d.controllerKeysToAttachedDisks[controllerKey]++
-}
-
-// hasFreeSlot returns whether or not the controller identified by the provided
-// controller key has a free slot to attach a disk.
-//
-// TODO(akutz) Consider the hardware version when calculating these values.
-func (d *ensureDiskControllerData) hasFreeSlot(controllerKey int32) bool {
-
-	var maxDisksForType int
-
-	switch d.controllerKeys[controllerKey].(type) {
-	case
-		// SCSI (paravirtual)
-		*vimtypes.ParaVirtualSCSIController:
-
-		maxDisksForType = maxDisksPerSCSIController
-
-	case
-		// SCSI (non-paravirtual)
-		*vimtypes.VirtualBusLogicController,
-		*vimtypes.VirtualLsiLogicController,
-		*vimtypes.VirtualLsiLogicSASController,
-		*vimtypes.VirtualSCSIController:
-
-		maxDisksForType = maxDisksPerSCSIController
-
-	case
-		// SATA
-		*vimtypes.VirtualSATAController,
-		*vimtypes.VirtualAHCIController:
-
-		maxDisksForType = maxDisksPerSATAController
-
-	case
-		// NVME
-		*vimtypes.VirtualNVMEController:
-
-		maxDisksForType = maxDisksPerNVMEController
+// addDisk adds a placeholder for this disks controller if add() wasn't already
+// called for that controller, and reserves the unit number if specified.
+func (d *ensureDiskControllerData) addDisk(controllerKey int32, unitNumber *int32) {
+	dc, ok := d.keyToDiskControllers[controllerKey]
+	if !ok {
+		dc = &diskController{}
+		d.keyToDiskControllers[controllerKey] = dc
 	}
 
-	return d.controllerKeysToAttachedDisks[controllerKey] < maxDisksForType-1
+	if unitNumber != nil {
+		dc.reserveUnitNumber(*unitNumber)
+	}
+}
+
+// getNextUnitNumber returns the next available unit number for the controller
+// to assign to a disk.
+func (d *ensureDiskControllerData) getNextUnitNumber(controllerKey int32) (int32, bool) {
+	dc, ok := d.keyToDiskControllers[controllerKey]
+	if !ok {
+		// We shouldn't have an invalid controller key at this point.
+		return -1, false
+	}
+
+	return dc.nextUnitNumber()
+}
+
+func (d *ensureDiskControllerData) mustGetNextUnitNumber(controllerKey int32) int32 {
+	unitNumber, ok := d.getNextUnitNumber(controllerKey)
+	if !ok {
+		panic(fmt.Sprintf("must get unit number for controller key %d failed", controllerKey))
+	}
+	return unitNumber
 }
 
 // ensureDiskControllerFind attempts to locate a controller for the provided
@@ -521,11 +558,12 @@ func ensureDiskControllerFindWith(
 
 	for i := range controllerKeys {
 		controllerKey := controllerKeys[i]
-		if diskControllers.hasFreeSlot(controllerKey) {
-			// If the controller has room for another disk, then use this
-			// controller for the current disk.
+		// If the controller has a unit number available then use the controller for
+		// this disk.
+		// TODO: Remove full controllers from their corresponding ensureDiskControllerData keys list.
+		if unitNumber, ok := diskControllers.getNextUnitNumber(controllerKey); ok {
 			disk.ControllerKey = controllerKey
-			diskControllers.attach(controllerKey)
+			disk.UnitNumber = &unitNumber
 			return true
 		}
 	}
@@ -585,6 +623,8 @@ func ensureDiskControllerCreate(
 	default:
 		return fmt.Errorf("no controllers available")
 	}
+
+	// TODO: Need to set controller.GetVirtualDevice().UnitNumber?
 
 	// Add the new controller to the ConfigSpec.
 	configSpec.DeviceChange = append(

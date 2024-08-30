@@ -128,6 +128,7 @@ type FeatureStates struct {
 	WorkloadDomainIsolation   bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
 	VMIncrementalRestore      bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
 	BringYourOwnEncryptionKey bool // FSS_WCP_VMSERVICE_BYOK
+	SVAsyncUpgrade            bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
 }
 
 type InstanceStorage struct {

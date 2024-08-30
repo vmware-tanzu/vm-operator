@@ -55,6 +55,7 @@ const (
 	FSSWorkloadDomainIsolation
 	FSSVMIncrementalRestore
 	FSSBringYourOwnEncryptionKey
+	FSSSVAsyncUpgrade
 
 	_varNameEnd
 )
@@ -167,6 +168,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE"
 	case FSSBringYourOwnEncryptionKey:
 		return "FSS_WCP_VMSERVICE_BYOK"
+	case FSSSVAsyncUpgrade:
+		return "FSS_WCP_SUPERVISOR_ASYNC_UPGRADE"
 	}
 	panic("unknown environment variable")
 }

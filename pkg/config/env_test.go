@@ -98,11 +98,12 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_WORKLOAD_DOMAIN_ISOLATION", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_BYOK", "true")).To(Succeed())
+					Expect(os.Setenv("FSS_WCP_SUPERVISOR_ASYNC_UPGRADE", "false")).To(Succeed())
 					Expect(os.Setenv("CREATE_VM_REQUEUE_DELAY", "125h")).To(Succeed())
 					Expect(os.Setenv("POWERED_ON_VM_HAS_IP_REQUEUE_DELAY", "126h")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
-					Expect(config).To(Equal(pkgcfg.Config{
+					Expect(config).To(BeComparableTo(pkgcfg.Config{
 						DefaultVMClassControllerName: "100",
 						MaxCreateVMsOnProvider:       101,
 						PrivilegedUsers:              "102",
@@ -141,13 +142,26 @@ var _ = Describe(
 							VMResize:                  true,
 							VMResizeCPUMemory:         true,
 							VMImportNewNet:            true,
-							WorkloadDomainIsolation:   true,
 							VMIncrementalRestore:      true,
 							BringYourOwnEncryptionKey: true,
+							SVAsyncUpgrade:            false, // Capability gate so tested below
+							WorkloadDomainIsolation:   true,
 						},
 						CreateVMRequeueDelay:         125 * time.Hour,
 						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,
 					}))
+				})
+			})
+
+			When("SV Async Upgrade Enabled", func() {
+				BeforeEach(func() {
+					Expect(os.Setenv("FSS_WCP_SUPERVISOR_ASYNC_UPGRADE", "true")).To(Succeed())
+					Expect(os.Setenv("FSS_WCP_WORKLOAD_DOMAIN_ISOLATION", "true")).To(Succeed())
+				})
+				It("Capabilities features should not be enabled", func() {
+					Expect(config.Features.SVAsyncUpgrade).To(BeTrue())
+					// FSS env vars should be ignored for these.
+					Expect(config.Features.WorkloadDomainIsolation).To(BeFalse())
 				})
 			})
 		})

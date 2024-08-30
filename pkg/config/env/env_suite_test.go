@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestConfig(t *testing.T) {
+func TestEnv(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Env Suite")
 }

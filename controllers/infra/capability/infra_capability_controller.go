@@ -7,7 +7,6 @@ package capability
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -22,23 +21,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-)
-
-const (
-	// WCPClusterCapabilitiesConfigMapName is the name of the wcp-cluster-capabilities ConfigMap.
-	WCPClusterCapabilitiesConfigMapName = "wcp-cluster-capabilities"
-
-	// WCPClusterCapabilitiesNamespace is the namespace of the wcp-cluster-capabilities
-	// ConfigMap.
-	WCPClusterCapabilitiesNamespace = "kube-system"
-
-	// TKGMultipleCLCapabilityKey is the name of capability key defined in wcp-cluster-capabilities ConfigMap.
-	TKGMultipleCLCapabilityKey = "MultipleCL_For_TKG_Supported"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -54,7 +42,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr,
 		&ctx.SyncPeriod,
 		controlledType,
-		WCPClusterCapabilitiesNamespace)
+		capabilities.WCPClusterCapabilitiesConfigMapObjKey.Namespace)
 	if err != nil {
 		return err
 	}
@@ -83,10 +71,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		&handler.TypedEnqueueRequestForObject[*corev1.ConfigMap]{},
 		predicate.TypedFuncs[*corev1.ConfigMap]{
 			CreateFunc: func(e event.TypedCreateEvent[*corev1.ConfigMap]) bool {
-				return e.Object.GetName() == WCPClusterCapabilitiesConfigMapName
+				return e.Object.Name == capabilities.WCPClusterCapabilitiesConfigMapObjKey.Name
 			},
 			UpdateFunc: func(e event.TypedUpdateEvent[*corev1.ConfigMap]) bool {
-				return e.ObjectOld.GetName() == WCPClusterCapabilitiesConfigMapName
+				return e.ObjectOld.Name == capabilities.WCPClusterCapabilitiesConfigMapObjKey.Name
 			},
 			DeleteFunc: func(e event.TypedDeleteEvent[*corev1.ConfigMap]) bool {
 				return false
@@ -125,7 +113,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
-	if req.Name == WCPClusterCapabilitiesConfigMapName && req.Namespace == WCPClusterCapabilitiesNamespace {
+	if req.NamespacedName == capabilities.WCPClusterCapabilitiesConfigMapObjKey {
 		return ctrl.Result{}, r.reconcileWcpClusterCapabilitiesConfig(ctx, req)
 	}
 
@@ -134,26 +122,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) reconcileWcpClusterCapabilitiesConfig(ctx context.Context, req ctrl.Request) error {
-	r.Logger.Info("Reconciling WCP Cluster Capabilities Config", "configMap", req.NamespacedName)
+	oldFeatures := pkgcfg.FromContext(ctx).Features
+	r.Logger.Info("Reconciling WCP Cluster Capabilities Config", "configMap", req.NamespacedName,
+		"isAsyncSVUpgrade", oldFeatures.SVAsyncUpgrade)
 
 	cm := &corev1.ConfigMap{}
 	if err := r.Cache.Get(ctx, req.NamespacedName, cm); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 
-	// The SetContext call impacts the configuration available to contexts throughout the process,
-	// not just *this* context or its children. Please refer to the pkg/config package for more information
-	// on SetContext and its behavior.
-	pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-		config.Features.TKGMultipleCL = isTKGMultipleCLSupported(cm.Data)
-	})
+	capabilities.UpdateCapabilitiesFeatures(ctx, cm.Data)
+	if newFeatures := pkgcfg.FromContext(ctx).Features; oldFeatures != newFeatures {
+		r.Logger.Info("Updated features from capabilities", "old", oldFeatures, "new", newFeatures)
+	}
 
 	return nil
-}
-
-// isTKGMultipleCLSupported returns if MultipleCL_For_TKG_Supported is enabled or not in the
-// wcp-cluster-capabilities ConfigMap.
-func isTKGMultipleCLSupported(data map[string]string) bool {
-	ok, _ := strconv.ParseBool(data[TKGMultipleCLCapabilityKey])
-	return ok
 }

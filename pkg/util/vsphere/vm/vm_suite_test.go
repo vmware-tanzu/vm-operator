@@ -12,12 +12,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+const doesNotExist = "does-not-exist"
+
 func vcSimTests() {
 	Describe("Power State", Label(testlabels.VCSim), powerStateTests)
 	Describe("Hardware Version", Label(testlabels.VCSim), hardwareVersionTests)
 	Describe("Managed Object", managedObjectTests)
 	Describe("Guest ID", guestIDTests)
-	Describe("CD ROM", Label(testlabels.VCSim), cdromTests)
 }
 
 var suite = builder.NewTestSuite()

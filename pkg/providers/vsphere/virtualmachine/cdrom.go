@@ -1,7 +1,7 @@
 // Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package vm
+package virtualmachine
 
 import (
 	"fmt"

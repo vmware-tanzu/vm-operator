@@ -316,6 +316,43 @@ func intgTestsReconcile() {
 			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
+		When("VM has a pause annotation", func() {
+			BeforeEach(func() {
+				vm.Annotations = make(map[string]string)
+				vm.Annotations[vmopv1.PauseAnnotation] = "true"
+			})
+
+			It("Reconciles VM", func() {
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+				vm = getVirtualMachine(vmKey)
+				Expect(vm).ToNot(BeNil())
+
+				By("VM has no volumes", func() {
+					Expect(vm.Spec.Volumes).To(BeEmpty())
+					Expect(vm.Status.Volumes).To(BeEmpty())
+				})
+
+				By("Assign VM BiosUUID", func() {
+					vm.Status.BiosUUID = dummyBiosUUID
+					Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+				})
+
+				By("Add CNS volume to Spec.Volumes", func() {
+					vm.Spec.Volumes = append(vm.Spec.Volumes, vmVolume1)
+					Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				})
+
+				By("CnsNodeVmAttachment should not be created for volume", func() {
+					var attachment *cnsv1alpha1.CnsNodeVmAttachment
+					Eventually(func() *cnsv1alpha1.CnsNodeVmAttachment {
+						attachment = getCnsNodeVMAttachment(vm, vmVolume1)
+						return attachment
+					}).Should(BeNil())
+				})
+			})
+		})
+
 		It("Reconciles VirtualMachine Spec.Volumes", func() {
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 

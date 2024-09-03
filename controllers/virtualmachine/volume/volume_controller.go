@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 )
 
 const (
@@ -234,10 +235,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 		VM:      vm,
 	}
 
+	if annotations.HasPaused(vm) {
+		volCtx.Logger.Info("Skipping reconciliation since VirtualMachine contains the pause annotation")
+		return ctrl.Result{}, nil
+	}
+
 	// If the VM has a pause reconcile label key, Skip volume reconciliation.
 	// Do not requeue the reconcile here since removing the pause label will trigger a reconcile anyway.
 	if val, ok := vm.Labels[vmopv1.PausedVMLabelKey]; ok {
-		volCtx.Logger.Info("Skipping reconciliation because a pause operation has been initiated on this VirtualMachine.", "paused by", val)
+		volCtx.Logger.Info("Skipping reconciliation because a pause operation has been initiated on this VirtualMachine.",
+			"pausedBy", val)
 		return ctrl.Result{}, nil
 	}
 

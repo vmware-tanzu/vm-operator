@@ -3,6 +3,13 @@
 set -o errexit
 set -o pipefail
 set -o nounset
+set -x
+
+
+CRI_BIN="${CRI_BIN:-}"
+if [ -z "${CRI_BIN:-}" ]; then
+  CRI_BIN="$(command -v podman 2>/dev/null || command -v docker 2>/dev/null)"
+fi
 
 IMAGE=
 IMAGE_TAG=
@@ -16,7 +23,7 @@ usage() {
 build() {
     GOOS=linux
     echo "GOOS=${GOOS} GOARCH=${GOARCH}"
-    docker build . \
+    "${CRI_BIN}" build . \
         -t "${IMAGE}":"${IMAGE_TAG}" \
         -t "${IMAGE}":"${BUILD_NUMBER}" \
         -t "${IMAGE}":"${BUILD_VERSION}" \

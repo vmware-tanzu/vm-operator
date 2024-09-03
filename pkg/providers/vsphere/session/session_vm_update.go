@@ -529,7 +529,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
 	if pkgcfg.FromContext(vmCtx).Features.IsoSupport {
-		cdromDeviceChanges, err := vmutil.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
+		cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
 		if err != nil {
 			return nil, fmt.Errorf("update CD-ROM device changes error: %w", err)
 		}
@@ -795,7 +795,7 @@ func (s *Session) poweredOnVMReconfigure(
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
 	if pkgcfg.FromContext(vmCtx).Features.IsoSupport {
-		if err := vmutil.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
+		if err := virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
 			return false, fmt.Errorf("update CD-ROM device connection error: %w", err)
 		}
 	}
@@ -1235,7 +1235,7 @@ func (s *Session) UpdateVirtualMachine(
 func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 	vm := vmCtx.VM
 
-	adminPaused := vmutil.IsPausedByAdmin(vmCtx.MoVM)
+	adminPaused := virtualmachine.IsPausedByAdmin(vmCtx.MoVM)
 	devopsPaused := annotations.HasPaused(vm)
 
 	if adminPaused || devopsPaused {

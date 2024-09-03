@@ -1,7 +1,7 @@
 // Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package vm_test
+package virtualmachine_test
 
 import (
 	"path"
@@ -21,9 +21,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
-	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -86,7 +86,7 @@ func cdromTests() {
 			})
 
 			JustBeforeEach(func() {
-				result, resultErr = vmutil.UpdateCdromDeviceChanges(vmCtx, restClient, k8sClient, curDevices)
+				result, resultErr = virtualmachine.UpdateCdromDeviceChanges(vmCtx, restClient, k8sClient, curDevices)
 				Expect(resultErr).ToNot(HaveOccurred())
 			})
 
@@ -394,7 +394,7 @@ func cdromTests() {
 			JustBeforeEach(func() {
 				k8sClient = builder.NewFakeClient(k8sInitObjs...)
 
-				result, resultErr = vmutil.UpdateCdromDeviceChanges(vmCtx, restClient, k8sClient, curDevices)
+				result, resultErr = virtualmachine.UpdateCdromDeviceChanges(vmCtx, restClient, k8sClient, curDevices)
 				Expect(resultErr).To(HaveOccurred())
 			})
 
@@ -771,7 +771,7 @@ func cdromTests() {
 		})
 
 		JustBeforeEach(func() {
-			updateErr = vmutil.UpdateConfigSpecCdromDeviceConnection(vmCtx, restClient, k8sClient, configInfo, configSpec)
+			updateErr = virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, restClient, k8sClient, configInfo, configSpec)
 		})
 
 		Context("Happy Path (no error occurs)", func() {
@@ -886,7 +886,7 @@ func cdromTests() {
 			JustBeforeEach(func() {
 				k8sClient = builder.NewFakeClient(k8sInitObjs...)
 
-				updateErr = vmutil.UpdateConfigSpecCdromDeviceConnection(vmCtx, restClient, k8sClient, configInfo, configSpec)
+				updateErr = virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, restClient, k8sClient, configInfo, configSpec)
 			})
 
 			// These test cases are similar to those in UpdateCdromDeviceChanges.

@@ -38,7 +38,7 @@ func DeleteVirtualMachine(
 		return err
 	}
 	// Throw an error to distinguish from successful deletion.
-	if paused := vmutil.IsPausedByAdmin(vmCtx.MoVM); paused {
+	if paused := IsPausedByAdmin(vmCtx.MoVM); paused {
 		if vmCtx.VM.Labels == nil {
 			vmCtx.VM.Labels = make(map[string]string)
 		}

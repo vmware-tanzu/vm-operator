@@ -40,8 +40,8 @@ export GOTOOLCHAIN ?= local
 ROOT_DIR ?= $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
 # Get the GOPATH, but do not export it. This is used to determine if the project
-# is in the GOPATH and if not, to use Docker for the generate-go-conversions
-# target.
+# is in the GOPATH and if not, to use the container runtime for the
+# generate-go-conversions target.
 GOPATH ?= $(shell go env GOPATH)
 PROJECT_SLUG := github.com/vmware-tanzu/vm-operator
 
@@ -50,7 +50,7 @@ ROOT_DIR_IN_GOPATH := $(findstring $(GOPATH)/src/$(PROJECT_SLUG),$(ROOT_DIR))
 
 # CONVERSION_GEN_FALLBACK_MODE determines how to run the conversion-gen tool if
 # this project is not in the GOPATH at the expected location. Possible values
-# include "symlink" and "docker."
+# include "symlink" and "docker|podman".
 CONVERSION_GEN_FALLBACK_MODE ?= symlink
 
 endif # ifneq (,$(filter-out $(NON_GO_GOALS),$(MAKECMDGOALS)))
@@ -82,6 +82,7 @@ KUBEBUILDER        := $(TOOLS_BIN_DIR)/kubebuilder
 KUBECTL            := $(TOOLS_BIN_DIR)/kubectl
 ETCD               := $(TOOLS_BIN_DIR)/etcd
 GOVULNCHECK        := $(TOOLS_BIN_DIR)/govulncheck
+KIND               := $(TOOLS_BIN_DIR)/kind
 
 # Allow overriding manifest generation destination directory
 MANIFEST_ROOT     ?= config
@@ -104,6 +105,22 @@ COVERAGE_FILE := cover.out
 # the test-nocover target is one of the currenty active goals.
 ifeq (,$(filter-out test-nocover,$(MAKECMDGOALS)))
 COVERED_PKGS := $(shell find . -name '*_test.go' -not -path './api/*' -print | awk -F'/' '{print "./"$$2}' | sort -u)
+endif
+
+# CRI_BIN is the path to the container runtime binary.
+CRI_BIN := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+export CRI_BIN
+
+KIND_CMD := $(KIND)
+ifeq (podman,$(notdir $(CRI_BIN)))
+KIND_CMD := KIND_EXPERIMENTAL_PROVIDER=podman $(KIND)
+endif
+
+# KIND_IMAGE may be overridden to use an upstream image.
+KIND_IMAGE ?= dockerhub.packages.vcfd.broadcom.net/kindest/node:v1.31.0
+
+ifneq (,$(strip $(KIND_IMAGE)))
+KIND_IMAGE_FLAG := --image $(KIND_IMAGE)
 endif
 
 # Kind cluster name used in integration tests. Please note this name must
@@ -207,7 +224,7 @@ web-console-validator: prereqs generate lint-go web-console-validator-only ## Bu
 TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(CONVERSION_GEN) \
                     $(GOLANGCI_LINT) $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) $(ETCD) \
-                    $(GINKGO) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK)
+                    $(GINKGO) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK) $(KIND)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
 $(TOOLING_BINARIES):
 	make -C $(TOOLS_DIR) $(@F)
@@ -234,11 +251,11 @@ lint-go-full: lint-go ## Run slower linters to detect possible issues
 
 .PHONY: lint-markdown
 lint-markdown: ## Lint the project's markdown
-	docker run --rm -v "$$(pwd)":/build gcr.io/cluster-api-provider-vsphere/extra/mdlint:0.17.0
+	$(CRI_BIN) run --rm -v "$$(pwd)":/build gcr.io/cluster-api-provider-vsphere/extra/mdlint:0.17.0
 
 .PHONY: lint-shell
 lint-shell: ## Lint the project's shell scripts
-	docker run --rm -t -v "$$(pwd)":/build:ro gcr.io/cluster-api-provider-vsphere/extra/shellcheck
+	$(CRI_BIN) run --rm -t -v "$$(pwd)":/build:ro gcr.io/cluster-api-provider-vsphere/extra/shellcheck
 
 .PHONY: fix
 fix: GOLANGCI_LINT_FLAGS = --fast=false --fix
@@ -405,25 +422,26 @@ generate-go-conversions:
 	cd "$${NEW_ROOT_DIR}" && \
 	GOPATH="$${NEW_GOPATH}" ROOT_DIR="$${NEW_ROOT_DIR}" make $@
 
-else ifeq (docker,$(CONVERSION_GEN_FALLBACK_MODE))
+else ifeq ($(notdir $(CRI_BIN)),$(CONVERSION_GEN_FALLBACK_MODE))
 
-ifeq (,$(strip $(shell command -v docker 2>/dev/null || true)))
-$(error Docker is required for generate-go-conversions and not detected in path!)
+ifeq (,$(CRI_BIN))
+$(error Container runtime is required for generate-go-conversions and not detected in path!)
 endif
 
-# The generate-go-conversions target will use Docker. Step-by-step, the target:
+# The generate-go-conversions target will use a container runtime. Step-by-step,
+# the target:
 #
 # 1. GOLANG_IMAGE is set to golang:YOUR_LOCAL_GO_VERSION and is the image used
 #    to run make generate-go-conversions.
 #
 # 2. If using an arm host, the GOLANG_IMAGE is prefixed with arm64v8, which is
-#    the prefix for Golang's Docker images for arm systems.
+#    the prefix for Golang's container images for arm systems.
 #
 # 3. A new, temporary directory is created and its path is stored in
 #    TOOLS_BIN_DIR. More on this later.
 #
-# 4. The docker flag --rm ensures that the container will be removed upon
-#    success or failure, preventing orphaned containers from hanging around.
+# 4. The flag --rm ensures that the container will be removed upon success or
+#    failure, preventing orphaned containers from hanging around.
 #
 # 5. The first -v flag is used to bind mount the project's root directory to
 #    the path /go/src/github.com/vmware-tanzu/vm-operator inside of the
@@ -453,7 +471,7 @@ generate-go-conversions:
 	GOLANG_IMAGE="golang:$$(go env GOVERSION | cut -c3-)"; \
 	[ "$$(go env GOHOSTARCH)" = "arm64" ] && GOLANG_IMAGE="arm64v8/$${GOLANG_IMAGE}"; \
 	TOOLS_BIN_DIR="$$(mktemp -d)"; \
-	  docker run -it --rm \
+	  $(CRI_BIN) run -it --rm \
 	  -v "$(ROOT_DIR)":/go/src/$(PROJECT_SLUG) \
 	  -v "$${TOOLS_BIN_DIR}":/go/src/$(PROJECT_SLUG)/hack/tools/bin \
 	  -w /go/src/$(PROJECT_SLUG) \
@@ -516,8 +534,9 @@ kustomize-local-vcsim: kustomize-x ## Kustomize for local-vcsim cluster
 ## --------------------------------------
 
 .PHONY: kind-cluster-info
+kind-cluster-info: | $(KIND)
 kind-cluster-info: ## Print the name of the Kind cluster and its kubeconfig
-	@kind get kubeconfig --name "$(KIND_CLUSTER_NAME)" >/dev/null 2>&1
+	@$(KIND_CMD) get kubeconfig --name "$(KIND_CLUSTER_NAME)" >/dev/null 2>&1
 	@printf "kind cluster name:   %s\nkind cluster config: %s\n" "$(KIND_CLUSTER_NAME)" "$(KUBECONFIG)"
 	@printf "KUBECONFIG=%s\n" "$(KUBECONFIG)" >local.envvars
 
@@ -531,21 +550,24 @@ kind-cluster-info-dump: ## Collect diagnostic information from the kind cluster.
 	@printf "kind cluster dump:   %s\n" "./$(KIND_CLUSTER_INFO_DUMP_DIR)"
 
 .PHONY: kind-cluster
+kind-cluster: | $(KIND)
 kind-cluster: ## Create a kind cluster of name $(KIND_CLUSTER_NAME) for integration (if it does not exist yet)
 	@$(MAKE) --no-print-directory kind-cluster-info 2>/dev/null || \
-	kind create cluster --name "$(KIND_CLUSTER_NAME)" --image harbor-repo.vmware.com/dockerhub-proxy-cache/kindest/node:v1.24.12
+	$(KIND_CMD) create cluster --name "$(KIND_CLUSTER_NAME)" $(KIND_IMAGE_FLAG)
 
 .PHONY: delete-kind-cluster
+delete-kind-cluster: | $(KIND)
 delete-kind-cluster: ## Delete the kind cluster created for integration tests
 	@{ $(MAKE) --no-print-directory kind-cluster-info >/dev/null 2>&1 && \
-	kind delete cluster --name "$(KIND_CLUSTER_NAME)"; } || true
+	$(KIND_CMD) delete cluster --name "$(KIND_CLUSTER_NAME)"; } || true
 
 .PHONY: deploy-local-kind
 deploy-local-kind: docker-build load-kind ## Deploy controller in the kind cluster used for integration tests
 
 .PHONY: load-kind
+load-kind: | $(KIND)
 load-kind: ## Load the image into the kind cluster
-	kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME) -v 10
+	$(KIND_CMD) load docker-image $(IMG) --name $(KIND_CLUSTER_NAME) -v 10
 
 ## --------------------------------------
 ## Development - run
@@ -599,9 +621,9 @@ endif
 	$(MKDOCS) build --clean --config-file mkdocs.yml
 
 .PHONY: docs-build-docker
-docs-build-docker: ## Build docs w Docker
-	docker build -f Dockerfile.docs -t $(IMAGE)-docs:$(IMAGE_TAG) .
-	docker run -it --rm -v "$$(pwd)":/docs --entrypoint /usr/bin/mkdocs \
+docs-build-docker: ## Build docs w container
+	$(CRI_BIN) build -f Dockerfile.docs -t $(IMAGE)-docs:$(IMAGE_TAG) .
+	$(CRI_BIN) run -it --rm -v "$$(pwd)":/docs --entrypoint /usr/bin/mkdocs \
 	  $(IMAGE)-docs:$(IMAGE_TAG) build --clean --config-file mkdocs.yml
 
 .PHONY: docs-serve-python
@@ -613,27 +635,27 @@ endif
 	$(MKDOCS) serve
 
 .PHONY: docs-serve-docker
-docs-serve-docker: ## Serve docs w docker
-	docker build -f Dockerfile.docs -t $(IMAGE)-docs:$(IMAGE_TAG) .
-	docker run -it --rm -p 8000:8000 -v "$$(pwd)":/docs $(IMAGE)-docs:$(IMAGE_TAG)
+docs-serve-docker: ## Serve docs w container
+	$(CRI_BIN) build -f Dockerfile.docs -t $(IMAGE)-docs:$(IMAGE_TAG) .
+	$(CRI_BIN) run -it --rm -p 8000:8000 -v "$$(pwd)":/docs $(IMAGE)-docs:$(IMAGE_TAG)
 
 ## --------------------------------------
 ## Docker
 ## --------------------------------------
 
 .PHONY: docker-build
-docker-build: ## Build the docker image
+docker-build: ## Build the container image
 	hack/build-container.sh -i $(IMAGE) -t $(IMAGE_TAG) -v $(BUILD_VERSION) -n $(BUILD_NUMBER)
 
 .PHONY: docker-push
-docker-push: prereqs  ## Push the docker image
-	docker push ${IMG}
+docker-push: prereqs  ## Push the container image
+	$(CRI_BIN) push ${IMG}
 
 .PHONY: docker-remove
-docker-remove: ## Remove the docker image
-	@if [[ "`docker images -q ${IMG} 2>/dev/null`" != "" ]]; then \
-		echo "Remove docker container ${IMG}"; \
-		docker rmi ${IMG}; \
+docker-remove: ## Remove the container image
+	@if [[ "`$(CRI_BIN) images -q ${IMG} 2>/dev/null`" != "" ]]; then \
+		echo "Remove container ${IMG}"; \
+		$(CRI_BIN) rmi ${IMG}; \
 	fi
 
 

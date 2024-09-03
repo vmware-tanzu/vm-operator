@@ -8,7 +8,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
@@ -94,6 +96,66 @@ func configTests() {
 				Entry("both VC PNID and Port are updated", "some-pnid", "some-port"),
 				Entry("neither VC PNID and Port are updated", nil, nil),
 			)
+		})
+	})
+
+	Describe("GetDNSInformationFromConfigMap", func() {
+		var cm *corev1.ConfigMap
+
+		JustBeforeEach(func() {
+			// Note that NewTestContextForVCSim() creates this CM.
+			cm = &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      config.NetworkConfigMapName,
+					Namespace: ctx.PodNamespace,
+				},
+			}
+			Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(cm), cm)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			cm = nil
+		})
+
+		It("does not exist", func() {
+			Expect(ctx.Client.Delete(ctx, cm)).To(Succeed())
+
+			_, _, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+
+		It("returns empty data", func() {
+			cm.Data = map[string]string{}
+			Expect(ctx.Client.Update(ctx, cm)).To(Succeed())
+
+			nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nameservers).To(BeEmpty())
+			Expect(searchSuffixes).To(BeEmpty())
+		})
+
+		It("returns error if <worker_dns> is there", func() {
+			cm.Data = map[string]string{
+				config.NameserversKey: "<worker_dns>",
+			}
+			Expect(ctx.Client.Update(ctx, cm)).To(Succeed())
+
+			_, _, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("It still contains <worker_dns> key"))
+		})
+
+		It("returns expected data", func() {
+			cm.Data = map[string]string{
+				config.NameserversKey:    "1.1.1.1 8.8.8.8",
+				config.SearchSuffixesKey: "vmware.com google.com",
+			}
+			Expect(ctx.Client.Update(ctx, cm)).To(Succeed())
+
+			nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nameservers).To(ConsistOf("1.1.1.1", "8.8.8.8"))
+			Expect(searchSuffixes).To(ConsistOf("vmware.com", "google.com"))
 		})
 	})
 }

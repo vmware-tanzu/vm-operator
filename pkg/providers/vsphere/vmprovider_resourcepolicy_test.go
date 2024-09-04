@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere_test
@@ -58,7 +58,7 @@ func resourcePolicyTests() {
 
 		JustBeforeEach(func() {
 			ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
-			vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
+			vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Client, ctx.Recorder)
 
 			nsInfo = ctx.CreateWorkloadNamespace()
 		})

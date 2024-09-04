@@ -543,9 +543,10 @@ func GetVMClassConfigSpec(
 
 // GetAttachedDiskUUIDToPVC returns a map of disk UUID to PVC object for all
 // attached disks by checking the VM's spec and status of volumes.
+// It uses the API reader to avoid implicit caching of all PVC objects.
 func GetAttachedDiskUUIDToPVC(
 	vmCtx pkgctx.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (map[string]corev1.PersistentVolumeClaim, error) {
+	apiReader ctrlclient.Reader) (map[string]corev1.PersistentVolumeClaim, error) {
 
 	if len(vmCtx.VM.Spec.Volumes) == 0 {
 		return nil, nil
@@ -576,7 +577,7 @@ func GetAttachedDiskUUIDToPVC(
 
 		pvcObj := corev1.PersistentVolumeClaim{}
 		objKey := ctrlclient.ObjectKey{Name: pvcName, Namespace: vmCtx.VM.Namespace}
-		if err := k8sClient.Get(vmCtx, objKey, &pvcObj); err != nil {
+		if err := apiReader.Get(vmCtx, objKey, &pvcObj); err != nil {
 			return nil, err
 		}
 

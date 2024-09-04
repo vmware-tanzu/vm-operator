@@ -73,7 +73,7 @@ func vmTests() {
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.MaxDeployThreadsOnProvider = 1
 		})
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
+		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Client, ctx.Recorder)
 		nsInfo = ctx.CreateWorkloadNamespace()
 	})
 

@@ -58,6 +58,7 @@ type VersionedOVFEnvelope struct {
 
 type vSphereVMProvider struct {
 	k8sClient         ctrlclient.Client
+	k8sAPIReader      ctrlclient.Reader
 	eventRecorder     record.Recorder
 	globalExtraConfig map[string]string
 	minCPUFreq        uint64
@@ -71,6 +72,7 @@ type vSphereVMProvider struct {
 func NewVSphereVMProviderFromClient(
 	ctx context.Context,
 	client ctrlclient.Client,
+	apiReader ctrlclient.Reader,
 	recorder record.Recorder) providers.VirtualMachineProviderInterface {
 
 	ovfCache, ovfLockPool := InitOvfCacheAndLockPool(
@@ -78,6 +80,7 @@ func NewVSphereVMProviderFromClient(
 
 	return &vSphereVMProvider{
 		k8sClient:         client,
+		k8sAPIReader:      apiReader,
 		eventRecorder:     recorder,
 		globalExtraConfig: getExtraConfig(ctx),
 		ovfCache:          ovfCache,

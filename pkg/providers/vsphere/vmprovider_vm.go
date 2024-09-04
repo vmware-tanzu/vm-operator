@@ -536,7 +536,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		annotations.HasForceEnableBackup(vmCtx.VM) {
 		vmCtx.Logger.V(4).Info("Backing up VM Service managed VM")
 
-		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
+		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sAPIReader)
 		if err != nil {
 			vmCtx.Logger.Error(err, "failed to get disk uuid to PVC mapping for backup")
 			return err

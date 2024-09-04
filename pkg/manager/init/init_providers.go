@@ -19,6 +19,6 @@ func InitializeProviders(
 
 	vmProviderName := fmt.Sprintf("%s/%s/vmProvider", ctx.Namespace, ctx.Name)
 	recorder := record.New(mgr.GetEventRecorderFor(vmProviderName))
-	ctx.VMProvider = vsphere2.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), recorder)
+	ctx.VMProvider = vsphere2.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), mgr.GetAPIReader(), recorder)
 	return nil
 }

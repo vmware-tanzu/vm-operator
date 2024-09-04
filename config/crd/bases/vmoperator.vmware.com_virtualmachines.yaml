@@ -5313,11 +5313,7 @@ spec:
                       anyOf:
                       - type: integer
                       - type: string
-                      description: |-
-                        Limit describes the storage limit for the volume.
-                        Please note, this is only available for Classic volumes. For Managed
-                        volumes, please refer to the PersistentVolumeClaim resource for the
-                        requested capacity.
+                      description: Limit describes the storage limit for the volume.
                       pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                       x-kubernetes-int-or-string: true
                     name:

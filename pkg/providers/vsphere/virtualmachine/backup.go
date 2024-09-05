@@ -4,7 +4,6 @@
 package virtualmachine
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -207,7 +206,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 		// This ensures that the reconfigure done for storing the backup data
 		// does not indicate an update operation was triggered. While this does
 		// reconfigure the VM, it is not what "update" means to a user.
-		ctx := ctxop.JoinContext(opts.VMCtx, ctxop.WithContext(context.TODO()))
+		ctx := ctxop.WithContext(opts.VMCtx)
 
 		if _, err := resVM.Reconfigure(ctx, configSpec); err != nil {
 			opts.VMCtx.Logger.Error(err, "failed to update VM ExtraConfig with latest backup data")

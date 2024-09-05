@@ -18,7 +18,7 @@ func init() {
 	logf.SetLogger(klog.Background())
 }
 
-func TestKube(t *testing.T) {
+func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Operation Context Test Suite")
 }

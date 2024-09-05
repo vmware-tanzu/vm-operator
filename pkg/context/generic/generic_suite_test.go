@@ -1,7 +1,7 @@
 // Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package cource_test
+package generic_test
 
 import (
 	"testing"
@@ -20,5 +20,5 @@ func init() {
 
 func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Cource Util Test Suite")
+	RunSpecs(t, "Generic Context Test Suite")
 }

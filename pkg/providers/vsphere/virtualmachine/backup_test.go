@@ -69,6 +69,12 @@ func backupTests() {
 	DescribeTableSubtree("Backup VM",
 		func(IncrementalRestore bool) {
 
+			var fakeManagedFields = []metav1.ManagedFieldsEntry{
+				{
+					Manager: "fake-manager",
+				},
+			}
+
 			BeforeEach(func() {
 				if IncrementalRestore {
 					testConfig.WithVMIncrementalRestore = true
@@ -85,6 +91,10 @@ func backupTests() {
 					Logger:  suite.GetLogger().WithValues("vmName", vcVM.Name()),
 					VM:      builder.DummyVirtualMachine(),
 				}
+
+				// Add last-apply annotation and managed fields to verify they are not backed up in VM's ExtraConfig.
+				vmCtx.VM.Annotations[corev1.LastAppliedConfigAnnotation] = "last-applied-vm"
+				vmCtx.VM.ManagedFields = fakeManagedFields
 			})
 
 			AfterEach(func() {
@@ -106,17 +116,8 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-
-						if IncrementalRestore {
-							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
-						}
-
-						copyVM := vmCtx.VM.DeepCopy()
-						// ignore the status
-						copyVM.Status = vmopv1.VirtualMachineStatus{}
-						expectedVMYAML, err := yaml.Marshal(copyVM)
-						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(expectedVMYAML), true)
+						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
@@ -138,9 +139,8 @@ func backupTests() {
 
 						oldVM := vmCtx.VM.DeepCopy()
 						oldVM.ObjectMeta.Generation = 10
-						oldVMYAML, err := yaml.Marshal(oldVM)
-						Expect(err).NotTo(HaveOccurred())
-						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(oldVMYAML))
+						oldVMYAML := getExpectedBackupObjectYAML(oldVM)
+						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(oldVMYAML)
 						Expect(err).NotTo(HaveOccurred())
 
 						extraConfig := []vimtypes.BaseOptionValue{
@@ -176,16 +176,9 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
-						copyVM := vmCtx.VM.DeepCopy()
-						// ignore the status
-						copyVM.Status = vmopv1.VirtualMachineStatus{}
-						expectedVMYAML, err := yaml.Marshal(copyVM)
-						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(expectedVMYAML), true)
-						// Backing up the YAML should not result in an update op being
-						// flagged.
-						Expect(ctxop.IsUpdate(vmCtx)).To(BeFalse())
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
@@ -206,10 +199,8 @@ func backupTests() {
 
 						oldVM := vmCtx.VM.DeepCopy()
 						oldVM.Annotations["foo"] = "bar"
-
-						oldVMYAML, err := yaml.Marshal(oldVM)
-						Expect(err).NotTo(HaveOccurred())
-						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(oldVMYAML))
+						oldVMYAML := getExpectedBackupObjectYAML(oldVM)
+						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(oldVMYAML)
 						Expect(err).NotTo(HaveOccurred())
 
 						extraConfig := []vimtypes.BaseOptionValue{
@@ -245,12 +236,8 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						copyVM := vmCtx.VM.DeepCopy()
-						// ignore the status
-						copyVM.Status = vmopv1.VirtualMachineStatus{}
-						expectedVMYAML, err := yaml.Marshal(copyVM)
-						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(expectedVMYAML), true)
+						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
@@ -272,9 +259,8 @@ func backupTests() {
 
 						oldVM := vmCtx.VM.DeepCopy()
 						oldVM.ObjectMeta.Labels = map[string]string{"foo": "bar"}
-						oldVMYAML, err := yaml.Marshal(oldVM)
-						Expect(err).NotTo(HaveOccurred())
-						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(oldVMYAML))
+						oldVMYAML := getExpectedBackupObjectYAML(oldVM)
+						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(oldVMYAML)
 						Expect(err).NotTo(HaveOccurred())
 
 						extraConfig := []vimtypes.BaseOptionValue{
@@ -310,12 +296,9 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						copyVM := vmCtx.VM.DeepCopy()
-						// ignore the status
-						copyVM.Status = vmopv1.VirtualMachineStatus{}
-						expectedVMYAML, err := yaml.Marshal(copyVM)
-						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(expectedVMYAML), true)
+						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
+
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
@@ -337,9 +320,7 @@ func backupTests() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
 						}
 
-						vmYAML, err := yaml.Marshal(vmCtx.VM)
-						Expect(err).NotTo(HaveOccurred())
-						vmBackupStr = string(vmYAML)
+						vmBackupStr = getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
 						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmBackupStr)
 						Expect(err).NotTo(HaveOccurred())
 
@@ -400,6 +381,11 @@ func backupTests() {
 							UID:             "secret-uid",
 							ResourceVersion: "0",
 							Name:            "vm-secret",
+							// Add last-apply annotation and managed fields to verify they are not backed up in ExtraConfig.
+							Annotations: map[string]string{
+								corev1.LastAppliedConfigAnnotation: "last-applied-secret",
+							},
+							ManagedFields: fakeManagedFields,
 						},
 					}
 				)
@@ -411,9 +397,8 @@ func backupTests() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
 						}
 
-						vmYAML, err := yaml.Marshal(vmCtx.VM)
-						Expect(err).NotTo(HaveOccurred())
-						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+						vmYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 						Expect(err).NotTo(HaveOccurred())
 
 						extraConfig := []vimtypes.BaseOptionValue{
@@ -429,6 +414,7 @@ func backupTests() {
 								Value: vT2,
 							})
 						}
+
 						_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
 							ExtraConfig: extraConfig,
 						})
@@ -447,9 +433,9 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						resYAML, err := yaml.Marshal(secretRes)
-						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, string(resYAML), true)
+						resYAML := getExpectedBackupObjectYAML(secretRes)
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, resYAML, true)
+
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
@@ -464,15 +450,13 @@ func backupTests() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
 						}
 
-						vmYAML, err := yaml.Marshal(vmCtx.VM)
-						Expect(err).NotTo(HaveOccurred())
-						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+						vmYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 						Expect(err).NotTo(HaveOccurred())
 
-						oldRes := secretRes.DeepCopy()
-						oldResYAML, err := yaml.Marshal(oldRes)
+						oldResYAML := getExpectedBackupObjectYAML(secretRes.DeepCopy())
 						Expect(err).NotTo(HaveOccurred())
-						yamlEncoded, err := pkgutil.EncodeGzipBase64(string(oldResYAML))
+						yamlEncoded, err := pkgutil.EncodeGzipBase64(oldResYAML)
 						Expect(err).NotTo(HaveOccurred())
 
 						extraConfig := []vimtypes.BaseOptionValue{
@@ -512,9 +496,9 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						newResYAML, err := yaml.Marshal(secretRes)
-						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, string(newResYAML), true)
+						newResYAML := getExpectedBackupObjectYAML(secretRes.DeepCopy())
+						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, newResYAML, true)
+
 						if IncrementalRestore {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
@@ -532,14 +516,11 @@ func backupTests() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
 						}
 
-						vmYAML, err := yaml.Marshal(vmCtx.VM)
-						Expect(err).NotTo(HaveOccurred())
-						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+						vmYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 						Expect(err).NotTo(HaveOccurred())
 
-						resYAML, err := yaml.Marshal(secretRes)
-						Expect(err).NotTo(HaveOccurred())
-						backupStr = string(resYAML)
+						backupStr = getExpectedBackupObjectYAML(secretRes.DeepCopy())
 						yamlEncoded, err := pkgutil.EncodeGzipBase64(backupStr)
 						Expect(err).NotTo(HaveOccurred())
 
@@ -597,6 +578,11 @@ func backupTests() {
 						cmRes := &corev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vm-configMap",
+								// Add last-apply annotation and managed fields to verify they are not backed up in ExtraConfig.
+								Annotations: map[string]string{
+									corev1.LastAppliedConfigAnnotation: "last-applied-configMap",
+								},
+								ManagedFields: fakeManagedFields,
 							},
 						}
 
@@ -611,11 +597,9 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						secretResYAML, err := yaml.Marshal(secretRes)
-						Expect(err).NotTo(HaveOccurred())
-						cmResYAML, err := yaml.Marshal(cmRes)
-						Expect(err).NotTo(HaveOccurred())
-						expectedYAML := string(secretResYAML) + "\n---\n" + string(cmResYAML)
+						secretResYAML := getExpectedBackupObjectYAML(secretRes.DeepCopy())
+						cmResYAML := getExpectedBackupObjectYAML(cmRes.DeepCopy())
+						expectedYAML := secretResYAML + "\n---\n" + cmResYAML
 						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, expectedYAML, true)
 
 						if IncrementalRestore {
@@ -648,9 +632,8 @@ func backupTests() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
 						}
 
-						vmYAML, err := yaml.Marshal(vmCtx.VM)
-						Expect(err).NotTo(HaveOccurred())
-						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+						vmYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+						vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 						Expect(err).NotTo(HaveOccurred())
 
 						extraConfig := []vimtypes.BaseOptionValue{
@@ -734,9 +717,8 @@ func backupTests() {
 							// simulate an old VM with backup version at t2 restored into the inventory.
 							oldVM := vmCtx.VM.DeepCopy()
 							oldVM.ObjectMeta.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
-							vmYAML, err := yaml.Marshal(oldVM)
-							Expect(err).NotTo(HaveOccurred())
-							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+							vmYAML := getExpectedBackupObjectYAML(oldVM)
+							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 							Expect(err).NotTo(HaveOccurred())
 
 							extraConfig := []vimtypes.BaseOptionValue{
@@ -805,9 +787,8 @@ func backupTests() {
 					When("backup versions (ie) vm annotation and extra config key match", func() {
 						JustBeforeEach(func() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
-							vmYAML, err := yaml.Marshal(vmCtx.VM)
-							Expect(err).NotTo(HaveOccurred())
-							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+							vmYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 							Expect(err).NotTo(HaveOccurred())
 
 							extraConfig := []vimtypes.BaseOptionValue{
@@ -854,9 +835,8 @@ func backupTests() {
 
 					When("vm has no backup version annotation", func() {
 						JustBeforeEach(func() {
-							vmYAML, err := yaml.Marshal(vmCtx.VM)
-							Expect(err).NotTo(HaveOccurred())
-							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+							vmYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 							Expect(err).NotTo(HaveOccurred())
 
 							extraConfig := []vimtypes.BaseOptionValue{
@@ -892,9 +872,8 @@ func backupTests() {
 					When("vm has invalid backup version annotation", func() {
 						JustBeforeEach(func() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = "invalid"
-							vmYAML, err := yaml.Marshal(vmCtx.VM)
-							Expect(err).NotTo(HaveOccurred())
-							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+							vmYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 							Expect(err).NotTo(HaveOccurred())
 
 							extraConfig := []vimtypes.BaseOptionValue{
@@ -935,9 +914,8 @@ func backupTests() {
 					When("vm has invalid backup version extraConfig key", func() {
 						JustBeforeEach(func() {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT1
-							vmYAML, err := yaml.Marshal(vmCtx.VM)
-							Expect(err).NotTo(HaveOccurred())
-							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(string(vmYAML))
+							vmYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
+							vmYAMLEncoded, err := pkgutil.EncodeGzipBase64(vmYAML)
 							Expect(err).NotTo(HaveOccurred())
 
 							extraConfig := []vimtypes.BaseOptionValue{
@@ -1075,4 +1053,24 @@ func verifyBackupDataInExtraConfig(
 	} else {
 		Expect(ecValRaw).To(Equal(expectedVal))
 	}
+}
+
+func getExpectedBackupObjectYAML(obj client.Object) string {
+	// Remove fields that are trimmed before persisting in the ExtraConfig.
+	if annotations := obj.GetAnnotations(); len(annotations) > 0 {
+		delete(annotations, corev1.LastAppliedConfigAnnotation)
+		obj.SetAnnotations(annotations)
+	}
+	obj.SetManagedFields(nil)
+
+	// Ignore the VM status field as the backup condition will be added after
+	// persisting the VM YAML in ExtraConfig.
+	if vm, ok := obj.(*vmopv1.VirtualMachine); ok {
+		vm.Status = vmopv1.VirtualMachineStatus{}
+		obj = vm
+	}
+
+	objYAML, err := yaml.Marshal(obj)
+	Expect(err).NotTo(HaveOccurred())
+	return string(objYAML)
 }

@@ -553,7 +553,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			VcVM:                vcVM,
 			DiskUUIDToPVC:       diskUUIDToPVC,
 			AdditionalResources: additionalResources,
-			BackupVersion:       fmt.Sprint(time.Now().Unix()),
+			BackupVersion:       fmt.Sprint(time.Now().UnixMilli()),
 			ClassicDiskUUIDs:    GetAttachedClassicDiskUUIDs(vmCtx),
 		}
 		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {

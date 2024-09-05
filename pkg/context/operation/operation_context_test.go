@@ -30,12 +30,12 @@ var _ = Describe("IsCreate", func() {
 			Expect(fn).To(PanicWith("context is nil"))
 		})
 	})
-	When("operation is missing from context", func() {
+	When("value is missing from context", func() {
 		It("should panic", func() {
 			fn := func() {
 				_ = ctxop.IsCreate(ctx)
 			}
-			Expect(fn).To(PanicWith("operation is missing from context"))
+			Expect(fn).To(PanicWith("value is missing from context"))
 		})
 	})
 	When("operation is present in context", func() {
@@ -66,12 +66,12 @@ var _ = Describe("IsUpdate", func() {
 			Expect(fn).To(PanicWith("context is nil"))
 		})
 	})
-	When("operation is missing from context", func() {
+	When("value is missing from context", func() {
 		It("should panic", func() {
 			fn := func() {
 				_ = ctxop.IsUpdate(ctx)
 			}
-			Expect(fn).To(PanicWith("operation is missing from context"))
+			Expect(fn).To(PanicWith("value is missing from context"))
 		})
 	})
 	When("operation is present in context", func() {
@@ -102,12 +102,12 @@ var _ = Describe("MarkCreate", func() {
 			Expect(fn).To(PanicWith("context is nil"))
 		})
 	})
-	When("operation is missing from context", func() {
+	When("value is missing from context", func() {
 		It("should panic", func() {
 			fn := func() {
 				ctxop.MarkCreate(ctx)
 			}
-			Expect(fn).To(PanicWith("operation is missing from context"))
+			Expect(fn).To(PanicWith("value is missing from context"))
 		})
 	})
 	When("operation is present in context", func() {
@@ -153,12 +153,12 @@ var _ = Describe("MarkUpdate", func() {
 			Expect(fn).To(PanicWith("context is nil"))
 		})
 	})
-	When("operation is missing from context", func() {
+	When("value is missing from context", func() {
 		It("should panic", func() {
 			fn := func() {
 				ctxop.MarkUpdate(ctx)
 			}
-			Expect(fn).To(PanicWith("operation is missing from context"))
+			Expect(fn).To(PanicWith("value is missing from context"))
 		})
 	})
 	When("operation is present in context", func() {
@@ -217,12 +217,12 @@ var _ = Describe("JoinContext", func() {
 			Expect(fn).To(PanicWith("right context is nil"))
 		})
 	})
-	When("operation is missing from context", func() {
+	When("value is missing from context", func() {
 		It("should panic", func() {
 			fn := func() {
 				_ = ctxop.JoinContext(left, right)
 			}
-			Expect(fn).To(PanicWith("operation is missing from context"))
+			Expect(fn).To(PanicWith("value is missing from context"))
 		})
 	})
 	When("the left context has a operation", func() {
@@ -252,12 +252,28 @@ var _ = Describe("JoinContext", func() {
 		BeforeEach(func() {
 			left = ctxop.WithContext(context.Background())
 			right = ctxop.WithContext(context.Background())
-			ctxop.MarkUpdate(right)
 		})
-		It("should return the left context with operation from the right", func() {
-			ctx := ctxop.JoinContext(left, right)
-			Expect(ctx).ToNot(BeNil())
-			Expect(ctxop.IsUpdate(ctx)).To(BeTrue())
+		When("the left operation is create and the right operation is update", func() {
+			BeforeEach(func() {
+				ctxop.MarkCreate(left)
+				ctxop.MarkUpdate(right)
+			})
+			It("should return the left context with operation from the left", func() {
+				ctx := ctxop.JoinContext(left, right)
+				Expect(ctx).ToNot(BeNil())
+				Expect(ctxop.IsCreate(ctx)).To(BeTrue())
+			})
+		})
+		When("the left operation is update and the right operation is create", func() {
+			BeforeEach(func() {
+				ctxop.MarkUpdate(left)
+				ctxop.MarkCreate(right)
+			})
+			It("should return the left context with operation from the right", func() {
+				ctx := ctxop.JoinContext(left, right)
+				Expect(ctx).ToNot(BeNil())
+				Expect(ctxop.IsCreate(ctx)).To(BeTrue())
+			})
 		})
 	})
 })

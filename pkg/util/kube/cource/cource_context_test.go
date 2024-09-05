@@ -33,12 +33,12 @@ var _ = Describe("FromContext", func() {
 			Expect(fn).To(PanicWith("context is nil"))
 		})
 	})
-	When("map is missing from context", func() {
+	When("value is missing from context", func() {
 		It("should panic", func() {
 			fn := func() {
 				_ = cource.FromContext(ctx, key)
 			}
-			Expect(fn).To(PanicWith("map is missing from context"))
+			Expect(fn).To(PanicWith("value is missing from context"))
 		})
 	})
 	When("map is present in context", func() {
@@ -69,7 +69,7 @@ var _ = Describe("ValidateContext", func() {
 			Expect(fn).To(PanicWith("context is nil"))
 		})
 	})
-	When("map is missing from context", func() {
+	When("value is missing from context", func() {
 		It("should return false", func() {
 			Expect(cource.ValidateContext(ctx)).To(BeFalse())
 		})
@@ -115,12 +115,12 @@ var _ = Describe("JoinContext", func() {
 			Expect(fn).To(PanicWith("right context is nil"))
 		})
 	})
-	When("map is missing from context", func() {
+	When("value is missing from context", func() {
 		It("should panic", func() {
 			fn := func() {
 				_ = cource.JoinContext(left, right)
 			}
-			Expect(fn).To(PanicWith("map is missing from context"))
+			Expect(fn).To(PanicWith("value is missing from context"))
 		})
 	})
 	When("the left context has the map", func() {

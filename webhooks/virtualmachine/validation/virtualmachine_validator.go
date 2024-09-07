@@ -360,8 +360,10 @@ func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *
 	)
 
 	switch {
+	// Imageless VMs are only allowed if the Mobility Import VM, or the Incremental restore FSS is supported.
 	case vmopv1util.IsImagelessVM(*vm) &&
-		pkgcfg.FromContext(ctx).Features.VMImportNewNet:
+		(pkgcfg.FromContext(ctx).Features.VMImportNewNet ||
+			pkgcfg.FromContext(ctx).Features.VMIncrementalRestore):
 
 		// Restrict creating imageless VM resources to privileged users.
 		if !ctx.IsPrivilegedAccount {

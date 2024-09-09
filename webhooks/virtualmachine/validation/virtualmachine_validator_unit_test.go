@@ -556,6 +556,100 @@ func unitTestsValidateCreate() {
 			},
 		),
 
+		// FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled
+		Entry("allow empty spec.image for privileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("require spec.image.kind for privileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKindMsg).Error(),
+				),
+			},
+		),
+		Entry("forbid empty spec.image for unprivileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Forbidden(field.NewPath("spec", "image"), "restricted to privileged users").Error(),
+				),
+			},
+		),
+		Entry("require spec.image.kind for unprivileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "image").Child("kind"), invalidImageKindMsg).Error(),
+				),
+			},
+		),
+		Entry("require valid spec.image.kind for privileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+						Kind: "invalid",
+					}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKindMsg).Error(),
+				),
+			},
+		),
+		Entry("require valid spec.image.kind for unprivileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+						Kind: "invalid",
+					}
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "image").Child("kind"), "invalid", invalidImageKindMsg).Error(),
+				),
+			},
+		),
+
 		//
 		// FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled
 		//

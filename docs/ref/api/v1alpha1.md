@@ -648,7 +648,6 @@ _Appears in:_
 | --- | --- |
 | `tcpSocket` _[TCPSocketAction](#tcpsocketaction)_ | TCPSocket specifies an action involving a TCP port.
 
-
 Deprecated: The TCPSocket action requires network connectivity that is not supported in all environments.
 This field will be removed in a later API version. |
 | `guestHeartbeat` _[GuestHeartbeatAction](#guestheartbeataction)_ | GuestHeartbeat specifies an action involving the guest heartbeat status. |
@@ -800,12 +799,10 @@ _Appears in:_
 reconciling VirtualMachine resources that are realized from this
 VirtualMachineClass.
 
-
 When omitted, controllers reconciling VirtualMachine resources determine
 the default controller name from the environment variable
 DEFAULT_VM_CLASS_CONTROLLER_NAME. If this environment variable is not
 defined or empty, it defaults to vmoperator.vmware.com/vsphere.
-
 
 Once a non-empty value is assigned to this field, attempts to set this
 field to an empty value will be silently ignored. |
@@ -914,7 +911,6 @@ A VirtualMachineImage is supported by VMService if the following conditions are 
 | `conditions` _[Condition](#condition) array_ | Conditions describes the current condition information of the VirtualMachineImage object. e.g. if the OS type
 is supported or image is supported by VMService |
 | `contentLibraryRef` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core)_ | ContentLibraryRef is a reference to the source ContentLibrary/ClusterContentLibrary resource.
-
 
 Deprecated: This field is provider specific but the VirtualMachineImage types are intended to be provider generic.
 This field does not exist in later API versions. Instead, the Spec.ProviderRef field should be used to look up the
@@ -1040,7 +1036,6 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name is the name of the referenced object.
 
-
 If omitted this value defaults to the name of the
 VirtualMachinePublishRequest resource. |
 | `apiVersion` _string_ | APIVersion is the API version of the referenced object. |
@@ -1052,7 +1047,6 @@ VirtualMachinePublishRequest resource. |
 
 VirtualMachinePublishRequestSpec defines the desired state of a
 VirtualMachinePublishRequest.
-
 
 All the fields in this spec are optional. This is especially useful when a
 DevOps persona wants to publish a VM without doing anything more than
@@ -1067,7 +1061,6 @@ _Appears in:_
 | `source` _[VirtualMachinePublishRequestSource](#virtualmachinepublishrequestsource)_ | Source is the source of the publication request, ex. a VirtualMachine
 resource.
 
-
 If this value is omitted then the publication controller checks to
 see if there is a resource with the same name as this
 VirtualMachinePublishRequest resource, an API version equal to
@@ -1076,14 +1069,12 @@ a resource exists, then it is the source of the publication. |
 | `target` _[VirtualMachinePublishRequestTarget](#virtualmachinepublishrequesttarget)_ | Target is the target of the publication request, ex. item
 information and a ContentLibrary resource.
 
-
 If this value is omitted, the controller uses spec.source.name + "-image"
 as the name of the published item. Additionally, when omitted the
 controller attempts to identify the target location by matching a
 resource with an API version equal to spec.target.location.apiVersion, a
 kind equal to spec.target.location.kind, w/ the label
 "imageregistry.vmware.com/default".
-
 
 Please note that while optional, if a VirtualMachinePublishRequest sans
 target information is applied to a namespace without a default
@@ -1093,7 +1084,6 @@ will be marked in error. |
 resource will be allowed to exist once the publication operation
 completes. After the TTL expires, the resource will be automatically
 deleted without the user having to take any direct action.
-
 
 If this field is unset then the request resource will not be
 automatically deleted. If this field is set to zero then the request
@@ -1119,7 +1109,6 @@ ex. item information and a ContentLibrary resource. |
 guaranteed to be set in happens-before order across separate operations.
 It is represented in RFC3339 form and is in UTC.
 
-
 The value of this field should be equal to the value of the
 LastTransitionTime for the status condition Type=Complete. |
 | `startTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | StartTime represents time when the request was acknowledged by the
@@ -1133,17 +1122,14 @@ has been attempted. |
 eventually realized in the same namespace as the VM and publication
 request after the publication operation completes.
 
-
 This field will not be set until the VirtualMachineImage resource
 is realized. |
 | `ready` _boolean_ | Ready is set to true only when the VM has been published successfully
 and the new VirtualMachineImage resource is ready.
 
-
 Readiness is determined by waiting until there is status condition
 Type=Complete and ensuring it and all other status conditions present
 have a Status=True. The conditions present will be:
-
 
   * SourceValid
   * TargetValid
@@ -1169,7 +1155,6 @@ _Appears in:_
 | `item` _[VirtualMachinePublishRequestTargetItem](#virtualmachinepublishrequesttargetitem)_ | Item contains information about the name of the object to which
 the VM is published.
 
-
 Please note this value is optional and if omitted, the controller
 will use spec.source.name + "-image" as the name of the published
 item. |
@@ -1190,13 +1175,11 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name is the display name of the published object.
 
-
 If the spec.target.location.apiVersion equals
 imageregistry.vmware.com/v1alpha1 and the spec.target.location.kind
 equals ContentLibrary, then this should be the name that will
 show up in vCenter Content Library, not the custom resource name
 in the namespace.
-
 
 If omitted then the controller will use spec.source.name + "-image". |
 | `description` _string_ | Description is the description to assign to the published object. |
@@ -1215,10 +1198,8 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name is the name of the referenced object.
 
-
 Please note an error will be returned if this field is not
 set in a namespace that lacks a default publication target.
-
 
 A default publication target is a resource with an API version
 equal to spec.target.location.apiVersion, a kind equal to
@@ -1375,14 +1356,12 @@ _Appears in:_
 | `imageName` _string_ | ImageName describes the name of the image resource used to deploy this
 VM.
 
-
 This field may be used to specify the name of a VirtualMachineImage
 or ClusterVirtualMachineImage resource. The resolver first checks to see
 if there is a VirtualMachineImage with the specified name in the
 same namespace as the VM being deployed. If no such resource exists, the
 resolver then checks to see if there is a ClusterVirtualMachineImage
 resource with the specified name.
-
 
 This field may also be used to specify the display name (vSphere name) of
 a VirtualMachineImage or ClusterVirtualMachineImage resource. If the
@@ -1397,18 +1376,15 @@ of VirtualMachine.  A VirtualMachineClass is used to further customize the attri
 instance.  See VirtualMachineClass for more description. |
 | `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the desired power state of a VirtualMachine.
 
-
 Please note this field may be omitted when creating a new VM and will
 default to "poweredOn." However, once the field is set to a non-empty
 value, it may no longer be set to an empty value.
-
 
 Additionally, setting this value to "suspended" is not supported when
 creating a new VM. The valid values when creating a new VM are
 "poweredOn" and "poweredOff." An empty value is also allowed on create
 since this value defaults to "poweredOn" for new VMs. |
 | `powerOffMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | PowerOffMode describes the desired behavior when powering off a VM.
-
 
 There are three, supported power off modes: hard, soft, and
 trySoft. The first mode, hard, is the equivalent of a physical
@@ -1418,10 +1394,8 @@ gracefully shutdown the VM. Its variant, trySoft, first attempts
 a graceful shutdown, and if that fails or the VM is not in a powered off
 state after five minutes, the VM is halted.
 
-
 If omitted, the mode defaults to hard. |
 | `suspendMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | SuspendMode describes the desired behavior when suspending a VM.
-
 
 There are three, supported suspend modes: hard, soft, and
 trySoft. The first mode, hard, is where vSphere suspends the VM to
@@ -1431,18 +1405,15 @@ gracefully suspend the VM. Its variant, trySoft, first attempts
 a graceful suspend, and if that fails or the VM is not in a put into
 standby by the guest after five minutes, the VM is suspended.
 
-
 If omitted, the mode defaults to hard. |
 | `nextRestartTime` _string_ | NextRestartTime may be used to restart the VM, in accordance with
 RestartMode, by setting the value of this field to "now"
 (case-insensitive).
 
-
 A mutating webhook changes this value to the current time (UTC), which
 the VM controller then uses to determine the VM should be restarted by
 comparing the value to the timestamp of the last time the VM was
 restarted.
-
 
 Please note it is not possible to schedule future restarts using this
 field. The only value that users may set is the string "now"
@@ -1450,14 +1421,12 @@ field. The only value that users may set is the string "now"
 | `restartMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | RestartMode describes the desired behavior for restarting a VM when
 spec.nextRestartTime is set to "now" (case-insensitive).
 
-
 There are three, supported suspend modes: hard, soft, and
 trySoft. The first mode, hard, is where vSphere resets the VM without any
 interaction inside of the guest. The soft mode requires the VM's guest to
 have VM Tools installed and asks the guest to restart the VM. Its
 variant, trySoft, first attempts a soft restart, and if that fails or
 does not complete within five minutes, the VM is hard reset.
-
 
 If omitted, the mode defaults to hard. |
 | `ports` _[VirtualMachinePort](#virtualmachineport) array_ | Ports is currently unused and can be considered deprecated. |
@@ -1467,7 +1436,6 @@ instance. |
 | `networkInterfaces` _[VirtualMachineNetworkInterface](#virtualmachinenetworkinterface) array_ | NetworkInterfaces describes a list of VirtualMachineNetworkInterfaces to be configured on the VirtualMachine instance.
 Each of these VirtualMachineNetworkInterfaces describes external network integration configurations that are to be
 used by the VirtualMachine controller when integrating the VirtualMachine into one or more external networks.
-
 
 The maximum number of network interface allowed is 10 because of the limit built into vSphere. |
 | `resourcePolicyName` _string_ | ResourcePolicyName describes the name of a VirtualMachineSetResourcePolicy to be used when creating the
@@ -1481,7 +1449,6 @@ responding to the probe. |
 | `minHardwareVersion` _integer_ | MinHardwareVersion specifies the desired minimum hardware version
 for this VM.
 
-
 Usually the VM's hardware version is derived from:
 1. the VirtualMachineClass used to deploy the VM provided by the ClassName field
 2. the datacenter/cluster/host default hardware version
@@ -1489,11 +1456,9 @@ Setting this field will ensure that the hardware version of the VM
 is at least set to the specified value. To enforce this, it will override
 the value from the VirtualMachineClass.
 
-
 This field is never updated to reflect the derived hardware version.
 Instead, VirtualMachineStatus.HardwareVersion surfaces
 the observed hardware version.
-
 
 Please note, setting this field's value to N ensures a VM's hardware
 version is equal to or greater than N. For example, if a VM's observed
@@ -1501,17 +1466,13 @@ hardware version is 10 and this field's value is 13, then the VM will be
 upgraded to hardware version 13. However, if the observed hardware
 version is 17 and this field's value is 13, no change will occur.
 
-
 Several features are hardware version dependent, for example:
-
 
 * NVMe Controllers                >= 14
 * Dynamic Direct Path I/O devices >= 17
 
-
 Please refer to https://kb.vmware.com/s/article/1003746 for a list of VM
 hardware versions.
-
 
 It is important to remember that a VM's hardware version may not be
 downgraded and upgrading a VM deployed from an image based on an older
@@ -1553,7 +1514,6 @@ Please note this field may be empty when the cluster is not zone-aware. |
 | `hardwareVersion` _integer_ | HardwareVersion describes the VirtualMachine resource's observed
 hardware version.
 
-
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
 
@@ -1576,10 +1536,8 @@ have a unique name. |
 in the same namespace. The PersistentVolumeClaim must match one of the
 following:
 
-
   * A volume provisioned (either statically or dynamically) by the
     cluster's CSI provider.
-
 
   * An instance volume with a lifecycle coupled to the VM. |
 | `vSphereVolume` _[VsphereVolumeSource](#vspherevolumesource)_ | VsphereVolume represents a reference to a VsphereVolumeSource in the same namespace. Only one of PersistentVolumeClaim or
@@ -1665,16 +1623,13 @@ the VM's web console.
 The value could be a DNS entry, IPv4, or IPv6 address, followed by an
 optional port. For example, valid values include:
 
-
     DNS
         * host.com
         * host.com:6443
 
-
     IPv4
         * 1.2.3.4
         * 1.2.3.4:6443
-
 
     IPv6
         * 1234:1234:1234:1234:1234:1234:1234:1234
@@ -1682,7 +1637,6 @@ optional port. For example, valid values include:
         * 1234:1234:1234:0000:0000:0000:1234:1234
         * 1234:1234:1234::::1234:1234
         * [1234:1234:1234::::1234:1234]:6443
-
 
 In other words, the field may be set to any value that is parsable
 by Go's https://pkg.go.dev/net#ResolveIPAddr and

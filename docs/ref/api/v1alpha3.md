@@ -215,16 +215,13 @@ _Appears in:_
 | --- | --- |
 | `key` _string_ | Key is the name of the GuestInfo key.
 
-
 The key is automatically prefixed with "guestinfo." before being
 evaluated. Thus if the key "guestinfo.mykey" is provided, it will be
 evaluated as "guestinfo.guestinfo.mykey". |
 | `value` _string_ | Value is a regular expression that is matched against the value of the
 specified key.
 
-
 An empty value is the equivalent of "match any" or ".*".
-
 
 All values must adhere to the RE2 regular expression syntax as documented
 at https://golang.org/s/re2syntax. Invalid values may be rejected or
@@ -478,7 +475,6 @@ _Appears in:_
 | `bootDiskCapacity` _[Quantity](#quantity)_ | BootDiskCapacity is the capacity of the VM's boot disk -- the first disk
 from the VirtualMachineImage from which the VM was deployed.
 
-
 Please note it is not advised to change this value while the VM is
 running. Also, resizing the VM's boot disk may require actions inside of
 the guest to take advantage of the additional capacity. Finally, changing
@@ -507,15 +503,12 @@ If omitted, this field defaults to the VM's BiosUUID. |
 | `cloudConfig` _[CloudConfig](#cloudconfig)_ | CloudConfig describes a subset of a Cloud-Init CloudConfig, used to
 bootstrap the VM.
 
-
 Please note this field and RawCloudConfig are mutually exclusive. |
 | `rawCloudConfig` _[SecretKeySelector](#secretkeyselector)_ | RawCloudConfig describes a key in a Secret resource that contains the
 CloudConfig data used to bootstrap the VM.
 
-
 The CloudConfig data specified by the key may be plain-text,
 base64-encoded, or gzipped and base64-encoded.
-
 
 Please note this field and CloudConfig are mutually exclusive. |
 | `sshAuthorizedKeys` _string array_ | SSHAuthorizedKeys is a list of public keys that CloudInit will apply to
@@ -537,12 +530,10 @@ _Appears in:_
 local time. |
 | `timeZone` _string_ | TimeZone is a case-sensitive timezone, such as Europe/Sofia.
 
-
 Valid values are based on the tz (timezone) database used by Linux and
 other Unix systems. The values are strings in the form of
 "Area/Location," in which Area is a continent or ocean name, and
 Location is the city, island, or other regional designation.
-
 
 Please see https://kb.vmware.com/s/article/2145518 for a list of valid
 time zones for Linux systems. |
@@ -562,38 +553,30 @@ _Appears in:_
 | `cloudInit` _[VirtualMachineBootstrapCloudInitSpec](#virtualmachinebootstrapcloudinitspec)_ | CloudInit may be used to bootstrap Linux guests with Cloud-Init or
 Windows guests that support Cloudbase-Init.
 
-
 The guest's networking stack is configured by Cloud-Init on Linux guests
 and Cloudbase-Init on Windows guests.
-
 
 Please note this bootstrap provider may not be used in conjunction with
 the other bootstrap providers. |
 | `linuxPrep` _[VirtualMachineBootstrapLinuxPrepSpec](#virtualmachinebootstraplinuxprepspec)_ | LinuxPrep may be used to bootstrap Linux guests.
 
-
 The guest's networking stack is configured by Guest OS Customization
 (GOSC).
-
 
 Please note this bootstrap provider may be used in conjunction with the
 VAppConfig bootstrap provider when wanting to configure the guest's
 network with GOSC but also send vApp/OVF properties into the guest.
-
 
 This bootstrap provider may not be used in conjunction with the CloudInit
 or Sysprep bootstrap providers. |
 | `sysprep` _[VirtualMachineBootstrapSysprepSpec](#virtualmachinebootstrapsysprepspec)_ | Sysprep may be used to bootstrap Windows guests.
 
-
 The guest's networking stack is configured by Guest OS Customization
 (GOSC).
-
 
 Please note this bootstrap provider may be used in conjunction with the
 VAppConfig bootstrap provider when wanting to configure the guest's
 network with GOSC but also send vApp/OVF properties into the guest.
-
 
 This bootstrap provider may not be used in conjunction with the CloudInit
 or LinuxPrep bootstrap providers. |
@@ -601,10 +584,8 @@ or LinuxPrep bootstrap providers. |
 (how VMware surfaces OVF properties on guests) to transport data into the
 guest.
 
-
 The guest's networking stack may be configured using either vApp
 properties or GOSC.
-
 
 Many OVFs define one or more properties that are used by the guest to
 bootstrap its networking stack. If the VirtualMachineImage defines one or
@@ -612,15 +593,12 @@ more properties like this, then they can be configured to use the network
 data provided for this VM at runtime by setting these properties to Go
 template strings.
 
-
 It is also possible to use GOSC to bootstrap this VM's network stack by
 configuring either the LinuxPrep or Sysprep bootstrap providers.
-
 
 Please note the VAppConfig bootstrap provider in conjunction with the
 LinuxPrep bootstrap provider is the equivalent of setting the v1alpha1
 VM metadata transport to "OvfEnv".
-
 
 This bootstrap provider may not be used in conjunction with the CloudInit
 bootstrap provider. |
@@ -639,22 +617,17 @@ _Appears in:_
 | --- | --- |
 | `sysprep` _[Sysprep](#sysprep)_ | Sysprep is an object representation of a Windows sysprep.xml answer file.
 
-
 This field encloses all the individual keys listed in a sysprep.xml file.
-
 
 For more detailed information please see
 https://technet.microsoft.com/en-us/library/cc771830(v=ws.10).aspx.
-
 
 Please note this field and RawSysprep are mutually exclusive. |
 | `rawSysprep` _[SecretKeySelector](#secretkeyselector)_ | RawSysprep describes a key in a Secret resource that contains an XML
 string of the Sysprep text used to bootstrap the VM.
 
-
 The data specified by the Secret key may be plain-text, base64-encoded,
 or gzipped and base64-encoded.
-
 
 Please note this field and Sysprep are mutually exclusive. |
 
@@ -672,12 +645,10 @@ _Appears in:_
 | --- | --- |
 | `properties` _KeyValueOrSecretKeySelectorPair array_ | Properties is a list of vApp/OVF property key/value pairs.
 
-
 Please note this field and RawProperties are mutually exclusive. |
 | `rawProperties` _string_ | RawProperties is the name of a Secret resource in the same Namespace as
 this VM where each key/value pair from the Secret is used as a vApp
 key/value pair.
-
 
 Please note this field and Properties are mutually exclusive. |
 
@@ -695,38 +666,31 @@ _Appears in:_
 | `name` _string_ | Name consists of at least two lowercase letters or digits of this CD-ROM.
 It must be unique among all CD-ROM devices attached to the VM.
 
-
 This field is immutable when the VM is powered on. |
 | `image` _[VirtualMachineImageRef](#virtualmachineimageref)_ | Image describes the reference to an ISO type VirtualMachineImage or
 ClusterVirtualMachineImage resource used as the backing for the CD-ROM.
 If the image kind is omitted, it defaults to VirtualMachineImage.
 
-
 This field is immutable when the VM is powered on.
-
 
 Please note, unlike the spec.imageName field, the value of this
 spec.cdrom.image.name MUST be a Kubernetes object name. |
 | `connected` _boolean_ | Connected describes the desired connection state of the CD-ROM device.
 
-
 When true, the CD-ROM device is added and connected to the VM.
 If the device already exists, it is updated to a connected state.
-
 
 When explicitly set to false, the CD-ROM device is added but remains
 disconnected from the VM. If the CD-ROM device already exists, it is
 updated to a disconnected state.
 
-
-Please note that disconnecting a CD-ROM during guest OS installation may
-not work since the CD-ROM might be locked by the guest.
-
+Note: Before disconnecting a CD-ROM, the device may need to be unmounted
+in the guest OS. Refer to the following KB article for more details:
+https://knowledge.broadcom.com/external/article?legacyId=2144053
 
 Defaults to true if omitted. |
 | `allowGuestControl` _boolean_ | AllowGuestControl describes whether or not a web console connection
 may be used to connect/disconnect the CD-ROM device.
-
 
 Defaults to true if omitted. |
 
@@ -791,12 +755,10 @@ _Appears in:_
 reconciling VirtualMachine resources that are realized from this
 VirtualMachineClass.
 
-
 When omitted, controllers reconciling VirtualMachine resources determine
 the default controller name from the environment variable
 DEFAULT_VM_CLASS_CONTROLLER_NAME. If this environment variable is not
 defined or empty, it defaults to vmoperator.vmware.com/vsphere.
-
 
 Once a non-empty value is assigned to this field, attempts to set this
 field to an empty value will be silently ignored. |
@@ -856,16 +818,13 @@ _Appears in:_
 | --- | --- |
 | `id` _string_ | ID describes the operating system ID.
 
-
 This value is also added to the image resource's labels as
 VirtualMachineImageOSIDLabel. |
 | `type` _string_ | Type describes the operating system type.
 
-
 This value is also added to the image resource's labels as
 VirtualMachineImageOSTypeLabel. |
 | `version` _string_ | Version describes the operating system version.
-
 
 This value is also added to the image resource's labels as
 VirtualMachineImageOSVersionLabel. |
@@ -933,18 +892,15 @@ _Appears in:_
 | `name` _string_ | Name describes the display name of this image. |
 | `capabilities` _string array_ | Capabilities describes the image's observed capabilities.
 
-
 The capabilities are discerned when VM Operator reconciles an image.
 If the source of an image is an OVF in Content Library, then the
 capabilities are parsed from the OVF property
 capabilities.image.vmoperator.vmware.com as a comma-separated list of
 values. Well-known capabilities include:
 
-
 * cloud-init
 * nvidia-gpu
 * sriov-net
-
 
 Every capability is also added to the resource's labels as
 VirtualMachineImageCapabilityLabel + Value. For example, if the
@@ -954,7 +910,6 @@ resource: capability.image.vmoperator.vmware.com/cloud-init. |
 | `hardwareVersion` _integer_ | HardwareVersion describes the observed hardware version of this image. |
 | `osInfo` _[VirtualMachineImageOSInfo](#virtualmachineimageosinfo)_ | OSInfo describes the observed operating system information for this
 image.
-
 
 The OS information is also added to the image resource's labels. Please
 refer to VirtualMachineImageOSInfo for more information. |
@@ -1021,10 +976,8 @@ the "my-vm" part of "my-vm.domain.local". |
 the "domain.local" part of "my-vm.domain.local". |
 | `nameservers` _string array_ | Nameservers is a list of the IP addresses for the DNS servers to use.
 
-
 IP4 addresses are specified using dotted decimal notation. For example,
 "192.0.2.1".
-
 
 IP6 addresses are 128-bit addresses represented as eight fields of up to
 four hexadecimal digits. A colon separates each field (:). For example,
@@ -1052,11 +1005,9 @@ Addresses include the network's prefix length, ex. 192.168.0.0/24 or
 2001:DB8:101::230:6eff:fe04:d9ff::/64. |
 | `gateway4` _string_ | Gateway4 describes the interface's configured, default, IP4 gateway.
 
-
 Please note the IP address include the network prefix length, ex.
 192.168.0.1/24. |
 | `gateway6` _string_ | Gateway6 describes the interface's configured, default, IP6 gateway.
-
 
 Please note the IP address includes the network prefix length, ex.
 2001:db8:101::1/64. |
@@ -1075,7 +1026,6 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name describes the corresponding network interface with the same name
 in the VM's desired network interface list.
-
 
 Please note this name is not necessarily related to the name of the
 device as it is surfaced inside of the guest. |
@@ -1109,7 +1059,6 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `config` _KeyValuePair array_ | Config describes platform-dependent settings for the DHCP client.
-
 
 The key part is a unique number while the value part is the platform
 specific configuration command. For example on Linux and BSD systems
@@ -1157,10 +1106,8 @@ the "my-vm" part of "my-vm.domain.local". |
 the "domain.local" part of "my-vm.domain.local". |
 | `nameservers` _string array_ | Nameservers is a list of the IP addresses for the DNS servers to use.
 
-
 IP4 addresses are specified using dotted decimal notation. For example,
 "192.0.2.1".
-
 
 IP6 addresses are 128-bit addresses represented as eight fields of up to
 four hexadecimal digits. A colon separates each field (:). For example,
@@ -1202,10 +1149,8 @@ _Appears in:_
 | `gateway` _[VirtualMachineNetworkIPRouteGatewayStatus](#virtualmachinenetworkiproutegatewaystatus)_ | Gateway describes where to send the packets to next. |
 | `networkAddress` _string_ | NetworkAddress is the IP4 or IP6 address of the destination network.
 
-
 Addresses include the network's prefix length, ex. 192.168.0.0/24 or
 2001:DB8:101::230:6eff:fe04:d9ff::/64.
-
 
 IP6 addresses are 128-bit addresses represented as eight fields of up to
 four hexadecimal digits. A colon separates each field (:). For example,
@@ -1231,7 +1176,6 @@ _Appears in:_
 | `kernelConfig` _KeyValuePair array_ | KernelConfig describes the observed state of the VM's kernel IP
 configuration settings.
 
-
 The key part contains a unique number while the value part contains the
 'key=value' as provided by the underlying provider. For example, on
 Linux and/or BSD, the systcl -a output would be reported as:
@@ -1251,10 +1195,8 @@ _Appears in:_
 | --- | --- |
 | `address` _string_ | Address is an IP4 or IP6 address and their network prefix length.
 
-
 An IP4 address is specified using dotted decimal notation. For example,
 "192.0.2.1".
-
 
 IP6 addresses are 128-bit addresses represented as eight fields of up to
 four hexadecimal digits. A colon separates each field (:). For example,
@@ -1280,10 +1222,8 @@ _Appears in:_
 | `autoConfigurationEnabled` _boolean_ | AutoConfigurationEnabled describes whether or not ICMPv6 router
 solicitation requests are enabled or disabled from a given interface.
 
-
 These requests acquire an IP6 address and default gateway route from
 zero-to-many routers on the connected network.
-
 
 If not set then ICMPv6 is not available on this VM. |
 | `dhcp` _[VirtualMachineNetworkDHCPStatus](#virtualmachinenetworkdhcpstatus)_ | DHCP describes the VM's observed, client-side, interface-specific DHCP
@@ -1306,14 +1246,12 @@ _Appears in:_
 | `name` _string_ | Name describes the unique name of this network interface, used to
 distinguish it from other network interfaces attached to this VM.
 
-
 When the bootstrap provider is Cloud-Init and GuestDeviceName is not
 specified, the device inside the guest will be renamed to this value.
 Please note it is up to the user to ensure the provided name does not
 conflict with any other devices inside the guest, ex. dvd, cdrom, sda, etc. |
 | `network` _[PartialObjectRef](#partialobjectref)_ | Network is the name of the network resource to which this interface is
 connected.
-
 
 If no network is provided, then this interface will be connected to the
 Namespace's default network. |
@@ -1324,98 +1262,77 @@ inside the guest, ex. dvd, cdrom, sda, etc. |
 | `addresses` _string array_ | Addresses is an optional list of IP4 or IP6 addresses to assign to this
 interface.
 
-
 Please note this field is only supported if the connected network
 supports manual IP allocation.
-
 
 Please note IP4 and IP6 addresses must include the network prefix length,
 ex. 192.168.0.10/24 or 2001:db8:101::a/64.
 
-
 Please note this field may not contain IP4 addresses if DHCP4 is set
 to true or IP6 addresses if DHCP6 is set to true.
-
 
 Please note if the Interfaces field is non-empty then this field is
 ignored and should be specified on the elements in the Interfaces list. |
 | `dhcp4` _boolean_ | DHCP4 indicates whether or not this interface uses DHCP for IP4
 networking.
 
-
 Please note this field is only supported if the network connection
 supports DHCP.
-
 
 Please note this field is mutually exclusive with IP4 addresses in the
 Addresses field and the Gateway4 field. |
 | `dhcp6` _boolean_ | DHCP6 indicates whether or not this interface uses DHCP for IP6
 networking.
 
-
 Please note this field is only supported if the network connection
 supports DHCP.
-
 
 Please note this field is mutually exclusive with IP6 addresses in the
 Addresses field and the Gateway6 field. |
 | `gateway4` _string_ | Gateway4 is the default, IP4 gateway for this interface.
 
-
 Please note this field is only supported if the network connection
 supports manual IP allocation.
-
 
 If the network connection supports manual IP allocation and the
 Addresses field includes at least one IP4 address, then this field
 is required.
 
-
 Please note the IP address must include the network prefix length, ex.
 192.168.0.1/24.
-
 
 Please note this field is mutually exclusive with DHCP4. |
 | `gateway6` _string_ | Gateway6 is the primary IP6 gateway for this interface.
 
-
 Please note this field is only supported if the network connection
 supports manual IP allocation.
-
 
 If the network connection supports manual IP allocation and the
 Addresses field includes at least one IP6 address, then this field
 is required.
 
-
 Please note the IP address must include the network prefix length, ex.
 2001:db8:101::1/64.
 
-
 Please note this field is mutually exclusive with DHCP6. |
 | `mtu` _integer_ | MTU is the Maximum Transmission Unit size in bytes.
-
 
 Please note this feature is available only with the following bootstrap
 providers: CloudInit. |
 | `nameservers` _string array_ | Nameservers is a list of IP4 and/or IP6 addresses used as DNS
 nameservers.
 
-
 Please note this feature is available only with the following bootstrap
 providers: CloudInit and Sysprep.
-
 
 Please note that Linux allows only three nameservers
 (https://linux.die.net/man/5/resolv.conf). |
 | `routes` _[VirtualMachineNetworkRouteSpec](#virtualmachinenetworkroutespec) array_ | Routes is a list of optional, static routes.
 
-
 Please note this feature is available only with the following bootstrap
 providers: CloudInit. |
 | `searchDomains` _string array_ | SearchDomains is a list of search domains used when resolving IP
 addresses with DNS.
-
 
 Please note this feature is available only with the following bootstrap
 providers: CloudInit. |
@@ -1435,7 +1352,6 @@ _Appears in:_
 | `name` _string_ | Name describes the corresponding network interface with the same name
 in the VM's desired network interface list. If unset, then there is no
 corresponding entry for this interface.
-
 
 Please note this name is not necessarily related to the name of the
 device as it is surfaced inside of the guest. |
@@ -1474,14 +1390,11 @@ _Appears in:_
 | `hostName` _string_ | HostName describes the value the guest uses as its host name. If omitted,
 the name of the VM will be used.
 
-
 Please note, this feature is available with the following bootstrap
 providers: CloudInit, LinuxPrep, and Sysprep.
 
-
 This field must adhere to the format specified in RFC-1034, Section 3.5
 for DNS labels:
-
 
   * The total length is restricted to 63 characters or less.
   * The total length is restricted to 15 characters or less on Windows
@@ -1499,19 +1412,15 @@ for DNS labels:
     address for the host name is disallowed if spec.network.domainName is
     non-empty.
 
-
 Please note, the combined values of spec.network.hostName and
 spec.network.domainName may not exceed 255 characters in length. |
 | `domainName` _string_ | DomainName describes the value the guest uses as its domain name.
 
-
 Please note, this feature is available with the following bootstrap
 providers: CloudInit, LinuxPrep, and Sysprep.
 
-
 This field must adhere to the format specified in RFC-1034, Section 3.5
 for DNS names:
-
 
   * When joined with the host name, the total length is restricted to 255
     characters or less.
@@ -1524,43 +1433,35 @@ for DNS names:
   * Symbol unicode points, such as emoji, are disallowed in the top-level
     domain.
 
-
 Please note, the combined values of spec.network.hostName and
 spec.network.domainName may not exceed 255 characters in length.
-
 
 When deploying a guest running Microsoft Windows, this field describes
 the domain the computer should join. |
 | `disabled` _boolean_ | Disabled is a flag that indicates whether or not to disable networking
 for this VM.
 
-
 When set to true, the VM is not configured with a default interface nor
 any specified from the Interfaces field. |
 | `nameservers` _string array_ | Nameservers is a list of IP4 and/or IP6 addresses used as DNS
 nameservers. These are applied globally.
 
-
 Please note global nameservers are only available with the following
 bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
 provider supports per-interface nameservers.
-
 
 Please note that Linux allows only three nameservers
 (https://linux.die.net/man/5/resolv.conf). |
 | `searchDomains` _string array_ | SearchDomains is a list of search domains used when resolving IP
 addresses with DNS. These are applied globally.
 
-
 Please note global search domains are only available with the following
 bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
 provider supports per-interface search domains. |
 | `interfaces` _[VirtualMachineNetworkInterfaceSpec](#virtualmachinenetworkinterfacespec) array_ | Interfaces is the list of network interfaces used by this VM.
 
-
 If the Interfaces field is empty and the Disabled field is false, then
 a default interface with the name eth0 will be created.
-
 
 The maximum number of network interface allowed is 10 because a vSphere
 virtual machine may not have more than 10 virtual ethernet card devices. |
@@ -1581,7 +1482,6 @@ _Appears in:_
 such as an interface's IP address obtained from IPAM, or global DNS
 settings.
 
-
 Please note this information does *not* represent the *observed* network
 state of the VM, but is intended for situations where someone boots a VM
 with no appropriate bootstrap engine and needs to know the network config
@@ -1591,24 +1491,20 @@ valid for the deployed VM. |
 stacks. |
 | `primaryIP4` _string_ | PrimaryIP4 describes the VM's primary IP4 address.
 
-
 If the bootstrap provider is CloudInit then this value is set to the
 value of the VM's "guestinfo.local-ipv4" property. Please see
 https://bit.ly/3NJB534 for more information on how this value is
 calculated.
-
 
 If the bootstrap provider is anything else then this field is set to the
 value of the infrastructure VM's "guest.ipAddress" field. Please see
 https://bit.ly/3Au0jM4 for more information. |
 | `primaryIP6` _string_ | PrimaryIP6 describes the VM's primary IP6 address.
 
-
 If the bootstrap provider is CloudInit then this value is set to the
 value of the VM's "guestinfo.local-ipv6" property. Please see
 https://bit.ly/3NJB534 for more information on how this value is
 calculated.
-
 
 If the bootstrap provider is anything else then this field is set to the
 value of the infrastructure VM's "guest.ipAddress" field. Please see
@@ -1651,7 +1547,6 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name is the name of the referenced object.
 
-
 If omitted this value defaults to the name of the
 VirtualMachinePublishRequest resource. |
 | `apiVersion` _string_ | APIVersion is the API version of the referenced object. |
@@ -1663,7 +1558,6 @@ VirtualMachinePublishRequest resource. |
 
 VirtualMachinePublishRequestSpec defines the desired state of a
 VirtualMachinePublishRequest.
-
 
 All the fields in this spec are optional. This is especially useful when a
 DevOps persona wants to publish a VM without doing anything more than
@@ -1678,7 +1572,6 @@ _Appears in:_
 | `source` _[VirtualMachinePublishRequestSource](#virtualmachinepublishrequestsource)_ | Source is the source of the publication request, ex. a VirtualMachine
 resource.
 
-
 If this value is omitted then the publication controller checks to
 see if there is a resource with the same name as this
 VirtualMachinePublishRequest resource, an API version equal to
@@ -1687,14 +1580,12 @@ a resource exists, then it is the source of the publication. |
 | `target` _[VirtualMachinePublishRequestTarget](#virtualmachinepublishrequesttarget)_ | Target is the target of the publication request, ex. item
 information and a ContentLibrary resource.
 
-
 If this value is omitted, the controller uses spec.source.name + "-image"
 as the name of the published item. Additionally, when omitted the
 controller attempts to identify the target location by matching a
 resource with an API version equal to spec.target.location.apiVersion, a
 kind equal to spec.target.location.kind, w/ the label
 "imageregistry.vmware.com/default".
-
 
 Please note that while optional, if a VirtualMachinePublishRequest sans
 target information is applied to a namespace without a default
@@ -1704,7 +1595,6 @@ will be marked in error. |
 resource will be allowed to exist once the publication operation
 completes. After the TTL expires, the resource will be automatically
 deleted without the user having to take any direct action.
-
 
 If this field is unset then the request resource will not be
 automatically deleted. If this field is set to zero then the request
@@ -1730,7 +1620,6 @@ ex. item information and a ContentLibrary resource. |
 guaranteed to be set in happens-before order across separate operations.
 It is represented in RFC3339 form and is in UTC.
 
-
 The value of this field should be equal to the value of the
 LastTransitionTime for the status condition Type=Complete. |
 | `startTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | StartTime represents time when the request was acknowledged by the
@@ -1744,17 +1633,14 @@ has been attempted. |
 eventually realized in the same namespace as the VM and publication
 request after the publication operation completes.
 
-
 This field will not be set until the VirtualMachineImage resource
 is realized. |
 | `ready` _boolean_ | Ready is set to true only when the VM has been published successfully
 and the new VirtualMachineImage resource is ready.
 
-
 Readiness is determined by waiting until there is status condition
 Type=Complete and ensuring it and all other status conditions present
 have a Status=True. The conditions present will be:
-
 
   * SourceValid
   * TargetValid
@@ -1780,7 +1666,6 @@ _Appears in:_
 | `item` _[VirtualMachinePublishRequestTargetItem](#virtualmachinepublishrequesttargetitem)_ | Item contains information about the name of the object to which
 the VM is published.
 
-
 Please note this value is optional and if omitted, the controller
 will use spec.source.name + "-image" as the name of the published
 item. |
@@ -1801,13 +1686,11 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name is the name of the published object.
 
-
 If the spec.target.location.apiVersion equals
 imageregistry.vmware.com/v1alpha1 and the spec.target.location.kind
 equals ContentLibrary, then this should be the name that will
 show up in vCenter Content Library, not the custom resource name
 in the namespace.
-
 
 If omitted then the controller will use spec.source.name + "-image". |
 | `description` _string_ | Description is the description to assign to the published object. |
@@ -1826,10 +1709,8 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name is the name of the referenced object.
 
-
 Please note an error will be returned if this field is not
 set in a namespace that lacks a default publication target.
-
 
 A default publication target is a resource with an API version
 equal to spec.target.location.apiVersion, a kind equal to
@@ -1852,38 +1733,30 @@ _Appears in:_
 | --- | --- |
 | `tcpSocket` _[TCPSocketAction](#tcpsocketaction)_ | TCPSocket specifies an action involving a TCP port.
 
-
 Deprecated: The TCPSocket action requires network connectivity that is not supported in all environments.
 This field will be removed in a later API version. |
 | `guestHeartbeat` _[GuestHeartbeatAction](#guestheartbeataction)_ | GuestHeartbeat specifies an action involving the guest heartbeat status. |
 | `guestInfo` _[GuestInfoAction](#guestinfoaction) array_ | GuestInfo specifies an action involving key/value pairs from GuestInfo.
 
-
 The elements are evaluated with the logical AND operator, meaning
 all expressions must evaluate as true for the probe to succeed.
 
-
 For example, a VM resource's probe definition could be specified as the
 following:
-
 
         guestInfo:
         - key:   ready
           value: true
 
-
 With the above configuration in place, the VM would not be considered
 ready until the GuestInfo key "ready" was set to the value "true".
-
 
 From within the guest operating system it is possible to set GuestInfo
 key/value pairs using the program "vmware-rpctool," which is included
 with VM Tools. For example, the following command will set the key
 "guestinfo.ready" to the value "true":
 
-
         vmware-rpctool "info-set guestinfo.ready true"
-
 
 Once executed, the VM's readiness probe will be signaled and the
 VM resource will be marked as ready. |
@@ -1911,7 +1784,6 @@ Only supported deletion policy is "Random". |
 | `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#labelselector-v1-meta)_ | Selector is a label to query over virtual machines that should match the
 replica count. A virtual machine's label keys and values must match in order
 to be controlled by this VirtualMachineReplicaSet.
-
 
 It must match the VirtualMachine template's labels.
 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors |
@@ -2109,14 +1981,11 @@ _Appears in:_
 | --- | --- |
 | `cdrom` _[VirtualMachineCdromSpec](#virtualmachinecdromspec) array_ | Cdrom describes the desired state of the VM's CD-ROM devices.
 
-
 Each CD-ROM device requires a reference to an ISO-type
 VirtualMachineImage or ClusterVirtualMachineImage resource as backing.
 
-
 Multiple CD-ROM devices using the same backing image, regardless of image
 kinds (namespace or cluster scope), are not allowed.
-
 
 CD-ROM devices can be added, updated, or removed when the VM is powered
 off. When the VM is powered on, only the connection state of existing
@@ -2125,15 +1994,12 @@ CD-ROM devices are attached to the VM in the specified list-order. |
 | `image` _[VirtualMachineImageRef](#virtualmachineimageref)_ | Image describes the reference to the VirtualMachineImage or
 ClusterVirtualMachineImage resource used to deploy this VM.
 
-
 Please note, unlike the field spec.imageName, the value of
 spec.image.name MUST be a Kubernetes object name.
-
 
 Please also note, when creating a new VirtualMachine, if this field and
 spec.imageName are both non-empty, then they must refer to the same
 resource or an error is returned.
-
 
 Please note, this field *may* be empty if the VM was imported instead of
 deployed by VM Operator. An imported VirtualMachine resource references
@@ -2142,14 +2008,12 @@ VM image. |
 | `imageName` _string_ | ImageName describes the name of the image resource used to deploy this
 VM.
 
-
 This field may be used to specify the name of a VirtualMachineImage
 or ClusterVirtualMachineImage resource. The resolver first checks to see
 if there is a VirtualMachineImage with the specified name in the
 same namespace as the VM being deployed. If no such resource exists, the
 resolver then checks to see if there is a ClusterVirtualMachineImage
 resource with the specified name.
-
 
 This field may also be used to specify the display name (vSphere name) of
 a VirtualMachineImage or ClusterVirtualMachineImage resource. If the
@@ -2160,11 +2024,9 @@ spec.image field with the reference to the resolved VM image. If the
 display name resolves to multiple or no VM images, then the mutation
 webhook denies the request and returns an error.
 
-
 Please also note, when creating a new VirtualMachine, if this field and
 spec.image are both non-empty, then they must refer to the same
 resource or an error is returned.
-
 
 Please note, this field *may* be empty if the VM was imported instead of
 deployed by VM Operator. An imported VirtualMachine resource references
@@ -2173,7 +2035,6 @@ VM image. |
 | `className` _string_ | ClassName describes the name of the VirtualMachineClass resource used to
 deploy this VM.
 
-
 Please note, this field *may* be empty if the VM was imported instead of
 deployed by VM Operator. An imported VirtualMachine resource references
 an existing VM on the underlying platform that was not deployed from a
@@ -2181,35 +2042,29 @@ VM class. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
 used to configure this VM's storage-related attributes.
 
-
 Please see https://kubernetes.io/docs/concepts/storage/storage-classes/
 for more information on Kubernetes storage classes. |
 | `bootstrap` _[VirtualMachineBootstrapSpec](#virtualmachinebootstrapspec)_ | Bootstrap describes the desired state of the guest's bootstrap
 configuration.
 
-
 If omitted, a default bootstrap method may be selected based on the
 guest OS identifier. If Linux, then the LinuxPrep method is used. |
 | `network` _[VirtualMachineNetworkSpec](#virtualmachinenetworkspec)_ | Network describes the desired network configuration for the VM.
-
 
 Please note this value may be omitted entirely and the VM will be
 assigned a single, virtual network interface that is connected to the
 Namespace's default network. |
 | `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the desired power state of a VirtualMachine.
 
-
 Please note this field may be omitted when creating a new VM and will
 default to "PoweredOn." However, once the field is set to a non-empty
 value, it may no longer be set to an empty value.
-
 
 Additionally, setting this value to "Suspended" is not supported when
 creating a new VM. The valid values when creating a new VM are
 "PoweredOn" and "PoweredOff." An empty value is also allowed on create
 since this value defaults to "PoweredOn" for new VMs. |
 | `powerOffMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | PowerOffMode describes the desired behavior when powering off a VM.
-
 
 There are three, supported power off modes: Hard, Soft, and
 TrySoft. The first mode, Hard, is the equivalent of a physical
@@ -2219,10 +2074,8 @@ gracefully shutdown the VM. Its variant, TrySoft, first attempts
 a graceful shutdown, and if that fails or the VM is not in a powered off
 state after five minutes, the VM is halted.
 
-
 If omitted, the mode defaults to TrySoft. |
 | `suspendMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | SuspendMode describes the desired behavior when suspending a VM.
-
 
 There are three, supported suspend modes: Hard, Soft, and
 TrySoft. The first mode, Hard, is where vSphere suspends the VM to
@@ -2232,25 +2085,21 @@ gracefully suspend the VM. Its variant, TrySoft, first attempts
 a graceful suspend, and if that fails or the VM is not in a put into
 standby by the guest after five minutes, the VM is suspended.
 
-
 If omitted, the mode defaults to TrySoft. |
 | `nextRestartTime` _string_ | NextRestartTime may be used to restart the VM, in accordance with
 RestartMode, by setting the value of this field to "now"
 (case-insensitive).
-
 
 A mutating webhook changes this value to the current time (UTC), which
 the VM controller then uses to determine the VM should be restarted by
 comparing the value to the timestamp of the last time the VM was
 restarted.
 
-
 Please note it is not possible to schedule future restarts using this
 field. The only value that users may set is the string "now"
 (case-insensitive). |
 | `restartMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | RestartMode describes the desired behavior for restarting a VM when
 spec.nextRestartTime is set to "now" (case-insensitive).
-
 
 There are three, supported suspend modes: Hard, Soft, and
 TrySoft. The first mode, Hard, is where vSphere resets the VM without any
@@ -2259,7 +2108,6 @@ have VM Tools installed and asks the guest to restart the VM. Its
 variant, TrySoft, first attempts a soft restart, and if that fails or
 does not complete within five minutes, the VM is hard reset.
 
-
 If omitted, the mode defaults to TrySoft. |
 | `volumes` _[VirtualMachineVolume](#virtualmachinevolume) array_ | Volumes describes a list of volumes that can be mounted to the VM. |
 | `readinessProbe` _[VirtualMachineReadinessProbeSpec](#virtualmachinereadinessprobespec)_ | ReadinessProbe describes a probe used to determine the VM's ready state. |
@@ -2267,14 +2115,11 @@ If omitted, the mode defaults to TrySoft. |
 | `reserved` _[VirtualMachineReservedSpec](#virtualmachinereservedspec)_ | Reserved describes a set of VM configuration options reserved for system
 use.
 
-
 Please note attempts to modify the value of this field by a DevOps user
 will result in a validation error. |
 | `minHardwareVersion` _integer_ | MinHardwareVersion describes the desired, minimum hardware version.
 
-
 The logic that determines the hardware version is as follows:
-
 
 1. If this field is set, then its value is used.
 2. Otherwise, if the VirtualMachineClass used to deploy the VM contains a
@@ -2283,11 +2128,9 @@ The logic that determines the hardware version is as follows:
    set to the default hardware version for the Datacenter/Cluster/Host
    where the VM is provisioned.
 
-
 This field is never updated to reflect the derived hardware version.
 Instead, VirtualMachineStatus.HardwareVersion surfaces
 the observed hardware version.
-
 
 Please note, setting this field's value to N ensures a VM's hardware
 version is equal to or greater than N. For example, if a VM's observed
@@ -2295,17 +2138,13 @@ hardware version is 10 and this field's value is 13, then the VM will be
 upgraded to hardware version 13. However, if the observed hardware
 version is 17 and this field's value is 13, no change will occur.
 
-
 Several features are hardware version dependent, for example:
-
 
 * NVMe Controllers                >= 14
 * Dynamic Direct Path I/O devices >= 17
 
-
 Please refer to https://kb.vmware.com/s/article/1003746 for a list of VM
 hardware versions.
-
 
 It is important to remember that a VM's hardware version may not be
 downgraded and upgrading a VM deployed from an image based on an older
@@ -2324,24 +2163,23 @@ When the bootstrap provider is Cloud-Init, this value is used as the
 default value for spec.bootstrap.cloudInit.instanceID if it is omitted. |
 | `guestID` _string_ | GuestID describes the desired guest operating system identifier for a VM.
 
-
 The logic that determines the guest ID is as follows:
-
 
 If this field is set, then its value is used.
 Otherwise, if the VM is deployed from an OVF template that defines a
 guest ID, then that value is used.
 The guest ID from VirtualMachineClass used to deploy the VM is ignored.
 
-
-Please refer to https://bit.ly/4elnjP3 for a complete list of supported
-guest operating system identifiers.
-
+For a complete list of supported values, refer to https://bit.ly/3TiZX3G.
+Note that some guest ID values may require a minimal hardware version,
+which can be set using the `spec.minHardwareVersion` field.
+To see the mapping between virtual hardware versions and the product
+versions that support a specific guest ID, visit the following link:
+https://knowledge.broadcom.com/external/article/315655/virtual-machine-hardware-versions.html
 
 Please note that this field is immutable after the VM is powered on.
 To change the guest ID after the VM is powered on, the VM must be powered
 off and then powered on again with the updated guest ID spec.
-
 
 This field is required when the VM has any CD-ROM devices attached. |
 
@@ -2379,12 +2217,10 @@ enabled for the VirtualMachine. |
 | `zone` _string_ | Zone describes the availability zone where the VirtualMachine has been
 scheduled.
 
-
 Please note this field may be empty when the cluster is not zone-aware. |
 | `lastRestartTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | LastRestartTime describes the last time the VM was restarted. |
 | `hardwareVersion` _integer_ | HardwareVersion describes the VirtualMachine resource's observed
 hardware version.
-
 
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
@@ -2440,7 +2276,6 @@ the VM. |
 | `persistentVolumeClaim` _[PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)_ | PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
 in the same namespace.
 
-
 More information is available at
 https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims. |
 
@@ -2469,7 +2304,6 @@ _Appears in:_
 | --- | --- |
 | `persistentVolumeClaim` _[PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)_ | PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
 in the same namespace.
-
 
 More information is available at
 https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims. |
@@ -2545,20 +2379,16 @@ _Appears in:_
 | `proxyAddr` _string_ | ProxyAddr describes the host address and optional port used to access
 the VM's web console.
 
-
 The value could be a DNS entry, IPv4, or IPv6 address, followed by an
 optional port. For example, valid values include:
-
 
     DNS
         * host.com
         * host.com:6443
 
-
     IPv4
         * 1.2.3.4
         * 1.2.3.4:6443
-
 
     IPv6
         * 1234:1234:1234:1234:1234:1234:1234:1234
@@ -2566,7 +2396,6 @@ optional port. For example, valid values include:
         * 1234:1234:1234:0000:0000:0000:1234:1234
         * 1234:1234:1234::::1234:1234
         * [1234:1234:1234::::1234:1234]:6443
-
 
 In other words, the field may be set to any value that is parsable
 by Go's https://pkg.go.dev/net#ResolveIPAddr and

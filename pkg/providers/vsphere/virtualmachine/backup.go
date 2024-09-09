@@ -168,6 +168,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 			copyVM := opts.VMCtx.VM.DeepCopy()
 			setBackupVersionAnnotation(copyVM, opts.BackupVersion)
 			// Backup the updated VM's YAML with encoding and compression.
+			trimBackupFields(copyVM)
 			encodedVMYaml, err := getEncodedVMYaml(copyVM)
 			if err != nil {
 				opts.VMCtx.Logger.Error(err, "failed to get VM resource yaml for backup")
@@ -270,12 +271,26 @@ func getDesiredVMResourceYAMLForBackup(
 		return "", err
 	}
 
+	// Use a copy to avoid modifying the VM object at the end of reconciliation.
+	copyVM := vm.DeepCopy()
+	trimBackupFields(copyVM)
+
 	// Backup the updated VM's YAML with encoding and compression.
-	return getEncodedVMYaml(vm)
+	return getEncodedVMYaml(copyVM)
 }
 
+// trimBackupFields removes the object fields that are not necessary for backup.
+func trimBackupFields(obj client.Object) {
+	if annotations := obj.GetAnnotations(); len(annotations) > 0 {
+		delete(annotations, corev1.LastAppliedConfigAnnotation)
+		obj.SetAnnotations(annotations)
+	}
+
+	obj.SetManagedFields(nil)
+}
+
+// getEncodedVMYaml returns the encoded and gzipped YAML of the given VM object.
 func getEncodedVMYaml(vm *vmopv1.VirtualMachine) (string, error) {
-	// Backup the updated VM's YAML with encoding and compression.
 	vmYAML, err := k8syaml.Marshal(vm)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal VM into YAML %+v: %v", vm, err)
@@ -303,9 +318,13 @@ func isVMBackupUpToDate(vm *vmopv1.VirtualMachine, backup string) (bool, error) 
 		return false, err
 	}
 
+	// Do not compare LastAppliedConfigAnnotation as it's not in the backup.
+	curAnnotations := maps.Clone(vm.Annotations)
+	delete(curAnnotations, corev1.LastAppliedConfigAnnotation)
+
 	return vm.Generation == backupVM.Generation &&
 		maps.Equal(vm.Labels, backupVM.Labels) &&
-		maps.Equal(vm.Annotations, backupVM.Annotations), nil
+		maps.Equal(curAnnotations, backupVM.Annotations), nil
 }
 
 // getDesiredAdditionalResourceYAMLForBackup returns the encoded and gzipped
@@ -338,6 +357,7 @@ func getDesiredAdditionalResourceYAMLForBackup(
 	// Use "---" as the separator if more than one resource is passed.
 	var sb strings.Builder
 	for i, resource := range resources {
+		trimBackupFields(resource)
 		marshaledYaml, err := k8syaml.Marshal(resource)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal object %q: %v", resource.GetName(), err)

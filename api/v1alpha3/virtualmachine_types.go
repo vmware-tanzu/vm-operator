@@ -340,8 +340,9 @@ type VirtualMachineCdromSpec struct {
 	// disconnected from the VM. If the CD-ROM device already exists, it is
 	// updated to a disconnected state.
 	//
-	// Please note that disconnecting a CD-ROM during guest OS installation may
-	// not work since the CD-ROM might be locked by the guest.
+	// Note: Before disconnecting a CD-ROM, the device may need to be unmounted
+	// in the guest OS. Refer to the following KB article for more details:
+	// https://knowledge.broadcom.com/external/article?legacyId=2144053
 	//
 	// Defaults to true if omitted.
 	Connected *bool `json:"connected,omitempty"`
@@ -637,8 +638,12 @@ type VirtualMachineSpec struct {
 	// guest ID, then that value is used.
 	// The guest ID from VirtualMachineClass used to deploy the VM is ignored.
 	//
-	// Please refer to https://bit.ly/4elnjP3 for a complete list of supported
-	// guest operating system identifiers.
+	// For a complete list of supported values, refer to https://bit.ly/3TiZX3G.
+	// Note that some guest ID values may require a minimal hardware version,
+	// which can be set using the `spec.minHardwareVersion` field.
+	// To see the mapping between virtual hardware versions and the product
+	// versions that support a specific guest ID, visit the following link:
+	// https://knowledge.broadcom.com/external/article/315655/virtual-machine-hardware-versions.html
 	//
 	// Please note that this field is immutable after the VM is powered on.
 	// To change the guest ID after the VM is powered on, the VM must be powered

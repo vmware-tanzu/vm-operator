@@ -98,9 +98,6 @@ type VirtualMachineVolumeStatus struct {
 	// +optional
 
 	// Limit describes the storage limit for the volume.
-	// Please note, this is only available for Classic volumes. For Managed
-	// volumes, please refer to the PersistentVolumeClaim resource for the
-	// requested capacity.
 	Limit *resource.Quantity `json:"limit,omitempty"`
 
 	// +optional

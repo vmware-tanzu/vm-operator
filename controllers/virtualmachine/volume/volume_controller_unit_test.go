@@ -45,24 +45,6 @@ func (f *testFailClient) Create(ctx context.Context, obj client.Object, opts ...
 	return apierrors.NewForbidden(schema.GroupResource{}, "", errors.New("insufficient quota for creating PVC"))
 }
 
-type noPVCReader struct {
-	client.Client
-}
-
-func (c *noPVCReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	if _, ok := obj.(*corev1.PersistentVolumeClaim); ok {
-		panic("Don't Get() PersistentVolumeClaim with this Client!")
-	}
-	return c.Client.Get(ctx, key, obj, opts...)
-}
-
-func (c *noPVCReader) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	if _, ok := list.(*corev1.PersistentVolumeClaimList); ok {
-		panic("Don't List() PersistentVolumeClaim with this Client!")
-	}
-	return c.Client.List(ctx, list, opts...)
-}
-
 func unitTests() {
 	Describe(
 		"Reconcile",
@@ -164,12 +146,8 @@ func unitTestsReconcile() {
 				}).
 			Build()
 
-		// Any PVC Get/List should not use this client so we don't start an informer.
-		noPVCClient := &noPVCReader{ctx.Client}
-
 		reconciler = volume.NewReconciler(
 			ctx,
-			noPVCClient,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,

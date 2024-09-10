@@ -70,7 +70,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
-		mgr.GetAPIReader(),
 		ctrl.Log.WithName("controllers").WithName("volume"),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.VMProvider,
@@ -177,14 +176,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 func NewReconciler(
 	ctx context.Context,
 	client client.Client,
-	reader client.Reader,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
 		Context:    ctx,
 		Client:     client,
-		reader:     reader,
 		logger:     logger,
 		recorder:   recorder,
 		VMProvider: vmProvider,
@@ -195,7 +192,6 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
-	reader     client.Reader
 	Context    context.Context
 	logger     logr.Logger
 	recorder   record.Recorder
@@ -666,7 +662,7 @@ func (r *Reconciler) processAttachments(
 			if volume.PersistentVolumeClaim.ClaimName == attachment.Spec.VolumeName {
 				volumeStatus := attachmentToVolumeStatus(volume.Name, attachment)
 				volumeStatus.Used = existingManagedVolUsage[volume.Name]
-				if err := updateVolumeStatusWithLimit(ctx, r.reader, *volume.PersistentVolumeClaim, &volumeStatus); err != nil {
+				if err := updateVolumeStatusWithLimit(ctx, r.Client, *volume.PersistentVolumeClaim, &volumeStatus); err != nil {
 					ctx.Logger.Error(err, "failed to get volume status limit")
 				}
 				volumeStatuses = append(volumeStatuses, volumeStatus)

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -11,13 +12,15 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/flowcontrol"
-	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/textlogger"
 
 	"github.com/vmware-tanzu/vm-operator/controllers"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
@@ -26,6 +29,7 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	ctrlsig "sigs.k8s.io/controller-runtime/pkg/manager/signals"
@@ -122,7 +126,7 @@ func main() {
 		&managerOpts.WebhookServiceContainerPort,
 		"webhook-service-container-port",
 		defaultConfig.WebhookServiceContainerPort,
-		"The the port on which the webhook service expects the webhook server to listen for incoming requests.")
+		"The port on which the webhook service expects the webhook server to listen for incoming requests.")
 	flag.StringVar(
 		&managerOpts.WebhookServiceNamespace,
 		"webhook-service-namespace",
@@ -201,6 +205,8 @@ func main() {
 	if defaultConfig.Features.UnifiedStorageQuota {
 		ctx = cource.WithContext(ctx)
 	}
+	initFeaturesFromCapabilities(ctx, setupLog)
+	setupLog.Info("Initial features", "features", pkgcfg.FromContext(ctx).Features)
 
 	mgr, err := pkgmgr.New(ctx, managerOpts)
 	if err != nil {
@@ -252,6 +258,25 @@ func waitForWebhookCertificates(setupLog logr.Logger, managerOpts pkgmgr.Options
 			setupLog.Info("waiting on certificates", "elapsed", time.Since(waitOnCertsStartTime).String())
 		}
 	}
+}
+
+// initFeaturesFromCapabilities updates our enabled/disabled features based on the
+// capabilities. If we cannot get the CM, don't prevent the container from starting
+// and instead depend on the infra capabilities controller to eventually fix things up.
+func initFeaturesFromCapabilities(ctx context.Context, setupLog logr.Logger) {
+	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
+	if err != nil {
+		setupLog.Error(err, "unable to create client for capabilities")
+		return
+	}
+
+	cm := &corev1.ConfigMap{}
+	if err := c.Get(ctx, capabilities.WCPClusterCapabilitiesConfigMapObjKey, cm); err != nil {
+		setupLog.Error(err, "unable to get capabilities ConfigMap")
+		return
+	}
+
+	capabilities.UpdateCapabilitiesFeatures(ctx, cm.Data)
 }
 
 // CertDirReady returns a channel that is closed when there are certificates

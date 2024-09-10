@@ -12,8 +12,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/infra/capability"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -37,7 +37,6 @@ func intgTestsReconcile() {
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
-
 	})
 
 	AfterEach(func() {
@@ -46,49 +45,42 @@ func intgTestsReconcile() {
 	})
 
 	Context("WcpClusterCapabilitiesConfigMap", func() {
-		var obj *corev1.ConfigMap
+		var configMap *corev1.ConfigMap
 
 		BeforeEach(func() {
-			obj = newWCPClusterCapabilitiesConfigMap(
-				map[string]string{
-					capability.TKGMultipleCLCapabilityKey: "false",
-				})
-			Expect(obj).NotTo(BeNil())
+			configMap = &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      capabilities.WCPClusterCapabilitiesConfigMapName,
+					Namespace: capabilities.WCPClusterCapabilitiesNamespace,
+				},
+				Data: map[string]string{
+					capabilities.TKGMultipleCLCapabilityKey: "false",
+				},
+			}
 		})
 
 		JustBeforeEach(func() {
-			Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, configMap)).To(Succeed())
 		})
 
 		AfterEach(func() {
-			err := ctx.Client.Delete(ctx, obj)
+			err := ctx.Client.Delete(ctx, configMap)
 			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
 		When("updated", func() {
 			JustBeforeEach(func() {
-				data := map[string]string{
-					capability.TKGMultipleCLCapabilityKey: "true",
+				configMap.Data = map[string]string{
+					capabilities.TKGMultipleCLCapabilityKey: "true",
 				}
-				obj.Data = data
-				Expect(ctx.Client.Update(ctx, obj)).To(Succeed())
+				Expect(ctx.Client.Update(ctx, configMap)).To(Succeed())
 			})
 
 			It("should be reconciled", func() {
-				Eventually(func() bool {
-					return pkgcfg.FromContext(suite.Context).Features.TKGMultipleCL
-				}).Should(BeTrue())
+				Eventually(func(g Gomega) {
+					g.Expect(pkgcfg.FromContext(suite.Context).Features.TKGMultipleCL).To(BeTrue())
+				}).Should(Succeed())
 			})
 		})
 	})
-}
-
-func newWCPClusterCapabilitiesConfigMap(wcpClusterConfig map[string]string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      capability.WCPClusterCapabilitiesConfigMapName,
-			Namespace: capability.WCPClusterCapabilitiesNamespace,
-		},
-		Data: wcpClusterConfig,
-	}
 }

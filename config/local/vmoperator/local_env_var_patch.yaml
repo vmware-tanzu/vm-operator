@@ -35,6 +35,8 @@ spec:
           value: "false"
         - name: FSS_WCP_VMSERVICE_BYOK
           value: "false"
+        - name: FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
+          value: "false"
 
         #
         # Feature state switch flags beneath this line are enabled on main and

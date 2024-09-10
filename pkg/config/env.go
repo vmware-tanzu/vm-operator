@@ -59,9 +59,16 @@ func FromEnv() Config {
 	setBool(env.FSSVMResize, &config.Features.VMResize)
 	setBool(env.FSSVMResizeCPUMemory, &config.Features.VMResizeCPUMemory)
 	setBool(env.FSSVMImportNewNet, &config.Features.VMImportNewNet)
-	setBool(env.FSSWorkloadDomainIsolation, &config.Features.WorkloadDomainIsolation)
 	setBool(env.FSSVMIncrementalRestore, &config.Features.VMIncrementalRestore)
 	setBool(env.FSSBringYourOwnEncryptionKey, &config.Features.BringYourOwnEncryptionKey)
+
+	setBool(env.FSSSVAsyncUpgrade, &config.Features.SVAsyncUpgrade)
+	if !config.Features.SVAsyncUpgrade {
+		// When SVAsyncUpgrade is enabled, we'll later use the capability CM to determine if
+		// FSS's with a capability are enabled. TKGMultipleCL is special in that in predated
+		// the SVAsyncUpgrade work.
+		setBool(env.FSSWorkloadDomainIsolation, &config.Features.WorkloadDomainIsolation)
+	}
 
 	return config
 }

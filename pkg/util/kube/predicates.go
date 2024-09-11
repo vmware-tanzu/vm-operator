@@ -121,6 +121,9 @@ func (r *vmForVMClassPredicate) matches(obj runtime.Object) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if className == "" && r.opts.MatchIfVMClassNotFound {
+		return true, nil
+	}
 	if !ok {
 		return false, fmt.Errorf("spec.className not found for %s", vm)
 	}

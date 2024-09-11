@@ -391,7 +391,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.Virtu
 		},
 	}
 
-	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
+	result, err := controllerutil.CreateOrPatch(ctx, r.Client, service, func() error {
 		if err := controllerutil.SetControllerReference(vmService, service, r.Client.Scheme()); err != nil {
 			return err
 		}

@@ -72,6 +72,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		Scheme: opts.Scheme,
 		Cache: cache.Options{
 			DefaultNamespaces: GetNamespaceCacheConfigs(opts.WatchNamespace),
+			DefaultTransform:  cache.TransformStripManagedFields(),
 			SyncPeriod:        &opts.SyncPeriod,
 		},
 		Client: client.Options{

@@ -13,12 +13,17 @@ import (
 )
 
 func IsPausedByAdmin(moVM mo.VirtualMachine) bool {
-	for i := range moVM.Config.ExtraConfig {
-		if o := moVM.Config.ExtraConfig[i].GetOptionValue(); o != nil {
+	if moVM.Config == nil {
+		return false
+	}
+
+	for _, ec := range moVM.Config.ExtraConfig {
+		if o := ec.GetOptionValue(); o != nil {
 			if o.Key == vmopv1.PauseVMExtraConfigKey {
 				if value, ok := o.Value.(string); ok {
 					return strings.ToUpper(value) == constants.ExtraConfigTrue
 				}
+				return false
 			}
 		}
 	}

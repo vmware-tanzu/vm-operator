@@ -36,6 +36,16 @@ func extraConfigTests() {
 			}
 		})
 
+		It("should return false when VM's Config is nil", func() {
+			mgdObj.Config = nil
+			Expect(virtualmachine.IsPausedByAdmin(mgdObj)).To(BeFalse())
+		})
+
+		It("should return false when VM's Config.ExtraConfig is nil", func() {
+			mgdObj.Config.ExtraConfig = nil
+			Expect(virtualmachine.IsPausedByAdmin(mgdObj)).To(BeFalse())
+		})
+
 		It("should return false when PauseVMExtraConfigKey is not set", func() {
 			Expect(virtualmachine.IsPausedByAdmin(mgdObj)).To(BeFalse())
 		})

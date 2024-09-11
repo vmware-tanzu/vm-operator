@@ -312,7 +312,7 @@ func createNetOPNetworkInterface(
 		}
 	}
 
-	_, err := controllerutil.CreateOrUpdate(vmCtx, client, netIf, func() error {
+	_, err := controllerutil.CreateOrPatch(vmCtx, client, netIf, func() error {
 		if err := controllerutil.SetOwnerReference(vmCtx.VM, netIf, client.Scheme()); err != nil {
 			// If this fails we likely have an object name collision, and we're in a tough spot.
 			return err
@@ -480,7 +480,7 @@ func createNCPNetworkInterface(
 		}
 	}
 
-	_, err := controllerutil.CreateOrUpdate(vmCtx, client, vnetIf, func() error {
+	_, err := controllerutil.CreateOrPatch(vmCtx, client, vnetIf, func() error {
 		if err := controllerutil.SetOwnerReference(vmCtx.VM, vnetIf, client.Scheme()); err != nil {
 			return err
 		}
@@ -615,7 +615,7 @@ func createVPCNetworkInterface(
 		return nil, fmt.Errorf("network kind %q is not supported for VPC", networkRefType.Kind)
 	}
 
-	_, err := controllerutil.CreateOrUpdate(vmCtx, client, vpcSubnetPort, func() error {
+	_, err := controllerutil.CreateOrPatch(vmCtx, client, vpcSubnetPort, func() error {
 		if err := controllerutil.SetOwnerReference(vmCtx.VM, vpcSubnetPort, client.Scheme()); err != nil {
 			return err
 		}

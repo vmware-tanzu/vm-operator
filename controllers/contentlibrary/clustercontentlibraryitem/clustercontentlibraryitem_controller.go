@@ -132,9 +132,15 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.ClusterContentLibraryItemContex
 		controllerutil.ContainsFinalizer(ctx.CCLItem, utils.DeprecatedCCLItemFinalizer) {
 
 		r.Metrics.DeleteMetrics(ctx.Logger, ctx.ImageObjName, "")
+
+		objPatch := client.MergeFromWithOptions(
+			ctx.CCLItem.DeepCopy(),
+			client.MergeFromWithOptimisticLock{})
+
 		controllerutil.RemoveFinalizer(ctx.CCLItem, utils.CCLItemFinalizer)
 		controllerutil.RemoveFinalizer(ctx.CCLItem, utils.DeprecatedCCLItemFinalizer)
-		return r.Update(ctx, ctx.CCLItem)
+
+		return r.Patch(ctx, ctx.CCLItem, objPatch)
 	}
 
 	return nil
@@ -150,10 +156,15 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.ClusterContentLibraryItemContex
 			ctx.Logger.V(5).Info("Removed deprecated finalizer", "finalizerName", utils.DeprecatedCCLItemFinalizer)
 		}
 
+		objPatch := client.MergeFromWithOptions(
+			ctx.CCLItem.DeepCopy(),
+			client.MergeFromWithOptimisticLock{})
+
 		// The finalizer must be present before proceeding in order to ensure ReconcileDelete() will be called.
 		// Return immediately after here to update the object and then we'll proceed on the next reconciliation.
 		controllerutil.AddFinalizer(ctx.CCLItem, utils.CCLItemFinalizer)
-		return r.Update(ctx, ctx.CCLItem)
+
+		return r.Patch(ctx, ctx.CCLItem, objPatch)
 	}
 
 	// Do not set additional fields here as they will be overwritten in CreateOrPatch below.

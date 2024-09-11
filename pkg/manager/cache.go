@@ -35,9 +35,10 @@ func NewLabelSelectorCacheForObject(
 
 	cache, err := ctrlcache.New(mgr.GetConfig(),
 		ctrlcache.Options{
-			Scheme:     mgr.GetScheme(),
-			Mapper:     mgr.GetRESTMapper(),
-			SyncPeriod: resync,
+			Scheme:           mgr.GetScheme(),
+			Mapper:           mgr.GetRESTMapper(),
+			DefaultTransform: ctrlcache.TransformStripManagedFields(),
+			SyncPeriod:       resync,
 			ByObject: map[ctrlclient.Object]ctrlcache.ByObject{
 				object: {
 					Label: selector,
@@ -70,9 +71,10 @@ func NewNamespacedCacheForObject(
 
 	cache, err := ctrlcache.New(mgr.GetConfig(),
 		ctrlcache.Options{
-			Scheme:     mgr.GetScheme(),
-			Mapper:     mgr.GetRESTMapper(),
-			SyncPeriod: resync,
+			Scheme:           mgr.GetScheme(),
+			Mapper:           mgr.GetRESTMapper(),
+			DefaultTransform: ctrlcache.TransformStripManagedFields(),
+			SyncPeriod:       resync,
 			ByObject: map[ctrlclient.Object]ctrlcache.ByObject{
 				object: {
 					Namespaces: GetNamespaceCacheConfigs(namespaces...),

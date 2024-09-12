@@ -49,16 +49,16 @@ func ResolveBackingPostPlacement(
 		case pkgcfg.NetworkProviderTypeNSXT:
 			backing, err = searchNsxtNetworkReference(ctx, ccr, results.Results[idx].NetworkID)
 			if err != nil {
-				err = fmt.Errorf("post placement NSX-T backing fixup failed: %w", err)
+				err = fmt.Errorf("post placement NSX backing fixup failed: %w", err)
 			}
 		// VPC is an NSX-T construct that is attached to an NSX-T Project.
 		case pkgcfg.NetworkProviderTypeVPC:
 			backing, err = searchNsxtNetworkReference(ctx, ccr, results.Results[idx].NetworkID)
 			if err != nil {
-				err = fmt.Errorf("post placement NSX-T-VPC backing fixup failed: %w", err)
+				err = fmt.Errorf("post placement NSX-VPC backing fixup failed: %w", err)
 			}
 		default:
-			err = fmt.Errorf("only NSX-T networks are expected to need post placement backing fixup")
+			err = fmt.Errorf("only NSX networks are expected to need post placement backing fixup")
 		}
 
 		if err != nil {
@@ -114,10 +114,10 @@ func searchNsxtNetworkReference(
 	case 1:
 		return object.NewDistributedVirtualPortgroup(ccr.Client(), dvpgMoRefs[0]), nil
 	case 0:
-		return nil, fmt.Errorf("no DVPG with NSX-T network ID %q found", networkID)
+		return nil, fmt.Errorf("no DVPG with NSX network ID %q found", networkID)
 	default:
 		// The LogicalSwitchUuid is supposed to be unique per CCR, so this is likely an NCP
 		// misconfiguration, and we don't know which one to pick.
-		return nil, fmt.Errorf("multiple DVPGs (%d) with NSX-T network ID %q found", len(dvpgMoRefs), networkID)
+		return nil, fmt.Errorf("multiple DVPGs (%d) with NSX network ID %q found", len(dvpgMoRefs), networkID)
 	}
 }

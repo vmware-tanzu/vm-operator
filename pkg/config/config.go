@@ -129,6 +129,7 @@ type FeatureStates struct {
 	VMIncrementalRestore      bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
 	BringYourOwnEncryptionKey bool // FSS_WCP_VMSERVICE_BYOK
 	SVAsyncUpgrade            bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
+	SimplifiedEnablement      bool // FSS_WCP_SIMPLIFIED_ENABLEMENT
 }
 
 type InstanceStorage struct {

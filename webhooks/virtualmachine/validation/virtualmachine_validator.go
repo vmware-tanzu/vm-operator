@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -1130,22 +1131,22 @@ func (v validator) validateAvailabilityZone(ctx *pkgctx.WebhookRequestContext, v
 	}
 
 	// Validate the name of the provided availability zone.
-	zoneLabelVal := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
-	if zoneLabelVal != "" {
+	if zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
 		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-			// Validate the name of the provided zone.
-			// It is the same name as az.
-			zone, err := topology.GetZone(ctx.Context, v.client, zoneLabelVal, vm.Namespace)
+			// Validate the name of the provided zone. It is the same name as az.
+			zone, err := topology.GetZone(ctx.Context, v.client, zoneName, vm.Namespace)
 			if err != nil {
-				return append(allErrs, field.Invalid(zoneLabelPath, zoneLabelVal, err.Error()))
+				return append(allErrs, field.Invalid(zoneLabelPath, zoneName, err.Error()))
 			}
-			// prevent new VirtualMachines created on marked zone by SSO users.
-			if !ctx.IsPrivilegedAccount && !zone.DeletionTimestamp.IsZero() {
-				return append(allErrs, field.Invalid(zoneLabelPath, zoneLabelVal, invalidZone))
+			// Prevent new VirtualMachines created on marked zone by SSO users.
+			if !zone.DeletionTimestamp.IsZero() {
+				if !ctx.IsPrivilegedAccount && !isCAPVServiceAccount(ctx.UserInfo.Username) {
+					return append(allErrs, field.Invalid(zoneLabelPath, zoneName, invalidZone))
+				}
 			}
 		} else {
-			if _, err := topology.GetAvailabilityZone(ctx.Context, v.client, zoneLabelVal); err != nil {
-				return append(allErrs, field.Invalid(zoneLabelPath, zoneLabelVal, err.Error()))
+			if _, err := topology.GetAvailabilityZone(ctx.Context, v.client, zoneName); err != nil {
+				return append(allErrs, field.Invalid(zoneLabelPath, zoneName, err.Error()))
 			}
 		}
 	}
@@ -1370,4 +1371,11 @@ func validateCdromWhenPoweredOn(
 	}
 
 	return allErrs
+}
+
+var capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-tkg-domain-[^:]+:default$")
+
+// isCAPVServiceAccount checks if the username matches that of the CAPV service account.
+func isCAPVServiceAccount(username string) bool {
+	return capvDefaultServiceAccount.Match([]byte(username))
 }

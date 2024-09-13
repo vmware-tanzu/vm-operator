@@ -329,7 +329,7 @@ func unitTestsValidateCreate() {
 						zoneName := builder.DummyZoneName
 						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 						zone := &topologyv1.Zone{}
-						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone))
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
 						zone.Finalizers = []string{"test"}
 						Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
 						Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
@@ -347,7 +347,25 @@ func unitTestsValidateCreate() {
 						zoneName := builder.DummyZoneName
 						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 						zone := &topologyv1.Zone{}
-						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone))
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
+						zone.Finalizers = []string{"test"}
+						Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("when Workload Domain Isolation FSS enabled, should allow when VM created by CAPV that specifies a zone being deleted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.WorkloadDomainIsolation = true
+							ctx.UserInfo.Username = "system:serviceaccount:svc-tkg-domain-c52:default"
+						})
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						zone := &topologyv1.Zone{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
 						zone.Finalizers = []string{"test"}
 						Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
 						Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())

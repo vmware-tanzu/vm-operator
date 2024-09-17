@@ -56,6 +56,7 @@ const (
 	FSSVMIncrementalRestore
 	FSSBringYourOwnEncryptionKey
 	FSSSVAsyncUpgrade
+	FSSSimplifiedEnablement
 
 	_varNameEnd
 )

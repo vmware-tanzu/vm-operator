@@ -4,6 +4,7 @@
 package v1alpha2
 
 import (
+	"reflect"
 	"unsafe"
 
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
@@ -17,7 +18,9 @@ import (
 func Convert_sysprep_Sysprep_To_sysprep_Sysprep(
 	in *vmopv1a2sysprep.Sysprep, out *vmopv1sysprep.Sysprep, s apiconversion.Scope) error {
 
-	out.GUIRunOnce = (*vmopv1sysprep.GUIRunOnce)(unsafe.Pointer(&in.GUIRunOnce))
+	if !reflect.DeepEqual(in.GUIRunOnce, vmopv1a2sysprep.GUIRunOnce{}) {
+		out.GUIRunOnce = (*vmopv1sysprep.GUIRunOnce)(unsafe.Pointer(&in.GUIRunOnce))
+	}
 	out.GUIUnattended = (*vmopv1sysprep.GUIUnattended)(unsafe.Pointer(in.GUIUnattended))
 	out.LicenseFilePrintData = (*vmopv1sysprep.LicenseFilePrintData)(unsafe.Pointer(in.LicenseFilePrintData))
 	out.UserData = (*vmopv1sysprep.UserData)(unsafe.Pointer(in.UserData))

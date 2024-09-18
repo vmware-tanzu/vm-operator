@@ -17,7 +17,9 @@ import (
 func Convert_sysprep_Sysprep_To_sysprep_Sysprep(
 	in *vmopv1sysprep.Sysprep, out *vmopv1a2sysprep.Sysprep, s apiconversion.Scope) error {
 
-	out.GUIRunOnce = *(*vmopv1a2sysprep.GUIRunOnce)(unsafe.Pointer(in.GUIRunOnce))
+	if in.GUIRunOnce != nil {
+		out.GUIRunOnce = *(*vmopv1a2sysprep.GUIRunOnce)(unsafe.Pointer(in.GUIRunOnce))
+	}
 	out.GUIUnattended = (*vmopv1a2sysprep.GUIUnattended)(unsafe.Pointer(in.GUIUnattended))
 	out.LicenseFilePrintData = (*vmopv1a2sysprep.LicenseFilePrintData)(unsafe.Pointer(in.LicenseFilePrintData))
 	out.UserData = (*vmopv1a2sysprep.UserData)(unsafe.Pointer(in.UserData))

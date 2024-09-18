@@ -480,7 +480,6 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 						Sysprep: &vmopv1sysprep.Sysprep{
 							Identification: &vmopv1sysprep.Identification{},
-							GUIRunOnce:     &vmopv1sysprep.GUIRunOnce{},
 						},
 					},
 				}
@@ -581,6 +580,31 @@ func TestVirtualMachineConversion(t *testing.T) {
 					g.Expect(apiequality.Semantic.DeepEqual(hub, tc.outHub)).To(BeTrue(), cmp.Diff(hub, tc.outHub))
 				})
 			}
+		})
+	})
+
+	t.Run("VirtualMachine and partial inline sysprep", func(t *testing.T) {
+		t.Run("hub-spoke-hub", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+							Sysprep: &vmopv1sysprep.Sysprep{
+								UserData: &vmopv1sysprep.UserData{
+									FullName: "test-user",
+									OrgName:  "test-org",
+									ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{
+										Key:  "product_id",
+										Name: "vm-w9w4mn9xr2",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
 		})
 	})
 }

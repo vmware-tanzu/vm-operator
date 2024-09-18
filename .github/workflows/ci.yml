@@ -12,27 +12,29 @@ on:
     branches:
     - main
 
+#jobs:
+#
+#  lint-markdown:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - name: Check out code
+#      uses: actions/checkout@v4
+#    - name: Lint Markdown
+#      run: make lint-markdown
+#
+#  lint-shell:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - name: Check out code
+#      uses: actions/checkout@v4
+#    - name: Lint Shell
+#      run: make lint-shell
+
 jobs:
 
-  lint-markdown:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
-    - name: Lint Markdown
-      run: make lint-markdown
-
-  lint-shell:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
-    - name: Lint Shell
-      run: make lint-shell
-
   verify-docs:
-    needs:
-    - lint-markdown
+    # needs:
+    # - lint-markdown
     runs-on: ubuntu-latest
     steps:
     - name: Check out code

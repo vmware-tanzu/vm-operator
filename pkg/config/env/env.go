@@ -171,6 +171,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_VMSERVICE_BYOK"
 	case FSSSVAsyncUpgrade:
 		return "FSS_WCP_SUPERVISOR_ASYNC_UPGRADE"
+	case FSSSimplifiedEnablement:
+		return "FSS_WCP_SIMPLIFIED_ENABLEMENT"
 	}
 	panic("unknown environment variable")
 }

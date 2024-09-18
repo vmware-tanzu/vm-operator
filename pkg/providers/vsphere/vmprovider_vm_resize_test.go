@@ -113,6 +113,16 @@ func vmResizeTests() {
 		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
 	}
 
+	assertExpectedBrownfieldNoResizedClassFields := func(vm *vmopv1.VirtualMachine, class *vmopv1.VirtualMachineClass) {
+		_, _, _, exists := vmopv1util.GetLastResizedAnnotation(*vm)
+		ExpectWithOffset(1, exists).To(BeFalse(), "LRA not present")
+
+		ExpectWithOffset(1, vm.Status.Class).ToNot(BeNil(), "Status.Class")
+		ExpectWithOffset(1, vm.Status.Class.APIVersion).To(Equal(vmopv1.GroupVersion.String()), "Status.Class.APIVersion")
+		ExpectWithOffset(1, vm.Status.Class.Kind).To(Equal("VirtualMachineClass"), "Status.Class.Kind")
+		ExpectWithOffset(1, vm.Status.Class.Name).To(Equal(class.Name), "Status.Class.Name")
+	}
+
 	assertExpectedResizedClassFields := func(vm *vmopv1.VirtualMachine, class *vmopv1.VirtualMachineClass, synced ...bool) {
 		inSync := len(synced) == 0 || synced[0]
 
@@ -144,6 +154,10 @@ func vmResizeTests() {
 		ExpectWithOffset(1, memAllocation).ToNot(BeNil(), "memoryAllocation")
 		ExpectWithOffset(1, memAllocation.Reservation).To(HaveValue(BeEquivalentTo(memReservation)), "mem reservation")
 		ExpectWithOffset(1, memAllocation.Limit).To(HaveValue(BeEquivalentTo(memLimit)), "mem limit")
+	}
+
+	assertExpectedNoReservationFields := func(o mo.VirtualMachine) {
+		assertExpectedReservationFields(o, 0, -1, 0, -1)
 	}
 
 	DescribeTableSubtree("Resize VM",
@@ -187,59 +201,19 @@ func vmResizeTests() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 
-			Context("NumCPUs", func() {
-				BeforeEach(func() {
-					configSpec.NumCPUs = 2
-				})
+			Context("Powered off VM", func() {
 
-				It("Resizes", func() {
-					cs := configSpec
-					cs.NumCPUs = 42
-					newVMClass := createVMClass(cs)
-					vm.Spec.ClassName = newVMClass.Name
-
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
-
-					var o mo.VirtualMachine
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
-					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(512))
-
-					assertExpectedResizedClassFields(vm, newVMClass)
-				})
-			})
-
-			Context("MemoryMB", func() {
-				BeforeEach(func() {
-					configSpec.MemoryMB = 1024
-				})
-
-				It("Resizes", func() {
-					cs := configSpec
-					cs.MemoryMB = 8192
-					newVMClass := createVMClass(cs)
-					vm.Spec.ClassName = newVMClass.Name
-
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
-
-					var o mo.VirtualMachine
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
-					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
-
-					assertExpectedResizedClassFields(vm, newVMClass)
-				})
-			})
-
-			Context("CPU/Memory Reservations", func() {
-
-				Context("No reservations", func() {
+				Context("Resize NumCPUs/MemoryMB", func() {
+					BeforeEach(func() {
+						configSpec.NumCPUs = 2
+						configSpec.MemoryMB = 1024
+					})
 
 					It("Resizes", func() {
-						cs := configSpec
-						newVMClass := createVMClass(cs)
+						newCS := configSpec
+						newCS.NumCPUs = 42
+						configSpec.MemoryMB = 8192
+						newVMClass := createVMClass(newCS)
 						vm.Spec.ClassName = newVMClass.Name
 
 						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
@@ -247,45 +221,85 @@ func vmResizeTests() {
 
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						assertExpectedReservationFields(o, 0, -1, 0, -1)
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
 
 						assertExpectedResizedClassFields(vm, newVMClass)
 					})
 				})
 
-				Context("With Reservations", func() {
+				Context("CPU/Memory Reservations", func() {
 
-					It("Resizes", func() {
-						cs := configSpec
-						cs.NumCPUs = 42
-						cs.MemoryMB = 8192
-						newVMClass := createVMClass(cs)
-						vm.Spec.ClassName = newVMClass.Name
+					Context("No reservations", func() {
 
-						polices := vmopv1.VirtualMachineClassPolicies{
-							Resources: vmopv1.VirtualMachineClassResources{
-								Limits: vmopv1.VirtualMachineResourceSpec{
-									Cpu:    resource.MustParse("2"),
-									Memory: resource.MustParse("8192Mi"),
+						It("Resizes", func() {
+							newCS := configSpec
+							newVMClass := createVMClass(newCS)
+							vm.Spec.ClassName = newVMClass.Name
+
+							vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+							Expect(err).ToNot(HaveOccurred())
+
+							var o mo.VirtualMachine
+							Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+							Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+							Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+							assertExpectedNoReservationFields(o)
+
+							assertExpectedResizedClassFields(vm, newVMClass)
+						})
+					})
+
+					Context("With Reservations", func() {
+
+						It("Resizes", func() {
+							newCS := configSpec
+							newCS.NumCPUs = 42
+							newCS.MemoryMB = 8192
+							newVMClass := createVMClass(newCS)
+							vm.Spec.ClassName = newVMClass.Name
+
+							polices := vmopv1.VirtualMachineClassPolicies{
+								Resources: vmopv1.VirtualMachineClassResources{
+									Limits: vmopv1.VirtualMachineResourceSpec{
+										Cpu:    resource.MustParse("2"),
+										Memory: resource.MustParse("8192Mi"),
+									},
+									Requests: vmopv1.VirtualMachineResourceSpec{
+										Cpu:    resource.MustParse("1"),
+										Memory: resource.MustParse("4096Mi"),
+									},
 								},
-								Requests: vmopv1.VirtualMachineResourceSpec{
-									Cpu:    resource.MustParse("1"),
-									Memory: resource.MustParse("4096Mi"),
-								},
-							},
-						}
-						updateVMClassPolicies(newVMClass, polices)
+							}
+							updateVMClassPolicies(newVMClass, polices)
 
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
-						Expect(err).ToNot(HaveOccurred())
+							By("Resize set reservations", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
 
-						var o mo.VirtualMachine
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
-						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
-						assertExpectedReservationFields(o, 1*vcsimCPUFreq, 2*vcsimCPUFreq, 4096, 8192)
+								var o mo.VirtualMachine
+								Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+								Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+								Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
+								assertExpectedReservationFields(o, 1*vcsimCPUFreq, 2*vcsimCPUFreq, 4096, 8192)
 
-						assertExpectedResizedClassFields(vm, newVMClass)
+								assertExpectedResizedClassFields(vm, newVMClass)
+							})
+
+							By("Resize back to initial class removes reservations", func() {
+								vm.Spec.ClassName = vmClass.Name
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var o mo.VirtualMachine
+								Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+								Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+								Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+								assertExpectedNoReservationFields(o)
+
+								assertExpectedResizedClassFields(vm, vmClass)
+							})
+						})
 					})
 				})
 			})
@@ -297,10 +311,10 @@ func vmResizeTests() {
 				})
 
 				It("Resizes", func() {
-					cs := configSpec
-					cs.NumCPUs = 42
-					cs.MemoryMB = 8192
-					newVMClass := createVMClass(cs)
+					newCS := configSpec
+					newCS.NumCPUs = 42
+					newCS.MemoryMB = 8192
+					newVMClass := createVMClass(newCS)
 					vm.Spec.ClassName = newVMClass.Name
 
 					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
@@ -310,9 +324,9 @@ func vmResizeTests() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 					Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
-					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
-					assertExpectedReservationFields(o, 0, -1, 0, -1)
+					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
+					assertExpectedNoReservationFields(o)
 
 					assertExpectedResizedClassFields(vm, newVMClass)
 				})
@@ -320,10 +334,10 @@ func vmResizeTests() {
 				Context("With Reservations", func() {
 
 					It("Resizes", func() {
-						cs := configSpec
-						cs.NumCPUs = 42
-						cs.MemoryMB = 8192
-						newVMClass := createVMClass(cs)
+						newCS := configSpec
+						newCS.NumCPUs = 42
+						newCS.MemoryMB = 8192
+						newVMClass := createVMClass(newCS)
 						vm.Spec.ClassName = newVMClass.Name
 
 						polices := vmopv1.VirtualMachineClassPolicies{
@@ -346,11 +360,108 @@ func vmResizeTests() {
 
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(42))
-						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
 						assertExpectedReservationFields(o, 1*vcsimCPUFreq, 2*vcsimCPUFreq, 4096, 8192)
 
 						assertExpectedResizedClassFields(vm, newVMClass)
+					})
+				})
+
+				Context("Brownfield VM", func() {
+
+					It("Does not resize when LRA annotation is not present", func() {
+						newCS := configSpec
+						newCS.NumCPUs = 42
+						newCS.MemoryMB = 8192
+						updateVMClass(vmClass, newCS)
+
+						// Remove annotation so the VM appears to be from before this feature.
+						Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
+						delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
+
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+						assertExpectedNoReservationFields(o)
+
+						assertExpectedBrownfieldNoResizedClassFields(vm, vmClass)
+					})
+
+					It("Resizes", func() {
+						newCS := configSpec
+						newCS.NumCPUs = 42
+						newCS.MemoryMB = 8192
+						newVMClass := createVMClass(newCS)
+						vm.Spec.ClassName = newVMClass.Name
+
+						// Simulate what the VM mutation webhook would do by setting the LRA to the prior class name.
+						Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
+						Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, vmClass.Name)).To(Succeed())
+
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
+						assertExpectedNoReservationFields(o)
+
+						assertExpectedResizedClassFields(vm, newVMClass)
+					})
+				})
+
+				Context("Without Same Class Resize Annotation", func() {
+
+					It("Does not resize", func() {
+						newCS := configSpec
+						newCS.NumCPUs = 42
+						newCS.MemoryMB = 8192
+						updateVMClass(vmClass, newCS)
+
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+						assertExpectedNoReservationFields(o)
+
+						assertExpectedResizedClassFields(vm, vmClass, false)
+					})
+				})
+
+				Context("With Same Class Resize Annotation", func() {
+
+					It("Resizes", func() {
+						newCS := configSpec
+						newCS.NumCPUs = 42
+						newCS.MemoryMB = 8192
+						updateVMClass(vmClass, newCS)
+
+						vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
+						assertExpectedNoReservationFields(o)
+
+						assertExpectedResizedClassFields(vm, vmClass)
 					})
 				})
 			})
@@ -363,21 +474,22 @@ func vmResizeTests() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
-					cs := configSpec
-					cs.NumCPUs = 42
-					cs.MemoryMB = 8192
-					newVMClass := createVMClass(cs)
+					newCS := configSpec
+					newCS.NumCPUs = 42
+					newCS.MemoryMB = 8192
+					newVMClass := createVMClass(newCS)
 					vm.Spec.ClassName = newVMClass.Name
 
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 					Expect(err).ToNot(HaveOccurred())
 
-					By("Does not resize powered on VM", func() {
+					By("Does not resize", func() {
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
-						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(512))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+						assertExpectedNoReservationFields(o)
 					})
 
 					assertExpectedResizedClassFields(vm, vmClass, false)
@@ -394,20 +506,22 @@ func vmResizeTests() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
-					cs := configSpec
-					cs.MemoryMB = 8192
-					updateVMClass(vmClass, cs)
+					newCS := configSpec
+					newCS.NumCPUs = 42
+					newCS.MemoryMB = 8192
+					updateVMClass(vmClass, newCS)
 
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 					Expect(err).ToNot(HaveOccurred())
 
-					By("Does not resize powered on VM", func() {
+					By("Does not resize", func() {
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
-						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(512))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+						assertExpectedNoReservationFields(o)
 					})
 
 					assertExpectedResizedClassFields(vm, vmClass, false)
@@ -421,13 +535,15 @@ func vmResizeTests() {
 
 			Context("Same Class Resize Annotation", func() {
 				BeforeEach(func() {
+					configSpec.NumCPUs = 2
 					configSpec.MemoryMB = 1024
 				})
 
 				It("Resizes", func() {
-					cs := configSpec
-					cs.MemoryMB = 8192
-					updateVMClass(vmClass, cs)
+					newCS := configSpec
+					newCS.NumCPUs = 42
+					newCS.MemoryMB = 8192
+					updateVMClass(vmClass, newCS)
 
 					By("Does not resize without annotation", func() {
 						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
@@ -435,7 +551,9 @@ func vmResizeTests() {
 
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+						assertExpectedNoReservationFields(o)
 					})
 
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
@@ -444,15 +562,18 @@ func vmResizeTests() {
 
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
+					assertExpectedNoReservationFields(o)
 
 					assertExpectedResizedClassFields(vm, vmClass)
 				})
 
 				It("Resizes brownfield VM", func() {
-					cs := configSpec
-					cs.MemoryMB = 8192
-					updateVMClass(vmClass, cs)
+					newCS := configSpec
+					newCS.NumCPUs = 42
+					newCS.MemoryMB = 8192
+					updateVMClass(vmClass, newCS)
 
 					// Remove annotation so the VM appears to be from before this feature.
 					Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
@@ -464,8 +585,9 @@ func vmResizeTests() {
 
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
-						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+						assertExpectedNoReservationFields(o)
 
 						Expect(vm.Annotations).ToNot(HaveKey(vmopv1util.LastResizedAnnotationKey))
 						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConfigurationSynced)).To(BeTrue())
@@ -477,8 +599,9 @@ func vmResizeTests() {
 
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
-					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(8192))
+					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
+					assertExpectedNoReservationFields(o)
 
 					assertExpectedResizedClassFields(vm, vmClass)
 				})
@@ -493,6 +616,11 @@ func vmResizeTests() {
 					Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
 					delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
 
+					newCS := configSpec
+					newCS.NumCPUs = 42
+					newCS.MemoryMB = 8192
+					updateVMClass(vmClass, newCS)
+
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 					Expect(err).ToNot(HaveOccurred())
@@ -501,8 +629,9 @@ func vmResizeTests() {
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(1))
-						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(configSpec.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(configSpec.MemoryMB))
+						assertExpectedNoReservationFields(o)
 					})
 
 					c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)

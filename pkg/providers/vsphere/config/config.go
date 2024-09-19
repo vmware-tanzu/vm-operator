@@ -59,7 +59,6 @@ const (
 	useInventoryKey          = "UseInventoryAsContentSource"
 	insecureSkipTLSVerifyKey = "InsecureSkipTLSVerify"
 	caFilePathKey            = "CAFilePath"
-	ContentSourceKey         = "ContentSource"
 
 	NetworkConfigMapName = "vmoperator-network-config"
 	NameserversKey       = "nameservers"    // Key in the NetworkConfigMapName.
@@ -151,7 +150,7 @@ func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlclient.Clien
 
 	configMap := &corev1.ConfigMap{}
 	configMapKey := ctrlclient.ObjectKey{Name: NetworkConfigMapName, Namespace: vmopNamespace}
-	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
+	if err := client.Get(ctx, configMapKey, configMap); err != nil {
 		return nil, nil, err
 	}
 
@@ -160,25 +159,18 @@ func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlclient.Clien
 		searchSuffixes []string
 	)
 
-	nsStr, ok := configMap.Data[NameserversKey]
-	if !ok {
-		return nil, nil, fmt.Errorf("invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
-	}
+	if nsStr, ok := configMap.Data[NameserversKey]; ok {
+		nameservers = strings.Fields(nsStr)
 
-	nameservers = strings.Fields(nsStr)
-	if len(nameservers) == 0 {
-		return nil, nil, fmt.Errorf("no nameservers in %v ConfigMap", NetworkConfigMapName)
-	}
-
-	if len(nameservers) == 1 && nameservers[0] == "<worker_dns>" {
-		return nil, nil, fmt.Errorf("no valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
+		if len(nameservers) == 1 && nameservers[0] == "<worker_dns>" {
+			return nil, nil, fmt.Errorf("no valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
+		}
 	}
 
 	if ssStr, ok := configMap.Data[SearchSuffixesKey]; ok {
 		searchSuffixes = strings.Fields(ssStr)
 	}
 
-	// do we need to validate that these look like valid ipv4 addresses?
 	return nameservers, searchSuffixes, nil
 }
 

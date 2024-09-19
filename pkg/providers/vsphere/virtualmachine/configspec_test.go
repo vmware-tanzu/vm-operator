@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/uuid"
+	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 
@@ -378,6 +379,23 @@ var _ = Describe("CreateConfigSpec", func() {
 
 			It("config spec has the expected guestID set", func() {
 				Expect(configSpec.GuestId).To(Equal(fakeGuestID))
+			})
+		})
+
+		When("VM Class has reserved profile ID", func() {
+			BeforeEach(func() {
+				vmClassSpec.ReservedProfileID = "my-profile-id"
+			})
+			Specify("configSpec should have the expected ExtraConfig value", func() {
+				profileID, _ := object.OptionValueList(
+					configSpec.ExtraConfig).GetString(
+					constants.ExtraConfigReservedProfileID)
+				Expect(profileID).To(Equal(vmClassSpec.ReservedProfileID))
+
+				namespacedName, _ := object.OptionValueList(
+					configSpec.ExtraConfig).GetString(
+					constants.ExtraConfigVMServiceNamespacedName)
+				Expect(namespacedName).To(Equal(vm.NamespacedName()))
 			})
 		})
 	})

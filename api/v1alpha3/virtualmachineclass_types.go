@@ -152,6 +152,19 @@ type VirtualMachineClassSpec struct {
 	// (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator
 	// field "_typeName" to preserve type information.
 	ConfigSpec json.RawMessage `json:"configSpec,omitempty"`
+
+	// +optional
+
+	// ReservedProfileID describes the reservation profile associated with
+	// the namespace-scoped VirtualMachineClass object.
+	ReservedProfileID string `json:"reservedProfileID,omitempty"`
+
+	// +optional
+
+	// ReservedSlots describes the number of slots reserved for VMs that use
+	// this VirtualMachineClass.
+	// This field is only valid in conjunction with reservedProfileID.
+	ReservedSlots int32 `json:"reservedSlots,omitempty"`
 }
 
 // VirtualMachineClassStatus defines the observed state of VirtualMachineClass.

@@ -14,6 +14,7 @@ const (
 	ExtraConfigGuestInfoPrefix         = "guestinfo."
 	ExtraConfigRunContainerKey         = "RUN.container"
 	ExtraConfigVMServiceNamespacedName = "vmservice.namespacedName"
+	ExtraConfigReservedProfileID       = "resourcepool.vmResourceProfileId"
 
 	// VCVMAnnotation Annotation placed on the VM.
 	VCVMAnnotation = "Virtual Machine managed by the vSphere Virtual Machine service"

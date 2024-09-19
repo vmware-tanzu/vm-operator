@@ -61,12 +61,7 @@ func KnownObjectTypes() []client.Object {
 		&vmopv1a1.WebConsoleRequest{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
 		&spqv1.StoragePolicyQuota{},
-		//
-		// This resource *should* have a status sub-resource, but due to an
-		// issue the CSI team could not solve, they made the status a part of
-		// the normal resource.
-		//
-		// &spqv1.StoragePolicyUsage{},
+		&spqv1.StoragePolicyUsage{},
 		&spqv1.StorageQuota{},
 		&ncpv1alpha1.VirtualNetworkInterface{},
 		&netopv1alpha1.NetworkInterface{},

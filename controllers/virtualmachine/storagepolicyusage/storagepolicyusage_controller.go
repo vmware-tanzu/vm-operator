@@ -168,13 +168,8 @@ func (r *Reconciler) ReconcileNormal(
 	}
 	obj.Status.ResourceTypeLevelQuotaUsage.Reserved = &totalReserved
 	obj.Status.ResourceTypeLevelQuotaUsage.Used = &totalUsed
-
-	//
-	// Please note, the v1a1 StoragePolicyUsage object does not use a status
-	// sub-resource for some reason, thus the normal client is used to patch
-	// the object.
-	//
-	if err := r.Client.Patch(ctx, &obj, objPatch); err != nil {
+	
+	if err := r.Client.Status().Patch(ctx, &obj, objPatch); err != nil {
 		return fmt.Errorf(
 			"failed to patch StoragePolicyUsage %s: %w", objKey, err)
 	}

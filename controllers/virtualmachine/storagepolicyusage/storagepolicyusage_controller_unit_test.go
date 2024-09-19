@@ -386,18 +386,19 @@ func unitTestsReconcile() {
 			})
 			When("there is an error patching the StoragePolicyUsage resource", func() {
 				BeforeEach(func() {
-					withFuncs.Patch = func(
+					withFuncs.SubResourcePatch = func(
 						ctx context.Context,
-						client ctrlclient.WithWatch,
+						client ctrlclient.Client,
+						subResourceName string,
 						obj ctrlclient.Object,
 						patch ctrlclient.Patch,
-						opts ...ctrlclient.PatchOption) error {
+						opts ...ctrlclient.SubResourcePatchOption) error {
 
 						if _, ok := obj.(*spqv1.StoragePolicyUsage); ok {
 							return fmt.Errorf(fake)
 						}
 
-						return client.Patch(ctx, obj, patch, opts...)
+						return client.Status().Patch(ctx, obj, patch, opts...)
 					}
 				})
 				It("should return an error", func() {

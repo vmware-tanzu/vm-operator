@@ -168,7 +168,7 @@ func (r *Reconciler) ReconcileNormal(
 	}
 	obj.Status.ResourceTypeLevelQuotaUsage.Reserved = &totalReserved
 	obj.Status.ResourceTypeLevelQuotaUsage.Used = &totalUsed
-	
+
 	if err := r.Client.Status().Patch(ctx, &obj, objPatch); err != nil {
 		return fmt.Errorf(
 			"failed to patch StoragePolicyUsage %s: %w", objKey, err)

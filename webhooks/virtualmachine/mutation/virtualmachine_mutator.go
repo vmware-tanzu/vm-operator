@@ -469,7 +469,7 @@ func SetLastResizeAnnotation(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) (bool, error) {
 
-	if !pkgcfg.FromContext(ctx).Features.VMResize {
+	if f := pkgcfg.FromContext(ctx).Features; !f.VMResize && !f.VMResizeCPUMemory {
 		return false, nil
 	}
 

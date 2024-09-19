@@ -452,7 +452,7 @@ func UpdateConfigSpecFirmware(
 func updateConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
+	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, bool, error) {
 
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
 	vmClassSpec := updateArgs.VMClass.Spec
@@ -463,7 +463,7 @@ func updateConfigSpec(
 		*config,
 		configSpec); err != nil {
 
-		return nil, err
+		return nil, false, err
 	}
 
 	UpdateConfigSpecExtraConfig(
@@ -475,23 +475,25 @@ func updateConfigSpec(
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 	UpdateConfigSpecGuestID(config, configSpec, vmCtx.VM.Spec.GuestID)
 
-	if pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory {
+	needsResize := false
+	if pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory && vmopv1util.ResizeNeeded(*vmCtx.VM, updateArgs.VMClass) {
+		needsResize = true
 		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 		resize.CompareCPUAllocation(*config, updateArgs.ConfigSpec, configSpec)
 		resize.CompareMemoryAllocation(*config, updateArgs.ConfigSpec, configSpec)
 	}
 
-	return configSpec, nil
+	return configSpec, needsResize, nil
 }
 
 func (s *Session) prePowerOnVMConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
+	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, bool, error) {
 
-	configSpec, err := updateConfigSpec(vmCtx, config, updateArgs)
+	configSpec, needsResize, err := updateConfigSpec(vmCtx, config, updateArgs)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
@@ -501,7 +503,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 
 	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, currentDisks)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, diskDeviceChanges...)
 
@@ -512,7 +514,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 
 	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, expectedEthCards, currentEthCards)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
@@ -524,19 +526,19 @@ func (s *Session) prePowerOnVMConfigSpec(
 
 	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPCIDevices, currentPciDevices)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
 	if pkgcfg.FromContext(vmCtx).Features.IsoSupport {
 		cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
 		if err != nil {
-			return nil, fmt.Errorf("update CD-ROM device changes error: %w", err)
+			return nil, false, fmt.Errorf("update CD-ROM device changes error: %w", err)
 		}
 		configSpec.DeviceChange = append(configSpec.DeviceChange, cdromDeviceChanges...)
 	}
 
-	return configSpec, nil
+	return configSpec, needsResize, nil
 }
 
 func (s *Session) prePowerOnVMReconfigure(
@@ -546,13 +548,14 @@ func (s *Session) prePowerOnVMReconfigure(
 	updateArgs *VMUpdateArgs) error {
 
 	var configSpec *vimtypes.VirtualMachineConfigSpec
+	var needsResize bool
 	var err error
 
 	features := pkgcfg.FromContext(vmCtx).Features
 	if features.VMResize {
-		configSpec, err = s.prePowerOnVMResizeConfigSpec(vmCtx, config, updateArgs)
+		configSpec, needsResize, err = s.prePowerOnVMResizeConfigSpec(vmCtx, config, updateArgs)
 	} else {
-		configSpec, err = s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
+		configSpec, needsResize, err = s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
 	}
 	if err != nil {
 		return err
@@ -570,7 +573,7 @@ func (s *Session) prePowerOnVMReconfigure(
 		return err
 	}
 
-	if features.VMResize || features.VMResizeCPUMemory {
+	if needsResize {
 		vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, updateArgs.VMClass)
 
 		vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
@@ -923,7 +926,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 func (s *Session) prePowerOnVMResizeConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, error) {
+	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, bool, error) {
 
 	var configSpec vimtypes.VirtualMachineConfigSpec
 
@@ -931,17 +934,17 @@ func (s *Session) prePowerOnVMResizeConfigSpec(
 	if needsResize {
 		cs, err := resize.CreateResizeConfigSpec(vmCtx, *config, updateArgs.ConfigSpec)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		configSpec = cs
 	}
 
 	if err := vmopv1util.OverwriteResizeConfigSpec(vmCtx, *vmCtx.VM, *config, &configSpec); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return &configSpec, nil
+	return &configSpec, needsResize, nil
 }
 
 func (s *Session) updateVMDesiredPowerStateOff(

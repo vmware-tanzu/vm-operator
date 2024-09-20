@@ -17,7 +17,7 @@ import (
 
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
+	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsapis "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
@@ -61,12 +61,7 @@ func KnownObjectTypes() []client.Object {
 		&vmopv1a1.WebConsoleRequest{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
 		&spqv1.StoragePolicyQuota{},
-		//
-		// This resource *should* have a status sub-resource, but due to an
-		// issue the CSI team could not solve, they made the status a part of
-		// the normal resource.
-		//
-		// &spqv1.StoragePolicyUsage{},
+		&spqv1.StoragePolicyUsage{},
 		&spqv1.StorageQuota{},
 		&ncpv1alpha1.VirtualNetworkInterface{},
 		&netopv1alpha1.NetworkInterface{},

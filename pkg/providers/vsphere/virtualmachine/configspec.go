@@ -51,6 +51,16 @@ func CreateConfigSpec(
 		},
 	)
 
+	// Ensure ExtraConfig contains the VM Class's reservation profile ID if set.
+	if id := vmClassSpec.ReservedProfileID; id != "" {
+		configSpec.ExtraConfig = util.OptionValues(configSpec.ExtraConfig).Merge(
+			&vimtypes.OptionValue{
+				Key:   constants.ExtraConfigReservedProfileID,
+				Value: id,
+			},
+		)
+	}
+
 	// spec.biosUUID is only set when creating a VM and is immutable.
 	// This field should not be updated for existing VMs.
 	if id := vmCtx.VM.Spec.BiosUUID; id != "" {

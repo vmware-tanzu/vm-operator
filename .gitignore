@@ -9,6 +9,7 @@ config/crd/external-crds/cns.vmware.com_*
 
 .DS_Store
 .cache
+ginkgo.report
 
 # Mkdocs
 /.site/

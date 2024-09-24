@@ -53,6 +53,8 @@ func intgTestsReconcile() {
 		)
 
 		BeforeEach(func() {
+			atomic.StoreInt32(&called, 0)
+
 			obj = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: ctx.PodNamespace,
@@ -73,7 +75,6 @@ func intgTestsReconcile() {
 		AfterEach(func() {
 			err := ctx.Client.Delete(ctx, obj)
 			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
-			atomic.StoreInt32(&called, 0)
 		})
 
 		When("created", func() {
@@ -91,9 +92,10 @@ func intgTestsReconcile() {
 				})
 				It("should not be reconciled", func() {
 					Consistently(func() int32 {
-						// NOTE: ResetVcClient() won't be called during the reconcile because the
-						// obj namespace won't match the pod's namespace. It is bad news if you see
-						// "Reconciling unexpected object" in the logs.
+						// NOTE: ResetVcClient() will not be called during the
+						// reconcile because the object's namespace will not
+						// match the pod's namespace. It is bad news if
+						// "Reconciling unexpected object" is in the logs.
 						return atomic.LoadInt32(&called)
 					}).Should(Equal(int32(0)))
 				})
@@ -120,9 +122,10 @@ func intgTestsReconcile() {
 				})
 				It("should not be reconciled", func() {
 					Consistently(func() int32 {
-						// NOTE: ResetVcClient() won't be called during the reconcile because the
-						// obj namespace won't match the pod's namespace. It is bad news if you see
-						// "Reconciling unexpected object" in the logs.
+						// NOTE: ResetVcClient() will not be called during the
+						// reconcile because the object's namespace will not
+						// match the pod's namespace. It is bad news if
+						// "Reconciling unexpected object" is in the logs.
 						return atomic.LoadInt32(&called)
 					}).Should(Equal(int32(0)))
 				})

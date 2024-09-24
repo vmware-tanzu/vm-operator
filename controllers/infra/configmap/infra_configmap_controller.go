@@ -11,18 +11,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -45,40 +39,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx.VMProvider,
 	)
 
-	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
-	if err != nil {
-		return err
-	}
-
-	cache, err := pkgmgr.NewNamespacedCacheForObject(
-		mgr,
-		&ctx.SyncPeriod,
-		controlledType,
-		WcpClusterConfigMapNamespace)
-	if err != nil {
-		return err
-	}
-
-	return c.Watch(source.Kind(
-		cache,
-		controlledType,
-		&handler.TypedEnqueueRequestForObject[*corev1.ConfigMap]{},
-		predicate.TypedFuncs[*corev1.ConfigMap]{
-			CreateFunc: func(e event.TypedCreateEvent[*corev1.ConfigMap]) bool {
-				return e.Object.GetName() == WcpClusterConfigMapName
-			},
-			UpdateFunc: func(e event.TypedUpdateEvent[*corev1.ConfigMap]) bool {
-				return e.ObjectOld.GetName() == WcpClusterConfigMapName
-			},
-			DeleteFunc: func(e event.TypedDeleteEvent[*corev1.ConfigMap]) bool {
-				return false
-			},
-			GenericFunc: func(e event.TypedGenericEvent[*corev1.ConfigMap]) bool {
-				return false
-			},
-		},
-		kubeutil.TypedResourceVersionChangedPredicate[*corev1.ConfigMap]{},
-	))
+	return ctrl.NewControllerManagedBy(mgr).
+		For(controlledType).
+		WithEventFilter(kubeutil.MatchNamePredicate(WcpClusterConfigMapName)).
+		Complete(r)
 }
 
 type provider interface {

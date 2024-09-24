@@ -67,6 +67,17 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		_ = vpcv1alpha1.AddToScheme(opts.Scheme)
 	}
 
+	// An informer is created for each watched resource. Due to the number of
+	// ConfigMap and Secret resources that may exist in a cluster, caching all
+	// of these resources can result in VM Operator being terminated due to an
+	// out-of-memory error, i.e. OOMKill. To avoid this outcome, ConfigMap and
+	// Secret resources are only cached for the following namespaces:
+	// - kube-system
+	// - the namespace in which the VM Operator pod is running
+	nsCacheForConfigMapsAndSecrets := GetNamespaceCacheConfigs(
+		"kube-system",
+		opts.PodNamespace)
+
 	// Build the controller manager.
 	mgr, err := ctrlmgr.New(opts.KubeConfig, ctrlmgr.Options{
 		Scheme: opts.Scheme,
@@ -74,17 +85,14 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 			DefaultNamespaces: GetNamespaceCacheConfigs(opts.WatchNamespace),
 			DefaultTransform:  cache.TransformStripManagedFields(),
 			SyncPeriod:        &opts.SyncPeriod,
-		},
-		Client: client.Options{
-			Cache: &client.CacheOptions{
-				// An informer is created for each watched resource. Due to the
-				// number of ConfigMap and Secret resources that may exist,
-				// watching each one can result in VM Operator being terminated
-				// due to an out-of-memory error, i.e. OOMKill. To avoid this
-				// outcome, ConfigMap and Secret resources are not cached.
-				DisableFor: []client.Object{
-					&corev1.ConfigMap{},
-					&corev1.Secret{},
+			ByObject: map[client.Object]cache.ByObject{
+				// See the docs for nsCacheForConfigMapsAndSecrets
+				&corev1.ConfigMap{}: {
+					Namespaces: nsCacheForConfigMapsAndSecrets,
+				},
+				// See the docs for nsCacheForConfigMapsAndSecrets
+				&corev1.Secret{}: {
+					Namespaces: nsCacheForConfigMapsAndSecrets,
 				},
 			},
 		},

@@ -266,3 +266,31 @@ func isNil(arg any) bool {
 	}
 	return false
 }
+
+type matchNamePredicate[T client.Object] struct {
+	name string
+}
+
+// MatchNamePredicate returns a predicate that only allows objects with names
+// that match the provided value.
+func MatchNamePredicate(
+	name string) predicate.TypedPredicate[client.Object] {
+
+	return matchNamePredicate[client.Object]{name: name}
+}
+
+func (p matchNamePredicate[T]) Create(e event.TypedCreateEvent[T]) bool {
+	return e.Object.GetName() == p.name
+}
+
+func (p matchNamePredicate[T]) Delete(e event.TypedDeleteEvent[T]) bool {
+	return e.Object.GetName() == p.name
+}
+
+func (p matchNamePredicate[T]) Update(e event.TypedUpdateEvent[T]) bool {
+	return e.ObjectOld.GetName() == p.name
+}
+
+func (p matchNamePredicate[T]) Generic(e event.TypedGenericEvent[T]) bool {
+	return e.Object.GetName() == p.name
+}

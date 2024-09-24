@@ -664,6 +664,7 @@ spec:
                   this VirtualMachineClass.
                   This field is only valid in conjunction with reservedProfileID.
                 format: int32
+                minimum: 0
                 type: integer
             type: object
           status:

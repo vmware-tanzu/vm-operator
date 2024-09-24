@@ -42,11 +42,11 @@ func Convert_v1alpha1_VirtualMachineClass_To_v1alpha3_VirtualMachineClass(
 	}
 
 	if v := in.Annotations[reservedSlots]; v != "" {
-		i, err := strconv.ParseInt(v, 10, 32)
-		if err != nil {
-			return err
+		if i, err := strconv.ParseInt(v, 10, 32); err != nil {
+			out.Spec.ReservedSlots = 0
+		} else {
+			out.Spec.ReservedSlots = int32(i)
 		}
-		out.Spec.ReservedSlots = int32(i)
 		delete(in.Annotations, reservedSlots)
 	}
 
@@ -67,7 +67,7 @@ func Convert_v1alpha3_VirtualMachineClass_To_v1alpha1_VirtualMachineClass(
 		out.Annotations[reservedProfileID] = v
 	}
 
-	if v := in.Spec.ReservedSlots; v > 0 {
+	if v := in.Spec.ReservedSlots; v != 0 {
 		if out.Annotations == nil {
 			out.Annotations = map[string]string{}
 		}

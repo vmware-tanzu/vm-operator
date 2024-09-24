@@ -160,6 +160,7 @@ type VirtualMachineClassSpec struct {
 	ReservedProfileID string `json:"reservedProfileID,omitempty"`
 
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 
 	// ReservedSlots describes the number of slots reserved for VMs that use
 	// this VirtualMachineClass.

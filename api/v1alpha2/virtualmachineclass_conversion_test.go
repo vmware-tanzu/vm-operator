@@ -4,6 +4,8 @@
 package v1alpha2_test
 
 import (
+	"math"
+	"strconv"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -87,6 +89,68 @@ func TestVirtualMachineClassConversion(t *testing.T) {
 				},
 			}
 			hubSpokeHub(g, &hub, &vmopv1.VirtualMachineClass{}, &vmopv1a2.VirtualMachineClass{})
+		})
+		t.Run("class w negative reserved slots", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachineClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-vm-class",
+					Namespace: "my-namespace",
+				},
+				Spec: vmopv1.VirtualMachineClassSpec{
+					ReservedSlots: -1,
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1.VirtualMachineClass{}, &vmopv1a2.VirtualMachineClass{})
+		})
+	})
+
+	t.Run("VirtualMachineClass spoke-hub", func(t *testing.T) {
+		t.Run("class w reserved slots gt math.MaxInt32", func(t *testing.T) {
+			spoke := vmopv1a2.VirtualMachineClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"vmoperator.vmware.com/reserved-slots": strconv.Itoa(math.MaxInt32 + 2),
+					},
+				},
+			}
+
+			expectedHub := vmopv1.VirtualMachineClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Spec: vmopv1.VirtualMachineClassSpec{
+					ReservedSlots: 0,
+				},
+			}
+
+			g := NewWithT(t)
+			var hub vmopv1.VirtualMachineClass
+			g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
+			g.Expect(apiequality.Semantic.DeepEqual(hub, expectedHub)).To(BeTrue(), cmp.Diff(hub, expectedHub))
+		})
+		t.Run("class w reserved slots lt -math.MaxInt32", func(t *testing.T) {
+			spoke := vmopv1a2.VirtualMachineClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"vmoperator.vmware.com/reserved-slots": strconv.Itoa(-math.MaxInt32 - 2),
+					},
+				},
+			}
+
+			expectedHub := vmopv1.VirtualMachineClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Spec: vmopv1.VirtualMachineClassSpec{
+					ReservedSlots: 0,
+				},
+			}
+
+			g := NewWithT(t)
+			var hub vmopv1.VirtualMachineClass
+			g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
+			g.Expect(apiequality.Semantic.DeepEqual(hub, expectedHub)).To(BeTrue(), cmp.Diff(hub, expectedHub))
 		})
 	})
 }

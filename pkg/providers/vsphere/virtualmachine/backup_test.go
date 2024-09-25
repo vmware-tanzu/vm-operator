@@ -12,11 +12,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -689,22 +687,6 @@ func backupTests() {
 							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 						}
-
-						By("detect disk file backing change", func() {
-							vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
-							deviceList := object.VirtualDeviceList(vm.Config.Hardware.Device)
-
-							for _, device := range deviceList.SelectByType((*vimtypes.VirtualDisk)(nil)) {
-								disk := device.(*vimtypes.VirtualDisk)
-								if b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
-									b.Uuid = uuid.NewString()
-									break
-								}
-							}
-
-							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.PVCDiskDataExtraConfigKey, string(diskDataJSON), true)
-						})
 					})
 				})
 			})

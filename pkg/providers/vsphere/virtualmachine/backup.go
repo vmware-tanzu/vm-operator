@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"path"
 	"strconv"
 	"strings"
 
@@ -419,36 +418,10 @@ func getDesiredDiskDataForBackup(
 		classicDiskData []vmopbackup.ClassicDiskData
 	)
 
-	// Vendor's partial restore (e.g. single disk) method may create a new,
-	// non-FCD disk. The restored disk has new UUID and lives the the VM's
-	// directory, not the fcd/ directory. Given that FCD disk names are unique,
-	// we consult the backup data to compare using `FileName` before `Uuid`.
-	pvcDiskDataPrevious := make(map[string]vmopbackup.PVCDiskData)
-	curBackup, ok := extraConfig.GetString(vmopv1.PVCDiskDataExtraConfigKey)
-	if ok {
-		decoded, err := pkgutil.TryToDecodeBase64Gzip([]byte(curBackup))
-		if err != nil {
-			return "", "", err
-		}
-
-		var data []vmopbackup.PVCDiskData
-		dec := json.NewDecoder(strings.NewReader(decoded))
-		if err = dec.Decode(&data); err != nil {
-			return "", "", err
-		}
-
-		for _, pvc := range data {
-			pvcDiskDataPrevious[path.Base(pvc.FileName)] = pvc
-		}
-	}
-
 	for _, device := range deviceList.SelectByType((*vimtypes.VirtualDisk)(nil)) {
 		if disk, ok := device.(*vimtypes.VirtualDisk); ok {
 			if b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
-				if disk, ok := pvcDiskDataPrevious[path.Base(b.FileName)]; ok {
-					disk.FileName = b.FileName
-					pvcDiskData = append(pvcDiskData, disk)
-				} else if pvc, ok := opts.DiskUUIDToPVC[b.Uuid]; ok {
+				if pvc, ok := opts.DiskUUIDToPVC[b.Uuid]; ok {
 					pvcDiskData = append(pvcDiskData, vmopbackup.PVCDiskData{
 						FileName:    b.FileName,
 						PVCName:     pvc.Name,
@@ -473,6 +446,7 @@ func getDesiredDiskDataForBackup(
 	}
 
 	// Return an empty string to skip backup if PVC disk data is unchanged.
+	curBackup, _ := extraConfig.GetString(vmopv1.PVCDiskDataExtraConfigKey)
 	if pvcDiskDataBackup == curBackup {
 		pvcDiskDataBackup = ""
 	}

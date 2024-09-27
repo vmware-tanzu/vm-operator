@@ -49,8 +49,9 @@ spec:
             description: EncryptionClassSpec defines the desired state of EncryptionClass.
             properties:
               keyID:
-                description: KeyID describes the key used to encrypt/recrypt/decrypt
-                  resources.
+                description: |-
+                  KeyID describes the key used to encrypt/recrypt/decrypt resources.
+                  When omitted, a key will be generated from the specified provider.
                 type: string
               keyProvider:
                 description: |-
@@ -58,7 +59,6 @@ spec:
                   resources.
                 type: string
             required:
-            - keyID
             - keyProvider
             type: object
           status:

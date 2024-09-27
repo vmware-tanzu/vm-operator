@@ -10,6 +10,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra"
+	"github.com/vmware-tanzu/vm-operator/controllers/storageclass"
 	spq "github.com/vmware-tanzu/vm-operator/controllers/storagepolicyquota"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
@@ -57,6 +58,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	if pkgcfg.FromContext(ctx).Features.K8sWorkloadMgmtAPI {
 		if err := virtualmachinereplicaset.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineReplicaSet controller: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+		if err := storageclass.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize StorageClass controller: %w", err)
 		}
 	}
 

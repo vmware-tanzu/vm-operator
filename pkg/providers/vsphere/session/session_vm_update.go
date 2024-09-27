@@ -16,6 +16,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
@@ -30,10 +31,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
 
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
@@ -566,8 +568,10 @@ func (s *Session) prePowerOnVMReconfigure(
 			vmCtx,
 			vmCtx.Logger.WithName("prePowerOnVMReconfigure"),
 		),
+		s.K8sClient,
 		vmCtx.VM,
 		resVM.VcVM(),
+		vmCtx.MoVM,
 		*configSpec); err != nil {
 
 		return err
@@ -808,8 +812,10 @@ func (s *Session) poweredOnVMReconfigure(
 			vmCtx,
 			vmCtx.Logger.WithName("poweredOnVMReconfigure"),
 		),
+		s.K8sClient,
 		vmCtx.VM,
 		resVM.VcVM(),
+		vmCtx.MoVM,
 		*configSpec)
 
 	if err != nil {
@@ -900,8 +906,10 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 			vmCtx,
 			vmCtx.Logger.WithName("resizeVMWhenPoweredStateOff"),
 		),
+		s.K8sClient,
 		vmCtx.VM,
 		vcVM,
+		vmCtx.MoVM,
 		configSpec)
 
 	if err != nil {
@@ -1004,7 +1012,7 @@ func (s *Session) updateVMDesiredPowerStateOff(
 			refetchProps = true
 		}
 	} else {
-		refetch, err := defaultReconfigure(vmCtx, vcVM, *vmCtx.MoVM.Config)
+		refetch, err := defaultReconfigure(vmCtx, s.K8sClient, vcVM)
 		if err != nil {
 			return refetchProps, err
 		}
@@ -1037,7 +1045,7 @@ func (s *Session) updateVMDesiredPowerStateSuspended(
 		refetchProps = true
 	}
 
-	refetch, err := defaultReconfigure(vmCtx, vcVM, *vmCtx.MoVM.Config)
+	refetch, err := defaultReconfigure(vmCtx, s.K8sClient, vcVM)
 	if err != nil {
 		return refetchProps, err
 	}
@@ -1172,8 +1180,10 @@ func (s *Session) UpdateVirtualMachine(
 	getUpdateArgsFn func() (*VMUpdateArgs, error),
 	getResizeArgsFn func() (*VMResizeArgs, error)) error {
 
-	var refetchProps bool
-	var err error
+	var (
+		refetchProps bool
+		updateErr    error
+	)
 
 	// Only update VM's power state when VM is not paused.
 	if !isVMPaused(vmCtx) {
@@ -1190,20 +1200,20 @@ func (s *Session) UpdateVirtualMachine(
 
 		switch vmCtx.VM.Spec.PowerState {
 		case vmopv1.VirtualMachinePowerStateOff:
-			refetchProps, err = s.updateVMDesiredPowerStateOff(
+			refetchProps, updateErr = s.updateVMDesiredPowerStateOff(
 				vmCtx,
 				vcVM,
 				getResizeArgsFn,
 				existingPowerState)
 
 		case vmopv1.VirtualMachinePowerStateSuspended:
-			refetchProps, err = s.updateVMDesiredPowerStateSuspended(
+			refetchProps, updateErr = s.updateVMDesiredPowerStateSuspended(
 				vmCtx,
 				vcVM,
 				existingPowerState)
 
 		case vmopv1.VirtualMachinePowerStateOn:
-			refetchProps, err = s.updateVMDesiredPowerStateOn(
+			refetchProps, updateErr = s.updateVMDesiredPowerStateOn(
 				vmCtx,
 				vcVM,
 				getUpdateArgsFn,
@@ -1211,58 +1221,98 @@ func (s *Session) UpdateVirtualMachine(
 		}
 	} else {
 		vmCtx.Logger.Info("VirtualMachine is paused. PowerState is not updated.")
-		refetchProps, err = defaultReconfigure(vmCtx, vcVM, *vmCtx.MoVM.Config)
+		refetchProps, updateErr = defaultReconfigure(vmCtx, s.K8sClient, vcVM)
+	}
+
+	if updateErr != nil {
+		updateErr = fmt.Errorf("updating state failed with %w", updateErr)
 	}
 
 	if refetchProps {
+		vmCtx.Logger.V(8).Info(
+			"Refetching properties",
+			"refetchProps", refetchProps,
+			"powerState", vmCtx.VM.Spec.PowerState)
+
 		vmCtx.MoVM = mo.VirtualMachine{}
-	}
 
-	vmCtx.Logger.V(8).Info(
-		"UpdateVM",
-		"refetchProps", refetchProps,
-		"powerState", vmCtx.VM.Spec.PowerState)
+		if err := vcVM.Properties(
+			vmCtx,
+			vcVM.Reference(),
+			vmlifecycle.VMStatusPropertiesSelector,
+			&vmCtx.MoVM); err != nil {
 
-	updateErr := vmlifecycle.UpdateStatus(vmCtx, s.K8sClient, vcVM, refetchProps)
-	if updateErr != nil {
-		vmCtx.Logger.Error(updateErr, "Updating VM status failed")
-		if err == nil {
-			err = updateErr
+			err = fmt.Errorf("refetching props failed with %w", err)
+			if updateErr == nil {
+				updateErr = err
+			} else {
+				updateErr = fmt.Errorf("%w, %w", updateErr, err)
+			}
 		}
 	}
 
-	return err
+	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
+		for _, r := range vmconfig.FromContext(vmCtx) {
+			if err := r.OnResult(
+				vmCtx,
+				vmCtx.VM,
+				vmCtx.MoVM,
+				updateErr); err != nil {
+
+				err = fmt.Errorf("%s.OnResult failed with %w", r.Name(), err)
+				if updateErr == nil {
+					updateErr = err
+				} else {
+					updateErr = fmt.Errorf("%w, %w", updateErr, err)
+				}
+			}
+		}
+	}
+
+	if err := vmlifecycle.UpdateStatus(vmCtx, s.K8sClient, vcVM); err != nil {
+		err = fmt.Errorf("updating status failed with %w", err)
+		if updateErr == nil {
+			updateErr = err
+		} else {
+			updateErr = fmt.Errorf("%w, %w", updateErr, err)
+		}
+	}
+
+	return updateErr
 }
 
 // Source of truth is EC and Annotation.
 func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
-	vm := vmCtx.VM
+	byAdmin := paused.ByAdmin(vmCtx.MoVM)
+	byDevOps := paused.ByDevOps(vmCtx.VM)
 
-	adminPaused := virtualmachine.IsPausedByAdmin(vmCtx.MoVM)
-	devopsPaused := annotations.HasPaused(vm)
-
-	if adminPaused || devopsPaused {
-		if vm.Labels == nil {
-			vm.Labels = make(map[string]string)
+	if byAdmin || byDevOps {
+		if vmCtx.VM.Labels == nil {
+			vmCtx.VM.Labels = make(map[string]string)
 		}
 		switch {
-		case adminPaused && devopsPaused:
-			vm.Labels[vmopv1.PausedVMLabelKey] = "both"
-		case adminPaused:
-			vm.Labels[vmopv1.PausedVMLabelKey] = "admin"
-		case devopsPaused:
-			vm.Labels[vmopv1.PausedVMLabelKey] = "devops"
+		case byAdmin && byDevOps:
+			vmCtx.VM.Labels[vmopv1.PausedVMLabelKey] = "both"
+		case byAdmin:
+			vmCtx.VM.Labels[vmopv1.PausedVMLabelKey] = "admin"
+		case byDevOps:
+			vmCtx.VM.Labels[vmopv1.PausedVMLabelKey] = "devops"
 		}
 		return true
 	}
-	delete(vm.Labels, vmopv1.PausedVMLabelKey)
+	delete(vmCtx.VM.Labels, vmopv1.PausedVMLabelKey)
 	return false
 }
 
 func defaultReconfigure(
 	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	configInfo vimtypes.VirtualMachineConfigInfo) (bool, error) {
+	k8sClient ctrlclient.Client,
+	vcVM *object.VirtualMachine) (bool, error) {
+
+	var configInfo vimtypes.VirtualMachineConfigInfo
+	if vmCtx.MoVM.Config != nil {
+		configInfo = *vmCtx.MoVM.Config
+	}
 
 	var configSpec vimtypes.VirtualMachineConfigSpec
 	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
@@ -1279,16 +1329,38 @@ func defaultReconfigure(
 			vmCtx,
 			vmCtx.Logger.WithName("defaultReconfigure"),
 		),
+		k8sClient,
 		vmCtx.VM,
 		vcVM,
+		vmCtx.MoVM,
 		configSpec)
 }
 
 func doReconfigure(
 	ctx context.Context,
+	k8sClient ctrlclient.Client,
 	vm *vmopv1.VirtualMachine,
 	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
 	configSpec vimtypes.VirtualMachineConfigSpec) (bool, error) {
+
+	logger := logr.FromContextOrDiscard(ctx)
+	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+		for _, r := range vmconfig.FromContext(ctx) {
+			logger.Info("Reconciling vmconfig", "reconciler", r.Name())
+
+			if err := r.Reconcile(
+				ctx,
+				k8sClient,
+				vcVM.Client(),
+				vm,
+				moVM,
+				&configSpec); err != nil {
+
+				return false, err
+			}
+		}
+	}
 
 	var defaultConfigSpec vimtypes.VirtualMachineConfigSpec
 	if apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {

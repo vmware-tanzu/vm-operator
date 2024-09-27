@@ -31,6 +31,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 var _ = Describe("Update ConfigSpec", func() {
@@ -1286,7 +1287,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					vm.Spec.RestartMode = vmopv1.VirtualMachinePowerOpModeSoft
 				})
 				It("should return an error about lacking tools", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(MatchError("failed to soft restart vm ServerFaultCode: ToolsUnavailable"))
+					Expect(testutil.ContainsError(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil), "failed to soft restart vm ServerFaultCode: ToolsUnavailable")).To(BeTrue())
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
 					newLastRestartTime := getLastRestartTime(vmCtx.MoVM)
 					Expect(newLastRestartTime).To(Equal(oldLastRestartTime))

@@ -142,6 +142,10 @@ func Convert_v1alpha3_VirtualMachine_To_v1alpha2_VirtualMachine(
 	return nil
 }
 
+func restore_v1alpha3_VirtualMachineCryptoSpec(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Crypto = src.Spec.Crypto
+}
+
 func restore_v1alpha3_VirtualMachineImage(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Image = src.Spec.Image
 	dst.Spec.ImageName = src.Spec.ImageName
@@ -293,6 +297,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha3_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha3_VirtualMachineGuestID(dst, restored)
 	restore_v1alpha3_VirtualMachineCdrom(dst, restored)
+	restore_v1alpha3_VirtualMachineCryptoSpec(dst, restored)
 
 	// END RESTORE
 

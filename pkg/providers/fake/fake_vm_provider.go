@@ -53,6 +53,8 @@ type funcs struct {
 	ComputeCPUMinFrequencyFn                        func(ctx context.Context) error
 
 	GetTasksByActIDFn func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
+
+	DoesProfileSupportEncryptionFn func(ctx context.Context, profileID string) (bool, error)
 }
 
 type VMProvider struct {
@@ -357,6 +359,19 @@ func (s *VMProvider) IsPublishVMCalled() bool {
 	defer s.Unlock()
 
 	return s.isPublishVMCalled
+}
+
+func (s *VMProvider) DoesProfileSupportEncryption(
+	ctx context.Context,
+	profileID string) (bool, error) {
+
+	s.Lock()
+	defer s.Unlock()
+
+	if fn := s.DoesProfileSupportEncryptionFn; fn != nil {
+		return fn(ctx, profileID)
+	}
+	return false, nil
 }
 
 func NewVMProvider() *VMProvider {

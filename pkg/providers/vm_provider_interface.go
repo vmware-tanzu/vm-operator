@@ -40,4 +40,9 @@ type VirtualMachineProviderInterface interface {
 	SyncVirtualMachineImage(ctx context.Context, cli, vmi client.Object) error
 
 	GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
+
+	// DoesProfileSupportEncryption returns true if the specified profile
+	// supports encryption by checking whether or not the underlying policy
+	// contains any IOFILTERs.
+	DoesProfileSupportEncryption(ctx context.Context, profileID string) (bool, error)
 }

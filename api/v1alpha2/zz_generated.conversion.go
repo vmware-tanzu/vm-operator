@@ -3175,6 +3175,7 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
+	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	out.StorageClass = in.StorageClass
 	if in.Bootstrap != nil {
 		in, out := &in.Bootstrap, &out.Bootstrap
@@ -3251,6 +3252,7 @@ func autoConvert_v1alpha3_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	out.Host = in.Host
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
+	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	if in.Network != nil {
 		in, out := &in.Network, &out.Network
 		*out = new(VirtualMachineNetworkStatus)

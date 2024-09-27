@@ -42,6 +42,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
@@ -77,6 +78,7 @@ const (
 	invalidImageKind                         = "supported: " + vmiKind + "; " + cvmiKind
 	invalidZone                              = "cannot use zone that is being deleted"
 	restrictedToPrivUsers                    = "restricted to privileged users"
+	invalidPVCBYOKFmt                        = "cannot attach volume to vm with spec.crypto.encryptionClassName=%q"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha3-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha3,name=default.validating.virtualmachine.v1alpha3.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -124,6 +126,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateImageOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateClassOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateStorageClass(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
@@ -184,6 +187,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	// Validations for allowed updates. Return validation responses here for conditional updates regardless
 	// of whether the update is allowed or not.
+	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
@@ -470,6 +474,53 @@ func (v validator) validateStorageClass(ctx *pkgctx.WebhookRequestContext, vm *v
 	}
 
 	return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotAssignedFmt, vm.Namespace)))
+}
+
+func (v validator) validateCrypto(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var (
+		encClassName string
+		cryptoPath   = field.NewPath("spec", "crypto")
+	)
+
+	if vm.Spec.Crypto != nil {
+		encClassName = vm.Spec.Crypto.EncryptionClassName
+		if !pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+			return field.ErrorList{
+				field.Invalid(
+					cryptoPath,
+					vm.Spec.Crypto,
+					fmt.Sprintf(featureNotEnabled, "Bring Your Own Key (Provider)")),
+			}
+		}
+	}
+
+	if encClassName == "" {
+		return nil
+	}
+
+	var (
+		allErrs          field.ErrorList
+		encClassNamePath = cryptoPath.Child("encryptionClassName")
+	)
+
+	if ok, err := kubeutil.IsEncryptedStorageClass(
+		ctx,
+		v.client,
+		vm.Spec.StorageClass); err != nil {
+
+		allErrs = append(allErrs, field.InternalError(encClassNamePath, err))
+
+	} else if !ok {
+		allErrs = append(allErrs, field.Invalid(
+			encClassNamePath,
+			vm.Spec.Crypto.EncryptionClassName,
+			"requires spec.storageClass specify an encryption storage class"))
+	}
+
+	return allErrs
 }
 
 func (v validator) validateNetwork(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
@@ -773,7 +824,7 @@ func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1
 		if vol.PersistentVolumeClaim == nil {
 			allErrs = append(allErrs, field.Required(volPath.Child("persistentVolumeClaim"), ""))
 		} else {
-			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vol, volPath)...)
+			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vm, vol, volPath)...)
 		}
 	}
 
@@ -782,14 +833,30 @@ func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1
 
 func (v validator) validateVolumeWithPVC(
 	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath *field.Path) field.ErrorList {
 
-	var allErrs field.ErrorList
-	pvcPath := volPath.Child("persistentVolumeClaim")
+	var (
+		allErrs      field.ErrorList
+		encClassName string
+		pvcPath      = volPath.Child("persistentVolumeClaim")
+		claimName    = vol.PersistentVolumeClaim.ClaimName
+	)
 
-	if vol.PersistentVolumeClaim.ClaimName == "" {
-		allErrs = append(allErrs, field.Required(pvcPath.Child("claimName"), ""))
+	if vm.Spec.Crypto != nil {
+		encClassName = vm.Spec.Crypto.EncryptionClassName
+	}
+
+	if claimName == "" {
+		allErrs = append(
+			allErrs,
+			field.Required(pvcPath.Child("claimName"), ""))
+	} else if encClassName != "" && pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+		allErrs = append(allErrs, field.Invalid(
+			pvcPath.Child("claimName"),
+			claimName,
+			fmt.Sprintf(invalidPVCBYOKFmt, encClassName)))
 	}
 	if vol.PersistentVolumeClaim.ReadOnly {
 		allErrs = append(allErrs, field.NotSupported(pvcPath.Child("readOnly"), true, []string{"false"}))

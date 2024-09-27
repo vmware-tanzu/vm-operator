@@ -2052,6 +2052,7 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
+	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	out.StorageClass = in.StorageClass
 	// WARNING: in.Bootstrap requires manual conversion: does not exist in peer-type
 	// WARNING: in.Network requires manual conversion: does not exist in peer-type
@@ -2142,6 +2143,7 @@ func autoConvert_v1alpha3_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	} else {
 		out.Conditions = nil
 	}
+	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	// WARNING: in.Network requires manual conversion: does not exist in peer-type
 	out.UniqueID = in.UniqueID
 	out.BiosUUID = in.BiosUUID

@@ -36,16 +36,18 @@ import (
 )
 
 var (
-	// VMStatusPropertiesSelector is the minimum properties needed to be retrieved in order to populate
-	// the Status. Callers may provide a MO with more. This often saves us a second round trip in the
-	// common steady state.
+	// VMStatusPropertiesSelector is the minimum properties needed to be
+	// retrieved in order to populate the Status. Callers may provide a MO with
+	// more. This often saves us a second round trip in the common steady state.
 	VMStatusPropertiesSelector = []string{
 		"config.changeTrackingEnabled",
 		"config.extraConfig",
 		"config.hardware.device",
-		"resourcePool",
+		"config.keyId",
 		"layoutEx",
 		"guest",
+		"resourcePool",
+		"runtime",
 		"summary",
 	}
 )
@@ -53,8 +55,7 @@ var (
 func UpdateStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
-	vcVM *object.VirtualMachine,
-	refetchProperties bool) error {
+	vcVM *object.VirtualMachine) error {
 
 	vm := vmCtx.VM
 
@@ -77,25 +78,6 @@ func UpdateStatus(
 		}
 	} else {
 		vm.Status.Class = nil
-	}
-
-	if refetchProperties {
-		// In the common case, our caller will have already gotten the MO
-		// properties in order to determine if it had any reconciliation to do,
-		// and there was nothing to do since the VM is in the steady state so
-		// that MO is still entirely valid here.
-		//
-		// NOTE: The properties must have been retrieved with at least
-		//       VMStatusPropertiesSelector.
-		if err := vcVM.Properties(
-			vmCtx,
-			vcVM.Reference(),
-			VMStatusPropertiesSelector,
-			&vmCtx.MoVM); err != nil {
-
-			// Leave the current Status unchanged for now.
-			return fmt.Errorf("failed to get VM properties for status update: %w", err)
-		}
 	}
 
 	var (

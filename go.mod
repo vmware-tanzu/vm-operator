@@ -30,9 +30,9 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000
-	github.com/vmware/govmomi v0.31.1-0.20240730173452-49b88eb9917f
+	github.com/vmware/govmomi v0.31.1-0.20240920193643-44d4fb3e244a
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/24
-	golang.org/x/text v0.16.0
+	golang.org/x/text v0.18.0
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d
 	k8s.io/api v0.31.0
 	k8s.io/apiextensions-apiserver v0.31.0

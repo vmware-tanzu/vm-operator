@@ -15,10 +15,12 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	vimcrypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -29,6 +31,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -38,6 +41,8 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -46,6 +51,7 @@ const (
 	vcsimCPUFreq = 2294
 )
 
+//nolint:gocyclo // allowed is 30, this function is 32
 func vmTests() {
 
 	const (
@@ -104,6 +110,12 @@ func vmTests() {
 		})
 
 		AfterEach(func() {
+			if vm != nil && !pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+				By("Assert vm.Status.Crypto is nil when BYOK is disabled", func() {
+					Expect(vm.Status.Crypto).To(BeNil())
+				})
+			}
+
 			vmClass = nil
 			vm = nil
 			skipCreateOrUpdateVM = false
@@ -253,10 +265,9 @@ func vmTests() {
 					assertClassNotFound := func(className string) {
 						var err error
 						vcVM, err = createOrUpdateAndGetVcVM(ctx, vm)
-						ExpectWithOffset(1, err).To(MatchError(
-							fmt.Sprintf(
-								"virtualmachineclasses.vmoperator.vmware.com %q not found",
-								className)))
+						ExpectWithOffset(1, err).ToNot(BeNil())
+						ExpectWithOffset(1, err.Error()).To(ContainSubstring(
+							fmt.Sprintf("virtualmachineclasses.vmoperator.vmware.com %q not found", className)))
 						ExpectWithOffset(1, vcVM).To(BeNil())
 					}
 
@@ -1359,6 +1370,374 @@ func vmTests() {
 				})
 			})
 
+			Context("Crypto", Label(testlabels.Crypto), func() {
+				BeforeEach(func() {
+					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
+				})
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.BringYourOwnEncryptionKey = true
+					})
+					ctx.Context = vmconfig.WithContext(ctx.Context)
+					ctx.Context = vmconfig.Register(ctx.Context, crypto.New())
+
+					var storageClass storagev1.StorageClass
+					Expect(ctx.Client.Get(
+						ctx,
+						client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+						&storageClass)).To(Succeed())
+					Expect(kubeutil.MarkEncryptedStorageClass(
+						ctx,
+						ctx.Client,
+						storageClass,
+						true)).To(Succeed())
+				})
+
+				useExistingVM := func(
+					cryptoSpec vimtypes.BaseCryptoSpec, vTPM bool) {
+
+					vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+					ExpectWithOffset(1, err).ToNot(HaveOccurred())
+					ExpectWithOffset(1, vmList).ToNot(BeEmpty())
+
+					vcVM := vmList[0]
+					vm.Spec.BiosUUID = vcVM.UUID(ctx)
+
+					powerState, err := vcVM.PowerState(ctx)
+					ExpectWithOffset(1, err).ToNot(HaveOccurred())
+					if powerState == vimtypes.VirtualMachinePowerStatePoweredOn {
+						tsk, err := vcVM.PowerOff(ctx)
+						ExpectWithOffset(1, err).ToNot(HaveOccurred())
+						ExpectWithOffset(1, tsk.Wait(ctx)).To(Succeed())
+					}
+
+					if cryptoSpec != nil || vTPM {
+						configSpec := vimtypes.VirtualMachineConfigSpec{
+							Crypto: cryptoSpec,
+						}
+						if vTPM {
+							configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Device: &vimtypes.VirtualTPM{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key:           -1000,
+											ControllerKey: 100,
+										},
+									},
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+								},
+							}
+						}
+						tsk, err := vcVM.Reconfigure(ctx, configSpec)
+						ExpectWithOffset(1, err).ToNot(HaveOccurred())
+						ExpectWithOffset(1, tsk.Wait(ctx)).To(Succeed())
+					}
+				}
+
+				When("deploying an encrypted vm", func() {
+					JustBeforeEach(func() {
+						vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+					})
+
+					When("using a default provider", func() {
+
+						When("default provider is native key provider", func() {
+							JustBeforeEach(func() {
+								m := vimcrypto.NewManagerKmip(ctx.VCClient.Client)
+								Expect(m.MarkDefault(ctx, ctx.NativeKeyProviderID)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								_, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).ToNot(BeNil())
+								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+									[]vmopv1.VirtualMachineEncryptionType{
+										vmopv1.VirtualMachineEncryptionTypeConfig,
+										vmopv1.VirtualMachineEncryptionTypeDisks,
+									}))
+								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.NativeKeyProviderID))
+								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+							})
+						})
+
+						When("default provider is not native key provider", func() {
+							JustBeforeEach(func() {
+								m := vimcrypto.NewManagerKmip(ctx.VCClient.Client)
+								Expect(m.MarkDefault(ctx, ctx.EncryptionClass1ProviderID)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								_, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).ToNot(BeNil())
+								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+									[]vmopv1.VirtualMachineEncryptionType{
+										vmopv1.VirtualMachineEncryptionTypeConfig,
+										vmopv1.VirtualMachineEncryptionTypeDisks,
+									}))
+								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass1ProviderID))
+								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+							})
+						})
+					})
+
+					Context("using an encryption class", func() {
+
+						JustBeforeEach(func() {
+							vm.Spec.Crypto.EncryptionClassName = ctx.EncryptionClass1Name
+						})
+
+						It("should succeed", func() {
+							_, err := createOrUpdateAndGetVcVM(ctx, vm)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(vm.Status.Crypto).ToNot(BeNil())
+							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+								[]vmopv1.VirtualMachineEncryptionType{
+									vmopv1.VirtualMachineEncryptionTypeConfig,
+									vmopv1.VirtualMachineEncryptionTypeDisks,
+								}))
+							Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass1ProviderID))
+							Expect(vm.Status.Crypto.KeyID).To(Equal(nsInfo.EncryptionClass1KeyID))
+							Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+						})
+					})
+				})
+
+				When("encrypting an existing vm", func() {
+					var (
+						hasVTPM bool
+					)
+
+					BeforeEach(func() {
+						hasVTPM = false
+					})
+
+					JustBeforeEach(func() {
+						useExistingVM(nil, hasVTPM)
+						vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+					})
+
+					When("using a default provider", func() {
+
+						When("default provider is native key provider", func() {
+							JustBeforeEach(func() {
+								m := vimcrypto.NewManagerKmip(ctx.VCClient.Client)
+								Expect(m.MarkDefault(ctx, ctx.NativeKeyProviderID)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								_, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).ToNot(BeNil())
+								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+									[]vmopv1.VirtualMachineEncryptionType{
+										vmopv1.VirtualMachineEncryptionTypeConfig,
+										vmopv1.VirtualMachineEncryptionTypeDisks,
+									}))
+								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.NativeKeyProviderID))
+								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+							})
+						})
+
+						When("default provider is not native key provider", func() {
+							JustBeforeEach(func() {
+								m := vimcrypto.NewManagerKmip(ctx.VCClient.Client)
+								Expect(m.MarkDefault(ctx, ctx.EncryptionClass1ProviderID)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								_, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).ToNot(BeNil())
+								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+									[]vmopv1.VirtualMachineEncryptionType{
+										vmopv1.VirtualMachineEncryptionTypeConfig,
+										vmopv1.VirtualMachineEncryptionTypeDisks,
+									}))
+								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass1ProviderID))
+								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+							})
+						})
+					})
+
+					Context("using an encryption class", func() {
+
+						JustBeforeEach(func() {
+							vm.Spec.Crypto.EncryptionClassName = ctx.EncryptionClass2Name
+						})
+
+						It("should succeed", func() {
+							_, err := createOrUpdateAndGetVcVM(ctx, vm)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(vm.Status.Crypto).ToNot(BeNil())
+							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+								[]vmopv1.VirtualMachineEncryptionType{
+									vmopv1.VirtualMachineEncryptionTypeConfig,
+									vmopv1.VirtualMachineEncryptionTypeDisks,
+								}))
+							Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass2ProviderID))
+							Expect(vm.Status.Crypto.KeyID).To(Equal(nsInfo.EncryptionClass2KeyID))
+							Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+						})
+
+						When("using a non-encryption storage class", func() {
+							JustBeforeEach(func() {
+								vm.Spec.StorageClass = ctx.StorageClassName
+							})
+
+							When("there is no vTPM", func() {
+								It("should not error, but have condition", func() {
+									_, err := createOrUpdateAndGetVcVM(ctx, vm)
+									Expect(err).ToNot(HaveOccurred())
+									Expect(vm.Status.Crypto).To(BeNil())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal("InvalidState"))
+									Expect(c.Message).To(Equal("Must use encryption storage class or have vTPM when encrypting vm"))
+								})
+							})
+
+							When("there is a vTPM", func() {
+								BeforeEach(func() {
+									hasVTPM = true
+								})
+								It("should succeed", func() {
+									_, err := createOrUpdateAndGetVcVM(ctx, vm)
+									Expect(err).ToNot(HaveOccurred())
+									Expect(vm.Status.Crypto).ToNot(BeNil())
+									Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+										[]vmopv1.VirtualMachineEncryptionType{
+											vmopv1.VirtualMachineEncryptionTypeConfig,
+										}))
+									Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass2ProviderID))
+									Expect(vm.Status.Crypto.KeyID).To(Equal(nsInfo.EncryptionClass2KeyID))
+									Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+								})
+							})
+						})
+					})
+				})
+
+				When("recrypting a vm", func() {
+					var (
+						hasVTPM bool
+					)
+
+					BeforeEach(func() {
+						hasVTPM = false
+					})
+
+					JustBeforeEach(func() {
+						useExistingVM(&vimtypes.CryptoSpecEncrypt{
+							CryptoKeyId: vimtypes.CryptoKeyId{
+								KeyId: nsInfo.EncryptionClass1KeyID,
+								ProviderId: &vimtypes.KeyProviderId{
+									Id: ctx.EncryptionClass1ProviderID,
+								},
+							},
+						}, hasVTPM)
+						vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+					})
+
+					When("using a default provider", func() {
+
+						When("default provider is native key provider", func() {
+							JustBeforeEach(func() {
+								m := vimcrypto.NewManagerKmip(ctx.VCClient.Client)
+								Expect(m.MarkDefault(ctx, ctx.NativeKeyProviderID)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								_, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).ToNot(BeNil())
+								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+									[]vmopv1.VirtualMachineEncryptionType{
+										vmopv1.VirtualMachineEncryptionTypeConfig,
+										vmopv1.VirtualMachineEncryptionTypeDisks,
+									}))
+								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.NativeKeyProviderID))
+								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
+								Expect(vm.Status.Crypto.KeyID).ToNot(Equal(nsInfo.EncryptionClass1KeyID))
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+							})
+						})
+
+						When("default provider is not native key provider", func() {
+							JustBeforeEach(func() {
+								m := vimcrypto.NewManagerKmip(ctx.VCClient.Client)
+								Expect(m.MarkDefault(ctx, ctx.EncryptionClass2ProviderID)).To(Succeed())
+							})
+
+							It("should succeed", func() {
+								_, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).ToNot(BeNil())
+								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+									[]vmopv1.VirtualMachineEncryptionType{
+										vmopv1.VirtualMachineEncryptionTypeConfig,
+										vmopv1.VirtualMachineEncryptionTypeDisks,
+									}))
+								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass2ProviderID))
+								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
+								Expect(vm.Status.Crypto.KeyID).ToNot(Equal(nsInfo.EncryptionClass1KeyID))
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+							})
+						})
+					})
+
+					Context("using an encryption class", func() {
+
+						JustBeforeEach(func() {
+							vm.Spec.Crypto.EncryptionClassName = ctx.EncryptionClass2Name
+						})
+
+						It("should succeed", func() {
+							_, err := createOrUpdateAndGetVcVM(ctx, vm)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(vm.Status.Crypto).ToNot(BeNil())
+							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+								[]vmopv1.VirtualMachineEncryptionType{
+									vmopv1.VirtualMachineEncryptionTypeConfig,
+									vmopv1.VirtualMachineEncryptionTypeDisks,
+								}))
+							Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass2ProviderID))
+							Expect(vm.Status.Crypto.KeyID).To(Equal(nsInfo.EncryptionClass2KeyID))
+							Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+						})
+
+						When("using a non-encryption storage class with a vTPM", func() {
+							BeforeEach(func() {
+								hasVTPM = true
+							})
+
+							JustBeforeEach(func() {
+								vm.Spec.StorageClass = ctx.StorageClassName
+							})
+
+							It("should succeed", func() {
+								_, err := createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).ToNot(BeNil())
+								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
+									[]vmopv1.VirtualMachineEncryptionType{
+										vmopv1.VirtualMachineEncryptionTypeConfig,
+									}))
+								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass2ProviderID))
+								Expect(vm.Status.Crypto.KeyID).To(Equal(nsInfo.EncryptionClass2KeyID))
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+							})
+						})
+					})
+				})
+			})
+
 			Context("VM Class with PCI passthrough devices", func() {
 				BeforeEach(func() {
 					vmClass.Spec.Hardware.Devices = vmopv1.VirtualDevices{
@@ -2026,7 +2405,8 @@ func vmTests() {
 			It("Returns error with non-existence cluster module", func() {
 				vm.Annotations["vsphere-cluster-module-group"] = "bogusClusterMod"
 				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-				Expect(err).To(MatchError("ClusterModule bogusClusterMod not found"))
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("ClusterModule bogusClusterMod not found"))
 			})
 		})
 

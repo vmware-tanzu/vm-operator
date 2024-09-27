@@ -29,6 +29,7 @@ type UnitTestContext struct {
 // NewUnitTestContext returns a new UnitTestContext.
 func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
 	fakeClient := NewFakeClient(initObjects...)
+
 	return &UnitTestContext{
 		Context: ctxop.WithContext(pkgcfg.NewContext()),
 		Client:  fakeClient,

@@ -6,8 +6,6 @@ package util
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"reflect"
 
 	"github.com/vmware/govmomi/vim25"
@@ -203,35 +201,5 @@ func EnsureMinHardwareVersionInConfigSpec(
 func SafeConfigSpecToString(
 	in *vimtypes.VirtualMachineConfigSpec) (s string) {
 
-	if in == nil {
-		return "null"
-	}
-
-	marshalWithStdlibJSONEncoder := func() string {
-		data, err := json.Marshal(in)
-		if err != nil {
-			return fmt.Sprintf("%v", in)
-		}
-		return string(data)
-	}
-
-	defer func() {
-		if err := recover(); err != nil {
-			s = marshalWithStdlibJSONEncoder()
-		}
-	}()
-
-	var w bytes.Buffer
-	enc := vimtypes.NewJSONEncoder(&w)
-	if err := enc.Encode(in); err != nil {
-		return marshalWithStdlibJSONEncoder()
-	}
-
-	s = w.String()
-	if len(s) == 0 {
-		return s
-	}
-
-	// Do not include the newline character added by the vimtype JSON encoder.
-	return s[:len(s)-1]
+	return vimtypes.ToString(in)
 }

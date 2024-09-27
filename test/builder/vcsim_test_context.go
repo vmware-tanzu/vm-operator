@@ -22,10 +22,13 @@ import (
 	"sort"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi"
+	vimcrypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	pbmsim "github.com/vmware/govmomi/pbm/simulator"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -39,10 +42,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	// Blank import to make govmomi client aware of these bindings.
-	_ "github.com/vmware/govmomi/pbm/simulator"
 	_ "github.com/vmware/govmomi/vapi/cluster/simulator"
 	_ "github.com/vmware/govmomi/vapi/simulator"
 
+	// Already imported as pbmsim, but leaving the next import, even though
+	// commented out, as a reminder this package *must* be imported to register
+	// its bindings with vC Sim.
+
+	//nolint:godot
+	// _ "github.com/vmware/govmomi/pbm/simulator"
+
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -108,6 +118,14 @@ type VCSimTestConfig struct {
 
 	// WithISOSupport enables the FSS_WCP_VMSERVICE_ISO_SUPPORT FSS.
 	WithISOSupport bool
+
+	// WithoutEncryptionClass disables the creation of the EncryptionClass
+	// resource in each workload namespace.
+	WithoutEncryptionClass bool
+
+	// WithoutNativeKeyProvider disables the creation of the native key provider
+	// in vcsim.
+	WithoutNativeKeyProvider bool
 }
 
 type TestContextForVCSim struct {
@@ -141,8 +159,19 @@ type TestContextForVCSim struct {
 	ContentLibraryIsoItemID    string
 
 	// When WithoutStorageClass is false:
-	StorageClassName string
-	StorageProfileID string
+	StorageClassName          string
+	StorageProfileID          string
+	EncryptedStorageClassName string
+	EncryptedStorageProfileID string
+
+	// When WithoutEncryptionClass is false:
+	EncryptionClass1Name       string
+	EncryptionClass1ProviderID string
+	EncryptionClass2Name       string
+	EncryptionClass2ProviderID string
+
+	// When WithoutNativeKeyProvider is false:
+	NativeKeyProviderID string
 
 	networkEnv NetworkEnv
 	NetworkRef object.NetworkReference
@@ -158,8 +187,10 @@ type TestContextForVCSim struct {
 }
 
 type WorkloadNamespaceInfo struct {
-	Namespace string
-	Folder    *object.Folder
+	Namespace             string
+	Folder                *object.Folder
+	EncryptionClass1KeyID string
+	EncryptionClass2KeyID string
 }
 
 const (
@@ -169,7 +200,7 @@ const (
 	clustersPerZone = 1
 )
 
-func (s *TestSuite) NewTestContextForVCSim(
+func NewTestContextForVCSim(
 	config VCSimTestConfig,
 	initObjects ...client.Object) *TestContextForVCSim {
 
@@ -182,6 +213,13 @@ func (s *TestSuite) NewTestContextForVCSim(
 	ctx.setupAZs()
 
 	return ctx
+}
+
+func (s *TestSuite) NewTestContextForVCSim(
+	config VCSimTestConfig,
+	initObjects ...client.Object) *TestContextForVCSim {
+
+	return NewTestContextForVCSim(config, initObjects...)
 }
 
 func newTestContextForVCSim(
@@ -295,11 +333,54 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		},
 		Spec: corev1.ResourceQuotaSpec{
 			Hard: corev1.ResourceList{
-				corev1.ResourceName(c.StorageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims"): resource.MustParse("1"),
+				corev1.ResourceName(c.StorageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims"):          resource.MustParse("1"),
+				corev1.ResourceName(c.EncryptedStorageProfileID + ".storageclass.storage.k8s.io/persistentvolumeclaims"): resource.MustParse("1"),
 			},
 		},
 	}
 	Expect(c.Client.Create(c, resourceQuota)).To(Succeed())
+
+	var (
+		encryptionClass1KeyID string
+		encryptionClass2KeyID string
+	)
+
+	if c.EncryptionClass1Name != "" || c.EncryptionClass2Name != "" {
+		m := vimcrypto.NewManagerKmip(c.VCClient.Client)
+
+		createEncClass := func(
+			className,
+			providerID string,
+			keyID *string) {
+
+			var err error
+			*keyID, err = m.GenerateKey(c, providerID)
+			ExpectWithOffset(1, err).ToNot(HaveOccurred())
+			ExpectWithOffset(1, *keyID).ToNot(BeEmpty())
+
+			ExpectWithOffset(1, c.Client.Create(c,
+				&byokv1.EncryptionClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ns.Name,
+						Name:      className,
+					},
+					Spec: byokv1.EncryptionClassSpec{
+						KeyProvider: providerID,
+						KeyID:       *keyID,
+					},
+				})).To(Succeed())
+		}
+
+		createEncClass(
+			c.EncryptionClass1Name,
+			c.EncryptionClass1ProviderID,
+			&encryptionClass1KeyID)
+
+		createEncClass(
+			c.EncryptionClass2Name,
+			c.EncryptionClass2ProviderID,
+			&encryptionClass2KeyID)
+	}
 
 	// Make trip through the Finder to populate InventoryPath.
 	objRef, err := c.Finder.ObjectReference(c, nsFolder.Reference())
@@ -309,8 +390,10 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 	Expect(nsFolder.InventoryPath).ToNot(BeEmpty())
 
 	return WorkloadNamespaceInfo{
-		Namespace: ns.Name,
-		Folder:    nsFolder,
+		Namespace:             ns.Name,
+		Folder:                nsFolder,
+		EncryptionClass1KeyID: encryptionClass1KeyID,
+		EncryptionClass2KeyID: encryptionClass2KeyID,
 	}
 }
 
@@ -648,18 +731,56 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 		data["StorageClassRequired"] = "true"
 
 		c.StorageClassName = "vcsim-default-storageclass"
-		// Use the hardcoded vcsim profile ID.
-		c.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
+		c.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad" // from vcsim
 
-		storageClass := &storagev1.StorageClass{
+		Expect(c.Client.Create(c, &storagev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: c.StorageClassName,
 			},
 			Parameters: map[string]string{
 				"storagePolicyID": c.StorageProfileID,
 			},
-		}
-		Expect(c.Client.Create(c, storageClass)).To(Succeed())
+		})).To(Succeed())
+
+		c.EncryptedStorageClassName = "vm-encryption-policy"
+		c.EncryptedStorageProfileID = pbmsim.DefaultEncryptionProfileID
+
+		Expect(c.Client.Create(c, &storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: c.EncryptedStorageClassName,
+			},
+			Parameters: map[string]string{
+				"storagePolicyID": c.EncryptedStorageProfileID,
+			},
+		})).To(Succeed())
+	}
+
+	if !config.WithoutNativeKeyProvider {
+		m := vimcrypto.NewManagerKmip(c.VCClient.Client)
+
+		c.NativeKeyProviderID = uuid.NewString()
+		Expect(m.RegisterKmsCluster(
+			c,
+			c.NativeKeyProviderID,
+			vimtypes.KmipClusterInfoKmsManagementTypeNativeProvider)).To(Succeed())
+	}
+
+	if !config.WithoutEncryptionClass {
+		m := vimcrypto.NewManagerKmip(c.VCClient.Client)
+
+		c.EncryptionClass1Name = uuid.NewString()
+		c.EncryptionClass1ProviderID = uuid.NewString()
+		Expect(m.RegisterKmsCluster(
+			c,
+			c.EncryptionClass1ProviderID,
+			vimtypes.KmipClusterInfoKmsManagementTypeTrustAuthority)).To(Succeed())
+
+		c.EncryptionClass2Name = uuid.NewString()
+		c.EncryptionClass2ProviderID = uuid.NewString()
+		Expect(m.RegisterKmsCluster(
+			c,
+			c.EncryptionClass2ProviderID,
+			vimtypes.KmipClusterInfoKmsManagementTypeTrustAuthority)).To(Succeed())
 	}
 
 	if !config.WithContentLibrary {

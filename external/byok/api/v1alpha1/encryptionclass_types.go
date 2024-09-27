@@ -13,8 +13,11 @@ type EncryptionClassSpec struct {
 	// resources.
 	KeyProvider string `json:"keyProvider"`
 
+	// +optional
+
 	// KeyID describes the key used to encrypt/recrypt/decrypt resources.
-	KeyID string `json:"keyID"`
+	// When omitted, a key will be generated from the specified provider.
+	KeyID string `json:"keyID,omitempty"`
 }
 
 // EncryptionClassStatus defines the observed state of EncryptionClass.

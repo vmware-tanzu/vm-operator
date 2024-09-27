@@ -1,16 +1,15 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package storage
 
 import (
-	"fmt"
-
 	storagev1 "k8s.io/api/storage/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
 // getStoragePolicyID returns Storage Policy ID from Storage Class Name.
@@ -19,18 +18,12 @@ func getStoragePolicyID(
 	client ctrlclient.Client,
 	storageClassName string) (string, error) {
 
-	sc := &storagev1.StorageClass{}
-	if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: storageClassName}, sc); err != nil {
+	var sc storagev1.StorageClass
+	if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: storageClassName}, &sc); err != nil {
 		vmCtx.Logger.Error(err, "Failed to get StorageClass", "storageClass", storageClassName)
 		return "", err
 	}
-
-	policyID, ok := sc.Parameters["storagePolicyID"]
-	if !ok {
-		return "", fmt.Errorf("StorageClass %s does not have 'storagePolicyID' parameter", storageClassName)
-	}
-
-	return policyID, nil
+	return kubeutil.GetStoragePolicyID(sc)
 }
 
 // GetVMStoragePoliciesIDs returns a map of storage class names to their storage policy IDs.

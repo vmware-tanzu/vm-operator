@@ -149,6 +149,7 @@ func (vs *vSphereVMProvider) getVcClient(ctx context.Context) (*vcclient.Client,
 	}
 
 	vs.vcClient = vcClient
+
 	return vcClient, nil
 }
 
@@ -426,4 +427,16 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) 
 
 	log.V(5).Info("found tasks", "actID", actID, "tasks", taskList)
 	return taskList, nil
+}
+
+func (vs *vSphereVMProvider) DoesProfileSupportEncryption(
+	ctx context.Context,
+	profileID string) (bool, error) {
+
+	c, err := vs.getVcClient(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return c.PbmClient().SupportsEncryption(ctx, profileID)
 }

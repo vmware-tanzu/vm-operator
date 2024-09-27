@@ -45,6 +45,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -468,9 +469,10 @@ func (vs *vSphereVMProvider) createdVirtualMachineFallthroughUpdate(
 // second fetch of the VM properties.
 var VMUpdatePropertiesSelector = []string{
 	"config",
+	"guest",
 	"layoutEx",
 	"resourcePool",
-	"guest",
+	"runtime",
 	"summary",
 }
 
@@ -515,7 +517,8 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		}
 
 		getUpdateArgsFn := func() (*vmUpdateArgs, error) {
-			// TODO: Use createArgs if we already got them
+			// TODO: Use createArgs if we already got them, except for:
+			//       - createArgs.ConfigSpec.Crypto
 			_ = createArgs
 			return vs.vmUpdateGetArgs(vmCtx)
 		}
@@ -1075,6 +1078,22 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		createArgs.VMClass.Spec,
 		createArgs.ImageStatus,
 		minCPUFreq)
+
+	// Get the encryption class details for the VM.
+	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
+		for _, r := range vmconfig.FromContext(vmCtx) {
+			if err := r.Reconcile(
+				vmCtx,
+				vs.k8sClient,
+				vs.vcClient.VimClient(),
+				vmCtx.VM,
+				vmCtx.MoVM,
+				&configSpec); err != nil {
+
+				return err
+			}
+		}
+	}
 
 	err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs)
 	if err != nil {

@@ -467,3 +467,120 @@ rockylinux_64Guest          Rocky Linux (64-bit)
 windows2022srvNext_64Guest  Microsoft Windows Server 2025 (64-bit)
 ...
 ```
+
+## Crypto
+
+The field `spec.crypto` may be used in conjunction with a VM's storage class and/or virtual trusted platform module (vTPM) to control a VM's encryption level.
+
+### Encrypting a VM
+
+#### Encryption type
+
+The type of encryption depends on the storage class and hardware present in the VM as the chart below illustrates:
+
+|                          | Config | Disks |
+|--------------------------|:------:|:-----:|
+| Encryption storage class |    ✓   |   ✓   |
+| vTPM                     |    ✓   |       |
+
+The `Config` type refers to all files related to a VM except for virtual disks. The `Disks` type refers to a VM's virtual disks except for PVCs. To ascertain the encryption status of a PVC, please refer directly to the PVC resource.
+
+#### Default Key Provider
+
+By default, `spec.crypto.useDefaultKeyProvider` is true, meaning that if there is a default key provider and the VM has an encryption storage class and/or vTPM, the VM will be subject to some level of encryption. For example, if there was a default key provider present, it would be used to encrypt the following VM:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha3
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className:    my-vm-class
+  imageName:    vmi-0a0044d7c690bcbea
+  storageClass: my-encrypted-storage-class
+```
+
+#### Encryption Class
+
+It is also possible to set `spec.crypto.encryptionClassName` to the name of an `EncryptionClass` resource in the same namespace as the VM. This resource specifies the provider and key ID used to encrypt workloads. For example, the following VM would be deployed and encrypted using the `EncryptionClass` named `my-encryption-class`:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha3
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className:    my-vm-class
+  imageName:    vmi-0a0044d7c690bcbea
+  storageClass: my-encrypted-storage-class
+  crypto:
+    encryptionClassName: my-encryption-class
+```
+
+### Rekeying a VM
+
+Users can rekey VMs by switching to a different `EncryptionClass` or setting a currently non-empty `spec.crypto.encryptionClassName` to an empty value. This will result in the VM being rekeyed using the default key provider if it exists. If it does not, then the VM could be left in a state where it cannot be powered on.
+
+### Decrypting a VM
+
+It is not possible to decrypt an encrypted VM using VM Operator.
+
+### Status
+
+#### Observed type, provider, & key
+
+The following fields may be used to determine the encryption status of a VM:
+
+| Name | Description |
+|------|-------------|
+| `status.crypto.encrypted` | The observed state of the VM's encryption. May be `config`, `disks`, or both. |
+| `status.crypto.providerID` | The provider ID used to encrypt the VM. |
+| `status.crypto.keyID` | The key ID used to encrypt the VM. |
+
+For example, the following is an example of the status of a VM encrypted with an encryption storage class:
+
+```yaml
+status:
+  crypto:
+    encrypted:
+    - config
+    - disks
+    providerID: my-key-provider-id
+    keyID: my-key-id
+```
+
+#### EncryptionSynced Condition
+
+The condition `VirtualMachineEncryptionSynced` is also used to report whether or not the VM's desired encryption state was synchronized. For example, a VM that should be encrypted but is powered on may have the following condition:
+
+```yaml
+status:
+  conditions:
+  - type: VirtualMachineEncryptionSynced
+    status: False
+    reason: InvalidState
+    message: Must be powered off to encrypt VM.
+```
+
+If the VM requested encryption and it was successful, then the condition will be:
+
+```yaml
+status:
+  conditions:
+  - type: VirtualMachineEncryptionSynced
+    status: True
+```
+
+When `VirtualMachineEncryptionSynced` has `status: False`, the `reason` field may be set to one of or combination of the following values:
+
+| Reason | Description |
+|--------|-------------|
+| `EncryptionClassNotFound` | The resource specified with `spec.crypto.encryptionClassName` cannot be found. |
+| `EncryptionClassInvalid` |  The resource specified with `spec.crypto.encryptionClassName` contains an invalid provider and/or key ID. |
+| `InvalidState` | The VM cannot be encrypted, rekeyed, or updated in its current state. |
+| `InvalidChanges` | The VM has pending changes that would prohibit an encrypt, rekey, or update operation. |
+| `ReconfigureError` |  An encrypt, rekey, or update operation was attempted but failed due to a reason related to encryption. |
+
+If the condition is ever false, please refer first to the condition's `reason` field and then `message` for more information.

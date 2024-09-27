@@ -14,6 +14,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
 
@@ -38,7 +39,7 @@ func DeleteVirtualMachine(
 		return err
 	}
 	// Throw an error to distinguish from successful deletion.
-	if paused := IsPausedByAdmin(vmCtx.MoVM); paused {
+	if paused := paused.ByAdmin(vmCtx.MoVM); paused {
 		if vmCtx.VM.Labels == nil {
 			vmCtx.VM.Labels = make(map[string]string)
 		}

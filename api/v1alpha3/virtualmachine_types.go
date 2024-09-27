@@ -41,6 +41,10 @@ const (
 	// VirtualMachineConditionPlacementReady indicates that the placement decision for the VM is ready.
 	VirtualMachineConditionPlacementReady = "VirtualMachineConditionPlacementReady"
 
+	// VirtualMachineEncryptionSynced indicates that the VirtualMachine's
+	// encryption state is synced to the desired encryption state.
+	VirtualMachineEncryptionSynced = "VirtualMachineEncryptionSynced"
+
 	// VirtualMachineConditionCreated indicates that the VM has been created.
 	VirtualMachineConditionCreated = "VirtualMachineCreated"
 
@@ -357,6 +361,67 @@ type VirtualMachineCdromSpec struct {
 	AllowGuestControl *bool `json:"allowGuestControl,omitempty"`
 }
 
+// VirtualMachineCryptoSpec defines the desired state of a VirtualMachine's
+// encryption state.
+type VirtualMachineCryptoSpec struct {
+	// +optional
+
+	// EncryptionClassName describes the name of the EncryptionClass resource
+	// used to encrypt this VM.
+	//
+	// Please note, this field is not required to encrypt the VM. If the
+	// underlying platform has a default key provider, the VM may still be fully
+	// or partially encrypted depending on the specified storage and VM classes.
+	//
+	// If there is a default key provider and an encryption storage class is
+	// selected, the files in the VM's home directory and non-PVC virtual disks
+	// will be encrypted
+	//
+	// If there is a default key provider and a VM Class with a virtual, trusted
+	// platform module (vTPM) is selected, the files in the VM's home directory,
+	// minus any virtual disks, will be encrypted.
+	//
+	// If the underlying vSphere platform does not have a default key provider,
+	// then this field is required when specifying an encryption storage class
+	// and/or a VM Class with a vTPM.
+	EncryptionClassName string `json:"encryptionClassName,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=true
+
+	// UseDefaultKeyProvider describes the desired behavior for when an explicit
+	// EncryptionClass is not provided.
+	//
+	// When an explicit EncryptionClass is not provided and this value is true:
+	//
+	// - Deploying a VirtualMachine with an encryption storage policy or vTPM
+	//   will be encrypted using the default key provider.
+	//
+	// - If a VirtualMachine is not encrypted, uses an encryption storage
+	//   policy or has a virtual, trusted platform module (vTPM), there is a
+	//   default key provider, the VM will be encrypted using the default key
+	//   provider.
+	//
+	// - If a VirtualMachine is encrypted with a provider other than the default
+	//   key provider, the VM will be rekeyed using the default key provider.
+	//
+	// When an explicit EncryptionClass is not provided and this value is false:
+	//
+	// - Deploying a VirtualMachine with an encryption storage policy or vTPM
+	//   will fail.
+	//
+	// - If a VirtualMachine is encrypted with a provider other than the default
+	//   key provider, the VM will be not be rekeyed.
+	//
+	//   Please note, this could result in a VirtualMachine that cannot be
+	//   powered on since it is encrypted using a provider or key that may have
+	//   been removed. Without the key, the VM cannot be decrypted and thus
+	//   cannot be powered on.
+	//
+	// Defaults to true if omitted.
+	UseDefaultKeyProvider *bool `json:"useDefaultKeyProvider,omitempty"`
+}
+
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
 	// +optional
@@ -436,6 +501,11 @@ type VirtualMachineSpec struct {
 	// an existing VM on the underlying platform that was not deployed from a
 	// VM class.
 	ClassName string `json:"className,omitempty"`
+
+	// +optional
+
+	// Crypto describes the desired encryption state of the VirtualMachine.
+	Crypto *VirtualMachineCryptoSpec `json:"crypto,omitempty"`
 
 	// +optional
 
@@ -694,6 +764,43 @@ type VirtualMachineAdvancedSpec struct {
 	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 }
 
+type VirtualMachineEncryptionType string
+
+const (
+	VirtualMachineEncryptionTypeConfig VirtualMachineEncryptionType = "Config"
+	VirtualMachineEncryptionTypeDisks  VirtualMachineEncryptionType = "Disks"
+)
+
+type VirtualMachineCryptoStatus struct {
+	// +optional
+
+	// Encrypted describes the observed state of the VirtualMachine's
+	// encryption. There may be two values in this list:
+	//
+	// - Config -- This refers to all of the files related to a VM except any
+	//             virtual disks.
+	// - Disk   -- This refers to all of the VM's virtual disks that are *not*
+	//             PVCs.
+	//
+	// To determine whether or not a PVC is encrypted, please refer to the PVC
+	// resource.
+	Encrypted []VirtualMachineEncryptionType `json:"encrypted,omitempty"`
+
+	// +optional
+
+	// ProviderID describes the provider ID used to encrypt the VirtualMachine.
+	// Please note, this field will be empty if the VirtualMachine is not
+	// encrypted.
+	ProviderID string `json:"providerID,omitempty"`
+
+	// +optional
+
+	// KeyID describes the key ID used to encrypt the VirtualMachine.
+	// Please note, this field will be empty if the VirtualMachine is not
+	// encrypted.
+	KeyID string `json:"keyID,omitempty"`
+}
+
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
 type VirtualMachineStatus struct {
 	// +optional
@@ -717,6 +824,12 @@ type VirtualMachineStatus struct {
 
 	// Conditions describes the observed conditions of the VirtualMachine.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// +optional
+
+	// Crypto describes the observed state of the VirtualMachine's encryption
+	// configuration.
+	Crypto *VirtualMachineCryptoStatus `json:"crypto,omitempty"`
 
 	// +optional
 

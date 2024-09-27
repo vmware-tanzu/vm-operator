@@ -60,18 +60,20 @@ func DummyStorageClass() *storagev1.StorageClass {
 	}
 }
 
-func DummyResourceQuota(namespace, rlName string) *corev1.ResourceQuota {
-	return &corev1.ResourceQuota{
+func DummyResourceQuota(namespace string, rlNames ...string) *corev1.ResourceQuota {
+	obj := &corev1.ResourceQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      DummyResourceQuotaName,
 			Namespace: namespace,
 		},
 		Spec: corev1.ResourceQuotaSpec{
-			Hard: corev1.ResourceList{
-				corev1.ResourceName(rlName): resource.MustParse("1"),
-			},
+			Hard: corev1.ResourceList{},
 		},
 	}
+	for i := range rlNames {
+		obj.Spec.Hard[corev1.ResourceName(rlNames[i])] = resource.MustParse("1")
+	}
+	return obj
 }
 
 func DummyAvailabilityZone() *topologyv1.AvailabilityZone {

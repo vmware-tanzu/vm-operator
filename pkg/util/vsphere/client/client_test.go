@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
+	_ "github.com/vmware/govmomi/pbm/simulator" // load PBM simulator
 	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/session/keepalive"
 	"github.com/vmware/govmomi/simulator"

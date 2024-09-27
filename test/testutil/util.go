@@ -81,3 +81,32 @@ func WriteKubeConfig(config *rest.Config) ([]byte, error) {
 		CurrentContext: config.ServerName,
 	})
 }
+
+func ContainsError(err error, message string) bool {
+	for {
+		if err == nil {
+			return false
+		}
+		if err.Error() == message {
+			return true
+		}
+		switch tErr := err.(type) {
+		case unwrappableError:
+			err = tErr.Unwrap()
+		case unwrappableErrorSlice:
+			for _, uErr := range tErr.Unwrap() {
+				if ContainsError(uErr, message) {
+					return true
+				}
+			}
+		}
+	}
+}
+
+type unwrappableError interface {
+	Unwrap() error
+}
+
+type unwrappableErrorSlice interface {
+	Unwrap() []error
+}

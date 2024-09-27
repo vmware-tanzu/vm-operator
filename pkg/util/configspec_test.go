@@ -900,6 +900,6 @@ var _ = DescribeTable(
 		&vimtypes.VirtualMachineConfigSpec{
 			VAppConfig: (*vimtypes.VmConfigSpec)(nil),
 		},
-		`{"vAppConfig":null}`,
+		`{"_typeName":"VirtualMachineConfigSpec","vAppConfig":null}`,
 	),
 )

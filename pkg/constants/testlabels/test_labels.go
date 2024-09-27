@@ -13,6 +13,9 @@ const (
 	// Create describes a test related to create logic.
 	Create = "create"
 
+	// Crypto describes a test related to encryption.
+	Crypto = "crypto"
+
 	// Delete describes a test related to delete logic.
 	Delete = "delete"
 

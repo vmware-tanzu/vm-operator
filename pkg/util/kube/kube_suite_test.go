@@ -15,6 +15,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+const fakeString = "fake"
+
 func init() {
 	klog.SetOutput(GinkgoWriter)
 	logf.SetLogger(klog.Background())

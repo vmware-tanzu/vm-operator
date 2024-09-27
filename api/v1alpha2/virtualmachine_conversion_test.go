@@ -607,4 +607,75 @@ func TestVirtualMachineConversion(t *testing.T) {
 			hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
 		})
 	})
+
+	t.Run("VirtualMachine and spec.crypto", func(t *testing.T) {
+
+		t.Run("hub-spoke-hub", func(t *testing.T) {
+
+			t.Run("spec.crypto is nil", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto is empty", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.className is non-empty", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName: "fake",
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.useDefaultKeyProvider is true", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							UseDefaultKeyProvider: &[]bool{true}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto.useDefaultKeyProvider is false", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							UseDefaultKeyProvider: &[]bool{false}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+			})
+
+			t.Run("spec.crypto is completely filled out", func(t *testing.T) {
+				g := NewWithT(t)
+				hub := vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Crypto: &vmopv1.VirtualMachineCryptoSpec{
+							EncryptionClassName:   "fake",
+							UseDefaultKeyProvider: &[]bool{false}[0],
+						},
+					},
+				}
+				hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+			})
+		})
+	})
 }

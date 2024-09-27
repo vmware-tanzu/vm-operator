@@ -47,10 +47,9 @@ var _ = Describe("UpdateVM selected MO Properties", func() {
 var _ = Describe("UpdateStatus", func() {
 
 	var (
-		ctx          *builder.TestContextForVCSim
-		vmCtx        pkgctx.VirtualMachineContext
-		vcVM         *object.VirtualMachine
-		refetchProps bool
+		ctx   *builder.TestContextForVCSim
+		vmCtx pkgctx.VirtualMachineContext
+		vcVM  *object.VirtualMachine
 	)
 
 	BeforeEach(func() {
@@ -75,7 +74,6 @@ var _ = Describe("UpdateStatus", func() {
 			vcVM.Reference(),
 			vmlifecycle.VMStatusPropertiesSelector,
 			&vmCtx.MoVM)).To(Succeed())
-		refetchProps = false
 	})
 
 	AfterEach(func() {
@@ -84,14 +82,18 @@ var _ = Describe("UpdateStatus", func() {
 	})
 
 	JustBeforeEach(func() {
-		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, refetchProps)
+		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	When("properties are refetched", func() {
 		BeforeEach(func() {
 			vmCtx.MoVM = mo.VirtualMachine{}
-			refetchProps = true
+			Expect(vcVM.Properties(
+				ctx,
+				vcVM.Reference(),
+				vmlifecycle.VMStatusPropertiesSelector,
+				&vmCtx.MoVM)).To(Succeed())
 		})
 		Specify("the status is created from the properties fetched from vsphere", func() {
 			moVM := mo.VirtualMachine{}

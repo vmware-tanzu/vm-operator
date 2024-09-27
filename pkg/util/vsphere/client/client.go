@@ -12,6 +12,7 @@ import (
 
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/pbm"
 	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/session/keepalive"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -36,6 +37,7 @@ type Config struct {
 type Client struct {
 	vimClient      *vim25.Client
 	restClient     *rest.Client
+	pbmClient      *pbm.Client
 	sessionManager *session.Manager
 	config         Config
 
@@ -60,11 +62,17 @@ func NewClient(ctx context.Context, config Config) (*Client, error) {
 		return nil, err
 	}
 
+	pbmClient, err := pbm.NewClient(ctx, vimClient)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{
 		vimClient:      vimClient,
 		finder:         finder,
 		datacenter:     datacenter,
 		restClient:     restClient,
+		pbmClient:      pbmClient,
 		sessionManager: sm,
 		config:         config,
 	}, nil
@@ -270,6 +278,10 @@ func (c *Client) Finder() *find.Finder {
 
 func (c *Client) Datacenter() *object.Datacenter {
 	return c.datacenter
+}
+
+func (c *Client) PbmClient() *pbm.Client {
+	return c.pbmClient
 }
 
 func (c *Client) RestClient() *rest.Client {

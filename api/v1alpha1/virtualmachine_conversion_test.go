@@ -1508,6 +1508,29 @@ func TestVirtualMachineConversion(t *testing.T) {
 		spokeHubSpoke(g, &spoke, &vmopv1.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine spoke-hub with ConfigMapName", func(t *testing.T) {
+		g := NewWithT(t)
+
+		spoke := vmopv1a1.VirtualMachine{
+			Spec: vmopv1a1.VirtualMachineSpec{
+				VmMetadata: &vmopv1a1.VirtualMachineMetadata{
+					Transport:     vmopv1a1.VirtualMachineMetadataCloudInitTransport,
+					ConfigMapName: "my-configMap",
+				},
+			},
+			Status: vmopv1a1.VirtualMachineStatus{
+				Phase: vmopv1a1.Unknown,
+			},
+		}
+
+		var hub vmopv1.VirtualMachine
+		g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
+		g.Expect(hub.Spec.Bootstrap.CloudInit.RawCloudConfig)
+		anno := hub.GetAnnotations()
+		g.Expect(anno).ToNot(BeNil())
+		g.Expect(anno[vmopv1.V1alpha1ConfigMapTransportAnnotation]).To(Equal("true"))
+	})
+
 	t.Run("VirtualMachine hub-spoke-hub with spec.image", func(t *testing.T) {
 		g := NewWithT(t)
 		hub := vmopv1.VirtualMachine{
@@ -1771,6 +1794,34 @@ func TestVirtualMachineConversion(t *testing.T) {
 				}
 				hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
 			})
+		})
+	})
+
+	t.Run("VirtualMachine pauseAnnotation rename", func(t *testing.T) {
+		t.Run("VirtualMachine hub-spoke-hub after pauseAnnotation rename", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{vmopv1.PauseAnnotation: "true"},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
+		})
+
+		t.Run("VirtualMachine hub-spoke pauseAnnotation rename", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{vmopv1.PauseAnnotation: "true"},
+				},
+			}
+
+			var spoke vmopv1a1.VirtualMachine
+			g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+			anno := hub.GetAnnotations()
+			g.Expect(anno).ToNot(BeNil())
+			g.Expect(anno[vmopv1a1.PauseAnnotation]).To(Equal("true"))
+			g.Expect(anno).ShouldNot(HaveKey(vmopv1.PauseAnnotation))
 		})
 	})
 }

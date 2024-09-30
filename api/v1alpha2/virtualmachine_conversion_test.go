@@ -678,4 +678,32 @@ func TestVirtualMachineConversion(t *testing.T) {
 			})
 		})
 	})
+
+	t.Run("VirtualMachine pauseAnnotation rename", func(t *testing.T) {
+		t.Run("VirtualMachine hub-spoke-hub after pauseAnnotation rename", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{vmopv1.PauseAnnotation: "true"},
+				},
+			}
+			hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+		})
+
+		t.Run("VirtualMachine hub-spoke pauseAnnotation rename", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{vmopv1.PauseAnnotation: "true"},
+				},
+			}
+
+			var spoke vmopv1a2.VirtualMachine
+			g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+			anno := hub.GetAnnotations()
+			g.Expect(anno).ToNot(BeNil())
+			g.Expect(anno[vmopv1a2.PauseAnnotation]).To(Equal("true"))
+			g.Expect(anno).ShouldNot(HaveKey(vmopv1.PauseAnnotation))
+		})
+	})
 }

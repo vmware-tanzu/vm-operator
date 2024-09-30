@@ -231,6 +231,7 @@ func Convert_v1alpha2_VirtualMachine_To_v1alpha3_VirtualMachine(in *VirtualMachi
 		// This would also remove the annotation if someone created a
 		// v1a1 VM with "pause-reconcile" annotation.
 		delete(annotations, PauseAnnotation)
+		out.GetObjectMeta().SetAnnotations(annotations)
 	}
 
 	return nil

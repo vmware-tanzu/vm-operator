@@ -297,9 +297,9 @@ func (r *Reconciler) syncImageContent(ctx *pkgctx.ContentLibraryItemContext) err
 		vmi.Status.ProviderContentVersion = latestVersion
 	}
 
-	// Sync the image's OS information and capabilities to the resource's labels
-	// to make it easier for clients to search for images based on OS info and
-	// image capabilities.
+	// Sync the image's type, OS information and capabilities to the resource's
+	// labels to make it easier for clients to search for images based on type,
+	// OS info or image capabilities.
 	imgutil.SyncStatusToLabels(vmi, vmi.Status)
 
 	r.Recorder.EmitEvent(vmi, "Update", err, false)

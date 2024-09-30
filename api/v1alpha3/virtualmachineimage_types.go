@@ -33,6 +33,12 @@ const (
 )
 
 const (
+	// VirtualMachineImageTypeLabel is the label key for the type of the image
+	// (e.g. OVF, ISO, etc.).
+	VirtualMachineImageTypeLabel = "image." + GroupName + "/type"
+)
+
+const (
 	// VMIContentLibRefAnnotation is the key for the annotation that stores the content library
 	// reference for VMI and CVMI down conversion.
 	VMIContentLibRefAnnotation = "vmoperator.vmware.com/conversion-content-lib-ref"

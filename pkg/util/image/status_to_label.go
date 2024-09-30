@@ -4,54 +4,62 @@
 package image
 
 import (
+	"strings"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
-// SyncStatusToLabels copies the image's capabilities and OS information from
-// the image status to well-known labels on the image in order to make it
+// SyncStatusToLabels copies the image's type, capabilities and OS information
+// from the image status to well-known labels on the image in order to make it
 // easier for clients to search for images based on capabilities or OS details.
+// If the image status does not have the info or is invalid, remove the label.
 func SyncStatusToLabels(
 	obj metav1.Object,
 	status vmopv1.VirtualMachineImageStatus) {
 
-	var (
-		osID      = status.OSInfo.ID
-		osType    = status.OSInfo.Type
-		osVersion = status.OSInfo.Version
-		caps      = status.Capabilities
-	)
-
-	if osID == "" && osType == "" && osVersion == "" && len(caps) == 0 {
-		return
-	}
-
 	labels := obj.GetLabels()
 	if labels == nil {
 		labels = map[string]string{}
+		obj.SetLabels(labels)
 	}
 
-	if k, v := vmopv1.VirtualMachineImageOSIDLabel, osID; isValidLabelValue(v) {
-		labels[k] = v
-	}
-	if k, v := vmopv1.VirtualMachineImageOSTypeLabel, osType; isValidLabelValue(v) {
-		labels[k] = v
-	}
-	if k, v := vmopv1.VirtualMachineImageOSVersionLabel, osVersion; isValidLabelValue(v) {
-		labels[k] = v
-	}
-	if kp, v := vmopv1.VirtualMachineImageCapabilityLabel, caps; len(v) > 0 {
-		for i := range v {
-			k := kp + v[i]
-			if len(validation.IsQualifiedName(k)) == 0 {
-				labels[k] = "true"
-			}
+	setLabel := func(k, v string) {
+		if isValidLabelValue(v) {
+			labels[k] = v
+		} else {
+			delete(labels, k)
 		}
 	}
 
-	obj.SetLabels(labels)
+	// Set image type label.
+	setLabel(vmopv1.VirtualMachineImageTypeLabel, status.Type)
+
+	// Set OS labels.
+	setLabel(vmopv1.VirtualMachineImageOSIDLabel, status.OSInfo.ID)
+	setLabel(vmopv1.VirtualMachineImageOSTypeLabel, status.OSInfo.Type)
+	setLabel(vmopv1.VirtualMachineImageOSVersionLabel, status.OSInfo.Version)
+
+	// Set capability labels.
+	kp := vmopv1.VirtualMachineImageCapabilityLabel
+	capKeys := map[string]struct{}{}
+	for _, cap := range status.Capabilities {
+		k := kp + cap
+		if len(validation.IsQualifiedName(k)) == 0 {
+			labels[k] = "true"
+			capKeys[k] = struct{}{}
+		} else {
+			delete(labels, k)
+		}
+	}
+	// Delete any stale capability labels.
+	for k := range labels {
+		if _, ok := capKeys[k]; !ok && strings.HasPrefix(k, kp) {
+			delete(labels, k)
+		}
+	}
 }
 
 func isValidLabelValue(v string) bool {

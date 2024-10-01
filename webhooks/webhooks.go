@@ -12,6 +12,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/conversion"
 	"github.com/vmware-tanzu/vm-operator/webhooks/persistentvolumeclaim"
+	"github.com/vmware-tanzu/vm-operator/webhooks/unifiedstoragequota"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinepublishrequest"
@@ -51,6 +52,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 	if pkgcfg.FromContext(ctx).Features.K8sWorkloadMgmtAPI {
 		if err := virtualmachinereplicaset.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineReplicaSet webhooks: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota {
+		if err := unifiedstoragequota.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize UnifiedStorageQuota webhooks: %w", err)
 		}
 	}
 

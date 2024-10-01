@@ -702,7 +702,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 			g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
 			anno := hub.GetAnnotations()
 			g.Expect(anno).ToNot(BeNil())
-			g.Expect(anno[vmopv1a2.PauseAnnotation]).To(Equal("true"))
+			g.Expect(anno).Should(HaveKeyWithValue(vmopv1a2.PauseAnnotation, "true"))
 			g.Expect(anno).ShouldNot(HaveKey(vmopv1.PauseAnnotation))
 		})
 	})

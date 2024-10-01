@@ -1525,10 +1525,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 
 		var hub vmopv1.VirtualMachine
 		g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
-		g.Expect(hub.Spec.Bootstrap.CloudInit.RawCloudConfig)
 		anno := hub.GetAnnotations()
 		g.Expect(anno).ToNot(BeNil())
-		g.Expect(anno[vmopv1.V1alpha1ConfigMapTransportAnnotation]).To(Equal("true"))
+		g.Expect(anno).Should(HaveKeyWithValue(vmopv1.V1alpha1ConfigMapTransportAnnotation, "true"))
 	})
 
 	t.Run("VirtualMachine hub-spoke-hub with spec.image", func(t *testing.T) {
@@ -1820,7 +1819,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 			g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
 			anno := hub.GetAnnotations()
 			g.Expect(anno).ToNot(BeNil())
-			g.Expect(anno[vmopv1a1.PauseAnnotation]).To(Equal("true"))
+			g.Expect(anno).Should(HaveKeyWithValue(vmopv1a1.PauseAnnotation, "true"))
 			g.Expect(anno).ShouldNot(HaveKey(vmopv1.PauseAnnotation))
 		})
 	})

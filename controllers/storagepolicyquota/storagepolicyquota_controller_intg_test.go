@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,6 +55,29 @@ func intgTestsReconcile() {
 
 	Context("Reconcile", func() {
 		BeforeEach(func() {
+			validatingWebhookConfiguration := &admissionv1.ValidatingWebhookConfiguration{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: spqutil.ValidatingWebhookConfigName,
+				},
+				Webhooks: []admissionv1.ValidatingWebhook{
+					{
+						AdmissionReviewVersions: []string{"v1beta1", "v1"},
+						ClientConfig: admissionv1.WebhookClientConfig{
+							Service: &admissionv1.ServiceReference{
+								Name:      "vmware-system-vmop-webhook-service",
+								Namespace: "vmware-system-vmop",
+								Path:      ptr.To("/default-validate-vmoperator-vmware-com-v1alpha3-virtualmachine"),
+							},
+							CABundle: []byte("fake-ca-bundle"),
+						},
+						FailurePolicy: ptr.To(admissionv1.Fail),
+						Name:          "default.validating.virtualmachine.v1alpha3.vmoperator.vmware.com",
+						SideEffects:   ptr.To(admissionv1.SideEffectClassNone),
+					},
+				},
+			}
+			Expect(ctx.Client.Create(ctx, validatingWebhookConfiguration)).To(Succeed())
+
 			obj := spqv1.StoragePolicyQuota{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      storageQuotaName,
@@ -111,6 +135,8 @@ func intgTestsReconcile() {
 				g.Expect(obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
 				g.Expect(obj.Spec.ResourceKind).To(Equal("VirtualMachine"))
 				g.Expect(obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
+				g.Expect(obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.PodNamespace))
+				g.Expect(obj.Spec.CABundle).To(Equal([]byte("fake-ca-bundle")))
 			}).Should(Succeed())
 		})
 	})

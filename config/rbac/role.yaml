@@ -40,6 +40,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfiguration
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - cns.vmware.com
   resources:
   - cnsnodevmattachments

@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package utils
@@ -13,7 +13,7 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 // GetImageFieldNameFromItem returns the Image field name in format of "vmi-<uuid>"
@@ -65,7 +65,7 @@ func AddContentLibraryRefToAnnotation(to client.Object, ref *imgregv1a1.NameAndK
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	annotations[v1alpha2.VMIContentLibRefAnnotation] = string(data)
+	annotations[vmopv1.VMIContentLibRefAnnotation] = string(data)
 	to.SetAnnotations(annotations)
 
 	return nil

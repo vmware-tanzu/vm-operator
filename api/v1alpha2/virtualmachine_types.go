@@ -140,19 +140,6 @@ const (
 	ManagedByExtensionType = "VirtualMachine"
 )
 
-// VirtualMachine backup/restore related constants.
-const (
-	// VMResourceYAMLExtraConfigKey is the ExtraConfig key to persist VM
-	// Kubernetes resource YAML, compressed using gzip and base64-encoded.
-	VMResourceYAMLExtraConfigKey = "vmservice.virtualmachine.resource.yaml"
-	// AdditionalResourcesYAMLExtraConfigKey is the ExtraConfig key to persist
-	// VM-relevant Kubernetes resource YAML, compressed using gzip and base64-encoded.
-	AdditionalResourcesYAMLExtraConfigKey = "vmservice.virtualmachine.additional.resources.yaml"
-	// PVCDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// PVC disk data in JSON, compressed using gzip and base64-encoded.
-	PVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
-)
-
 const (
 	// PauseVMExtraConfigKey is the ExtraConfig key to allow override
 	// operations for admins to pause reconciliation of VM Service VM.

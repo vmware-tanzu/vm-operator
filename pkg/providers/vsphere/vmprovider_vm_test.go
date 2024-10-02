@@ -28,6 +28,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -1323,7 +1324,7 @@ func vmTests() {
 					Expect(o.Config.ExtraConfig).ToNot(BeNil())
 
 					ecMap := pkgutil.OptionValues(o.Config.ExtraConfig).StringMap()
-					Expect(ecMap).To(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
+					Expect(ecMap).To(HaveKey(backupapi.VMResourceYAMLExtraConfigKey))
 				})
 
 				// TODO: More assertions!
@@ -1345,7 +1346,7 @@ func vmTests() {
 				By("does not have any backup ExtraConfig key", func() {
 					Expect(o.Config.ExtraConfig).ToNot(BeNil())
 					ecMap := pkgutil.OptionValues(o.Config.ExtraConfig).StringMap()
-					Expect(ecMap).ToNot(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
+					Expect(ecMap).ToNot(HaveKey(backupapi.VMResourceYAMLExtraConfigKey))
 				})
 			})
 			It("TKG VM that has opt-in annotation gets the backup EC", func() {
@@ -1366,7 +1367,7 @@ func vmTests() {
 				By("has backup ExtraConfig key", func() {
 					Expect(o.Config.ExtraConfig).ToNot(BeNil())
 					ecMap := pkgutil.OptionValues(o.Config.ExtraConfig).StringMap()
-					Expect(ecMap).To(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
+					Expect(ecMap).To(HaveKey(backupapi.VMResourceYAMLExtraConfigKey))
 				})
 			})
 

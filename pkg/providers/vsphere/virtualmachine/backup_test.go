@@ -18,8 +18,8 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	vmopbackup "github.com/vmware-tanzu/vm-operator/api/backup"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
@@ -115,10 +115,10 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
 						if IncrementalRestore {
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT1, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
 							Expect(c).NotTo(BeNil())
@@ -143,14 +143,14 @@ func backupTests() {
 
 						extraConfig := []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+								Key:   backupapi.VMResourceYAMLExtraConfigKey,
 								Value: vmYAMLEncoded,
 							},
 						}
 
 						if IncrementalRestore {
 							extraConfig = append(extraConfig, &vimtypes.OptionValue{
-								Key:   vmopv1.BackupVersionExtraConfigKey,
+								Key:   backupapi.BackupVersionExtraConfigKey,
 								Value: vT2,
 							})
 						}
@@ -175,10 +175,10 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
 						if IncrementalRestore {
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
 							Expect(c).NotTo(BeNil())
@@ -203,14 +203,14 @@ func backupTests() {
 
 						extraConfig := []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+								Key:   backupapi.VMResourceYAMLExtraConfigKey,
 								Value: vmYAMLEncoded,
 							},
 						}
 
 						if IncrementalRestore {
 							extraConfig = append(extraConfig, &vimtypes.OptionValue{
-								Key:   vmopv1.BackupVersionExtraConfigKey,
+								Key:   backupapi.BackupVersionExtraConfigKey,
 								Value: vT2,
 							})
 						}
@@ -235,10 +235,10 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
 						if IncrementalRestore {
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
 							Expect(c).NotTo(BeNil())
@@ -263,14 +263,14 @@ func backupTests() {
 
 						extraConfig := []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+								Key:   backupapi.VMResourceYAMLExtraConfigKey,
 								Value: vmYAMLEncoded,
 							},
 						}
 
 						if IncrementalRestore {
 							extraConfig = append(extraConfig, &vimtypes.OptionValue{
-								Key:   vmopv1.BackupVersionExtraConfigKey,
+								Key:   backupapi.BackupVersionExtraConfigKey,
 								Value: vT2,
 							})
 						}
@@ -295,10 +295,10 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
 						if IncrementalRestore {
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
 							Expect(c).NotTo(BeNil())
@@ -324,14 +324,14 @@ func backupTests() {
 
 						extraConfig := []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+								Key:   backupapi.VMResourceYAMLExtraConfigKey,
 								Value: vmYAMLEncoded,
 							},
 						}
 
 						if IncrementalRestore {
 							extraConfig = append(extraConfig, &vimtypes.OptionValue{
-								Key:   vmopv1.BackupVersionExtraConfigKey,
+								Key:   backupapi.BackupVersionExtraConfigKey,
 								Value: vT2,
 							})
 						}
@@ -356,11 +356,11 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, vmBackupStr, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, vmBackupStr, true)
 
 						if IncrementalRestore {
 							// verify it doesn't get updated to vT3 and stays at vT2
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT2, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 						}
 					})
@@ -401,14 +401,14 @@ func backupTests() {
 
 						extraConfig := []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+								Key:   backupapi.VMResourceYAMLExtraConfigKey,
 								Value: vmYAMLEncoded,
 							},
 						}
 
 						if IncrementalRestore {
 							extraConfig = append(extraConfig, &vimtypes.OptionValue{
-								Key:   vmopv1.BackupVersionExtraConfigKey,
+								Key:   backupapi.BackupVersionExtraConfigKey,
 								Value: vT2,
 							})
 						}
@@ -432,10 +432,10 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 						resYAML := getExpectedBackupObjectYAML(secretRes)
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, resYAML, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.AdditionalResourcesYAMLExtraConfigKey, resYAML, true)
 
 						if IncrementalRestore {
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
 						}
 					})
@@ -459,18 +459,18 @@ func backupTests() {
 
 						extraConfig := []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+								Key:   backupapi.VMResourceYAMLExtraConfigKey,
 								Value: vmYAMLEncoded,
 							},
 							&vimtypes.OptionValue{
-								Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
+								Key:   backupapi.AdditionalResourcesYAMLExtraConfigKey,
 								Value: yamlEncoded,
 							},
 						}
 
 						if IncrementalRestore {
 							extraConfig = append(extraConfig, &vimtypes.OptionValue{
-								Key:   vmopv1.BackupVersionExtraConfigKey,
+								Key:   backupapi.BackupVersionExtraConfigKey,
 								Value: vT2,
 							})
 						}
@@ -495,10 +495,10 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 						newResYAML := getExpectedBackupObjectYAML(secretRes.DeepCopy())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, newResYAML, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.AdditionalResourcesYAMLExtraConfigKey, newResYAML, true)
 
 						if IncrementalRestore {
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
 						}
 					})
@@ -524,18 +524,18 @@ func backupTests() {
 
 						extraConfig := []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+								Key:   backupapi.VMResourceYAMLExtraConfigKey,
 								Value: vmYAMLEncoded,
 							},
 							&vimtypes.OptionValue{
-								Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
+								Key:   backupapi.AdditionalResourcesYAMLExtraConfigKey,
 								Value: yamlEncoded,
 							},
 						}
 
 						if IncrementalRestore {
 							extraConfig = append(extraConfig, &vimtypes.OptionValue{
-								Key:   vmopv1.BackupVersionExtraConfigKey,
+								Key:   backupapi.BackupVersionExtraConfigKey,
 								Value: vT2,
 							})
 						}
@@ -560,11 +560,11 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, backupStr, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.AdditionalResourcesYAMLExtraConfigKey, backupStr, true)
 
 						if IncrementalRestore {
 							// verify it doesn't get updated to vT3 and stays at vT2
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT2, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 						}
 					})
@@ -598,10 +598,10 @@ func backupTests() {
 						secretResYAML := getExpectedBackupObjectYAML(secretRes.DeepCopy())
 						cmResYAML := getExpectedBackupObjectYAML(cmRes.DeepCopy())
 						expectedYAML := secretResYAML + "\n---\n" + cmResYAML
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, expectedYAML, true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.AdditionalResourcesYAMLExtraConfigKey, expectedYAML, true)
 
 						if IncrementalRestore {
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT1, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
 						}
 					})
@@ -619,7 +619,7 @@ func backupTests() {
 							DiskUUIDToPVC: nil,
 						}
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.PVCDiskDataExtraConfigKey, "", true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.PVCDiskDataExtraConfigKey, "", true)
 					})
 				})
 
@@ -636,14 +636,14 @@ func backupTests() {
 
 						extraConfig := []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+								Key:   backupapi.VMResourceYAMLExtraConfigKey,
 								Value: vmYAMLEncoded,
 							},
 						}
 
 						if IncrementalRestore {
 							extraConfig = append(extraConfig, &vimtypes.OptionValue{
-								Key:   vmopv1.BackupVersionExtraConfigKey,
+								Key:   backupapi.BackupVersionExtraConfigKey,
 								Value: vT1,
 							})
 						}
@@ -672,19 +672,19 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
-						diskData := []vmopbackup.PVCDiskData{
+						diskData := []backupapi.PVCDiskData{
 							{
 								FileName:    vcSimDiskFileName,
 								PVCName:     dummyPVC.Name,
-								AccessModes: dummyPVC.Spec.AccessModes,
+								AccessModes: backupapi.ToPersistentVolumeAccessModes(dummyPVC.Spec.AccessModes),
 							},
 						}
 						diskDataJSON, err := json.Marshal(diskData)
 						Expect(err).NotTo(HaveOccurred())
-						verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.PVCDiskDataExtraConfigKey, string(diskDataJSON), true)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.PVCDiskDataExtraConfigKey, string(diskDataJSON), true)
 
 						if IncrementalRestore {
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT2, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 						}
 					})
@@ -705,11 +705,11 @@ func backupTests() {
 
 							extraConfig := []vimtypes.BaseOptionValue{
 								&vimtypes.OptionValue{
-									Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+									Key:   backupapi.VMResourceYAMLExtraConfigKey,
 									Value: vmYAMLEncoded,
 								},
 								&vimtypes.OptionValue{
-									Key:   vmopv1.BackupVersionExtraConfigKey,
+									Key:   backupapi.BackupVersionExtraConfigKey,
 									Value: vT2,
 								},
 							}
@@ -733,7 +733,7 @@ func backupTests() {
 							Expect(err).ToNot(HaveOccurred())
 
 							// verify key doesn't get updated to "t4" and stays at "t1"
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT2, false)
 							// verify annotation doesn't get updated to "t4" and stays at "t3"
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
@@ -756,7 +756,7 @@ func backupTests() {
 							Expect(err).ToNot(HaveOccurred())
 
 							// verify key gets updated to "1004"
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, "1004", false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, "1004", false)
 							// verify annotation gets updated to "t4"
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal("1004"))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
@@ -775,11 +775,11 @@ func backupTests() {
 
 							extraConfig := []vimtypes.BaseOptionValue{
 								&vimtypes.OptionValue{
-									Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+									Key:   backupapi.VMResourceYAMLExtraConfigKey,
 									Value: vmYAMLEncoded,
 								},
 								&vimtypes.OptionValue{
-									Key:   vmopv1.BackupVersionExtraConfigKey,
+									Key:   backupapi.BackupVersionExtraConfigKey,
 									Value: vT1,
 								},
 							}
@@ -800,13 +800,13 @@ func backupTests() {
 							// won't err to retry later since versions match and backup was tried
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 							// annotation and key stay the same as there was no new changes to backup.
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT1, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
 
 							// Update the generation to simulate a new spec update of the VM.
 							backupOpts.VMCtx.VM.ObjectMeta.Generation = 11
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT3, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
 							Expect(c).NotTo(BeNil())
@@ -823,7 +823,7 @@ func backupTests() {
 
 							extraConfig := []vimtypes.BaseOptionValue{
 								&vimtypes.OptionValue{
-									Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+									Key:   backupapi.VMResourceYAMLExtraConfigKey,
 									Value: vmYAMLEncoded,
 								},
 							}
@@ -842,7 +842,7 @@ func backupTests() {
 							}
 
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT2, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT2, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
 							Expect(c).NotTo(BeNil())
@@ -860,11 +860,11 @@ func backupTests() {
 
 							extraConfig := []vimtypes.BaseOptionValue{
 								&vimtypes.OptionValue{
-									Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+									Key:   backupapi.VMResourceYAMLExtraConfigKey,
 									Value: vmYAMLEncoded,
 								},
 								&vimtypes.OptionValue{
-									Key:   vmopv1.BackupVersionExtraConfigKey,
+									Key:   backupapi.BackupVersionExtraConfigKey,
 									Value: vT1,
 								},
 							}
@@ -902,11 +902,11 @@ func backupTests() {
 
 							extraConfig := []vimtypes.BaseOptionValue{
 								&vimtypes.OptionValue{
-									Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+									Key:   backupapi.VMResourceYAMLExtraConfigKey,
 									Value: vmYAMLEncoded,
 								},
 								&vimtypes.OptionValue{
-									Key:   vmopv1.BackupVersionExtraConfigKey,
+									Key:   backupapi.BackupVersionExtraConfigKey,
 									Value: "invalid",
 								},
 							}
@@ -945,7 +945,7 @@ func backupTests() {
 								ClassicDiskUUIDs: nil,
 							}
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.ClassicDiskDataExtraConfigKey, "", false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.ClassicDiskDataExtraConfigKey, "", false)
 						})
 					})
 
@@ -959,15 +959,15 @@ func backupTests() {
 							}
 
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-							diskData := []vmopbackup.ClassicDiskData{
+							diskData := []backupapi.ClassicDiskData{
 								{
 									FileName: vcSimDiskFileName,
 								},
 							}
 							diskDataJSON, err := json.Marshal(diskData)
 							Expect(err).NotTo(HaveOccurred())
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.ClassicDiskDataExtraConfigKey, string(diskDataJSON), true)
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.ClassicDiskDataExtraConfigKey, string(diskDataJSON), true)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT1, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
 						})
 					})
@@ -993,7 +993,7 @@ func backupTests() {
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
 							// Verify the backup version remains the same which indicates the backup was skipped.
-							verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.BackupVersionExtraConfigKey, vT1, false)
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT1, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
 						})
 					})

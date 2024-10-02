@@ -19,8 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	k8syaml "sigs.k8s.io/yaml"
 
-	vmopbackup "github.com/vmware-tanzu/vm-operator/api/backup"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -74,7 +74,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 	 */
 	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
 		if backupVersionAnnotation, ok := opts.VMCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]; ok && backupVersionAnnotation != "" {
-			if backupVersionEcVal, _ := curExCfg.GetString(vmopv1.BackupVersionExtraConfigKey); backupVersionEcVal != "" {
+			if backupVersionEcVal, _ := curExCfg.GetString(backupapi.BackupVersionExtraConfigKey); backupVersionEcVal != "" {
 				canBackup, err := canPerformBackup(opts, backupVersionEcVal, backupVersionAnnotation)
 				if err != nil {
 					return err
@@ -112,7 +112,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 		opts.VMCtx.Logger.V(4).Info("Skipping additional resources yaml backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
-			Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
+			Key:   backupapi.AdditionalResourcesYAMLExtraConfigKey,
 			Value: additionalYAML,
 		})
 	}
@@ -127,7 +127,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 		opts.VMCtx.Logger.V(4).Info("Skipping PVC disk data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
-			Key:   vmopv1.PVCDiskDataExtraConfigKey,
+			Key:   backupapi.PVCDiskDataExtraConfigKey,
 			Value: pvcDiskData,
 		})
 	}
@@ -137,14 +137,14 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 			opts.VMCtx.Logger.V(4).Info("Skipping classic disk data backup as unchanged")
 		} else {
 			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
-				Key:   vmopv1.ClassicDiskDataExtraConfigKey,
+				Key:   backupapi.ClassicDiskDataExtraConfigKey,
 				Value: classicDiskData,
 			})
 		}
 	}
 
 	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
-		curBackup, _ := curExCfg.GetString(vmopv1.VMResourceYAMLExtraConfigKey)
+		curBackup, _ := curExCfg.GetString(backupapi.VMResourceYAMLExtraConfigKey)
 		vmBackupInSync, err := isVMBackupUpToDate(opts.VMCtx.VM, curBackup)
 		if err != nil {
 			opts.VMCtx.Logger.Error(err, "failed to check if VM resource is in sync with backup")
@@ -158,7 +158,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 		backupVersionAnnotation, ok := opts.VMCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]
 		if (!ok || backupVersionAnnotation == "") || len(ecToUpdate) != 0 || !vmBackupInSync {
 			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
-				Key:   vmopv1.BackupVersionExtraConfigKey,
+				Key:   backupapi.BackupVersionExtraConfigKey,
 				Value: opts.BackupVersion,
 			})
 
@@ -175,7 +175,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 			}
 
 			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
-				Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+				Key:   backupapi.VMResourceYAMLExtraConfigKey,
 				Value: encodedVMYaml,
 			})
 		}
@@ -190,7 +190,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 			opts.VMCtx.Logger.V(4).Info("Skipping VM resource yaml backup as unchanged")
 		} else {
 			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
-				Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+				Key:   backupapi.VMResourceYAMLExtraConfigKey,
 				Value: vmYAML,
 			})
 		}
@@ -264,7 +264,7 @@ func getDesiredVMResourceYAMLForBackup(
 	vm *vmopv1.VirtualMachine,
 	extraConfig pkgutil.OptionValues) (string, error) {
 
-	curBackup, _ := extraConfig.GetString(vmopv1.VMResourceYAMLExtraConfigKey)
+	curBackup, _ := extraConfig.GetString(backupapi.VMResourceYAMLExtraConfigKey)
 	isUpToDate, err := isVMBackupUpToDate(vm, curBackup)
 	if err != nil || isUpToDate {
 		return "", err
@@ -333,7 +333,7 @@ func getDesiredAdditionalResourceYAMLForBackup(
 	resources []client.Object,
 	extraConfig pkgutil.OptionValues) (string, error) {
 
-	curBackup, _ := extraConfig.GetString(vmopv1.AdditionalResourcesYAMLExtraConfigKey)
+	curBackup, _ := extraConfig.GetString(backupapi.AdditionalResourcesYAMLExtraConfigKey)
 	backupVers, err := getBackupResourceVersions(curBackup)
 	if err != nil {
 		return "", err
@@ -414,21 +414,21 @@ func getDesiredDiskDataForBackup(
 	}
 
 	var (
-		pvcDiskData     []vmopbackup.PVCDiskData
-		classicDiskData []vmopbackup.ClassicDiskData
+		pvcDiskData     []backupapi.PVCDiskData
+		classicDiskData []backupapi.ClassicDiskData
 	)
 
 	for _, device := range deviceList.SelectByType((*vimtypes.VirtualDisk)(nil)) {
 		if disk, ok := device.(*vimtypes.VirtualDisk); ok {
 			if b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
 				if pvc, ok := opts.DiskUUIDToPVC[b.Uuid]; ok {
-					pvcDiskData = append(pvcDiskData, vmopbackup.PVCDiskData{
+					pvcDiskData = append(pvcDiskData, backupapi.PVCDiskData{
 						FileName:    b.FileName,
 						PVCName:     pvc.Name,
-						AccessModes: pvc.Spec.AccessModes,
+						AccessModes: backupapi.ToPersistentVolumeAccessModes(pvc.Spec.AccessModes),
 					})
 				} else if _, ok := opts.ClassicDiskUUIDs[b.Uuid]; ok {
-					classicDiskData = append(classicDiskData, vmopbackup.ClassicDiskData{
+					classicDiskData = append(classicDiskData, backupapi.ClassicDiskData{
 						FileName: b.FileName,
 					})
 				}
@@ -446,7 +446,7 @@ func getDesiredDiskDataForBackup(
 	}
 
 	// Return an empty string to skip backup if PVC disk data is unchanged.
-	curBackup, _ := extraConfig.GetString(vmopv1.PVCDiskDataExtraConfigKey)
+	curBackup, _ := extraConfig.GetString(backupapi.PVCDiskDataExtraConfigKey)
 	if pvcDiskDataBackup == curBackup {
 		pvcDiskDataBackup = ""
 	}
@@ -463,7 +463,7 @@ func getDesiredDiskDataForBackup(
 		}
 
 		// Return an empty string to skip backup if classic disk data is unchanged.
-		curBackup, _ := extraConfig.GetString(vmopv1.ClassicDiskDataExtraConfigKey)
+		curBackup, _ := extraConfig.GetString(backupapi.ClassicDiskDataExtraConfigKey)
 		if classicDiskDataBackup == curBackup {
 			classicDiskDataBackup = ""
 		}

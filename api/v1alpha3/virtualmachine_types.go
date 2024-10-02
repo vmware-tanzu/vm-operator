@@ -172,47 +172,7 @@ const (
 	VirtualMachineBackupFailedReason = "VirtualMachineBackupFailed"
 )
 
-// VirtualMachine backup/restore related constants.
 const (
-	// VMResourceYAMLExtraConfigKey is the ExtraConfig key to persist VM
-	// Kubernetes resource YAML, compressed using gzip and base64-encoded.
-	VMResourceYAMLExtraConfigKey = "vmservice.virtualmachine.resource.yaml"
-	// AdditionalResourcesYAMLExtraConfigKey is the ExtraConfig key to persist
-	// VM-relevant Kubernetes resource YAML, compressed using gzip and base64-encoded.
-	AdditionalResourcesYAMLExtraConfigKey = "vmservice.virtualmachine.additional.resources.yaml"
-	// PVCDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// PVC disk data in JSON, compressed using gzip and base64-encoded.
-	PVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
-
-	// ClassicDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// classic (static) disk data in JSON, compressed using gzip and base64-encoded.
-	ClassicDiskDataExtraConfigKey = "vmservice.virtualmachine.classicDiskData"
-
-	// BackupVersionExtraConfigKey is the ExtraConfig key that indicates
-	// the version of the VM's last backup. It is a monotonically increasing counter and
-	// is only supposed to be used by IaaS control plane and vCenter for virtual machine registration
-	// post a restore operation.
-	//
-	// The BackupVersionExtraConfigKey on the vSphere VM and the VirtualMachineBackupVersionAnnotation
-	// on the VM resource in Supervisor indicate whether the backups are in sync.
-	BackupVersionExtraConfigKey = "vmservice.virtualmachine.backupVersion"
-
-	// DisableAutoRegistrationExtraConfigKey is the ExtraConfig key that can be
-	// set to "true" (case insensitive) on a virtual machine to opt-out of the
-	// automatic registration workflow.
-	//
-	// A "registration" refers to adopting a virtual machine so it is managed by
-	// VM operator on Supervisor. Typically, this involves creating a new
-	// VirtualMachine resource, or updating an existing VirtualMachine resource on
-	// Supervisor to conform to the virtual machine on vSphere.
-	//
-	// After a restore from a backup restore vendor, or a failover from a disaster
-	// recovery solution, vCenter automatically attempts to register the restored
-	// virtual machine with Supervisor. If the automatic registration is skipped by
-	// specifying this key, backup/restore and/or disaster recovery solutions are
-	// responsible to register the VM with Supervisor.
-	DisableAutoRegistrationExtraConfigKey = "vmservice.virtualmachine.disableAutomaticRegistration"
-
 	// ForceEnableBackupAnnotation is an annotation that instructs VM operator to
 	// ignore all exclusion rules and persist the configuration of the resource in
 	// virtual machine in relevant ExtraConfig fields.

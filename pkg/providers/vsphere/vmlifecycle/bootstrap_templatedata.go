@@ -45,12 +45,13 @@ func GetTemplateRenderFunc(
 		Nameservers: bsArgs.DNSServers,
 	}
 
-	// Oh dear. The VM itself really should not have been included here.
+	// Use separate deep copies of the VM to prevent issues caused by down-converting to v1a1 and v1a2.
+	// This prevents changing actual VM on next reconcile.
 	v1a1VM := &v1alpha1.VirtualMachine{}
-	_ = v1a1VM.ConvertFrom(vmCtx.VM)
+	_ = v1a1VM.ConvertFrom(vmCtx.VM.DeepCopy())
 
 	v1a2VM := &v1alpha2.VirtualMachine{}
-	_ = v1a2VM.ConvertFrom(vmCtx.VM)
+	_ = v1a2VM.ConvertFrom(vmCtx.VM.DeepCopy())
 
 	templateData := struct {
 		V1alpha1 v1alpha1.VirtualMachineTemplate

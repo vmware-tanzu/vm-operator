@@ -6,6 +6,7 @@ package vsphere
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -145,7 +146,7 @@ func GetVirtualMachineImageSpecAndStatus(
 		return nil,
 			vmopv1.VirtualMachineImageSpec{},
 			vmopv1.VirtualMachineImageStatus{},
-			fmt.Errorf(reason)
+			errors.New(reason)
 	}
 
 	var (
@@ -251,7 +252,7 @@ func GetVirtualMachineImageSpecAndStatus(
 		return nil,
 			vmopv1.VirtualMachineImageSpec{},
 			vmopv1.VirtualMachineImageStatus{},
-			fmt.Errorf(vmiNotReadyMessage)
+			errors.New(vmiNotReadyMessage)
 	}
 
 	return obj, spec, status, nil

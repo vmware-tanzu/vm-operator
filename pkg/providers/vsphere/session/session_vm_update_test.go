@@ -1399,13 +1399,13 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 			})
 
-			When("the boot disk size is changed", func() {
-				const (
-					oldDiskSizeBytes = int64(10 * 1024 * 1024 * 1024)
-					newDiskSizeGi    = 20
-					newDiskSizeBytes = int64(newDiskSizeGi * 1024 * 1024 * 1024)
-				)
+			const (
+				oldDiskSizeBytes = int64(10 * 1024 * 1024 * 1024)
+				newDiskSizeGi    = 20
+				newDiskSizeBytes = int64(newDiskSizeGi * 1024 * 1024 * 1024)
+			)
 
+			When("the boot disk size is changed for non-ISO VMs", func() {
 				JustBeforeEach(func() {
 					vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
 					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
@@ -1418,8 +1418,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
 						BootDiskCapacity: &q,
 					}
+					vm.Spec.Cdrom = nil
 				})
-				It("should power on the VM", func() {
+				It("should power on the VM with the boot disk resized", func() {
 					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
 					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
@@ -1429,6 +1430,44 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
 					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
 					Expect(diskCapacityBytes).To(Equal(newDiskSizeBytes))
+					assertUpdate()
+				})
+			})
+
+			When("the boot disk size is changed for ISO VMs", func() {
+				JustBeforeEach(func() {
+					vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+					Expect(disks).To(HaveLen(1))
+					Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+					Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+
+					q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						BootDiskCapacity: &q,
+					}
+					vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: "cdrom",
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: "fake-iso-image",
+							},
+						},
+					}
+				})
+
+				It("should power on the VM without the boot disk resized", func() {
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+					vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+					Expect(disks).To(HaveLen(1))
+					Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+					Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+					// VM is powered on.
 					assertUpdate()
 				})
 			})

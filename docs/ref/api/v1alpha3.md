@@ -479,7 +479,10 @@ Please note it is not advised to change this value while the VM is
 running. Also, resizing the VM's boot disk may require actions inside of
 the guest to take advantage of the additional capacity. Finally, changing
 the size of the VM's boot disk, even increasing it, could adversely
-affect the VM. |
+affect the VM.
+
+Please note this field is ignored if the VM is deployed from an ISO with
+CD-ROM devices attached. |
 | `defaultVolumeProvisioningMode` _[VirtualMachineVolumeProvisioningMode](#virtualmachinevolumeprovisioningmode)_ | DefaultVolumeProvisioningMode specifies the default provisioning mode for
 persistent volumes managed by this VM. |
 | `changeBlockTracking` _boolean_ | ChangeBlockTracking is a flag that enables incremental backup support
@@ -778,6 +781,11 @@ VirtualMachine.
 The contents of this field are the VirtualMachineConfigSpec data object
 (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator
 field "_typeName" to preserve type information. |
+| `reservedProfileID` _string_ | ReservedProfileID describes the reservation profile associated with
+the namespace-scoped VirtualMachineClass object. |
+| `reservedSlots` _integer_ | ReservedSlots describes the number of slots reserved for VMs that use
+this VirtualMachineClass.
+This field is only valid in conjunction with reservedProfileID. |
 
 ### VirtualMachineClassStatus
 
@@ -787,6 +795,105 @@ VirtualMachineClassStatus defines the observed state of VirtualMachineClass.
 
 _Appears in:_
 - [VirtualMachineClass](#virtualmachineclass)
+
+
+### VirtualMachineCryptoSpec
+
+
+
+VirtualMachineCryptoSpec defines the desired state of a VirtualMachine's
+encryption state.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `encryptionClassName` _string_ | EncryptionClassName describes the name of the EncryptionClass resource
+used to encrypt this VM.
+
+Please note, this field is not required to encrypt the VM. If the
+underlying platform has a default key provider, the VM may still be fully
+or partially encrypted depending on the specified storage and VM classes.
+
+If there is a default key provider and an encryption storage class is
+selected, the files in the VM's home directory and non-PVC virtual disks
+will be encrypted
+
+If there is a default key provider and a VM Class with a virtual, trusted
+platform module (vTPM) is selected, the files in the VM's home directory,
+minus any virtual disks, will be encrypted.
+
+If the underlying vSphere platform does not have a default key provider,
+then this field is required when specifying an encryption storage class
+and/or a VM Class with a vTPM. |
+| `useDefaultKeyProvider` _boolean_ | UseDefaultKeyProvider describes the desired behavior for when an explicit
+EncryptionClass is not provided.
+
+When an explicit EncryptionClass is not provided and this value is true:
+
+- Deploying a VirtualMachine with an encryption storage policy or vTPM
+  will be encrypted using the default key provider.
+
+- If a VirtualMachine is not encrypted, uses an encryption storage
+  policy or has a virtual, trusted platform module (vTPM), there is a
+  default key provider, the VM will be encrypted using the default key
+  provider.
+
+- If a VirtualMachine is encrypted with a provider other than the default
+  key provider, the VM will be rekeyed using the default key provider.
+
+When an explicit EncryptionClass is not provided and this value is false:
+
+- Deploying a VirtualMachine with an encryption storage policy or vTPM
+  will fail.
+
+- If a VirtualMachine is encrypted with a provider other than the default
+  key provider, the VM will be not be rekeyed.
+
+  Please note, this could result in a VirtualMachine that cannot be
+  powered on since it is encrypted using a provider or key that may have
+  been removed. Without the key, the VM cannot be decrypted and thus
+  cannot be powered on.
+
+Defaults to true if omitted. |
+
+### VirtualMachineCryptoStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineStatus](#virtualmachinestatus)
+
+| Field | Description |
+| --- | --- |
+| `encrypted` _[VirtualMachineEncryptionType](#virtualmachineencryptiontype) array_ | Encrypted describes the observed state of the VirtualMachine's
+encryption. There may be two values in this list:
+
+- Config -- This refers to all of the files related to a VM except any
+            virtual disks.
+- Disk   -- This refers to all of the VM's virtual disks that are *not*
+            PVCs.
+
+To determine whether or not a PVC is encrypted, please refer to the PVC
+resource. |
+| `providerID` _string_ | ProviderID describes the provider ID used to encrypt the VirtualMachine.
+Please note, this field will be empty if the VirtualMachine is not
+encrypted. |
+| `keyID` _string_ | KeyID describes the key ID used to encrypt the VirtualMachine.
+Please note, this field will be empty if the VirtualMachine is not
+encrypted. |
+
+### VirtualMachineEncryptionType
+
+_Underlying type:_ `string`
+
+
+
+_Appears in:_
+- [VirtualMachineCryptoStatus](#virtualmachinecryptostatus)
 
 
 
@@ -2039,6 +2146,7 @@ Please note, this field *may* be empty if the VM was imported instead of
 deployed by VM Operator. An imported VirtualMachine resource references
 an existing VM on the underlying platform that was not deployed from a
 VM class. |
+| `crypto` _[VirtualMachineCryptoSpec](#virtualmachinecryptospec)_ | Crypto describes the desired encryption state of the VirtualMachine. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
 used to configure this VM's storage-related attributes.
 
@@ -2200,6 +2308,8 @@ this VM. |
 where the VM is executed. |
 | `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the observed power state of the VirtualMachine. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions of the VirtualMachine. |
+| `crypto` _[VirtualMachineCryptoStatus](#virtualmachinecryptostatus)_ | Crypto describes the observed state of the VirtualMachine's encryption
+configuration. |
 | `network` _[VirtualMachineNetworkStatus](#virtualmachinenetworkstatus)_ | Network describes the observed state of the VM's network configuration.
 Please note much of the network status information is only available if
 the guest has VM Tools installed. |
@@ -2322,10 +2432,7 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name is the name of the attached volume. |
 | `type` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | Type is the type of the attached volume. |
-| `limit` _[Quantity](#quantity)_ | Limit describes the storage limit for the volume.
-Please note, this is only available for Classic volumes. For Managed
-volumes, please refer to the PersistentVolumeClaim resource for the
-requested capacity. |
+| `limit` _[Quantity](#quantity)_ | Limit describes the storage limit for the volume. |
 | `used` _[Quantity](#quantity)_ | Used describes the observed, non-shared size of the volume on disk.
 For example, if this is a linked-clone's boot volume, this value
 represents the space consumed by the linked clone, not the parent. |

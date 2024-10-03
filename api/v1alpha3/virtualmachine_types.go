@@ -708,6 +708,9 @@ type VirtualMachineAdvancedSpec struct {
 	// the guest to take advantage of the additional capacity. Finally, changing
 	// the size of the VM's boot disk, even increasing it, could adversely
 	// affect the VM.
+	//
+	// Please note this field is ignored if the VM is deployed from an ISO with
+	// CD-ROM devices attached.
 	BootDiskCapacity *resource.Quantity `json:"bootDiskCapacity,omitempty"`
 
 	// +optional

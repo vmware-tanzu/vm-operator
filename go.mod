@@ -28,8 +28,8 @@ require (
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20240902045731-00a14868c72d
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/appplatform v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000

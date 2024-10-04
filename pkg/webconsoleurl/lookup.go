@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vmware-tanzu/vm-operator/external/appplatform/api/vmw_v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/vmware-tanzu/vm-operator/external/appplatform/api/vmw_v1alpha1"
 )
 
 const (

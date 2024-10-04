@@ -223,27 +223,29 @@ func (r *Reconciler) ReconcileOwnerReferences(ctx *pkgctx.WebConsoleRequestConte
 	return nil
 }
 
-// Retrieve the Proxy Address. First, attempt to get it through the API Server DNS Names.
+// ProxyAddress first attempts to get the proxy address through the API Server DNS Names.
 // If that is unset, though, fall back to using the virtual IP.
 func (r *Reconciler) ProxyAddress(ctx *pkgctx.WebConsoleRequestContext) (string, error) {
 	if !pkgcfg.FromContext(ctx).Features.SimplifiedEnablement {
 		return r.ProxyAddressFromVirtualIP(ctx)
 	}
 
+	// Attempt to use the API Server DNS Names to get the proxy address.
 	proxyAddress, err := webconsoleurl.ProxyServiceDNSName(ctx, r)
 
 	if err != nil {
 		return "", fmt.Errorf("failed to get proxy service URL: %w", err)
 	}
 
-	if proxyAddress == "" {
+	// If no API Server DNS Name exists, fall back to using the virtual IP.
+	if len(proxyAddress) == 0 {
 		return r.ProxyAddressFromVirtualIP(ctx)
 	}
 
 	return proxyAddress, nil
 }
 
-// Retrieve the virtual IP, which will be used as the Proxy Address.
+// ProxyAddressFromVirtualIP retrieves the virtual IP, which will be used as the Proxy Address.
 func (r *Reconciler) ProxyAddressFromVirtualIP(ctx *pkgctx.WebConsoleRequestContext) (string, error) {
 	proxySvc := &corev1.Service{}
 	proxySvcObjectKey := client.ObjectKey{Name: ProxyAddrServiceName, Namespace: ProxyAddrServiceNamespace}

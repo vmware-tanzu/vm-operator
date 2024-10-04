@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,14 +25,12 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	proxyaddr "github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
 )
 
 const (
 	DefaultExpiryTime = time.Second * 120
 	UUIDLabelKey      = "vmoperator.vmware.com/webconsolerequest-uuid"
-
-	ProxyAddrServiceName      = "kube-apiserver-lb-svc"
-	ProxyAddrServiceNamespace = "kube-system"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -187,18 +184,11 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.WebConsoleRequestContext) error
 	ctx.WebConsoleRequest.Status.Response = ticket
 	ctx.WebConsoleRequest.Status.ExpiryTime = metav1.NewTime(metav1.Now().Add(DefaultExpiryTime))
 
-	// Retrieve the proxy address from the load balancer service ingress IP.
-	proxySvc := &corev1.Service{}
-	proxySvcObjectKey := client.ObjectKey{Name: ProxyAddrServiceName, Namespace: ProxyAddrServiceNamespace}
-	err = r.Get(ctx, proxySvcObjectKey, proxySvc)
+	proxyAddr, err := proxyaddr.ProxyAddress(ctx, r)
 	if err != nil {
-		return fmt.Errorf("failed to get proxy address service  %s: %w", proxySvcObjectKey, err)
+		return err
 	}
-	if len(proxySvc.Status.LoadBalancer.Ingress) == 0 {
-		return fmt.Errorf("no ingress found for proxy address service %s", proxySvcObjectKey)
-	}
-
-	ctx.WebConsoleRequest.Status.ProxyAddr = proxySvc.Status.LoadBalancer.Ingress[0].IP
+	ctx.WebConsoleRequest.Status.ProxyAddr = proxyAddr
 
 	// Add UUID as a Label to the current WebConsoleRequest resource after acquiring the ticket.
 	// This will be used when validating the connection request from users to the web console URL.

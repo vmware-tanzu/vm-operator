@@ -59,7 +59,7 @@ type VMCreateArgs struct {
 	ImageSpec      vmopv1.VirtualMachineImageSpec
 	ImageStatus    vmopv1.VirtualMachineImageStatus
 
-	StorageClassesToIDs   map[string]string
+	Storage               storage.VMStorageData
 	HasInstanceStorage    bool
 	ChildResourcePoolName string
 	ChildFolderName       string
@@ -587,9 +587,19 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
 		createArgs.ConfigSpec,
-		createArgs.StorageClassesToIDs)
+		createArgs.Storage.StorageClassToPolicyID)
 	if err != nil {
 		return err
+	}
+
+	pvcZones, err := kubeutil.GetPVCZoneConstraints(createArgs.Storage.PVCs)
+	if err != nil {
+		return err
+	}
+
+	constraints := placement.Constraints{
+		ChildRPName: createArgs.ChildResourcePoolName,
+		Zones:       pvcZones,
 	}
 
 	result, err := placement.Placement(
@@ -597,7 +607,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		vs.k8sClient,
 		vcClient.VimClient(),
 		placementConfigSpec,
-		createArgs.ChildResourcePoolName)
+		constraints)
 	if err != nil {
 		return err
 	}
@@ -992,15 +1002,14 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		createArgs.DatastoreMoID = datastore.Reference().Value
 	}
 
-	storageClassesToIDs, err := storage.GetVMStoragePoliciesIDs(vmCtx, vs.k8sClient)
+	vmStorage, err := storage.GetVMStorageData(vmCtx, vs.k8sClient)
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
 		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, msg)
 		return err
 	}
 
-	vmStorageProfileID := storageClassesToIDs[vmStorageClass]
-
+	vmStorageProfileID := vmStorage.StorageClassToPolicyID[vmStorageClass]
 	provisioningType, err := virtualmachine.GetDefaultDiskProvisioningType(vmCtx, vcClient, vmStorageProfileID)
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
@@ -1008,7 +1017,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		return err
 	}
 
-	createArgs.StorageClassesToIDs = storageClassesToIDs
+	createArgs.Storage = vmStorage
 	createArgs.StorageProvisioning = provisioningType
 	createArgs.StorageProfileID = vmStorageProfileID
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady)

@@ -5,14 +5,16 @@ package kube_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"sync"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -57,6 +59,111 @@ var _ = DescribeTable("GetStoragePolicyID",
 		"",
 		fakeString,
 		`StorageClass "my-storage-class" does not have 'storagePolicyID' parameter`),
+)
+
+var _ = Describe("GetPVCZoneConstraints", func() {
+	It("Unmarshal JSON", func() {
+		pvcs := make([]corev1.PersistentVolumeClaim, 1)
+		pvcs[0] = corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "pvc",
+				Annotations: map[string]string{
+					"csi.vsphere.volume-requested-topology": `[{"topology.kubernetes.io/zone":"zone1"},{"topology.kubernetes.io/zone":"zone2"},{"topology.kubernetes.io/zone":"zone3"}]`,
+				},
+			},
+		}
+		zones, err := kubeutil.GetPVCZoneConstraints(pvcs)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(zones.UnsortedList()).To(ConsistOf("zone1", "zone2", "zone3"))
+	})
+})
+
+var _ = DescribeTable("GetPVCZoneConstraints Table",
+	func(pvcsZones [][]string, expZones []string, expErr string) {
+		var pvcs []corev1.PersistentVolumeClaim
+		for i, zones := range pvcsZones {
+			var annotations map[string]string
+
+			if len(zones) > 0 {
+				var topology []map[string]string
+				for _, z := range zones {
+					topology = append(topology, map[string]string{"topology.kubernetes.io/zone": z})
+				}
+
+				requestedZones, err := json.Marshal(topology)
+				Expect(err).NotTo(HaveOccurred())
+				annotations = map[string]string{
+					"csi.vsphere.volume-requested-topology": string(requestedZones),
+				}
+			}
+
+			pvc := corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        fmt.Sprintf("pvc-%d", i),
+					Annotations: annotations,
+				},
+			}
+			pvcs = append(pvcs, pvc)
+		}
+
+		zones, err := kubeutil.GetPVCZoneConstraints(pvcs)
+		if expErr != "" {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(expErr))
+			Expect(zones).To(BeEmpty())
+		} else {
+			Expect(zones.UnsortedList()).To(ConsistOf(expZones))
+		}
+	},
+	Entry(
+		"One PVC with no zones",
+		[][]string{
+			{},
+		},
+		[]string{},
+		""),
+	Entry(
+		"One PVC with one zone",
+		[][]string{
+			{"zone1"},
+		},
+		[]string{"zone1"},
+		""),
+	Entry(
+		"One PVC with one zone and PVC without zone",
+		[][]string{
+			{},
+			{"zone1"},
+		},
+		[]string{"zone1"},
+		""),
+	Entry(
+		"Multiple PVCs with one common zone",
+		[][]string{
+			{"zone1", "zoneX"},
+			{"zone1", "zoneY"},
+			{"zone1", "zoneZ"},
+		},
+		[]string{"zone1"},
+		""),
+	Entry(
+		"Multiple PVCs with multiple common zones",
+		[][]string{
+			{"zone1", "zoneX", "zone2"},
+			{"zone1", "zoneY", "zone2"},
+			{"zone1", "zoneZ", "zone2"},
+		},
+		[]string{"zone1", "zone2"},
+		""),
+	Entry(
+		"Multiple PVCs with no common zones",
+		[][]string{
+			{"zoneX"},
+			{"zoneY", "zone1"},
+			{"zoneZ", "zone1"},
+		},
+		nil,
+		"no common zones remaining"),
 )
 
 var _ = Describe("IsEncryptedStorageClass", func() {

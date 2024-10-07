@@ -33,7 +33,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	vsphere "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
@@ -1022,6 +1022,9 @@ func vmTests() {
 
 				Context("VM Class has vGPU and/or DDPIO devices and VM spec has a PVC", func() {
 					BeforeEach(func() {
+						// Need to create the PVC before creating the VM.
+						skipCreateOrUpdateVM = true
+
 						// Create the ConfigSpec with a GPU and a DDPIO device.
 						configSpec = &vimtypes.VirtualMachineConfigSpec{
 							Name: "dummy-VM",
@@ -1077,6 +1080,20 @@ func vmTests() {
 					})
 
 					It("creates a VM with a hardware version minimum supported for PCI devices", func() {
+						pvc1 := &corev1.PersistentVolumeClaim{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "pvc-claim-1",
+								Namespace: vm.Namespace,
+							},
+							Spec: corev1.PersistentVolumeClaimSpec{
+								StorageClassName: ptr.To(ctx.StorageClassName),
+							},
+						}
+						Expect(ctx.Client.Create(ctx, pvc1)).To(Succeed())
+
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", pkgconst.MinSupportedHWVersionForPCIPassthruDevices)))
@@ -1085,6 +1102,9 @@ func vmTests() {
 
 				Context("VM spec has a PVC", func() {
 					BeforeEach(func() {
+						// Need to create the PVC before creating the VM.
+						skipCreateOrUpdateVM = true
+
 						vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 							{
 								Name: "dummy-vol",
@@ -1107,6 +1127,20 @@ func vmTests() {
 					})
 
 					It("creates a VM with a hardware version minimum supported for PVCs", func() {
+						pvc1 := &corev1.PersistentVolumeClaim{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "pvc-claim-1",
+								Namespace: vm.Namespace,
+							},
+							Spec: corev1.PersistentVolumeClaimSpec{
+								StorageClassName: ptr.To(ctx.StorageClassName),
+							},
+						}
+						Expect(ctx.Client.Create(ctx, pvc1)).To(Succeed())
+
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", pkgconst.MinSupportedHWVersionForPVC)))

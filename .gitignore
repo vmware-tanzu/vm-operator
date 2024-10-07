@@ -12,6 +12,7 @@ ginkgo.report
 
 .DS_Store
 .cache
+ginkgo.report
 
 # Mkdocs
 /.site/

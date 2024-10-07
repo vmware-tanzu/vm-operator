@@ -112,8 +112,8 @@ func GetNamespaceCacheConfigs(namespaces ...string) map[string]ctrlcache.Config 
 	}
 	nsc := make(map[string]ctrlcache.Config, len(namespaces))
 	for i := range namespaces {
-		if v := namespaces[i]; v != "" {
-			nsc[v] = ctrlcache.Config{}
+		if namespaces[i] != "" {
+			nsc[namespaces[i]] = ctrlcache.Config{}
 		}
 	}
 	return nsc

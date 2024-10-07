@@ -41,6 +41,8 @@ func cdromTests() {
 		cvmiKind          = "ClusterVirtualMachineImage"
 		cdromName1        = "cdrom1"
 		cdromName2        = "cdrom2"
+		cdromDeviceKey1   = 3000
+		cdromDeviceKey2   = 3001
 		ideControllerKey  = 200
 		sataControllerKey = 15000
 		pciControllerKey  = 100
@@ -316,19 +318,19 @@ func cdromTests() {
 						&vimtypes.VirtualCdrom{
 							// Set all the expected fields to avoid this CD-ROM being updated.
 							VirtualDevice: vimtypes.VirtualDevice{
-								Key: 3000,
+								Key: cdromDeviceKey1,
 								Backing: &vimtypes.VirtualCdromIsoBackingInfo{
 									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 										FileName: vmiFileName,
 									},
 								},
-								ControllerKey: 200,
+								ControllerKey: ideControllerKey,
 							},
 						},
 						&vimtypes.VirtualCdrom{
 							// CD-ROM to be removed.
 							VirtualDevice: vimtypes.VirtualDevice{
-								Key: 3001,
+								Key: cdromDeviceKey2,
 							},
 						},
 					}
@@ -336,10 +338,12 @@ func cdromTests() {
 
 				It("should remove the specified CD-ROM device from VM", func() {
 					Expect(result).To(HaveLen(1))
-					Expect(result[0].GetVirtualDeviceConfigSpec().Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
-					cdrom, ok := result[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualCdrom)
+					devSpec := result[0].GetVirtualDeviceConfigSpec()
+					Expect(devSpec).ToNot(BeNil())
+					Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
+					cdrom, ok := devSpec.Device.(*vimtypes.VirtualCdrom)
 					Expect(ok).To(BeTrue())
-					Expect(cdrom.Key).To(Equal(int32(3001)))
+					Expect(cdrom.Key).To(Equal(int32(cdromDeviceKey2)))
 				})
 			})
 
@@ -362,7 +366,7 @@ func cdromTests() {
 						&vimtypes.VirtualCdrom{
 							// CD-ROM to be updated (currently connected and allowed guest control).
 							VirtualDevice: vimtypes.VirtualDevice{
-								Key: 3000,
+								Key: cdromDeviceKey1,
 								Backing: &vimtypes.VirtualCdromIsoBackingInfo{
 									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 										FileName: vmiFileName,
@@ -373,7 +377,7 @@ func cdromTests() {
 									StartConnected:    true,
 									Connected:         true,
 								},
-								ControllerKey: 200,
+								ControllerKey: ideControllerKey,
 								UnitNumber:    new(int32),
 							},
 						},
@@ -382,7 +386,69 @@ func cdromTests() {
 
 				It("should update the existing CD-ROM device as expected", func() {
 					Expect(result).To(HaveLen(1))
-					verifyCdromDeviceConfigSpec(result[0], vimtypes.VirtualDeviceConfigSpecOperationEdit, false, false, 200, 0, vmiFileName)
+					verifyCdromDeviceConfigSpec(result[0], vimtypes.VirtualDeviceConfigSpecOperationEdit, false, false, ideControllerKey, 0, vmiFileName)
+				})
+			})
+
+			When("VM.spec.Cdrom replaces an existing CD-ROM device", func() {
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							// CD-ROM to be added with a new backing image.
+							Name: cdromName2,
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: cvmiName,
+								Kind: cvmiKind,
+							},
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
+						},
+					}
+					curDevices = object.VirtualDeviceList{
+						&vimtypes.VirtualCdrom{
+							// CD-ROM to be replaced.
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: cdromDeviceKey1,
+								Backing: &vimtypes.VirtualCdromIsoBackingInfo{
+									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+										FileName: vmiFileName,
+									},
+								},
+								Connectable: &vimtypes.VirtualDeviceConnectInfo{
+									AllowGuestControl: true,
+									StartConnected:    true,
+									Connected:         true,
+								},
+								ControllerKey: ideControllerKey,
+								UnitNumber:    new(int32),
+							},
+						},
+						// Controller assigned to the current CD-ROM.
+						&vimtypes.VirtualIDEController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: ideControllerKey,
+								},
+								Device: []int32{
+									cdromDeviceKey1,
+								},
+							},
+						},
+					}
+				})
+
+				It("should remove the existing CD-ROM and add a new CD-ROM with the correct controller assigned", func() {
+					Expect(result).To(HaveLen(2))
+					// First result should add the new CD-ROM device with its unit number being 0 on the controller.
+					verifyCdromDeviceConfigSpec(result[0], vimtypes.VirtualDeviceConfigSpecOperationAdd, true, true, ideControllerKey, 0, cvmiFileName)
+					// Second result should being removing the old CD-ROM device.
+					devSpec := result[1].GetVirtualDeviceConfigSpec()
+					Expect(devSpec).ToNot(BeNil())
+					Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
+					removed, ok := devSpec.Device.(*vimtypes.VirtualCdrom)
+					Expect(ok).To(BeTrue())
+					Expect(removed.Key).To(Equal(int32(cdromDeviceKey1)))
 				})
 			})
 		})
@@ -711,7 +777,7 @@ func cdromTests() {
 					curDevices = object.VirtualDeviceList{
 						&vimtypes.VirtualCdrom{
 							VirtualDevice: vimtypes.VirtualDevice{
-								Key: 3000,
+								Key: cdromDeviceKey1,
 								Backing: &vimtypes.VirtualCdromIsoBackingInfo{
 									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 										FileName: vmiFileName,
@@ -721,7 +787,7 @@ func cdromTests() {
 						},
 						&vimtypes.VirtualCdrom{
 							VirtualDevice: vimtypes.VirtualDevice{
-								Key: 3001,
+								Key: cdromDeviceKey2,
 								Backing: &vimtypes.VirtualCdromIsoBackingInfo{
 									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 										FileName: vmiFileName,
@@ -792,7 +858,7 @@ func cdromTests() {
 							Device: []vimtypes.BaseVirtualDevice{
 								&vimtypes.VirtualCdrom{
 									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 3000,
+										Key: cdromDeviceKey1,
 										Backing: &vimtypes.VirtualCdromIsoBackingInfo{
 											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 												FileName: vmiFileName,
@@ -837,7 +903,7 @@ func cdromTests() {
 							Device: []vimtypes.BaseVirtualDevice{
 								&vimtypes.VirtualCdrom{
 									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 3000,
+										Key: cdromDeviceKey1,
 										Backing: &vimtypes.VirtualCdromIsoBackingInfo{
 											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 												FileName: vmiFileName,
@@ -921,7 +987,7 @@ func cdromTests() {
 							Device: []vimtypes.BaseVirtualDevice{
 								&vimtypes.VirtualCdrom{
 									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 3000,
+										Key: cdromDeviceKey1,
 										Backing: &vimtypes.VirtualCdromIsoBackingInfo{
 											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 												FileName: vmiFileName,
@@ -931,7 +997,7 @@ func cdromTests() {
 								},
 								&vimtypes.VirtualCdrom{
 									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 3001,
+										Key: cdromDeviceKey2,
 										Backing: &vimtypes.VirtualCdromIsoBackingInfo{
 											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 												FileName: vmiFileName,

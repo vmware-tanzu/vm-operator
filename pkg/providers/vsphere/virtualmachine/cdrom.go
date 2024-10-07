@@ -16,7 +16,6 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -71,9 +70,33 @@ func UpdateCdromDeviceChanges(
 		expectedBackingFileNameToCdrom[bFileName] = cdrom
 	}
 
-	// Ensure all CD-ROM devices are assigned to controllers with proper keys.
+	// Remove any existing CD-ROM devices that do not have the expected backing.
+	// Add them to the device changes with "Remove" operation.
+	// Also, update the current device list by excluding the removed CD-ROMs to
+	// assign the new CD-ROMs to the correct controller unit numbers later.
+	newCurDevices := object.VirtualDeviceList{}
+	for _, d := range curDevices {
+		cdrom, ok := d.(*vimtypes.VirtualCdrom)
+		if !ok {
+			newCurDevices = append(newCurDevices, d)
+			continue
+		}
+
+		if b, ok := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo); ok &&
+			expectedBackingFileNameToCdrom[b.FileName] != nil {
+			newCurDevices = append(newCurDevices, cdrom)
+			continue
+		}
+
+		deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+			Device:    cdrom,
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+		})
+	}
+
+	// Ensure all CD-ROM devices are assigned to controllers with proper slots.
 	// This may result new controllers to be added if none is available.
-	newControllers := ensureAllCdromsHaveControllers(expectedBackingFileNameToCdrom, curDevices)
+	newControllers := ensureAllCdromsHaveControllers(expectedBackingFileNameToCdrom, newCurDevices)
 	deviceChanges = append(deviceChanges, newControllers...)
 
 	// Check and update existing CD-ROM devices' connection state if needed.
@@ -83,22 +106,6 @@ func UpdateCdromDeviceChanges(
 		expectedBackingFileNameToCdrom,
 	)
 	deviceChanges = append(deviceChanges, curCdromChanges...)
-
-	// Remove any existing CD-ROM devices that are not in the expected list.
-	// Add them to the device changes with "Remove" operation.
-	curCdroms := util.SelectDevicesByType[*vimtypes.VirtualCdrom](curDevices)
-	for _, cdrom := range curCdroms {
-		if b, ok := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo); ok {
-			if _, ok := expectedBackingFileNameToCdrom[b.FileName]; ok {
-				continue
-			}
-		}
-
-		deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-			Device:    cdrom,
-			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
-		})
-	}
 
 	return deviceChanges, nil
 }

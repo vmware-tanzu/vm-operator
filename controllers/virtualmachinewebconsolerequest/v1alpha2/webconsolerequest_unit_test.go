@@ -152,65 +152,54 @@ func unitTestsReconcile() {
 				)
 			})
 
-			When("API Server DNS Name is set", func() {
-				JustBeforeEach(func() {
-					proxySvcDNS = &vmw_v1alpha1.SupervisorProperties{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      webconsoleurl.SupervisorServiceObjName,
-							Namespace: webconsoleurl.SupervisorServiceObjNamespace,
-						},
-						Spec: vmw_v1alpha1.SupervisorPropertiesSpec{
-							APIServerDNSNames: []string{"domain-1.test"},
-						},
-					}
-					initObjects = append(initObjects, proxySvcDNS)
-					ctx = suite.NewUnitTestContextForController(initObjects...)
-					reconciler = webconsolerequest.NewReconciler(
-						ctx,
-						ctx.Client,
-						ctx.Logger,
-						ctx.Recorder,
-						ctx.VMProvider,
-					)
-				})
+			scenarios := []struct {
+				name             string
+				apiServerDNSName []string
+				expectedProxy    string
+			}{
+				{
+					name:             "API Server DNS Name is set",
+					apiServerDNSName: []string{"domain-1.test"},
+					expectedProxy:    "domain-1.test",
+				},
+				{
+					name:             "API Server DNS Name is not set",
+					apiServerDNSName: []string{},
+					expectedProxy:    "dummy-proxy-ip",
+				},
+			}
 
-				It("returns success and sets ProxyAddr to API Server DNS Name", func() {
-					err := reconciler.ReconcileNormal(wcrCtx)
-					Expect(err).ToNot(HaveOccurred())
+			for _, scenario := range scenarios {
+				When(scenario.name, func() {
+					JustBeforeEach(func() {
+						proxySvcDNS = &vmw_v1alpha1.SupervisorProperties{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      webconsoleurl.SupervisorServiceObjName,
+								Namespace: webconsoleurl.SupervisorServiceObjNamespace,
+							},
+							Spec: vmw_v1alpha1.SupervisorPropertiesSpec{
+								APIServerDNSNames: scenario.apiServerDNSName,
+							},
+						}
+						initObjects = append(initObjects, proxySvcDNS)
+						ctx = suite.NewUnitTestContextForController(initObjects...)
+						reconciler = webconsolerequest.NewReconciler(
+							ctx,
+							ctx.Client,
+							ctx.Logger,
+							ctx.Recorder,
+							ctx.VMProvider,
+						)
+					})
 
-					Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("domain-1.test"))
-				})
-			})
+					It("returns success and sets ProxyAddr", func() {
+						err := reconciler.ReconcileNormal(wcrCtx)
+						Expect(err).ToNot(HaveOccurred())
 
-			When("API Server DNS Name is not set", func() {
-				JustBeforeEach(func() {
-					proxySvcDNS = &vmw_v1alpha1.SupervisorProperties{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      webconsoleurl.SupervisorServiceObjName,
-							Namespace: webconsoleurl.SupervisorServiceObjNamespace,
-						},
-						Spec: vmw_v1alpha1.SupervisorPropertiesSpec{
-							APIServerDNSNames: []string{},
-						},
-					}
-					initObjects = append(initObjects, proxySvcDNS)
-					ctx = suite.NewUnitTestContextForController(initObjects...)
-					reconciler = webconsolerequest.NewReconciler(
-						ctx,
-						ctx.Client,
-						ctx.Logger,
-						ctx.Recorder,
-						ctx.VMProvider,
-					)
+						Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal(scenario.expectedProxy))
+					})
 				})
-				It("returns success and sets ProxyAddr to virtual IP", func() {
-					err := reconciler.ReconcileNormal(wcrCtx)
-					Expect(err).ToNot(HaveOccurred())
-
-					Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("dummy-proxy-ip"))
-				})
-			})
+			}
 		})
-
 	})
 }

@@ -10,15 +10,15 @@ import (
 )
 
 const (
-	supervisorServiceObjName      = "supervisor-env-props"
-	supervisorServiceObjNamespace = "vmware-system-supervisor-services"
+	SupervisorServiceObjName      = "supervisor-env-props"
+	SupervisorServiceObjNamespace = "vmware-system-supervisor-services"
 )
 
 // ProxyServiceDNSName retrieves the first API server DNS name using the provided client by
 // querying the appplatform CRD, if one exists.
 func ProxyServiceDNSName(ctx context.Context, r client.Client) (string, error) {
 	proxySvc := &vmw_v1alpha1.SupervisorProperties{}
-	proxySvcObjectKey := client.ObjectKey{Name: supervisorServiceObjName, Namespace: supervisorServiceObjNamespace}
+	proxySvcObjectKey := client.ObjectKey{Name: SupervisorServiceObjName, Namespace: SupervisorServiceObjNamespace}
 
 	err := r.Get(ctx, proxySvcObjectKey, proxySvc)
 

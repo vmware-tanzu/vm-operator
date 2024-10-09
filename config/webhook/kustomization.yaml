@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
 - service.yaml
 - manifests.yaml
+- storage_quota_webhook_configuration.yaml
 
 patchesStrategicMerge:
 - manifests_label_patch.yaml

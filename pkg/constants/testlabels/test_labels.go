@@ -31,6 +31,9 @@ const (
 	// NSXT describes a test related to NSXT.
 	NSXT = "nsxt"
 
+	// Service describes a test related to a service (non-Controller runnable).
+	Service = "service"
+
 	// Update describes a test related to update logic.
 	Update = "update"
 

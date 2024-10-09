@@ -33,6 +33,8 @@ import (
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
+	"github.com/vmware-tanzu/vm-operator/services"
 	"github.com/vmware-tanzu/vm-operator/webhooks"
 	// +kubebuilder:scaffold:imports
 )
@@ -188,12 +190,20 @@ func main() {
 	setupLog.Info("wait for webhook certificates")
 	waitForWebhookCertificates(setupLog, managerOpts)
 
-	// Create a function that adds all of the controllers and webhooks to the manager.
-	addToManager := func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+	// Create a function that adds all of the controllers, services, and
+	// webhooks to the manager.
+	addToManager := func(
+		ctx *pkgctx.ControllerManagerContext,
+		mgr ctrlmgr.Manager) error {
+
 		if err := controllers.AddToManager(ctx, mgr); err != nil {
 			return err
 		}
-
+		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+			if err := services.AddToManager(ctx, mgr); err != nil {
+				return err
+			}
+		}
 		return webhooks.AddToManager(ctx, mgr)
 	}
 
@@ -202,9 +212,9 @@ func main() {
 	managerOpts.AddToManager = addToManager
 
 	ctx := pkgcfg.WithConfig(defaultConfig)
-	if defaultConfig.Features.UnifiedStorageQuota {
-		ctx = cource.WithContext(ctx)
-	}
+	ctx = cource.WithContext(ctx)
+	ctx = watcher.WithContext(ctx)
+
 	initFeaturesFromCapabilities(ctx, setupLog)
 	setupLog.Info("Initial features", "features", pkgcfg.FromContext(ctx).Features)
 

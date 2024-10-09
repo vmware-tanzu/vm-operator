@@ -74,6 +74,28 @@ func WithContext[T any, K comparable](
 	)
 }
 
+// ExecWithContext executes the provided function while holding the lock on
+// the context.
+func ExecWithContext[T any, K comparable](
+	ctx context.Context,
+	key K,
+	exeV func(val T)) {
+
+	if ctx == nil {
+		panic("context is nil")
+	}
+	obj := ctx.Value(key)
+	if obj == nil {
+		panic("value is missing from context")
+	}
+
+	m := obj.(*contextData[T])
+	m.Lock()
+	defer m.Unlock()
+
+	exeV(m.data)
+}
+
 // NewContext returns a new context with the data in the specified key.
 func NewContext[T any, K comparable](key K, newT func() T) context.Context {
 	return WithContext(context.Background(), key, newT)

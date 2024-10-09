@@ -8,11 +8,12 @@ import (
 
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
 // VirtualMachineProviderInterface is a pluggable interface for VM Providers.
@@ -37,7 +38,7 @@ type VirtualMachineProviderInterface interface {
 
 	GetItemFromLibraryByName(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
-	SyncVirtualMachineImage(ctx context.Context, cli, vmi client.Object) error
+	SyncVirtualMachineImage(ctx context.Context, cli, vmi ctrlclient.Object) error
 
 	GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
 
@@ -45,4 +46,7 @@ type VirtualMachineProviderInterface interface {
 	// supports encryption by checking whether or not the underlying policy
 	// contains any IOFILTERs.
 	DoesProfileSupportEncryption(ctx context.Context, profileID string) (bool, error)
+
+	// VSphereClient returns the provider's vSphere client.
+	VSphereClient(context.Context) (*client.Client, error)
 }

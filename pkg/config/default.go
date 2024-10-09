@@ -37,6 +37,7 @@ func Default() Config {
 		LeaderElectionID:             defaultPrefix + "controller-manager-runtime",
 		MaxCreateVMsOnProvider:       80,
 		MaxConcurrentReconciles:      1,
+		AsyncSignalDisabled:          false,
 		CreateVMRequeueDelay:         10 * time.Second,
 		PoweredOnVMHasIPRequeueDelay: 10 * time.Second,
 		NetworkProviderType:          NetworkProviderTypeNamed,

@@ -99,6 +99,11 @@ type Config struct {
 	// LogSensitiveData means that logs will potentially contain sensitive data
 	// such as passwords. Defaults to false.
 	LogSensitiveData bool
+
+	// AsyncSignalDisabled may be set to false to disable the vm-watcher service
+	// used to reconcile VirtualMachine objects if their backend state has
+	// changed.
+	AsyncSignalDisabled bool
 }
 
 // GetMaxDeployThreadsOnProvider returns MaxDeployThreadsOnProvider if it is >0

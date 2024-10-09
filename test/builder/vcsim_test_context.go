@@ -22,8 +22,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/google/uuid"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
 	"github.com/vmware/govmomi"
 	vimcrypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/find"
@@ -39,7 +41,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	// Blank import to make govmomi client aware of these bindings.
 	_ "github.com/vmware/govmomi/vapi/cluster/simulator"
@@ -59,6 +61,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
@@ -186,6 +189,13 @@ type TestContextForVCSim struct {
 	azCCRs map[string][]*object.ClusterComputeResource
 }
 
+type IntegrationTestContextForVCSim struct {
+	TestContextForVCSim
+
+	Suite  *TestSuite
+	NSInfo WorkloadNamespaceInfo
+}
+
 type WorkloadNamespaceInfo struct {
 	Namespace             string
 	Folder                *object.Folder
@@ -202,7 +212,7 @@ const (
 
 func NewTestContextForVCSim(
 	config VCSimTestConfig,
-	initObjects ...client.Object) *TestContextForVCSim {
+	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
 	ctx := newTestContextForVCSim(config, initObjects)
 
@@ -215,16 +225,66 @@ func NewTestContextForVCSim(
 	return ctx
 }
 
+// InitVCSimEnvFn is used to initialize an environment prior to the manager
+// starting.
+type InitVCSimEnvFn func(ctx *IntegrationTestContextForVCSim)
+
+func NewIntegrationTestContextForVCSim(
+	ctx context.Context,
+	config VCSimTestConfig,
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	initProvidersFn pkgmgr.InitializeProvidersFunc,
+	initEnvFn InitVCSimEnvFn) *IntegrationTestContextForVCSim {
+
+	utVcSimCtx := newTestContextForVCSim(config, nil)
+	utVcSimCtx.Context = ctx
+
+	itVcSimCtx := IntegrationTestContextForVCSim{
+		TestContextForVCSim: *utVcSimCtx,
+	}
+
+	itVcSimCtx.Suite = NewTestSuiteForControllerWithContextAndInitEnvFuncs(
+		ctx,
+		addToManagerFn,
+		initProvidersFn,
+		[]InitEnvFn{
+			func(ctx context.Context, mgr pkgmgr.Manager, client ctrlclient.Client) {
+				By("initializing vcsim", func() {
+					itVcSimCtx.Client = client
+					itVcSimCtx.Scheme = client.Scheme()
+					itVcSimCtx.Recorder = mgr.GetContext().Recorder
+					itVcSimCtx.PodNamespace = mgr.GetContext().Namespace
+
+					itVcSimCtx.setupEnv(config)
+					itVcSimCtx.setupVCSim(config)
+					itVcSimCtx.setupContentLibrary(config)
+					itVcSimCtx.setupK8sConfig(config)
+					itVcSimCtx.setupAZs()
+
+					itVcSimCtx.NSInfo = itVcSimCtx.CreateWorkloadNamespace()
+				})
+			},
+			func(ctx context.Context, mgr pkgmgr.Manager, client ctrlclient.Client) {
+				if initEnvFn != nil {
+					initEnvFn(&itVcSimCtx)
+				}
+			},
+		},
+	)
+
+	return &itVcSimCtx
+}
+
 func (s *TestSuite) NewTestContextForVCSim(
 	config VCSimTestConfig,
-	initObjects ...client.Object) *TestContextForVCSim {
+	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
 	return NewTestContextForVCSim(config, initObjects...)
 }
 
 func newTestContextForVCSim(
 	config VCSimTestConfig,
-	initObjects []client.Object) *TestContextForVCSim {
+	initObjects []ctrlclient.Object) *TestContextForVCSim {
 
 	fakeRecorder, _ := NewFakeRecorder()
 
@@ -268,6 +328,18 @@ func (c *TestContextForVCSim) AfterEach() {
 	c.UnitTestContext.AfterEach()
 }
 
+func (c *IntegrationTestContextForVCSim) BeforeEach() {
+	c.Suite.BeforeSuite()
+}
+
+func (c *IntegrationTestContextForVCSim) AfterEach() {
+	// Tear down the suite first since it may need vC Sim running.
+	c.Suite.AfterSuite()
+
+	// Tear down vC Sim.
+	c.TestContextForVCSim.AfterEach()
+}
+
 func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -302,7 +374,7 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is disabled, AvailabilityZone stores namespace info.
 		if !c.withWorkloadIsolation {
 			az := &topologyv1.AvailabilityZone{}
-			Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
+			Expect(c.Client.Get(c, ctrlclient.ObjectKey{Name: azName}, az)).To(Succeed())
 			if az.Spec.Namespaces == nil {
 				az.Spec.Namespaces = map[string]topologyv1.NamespaceInfo{}
 			}
@@ -737,6 +809,7 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: c.StorageClassName,
 			},
+			Provisioner: "fake",
 			Parameters: map[string]string{
 				"storagePolicyID": c.StorageProfileID,
 			},
@@ -749,6 +822,7 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: c.EncryptedStorageClassName,
 			},
+			Provisioner: "fake",
 			Parameters: map[string]string{
 				"storagePolicyID": c.EncryptedStorageProfileID,
 			},

@@ -7,19 +7,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	"github.com/vmware/govmomi/object"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
+	vmwatcher "github.com/vmware-tanzu/vm-operator/services/vm-watcher"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 func intgTests() {
@@ -333,3 +349,167 @@ func intgTestsReconcile() {
 		})
 	})
 }
+
+var _ = Describe(
+	"ChanSource",
+	Label(
+		testlabels.Controller,
+		testlabels.EnvTest,
+		testlabels.V1Alpha3,
+	), func() {
+
+		const (
+			vmName = "my-vm-1"
+		)
+
+		var (
+			ctx                    context.Context
+			vcSimCtx               *builder.IntegrationTestContextForVCSim
+			provider               *providerfake.VMProvider
+			initEnvFn              builder.InitVCSimEnvFn
+			vm                     *object.VirtualMachine
+			numCreateOrUpdateCalls int32
+		)
+
+		BeforeEach(func() {
+			numCreateOrUpdateCalls = 0
+			ctx = context.Background()
+			ctx = logr.NewContext(ctx, testutil.GinkgoLogr(4))
+		})
+
+		JustBeforeEach(func() {
+			ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
+			ctx = pkgcfg.UpdateContext(
+				ctx,
+				func(config *pkgcfg.Config) {
+					config.Features.WorkloadDomainIsolation = true
+				},
+			)
+			ctx = cource.WithContext(ctx)
+			ctx = watcher.WithContext(ctx)
+
+			provider = providerfake.NewVMProvider()
+			provider.VSphereClientFn = func(ctx context.Context) (*vsclient.Client, error) {
+				return vsclient.NewClient(ctx, vcSimCtx.VCClientConfig)
+			}
+			provider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, obj *vmopv1.VirtualMachine) error {
+				atomic.AddInt32(&numCreateOrUpdateCalls, 1)
+				return nil
+			}
+
+			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
+				ctx,
+				builder.VCSimTestConfig{
+					WithWorkloadIsolation: pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation,
+				},
+				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+					if err := vmwatcher.AddToManager(ctx, mgr); err != nil {
+						return err
+					}
+					return virtualmachine.AddToManager(ctx, mgr)
+				},
+				func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
+					ctx.VMProvider = provider
+					return nil
+				},
+				initEnvFn)
+			Expect(vcSimCtx).ToNot(BeNil())
+
+			vcSimCtx.BeforeEach()
+
+			ctx = vcSimCtx
+		})
+
+		BeforeEach(func() {
+			initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+				vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmList).ToNot(BeEmpty())
+				vm = vmList[0]
+
+				By("creating vm in k8s", func() {
+					obj := builder.DummyBasicVirtualMachine(
+						vmName,
+						ctx.NSInfo.Namespace)
+					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+					obj.Status.UniqueID = vm.Reference().Value
+					Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
+				})
+
+				By("adding namespacedName to vm's extraConfig", func() {
+					t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+						ExtraConfig: []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   "vmservice.namespacedName",
+								Value: ctx.NSInfo.Namespace + "/" + vmName,
+							},
+						},
+					})
+					Expect(err).ToNot(HaveOccurred())
+					Expect(t).ToNot(BeNil())
+					Expect(t.Wait(ctx)).To(Succeed())
+				})
+
+				By("moving vm into the zone's folder", func() {
+					t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+						Folder: ptr.To(vcSimCtx.NSInfo.Folder.Reference()),
+					}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(t).ToNot(BeNil())
+					Expect(t.Wait(ctx)).To(Succeed())
+				})
+			}
+		})
+
+		AfterEach(func() {
+			vcSimCtx.AfterEach()
+		})
+
+		Specify("vm should be reconciled when change happens on vSphere", func() {
+			By("wait for VM to have finalizer", func() {
+				Eventually(func(g Gomega) {
+					var (
+						obj vmopv1.VirtualMachine
+						key = client.ObjectKey{
+							Namespace: vcSimCtx.NSInfo.Namespace,
+							Name:      vmName,
+						}
+					)
+					g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+					g.Expect(obj.Finalizers).To(HaveLen(1))
+				}).Should(Succeed())
+			})
+
+			By("wait for vm to be reconciled once due to the controller starting", func() {
+				Eventually(func() int32 {
+					return atomic.LoadInt32(&numCreateOrUpdateCalls)
+				}).Should(Equal(int32(1)))
+				Consistently(func() int32 {
+					return atomic.LoadInt32(&numCreateOrUpdateCalls)
+				}).Should(Equal(int32(1)))
+			})
+
+			By("update the vm's extraConfig", func() {
+				t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
+							Key:   "guestinfo.ipaddr",
+							Value: "1.2.3.4",
+						},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(t).ToNot(BeNil())
+				Expect(t.Wait(ctx)).To(Succeed())
+			})
+
+			By("wait for vm to be reconciled again, this time by the watcher", func() {
+				Eventually(func() int32 {
+					return atomic.LoadInt32(&numCreateOrUpdateCalls)
+				}).Should(Equal(int32(2)))
+				Consistently(func() int32 {
+					return atomic.LoadInt32(&numCreateOrUpdateCalls)
+				}).Should(Equal(int32(2)))
+			})
+		})
+	})

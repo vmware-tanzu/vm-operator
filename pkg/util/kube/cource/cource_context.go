@@ -20,6 +20,16 @@ type contextValueType map[any]chan event.GenericEvent
 
 // FromContext creates or gets the channel for the specified key.
 func FromContext(ctx context.Context, key any) chan event.GenericEvent {
+	return FromContextWithBuffer(ctx, key, 0)
+}
+
+// FromContextWithBuffer creates or gets the buffered channel for the specified
+// key and buffer size.
+func FromContextWithBuffer(
+	ctx context.Context,
+	key any,
+	buffer int) chan event.GenericEvent {
+
 	return ctxgen.FromContext(
 		ctx,
 		contextKeyValue,
@@ -27,7 +37,7 @@ func FromContext(ctx context.Context, key any) chan event.GenericEvent {
 			if c, ok := val[key]; ok {
 				return c
 			}
-			c := make(chan event.GenericEvent)
+			c := make(chan event.GenericEvent, buffer)
 			val[key] = c
 			return c
 		})

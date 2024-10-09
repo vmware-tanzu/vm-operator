@@ -11,6 +11,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
+	"github.com/onsi/ginkgo/v2" //nolint:depguard
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -109,4 +112,18 @@ type unwrappableError interface {
 
 type unwrappableErrorSlice interface {
 	Unwrap() []error
+}
+
+// GinkgoLogr returns a new logr.Logger that uses the GinkgoWriter with the
+// specified verbosity.
+func GinkgoLogr(v int) logr.Logger {
+	return funcr.New(func(prefix, args string) {
+		if prefix == "" {
+			_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "%s\n", args)
+		} else {
+			_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "%s %s\n", prefix, args)
+		}
+	}, funcr.Options{
+		Verbosity: v,
+	})
 }

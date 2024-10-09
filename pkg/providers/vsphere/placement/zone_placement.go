@@ -7,10 +7,13 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"golang.org/x/exp/maps"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -21,6 +24,17 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 )
+
+type Constraints struct {
+	// ChildRPName is the name of the child ResourcePool that must exist under the NS/Zone's RP.
+	ChildRPName string
+
+	// Zones when non-empty is the set of allowed zone names that the possible placement candidates
+	// will further be filtered by.
+	Zones sets.Set[string]
+
+	// TODO: ClusterModules?
+}
 
 type Result struct {
 	ZonePlacement            bool
@@ -111,6 +125,7 @@ func getPlacementCandidates(
 			}
 			zones = append(zones, zone)
 		}
+
 		for _, zone := range zones {
 			// Filter out the zone that is to be deleted, so we don't have it as a candidate when doing placement.
 			if zonePlacement && !zone.DeletionTimestamp.IsZero() {
@@ -324,20 +339,47 @@ func Placement(
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	childRPName string) (*Result, error) {
+	constraints Constraints) (*Result, error) {
 
 	existingRes, zonePlacement, instanceStoragePlacement := doesVMNeedPlacement(vmCtx)
 	if !zonePlacement && !instanceStoragePlacement {
 		return &existingRes, nil
 	}
 
-	candidates, err := getPlacementCandidates(vmCtx, client, vcClient, zonePlacement, childRPName)
+	candidates, err := getPlacementCandidates(vmCtx, client, vcClient, zonePlacement, constraints.ChildRPName)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no placement candidates available")
+	}
+
+	if constraints.Zones.Len() > 0 {
+		// The VM's candidates may be limited due to external constraints, such as the
+		// requested zones of its PVCs. Apply those constraints here.
+		var disallowedZones []string
+		allowedCandidates := map[string][]string{}
+
+		for zoneName, rpMoIDs := range candidates {
+			if constraints.Zones.Has(zoneName) {
+				allowedCandidates[zoneName] = rpMoIDs
+			} else {
+				disallowedZones = append(disallowedZones, zoneName)
+			}
+		}
+
+		if len(disallowedZones) > 0 {
+			vmCtx.Logger.V(6).Info("Removed candidate zones due to constraints",
+				"candidateZones", maps.Keys(candidates), "disallowedZones", disallowedZones)
+		}
+
+		if len(allowedCandidates) == 0 {
+			return nil, fmt.Errorf("no placement candidates available after applying zone constraints: %s",
+				strings.Join(constraints.Zones.UnsortedList(), ","))
+		}
+
+		candidates = allowedCandidates
 	}
 
 	// TBD: May want to get the host for vGPU and other passthru devices too.

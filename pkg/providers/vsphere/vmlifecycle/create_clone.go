@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vmlifecycle
@@ -165,6 +165,12 @@ func resizeBootDiskDeviceChange(
 
 	capacity := advanced.BootDiskCapacity
 	if capacity == nil || capacity.IsZero() {
+		return nil
+	}
+
+	// Skip resizing ISO VMs with attached CD-ROMs as their boot disks are FCDs
+	// and should be managed by PVCs.
+	if len(vmCtx.VM.Spec.Cdrom) > 0 {
 		return nil
 	}
 

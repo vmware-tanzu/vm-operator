@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -49,8 +50,9 @@ func unitTestsReconcile() {
 		ctx         *builder.UnitTestContextForController
 		withObjects []client.Object
 
-		reconciler         *storagepolicyquota.Reconciler
-		storagePolicyQuota *spqv1.StoragePolicyQuota
+		reconciler                     *storagepolicyquota.Reconciler
+		storagePolicyQuota             *spqv1.StoragePolicyQuota
+		validatingWebhookConfiguration *admissionv1.ValidatingWebhookConfiguration
 	)
 
 	BeforeEach(func() {
@@ -62,6 +64,19 @@ func unitTestsReconcile() {
 				Provisioner: "fake",
 				Parameters: map[string]string{
 					"storagePolicyID": storagePolicyID,
+				},
+			},
+		}
+
+		validatingWebhookConfiguration = &admissionv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: spqutil.ValidatingWebhookConfigName,
+			},
+			Webhooks: []admissionv1.ValidatingWebhook{
+				{
+					ClientConfig: admissionv1.WebhookClientConfig{
+						CABundle: []byte("fake-ca-bundle"),
+					},
 				},
 			},
 		}
@@ -85,7 +100,7 @@ func unitTestsReconcile() {
 	})
 
 	JustBeforeEach(func() {
-		withObjects = append(withObjects, storagePolicyQuota)
+		withObjects = append(withObjects, storagePolicyQuota, validatingWebhookConfiguration)
 
 		ctx = suite.NewUnitTestContextForController(withObjects...)
 
@@ -99,6 +114,7 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
+			ctx.Namespace,
 		)
 	})
 
@@ -153,6 +169,7 @@ func unitTestsReconcile() {
 					&obj)).To(Succeed())
 				ExpectWithOffset(1, obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
 				ExpectWithOffset(1, obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
+				ExpectWithOffset(1, obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.Namespace))
 				ExpectWithOffset(1, obj.Spec.ResourceKind).To(Equal("VirtualMachine"))
 				ExpectWithOffset(1, obj.Spec.StorageClassName).To(Equal(storageClassName))
 				ExpectWithOffset(1, obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
@@ -246,6 +263,17 @@ func unitTestsReconcile() {
 				It("ignores the error", func() {
 					Expect(err).ToNot(HaveOccurred())
 				})
+			})
+		})
+
+		When("Unable to get CABundle; annotation is missing", func() {
+			BeforeEach(func() {
+				validatingWebhookConfiguration.Webhooks = []admissionv1.ValidatingWebhook{}
+			})
+
+			It("returns an error", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unable to get annotation"))
 			})
 		})
 	})

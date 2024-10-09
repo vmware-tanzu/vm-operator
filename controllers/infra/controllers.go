@@ -12,6 +12,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/node"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/secret"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/validatingwebhookconfiguration"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
@@ -28,6 +30,11 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 	if err := secret.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize infra secret controller: %w", err)
+	}
+	if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota {
+		if err := validatingwebhookconfiguration.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize storagepolicyusage webhook controller: %w", err)
+		}
 	}
 
 	return nil

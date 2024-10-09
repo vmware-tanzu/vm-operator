@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,7 +29,13 @@ const (
 
 	// StoragePolicyQuotaExtensionName is the name of the storage policy
 	// extension service provided by VM Service.
-	StoragePolicyQuotaExtensionName = "vmservice.cns.vsphere.vmware.com"
+	StoragePolicyQuotaExtensionName = "vmware-system-vmop-webhook-service"
+
+	// ValidatingWebhookConfigName is the name of the ValidatingWebhookConfiguration
+	// containing correct CA Bundle used by StoragePolicyUsage.
+	ValidatingWebhookConfigName = "vmware-system-vmop-validating-webhook-configuration"
+	WebhookConfigAnnotationKey  = "cert-manager.io/inject-ca-from"
+	SecretCertKey               = "ca.crt"
 )
 
 // StoragePolicyUsageName returns the name of the StoragePolicyUsage
@@ -182,4 +189,46 @@ func IsStorageClassInNamespace(
 		Namespace:    namespace,
 		StorageClass: name,
 	}
+}
+
+// GetWebhookCABundle returns the CA Bundle used for validating webhooks. It attempts to fetch the CA Bundle
+// from the ValidatingWebhookConfiguration first before attempting to fetch from the certificate Secret.
+func GetWebhookCABundle(ctx context.Context, k8sClient client.Client) ([]byte, error) {
+	webhookConfiguration := &admissionv1.ValidatingWebhookConfiguration{}
+	if err := k8sClient.Get(ctx, client.ObjectKey{Name: ValidatingWebhookConfigName}, webhookConfiguration); err != nil {
+		return nil, err
+	}
+
+	var caBundle []byte
+	for _, webhook := range webhookConfiguration.Webhooks {
+		if len(webhook.ClientConfig.CABundle) > 0 {
+			caBundle = webhook.ClientConfig.CABundle
+			break
+		}
+	}
+
+	if len(caBundle) == 0 {
+		certSecretNamespaceName, ok := webhookConfiguration.Annotations[WebhookConfigAnnotationKey]
+		if !ok || certSecretNamespaceName == "" {
+			return nil, fmt.Errorf("unable to get annotation for key: %s", WebhookConfigAnnotationKey)
+		}
+
+		namespaceAndName := strings.Split(certSecretNamespaceName, "/")
+		if len(namespaceAndName) != 2 {
+			return nil, fmt.Errorf("unable to get namespace and name for key: %s", WebhookConfigAnnotationKey)
+		}
+
+		certSecret := &corev1.Secret{}
+		key := client.ObjectKey{Namespace: namespaceAndName[0], Name: namespaceAndName[1]}
+		if err := k8sClient.Get(ctx, key, certSecret); err != nil {
+			return nil, err
+		}
+
+		caBundle, ok = certSecret.Data[SecretCertKey]
+		if !ok || len(caBundle) == 0 {
+			return nil, fmt.Errorf("unable to get CA bundle from secret; data[%s] not found", SecretCertKey)
+		}
+	}
+
+	return caBundle, nil
 }

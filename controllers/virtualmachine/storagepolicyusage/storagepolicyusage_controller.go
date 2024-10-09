@@ -67,7 +67,7 @@ func NewReconciler(
 	}
 }
 
-// Reconciler reconciles a VirtualMachineClass object.
+// Reconciler reconciles a StoragePolicyUsage object.
 type Reconciler struct {
 	client.Client
 	Context  context.Context

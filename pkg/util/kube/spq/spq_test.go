@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -561,6 +562,164 @@ var _ = Describe("GetStorageClassesForPolicy", func() {
 					Expect(obj).To(BeEmpty())
 				})
 			})
+		})
+	})
+})
+
+var _ = Describe("GetWebhookCABundle", func() {
+	var (
+		ctx         context.Context
+		client      ctrlclient.Client
+		withObjects []ctrlclient.Object
+		withFuncs   interceptor.Funcs
+		namespace   string
+		config      *admissionv1.ValidatingWebhookConfiguration
+		secret      *corev1.Secret
+		caBundle    []byte
+		err         error
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContext()
+		namespace = defaultNamespace
+		withFuncs = interceptor.Funcs{}
+		withObjects = []ctrlclient.Object{
+			&corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: namespace,
+				},
+			},
+		}
+
+		secret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "vmware-system-vmop-serving-cert",
+				Namespace: namespace,
+			},
+			Data: map[string][]byte{
+				"ca.crt": []byte("fake-ca-bundle"),
+			},
+		}
+
+		config = &admissionv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: spqutil.ValidatingWebhookConfigName,
+				Annotations: map[string]string{
+					"cert-manager.io/inject-ca-from": fmt.Sprintf("%s/vmware-system-vmop-serving-cert", namespace),
+				},
+			},
+			Webhooks: []admissionv1.ValidatingWebhook{},
+		}
+	})
+
+	JustBeforeEach(func() {
+		withObjects = append(withObjects, config, secret)
+
+		client = builder.NewFakeClientWithInterceptors(withFuncs, withObjects...)
+
+		caBundle, err = spqutil.GetWebhookCABundle(ctx, client)
+	})
+
+	When("webhooks exists and contains CA Bundle", func() {
+		BeforeEach(func() {
+			config.Webhooks = []admissionv1.ValidatingWebhook{
+				{
+					ClientConfig: admissionv1.WebhookClientConfig{
+						CABundle: []byte("fake-ca-bundle"),
+					},
+				},
+			}
+		})
+
+		It("should return the CA bundle", func() {
+			Expect(err).NotTo(HaveOccurred())
+			Expect(caBundle).To(Equal(config.Webhooks[0].ClientConfig.CABundle))
+		})
+	})
+
+	When("webhooks does not exist", func() {
+		It("should return the CA bundle from the secret", func() {
+			Expect(err).NotTo(HaveOccurred())
+			Expect(caBundle).To(Equal(secret.Data["ca.crt"]))
+		})
+	})
+
+	When("ValidatingWebhookConfiguration is not found", func() {
+		errMsg := `validatingwebhookconfigurations.admissionregistration.k8s.io "vmware-system-vmop-validating-webhook-configuration" not found`
+
+		BeforeEach(func() {
+			config = &admissionv1.ValidatingWebhookConfiguration{}
+		})
+
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(errMsg))
+		})
+	})
+
+	When("certificate annotation is not present", func() {
+		BeforeEach(func() {
+			delete(config.Annotations, "cert-manager.io/inject-ca-from")
+		})
+
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to get annotation for key"))
+		})
+	})
+
+	When("certificate annotation is present with empty value", func() {
+		BeforeEach(func() {
+			config.Annotations["cert-manager.io/inject-ca-from"] = ""
+		})
+
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to get annotation for key"))
+		})
+	})
+
+	When("certificate annotation is present and missing namespace", func() {
+		BeforeEach(func() {
+			config.Annotations["cert-manager.io/inject-ca-from"] = "vmware-system-vmop-serving-cert"
+		})
+
+		It("should not return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to get namespace and name for key"))
+		})
+	})
+
+	When("certificate Secret is not found", func() {
+		BeforeEach(func() {
+			secret.Name = "fake"
+		})
+
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`secrets "vmware-system-vmop-serving-cert" not found`))
+		})
+	})
+
+	When("secret is missing ca.crt", func() {
+		BeforeEach(func() {
+			delete(secret.Data, "ca.crt")
+		})
+
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to get CA bundle from secret"))
+		})
+	})
+
+	When("ca.crt is empty", func() {
+		BeforeEach(func() {
+			secret.Data["ca.crt"] = []byte("")
+		})
+
+		It("should return an error", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to get CA bundle from secret"))
 		})
 	})
 })

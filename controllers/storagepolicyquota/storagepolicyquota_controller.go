@@ -41,6 +41,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		ctx.Namespace,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -52,22 +53,25 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
-	recorder record.Recorder) *Reconciler {
+	recorder record.Recorder,
+	podNamespace string) *Reconciler {
 
 	return &Reconciler{
-		Context:  ctx,
-		Client:   client,
-		Logger:   logger,
-		Recorder: recorder,
+		Context:      ctx,
+		Client:       client,
+		Logger:       logger,
+		Recorder:     recorder,
+		PodNamespace: podNamespace,
 	}
 }
 
 // Reconciler reconciles a StoragePolicyQuota object.
 type Reconciler struct {
 	client.Client
-	Context  context.Context
-	Logger   logr.Logger
-	Recorder record.Recorder
+	Context      context.Context
+	Logger       logr.Logger
+	Recorder     record.Recorder
+	PodNamespace string
 }
 
 //
@@ -115,6 +119,11 @@ func (r *Reconciler) ReconcileNormal(
 	logger logr.Logger,
 	src *spqv1.StoragePolicyQuota) error {
 
+	caBundle, err := spqutil.GetWebhookCABundle(ctx, r.Client)
+	if err != nil {
+		return err
+	}
+
 	// Get the list of storage classes for the provided policy ID.
 	objs, err := spqutil.GetStorageClassesForPolicy(
 		ctx,
@@ -146,6 +155,8 @@ func (r *Reconciler) ReconcileNormal(
 			dst.Spec.ResourceAPIgroup = ptr.To(vmopv1.GroupVersion.Group)
 			dst.Spec.ResourceKind = "VirtualMachine"
 			dst.Spec.ResourceExtensionName = spqutil.StoragePolicyQuotaExtensionName
+			dst.Spec.ResourceExtensionNamespace = r.PodNamespace
+			dst.Spec.CABundle = caBundle
 
 			return nil
 		}

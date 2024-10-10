@@ -108,6 +108,20 @@ rules:
   - patch
   - update
 - apiGroups:
+  - iaas.vmware.com
+  resources:
+  - capabilities
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - iaas.vmware.com
+  resources:
+  - capabilities/status
+  verbs:
+  - get
+- apiGroups:
   - imageregistry.vmware.com
   resources:
   - clustercontentlibraryitems

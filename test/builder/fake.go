@@ -16,6 +16,7 @@ import (
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -69,6 +70,7 @@ func KnownObjectTypes() []client.Object {
 		&vpcv1alpha1.SubnetSet{},
 		&vpcv1alpha1.SubnetPort{},
 		&byokv1.EncryptionClass{},
+		&capv1.Capabilities{},
 	}
 }
 
@@ -84,6 +86,7 @@ func NewScheme() *runtime.Scheme {
 	_ = vmopv1a1.AddToScheme(scheme)
 	_ = vmopv1a2.AddToScheme(scheme)
 	_ = vmopv1.AddToScheme(scheme)
+	_ = capv1.AddToScheme(scheme)
 	_ = byokv1.AddToScheme(scheme)
 	_ = ncpv1alpha1.AddToScheme(scheme)
 	_ = cnsapis.AddToScheme(scheme)

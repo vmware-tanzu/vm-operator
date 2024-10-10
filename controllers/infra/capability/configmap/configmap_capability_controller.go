@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -20,6 +20,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/capability/exit"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -42,7 +43,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr,
 		&ctx.SyncPeriod,
 		controlledType,
-		capabilities.WCPClusterCapabilitiesConfigMapObjKey.Namespace)
+		capabilities.ConfigMapKey.Namespace)
 	if err != nil {
 		return err
 	}
@@ -71,15 +72,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		&handler.TypedEnqueueRequestForObject[*corev1.ConfigMap]{},
 		predicate.TypedFuncs[*corev1.ConfigMap]{
 			CreateFunc: func(e event.TypedCreateEvent[*corev1.ConfigMap]) bool {
-				return e.Object.Name == capabilities.WCPClusterCapabilitiesConfigMapObjKey.Name
+				return e.Object.Name == capabilities.ConfigMapKey.Name
 			},
 			UpdateFunc: func(e event.TypedUpdateEvent[*corev1.ConfigMap]) bool {
-				return e.ObjectOld.Name == capabilities.WCPClusterCapabilitiesConfigMapObjKey.Name
+				return e.ObjectOld.Name == capabilities.ConfigMapKey.Name
 			},
 			DeleteFunc: func(e event.TypedDeleteEvent[*corev1.ConfigMap]) bool {
-				return false
-			},
-			GenericFunc: func(e event.TypedGenericEvent[*corev1.ConfigMap]) bool {
 				return false
 			},
 		},
@@ -89,13 +87,13 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 func NewReconciler(
 	ctx context.Context,
-	cache client.Reader,
+	client ctrlclient.Reader,
 	logger logr.Logger,
 	recorder record.Recorder) *Reconciler {
 
 	return &Reconciler{
 		Context:  ctx,
-		Cache:    cache,
+		Client:   client,
 		Logger:   logger,
 		Recorder: recorder,
 	}
@@ -103,38 +101,28 @@ func NewReconciler(
 
 type Reconciler struct {
 	Context  context.Context
-	Cache    client.Reader
+	Client   ctrlclient.Reader
 	Logger   logr.Logger
 	Recorder record.Recorder
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Reconciler) Reconcile(
+	ctx context.Context,
+	req ctrl.Request) (ctrl.Result, error) {
+
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
-	if req.NamespacedName == capabilities.WCPClusterCapabilitiesConfigMapObjKey {
-		return ctrl.Result{}, r.reconcileWcpClusterCapabilitiesConfig(ctx, req)
+	var obj corev1.ConfigMap
+	if err := r.Client.Get(ctx, req.NamespacedName, &obj); err != nil {
+		return ctrl.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
-	r.Logger.Error(nil, "Reconciling unexpected object", "req", req.NamespacedName)
+	if capabilities.UpdateCapabilitiesFeatures(ctx, obj) {
+		r.Logger.Info("killing pod due to changed capabilities")
+		exit.Exit()
+	}
+
 	return ctrl.Result{}, nil
-}
-
-func (r *Reconciler) reconcileWcpClusterCapabilitiesConfig(ctx context.Context, req ctrl.Request) error {
-	oldFeatures := pkgcfg.FromContext(ctx).Features
-	r.Logger.Info("Reconciling WCP Cluster Capabilities Config", "configMap", req.NamespacedName,
-		"isAsyncSVUpgrade", oldFeatures.SVAsyncUpgrade)
-
-	cm := &corev1.ConfigMap{}
-	if err := r.Cache.Get(ctx, req.NamespacedName, cm); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-
-	capabilities.UpdateCapabilitiesFeatures(ctx, cm.Data)
-	if newFeatures := pkgcfg.FromContext(ctx).Features; oldFeatures != newFeatures {
-		r.Logger.Info("Updated features from capabilities", "old", oldFeatures, "new", newFeatures)
-	}
-
-	return nil
 }

@@ -10,52 +10,368 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("UpdateCapabilitiesFeatures", func() {
+const trueString = "true"
 
+var _ = Describe("UpdateCapabilities", func() {
 	var (
-		ctx  context.Context
-		data map[string]string
+		ctx     context.Context
+		client  ctrlclient.Client
+		err     error
+		changed bool
 	)
 
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContext()
-		data = map[string]string{}
+		ctx = logr.NewContext(ctx, logf.Log)
+		client = builder.NewFakeClient()
 	})
 
 	JustBeforeEach(func() {
-		capabilities.UpdateCapabilitiesFeatures(ctx, data)
+		changed, err = capabilities.UpdateCapabilities(ctx, client)
 	})
 
-	Context("MultipleCL_For_TKG_Supported", func() {
-		BeforeEach(func() {
-			Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
-			data[capabilities.TKGMultipleCLCapabilityKey] = "true"
+	Context("corev1.ConfigMap", func() {
+		When("the resource does not exist", func() {
+			Specify("an error should occur", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(changed).To(BeFalse())
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			})
 		})
+		When("the resource exists", func() {
+			BeforeEach(func() {
+				obj := corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: capabilities.ConfigMapNamespace,
+						Name:      capabilities.ConfigMapName,
+					},
+					Data: map[string]string{
+						capabilities.CapabilityKeyBringYourOwnKeyProvider:     trueString,
+						capabilities.CapabilityKeyTKGMultipleContentLibraries: trueString,
+						capabilities.CapabilityKeyWorkloadIsolation:           trueString,
+					},
+				}
+				Expect(client.Create(ctx, &obj)).To(Succeed())
+			})
 
-		It("Enabled", func() {
-			Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+			When("the capabilities are not different", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.BringYourOwnEncryptionKey = true
+						config.Features.TKGMultipleCL = true
+						config.Features.WorkloadDomainIsolation = true
+					})
+				})
+				Specify("capabilities did not change", func() {
+					Expect(changed).To(BeFalse())
+				})
+				Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeTrue())
+				})
+				Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+				})
+				Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+				})
+			})
+
+			When("the capabilities are different", func() {
+				Specify("capabilities changed", func() {
+					Expect(changed).To(BeTrue())
+				})
+				Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
+				})
+				Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+				})
+				Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
+					Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
+				})
+			})
 		})
 	})
 
-	Context("SVAsyncUpgrade is enabled", func() {
-
+	Context("capv1.Capabilities", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.SVAsyncUpgrade = true
 			})
 		})
+		When("the resource does not exist", func() {
+			Specify("an error should occur", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				Expect(changed).To(BeFalse())
+			})
+		})
+		When("the resource exists", func() {
 
-		Context("Workload_Domain_Isolation_Supported", func() {
-			BeforeEach(func() {
-				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
-				data[capabilities.WorkloadIsolationCapabilityKey] = "true"
+			Context("with true capabilities", func() {
+				BeforeEach(func() {
+					obj := capv1.Capabilities{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: capabilities.CapabilitiesName,
+						},
+					}
+					Expect(client.Create(ctx, &obj)).To(Succeed())
+
+					objPatch := ctrlclient.MergeFrom(obj.DeepCopy())
+					obj.Status.Supervisor = map[capv1.CapabilityName]capv1.CapabilityStatus{
+						capabilities.CapabilityKeyBringYourOwnKeyProvider: {
+							Activated: true,
+						},
+						capabilities.CapabilityKeyTKGMultipleContentLibraries: {
+							Activated: true,
+						},
+						capabilities.CapabilityKeyWorkloadIsolation: {
+							Activated: true,
+						},
+					}
+					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
+				})
+				When("the capabilities are not different", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.BringYourOwnEncryptionKey = true
+							config.Features.TKGMultipleCL = true
+							config.Features.WorkloadDomainIsolation = true
+						})
+					})
+					Specify("capabilities did not change", func() {
+						Expect(changed).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+					})
+				})
+
+				When("the capabilities are different", func() {
+					Specify("capabilities changed", func() {
+						Expect(changed).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+					})
+				})
 			})
 
-			It("Enabled", func() {
+			Context("with false capabilities", func() {
+				BeforeEach(func() {
+					obj := capv1.Capabilities{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: capabilities.CapabilitiesName,
+						},
+					}
+					Expect(client.Create(ctx, &obj)).To(Succeed())
+
+					objPatch := ctrlclient.MergeFrom(obj.DeepCopy())
+					obj.Status.Supervisor = map[capv1.CapabilityName]capv1.CapabilityStatus{
+						capabilities.CapabilityKeyBringYourOwnKeyProvider: {
+							Activated: false,
+						},
+						capabilities.CapabilityKeyTKGMultipleContentLibraries: {
+							Activated: false,
+						},
+						capabilities.CapabilityKeyWorkloadIsolation: {
+							Activated: false,
+						},
+					}
+					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
+				})
+				When("the capabilities are not different", func() {
+					Specify("capabilities did not change", func() {
+						Expect(changed).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
+					})
+				})
+
+				When("the capabilities are different", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.BringYourOwnEncryptionKey = true
+							config.Features.TKGMultipleCL = true
+							config.Features.WorkloadDomainIsolation = true
+						})
+					})
+					Specify("capabilities changed", func() {
+						Expect(changed).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
+					})
+				})
+			})
+		})
+	})
+})
+
+var _ = Describe("UpdateCapabilitiesFeatures", func() {
+	var (
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContext()
+		ctx = logr.NewContext(ctx, logf.Log)
+	})
+
+	When("obj is map[string]string", func() {
+		var (
+			obj map[string]string
+		)
+		BeforeEach(func() {
+			obj = map[string]string{}
+		})
+		JustBeforeEach(func() {
+			capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+		})
+		Context(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
+				obj[capabilities.CapabilityKeyTKGMultipleContentLibraries] = trueString
+			})
+			Specify("Enabled", func() {
+				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+			})
+		})
+
+		Context("SVAsyncUpgrade is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.SVAsyncUpgrade = true
+				})
+			})
+			Context(capabilities.CapabilityKeyWorkloadIsolation, func() {
+				BeforeEach(func() {
+					Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
+					obj[capabilities.CapabilityKeyWorkloadIsolation] = trueString
+				})
+				Specify("Enabled", func() {
+					Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+				})
+			})
+		})
+	})
+
+	When("obj is corev1.ConfigMap", func() {
+		var (
+			obj corev1.ConfigMap
+		)
+		BeforeEach(func() {
+			obj.Data = map[string]string{}
+		})
+		JustBeforeEach(func() {
+			capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+		})
+		Context(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
+				obj.Data[capabilities.CapabilityKeyTKGMultipleContentLibraries] = trueString
+			})
+			Specify("Enabled", func() {
+				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+			})
+		})
+
+		Context("SVAsyncUpgrade is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.SVAsyncUpgrade = true
+				})
+			})
+			Context(capabilities.CapabilityKeyWorkloadIsolation, func() {
+				BeforeEach(func() {
+					Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
+					obj.Data[capabilities.CapabilityKeyWorkloadIsolation] = trueString
+				})
+				Specify("Enabled", func() {
+					Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+				})
+			})
+		})
+	})
+
+	When("obj is capv1.Capabilities", func() {
+		var (
+			obj capv1.Capabilities
+		)
+		BeforeEach(func() {
+			obj.Status.Supervisor = map[capv1.CapabilityName]capv1.CapabilityStatus{}
+		})
+		JustBeforeEach(func() {
+			capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+		})
+		Context(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyBringYourOwnKeyProvider] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeTrue())
+			})
+		})
+		Context(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyTKGMultipleContentLibraries] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+			})
+		})
+		Context(capabilities.CapabilityKeyWorkloadIsolation, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyWorkloadIsolation] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
 			})
 		})

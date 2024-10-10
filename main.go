@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/textlogger"
@@ -270,23 +269,17 @@ func waitForWebhookCertificates(setupLog logr.Logger, managerOpts pkgmgr.Options
 	}
 }
 
-// initFeaturesFromCapabilities updates our enabled/disabled features based on the
-// capabilities. If we cannot get the CM, don't prevent the container from starting
-// and instead depend on the infra capabilities controller to eventually fix things up.
-func initFeaturesFromCapabilities(ctx context.Context, setupLog logr.Logger) {
+// initFeaturesFromCapabilities updates our enabled/disabled features based on
+// the capabilities. The inability to get the capabilities should not prevent
+// the container from starting as the features will be processed later by the
+// capabilities controller.
+func initFeaturesFromCapabilities(ctx context.Context, logger logr.Logger) {
 	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
 	if err != nil {
-		setupLog.Error(err, "unable to create client for capabilities")
-		return
+		logger.Error(err, "failed to create client for updating capabilities")
+	} else if _, err := capabilities.UpdateCapabilities(ctx, c); err != nil {
+		logger.Error(err, "failed to update capabilities")
 	}
-
-	cm := &corev1.ConfigMap{}
-	if err := c.Get(ctx, capabilities.WCPClusterCapabilitiesConfigMapObjKey, cm); err != nil {
-		setupLog.Error(err, "unable to get capabilities ConfigMap")
-		return
-	}
-
-	capabilities.UpdateCapabilitiesFeatures(ctx, cm.Data)
 }
 
 // CertDirReady returns a channel that is closed when there are certificates

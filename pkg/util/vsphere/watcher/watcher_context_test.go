@@ -110,9 +110,20 @@ var _ = Describe("Add", func() {
 				watcher.WithContext(pkgcfg.NewContext()),
 				vimtypes.ManagedObjectReference{},
 				"fake",
-			)).To(MatchError("no watcher"))
+			)).To(MatchError(watcher.ErrNoWatcher))
 		})
 	})
+	When("async signal is disabled", func() {
+		It("should fail", func() {
+			Expect(watcher.Add(
+				watcher.WithContext(pkgcfg.WithConfig(
+					pkgcfg.Config{AsyncSignalDisabled: true})),
+				vimtypes.ManagedObjectReference{},
+				"fake",
+			)).To(MatchError(watcher.ErrAsyncSignalDisabled))
+		})
+	})
+
 })
 
 var _ = Describe("Remove", func() {
@@ -122,7 +133,17 @@ var _ = Describe("Remove", func() {
 				watcher.WithContext(pkgcfg.NewContext()),
 				vimtypes.ManagedObjectReference{},
 				"fake",
-			)).To(MatchError("no watcher"))
+			)).To(MatchError(watcher.ErrNoWatcher))
+		})
+	})
+	When("async signal is disabled", func() {
+		It("should fail", func() {
+			Expect(watcher.Remove(
+				watcher.WithContext(pkgcfg.WithConfig(
+					pkgcfg.Config{AsyncSignalDisabled: true})),
+				vimtypes.ManagedObjectReference{},
+				"fake",
+			)).To(MatchError(watcher.ErrAsyncSignalDisabled))
 		})
 	})
 })

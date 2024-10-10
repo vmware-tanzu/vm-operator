@@ -65,18 +65,28 @@ func JoinContext(left, right context.Context) context.Context {
 		})
 }
 
+var (
+	// ErrAsyncSignalDisabled is returned from the Add/Remove functions if they
+	// are called while async signal is disabled.
+	ErrAsyncSignalDisabled = errors.New("async signal disabled")
+
+	// ErrNoWatcher is returned from the Add/Remove functions if they are called
+	// without a watcher in the context.
+	ErrNoWatcher = errors.New("no watcher")
+)
+
 // Add starts watching a container to which VirtualMachine resources may belong,
 // such as a Folder, Cluster, ResourcePool, etc.
 func Add(ctx context.Context, ref moRef, id string) (err error) {
 	if pkgcfg.FromContext(ctx).AsyncSignalDisabled {
-		return nil
+		return ErrAsyncSignalDisabled
 	}
 	ctxgen.ExecWithContext(
 		ctx,
 		contextKeyValue,
 		func(w contextValueType) {
 			if w == nil {
-				err = errors.New("no watcher")
+				err = ErrNoWatcher
 			} else {
 				err = w.add(ctx, ref, id)
 			}
@@ -88,14 +98,14 @@ func Add(ctx context.Context, ref moRef, id string) (err error) {
 // belong, such as a Folder, Cluster, ResourcePool, etc.
 func Remove(ctx context.Context, ref moRef, id string) (err error) {
 	if pkgcfg.FromContext(ctx).AsyncSignalDisabled {
-		return nil
+		return ErrAsyncSignalDisabled
 	}
 	ctxgen.ExecWithContext(
 		ctx,
 		contextKeyValue,
 		func(w contextValueType) {
 			if w == nil {
-				err = errors.New("no watcher")
+				err = ErrNoWatcher
 			} else {
 				err = w.remove(ctx, ref, id)
 			}

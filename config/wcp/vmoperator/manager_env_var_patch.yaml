@@ -43,6 +43,12 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
+    name: ASYNC_SIGNAL_DISABLED
+    value: "false"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
     name: FSS_PODVMONSTRETCHEDSUPERVISOR
     value: "<FSS_PODVMONSTRETCHEDSUPERVISOR>"
 

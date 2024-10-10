@@ -78,12 +78,16 @@ type Result struct {
 }
 
 type Watcher struct {
-	mu sync.Mutex
-
-	cancel func()
+	err        error
+	errMu      sync.RWMutex
+	cancel     func()
+	chanDone   chan struct{}
+	chanResult chan Result
 
 	client *vim25.Client
 
+	pc *property.Collector
+	pf *property.Filter
 	vm *view.Manager
 	lv *view.ListView
 	cv map[moRef]*view.ContainerView
@@ -94,17 +98,8 @@ type Watcher struct {
 	// destroyed.
 	cvr map[moRef]map[string]struct{}
 
-	pc *property.Collector
-	pf *property.Filter
-
 	ignoredExtraConfigKeys map[string]struct{}
 	lookupNamespacedName   lookupNamespacedNameFn
-
-	err   error
-	errMu sync.RWMutex
-
-	chanDone   chan struct{}
-	chanResult chan Result
 }
 
 // Done returns a channel that is closed when the watcher is shutdown.
@@ -193,10 +188,8 @@ func newWatcher(
 }
 
 func (w *Watcher) close() {
-	w.mu.Lock()
 	w.cancel()
 	close(w.chanDone)
-	w.mu.Unlock()
 
 	_ = w.pf.Destroy(context.Background())
 	_ = w.pc.Destroy(context.Background())
@@ -204,15 +197,6 @@ func (w *Watcher) close() {
 	for _, cv := range w.cv {
 		_ = cv.Destroy(context.Background())
 	}
-
-	w.pf = nil
-	w.pc = nil
-	w.cv = nil
-	w.cvr = nil
-	w.lv = nil
-	w.vm = nil
-	w.client = nil
-	w.lookupNamespacedName = nil
 }
 
 // Start begins watching a vSphere server for updates to VM Service managed VMs.
@@ -250,11 +234,11 @@ func Start(
 
 	go func() {
 		defer func() {
-			w.close()
-
 			// Remove this watcher from the context. While there is no watcher
 			// in the context, calls to Add/Remove will fail.
 			setContext(ctx, nil)
+
+			w.close()
 		}()
 
 		if err := w.pc.WaitForUpdatesEx(
@@ -436,15 +420,6 @@ func checkExtraConfig(
 }
 
 func (w *Watcher) add(ctx context.Context, ref moRef, id string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if w.pc == nil {
-		// The property collector is nil means the watcher is closed/stopped;
-		// return early.
-		return nil
-	}
-
 	if _, ok := w.cv[ref]; ok {
 		w.cvr[ref][id] = struct{}{}
 		return nil
@@ -482,15 +457,6 @@ func (w *Watcher) add(ctx context.Context, ref moRef, id string) error {
 }
 
 func (w *Watcher) remove(_ context.Context, ref moRef, id string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if w.pc == nil {
-		// The property collector is nil means the watcher is closed/stopped;
-		// return early.
-		return nil
-	}
-
 	cv, ok := w.cv[ref]
 	if !ok {
 		return nil

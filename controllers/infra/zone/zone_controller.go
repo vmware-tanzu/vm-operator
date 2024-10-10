@@ -130,7 +130,10 @@ func (r *Reconciler) ReconcileDelete(
 					Value: val,
 				},
 				fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
-				return ctrl.Result{}, err
+
+				if err != watcher.ErrAsyncSignalDisabled {
+					return ctrl.Result{}, err
+				}
 			}
 		}
 		controllerutil.RemoveFinalizer(obj, Finalizer)
@@ -153,7 +156,10 @@ func (r *Reconciler) ReconcileNormal(
 					Value: val,
 				},
 				fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
-				return ctrl.Result{}, err
+
+				if err != watcher.ErrAsyncSignalDisabled {
+					return ctrl.Result{}, err
+				}
 			}
 			controllerutil.AddFinalizer(obj, Finalizer)
 		}

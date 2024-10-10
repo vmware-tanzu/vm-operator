@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/pbm"
@@ -96,10 +97,10 @@ func SoapKeepAliveHandlerFn(
 
 	return func() error {
 		ctx := context.Background()
-		if _, err := methods.GetCurrentTime(ctx, sc); err != nil && isNotAuthenticatedError(err) {
+		if _, err := methods.GetCurrentTime(ctx, sc); err != nil && IsNotAuthenticatedError(err) {
 			log.Info("Re-authenticating vim client")
 			if err = sm.Login(ctx, userInfo); err != nil {
-				if isInvalidLogin(err) {
+				if IsInvalidLogin(err) {
 					log.Error(err, "Invalid login in keepalive handler", "url", sc.URL())
 					return err
 				}
@@ -246,26 +247,12 @@ func newFinder(
 	return finder, dc, nil
 }
 
-func isNotAuthenticatedError(err error) bool {
-	if soap.IsSoapFault(err) {
-		vimFault := soap.ToSoapFault(err).VimFault()
-		if _, ok := vimFault.(vimtypes.NotAuthenticated); ok {
-			return true
-		}
-	}
-
-	return false
+func IsNotAuthenticatedError(err error) bool {
+	return fault.Is(err, &vimtypes.NotAuthenticated{})
 }
 
-func isInvalidLogin(err error) bool {
-	if soap.IsSoapFault(err) {
-		vimFault := soap.ToSoapFault(err).VimFault()
-		if _, ok := vimFault.(vimtypes.InvalidLogin); ok {
-			return true
-		}
-	}
-
-	return false
+func IsInvalidLogin(err error) bool {
+	return fault.Is(err, &vimtypes.InvalidLogin{})
 }
 
 func (c *Client) VimClient() *vim25.Client {
@@ -290,6 +277,13 @@ func (c *Client) RestClient() *rest.Client {
 
 func (c *Client) Config() Config {
 	return c.config
+}
+
+func (c *Client) Valid() bool {
+	if c == nil || c.vimClient == nil {
+		return false
+	}
+	return c.VimClient().Valid()
 }
 
 func (c *Client) Logout(ctx context.Context) {

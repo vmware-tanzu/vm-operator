@@ -36,6 +36,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
 const (
@@ -439,4 +440,14 @@ func (vs *vSphereVMProvider) DoesProfileSupportEncryption(
 	}
 
 	return c.PbmClient().SupportsEncryption(ctx, profileID)
+}
+
+func (vs *vSphereVMProvider) VSphereClient(
+	ctx context.Context) (*vsclient.Client, error) {
+
+	c, err := vs.getVcClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.Client, nil
 }

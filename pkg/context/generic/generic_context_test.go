@@ -5,6 +5,7 @@ package generic_test
 
 import (
 	"context"
+	"errors"
 	"maps"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -583,6 +584,106 @@ var _ = Describe("ComplexType", func() {
 				ctx := complexWithContext(context.Background())
 				Expect(ctx).ToNot(BeNil())
 			})
+		})
+	})
+})
+
+type execContextKeyType uint8
+
+const execContextKeyValue execContextKeyType = 0
+
+type execContextValueType struct{}
+
+func (e execContextValueType) add(a, b int) (int, error) {
+	if a < 0 || b < 0 {
+		return 0, errors.New("negative numbers not allowed")
+	}
+	return a + b, nil
+}
+
+func (e execContextValueType) sub(a, b int) (int, error) {
+	if a < 0 || b < 0 {
+		return 0, errors.New("negative numbers not allowed")
+	}
+	return a - b, nil
+}
+
+func execWithContext(parent context.Context) context.Context {
+	return ctxgen.WithContext(
+		parent,
+		execContextKeyValue,
+		func() execContextValueType { return execContextValueType{} })
+}
+
+func execWithContextAdd(ctx context.Context, a, b int) (c int, err error) {
+	ctxgen.ExecWithContext(
+		ctx,
+		execContextKeyValue,
+		func(obj execContextValueType) {
+			c, err = obj.add(a, b)
+		})
+	return
+}
+
+func execWithContextSub(ctx context.Context, a, b int) (c int, err error) {
+	ctxgen.ExecWithContext(
+		ctx,
+		execContextKeyValue,
+		func(obj execContextValueType) {
+			c, err = obj.sub(a, b)
+		})
+	return
+}
+
+var _ = Describe("ExecWithContext", func() {
+	var (
+		ctx context.Context
+	)
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	When("ctx is nil", func() {
+		BeforeEach(func() {
+			ctx = nil
+		})
+		It("should panic", func() {
+			fn := func() {
+				_, _ = execWithContextAdd(ctx, 1, 2)
+			}
+			Expect(fn).To(PanicWith("context is nil"))
+		})
+	})
+	When("value is missing from context", func() {
+		It("should panic", func() {
+			fn := func() {
+				_, _ = execWithContextSub(ctx, 1, 2)
+			}
+			Expect(fn).To(PanicWith("value is missing from context"))
+		})
+	})
+	When("value is present in context", func() {
+		BeforeEach(func() {
+			ctx = execWithContext(ctx)
+		})
+		It("should be able to add", func() {
+			c, err := execWithContextAdd(ctx, 1, 2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(c).To(Equal(3))
+
+			c, err = execWithContextAdd(ctx, -1, 2)
+			Expect(err).To(MatchError("negative numbers not allowed"))
+			Expect(c).To(Equal(0))
+		})
+
+		It("should be able to subtract", func() {
+			c, err := execWithContextSub(ctx, 1, 2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(c).To(Equal(-1))
+
+			c, err = execWithContextSub(ctx, -1, 2)
+			Expect(err).To(MatchError("negative numbers not allowed"))
+			Expect(c).To(Equal(0))
 		})
 	})
 })

@@ -17,6 +17,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
 // This Fake Provider is supposed to simulate an actual VM provider.
@@ -55,6 +56,7 @@ type funcs struct {
 	GetTasksByActIDFn func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
 
 	DoesProfileSupportEncryptionFn func(ctx context.Context, profileID string) (bool, error)
+	VSphereClientFn                func(context.Context) (*vsclient.Client, error)
 }
 
 type VMProvider struct {
@@ -372,6 +374,16 @@ func (s *VMProvider) DoesProfileSupportEncryption(
 		return fn(ctx, profileID)
 	}
 	return false, nil
+}
+
+func (s *VMProvider) VSphereClient(ctx context.Context) (*vsclient.Client, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	if fn := s.VSphereClientFn; fn != nil {
+		return fn(ctx)
+	}
+	return nil, nil
 }
 
 func NewVMProvider() *VMProvider {

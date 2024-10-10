@@ -51,6 +51,46 @@ var _ = Describe("FromContext", func() {
 	})
 })
 
+var _ = Describe("FromContextWithBuffer", func() {
+	var (
+		ctx context.Context
+		key any
+	)
+	BeforeEach(func() {
+		ctx = context.Background()
+		key = "1"
+	})
+	When("ctx is nil", func() {
+		BeforeEach(func() {
+			ctx = nil
+		})
+		It("should panic", func() {
+			fn := func() {
+				_ = cource.FromContextWithBuffer(ctx, key, 100)
+			}
+			Expect(fn).To(PanicWith("context is nil"))
+		})
+	})
+	When("value is missing from context", func() {
+		It("should panic", func() {
+			fn := func() {
+				_ = cource.FromContextWithBuffer(ctx, key, 100)
+			}
+			Expect(fn).To(PanicWith("value is missing from context"))
+		})
+	})
+	When("map is present in context", func() {
+		BeforeEach(func() {
+			ctx = cource.NewContext()
+		})
+		It("should return a channel", func() {
+			chanObj := cource.FromContextWithBuffer(ctx, key, 100)
+			Expect(chanObj).ToNot(BeNil())
+			Expect(cource.FromContextWithBuffer(ctx, key, 100)).To(BeIdenticalTo(chanObj))
+		})
+	})
+})
+
 var _ = Describe("ValidateContext", func() {
 	var (
 		ctx context.Context

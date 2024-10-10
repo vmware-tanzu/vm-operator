@@ -57,6 +57,12 @@ type Reconciler interface{}
 // NewReconcilerFunc is a base type for functions that return a reconciler.
 type NewReconcilerFunc func() Reconciler
 
+// InitEnvFn is used to initialize an environment prior to the manager starting.
+type InitEnvFn func(
+	ctx context.Context,
+	mgr pkgmgr.Manager,
+	client client.Client)
+
 func init() {
 	klog.SetOutput(GinkgoWriter)
 	logf.SetLogger(klog.Background())
@@ -66,6 +72,14 @@ func init() {
 // contains one independent test environment and a controller manager.
 type TestSuite struct {
 	context.Context
+
+	// startErr is the error returned by manager.Start
+	startErr   error
+	startErrMu sync.RWMutex
+
+	// StartErrExpected may be set to true to expect an error from
+	// manager.Start.
+	StartErrExpected bool
 
 	flags                 testFlags
 	envTest               envtest.Environment
@@ -78,6 +92,7 @@ type TestSuite struct {
 	cancelFunc      context.CancelFunc
 
 	// Controller specific fields
+	initEnvFuncs        []InitEnvFn
 	addToManagerFn      pkgmgr.AddToManagerFunc
 	initProvidersFn     pkgmgr.InitializeProvidersFunc
 	integrationTest     bool
@@ -93,6 +108,18 @@ type TestSuite struct {
 	mutatorFn   builder.MutatorFunc
 	pki         pkiToolchain
 	webhookYaml []byte
+}
+
+func (s *TestSuite) StartErr() error {
+	s.startErrMu.RLock()
+	defer s.startErrMu.RUnlock()
+	return s.startErr
+}
+
+func (s *TestSuite) setStartErr(err error) {
+	s.startErrMu.Lock()
+	defer s.startErrMu.Unlock()
+	s.startErr = err
 }
 
 func (s *TestSuite) isWebhookTest() bool {
@@ -156,6 +183,18 @@ func NewTestSuiteForControllerWithContext(
 	addToManagerFn pkgmgr.AddToManagerFunc,
 	initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
 
+	return NewTestSuiteForControllerWithContextAndInitEnvFuncs(
+		ctx, addToManagerFn, initProvidersFn, nil)
+}
+
+// NewTestSuiteForControllerWithContextAndInitEnvFuncs returns a new test suite
+// used for controller integration test.
+func NewTestSuiteForControllerWithContextAndInitEnvFuncs(
+	ctx context.Context,
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	initProvidersFn pkgmgr.InitializeProvidersFunc,
+	initEnvFuncs []InitEnvFn) *TestSuite {
+
 	if addToManagerFn == nil {
 		panic("addToManagerFn is nil")
 	}
@@ -168,6 +207,7 @@ func NewTestSuiteForControllerWithContext(
 		integrationTest: true,
 		addToManagerFn:  addToManagerFn,
 		initProvidersFn: initProvidersFn,
+		initEnvFuncs:    initEnvFuncs,
 	}
 	testSuite.init()
 
@@ -407,7 +447,13 @@ func (s *TestSuite) startManager() {
 		defer GinkgoRecover()
 
 		s.setManagerRunning(true)
-		Expect(s.manager.Start(ctx)).ToNot(HaveOccurred())
+		err := s.manager.Start(ctx)
+		s.setStartErr(err)
+		if s.StartErrExpected {
+			Expect(err).To(HaveOccurred())
+		} else {
+			Expect(err).ToNot(HaveOccurred())
+		}
 		s.setManagerRunning(false)
 	}()
 }
@@ -502,6 +548,14 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 				},
 			}
 			Expect(s.integrationTestClient.Create(s, namespace)).To(Succeed())
+		})
+
+		By("running init env funcs", func() {
+			for i := range s.initEnvFuncs {
+				if fn := s.initEnvFuncs[i]; fn != nil {
+					fn(s, s.manager, s.integrationTestClient)
+				}
+			}
 		})
 
 		By("create availability zone", func() {

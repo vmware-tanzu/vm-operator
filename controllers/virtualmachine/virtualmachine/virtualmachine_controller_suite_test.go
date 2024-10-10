@@ -11,11 +11,12 @@ import (
 
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -38,6 +39,9 @@ func TestVirtualMachine(t *testing.T) {
 	suite.Register(t, "VirtualMachine controller suite", intgTests, unitTests)
 }
 
-var _ = BeforeSuite(suite.BeforeSuite)
+var _ = BeforeSuite(func() {
+	virtualmachine.SkipNameValidation = ptr.To(true)
+	suite.BeforeSuite()
+})
 
 var _ = AfterSuite(suite.AfterSuite)

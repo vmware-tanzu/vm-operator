@@ -160,11 +160,20 @@ rules:
   resources:
   - availabilityzones
   - availabilityzones/status
-  - zones
   - zones/status
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - topology.tanzu.vmware.com
+  resources:
+  - zones
+  verbs:
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - vmoperator.vmware.com

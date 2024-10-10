@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 
@@ -54,6 +55,12 @@ const (
 	// controller.
 	vmClassControllerName = "vmoperator.vmware.com/vsphere"
 )
+
+// SkipNameValidation is used for testing to allow multiple controllers with the
+// same name since Controller-Runtime has a global singleton registry to
+// prevent controllers with the same name, even if attached to different
+// managers.
+var SkipNameValidation *bool
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
@@ -102,7 +109,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				MatchIfControllerNameFieldEmpty:   isDefaultVMClassController,
 				MatchIfControllerNameFieldMissing: isDefaultVMClassController,
 			}))).
-		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			SkipNameValidation:      SkipNameValidation,
+		})
 
 	builder = builder.Watches(&vmopv1.VirtualMachineClass{},
 		handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client, isDefaultVMClassController)))
@@ -113,6 +123,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.EnqueueRequestsFromMapFunc(
 				encryptionClassToVMMapperFn(ctx, r.Client),
 			))
+	}
+
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+		if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+			builder = builder.WatchesRawSource(source.Channel(
+				cource.FromContextWithBuffer(ctx, "VirtualMachine", 100),
+				&handler.EnqueueRequestForObject{}))
+		}
 	}
 
 	return builder.Complete(r)
@@ -298,7 +316,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
-	if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota {
+	if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota || pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
 		ctx = cource.JoinContext(ctx, r.Context)
 	}
 

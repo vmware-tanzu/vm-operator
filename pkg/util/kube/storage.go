@@ -5,6 +5,7 @@ package kube
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 
@@ -12,11 +13,61 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 )
+
+const (
+	csiTopologyAnnotation = "csi.vsphere.volume-requested-topology"
+)
+
+func getPVCRequestedZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
+	v, ok := pvc.Annotations[csiTopologyAnnotation]
+	if !ok {
+		return nil
+	}
+
+	zones := sets.Set[string]{}
+
+	var topology []map[string]string
+	if json.Unmarshal([]byte(v), &topology) == nil {
+		for i := range topology {
+			if z := topology[i]["topology.kubernetes.io/zone"]; z != "" {
+				zones.Insert(z)
+			}
+		}
+	}
+
+	return zones
+}
+
+// GetPVCZoneConstraints gets the set of the allowed zones, if any, for the PVCs.
+func GetPVCZoneConstraints(pvcs []corev1.PersistentVolumeClaim) (sets.Set[string], error) {
+	var zones sets.Set[string]
+
+	for _, pvc := range pvcs {
+		reqZones := getPVCRequestedZones(pvc)
+		if reqZones.Len() == 0 {
+			continue
+		}
+
+		if zones == nil {
+			zones = reqZones
+		} else {
+			t := zones.Intersection(reqZones)
+			if t.Len() == 0 {
+				return nil, fmt.Errorf("no common zones remaining after applying zone contraints for PVC %s", pvc.Name)
+			}
+
+			zones = t
+		}
+	}
+
+	return zones, nil
+}
 
 // GetStoragePolicyID returns the storage policy ID for a given StorageClass.
 // If no ID is found, an error is returned.

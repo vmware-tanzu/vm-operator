@@ -163,14 +163,14 @@ func ClusterPlaceVMForCreate(
 		HostRecommRequired: &needsHost,
 	}
 
-	vmCtx.Logger.V(6).Info("PlaceVmxCluster request", "placementSpec", placementSpec)
+	vmCtx.Logger.V(6).Info("PlaceVmsXCluster request", "placementSpec", placementSpec)
 
 	resp, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(vmCtx, placementSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	vmCtx.Logger.V(6).Info("PlaceVmxCluster response", "resp", resp)
+	vmCtx.Logger.V(6).Info("PlaceVmsXCluster response", "resp", resp)
 
 	if len(resp.Faults) != 0 {
 		var faultMgs []string

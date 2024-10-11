@@ -270,6 +270,7 @@ modules: ## Validates the modules
 	go mod tidy
 	cd hack/tools && go mod tidy
 	cd api && go mod tidy
+	cd pkg/backup/api && go mod tidy
 	cd pkg/constants/testlabels && go mod tidy
 
 .PHONY: modules-vendor

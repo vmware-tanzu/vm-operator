@@ -229,6 +229,7 @@ func cdromTests() {
 							pci := pciChange.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualPCIController)
 							ahci := ahciChange.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualAHCIController)
 							Expect(ahci.ControllerKey).To(Equal(pci.Key))
+							Expect(ahci.UnitNumber).ToNot(BeNil())
 
 							verifyCdromDeviceConfigSpec(cdromChange, vimtypes.VirtualDeviceConfigSpecOperationAdd, true, true, ahci.Key, 0, vmiFileName)
 						})

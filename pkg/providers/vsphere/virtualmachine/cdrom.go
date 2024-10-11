@@ -356,12 +356,13 @@ func addNewAHCIController(curDevices object.VirtualDeviceList) (
 		VirtualSATAController: vimtypes.VirtualSATAController{
 			VirtualController: vimtypes.VirtualController{
 				VirtualDevice: vimtypes.VirtualDevice{
-					ControllerKey: pciController.Key,
-					Key:           curDevices.NewKey(),
+					Key: curDevices.NewKey(),
 				},
 			},
 		},
 	}
+	curDevices.AssignController(ahciController, pciController)
+
 	deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 		Device:    ahciController,
 		Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,

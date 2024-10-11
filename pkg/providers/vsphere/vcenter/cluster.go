@@ -26,13 +26,13 @@ func ClusterMinCPUFreq(ctx context.Context, cluster *object.ClusterComputeResour
 
 	var hosts []mo.HostSystem
 	pc := property.DefaultCollector(cluster.Client())
-	if err := pc.Retrieve(ctx, cr.Host, []string{"summary"}, &hosts); err != nil {
+	if err := pc.Retrieve(ctx, cr.Host, []string{"summary.hardware.cpuMhz"}, &hosts); err != nil {
 		return 0, err
 	}
 
 	var minFreq uint64
-	for _, h := range hosts {
-		if hw := h.Summary.Hardware; hw != nil {
+	for i := range hosts {
+		if hw := hosts[i].Summary.Hardware; hw != nil {
 			hostCPUMHz := uint64(hw.CpuMhz)
 			if hostCPUMHz < minFreq || minFreq == 0 {
 				minFreq = hostCPUMHz

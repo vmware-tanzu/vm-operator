@@ -1,0 +1,52 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: vm-storage-quota-validating-webhook-configuration
+  annotations:
+    cert-manager.io/inject-ca-from: kube-system/storage-quota-serving-cert
+  labels:
+    "webhooks.vmoperator.vmware.com": "true"
+webhooks:
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: storage-quota-webhook-service
+      namespace: kube-system
+      path: /validate-storage-quota
+  failurePolicy: Fail
+  name: quota-create.validating.virtualmachine.v1alpha3.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha3
+    operations:
+    - CREATE
+    resources:
+    - virtualmachines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: storage-quota-webhook-service
+      namespace: kube-system
+      path: /validate-storage-quota
+  failurePolicy: Fail
+  name: quota-update.validating.virtualmachine.v1alpha3.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha3
+    operations:
+    - UPDATE
+    resources:
+    - virtualmachines
+  sideEffects: None
+  matchConditions:
+  - expression: oldObject.spec.advanced.bootDiskCapacity != object.spec.advanced.bootDiskCapacity
+    name: boot-disk-change

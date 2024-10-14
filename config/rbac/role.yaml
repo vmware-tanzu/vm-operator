@@ -108,6 +108,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - encryption.vmware.com
+  resources:
+  - encryptionclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - iaas.vmware.com
   resources:
   - capabilities
@@ -188,14 +196,6 @@ rules:
   - list
   - patch
   - update
-  - watch
-- apiGroups:
-  - vmencryption.vmware.com
-  resources:
-  - encryptionclasses
-  verbs:
-  - get
-  - list
   - watch
 - apiGroups:
   - vmoperator.vmware.com

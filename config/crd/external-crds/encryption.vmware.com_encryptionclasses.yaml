@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.1
-  name: encryptionclasses.vmencryption.vmware.com
+  name: encryptionclasses.encryption.vmware.com
 spec:
-  group: vmencryption.vmware.com
+  group: encryption.vmware.com
   names:
     kind: EncryptionClass
     listKind: EncryptionClassList

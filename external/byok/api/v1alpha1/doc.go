@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // +kubebuilder:object:generate=true
-// +groupName=vmencryption.vmware.com
+// +groupName=encryption.vmware.com
 
-// Package v1alpha1 contains API Schema definitions for the vmencryption
-// v1alpha1 API group.
+// Package v1alpha1 contains API Schema definitions for the encryption v1alpha1
+// API group.
 package v1alpha1

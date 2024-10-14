@@ -10,7 +10,7 @@ import (
 )
 
 // GroupName specifies the group name used to register the objects.
-const GroupName = "vmencryption.vmware.com"
+const GroupName = "encryption.vmware.com"
 
 var (
 	// GroupVersion is group version used to register these objects.

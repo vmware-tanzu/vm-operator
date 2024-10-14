@@ -5,6 +5,7 @@ package vmopv1_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -12,11 +13,17 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
@@ -535,6 +542,297 @@ var _ = Describe("SyncStorageUsageForNamespace", func() {
 			Expect(e.Object).ToNot(BeNil())
 			Expect(e.Object.GetNamespace()).To(Equal(namespace))
 			Expect(e.Object.GetName()).To(Equal(storageClass))
+		})
+	})
+})
+
+var _ = Describe("EncryptionClassToVirtualMachineMapper", func() {
+	const (
+		encryptionClassName = "my-encryption-class"
+		keyProviderID       = "my-key-provider-id"
+		keyID               = "my-key-id"
+		namespaceName       = "fake"
+	)
+
+	var (
+		ctx       context.Context
+		k8sClient ctrlclient.Client
+		withObjs  []ctrlclient.Object
+		withFuncs interceptor.Funcs
+		obj       ctrlclient.Object
+		mapFn     handler.MapFunc
+		mapFnCtx  context.Context
+		mapFnObj  ctrlclient.Object
+		reqs      []reconcile.Request
+	)
+	BeforeEach(func() {
+		reqs = nil
+		withObjs = nil
+		withFuncs = interceptor.Funcs{}
+
+		ctx = context.Background()
+		mapFnCtx = ctx
+
+		obj = &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      encryptionClassName,
+				Namespace: namespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: keyProviderID,
+				KeyID:       keyID,
+			},
+		}
+		mapFnObj = obj
+	})
+	JustBeforeEach(func() {
+		withObjs = append(withObjs, obj)
+		k8sClient = builder.NewFakeClientWithInterceptors(withFuncs, withObjs...)
+		Expect(k8sClient).ToNot(BeNil())
+	})
+	When("panic is expected", func() {
+		When("ctx is nil", func() {
+			JustBeforeEach(func() {
+				ctx = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_ = vmopv1util.EncryptionClassToVirtualMachineMapper(
+						ctx,
+						k8sClient)
+				}).To(PanicWith("context is nil"))
+			})
+		})
+		When("k8sClient is nil", func() {
+			JustBeforeEach(func() {
+				k8sClient = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_ = vmopv1util.EncryptionClassToVirtualMachineMapper(
+						ctx,
+						k8sClient)
+				}).To(PanicWith("k8sClient is nil"))
+			})
+		})
+		Context("mapFn", func() {
+			JustBeforeEach(func() {
+				mapFn = vmopv1util.EncryptionClassToVirtualMachineMapper(
+					ctx,
+					k8sClient)
+				Expect(mapFn).ToNot(BeNil())
+			})
+			When("ctx is nil", func() {
+				BeforeEach(func() {
+					mapFnCtx = nil
+				})
+				It("should panic", func() {
+					Expect(func() {
+						_ = mapFn(mapFnCtx, mapFnObj)
+					}).To(PanicWith("context is nil"))
+				})
+			})
+			When("object is nil", func() {
+				BeforeEach(func() {
+					mapFnObj = nil
+				})
+				It("should panic", func() {
+					Expect(func() {
+						_ = mapFn(mapFnCtx, mapFnObj)
+					}).To(PanicWith("object is nil"))
+				})
+			})
+			When("object is invalid", func() {
+				BeforeEach(func() {
+					mapFnObj = &vmopv1.VirtualMachine{}
+				})
+				It("should panic", func() {
+					Expect(func() {
+						_ = mapFn(mapFnCtx, mapFnObj)
+					}).To(PanicWith(fmt.Sprintf("object is %T", mapFnObj)))
+				})
+			})
+		})
+	})
+	When("panic is not expected", func() {
+		JustBeforeEach(func() {
+			mapFn = vmopv1util.EncryptionClassToVirtualMachineMapper(
+				ctx,
+				k8sClient)
+			Expect(mapFn).ToNot(BeNil())
+			reqs = mapFn(mapFnCtx, mapFnObj)
+			_ = reqs
+		})
+		When("there is an error listing vms", func() {
+			BeforeEach(func() {
+				withFuncs.List = func(
+					ctx context.Context,
+					client ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if _, ok := list.(*vmopv1.VirtualMachineList); ok {
+						return errors.New("fake")
+					}
+					return client.List(ctx, list, opts...)
+				}
+			})
+			Specify("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+		When("there are no matching vms", func() {
+			BeforeEach(func() {
+				withObjs = append(withObjs,
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-1",
+						},
+					},
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-2",
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							Crypto: &vmopv1.VirtualMachineCryptoSpec{},
+						},
+					},
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-3",
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							Crypto: &vmopv1.VirtualMachineCryptoSpec{
+								EncryptionClassName: encryptionClassName + "1",
+							},
+						},
+					},
+				)
+			})
+			Specify("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+		When("there is a single matching vm", func() {
+			BeforeEach(func() {
+				withObjs = append(withObjs,
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-1",
+						},
+					},
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-2",
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							Crypto: &vmopv1.VirtualMachineCryptoSpec{},
+						},
+					},
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-3",
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							Crypto: &vmopv1.VirtualMachineCryptoSpec{
+								EncryptionClassName: encryptionClassName,
+							},
+						},
+					},
+				)
+			})
+			Specify("one reconcile request should be returned", func() {
+				Expect(reqs).To(ConsistOf(
+					reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Namespace: namespaceName,
+							Name:      "vm-3",
+						},
+					},
+				))
+			})
+		})
+		When("there are multiple matching vms", func() {
+			BeforeEach(func() {
+				withObjs = append(withObjs,
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-1",
+						},
+					},
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-2",
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							Crypto: &vmopv1.VirtualMachineCryptoSpec{},
+						},
+					},
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-3",
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							Crypto: &vmopv1.VirtualMachineCryptoSpec{
+								EncryptionClassName: encryptionClassName,
+							},
+						},
+					},
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-4",
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							Crypto: &vmopv1.VirtualMachineCryptoSpec{
+								EncryptionClassName: encryptionClassName,
+							},
+						},
+					},
+					&vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      "vm-5",
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							Crypto: &vmopv1.VirtualMachineCryptoSpec{
+								EncryptionClassName: encryptionClassName,
+							},
+						},
+					},
+				)
+			})
+			Specify("an equal number of requests should be returned", func() {
+				Expect(reqs).To(ConsistOf(
+					reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Namespace: namespaceName,
+							Name:      "vm-4",
+						},
+					},
+					reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Namespace: namespaceName,
+							Name:      "vm-5",
+						},
+					},
+					reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Namespace: namespaceName,
+							Name:      "vm-3",
+						},
+					},
+				))
+			})
 		})
 	})
 })

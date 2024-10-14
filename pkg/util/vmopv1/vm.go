@@ -9,14 +9,18 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
@@ -239,4 +243,82 @@ func SyncStorageUsageForNamespace(
 			},
 		}
 	}()
+}
+
+// EncryptionClassToVirtualMachineMapper returns a mapper function used to
+// enqueue reconcile requests for VMs in response to an event on the
+// EncryptionClass resource.
+func EncryptionClassToVirtualMachineMapper(
+	ctx context.Context,
+	k8sClient client.Client) handler.MapFunc {
+
+	if ctx == nil {
+		panic("context is nil")
+	}
+	if k8sClient == nil {
+		panic("k8sClient is nil")
+	}
+
+	// For a given EncryptionClass, return reconcile requests for VMs that
+	// specify the same EncryptionClass.
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		if ctx == nil {
+			panic("context is nil")
+		}
+		if o == nil {
+			panic("object is nil")
+		}
+		obj, ok := o.(*byokv1.EncryptionClass)
+		if !ok {
+			panic(fmt.Sprintf("object is %T", o))
+		}
+
+		logger := logr.FromContextOrDiscard(ctx).
+			WithValues("name", o.GetName(), "namespace", o.GetNamespace())
+		logger.V(4).Info("Reconciling all VMs referencing an EncryptionClass")
+
+		// Find all VM resources that reference this EncryptionClass.
+		vmList := &vmopv1.VirtualMachineList{}
+		if err := k8sClient.List(
+			ctx,
+			vmList,
+			client.InNamespace(obj.Namespace)); err != nil {
+
+			if !apierrors.IsNotFound(err) {
+				logger.Error(
+					err,
+					"Failed to list VirtualMachines for "+
+						"reconciliation due to EncryptionClass watch")
+			}
+			return nil
+		}
+
+		// Populate reconcile requests for VMs that reference this
+		// EncryptionClass.
+		var requests []reconcile.Request
+		for i := range vmList.Items {
+			vm := vmList.Items[i]
+			if vm.Spec.Crypto == nil {
+				continue
+			}
+			if vm.Spec.Crypto.EncryptionClassName == obj.Name {
+				requests = append(
+					requests,
+					reconcile.Request{
+						NamespacedName: client.ObjectKey{
+							Namespace: vm.Namespace,
+							Name:      vm.Name,
+						},
+					})
+			}
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info(
+				"Reconciling VMs due to EncryptionClass watch",
+				"requests", requests)
+		}
+
+		return requests
+	}
 }

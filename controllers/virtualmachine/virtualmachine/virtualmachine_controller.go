@@ -121,7 +121,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		builder = builder.Watches(
 			&byokv1.EncryptionClass{},
 			handler.EnqueueRequestsFromMapFunc(
-				encryptionClassToVMMapperFn(ctx, r.Client),
+				vmopv1util.EncryptionClassToVirtualMachineMapper(ctx, r.Client),
 			))
 	}
 
@@ -193,54 +193,6 @@ func classToVMMapperFn(
 
 		logger.Info("Returning VM reconcile requests due to VirtualMachineClass watch", "requests", reconcileRequests)
 		return reconcileRequests
-	}
-}
-
-// encryptionClassToVMMapperFn returns a mapper function that can be used to
-// enqueue reconcile requests for VMs in response to an event on the
-// EncryptionClass resource.
-func encryptionClassToVMMapperFn(
-	ctx *pkgctx.ControllerManagerContext,
-	c client.Client) func(_ context.Context, o client.Object) []reconcile.Request {
-
-	// For a given EncryptionClass, return reconcile requests for VMs that
-	// specify the same EncryptionClass.
-	return func(_ context.Context, o client.Object) []reconcile.Request {
-		obj := o.(*byokv1.EncryptionClass)
-		logger := ctx.Logger.WithValues("name", obj.Name, "namespace", obj.Namespace)
-
-		logger.V(4).Info("Reconciling all VMs referencing an EncryptionClass")
-
-		// Find all VM resources that reference this EncryptionClass.
-		vmList := &vmopv1.VirtualMachineList{}
-		if err := c.List(ctx, vmList, client.InNamespace(obj.Namespace)); err != nil {
-			logger.Error(
-				err,
-				"Failed to list VirtualMachines for reconciliation due to EncryptionClass watch")
-			return nil
-		}
-
-		// Populate reconcile requests for VMs that reference this
-		// EncryptionClass.
-		var requests []reconcile.Request
-		for _, vm := range vmList.Items {
-			if vm.Spec.Crypto.EncryptionClassName == obj.Name {
-				requests = append(
-					requests,
-					reconcile.Request{
-						NamespacedName: client.ObjectKey{
-							Namespace: vm.Namespace,
-							Name:      vm.Name,
-						},
-					})
-			}
-		}
-
-		logger.V(4).Info(
-			"Returning VM reconcile requests due to EncryptionClass watch",
-			"requests", requests)
-
-		return requests
 	}
 }
 

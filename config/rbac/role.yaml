@@ -190,6 +190,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - vmencryption.vmware.com
+  resources:
+  - encryptionclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - vmoperator.vmware.com
   resources:
   - clustervirtualmachineimages

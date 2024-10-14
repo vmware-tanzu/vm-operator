@@ -312,6 +312,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=crd.nsx.vmware.com,resources=subnetports/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events;configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vmencryption.vmware.com,resources=encryptionclasses,verbs=get;list;watch
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)

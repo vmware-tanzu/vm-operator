@@ -90,6 +90,8 @@ func getVMStorageClassNamesAndPVCs(
 			pvc := &corev1.PersistentVolumeClaim{}
 			pvcKey := ctrlclient.ObjectKey{Name: claim.ClaimName, Namespace: vm.Namespace}
 			if err := client.Get(ctx, pvcKey, pvc); err != nil {
+				// TODO: If later we won't actually do placement, IMO this shouldn't be fatal. Need
+				// to rework the code a bit so this isn't as clunky.
 				return nil, nil, err
 			}
 

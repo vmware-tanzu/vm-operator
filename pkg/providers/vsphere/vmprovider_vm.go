@@ -592,7 +592,9 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		return err
 	}
 
-	pvcZones, err := kubeutil.GetPVCZoneConstraints(createArgs.Storage.PVCs)
+	pvcZones, err := kubeutil.GetPVCZoneConstraints(
+		createArgs.Storage.StorageClasses,
+		createArgs.Storage.PVCs)
 	if err != nil {
 		return err
 	}

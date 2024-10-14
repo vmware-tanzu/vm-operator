@@ -21,11 +21,12 @@ import (
 )
 
 const (
-	csiTopologyAnnotation = "csi.vsphere.volume-requested-topology"
+	csiRequestedTopologyAnnotation  = "csi.vsphere.volume-requested-topology"
+	csiAccessibleTopologyAnnotation = "csi.vsphere.volume-accessible-topology"
 )
 
-func getPVCRequestedZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
-	v, ok := pvc.Annotations[csiTopologyAnnotation]
+func getPVCZones(pvc corev1.PersistentVolumeClaim, key string) sets.Set[string] {
+	v, ok := pvc.Annotations[key]
 	if !ok {
 		return nil
 	}
@@ -44,25 +45,74 @@ func getPVCRequestedZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
 	return zones
 }
 
-// GetPVCZoneConstraints gets the set of the allowed zones, if any, for the PVCs.
-func GetPVCZoneConstraints(pvcs []corev1.PersistentVolumeClaim) (sets.Set[string], error) {
+func getPVCRequestedZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
+	return getPVCZones(pvc, csiRequestedTopologyAnnotation)
+}
+
+func getPVCAccessibleZones(pvc corev1.PersistentVolumeClaim) sets.Set[string] {
+	return getPVCZones(pvc, csiAccessibleTopologyAnnotation)
+}
+
+func GetPVCZoneConstraints(
+	storageClasses map[string]storagev1.StorageClass,
+	pvcs []corev1.PersistentVolumeClaim) (sets.Set[string], error) {
+
 	var zones sets.Set[string]
 
 	for _, pvc := range pvcs {
-		reqZones := getPVCRequestedZones(pvc)
-		if reqZones.Len() == 0 {
+		var z sets.Set[string]
+
+		// We don't expect anything else but check since we check CSI specific annotations below.
+		if v, ok := pvc.Annotations["volume.kubernetes.io/storage-provisioner"]; ok && v != "csi.vsphere.vmware.com" {
 			continue
 		}
 
-		if zones == nil {
-			zones = reqZones
-		} else {
-			t := zones.Intersection(reqZones)
-			if t.Len() == 0 {
-				return nil, fmt.Errorf("no common zones remaining after applying zone contraints for PVC %s", pvc.Name)
+		switch pvc.Status.Phase {
+		case corev1.ClaimBound:
+			// Easy case: if this PVC is already bound then just get its accessible zones, if any
+			// (the PVC's StorageClass should be Immediate).
+			z = getPVCAccessibleZones(pvc)
+
+		case corev1.ClaimPending:
+			var isImmediate bool
+
+			// We need to determine if the PVC's StorageClass is Immediate and we just
+			// caught this PVC before it was bound, or otherwise it is WFFC and we need
+			// to limit our placement candidates to its requested zones.
+
+			// While we have the DefaultStorageClass feature gate enabled, we don't mark an
+			// StorageClass with storageclass.kubernetes.io/is-default-class, so don't bother
+			// trying to resolve that here now.
+			if scName := pvc.Spec.StorageClassName; scName != nil && *scName != "" {
+				if sc, ok := storageClasses[*scName]; ok {
+					isImmediate = sc.VolumeBindingMode == nil || *sc.VolumeBindingMode == storagev1.VolumeBindingImmediate
+				}
 			}
 
-			zones = t
+			if isImmediate {
+				// Must wait for this PVC to get bound so we know its accessible zones.
+				return nil, fmt.Errorf("PVC %s is not bound", pvc.Name)
+			}
+
+			z = getPVCRequestedZones(pvc)
+
+		default: // corev1.ClaimLost
+			// TBD: For now preserve our prior behavior: don't explicitly fail here, and create the
+			// VM and wait for the volume to be attached prior to powering on the VM.
+			continue
+		}
+
+		if z.Len() > 0 {
+			if zones == nil {
+				zones = z
+			} else {
+				t := zones.Intersection(z)
+				if t.Len() == 0 {
+					return nil, fmt.Errorf("no allowed zones remaining after applying PVC zone constraints")
+				}
+
+				zones = t
+			}
 		}
 	}
 

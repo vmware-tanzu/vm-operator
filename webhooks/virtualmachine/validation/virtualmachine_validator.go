@@ -514,6 +514,9 @@ func (v validator) validateCrypto(
 		allErrs = append(allErrs, field.InternalError(encClassNamePath, err))
 
 	} else if !ok {
+		// Return an error on the "vm.Spec.Crypto.EncryptionClassName" path
+		// instead of "vm.Spec.StorageClass" because the storage class is
+		// invalid due to the user's choice of encryption class name.
 		allErrs = append(allErrs, field.Invalid(
 			encClassNamePath,
 			vm.Spec.Crypto.EncryptionClassName,

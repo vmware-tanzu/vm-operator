@@ -826,7 +826,10 @@ minus any virtual disks, will be encrypted.
 
 If the underlying vSphere platform does not have a default key provider,
 then this field is required when specifying an encryption storage class
-and/or a VM Class with a vTPM. |
+and/or a VM Class with a vTPM.
+
+If this field is set, spec.storageClass must use an encryption-enabled
+storage class. |
 | `useDefaultKeyProvider` _boolean_ | UseDefaultKeyProvider describes the desired behavior for when an explicit
 EncryptionClass is not provided.
 

@@ -6,6 +6,7 @@ package crypto_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -104,7 +105,15 @@ var _ = Describe("OnResult", Label(testlabels.Crypto), func() {
 			BeforeEach(func() {
 				vm.Spec.Crypto = nil
 			})
+			It("should not panic", func() {
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
 
+		When("reconfigErr does not include a fault", func() {
+			BeforeEach(func() {
+				reconfigErr = errors.New("fake")
+			})
 			It("should not panic", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})

@@ -140,7 +140,7 @@ func vmResizeTests() {
 		ExpectWithOffset(1, vm.Status.Class.Name).To(Equal(class.Name), "Status.Class.Name")
 
 		if inSync {
-			ExpectWithOffset(1, conditions.IsTrue(vm, vmopv1.VirtualMachineConfigurationSynced)).To(BeTrue(), "Synced Condition")
+			ExpectWithOffset(1, conditions.IsTrue(vm, vmopv1.VirtualMachineClassConfigurationSynced)).To(BeTrue(), "Synced Condition")
 		}
 	}
 
@@ -494,7 +494,7 @@ func vmResizeTests() {
 
 					assertExpectedResizedClassFields(vm, vmClass, false)
 
-					c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)
+					c := conditions.Get(vm, vmopv1.VirtualMachineClassConfigurationSynced)
 					Expect(c).ToNot(BeNil())
 					Expect(c.Status).To(Equal(metav1.ConditionFalse))
 					Expect(c.Reason).To(Equal("ClassNameChanged"))
@@ -526,7 +526,7 @@ func vmResizeTests() {
 
 					assertExpectedResizedClassFields(vm, vmClass, false)
 
-					c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)
+					c := conditions.Get(vm, vmopv1.VirtualMachineClassConfigurationSynced)
 					Expect(c).ToNot(BeNil())
 					Expect(c.Status).To(Equal(metav1.ConditionFalse))
 					Expect(c.Reason).To(Equal("ClassUpdated"))
@@ -590,7 +590,7 @@ func vmResizeTests() {
 						assertExpectedNoReservationFields(o)
 
 						Expect(vm.Annotations).ToNot(HaveKey(vmopv1util.LastResizedAnnotationKey))
-						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConfigurationSynced)).To(BeTrue())
+						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineClassConfigurationSynced)).To(BeTrue())
 					})
 
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
@@ -634,7 +634,7 @@ func vmResizeTests() {
 						assertExpectedNoReservationFields(o)
 					})
 
-					c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)
+					c := conditions.Get(vm, vmopv1.VirtualMachineClassConfigurationSynced)
 					Expect(c).ToNot(BeNil())
 					Expect(c.Status).To(Equal(metav1.ConditionFalse))
 					Expect(c.Reason).To(Equal("SameClassResize"))
@@ -721,7 +721,7 @@ func vmResizeTests() {
 				// BMV: TBD exactly what we should do in this case.
 				// Expect(vm.Status.Class).To(BeNil())
 
-				c := conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)
+				c := conditions.Get(vm, vmopv1.VirtualMachineClassConfigurationSynced)
 				Expect(c).ToNot(BeNil())
 				Expect(c.Status).To(Equal(metav1.ConditionUnknown))
 				Expect(c.Reason).To(Equal("ClassNotFound"))
@@ -747,7 +747,7 @@ func vmResizeTests() {
 				Expect(o.Config.ChangeTrackingEnabled).To(HaveValue(BeTrue()))
 
 				Expect(vm.Status.Class).To(BeNil())
-				Expect(conditions.Get(vm, vmopv1.VirtualMachineConfigurationSynced)).To(BeNil())
+				Expect(conditions.Get(vm, vmopv1.VirtualMachineClassConfigurationSynced)).To(BeNil())
 			})
 		})
 	})

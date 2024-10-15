@@ -425,7 +425,7 @@ func MarkVMClassConfigurationSynced(
 
 	className := vm.Spec.ClassName
 	if className == "" {
-		conditions.Delete(vm, vmopv1.VirtualMachineConfigurationSynced)
+		conditions.Delete(vm, vmopv1.VirtualMachineClassConfigurationSynced)
 		return
 	}
 
@@ -437,17 +437,17 @@ func MarkVMClassConfigurationSynced(
 	if !exists || lraName == "" {
 		_, sameClassResize := vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation]
 		if sameClassResize {
-			conditions.MarkFalse(vm, vmopv1.VirtualMachineConfigurationSynced, "SameClassResize", "")
+			conditions.MarkFalse(vm, vmopv1.VirtualMachineClassConfigurationSynced, "SameClassResize", "")
 		} else {
 			// Brownfield VM so just marked as synced.
-			conditions.MarkTrue(vm, vmopv1.VirtualMachineConfigurationSynced)
+			conditions.MarkTrue(vm, vmopv1.VirtualMachineClassConfigurationSynced)
 		}
 		return
 	}
 
 	if vm.Spec.ClassName != lraName {
 		// Most common need resize case.
-		conditions.MarkFalse(vm, vmopv1.VirtualMachineConfigurationSynced, "ClassNameChanged", "")
+		conditions.MarkFalse(vm, vmopv1.VirtualMachineClassConfigurationSynced, "ClassNameChanged", "")
 		return
 	}
 
@@ -462,17 +462,17 @@ func MarkVMClassConfigurationSynced(
 	vmClass := vmopv1.VirtualMachineClass{}
 	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: className, Namespace: vm.Namespace}, &vmClass); err != nil {
 		if apierrors.IsNotFound(err) {
-			conditions.MarkUnknown(vm, vmopv1.VirtualMachineConfigurationSynced, "ClassNotFound", "")
+			conditions.MarkUnknown(vm, vmopv1.VirtualMachineClassConfigurationSynced, "ClassNotFound", "")
 		} else {
-			conditions.MarkUnknown(vm, vmopv1.VirtualMachineConfigurationSynced, err.Error(), "")
+			conditions.MarkUnknown(vm, vmopv1.VirtualMachineClassConfigurationSynced, err.Error(), "")
 		}
 		return
 	}
 
 	if string(vmClass.UID) == lraUID && vmClass.Generation == lraGeneration {
-		conditions.MarkTrue(vm, vmopv1.VirtualMachineConfigurationSynced)
+		conditions.MarkTrue(vm, vmopv1.VirtualMachineClassConfigurationSynced)
 	} else {
-		conditions.MarkFalse(vm, vmopv1.VirtualMachineConfigurationSynced, "ClassUpdated", "")
+		conditions.MarkFalse(vm, vmopv1.VirtualMachineClassConfigurationSynced, "ClassUpdated", "")
 	}
 }
 

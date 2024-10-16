@@ -1,12 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-bases:
-- ../local
-
 resources:
+- ../local
 - sc.yaml
 - lb-xds.yaml
+
+components:
+- ../replacements
 
 patches:
 - target:
@@ -34,5 +35,4 @@ patches:
     namespace: vmware-system-vmop
   path: remove-node-selector-patch.yaml
 
-patchesStrategicMerge:
-  - vcsim-patch.yaml
+- path: vcsim-patch.yaml

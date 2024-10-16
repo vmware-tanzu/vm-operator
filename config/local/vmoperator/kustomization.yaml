@@ -23,14 +23,12 @@ resources:
 - ../../crd/external-crds/imageregistry.vmware.com_contentlibraryitems.yaml
 - ../../crd/external-crds/netoperator.vmware.com_networkinterfaces.yaml
 
-patchesStrategicMerge:
-- cpu_resources_patch.yaml
-- revision_history_limit.yaml
-- local_env_var_patch.yaml
-
-patchesJson6902:
+patches:
 - path: namespace_patch.yaml
   target:
     version: v1
     kind: Namespace
     name: system
+- path: cpu_resources_patch.yaml
+- path: revision_history_limit.yaml
+- path: local_env_var_patch.yaml

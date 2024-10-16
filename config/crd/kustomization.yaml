@@ -1,6 +1,9 @@
-# This kustomization.yaml is not intended to be run by itself,
-# since it depends on service name and namespace that are out of this kustomize package.
-# It should be run by config/default
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configurations:
+- kustomizeconfig.yaml
+
 resources:
 - bases/vmoperator.vmware.com_clustervirtualmachineimages.yaml
 - bases/vmoperator.vmware.com_contentsources.yaml
@@ -16,40 +19,26 @@ resources:
 - bases/vmoperator.vmware.com_webconsolerequests.yaml
 - bases/vmoperator.vmware.com_virtualmachinewebconsolerequests.yaml
 - bases/vmoperator.vmware.com_virtualmachinereplicasets.yaml
-# +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
 - path: patches/crd_preserveUnknownFields.yaml
   target:
     kind: CustomResourceDefinition
 
-patchesStrategicMerge:
-# [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
-# patches here are for enabling the conversion webhook for each CRD
-- patches/webhook_in_clustervirtualmachineimages.yaml
-- patches/webhook_in_virtualmachineclasses.yaml
-- patches/webhook_in_virtualmachineimages.yaml
-- patches/webhook_in_virtualmachinepublishrequests.yaml
-- patches/webhook_in_virtualmachines.yaml
-- patches/webhook_in_virtualmachineservices.yaml
-- patches/webhook_in_virtualmachinesetresourcepolicies.yaml
-#- patches/webhook_in_virtualmachinereplicasets.yaml
-#- patches/webhook_in_virtualmachinewebconsolerequests.yaml
-# +kubebuilder:scaffold:crdkustomizewebhookpatch
+# [WEBHOOK]
+- path: patches/webhook_in_clustervirtualmachineimages.yaml
+- path: patches/webhook_in_virtualmachineclasses.yaml
+- path: patches/webhook_in_virtualmachineimages.yaml
+- path: patches/webhook_in_virtualmachinepublishrequests.yaml
+- path: patches/webhook_in_virtualmachines.yaml
+- path: patches/webhook_in_virtualmachineservices.yaml
+- path: patches/webhook_in_virtualmachinesetresourcepolicies.yaml
 
-# [CERTMANAGER] To enable webhook, uncomment all the sections with [CERTMANAGER] prefix.
-# patches here are for enabling the CA injection for each CRD
-- patches/cainjection_in_clustervirtualmachineimages.yaml
-- patches/cainjection_in_virtualmachineclasses.yaml
-- patches/cainjection_in_virtualmachineimages.yaml
-- patches/cainjection_in_virtualmachinepublishrequests.yaml
-- patches/cainjection_in_virtualmachines.yaml
-- patches/cainjection_in_virtualmachineservices.yaml
-- patches/cainjection_in_virtualmachinesetresourcepolicies.yaml
-#- patches/cainjection_in_virtualmachinereplicasets.yaml
-#- patches/cainjection_in_virtualmachinewebconsolerequests.yaml
-# +kubebuilder:scaffold:crdkustomizecainjectionpatch
-
-# the following config is for teaching kustomize how to do kustomization for CRDs.
-configurations:
-- kustomizeconfig.yaml
+# [CERTMANAGER]
+- path: patches/cainjection_in_clustervirtualmachineimages.yaml
+- path: patches/cainjection_in_virtualmachineclasses.yaml
+- path: patches/cainjection_in_virtualmachineimages.yaml
+- path: patches/cainjection_in_virtualmachinepublishrequests.yaml
+- path: patches/cainjection_in_virtualmachines.yaml
+- path: patches/cainjection_in_virtualmachineservices.yaml
+- path: patches/cainjection_in_virtualmachinesetresourcepolicies.yaml

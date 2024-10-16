@@ -19,23 +19,23 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
-
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
-	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -62,7 +62,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		ctx,
 		&vmopv1.VirtualMachineImage{},
 		"status.name",
-		func(rawObj client.Object) []string {
+		func(rawObj ctrlclient.Object) []string {
 			vmi := rawObj.(*vmopv1.VirtualMachineImage)
 			return []string{vmi.Status.Name}
 		}); err != nil {
@@ -72,7 +72,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		ctx,
 		&vmopv1.ClusterVirtualMachineImage{},
 		"status.name",
-		func(rawObj client.Object) []string {
+		func(rawObj ctrlclient.Object) []string {
 			cvmi := rawObj.(*vmopv1.ClusterVirtualMachineImage)
 			return []string{cvmi.Status.Name}
 		}); err != nil {
@@ -89,7 +89,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 }
 
 // NewMutator returns the package's Mutator.
-func NewMutator(client client.Client) builder.Mutator {
+func NewMutator(client ctrlclient.Client) builder.Mutator {
 	return mutator{
 		client:    client,
 		converter: runtime.DefaultUnstructuredConverter,
@@ -97,7 +97,7 @@ func NewMutator(client client.Client) builder.Mutator {
 }
 
 type mutator struct {
-	client    client.Client
+	client    ctrlclient.Client
 	converter runtime.UnstructuredConverter
 }
 
@@ -130,6 +130,11 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		}
 		if _, err := ResolveImageNameOnCreate(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
+		}
+		if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+			if _, err := SetDefaultEncryptionClass(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			}
 		}
 	case admissionv1.Update:
 		oldVM, err := m.vmFromUnstructured(ctx.OldObj)
@@ -212,7 +217,7 @@ func SetNextRestartTime(
 // AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set
 // and no NetworkInterface is specified.
 // Return true if default NetworkInterface is added, otherwise return false.
-func AddDefaultNetworkInterface(ctx *pkgctx.WebhookRequestContext, client client.Client, vm *vmopv1.VirtualMachine) bool {
+func AddDefaultNetworkInterface(ctx *pkgctx.WebhookRequestContext, client ctrlclient.Client, vm *vmopv1.VirtualMachine) bool {
 	// Continue to support this ad-hoc v1a1 annotation. I don't think need or want to have this annotation
 	// in v1a2: Disabled mostly already covers it. We could map between the two for version conversion, but
 	// they do mean slightly different things, and kind of complicated to know what to do like if the annotation
@@ -303,11 +308,11 @@ func AddDefaultNetworkInterface(ctx *pkgctx.WebhookRequestContext, client client
 }
 
 // getProviderConfigMap is used in e2e tests.
-func getProviderConfigMap(ctx *pkgctx.WebhookRequestContext, c client.Client) (string, error) {
+func getProviderConfigMap(ctx *pkgctx.WebhookRequestContext, c ctrlclient.Client) (string, error) {
 	var obj corev1.ConfigMap
 	if err := c.Get(
 		ctx,
-		client.ObjectKey{
+		ctrlclient.ObjectKey{
 			Name:      config.ProviderConfigMapName,
 			Namespace: ctx.Namespace,
 		},
@@ -321,7 +326,7 @@ func getProviderConfigMap(ctx *pkgctx.WebhookRequestContext, c client.Client) (s
 // Return true if the default power state was set, otherwise false.
 func SetDefaultPowerState(
 	ctx *pkgctx.WebhookRequestContext,
-	client client.Client,
+	client ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) bool {
 
 	if vm.Spec.PowerState == "" {
@@ -335,7 +340,7 @@ func SetDefaultPowerState(
 // Return true if a default instance uuid was set, otherwise false.
 func SetDefaultInstanceUUID(
 	ctx *pkgctx.WebhookRequestContext,
-	client client.Client,
+	client ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
 	// DevOps users are not allowed to set spec.instanceUUID when creating a VM.
@@ -362,7 +367,7 @@ func SetDefaultInstanceUUID(
 // Return true if a default bios uuid was set, otherwise false.
 func SetDefaultBiosUUID(
 	ctx *pkgctx.WebhookRequestContext,
-	client client.Client,
+	client ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
 	// DevOps users are not allowed to set spec.biosUUID when creating a VM.
@@ -408,7 +413,7 @@ const (
 // vm.spec.imageName is also non-empty.
 func ResolveImageNameOnCreate(
 	ctx *pkgctx.WebhookRequestContext,
-	c client.Client,
+	c ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
 	// Return early if the VM image name is empty.
@@ -551,4 +556,58 @@ func SetImageNameFromCdrom(
 	}
 
 	vm.Spec.ImageName = cdromImageName
+}
+
+// SetDefaultEncryptionClass assigns spec.crypto.encryptionClassName to the
+// namespace's default EncryptionClass when creating a VM if spec.crypto is
+// nil or spec.crypto.encryptionClassName is empty.
+func SetDefaultEncryptionClass(
+	ctx *pkgctx.WebhookRequestContext,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) (bool, error) {
+
+	// Return early if the VM already specifies an EncryptionClass.
+	if c := vm.Spec.Crypto; c != nil && c.EncryptionClassName != "" {
+		return false, nil
+	}
+
+	// Return early if the VM does not specify a StorageClass.
+	if vm.Spec.StorageClass == "" {
+		return false, nil
+	}
+
+	// Check if the VM's storage class supports encryption.
+	if ok, err := kubeutil.IsEncryptedStorageClass(
+		ctx,
+		k8sClient,
+		vm.Spec.StorageClass); err != nil {
+
+		return false, err
+	} else if !ok {
+
+		// The VM Class does not support encryption, so we do not need to set
+		// a default EncryptionClass for the VM.
+		return false, nil
+	}
+
+	// Get the default encryption class for this namespace.
+	defaultEncClass, err := kubeutil.GetDefaultEncryptionClassForNamespace(
+		ctx,
+		k8sClient,
+		vm.Namespace)
+	if err != nil {
+		if err == kubeutil.ErrNoDefaultEncryptionClass {
+			return false, nil
+		}
+		return false, err
+	}
+
+	// Update the VM with the namespace's default EncryptionClass name.
+	if vm.Spec.Crypto == nil {
+		vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
+	}
+	vm.Spec.Crypto.EncryptionClassName = defaultEncClass.Name
+
+	return true, nil
+
 }

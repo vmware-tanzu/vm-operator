@@ -178,18 +178,15 @@ func IsEncryptedStorageClass(
 	}
 
 	var (
-		obj      corev1.ConfigMap
+		obj    corev1.ConfigMap
+		objKey = ctrlclient.ObjectKey{
+			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+			Name:      internal.EncryptedStorageClassNamesConfigMapName,
+		}
 		ownerRef = internal.GetOwnerRefForStorageClass(storageClass)
 	)
 
-	if err := k8sClient.Get(
-		ctx,
-		ctrlclient.ObjectKey{
-			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-			Name:      internal.EncryptedStorageClassNamesConfigMapName,
-		},
-		&obj); err != nil {
-
+	if err := k8sClient.Get(ctx, objKey, &obj); err != nil {
 		return false, ctrlclient.IgnoreNotFound(err)
 	}
 

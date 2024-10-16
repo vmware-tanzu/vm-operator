@@ -10,14 +10,18 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/uuid"
+	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -551,6 +555,181 @@ func intgTestsMutating() {
 							Expect(c.Image.Kind).To(BeEmpty())
 						}
 					}
+				})
+			})
+		})
+	})
+
+	Context("Crypto", func() {
+		const (
+			fakeString    = "fake"
+			encClassName  = "my-encryption-class"
+			keyProviderID = "my-key-provider-id"
+			keyID         = "my-key-id"
+			storClassName = "my-storage-class"
+		)
+
+		var (
+			encClass  byokv1.EncryptionClass
+			storClass storagev1.StorageClass
+		)
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.PodNamespace = pkgcfg.FromContext(suite.Context).PodNamespace
+			})
+
+			encClass = byokv1.EncryptionClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ctx.Namespace,
+					Name:      encClassName,
+					Labels: map[string]string{
+						kubeutil.DefaultEncryptionClassLabelName: kubeutil.DefaultEncryptionClassLabelValue,
+					},
+				},
+				Spec: byokv1.EncryptionClassSpec{
+					KeyProvider: keyProviderID,
+					KeyID:       keyID,
+				},
+			}
+
+			storClass = storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: storClassName,
+				},
+				Provisioner: "fake",
+			}
+
+			ctx.vm.Spec.StorageClass = storClass.Name
+
+			Expect(ctx.Client.Create(ctx, &encClass)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, &storClass)).To(Succeed())
+			Expect(kubeutil.MarkEncryptedStorageClass(
+				ctx,
+				ctx.Client,
+				storClass,
+				true)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			Expect(kubeutil.MarkEncryptedStorageClass(
+				ctx,
+				ctx.Client,
+				storClass,
+				false)).To(Succeed())
+			Expect(ctx.Client.Delete(ctx, &storClass)).To(Succeed())
+		})
+
+		When("creating a VM", func() {
+			JustBeforeEach(func() {
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			})
+
+			When("spec.crypto is nil", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Crypto = nil
+				})
+				When("spec.storageClass is empty", func() {
+					BeforeEach(func() {
+						ctx.vm.Spec.StorageClass = ""
+					})
+					It("should not modify spec.crypto", func() {
+						Expect(ctx.vm.Spec.Crypto).To(BeNil())
+					})
+				})
+				When("spec.storageClass does not support encryption", func() {
+					BeforeEach(func() {
+						Expect(kubeutil.MarkEncryptedStorageClass(
+							ctx,
+							ctx.Client,
+							storClass,
+							false)).To(Succeed())
+					})
+					It("should not modify spec.crypto", func() {
+						Expect(ctx.vm.Spec.Crypto).To(BeNil())
+					})
+				})
+				When("there is no default EncryptionClass", func() {
+					BeforeEach(func() {
+						encClass.Labels = map[string]string{}
+						Expect(ctx.Client.Update(ctx, &encClass)).To(Succeed())
+					})
+					It("should not modify spec.crypto", func() {
+						Expect(ctx.vm.Spec.Crypto).To(BeNil())
+					})
+				})
+				When("there is a default EncryptionClass", func() {
+					It("should set spec.crypto.encryptionClassName", func() {
+						Expect(ctx.vm.Spec.Crypto).ToNot(BeNil())
+						Expect(ctx.vm.Spec.Crypto.EncryptionClassName).To(Equal(encClass.Name))
+					})
+				})
+			})
+			When("spec.crypto.encryptionClassName is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
+				})
+				When("there is a default EncryptionClass", func() {
+					It("should set spec.crypto.encryptionClassName", func() {
+						Expect(ctx.vm.Spec.Crypto).ToNot(BeNil())
+						Expect(ctx.vm.Spec.Crypto.EncryptionClassName).To(Equal(encClass.Name))
+					})
+				})
+			})
+			When("spec.crypto.encryptionClassName is not empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+						EncryptionClassName: fakeString,
+					}
+				})
+				When("there is a default EncryptionClass", func() {
+					It("should not modify spec.crypto.encryptionClassName", func() {
+						Expect(ctx.vm.Spec.Crypto).ToNot(BeNil())
+						Expect(ctx.vm.Spec.Crypto.EncryptionClassName).To(Equal(fakeString))
+					})
+				})
+			})
+		})
+		When("updating a VM", func() {
+			BeforeEach(func() {
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			})
+			JustBeforeEach(func() {
+				Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+			})
+
+			When("spec.crypto is nil", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Crypto = nil
+				})
+				When("there is a default EncryptionClass", func() {
+					It("should not modify spec.crypto", func() {
+						Expect(ctx.vm.Spec.Crypto).To(BeNil())
+					})
+				})
+			})
+			When("spec.crypto.encryptionClassName is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
+				})
+				When("there is a default EncryptionClass", func() {
+					It("should not modify spec.crypto.encryptionClassName", func() {
+						Expect(ctx.vm.Spec.Crypto).ToNot(BeNil())
+						Expect(ctx.vm.Spec.Crypto.EncryptionClassName).To(BeEmpty())
+					})
+				})
+			})
+			When("spec.crypto.encryptionClassName is not empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+						EncryptionClassName: fakeString,
+					}
+				})
+				When("there is a default EncryptionClass", func() {
+					It("should not modify spec.crypto.encryptionClassName", func() {
+						Expect(ctx.vm.Spec.Crypto).ToNot(BeNil())
+						Expect(ctx.vm.Spec.Crypto.EncryptionClassName).To(Equal(fakeString))
+					})
 				})
 			})
 		})

@@ -41,9 +41,9 @@ FLAGS:
 # VIP host key will change as Supervisor leader migrates
 COMMON_SSH_OPTS=("-o StrictHostKeyChecking=no" "-o UserKnownHostsFile=/dev/null")
 
-# Easiest tag to just assume. Maybe revist if we combine "docker build", "docker save",
+# Easiest tag to just assume. Maybe revist if we combine "podman build", "podman save",
 # and this script into one.
-IMAGE_REF="docker.io/library/vmoperator-controller:latest"
+IMAGE_REF=${IMAGE_REF:-"localhost/vmoperator-controller:latest"}
 
 SV_VIP=
 SV_USERNAME="root"

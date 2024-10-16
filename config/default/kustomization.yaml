@@ -13,116 +13,44 @@ resources:
 - ../certmanager
 - ../crd/external-crds/encryption.vmware.com_encryptionclasses.yaml
 
-patchesStrategicMerge:
-- manager_default_container_patch.yaml
-- manager_auth_proxy_patch.yaml
-- manager_webhook_patch.yaml
-- manager_replicas_patch.yaml
-- manager_pod_info_patch.yaml
-- manager_tolerations_patch.yaml
-- manager_update_strategy_patch.yaml
-- manager_leader_election_id_patch.yaml
-- manager_max_concurrent_reconciles_patch.yaml
-
-vars:
-- name: LEADER_ELECTION_ID
-  objref:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: controller-manager
-  fieldref:
-    fieldpath: metadata.name
-- name: WEBHOOK_SERVICE_NAMESPACE
-  objref:
-    apiVersion: v1
-    kind: Service
-    name: webhook-service
-  fieldref:
-    fieldpath: metadata.namespace
-- name: WEBHOOK_SERVICE_NAME
-  objref:
-    apiVersion: v1
-    kind: Service
-    name: webhook-service
-  fieldref:
-    fieldpath: metadata.name
-- name: WEBHOOK_SERVICE_CONTAINER_PORT
-  objref:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: controller-manager
-  fieldref:
-    # Note that this assumes "manager" is containers[0] and the webhook port is ports[0]
-    fieldpath: spec.template.spec.containers[0].ports[0].containerPort
-- name: WEBHOOK_CERTIFICATE_NAMESPACE # namespace of the certificate CR
-  objref:
-    kind: Certificate
-    group: cert-manager.io
-    version: v1
-    name: serving-cert # this name should match the one in certificate.yaml
-  fieldref:
-    fieldpath: metadata.namespace
-- name: WEBHOOK_CERTIFICATE_NAME
-  objref:
-    kind: Certificate
-    group: cert-manager.io
-    version: v1
-    name: serving-cert # this name should match the one in certificate.yaml
-- name: WEBHOOK_SECRET_NAMESPACE
-  objref:
-    kind: Certificate
-    group: cert-manager.io
-    version: v1
-    name: serving-cert # this name should match the one in certificate.yaml
-  fieldref:
-    fieldpath: metadata.namespace
-- name: WEBHOOK_SECRET_NAME
-  objref:
-    kind: Certificate
-    group: cert-manager.io
-    version: v1
-    name: serving-cert # this name should match the one in certificate.yaml
-  fieldref:
-    fieldpath: spec.secretName
-- name: WEB_CONSOLE_VALIDATOR_CONTAINER_PORT
-  objref:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: web-console-validator
-  fieldref:
-    # Note that this assumes "web-console-validator" is containers[0] and port is ports[0]
-    fieldpath: spec.template.spec.containers[0].ports[0].containerPort
+patches:
+- path: manager_default_container_patch.yaml
+- path: manager_auth_proxy_patch.yaml
+- path: manager_webhook_patch.yaml
+- path: manager_replicas_patch.yaml
+- path: manager_pod_info_patch.yaml
+- path: manager_tolerations_patch.yaml
+- path: manager_update_strategy_patch.yaml
+- path: manager_leader_election_id_patch.yaml
+- path: manager_max_concurrent_reconciles_patch.yaml
 
 replacements:
-  - source:
+- source:
+    fieldPath: spec.template.spec.containers.[name=manager].ports.[name=webhook-server].containerPort
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: system
+    name: controller-manager
+  targets:
+  - select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: controller-manager
+    fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SERVICE_CONTAINER_PORT].value
+- source:
+    fieldPath: spec.template.spec.containers.[name=manager].volumeMounts.[name=cert].mountPath
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: system
+    name: controller-manager
+  targets:
+  - select:
       kind: Deployment
       name: controller-manager
-      fieldPath: metadata.annotations.[webhooks.vmoperator.vmware.com/service-container-port]
-    targets:
-    - select:
-        kind: Deployment
-        name: controller-manager
-      fieldPaths:
-      - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SERVICE_CONTAINER_PORT].value
-  - source:
-      kind: Deployment
-      name: controller-manager
-      fieldPath: metadata.annotations.[webhooks.vmoperator.vmware.com/secret-volume-mount-path]
-    targets:
-    - select:
-        kind: Deployment
-        name: controller-manager
-      fieldPaths:
-      - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SECRET_VOLUME_MOUNT_PATH].value
-      - spec.template.spec.containers.[name=manager].volumeMounts.0.mountPath
-  - source:
-      kind: Deployment
-      name: controller-manager
-      fieldPath: metadata.annotations.[webhooks.vmoperator.vmware.com/secret-volume-name]
-    targets:
-    - select:
-        kind: Deployment
-        name: controller-manager
-      fieldPaths:
-      - spec.template.spec.containers.[name=manager].volumeMounts.0.name
-      - spec.template.spec.volumes.0.name
+    fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SECRET_VOLUME_MOUNT_PATH].value

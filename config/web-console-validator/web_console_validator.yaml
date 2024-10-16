@@ -33,6 +33,7 @@ spec:
             memory: 50Mi
         ports:
         - containerPort: 9868
+          name: wcv-server
         env:
         - name: POD_NAMESPACE
           valueFrom:
@@ -68,6 +69,6 @@ spec:
   ports:
   - name: http
     port: 80
-    targetPort: $(WEB_CONSOLE_VALIDATOR_CONTAINER_PORT)
+    targetPort: wcv-server
   selector:
     app: web-console-validator

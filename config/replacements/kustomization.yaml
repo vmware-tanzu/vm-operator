@@ -1,0 +1,332 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+replacements:
+
+# LEADER_ELECTION_ID
+- source:
+    fieldPath: metadata.name
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: system
+    name: controller-manager
+  targets:
+  - fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=LEADER_ELECTION_ID].value
+    options:
+      delimiter: '-'
+    select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: controller-manager
+
+# WEBHOOK_SERVICE_NAME
+- source:
+    fieldPath: metadata.name
+    version: v1
+    kind: Service
+    namespace: system
+    name: webhook-service
+  targets:
+  - fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SERVICE_NAME].value
+    select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: controller-manager
+  - fieldPaths:
+    - spec.dnsNames.0
+    options:
+      delimiter: .
+      index: 0
+    select:
+      version: v1
+      group: cert-manager.io
+      kind: Certificate
+      namespace: system
+      name: serving-cert
+  - fieldPaths:
+    - spec.dnsNames.1
+    options:
+      delimiter: .
+      index: 0
+    select:
+      version: v1
+      group: cert-manager.io
+      kind: Certificate
+      namespace: system
+      name: serving-cert
+
+# WEBHOOK_SERVICE_NAMESPACE
+- source:
+    fieldPath: metadata.namespace
+    version: v1
+    kind: Service
+    namespace: system
+    name: webhook-service
+  targets:
+  - fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SERVICE_NAMESPACE].value
+    select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: controller-manager
+  - fieldPaths:
+    - spec.dnsNames.0
+    options:
+      delimiter: .
+      index: 1
+    select:
+      version: v1
+      group: cert-manager.io
+      kind: Certificate
+      namespace: system
+      name: serving-cert
+  - fieldPaths:
+    - spec.dnsNames.1
+    options:
+      delimiter: .
+      index: 1
+    select:
+      version: v1
+      group: cert-manager.io
+      kind: Certificate
+      namespace: system
+      name: serving-cert
+
+# WEBHOOK_CERTIFICATE_NAME
+- source:
+    fieldPath: metadata.name
+    version: v1
+    group: cert-manager.io
+    kind: Certificate
+    namespace: system
+    name: serving-cert
+  targets:
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: MutatingWebhookConfiguration
+      name: mutating-webhook-configuration
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: ValidatingWebhookConfiguration
+      name: validating-webhook-configuration
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: clustervirtualmachineimages.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachineclasses.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachineimages.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachinepublishrequests.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachines.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachineservices.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 1
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachinesetresourcepolicies.vmoperator.vmware.com
+
+
+# WEBHOOK_SECRET_NAME
+- source:
+    fieldPath: spec.secretName
+    version: v1
+    group: cert-manager.io
+    kind: Certificate
+    namespace: system
+    name: serving-cert
+  targets:
+  - fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SECRET_NAME].value
+    - spec.template.spec.volumes.[name=cert].secret.secretName
+    select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: controller-manager
+
+
+# WEBHOOK_CERTIFICATE_NAMESPACE
+# WEBHOOK_SECRET_NAMESPACE
+- source:
+    fieldPath: metadata.namespace
+    version: v1
+    group: cert-manager.io
+    kind: Certificate
+    namespace: system
+    name: serving-cert
+  targets:
+  - fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SECRET_NAMESPACE].value
+    select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: controller-manager
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: MutatingWebhookConfiguration
+      name: mutating-webhook-configuration
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: ValidatingWebhookConfiguration
+      name: validating-webhook-configuration
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: clustervirtualmachineimages.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachineclasses.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachineimages.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachinepublishrequests.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachines.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachineservices.vmoperator.vmware.com
+  - fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: /
+      index: 0
+    select:
+      group: apiextensions.k8s.io
+      version: v1
+      kind: CustomResourceDefinition
+      name: virtualmachinesetresourcepolicies.vmoperator.vmware.com

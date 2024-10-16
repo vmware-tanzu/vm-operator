@@ -22,4 +22,4 @@ spec:
         - "--v=10"
         ports:
         - containerPort: 8443
-          name: https
+          name: metrics-server

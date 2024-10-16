@@ -19,18 +19,19 @@ resources:
 - privileged_psp_role.yaml
 - privileged_psp_role_binding.yaml
 
-patchesStrategicMerge:
-# Applied for both manager and web-console-validator deployments.
-- image_patch.yaml
-- network_patch.yaml
-- anti_affinity_patch.yaml
-- cpu_resources_patch.yaml
-# Applied for the manager deployment only.
-- certs_volume_patch.yaml
-- manager_metrics_scrape_patch.yaml
-- service_metrics_port_patch.yaml
+patches:
 
-patchesJson6902:
+# Applied for both manager and web-console-validator deployments.
+- path: image_patch.yaml
+- path: network_patch.yaml
+- path: anti_affinity_patch.yaml
+- path: cpu_resources_patch.yaml
+
+# Applied for the manager deployment only.
+- path: certs_volume_patch.yaml
+- path: manager_metrics_scrape_patch.yaml
+- path: service_metrics_port_patch.yaml
+
 - path: web_console_validator_patch.yaml
   target:
     group: apps

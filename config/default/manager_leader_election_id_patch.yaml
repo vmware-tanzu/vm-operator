@@ -10,4 +10,4 @@ spec:
       - name: manager
         env:
         - name: LEADER_ELECTION_ID
-          value: $(LEADER_ELECTION_ID)-runtime
+          value: LEADER_ELECTION_ID_PLACEHOLDER-runtime

@@ -3,12 +3,6 @@ kind: Deployment
 metadata:
   name: controller-manager
   namespace: system
-  annotations:
-    # These are not annotations necessary at deploy time, rather they are used as constants in Kustomize
-    # Note that webhooks.vmoperator.vmware.com/service-container-port needs to be consistent with the containerPort int constant below
-    webhooks.vmoperator.vmware.com/service-container-port: "9878"
-    webhooks.vmoperator.vmware.com/secret-volume-mount-path: /tmp/k8s-webhook-server/serving-certs
-    webhooks.vmoperator.vmware.com/secret-volume-name: cert
 spec:
   template:
     spec:
@@ -17,21 +11,18 @@ spec:
       - name: manager
         env:
         - name: WEBHOOK_SERVICE_NAMESPACE
-          value: $(WEBHOOK_SERVICE_NAMESPACE)
+          value: WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER
         - name: WEBHOOK_SERVICE_NAME
-          value: $(WEBHOOK_SERVICE_NAME)
+          value: WEBHOOK_SERVICE_NAME_PLACEHOLDER
         - name: WEBHOOK_SECRET_NAMESPACE
-          value: $(WEBHOOK_SECRET_NAMESPACE)
+          value: WEBHOOK_SECRET_NAMESPACE_PLACEHOLDER
         - name: WEBHOOK_SECRET_NAME
-          value: $(WEBHOOK_SECRET_NAME)
+          value: WEBHOOK_SECRET_NAME_PLACEHOLDER
         - name: WEBHOOK_SECRET_VOLUME_MOUNT_PATH
           value: WEBHOOK_SECRET_VOLUME_MOUNT_PATH_VALUE
         - name: WEBHOOK_SERVICE_CONTAINER_PORT
           value: WEBHOOK_SERVICE_CONTAINER_PORT_STRING
         ports:
-        # This value is used as the int constant for webhook port across our YAML
-        # String constant for the same port is webhooks.vmoperator.vmware.com/service-container-port above. The two should be consistent.
-        # Note also there's an assumption in kustomization.yaml that this is ports[0]
         - containerPort: 9878
           name: webhook-server
           protocol: TCP
@@ -43,11 +34,11 @@ spec:
             path: /readyz
             port: health-probe
         volumeMounts:
-        - mountPath: WEBHOOK_SECRET_VOLUME_MOUNT_PATH_VALUE
-          name: WEBHOOK_SECRET_VOLUME_NAME
+        - name: cert
+          mountPath: /tmp/k8s-webhook-server/serving-certs
           readOnly: true
       volumes:
-      - name: WEBHOOK_SECRET_VOLUME_NAME
+      - name: cert
         secret:
           defaultMode: 420
-          secretName: $(WEBHOOK_SECRET_NAME)
+          secretName: WEBHOOK_SECRET_NAME_PLACEHOLDER

@@ -8,6 +8,6 @@ spec:
   ports:
   - name: https
     port: 443
-    targetPort: $(WEBHOOK_SERVICE_CONTAINER_PORT)
+    targetPort: webhook-server
   selector:
     control-plane: controller-manager

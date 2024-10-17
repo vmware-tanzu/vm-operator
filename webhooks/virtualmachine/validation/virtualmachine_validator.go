@@ -827,7 +827,7 @@ func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1
 		if vol.PersistentVolumeClaim == nil {
 			allErrs = append(allErrs, field.Required(volPath.Child("persistentVolumeClaim"), ""))
 		} else {
-			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vm, vol, volPath)...)
+			allErrs = append(allErrs, v.validateVolumeWithPVC(vol, volPath)...)
 		}
 	}
 
@@ -835,32 +835,21 @@ func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1
 }
 
 func (v validator) validateVolumeWithPVC(
-	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath *field.Path) field.ErrorList {
 
 	var (
-		allErrs      field.ErrorList
-		encClassName string
-		pvcPath      = volPath.Child("persistentVolumeClaim")
-		claimName    = vol.PersistentVolumeClaim.ClaimName
+		allErrs   field.ErrorList
+		pvcPath   = volPath.Child("persistentVolumeClaim")
+		claimName = vol.PersistentVolumeClaim.ClaimName
 	)
-
-	if vm.Spec.Crypto != nil {
-		encClassName = vm.Spec.Crypto.EncryptionClassName
-	}
 
 	if claimName == "" {
 		allErrs = append(
 			allErrs,
 			field.Required(pvcPath.Child("claimName"), ""))
-	} else if encClassName != "" && pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
-		allErrs = append(allErrs, field.Invalid(
-			pvcPath.Child("claimName"),
-			claimName,
-			fmt.Sprintf(invalidPVCBYOKFmt, encClassName)))
 	}
+
 	if vol.PersistentVolumeClaim.ReadOnly {
 		allErrs = append(allErrs, field.NotSupported(pvcPath.Child("readOnly"), true, []string{"false"}))
 	}

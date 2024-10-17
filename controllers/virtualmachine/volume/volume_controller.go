@@ -525,6 +525,11 @@ func (r *Reconciler) createInstanceStoragePVC(
 		},
 	}
 
+	if c := ctx.VM.Spec.Crypto; c != nil && c.EncryptionClassName != "" {
+		// Assign the InstanceStorage PVC the same EncryptionClass as the VM.
+		pvc.Annotations[constants.EncryptionClassNameAnnotation] = c.EncryptionClassName
+	}
+
 	if err := controllerutil.SetControllerReference(ctx.VM, pvc, r.Client.Scheme()); err != nil {
 		// This is an unexpected error.
 		return fmt.Errorf("cannot set controller reference on PersistentVolumeClaim: %w", err)

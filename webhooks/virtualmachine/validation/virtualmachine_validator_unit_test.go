@@ -860,7 +860,7 @@ func unitTestsValidateCreate() {
 					`spec.crypto.encryptionClassName: Invalid value: "fake": requires spec.storageClass specify an encryption storage class`),
 			},
 		),
-		Entry("disallow volume when spec.crypto.encryptionClassName is non-empty when FSS_WCP_VMSERVICE_BYOK is enabled",
+		Entry("allow volume when spec.crypto.encryptionClassName is non-empty when FSS_WCP_VMSERVICE_BYOK is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					storageClass1 := builder.DummyStorageClass()
@@ -897,61 +897,6 @@ func unitTestsValidateCreate() {
 						ctx.Client,
 						storageClass,
 						true)).To(Succeed())
-
-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.BringYourOwnEncryptionKey = true
-					})
-				},
-				validate: doValidateWithMsg(
-					`spec.volumes[0].persistentVolumeClaim.claimName: Invalid value: "dummyPVCName": cannot attach volume to vm with spec.crypto.encryptionClassName="fake"`),
-			},
-		),
-		Entry("allow volume when spec.crypto.encryptionClassName is empty when FSS_WCP_VMSERVICE_BYOK is enabled",
-			testParams{
-				setup: func(ctx *unitValidatingWebhookContext) {
-					storageClass1 := builder.DummyStorageClass()
-					Expect(ctx.Client.Create(ctx, storageClass1)).To(Succeed())
-
-					storageClass2 := builder.DummyStorageClass()
-					storageClass2.Name += "2"
-					Expect(ctx.Client.Create(ctx, storageClass2)).To(Succeed())
-
-					resourceQuota := builder.DummyResourceQuota(
-						ctx.vm.Namespace,
-						storageClass1.Name+".storageclass.storage.k8s.io/persistentvolumeclaims",
-						storageClass2.Name+".storageclass.storage.k8s.io/persistentvolumeclaims")
-					Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
-
-					pvc := builder.DummyPersistentVolumeClaim()
-					pvc.Name = builder.DummyPVCName
-					pvc.Namespace = ctx.vm.Namespace
-					pvc.Spec.StorageClassName = ptr.To(storageClass2.Name)
-					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
-
-					ctx.vm.Spec.StorageClass = storageClass1.Name
-					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
-
-					var vmStorageClass storagev1.StorageClass
-					Expect(ctx.Client.Get(
-						ctx,
-						client.ObjectKey{Name: ctx.vm.Spec.StorageClass},
-						&vmStorageClass)).To(Succeed())
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx,
-						ctx.Client,
-						vmStorageClass,
-						false)).To(Succeed())
-
-					var pvcStorageClass storagev1.StorageClass
-					Expect(ctx.Client.Get(
-						ctx,
-						client.ObjectKey{Name: *pvc.Spec.StorageClassName},
-						&pvcStorageClass)).To(Succeed())
-					Expect(kubeutil.MarkEncryptedStorageClass(
-						ctx,
-						ctx.Client,
-						pvcStorageClass,
-						false)).To(Succeed())
 
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.BringYourOwnEncryptionKey = true

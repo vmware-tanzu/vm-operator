@@ -68,6 +68,11 @@ const (
 	CloudInitGuestInfoUserdata         = "guestinfo.userdata"
 	CloudInitGuestInfoUserdataEncoding = "guestinfo.userdata.encoding"
 
+	// EncryptionClassNameAnnotation specifies the name of an EncryptionClass
+	// resource. This is used by APIs that participate in BYOK but cannot modify
+	// their spec to do so, such as the PersistentVolumeClaim API.
+	EncryptionClassNameAnnotation = "encryption.vmware.com/encryption-class-name"
+
 	// InstanceStoragePVCNamePrefix prefix of auto-generated PVC names.
 	InstanceStoragePVCNamePrefix = "instance-pvc-"
 	// InstanceStorageLabelKey identifies resources related to instance storage.

@@ -270,6 +270,57 @@ func unitTestsReconcile() {
 				Expect(err.Error()).To(ContainSubstring("insufficient quota"))
 				expectPVCsStatus(volCtx, ctx, true, false, 0)
 			})
+
+			When("VM has nil spec.crypto", func() {
+				BeforeEach(func() {
+					vm.Spec.Crypto = nil
+				})
+				Specify("PVCs are created sans the expected annotation", func() {
+					Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+					pvcList, err := getInstanceStoragePVCs(volCtx, ctx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(pvcList).ToNot(BeEmpty())
+					for i := range pvcList {
+						Expect(pvcList[i].Annotations).ToNot(HaveKey(constants.EncryptionClassNameAnnotation))
+					}
+				})
+			})
+
+			When("VM has empty spec.crypto.encryptionClassName", func() {
+				BeforeEach(func() {
+					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+						EncryptionClassName: "",
+					}
+				})
+				Specify("PVCs are created sans the expected annotation", func() {
+					Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+					pvcList, err := getInstanceStoragePVCs(volCtx, ctx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(pvcList).ToNot(BeEmpty())
+					for i := range pvcList {
+						Expect(pvcList[i].Annotations).ToNot(HaveKey(constants.EncryptionClassNameAnnotation))
+					}
+				})
+			})
+
+			When("VM has non-empty spec.crypto.encryptionClassName", func() {
+				BeforeEach(func() {
+					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+						EncryptionClassName: "my-encryption-class",
+					}
+				})
+				Specify("PVCs are created with the expected annotation", func() {
+					Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+					pvcList, err := getInstanceStoragePVCs(volCtx, ctx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(pvcList).ToNot(BeEmpty())
+					for i := range pvcList {
+						Expect(pvcList[i].Annotations).To(HaveKeyWithValue(
+							constants.EncryptionClassNameAnnotation,
+							vm.Spec.Crypto.EncryptionClassName))
+					}
+				})
+			})
 		})
 
 		When("VM does not have BiosUUID", func() {

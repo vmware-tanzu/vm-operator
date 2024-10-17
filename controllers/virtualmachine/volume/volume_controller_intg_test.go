@@ -244,7 +244,9 @@ func intgTestsReconcile() {
 				config.Features.InstanceStorage = true
 				config.InstanceStorage.PVPlacementFailedTTL = 0
 			})
+		})
 
+		JustBeforeEach(func() {
 			vm.Spec.Volumes = append(vm.Spec.Volumes, builder.DummyInstanceStorageVirtualMachineVolumes()...)
 			vm.Labels = map[string]string{constants.InstanceStorageLabelKey: "true"}
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
@@ -303,6 +305,42 @@ func intgTestsReconcile() {
 			})
 			By("selected-node annotations should be removed", func() {
 				waitForVirtualMachineInstanceStorage(vmKey, false, false)
+			})
+		})
+
+		When("VM has non-empty spec.crypto.encryptionClassName", func() {
+			BeforeEach(func() {
+				if vm.Annotations == nil {
+					vm.Annotations = map[string]string{}
+				}
+				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = dummySelectedNode
+				vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = dummySelectedNodeMOID
+
+				vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+					EncryptionClassName: "my-encryption-class",
+				}
+			})
+			Specify("PVCs are created with the expected annotation", func() {
+				Expect(ctx.Client.Get(ctx, vmKey, vm)).To(Succeed())
+
+				volumes := instancestorage.FilterVolumes(vm)
+				Expect(volumes).ToNot(BeEmpty())
+
+				Eventually(func(g Gomega) {
+					for i := range volumes {
+						var obj corev1.PersistentVolumeClaim
+						g.Expect(ctx.Client.Get(
+							ctx,
+							client.ObjectKey{
+								Namespace: vm.Namespace,
+								Name:      volumes[i].PersistentVolumeClaim.ClaimName,
+							},
+							&obj)).To(Succeed())
+						g.Expect(obj.Annotations).To(HaveKeyWithValue(
+							constants.EncryptionClassNameAnnotation,
+							vm.Spec.Crypto.EncryptionClassName))
+					}
+				}).Should(Succeed())
 			})
 		})
 	})

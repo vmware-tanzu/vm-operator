@@ -26,6 +26,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/webconsoleurl"
 )
 
 const (
@@ -167,9 +168,9 @@ func (r *Reconciler) ReconcileEarlyNormal(ctx *pkgctx.WebConsoleRequestContext) 
 }
 
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.WebConsoleRequestContext) error {
-	ctx.Logger.Info("Reconciling WebConsoleRequest")
+	ctx.Logger.Info("Reconciling WebConsoleRequest (v1alpha1)")
 	defer func() {
-		ctx.Logger.Info("Finished reconciling WebConsoleRequest")
+		ctx.Logger.Info("Finished reconciling WebConsoleRequest (v1alpha1)")
 	}()
 
 	v1a3VM := &vmopv1.VirtualMachine{}
@@ -187,18 +188,11 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.WebConsoleRequestContext) error
 	ctx.WebConsoleRequest.Status.Response = ticket
 	ctx.WebConsoleRequest.Status.ExpiryTime = metav1.NewTime(metav1.Now().Add(DefaultExpiryTime))
 
-	// Retrieve the proxy address from the load balancer service ingress IP.
-	proxySvc := &corev1.Service{}
-	proxySvcObjectKey := client.ObjectKey{Name: ProxyAddrServiceName, Namespace: ProxyAddrServiceNamespace}
-	err = r.Get(ctx, proxySvcObjectKey, proxySvc)
+	proxyAddr, err := r.ProxyAddress(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get proxy address service  %s: %w", proxySvcObjectKey, err)
+		return err
 	}
-	if len(proxySvc.Status.LoadBalancer.Ingress) == 0 {
-		return fmt.Errorf("no ingress found for proxy address service %s", proxySvcObjectKey)
-	}
-
-	ctx.WebConsoleRequest.Status.ProxyAddr = proxySvc.Status.LoadBalancer.Ingress[0].IP
+	ctx.WebConsoleRequest.Status.ProxyAddr = proxyAddr
 
 	// Add UUID as a Label to the current WebConsoleRequest resource after acquiring the ticket.
 	// This will be used when validating the connection request from users to the web console URL.
@@ -227,4 +221,41 @@ func (r *Reconciler) ReconcileOwnerReferences(ctx *pkgctx.WebConsoleRequestConte
 
 	ctx.WebConsoleRequest.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
 	return nil
+}
+
+// ProxyAddress first attempts to get the proxy address through the API Server DNS Names.
+// If that is unset, though, fall back to using the virtual IP.
+func (r *Reconciler) ProxyAddress(ctx *pkgctx.WebConsoleRequestContext) (string, error) {
+	if !pkgcfg.FromContext(ctx).Features.SimplifiedEnablement {
+		return r.ProxyAddressFromVirtualIP(ctx)
+	}
+
+	// Attempt to use the API Server DNS Names to get the proxy address.
+	proxyAddress, err := webconsoleurl.ProxyServiceDNSName(ctx, r)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to get proxy service URL: %w", err)
+	}
+
+	// If no API Server DNS Name exists, fall back to using the virtual IP.
+	if len(proxyAddress) == 0 {
+		return r.ProxyAddressFromVirtualIP(ctx)
+	}
+
+	return proxyAddress, nil
+}
+
+// ProxyAddressFromVirtualIP retrieves the virtual IP, which will be used as the Proxy Address.
+func (r *Reconciler) ProxyAddressFromVirtualIP(ctx *pkgctx.WebConsoleRequestContext) (string, error) {
+	proxySvc := &corev1.Service{}
+	proxySvcObjectKey := client.ObjectKey{Name: ProxyAddrServiceName, Namespace: ProxyAddrServiceNamespace}
+	err := r.Get(ctx, proxySvcObjectKey, proxySvc)
+	if err != nil {
+		return "", fmt.Errorf("failed to get proxy address service  %s: %w", proxySvcObjectKey, err)
+	}
+	if len(proxySvc.Status.LoadBalancer.Ingress) == 0 {
+		return "", fmt.Errorf("no ingress found for proxy address service %s", proxySvcObjectKey)
+	}
+
+	return proxySvc.Status.LoadBalancer.Ingress[0].IP, nil
 }

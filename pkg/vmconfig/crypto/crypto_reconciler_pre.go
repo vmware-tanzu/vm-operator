@@ -5,7 +5,6 @@ package crypto
 
 import (
 	"context"
-	"errors"
 	"regexp"
 	"strings"
 
@@ -43,6 +42,8 @@ type reconcileArgs struct {
 	curKey         cryptoKey
 	newKey         cryptoKey
 	isEncStorClass bool
+	hasVTPM        bool
+	addVTPM        bool
 }
 
 //nolint:gocyclo // The allowed complexity is 30, this is 31.
@@ -104,6 +105,9 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
+	// Record whether the VM has or is adding a vTPM.
+	args.hasVTPM, args.addVTPM = hasVTPM(moVM, configSpec)
+
 	// Get the new provider ID and key ID.
 	if args.newKey, reason, msgs, err = getNewCryptoKey(ctx, args); err != nil {
 		return err
@@ -111,7 +115,13 @@ func (r reconciler) Reconcile(
 
 	var op string
 	switch {
-	case args.curKey.provider == "" && args.newKey.provider != "":
+	case // The VM is not currently encrypted and there is a provider available.
+		args.curKey.provider == "" && args.newKey.provider != "" &&
+			// New VMs that do not have a vTPM or encryption storage policy
+			// should not be encrypted, even if there is a default key provider.
+			!(args.moVM.Config == nil && args.newKey.isDefaultProvider &&
+				!args.hasVTPM && !args.addVTPM && !args.isEncStorClass):
+
 		op = "encrypting"
 		if reason == 0 && len(msgs) == 0 {
 			r, m, err := onEncrypt(ctx, args)
@@ -121,9 +131,14 @@ func (r reconciler) Reconcile(
 			reason |= r
 			msgs = append(msgs, m...)
 		}
-	case args.curKey.provider != "" && args.newKey.provider != "" &&
-		((args.curKey.provider != args.newKey.provider) ||
-			(args.curKey.provider == args.newKey.provider && args.curKey.id != args.newKey.id)):
+	case // The VM is currently encrypted and there is a new provider that is
+		// different than the current provider.
+		args.curKey.provider != "" && args.newKey.provider != "" &&
+			((args.curKey.provider != args.newKey.provider) ||
+				// It is the same provider, but the new key is different than
+				// the current key.
+				(args.curKey.provider == args.newKey.provider &&
+					args.curKey.id != args.newKey.id)):
 
 		op = "recrypting"
 		if reason == 0 && len(msgs) == 0 {
@@ -134,7 +149,9 @@ func (r reconciler) Reconcile(
 			reason |= r
 			msgs = append(msgs, m...)
 		}
-	case args.curKey.provider != "":
+	case // The VM is currently encrypted.
+		args.curKey.provider != "":
+
 		op = "updating encrypted"
 		if reason == 0 && len(msgs) == 0 {
 			r, m, err := validateUpdateEncrypted(args)
@@ -145,7 +162,9 @@ func (r reconciler) Reconcile(
 			msgs = append(msgs, m...)
 		}
 
-	case args.curKey.provider == "":
+	case // The VM is not currently encrypted.
+		args.curKey.provider == "":
+
 		op = "updating unencrypted"
 		if reason == 0 && len(msgs) == 0 {
 			r, m, err := validateUpdateUnencrypted(args)
@@ -380,16 +399,13 @@ func onRecrypt(
 	return 0, nil, nil
 }
 
+//nolint:unparam
 func validateEncrypt(args reconcileArgs) (Reason, []string, error) {
 	var (
 		msgs   []string
 		reason Reason
 	)
-	if has, add := hasVTPM(args.moVM, args.configSpec); !has && !add && !args.isEncStorClass {
-		if args.newKey.isDefaultProvider {
-			return 0, nil, errors.New(
-				"encrypting vm requires compatible storage class or vTPM")
-		}
+	if !args.hasVTPM && !args.addVTPM && !args.isEncStorClass {
 		reason |= ReasonInvalidState
 		msgs = append(msgs, "use encryption storage class or have vTPM")
 	}
@@ -404,16 +420,13 @@ func validateEncrypt(args reconcileArgs) (Reason, []string, error) {
 	return reason, msgs, nil
 }
 
+//nolint:unparam
 func validateRecrypt(args reconcileArgs) (Reason, []string, error) {
 	var (
 		msgs   []string
 		reason Reason
 	)
-	if has, add := hasVTPM(args.moVM, args.configSpec); !has && !add && !args.isEncStorClass {
-		if args.newKey.isDefaultProvider {
-			return 0, nil, errors.New(
-				"recrypting vm requires compatible storage class or vTPM")
-		}
+	if !args.hasVTPM && !args.addVTPM && !args.isEncStorClass {
 		reason |= ReasonInvalidState
 		msgs = append(msgs, "use encryption storage class or have vTPM")
 	}
@@ -428,16 +441,13 @@ func validateRecrypt(args reconcileArgs) (Reason, []string, error) {
 	return reason, msgs, nil
 }
 
+//nolint:unparam
 func validateUpdateEncrypted(args reconcileArgs) (Reason, []string, error) {
 	var (
 		msgs   []string
 		reason Reason
 	)
-	if has, add := hasVTPM(args.moVM, args.configSpec); !has && !add && !args.isEncStorClass {
-		if args.newKey.isDefaultProvider {
-			return 0, nil, errors.New(
-				"updating encrypted vm requires compatible storage class or vTPM")
-		}
+	if !args.hasVTPM && !args.addVTPM && !args.isEncStorClass {
 		reason |= ReasonInvalidState
 		msgs = append(msgs, "use encryption storage class or have vTPM")
 	}
@@ -459,19 +469,17 @@ func validateUpdateUnencrypted(args reconcileArgs) (Reason, []string, error) {
 		reason Reason
 	)
 
-	if has, add := hasVTPM(args.moVM, args.configSpec); has || add || args.isEncStorClass {
-		if args.isEncStorClass {
-			reason |= ReasonInvalidState
-			msgs = append(msgs, "not use encryption storage class")
-		}
-		if has {
-			reason |= ReasonInvalidState
-			msgs = append(msgs, "not have vTPM")
-		}
-		if add {
-			reason |= ReasonInvalidChanges
-			msgs = append(msgs, "not add vTPM")
-		}
+	if args.isEncStorClass {
+		reason |= ReasonInvalidState
+		msgs = append(msgs, "not use encryption storage class")
+	}
+	if args.hasVTPM {
+		reason |= ReasonInvalidState
+		msgs = append(msgs, "not have vTPM")
+	}
+	if args.addVTPM {
+		reason |= ReasonInvalidChanges
+		msgs = append(msgs, "not add vTPM")
 	}
 	return reason, msgs, nil
 }

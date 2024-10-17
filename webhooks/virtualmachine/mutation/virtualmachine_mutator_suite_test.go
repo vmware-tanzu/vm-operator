@@ -18,6 +18,10 @@ var suite = builder.NewTestSuiteForMutatingWebhookWithContext(
 	pkgcfg.WithConfig(
 		pkgcfg.Config{
 			BuildVersion: "v1",
+			Features: pkgcfg.FeatureStates{
+				BringYourOwnEncryptionKey: true,
+			},
+			PodNamespace: "default",
 		}),
 	mutation.AddToManager,
 	mutation.NewMutator,

@@ -4,6 +4,8 @@
 package virtualmachine
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/vmware/govmomi/object"
@@ -15,6 +17,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -160,11 +163,9 @@ func UpdateConfigSpecCdromDeviceConnection(
 	return nil
 }
 
-// getBackingFileNameByImageRef syncs and returns the ISO type content library
-// file name based on the given VirtualMachineImageRef.
-// If a namespace scope VirtualMachineImage is provided, it checks the
-// ContentLibraryItem status, otherwise, a ClusterVirtualMachineImage status,
-// and returns the backing file name from the StorageURI field.
+// getBackingFileNameByImageRef returns the ISO type content library file name
+// based on the given VirtualMachineImageRef. It also syncs the content library
+// if needed to ensure the file is available for CD-ROM connection.
 func getBackingFileNameByImageRef(
 	vmCtx pkgctx.VirtualMachineContext,
 	libManager *library.Manager,
@@ -175,46 +176,24 @@ func getBackingFileNameByImageRef(
 	var (
 		libItemUUID string
 		itemStatus  imgregv1a1.ContentLibraryItemStatus
+		err         error
 	)
 
 	switch imageRef.Kind {
 	case vmiKind:
-		ns := vmCtx.VM.Namespace
-		var vmi vmopv1.VirtualMachineImage
-		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: imageRef.Name, Namespace: ns}, &vmi); err != nil {
+		libItemUUID, itemStatus, err = processImage(vmCtx, client, imageRef.Name, vmCtx.VM.Namespace)
+		if err != nil {
 			return "", err
 		}
-		if vmi.Spec.ProviderRef == nil {
-			return "", fmt.Errorf("provider ref is nil for VirtualMachineImage: %q", vmi.Name)
-		}
-		var clitem imgregv1a1.ContentLibraryItem
-		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: vmi.Spec.ProviderRef.Name, Namespace: ns}, &clitem); err != nil {
-			return "", err
-		}
-		libItemUUID = string(clitem.Spec.UUID)
-		itemStatus = clitem.Status
 	case cvmiKind:
-		var cvmi vmopv1.ClusterVirtualMachineImage
-		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: imageRef.Name}, &cvmi); err != nil {
+		libItemUUID, itemStatus, err = processImage(vmCtx, client, imageRef.Name, "")
+		if err != nil {
 			return "", err
 		}
-		if cvmi.Spec.ProviderRef == nil {
-			return "", fmt.Errorf("provider ref is nil for ClusterVirtualMachineImage: %q", cvmi.Name)
-		}
-		var cclitem imgregv1a1.ClusterContentLibraryItem
-		if err := client.Get(vmCtx, ctrlclient.ObjectKey{Name: cvmi.Spec.ProviderRef.Name}, &cclitem); err != nil {
-			return "", err
-		}
-		libItemUUID = string(cclitem.Spec.UUID)
-		itemStatus = cclitem.Status
-
 	default:
 		return "", fmt.Errorf("unsupported image kind: %q", imageRef.Kind)
 	}
 
-	if itemStatus.Type != imgregv1a1.ContentLibraryItemTypeIso {
-		return "", fmt.Errorf("expected ISO type image, got %s", itemStatus.Type)
-	}
 	if len(itemStatus.FileInfo) == 0 || itemStatus.FileInfo[0].StorageURI == "" {
 		return "", fmt.Errorf("no storage URI found in the content library item status: %v", itemStatus)
 	}
@@ -233,6 +212,63 @@ func getBackingFileNameByImageRef(
 	}
 
 	return itemStatus.FileInfo[0].StorageURI, nil
+}
+
+// processImage validates if the image is ready and of type ISO, and returns the
+// content library item UUID and status from its provider ref.
+func processImage(
+	ctx context.Context,
+	client ctrlclient.Client,
+	imageName string,
+	namespace string) (string, imgregv1a1.ContentLibraryItemStatus, error) {
+
+	var vmi vmopv1.VirtualMachineImage
+
+	if namespace != "" {
+		// Namespace scope image.
+		if err := client.Get(ctx, ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}, &vmi); err != nil {
+			return "", imgregv1a1.ContentLibraryItemStatus{}, err
+		}
+	} else {
+		// Cluster scope image.
+		var cvmi vmopv1.ClusterVirtualMachineImage
+		if err := client.Get(ctx, ctrlclient.ObjectKey{Name: imageName}, &cvmi); err != nil {
+			return "", imgregv1a1.ContentLibraryItemStatus{}, err
+		}
+		vmi = vmopv1.VirtualMachineImage(cvmi)
+	}
+
+	// Verify image before retrieving content library item.
+	if !conditions.IsTrue(&vmi, vmopv1.ReadyConditionType) {
+		return "", imgregv1a1.ContentLibraryItemStatus{}, fmt.Errorf("image condition is not ready: %v", conditions.Get(&vmi, vmopv1.ReadyConditionType))
+	}
+	if vmi.Status.Type != string(imgregv1a1.ContentLibraryItemTypeIso) {
+		return "", imgregv1a1.ContentLibraryItemStatus{}, fmt.Errorf("image type %q is not ISO", vmi.Status.Type)
+	}
+	if vmi.Spec.ProviderRef == nil || vmi.Spec.ProviderRef.Name == "" {
+		return "", imgregv1a1.ContentLibraryItemStatus{}, errors.New("image provider ref is empty")
+	}
+
+	var (
+		itemName = vmi.Spec.ProviderRef.Name
+		clitem   imgregv1a1.ContentLibraryItem
+	)
+
+	if namespace != "" {
+		// Namespace scope CL item.
+		if err := client.Get(ctx, ctrlclient.ObjectKey{Name: itemName, Namespace: namespace}, &clitem); err != nil {
+			return "", imgregv1a1.ContentLibraryItemStatus{}, err
+		}
+	} else {
+		// Cluster scope CL item.
+		var cclitem imgregv1a1.ClusterContentLibraryItem
+		if err := client.Get(ctx, ctrlclient.ObjectKey{Name: itemName}, &cclitem); err != nil {
+			return "", imgregv1a1.ContentLibraryItemStatus{}, err
+		}
+		clitem = imgregv1a1.ContentLibraryItem(cclitem)
+	}
+
+	return string(clitem.Spec.UUID), clitem.Status, nil
 }
 
 // getCdromByBackingFileName returns the CD-ROM device from the current devices

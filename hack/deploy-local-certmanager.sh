@@ -6,17 +6,11 @@ set -o pipefail
 set -o nounset
 set -x
 
-# Exit with a non-zero exit code and an error message if
-# the CERT_MANAGER_URL is not set.
-CERT_MANAGER_URL="${CERT_MANAGER_URL:?}"
+CERT_MANAGER_URL="${CERT_MANAGER_URL:-https://github.com/cert-manager/cert-manager/releases/download/v1.16.1/cert-manager.yaml}"
+CERT_MANAGER_YAML="artifacts/cert-manager.yaml"
 
-mkdir -p artifacts
+mkdir -p "$(dirname "${CERT_MANAGER_YAML}")"
 
-# Since we modify the PATH var at the beginning of Makefile, kustomize
-# should always be available.
-kustomize build \
-  --load-restrictor LoadRestrictionsNone \
-  "${CERT_MANAGER_URL}" \
-  >artifacts/cert-manager.yaml
+curl -Lo "${CERT_MANAGER_YAML}" "${CERT_MANAGER_URL}"
 
-kubectl apply -f artifacts/cert-manager.yaml
+kubectl apply -f "${CERT_MANAGER_YAML}"

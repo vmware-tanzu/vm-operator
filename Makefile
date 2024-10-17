@@ -537,6 +537,18 @@ kustomize-local-vcsim: YAML_OUT=$(LOCAL_YAML)
 kustomize-local-vcsim: prereqs generate-manifests $(KUSTOMIZE)
 kustomize-local-vcsim: kustomize-x ## Kustomize for local-vcsim cluster
 
+.PHONY: kustomize-wcp
+kustomize-wcp: CONFIG_TYPE=wcp
+kustomize-wcp: YAML_OUT=$(LOCAL_YAML)
+kustomize-wcp: prereqs generate-manifests $(KUSTOMIZE)
+kustomize-wcp: kustomize-x ## Kustomize for wcp cluster
+
+.PHONY: kustomize-wcp-no-configmap
+kustomize-wcp-no-configmap: CONFIG_TYPE=wcp-no-configmap
+kustomize-wcp-no-configmap: YAML_OUT=$(LOCAL_YAML)
+kustomize-wcp-no-configmap: prereqs generate-manifests $(KUSTOMIZE)
+kustomize-wcp-no-configmap: kustomize-x ## Kustomize for wcp cluster sans configmap
+
 
 ## --------------------------------------
 ## Development - kind

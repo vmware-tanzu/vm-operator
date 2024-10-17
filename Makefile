@@ -108,7 +108,13 @@ COVERED_PKGS := $(shell find . -name '*_test.go' -not -path './api/*' -print | a
 endif
 
 # CRI_BIN is the path to the container runtime binary.
+ifeq (,$(strip $(GITHUB_RUN_ID)))
+# Prefer podman locally.
 CRI_BIN := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+else
+# Prefer docker in GitHub actions.
+CRI_BIN := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null)
+endif
 export CRI_BIN
 
 KIND_CMD := $(KIND)
@@ -556,39 +562,63 @@ kustomize-wcp-no-configmap: kustomize-x ## Kustomize for wcp cluster sans config
 
 .PHONY: kind-cluster-info
 kind-cluster-info: | $(KIND)
-kind-cluster-info: ## Print the name of the Kind cluster and its kubeconfig
+kind-cluster-info:
 	@$(KIND_CMD) get kubeconfig --name "$(KIND_CLUSTER_NAME)" >/dev/null 2>&1
 	@printf "kind cluster name:   %s\nkind cluster config: %s\n" "$(KIND_CLUSTER_NAME)" "$(KUBECONFIG)"
 	@printf "KUBECONFIG=%s\n" "$(KUBECONFIG)" >local.envvars
 
+.PHONY: kind-info
+kind-info: kind-cluster-info
+kind-info: ## Print kind cluster info
+
 .PHONY: kind-cluster-info-dump
-kind-cluster-info-dump: ## Collect diagnostic information from the kind cluster.
-	@KUBECONFIG=$(KUBECONFIG) kubectl cluster-info dump --all-namespaces --output-directory $(KIND_CLUSTER_INFO_DUMP_DIR) 1>/dev/null
+kind-cluster-info-dump: | $(KUBECTL)
+	@KUBECONFIG=$(KUBECONFIG) $(KUBECTL) cluster-info dump --all-namespaces --output-directory $(KIND_CLUSTER_INFO_DUMP_DIR) 1>/dev/null
 	# Collect any logs from previously failed container invocations
-	@KUBECONFIG=$(KUBECONFIG) kubectl -n vmop-system logs --previous vmoperator-controller-manager-0 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-0-prev-logs.txt 2>&1 || true
-	@KUBECONFIG=$(KUBECONFIG) kubectl -n vmop-system logs --previous vmoperator-controller-manager-1 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-1-prev-logs.txt 2>&1 || true
-	@KUBECONFIG=$(KUBECONFIG) kubectl -n vmop-system logs --previous vmoperator-controller-manager-2 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-2-prev-logs.txt 2>&1 || true
+	@KUBECONFIG=$(KUBECONFIG) $(KUBECTL) -n vmop-system logs --previous vmoperator-controller-manager-0 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-0-prev-logs.txt 2>&1 || true
+	@KUBECONFIG=$(KUBECONFIG) $(KUBECTL) -n vmop-system logs --previous vmoperator-controller-manager-1 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-1-prev-logs.txt 2>&1 || true
+	@KUBECONFIG=$(KUBECONFIG) $(KUBECTL) -n vmop-system logs --previous vmoperator-controller-manager-2 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-2-prev-logs.txt 2>&1 || true
 	@printf "kind cluster dump:   %s\n" "./$(KIND_CLUSTER_INFO_DUMP_DIR)"
+
+.PHONY: kind-info-dump
+kind-info-dump: kind-cluster-info-dump
+kind-info-dump: ## Collect diagnostic info from kind cluster
 
 .PHONY: kind-cluster
 kind-cluster: | $(KIND)
-kind-cluster: ## Create a kind cluster of name $(KIND_CLUSTER_NAME) for integration (if it does not exist yet)
+kind-cluster:
 	@$(MAKE) --no-print-directory kind-cluster-info 2>/dev/null || \
 	$(KIND_CMD) create cluster --name "$(KIND_CLUSTER_NAME)" $(KIND_IMAGE_FLAG)
 
+.PHONY: kind-up
+kind-up: kind-cluster
+kind-up: ## Create kind cluster
+
 .PHONY: delete-kind-cluster
 delete-kind-cluster: | $(KIND)
-delete-kind-cluster: ## Delete the kind cluster created for integration tests
+delete-kind-cluster:
 	@{ $(MAKE) --no-print-directory kind-cluster-info >/dev/null 2>&1 && \
 	$(KIND_CMD) delete cluster --name "$(KIND_CLUSTER_NAME)"; } || true
 
+.PHONY: kind-down
+kind-down: delete-kind-cluster
+kind-down: ## Delete kind cluster
+
 .PHONY: deploy-local-kind
-deploy-local-kind: docker-build load-kind ## Deploy controller in the kind cluster used for integration tests
+deploy-local-kind: docker-build load-kind 
+
+.PHONY: kind-deploy
+kind-deploy: deploy-local-kind
+kind-deploy: ## Deploy controller into kind cluster
 
 .PHONY: load-kind
 load-kind: | $(KIND)
-load-kind: ## Load the image into the kind cluster
+load-kind:
 	$(KIND_CMD) load docker-image $(IMG) --name $(KIND_CLUSTER_NAME) -v 10
+
+.PHONY: kind-load
+kind-load: load-kind
+kind-load: ## Load image into kind cluster
 
 ## --------------------------------------
 ## Development - run
@@ -604,11 +634,13 @@ run: ## Run against the configured Kubernetes cluster in $(HOME)/.kube/config
 ## --------------------------------------
 
 .PHONY: deploy-local
-deploy-local: prereqs kustomize-local  ## Deploy controller in the configured Kubernetes cluster in ~/.kube/config
+deploy-local: prereqs kustomize-local | $(KUBECTL)
+deploy-local: ## Deploy local YAML into kind cluster
 	KUBECONFIG=$(KUBECONFIG) hack/deploy-local.sh $(LOCAL_YAML) $(DEFAULT_VMCLASSES_YAML)
 
 .PHONY: undeploy-local
-undeploy-local:  ## Un-Deploy controller in the configured Kubernetes cluster in ~/.kube/config
+undeploy-local: | $(KUBECTL)
+undeploy-local: ## Undeploy local YAML from kind cluster
 	KUBECONFIG=$(KUBECONFIG) kubectl delete -f $(DEFAULT_VMCLASSES_YAML)
 	KUBECONFIG=$(KUBECONFIG) kubectl delete -f $(LOCAL_YAML)
 
@@ -617,8 +649,18 @@ undeploy-local:  ## Un-Deploy controller in the configured Kubernetes cluster in
 ## --------------------------------------
 
 .PHONY: deploy-local-vcsim
-deploy-local-vcsim: prereqs kustomize-local-vcsim  ## Deploy controller in the configured Kubernetes cluster in ~/.kube/config
+deploy-local-vcsim: prereqs kustomize-local-vcsim | $(KUBECTL)
+deploy-local-vcsim: ## Deploy local-vcsim YAML into kind cluster
 	KUBECONFIG=$(KUBECONFIG) hack/deploy-local.sh $(LOCAL_YAML)
+
+## --------------------------------------
+## Development - wcp
+## --------------------------------------
+
+.PHONY: deploy-wcp
+deploy-wcp: prereqs kustomize-wcp | $(KUBECTL)
+deploy-wcp: prereqs kustomize-wcp  ## Deploy wcp YAML into local kind cluster
+	KUBECONFIG=$(KUBECONFIG) hack/deploy-local.sh $(LOCAL_YAML) $(DEFAULT_VMCLASSES_YAML)
 
 
 ## --------------------------------------
@@ -704,3 +746,11 @@ verify: prereqs ## Run static code analysis
 .PHONY: verify-codegen
 verify-codegen: ## Verify generated code
 	hack/verify-codegen.sh
+
+.PHONY: verify-local-manifests
+verify-local-manifests: ## Verify the local manifests
+	VERIFY_MANIFESTS=true $(MAKE) deploy-local
+
+.PHONY: verify-wcp-manifests
+verify-wcp-manifests: ## Verify the WCP manifests
+	VERIFY_MANIFESTS=true $(MAKE) deploy-wcp

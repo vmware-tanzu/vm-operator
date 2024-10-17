@@ -28,6 +28,8 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var _ = DescribeTable("GetStoragePolicyID",
@@ -62,108 +64,227 @@ var _ = DescribeTable("GetStoragePolicyID",
 )
 
 var _ = Describe("GetPVCZoneConstraints", func() {
+
 	It("Unmarshal JSON", func() {
 		pvcs := make([]corev1.PersistentVolumeClaim, 1)
 		pvcs[0] = corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "pvc",
+				Name: "bound-pvc",
+				Annotations: map[string]string{
+					"csi.vsphere.volume-accessible-topology": `[{"topology.kubernetes.io/zone":"zone1"},{"topology.kubernetes.io/zone":"zone2"},{"topology.kubernetes.io/zone":"zone3"}]`,
+				},
+			},
+			Status: corev1.PersistentVolumeClaimStatus{
+				Phase: corev1.ClaimBound,
+			},
+		}
+		zones, err := kubeutil.GetPVCZoneConstraints(nil, pvcs)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(zones.UnsortedList()).To(ConsistOf("zone1", "zone2", "zone3"))
+	})
+
+	It("Unmarshal JSON", func() {
+		pvcs := make([]corev1.PersistentVolumeClaim, 1)
+		pvcs[0] = corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "pending-pvc",
 				Annotations: map[string]string{
 					"csi.vsphere.volume-requested-topology": `[{"topology.kubernetes.io/zone":"zone1"},{"topology.kubernetes.io/zone":"zone2"},{"topology.kubernetes.io/zone":"zone3"}]`,
 				},
 			},
+			Status: corev1.PersistentVolumeClaimStatus{
+				Phase: corev1.ClaimPending,
+			},
 		}
-		zones, err := kubeutil.GetPVCZoneConstraints(pvcs)
+		zones, err := kubeutil.GetPVCZoneConstraints(nil, pvcs)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(zones.UnsortedList()).To(ConsistOf("zone1", "zone2", "zone3"))
 	})
-})
 
-var _ = DescribeTable("GetPVCZoneConstraints Table",
-	func(pvcsZones [][]string, expZones []string, expErr string) {
-		var pvcs []corev1.PersistentVolumeClaim
-		for i, zones := range pvcsZones {
-			var annotations map[string]string
+	Context("Pending PVC with Immediate StorageClass", func() {
 
-			if len(zones) > 0 {
-				var topology []map[string]string
-				for _, z := range zones {
-					topology = append(topology, map[string]string{"topology.kubernetes.io/zone": z})
-				}
-
-				requestedZones, err := json.Marshal(topology)
-				Expect(err).NotTo(HaveOccurred())
-				annotations = map[string]string{
-					"csi.vsphere.volume-requested-topology": string(requestedZones),
-				}
+		It("Returns error", func() {
+			sc := *builder.DummyStorageClass()
+			sc.VolumeBindingMode = ptr.To(storagev1.VolumeBindingImmediate)
+			storageClasses := map[string]storagev1.StorageClass{
+				sc.Name: sc,
 			}
 
-			pvc := corev1.PersistentVolumeClaim{
+			pvcs := make([]corev1.PersistentVolumeClaim, 1)
+			pvcs[0] = corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        fmt.Sprintf("pvc-%d", i),
-					Annotations: annotations,
+					Name: "pending-pvc",
+					Annotations: map[string]string{
+						"csi.vsphere.volume-requested-topology": `[{"topology.kubernetes.io/zone":"zone1"}]`,
+					},
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: &sc.Name,
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimPending,
 				},
 			}
-			pvcs = append(pvcs, pvc)
-		}
 
-		zones, err := kubeutil.GetPVCZoneConstraints(pvcs)
-		if expErr != "" {
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(expErr))
-			Expect(zones).To(BeEmpty())
-		} else {
-			Expect(zones.UnsortedList()).To(ConsistOf(expZones))
-		}
+			_, err := kubeutil.GetPVCZoneConstraints(storageClasses, pvcs)
+			Expect(err).To(MatchError("PVC pending-pvc is not bound"))
+		})
+	})
+
+	Context("Bound PVC with Immediate StorageClass and Unbound PVC with WFFC StorageClass ", func() {
+
+		It("Returns success with common zones", func() {
+			immdSC := *builder.DummyStorageClass()
+			immdSC.VolumeBindingMode = ptr.To(storagev1.VolumeBindingImmediate)
+			wffcSC := *builder.DummyStorageClass()
+			wffcSC.Name += "-wffc"
+			wffcSC.VolumeBindingMode = ptr.To(storagev1.VolumeBindingWaitForFirstConsumer)
+
+			storageClasses := map[string]storagev1.StorageClass{
+				immdSC.Name: immdSC,
+				wffcSC.Name: wffcSC,
+			}
+
+			pvcs := make([]corev1.PersistentVolumeClaim, 2)
+			pvcs[0] = corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "bound-pvc",
+					Annotations: map[string]string{
+						"csi.vsphere.volume-accessible-topology": `[{"topology.kubernetes.io/zone":"zone1"},{"topology.kubernetes.io/zone":"zoneX"}]`,
+					},
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: &immdSC.Name,
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimBound,
+				},
+			}
+			pvcs[1] = corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pending-pvc",
+					Annotations: map[string]string{
+						"csi.vsphere.volume-requested-topology": `[{"topology.kubernetes.io/zone":"zone1"},{"topology.kubernetes.io/zone":"zoneY"}]`,
+					},
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: &wffcSC.Name,
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimPending,
+				},
+			}
+
+			zones, err := kubeutil.GetPVCZoneConstraints(storageClasses, pvcs)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(zones.UnsortedList()).To(ConsistOf("zone1"))
+		})
+	})
+})
+
+var _ = DescribeTableSubtree("GetPVCZoneConstraints Table",
+
+	func(phase corev1.PersistentVolumeClaimPhase) {
+
+		DescribeTable("PVC Phase",
+			func(pvcsZones [][]string, expZones []string, expErr string) {
+				var pvcs []corev1.PersistentVolumeClaim
+				for i, zones := range pvcsZones {
+					var annotations map[string]string
+
+					if len(zones) > 0 {
+						var topology []map[string]string
+						for _, z := range zones {
+							topology = append(topology, map[string]string{"topology.kubernetes.io/zone": z})
+						}
+
+						volTopology, err := json.Marshal(topology)
+						Expect(err).NotTo(HaveOccurred())
+						if phase == corev1.ClaimBound {
+							annotations = map[string]string{
+								"csi.vsphere.volume-accessible-topology": string(volTopology),
+							}
+						} else {
+							annotations = map[string]string{
+								"csi.vsphere.volume-requested-topology": string(volTopology),
+							}
+						}
+					}
+
+					pvc := corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:        fmt.Sprintf("pvc-%d", i),
+							Annotations: annotations,
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Phase: phase,
+						},
+					}
+					pvcs = append(pvcs, pvc)
+				}
+
+				zones, err := kubeutil.GetPVCZoneConstraints(nil, pvcs)
+				if expErr != "" {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(expErr))
+					Expect(zones).To(BeEmpty())
+				} else {
+					Expect(zones.UnsortedList()).To(ConsistOf(expZones))
+				}
+			},
+			Entry(
+				"One PVC with no zones",
+				[][]string{
+					{},
+				},
+				[]string{},
+				""),
+			Entry(
+				"One PVC with one zone",
+				[][]string{
+					{"zone1"},
+				},
+				[]string{"zone1"},
+				""),
+			Entry(
+				"One PVC with one zone and PVC without zone",
+				[][]string{
+					{},
+					{"zone1"},
+				},
+				[]string{"zone1"},
+				""),
+			Entry(
+				"Multiple PVCs with one common zone",
+				[][]string{
+					{"zone1", "zoneX"},
+					{"zone1", "zoneY"},
+					{"zone1", "zoneZ"},
+				},
+				[]string{"zone1"},
+				""),
+			Entry(
+				"Multiple PVCs with multiple common zones",
+				[][]string{
+					{"zone1", "zoneX", "zone2"},
+					{"zone1", "zoneY", "zone2"},
+					{"zone1", "zoneZ", "zone2"},
+				},
+				[]string{"zone1", "zone2"},
+				""),
+			Entry(
+				"Multiple PVCs with no common zones",
+				[][]string{
+					{"zoneX"},
+					{"zoneY", "zone1"},
+					{"zoneZ", "zone1"},
+				},
+				nil,
+				"no allowed zones remaining after applying PVC zone constraints"),
+		)
 	},
-	Entry(
-		"One PVC with no zones",
-		[][]string{
-			{},
-		},
-		[]string{},
-		""),
-	Entry(
-		"One PVC with one zone",
-		[][]string{
-			{"zone1"},
-		},
-		[]string{"zone1"},
-		""),
-	Entry(
-		"One PVC with one zone and PVC without zone",
-		[][]string{
-			{},
-			{"zone1"},
-		},
-		[]string{"zone1"},
-		""),
-	Entry(
-		"Multiple PVCs with one common zone",
-		[][]string{
-			{"zone1", "zoneX"},
-			{"zone1", "zoneY"},
-			{"zone1", "zoneZ"},
-		},
-		[]string{"zone1"},
-		""),
-	Entry(
-		"Multiple PVCs with multiple common zones",
-		[][]string{
-			{"zone1", "zoneX", "zone2"},
-			{"zone1", "zoneY", "zone2"},
-			{"zone1", "zoneZ", "zone2"},
-		},
-		[]string{"zone1", "zone2"},
-		""),
-	Entry(
-		"Multiple PVCs with no common zones",
-		[][]string{
-			{"zoneX"},
-			{"zoneY", "zone1"},
-			{"zoneZ", "zone1"},
-		},
-		nil,
-		"no common zones remaining"),
+	Entry("Bound", corev1.ClaimBound),
+	Entry("Pending", corev1.ClaimPending),
 )
 
 var _ = Describe("IsEncryptedStorageClass", func() {

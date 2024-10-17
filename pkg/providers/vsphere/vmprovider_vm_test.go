@@ -1915,6 +1915,7 @@ func vmTests() {
 				JustBeforeEach(func() {
 					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
 				})
+
 				It("creates VM in placement selected zone", func() {
 					Expect(vm.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
@@ -1935,6 +1936,7 @@ func vmTests() {
 			})
 
 			It("creates VM in assigned zone", func() {
+				Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
 				azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
 				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = azName
 
@@ -1947,6 +1949,58 @@ func vmTests() {
 					nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, azName, "")
 					Expect(nsRP).ToNot(BeNil())
 					Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
+				})
+			})
+
+			When("VM zone is constrained by PVC", func() {
+				BeforeEach(func() {
+					// Need to create the PVC before creating the VM.
+					skipCreateOrUpdateVM = true
+
+					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "dummy-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "pvc-claim-1",
+									},
+								},
+							},
+						},
+					}
+
+				})
+
+				It("creates VM in allowed zone", func() {
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+
+					// Make sure we do placement.
+					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+
+					pvc1 := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "pvc-claim-1",
+							Namespace: vm.Namespace,
+							Annotations: map[string]string{
+								"csi.vsphere.volume-accessible-topology": fmt.Sprintf(`[{"topology.kubernetes.io/zone":"%s"}]`, azName),
+							},
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							StorageClassName: ptr.To(ctx.StorageClassName),
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Phase: corev1.ClaimBound,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc1)).To(Succeed())
+					Expect(ctx.Client.Status().Update(ctx, pvc1)).To(Succeed())
+
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					_, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vm.Status.Zone).To(Equal(azName))
 				})
 			})
 

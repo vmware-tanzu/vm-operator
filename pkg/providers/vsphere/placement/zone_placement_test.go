@@ -243,10 +243,9 @@ func vcSimPlacement() {
 			Context("Allowed Zone Constraints", func() {
 				Context("Only allowed zone does not exist", func() {
 					It("returns error", func() {
-						constraints.Zones = sets.New("foobar")
+						constraints.Zones = sets.New("bogus-zone")
 						_, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
-						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("no placement candidates available after applying zone constraints"))
+						Expect(err).To(MatchError("no placement candidates available after applying zone constraints: bogus-zone"))
 					})
 				})
 
@@ -437,10 +436,9 @@ func vcSimPlacement() {
 		Context("Allowed Zone Constraints", func() {
 			Context("Only allowed zone does not exist", func() {
 				It("returns error", func() {
-					constraints.Zones = sets.New("foobar")
+					constraints.Zones = sets.New("bogus-zone")
 					_, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("no placement candidates available after applying zone constraints"))
+					Expect(err).To(MatchError("no placement candidates available after applying zone constraints: bogus-zone"))
 				})
 			})
 

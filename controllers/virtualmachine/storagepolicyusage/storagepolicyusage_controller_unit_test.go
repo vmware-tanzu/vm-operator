@@ -5,6 +5,7 @@ package storagepolicyusage_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -231,7 +232,7 @@ func unitTestsReconcile() {
 
 					if _, ok := obj.(*spqv1.StoragePolicyUsage); ok {
 						if numCalls == 0 {
-							return fmt.Errorf(fake)
+							return errors.New(fake)
 						}
 						numCalls++
 					}
@@ -255,7 +256,7 @@ func unitTestsReconcile() {
 					opts ...ctrlclient.ListOption) error {
 
 					if _, ok := list.(*vmopv1.VirtualMachineList); ok {
-						return fmt.Errorf(fake)
+						return errors.New(fake)
 					}
 
 					return client.List(ctx, list, opts...)
@@ -369,7 +370,7 @@ func unitTestsReconcile() {
 
 						if _, ok := obj.(*spqv1.StoragePolicyUsage); ok {
 							if numCalls == 1 {
-								return fmt.Errorf(fake)
+								return errors.New(fake)
 							}
 							numCalls++
 						}
@@ -395,7 +396,7 @@ func unitTestsReconcile() {
 						opts ...ctrlclient.SubResourcePatchOption) error {
 
 						if _, ok := obj.(*spqv1.StoragePolicyUsage); ok {
-							return fmt.Errorf(fake)
+							return errors.New(fake)
 						}
 
 						return client.Status().Patch(ctx, obj, patch, opts...)
@@ -498,7 +499,7 @@ func unitTestsReconcile() {
 										opts ...ctrlclient.GetOption) error {
 
 										if _, ok := obj.(*vmopv1.VirtualMachineImage); ok {
-											return fmt.Errorf(fake)
+											return errors.New(fake)
 										}
 
 										return client.Get(ctx, key, obj, opts...)
@@ -636,7 +637,7 @@ func unitTestsReconcile() {
 											opts ...ctrlclient.GetOption) error {
 
 											if _, ok := obj.(*vmopv1.ClusterVirtualMachineImage); ok {
-												return fmt.Errorf(fake)
+												return errors.New(fake)
 											}
 
 											return client.Get(ctx, key, obj, opts...)

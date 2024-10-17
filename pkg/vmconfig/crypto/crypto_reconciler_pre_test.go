@@ -62,7 +62,8 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 	BeforeEach(func() {
 		r = pkgcrypto.New()
 
-		vcsimCtx := builder.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		vcsimCtx := builder.NewTestContextForVCSim(
+			context.Background(), builder.VCSimTestConfig{})
 		ctx = vcsimCtx
 		ctx = r.WithContext(ctx)
 		ctx = vmconfig.WithContext(ctx)

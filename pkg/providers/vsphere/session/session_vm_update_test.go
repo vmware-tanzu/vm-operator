@@ -1625,7 +1625,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 
 				JustBeforeEach(func() {
 					// Add required objects to get CD-ROM backing file name.
-					objs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, vmCtx.VM.Namespace, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, "ISO")
+					objs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, vmCtx.VM.Namespace, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, "ISO")
 					for _, obj := range objs {
 						Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
 					}

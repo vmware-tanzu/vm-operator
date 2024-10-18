@@ -5,6 +5,7 @@ package spq_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -86,7 +87,7 @@ var _ = Describe("IsStorageClassInNamespace", func() {
 					opts ...ctrlclient.ListOption) error {
 
 					if _, ok := list.(*corev1.ResourceQuotaList); ok {
-						return fmt.Errorf(fakeString)
+						return errors.New(fakeString)
 					}
 
 					return client.List(ctx, list, opts...)
@@ -143,7 +144,7 @@ var _ = Describe("IsStorageClassInNamespace", func() {
 					opts ...ctrlclient.ListOption) error {
 
 					if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
-						return fmt.Errorf(fakeString)
+						return errors.New(fakeString)
 					}
 
 					return client.List(ctx, list, opts...)
@@ -256,7 +257,7 @@ var _ = Describe("GetStorageClassInNamespace", func() {
 						opts ...ctrlclient.ListOption) error {
 
 						if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
-							return fmt.Errorf(fakeString)
+							return errors.New(fakeString)
 						}
 
 						return client.List(ctx, list, opts...)
@@ -471,7 +472,7 @@ var _ = Describe("GetStorageClassesForPolicy", func() {
 						opts ...ctrlclient.ListOption) error {
 
 						if _, ok := list.(*storagev1.StorageClassList); ok {
-							return fmt.Errorf(fakeString)
+							return errors.New(fakeString)
 						}
 
 						return client.List(ctx, list, opts...)
@@ -491,7 +492,7 @@ var _ = Describe("GetStorageClassesForPolicy", func() {
 						opts ...ctrlclient.ListOption) error {
 
 						if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
-							return fmt.Errorf(fakeString)
+							return errors.New(fakeString)
 						}
 
 						return client.List(ctx, list, opts...)

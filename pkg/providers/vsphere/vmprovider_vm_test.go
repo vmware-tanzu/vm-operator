@@ -5,6 +5,7 @@ package vsphere_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -33,6 +34,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -61,6 +63,7 @@ func vmTests() {
 	)
 
 	var (
+		parentCtx   context.Context
 		initObjects []client.Object
 		testConfig  builder.VCSimTestConfig
 		ctx         *builder.TestContextForVCSim
@@ -69,6 +72,7 @@ func vmTests() {
 	)
 
 	BeforeEach(func() {
+		parentCtx = ctxop.WithContext(pkgcfg.NewContext())
 		testConfig = builder.VCSimTestConfig{
 			WithContentLibrary:    true,
 			WithWorkloadIsolation: true,
@@ -76,7 +80,7 @@ func vmTests() {
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
+		ctx = suite.NewTestContextForVCSimWithParentContext(parentCtx, testConfig, initObjects...)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.MaxDeployThreadsOnProvider = 1
 		})
@@ -1407,15 +1411,15 @@ func vmTests() {
 
 			Context("Crypto", Label(testlabels.Crypto), func() {
 				BeforeEach(func() {
+					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+						config.Features.BringYourOwnEncryptionKey = true
+					})
+					parentCtx = vmconfig.WithContext(parentCtx)
+					parentCtx = vmconfig.Register(parentCtx, crypto.New())
+
 					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
 				})
 				JustBeforeEach(func() {
-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.BringYourOwnEncryptionKey = true
-					})
-					ctx.Context = vmconfig.WithContext(ctx.Context)
-					ctx.Context = vmconfig.Register(ctx.Context, crypto.New())
-
 					var storageClass storagev1.StorageClass
 					Expect(ctx.Client.Get(
 						ctx,

@@ -12,7 +12,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: serving-cert  # this name should match the one appeared in kustomizeconfig.yaml
+  name: serving-cert
   namespace: system
 spec:
   # WEBHOOK_SERVICE_NAME_PLACEHOLDER and WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER will be substituted by kustomize

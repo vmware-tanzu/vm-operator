@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: conversion-webhook
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: manager
+        args:
+        - "--enable-leader-election=false"
+        - "--health-addr=127.0.0.1:9447"
+        - "--metrics-addr=0"
+        - "--profiler-address=0"
+        ports:
+        - containerPort: 9447
+          name: health-probe
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health-probe

@@ -1,15 +1,40 @@
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: controller-manager
+  name: admission-webhook
   namespace: system
+  labels:
+    webhook: admission
+    controller-tools.k8s.io: "1.0"
 spec:
+  selector:
+    matchLabels:
+      webhook: admission
+      controller-tools.k8s.io: "1.0"
   template:
+    metadata:
+      labels:
+        webhook: admission
+        controller-tools.k8s.io: "1.0"
+        name: vmoperator-admission-webhook
     spec:
-      # There's an assumption in kustomization.yaml that manager is container[0]
       containers:
       - name: manager
+        command:
+        - /manager
+        image: controller:latest
+        imagePullPolicy: Never
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 75Mi
         env:
+        - name: VMOP_CONTAINER_TYPE
+          value: admission-webhook
         - name: WEBHOOK_SERVICE_NAMESPACE
           value: WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER
         - name: WEBHOOK_SERVICE_NAME
@@ -23,20 +48,16 @@ spec:
         - name: WEBHOOK_SERVICE_CONTAINER_PORT
           value: WEBHOOK_SERVICE_CONTAINER_PORT_STRING
         ports:
-        - containerPort: 9878
-          name: webhook-server
+        - name: https
+          containerPort: 9878
           protocol: TCP
-        - containerPort: 9445
-          name: health-probe
-          protocol: TCP
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: health-probe
         volumeMounts:
         - name: cert
           mountPath: /tmp/k8s-webhook-server/serving-certs
           readOnly: true
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      terminationGracePeriodSeconds: 10
       volumes:
       - name: cert
         secret:

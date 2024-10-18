@@ -6,48 +6,19 @@ resources:
 - ../manager
 - ../web-console-validator
 - ../rbac
-- ../webhook
+- ../webhooks/admission
+- ../webhooks/conversion
 - ../certmanager
 - ../crd/external-crds/encryption.vmware.com_encryptionclasses.yaml
 
 patches:
 - path: manager_default_container_patch.yaml
-- path: manager_auth_proxy_patch.yaml
-- path: manager_webhook_patch.yaml
 - path: manager_replicas_patch.yaml
 - path: manager_pod_info_patch.yaml
 - path: manager_tolerations_patch.yaml
 - path: manager_update_strategy_patch.yaml
 - path: manager_leader_election_id_patch.yaml
 - path: manager_max_concurrent_reconciles_patch.yaml
-
-replacements:
-- source:
-    fieldPath: spec.template.spec.containers.[name=manager].ports.[name=webhook-server].containerPort
-    group: apps
-    version: v1
-    kind: Deployment
-    namespace: system
-    name: controller-manager
-  targets:
-  - select:
-      group: apps
-      version: v1
-      kind: Deployment
-      namespace: system
-      name: controller-manager
-    fieldPaths:
-    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SERVICE_CONTAINER_PORT].value
-- source:
-    fieldPath: spec.template.spec.containers.[name=manager].volumeMounts.[name=cert].mountPath
-    group: apps
-    version: v1
-    kind: Deployment
-    namespace: system
-    name: controller-manager
-  targets:
-  - select:
-      kind: Deployment
-      name: controller-manager
-    fieldPaths:
-    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SECRET_VOLUME_MOUNT_PATH].value
+- path: manager_health_and_metrics.yaml
+- path: admission_webhook_health_and_metrics.yaml
+- path: conversion_webhook_health_and_metrics.yaml

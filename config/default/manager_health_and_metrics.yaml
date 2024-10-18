@@ -12,6 +12,15 @@ spec:
       - name: manager
         args:
         - "--metrics-addr=127.0.0.1:8080"
+        - "--health-addr=127.0.0.1:9445"
+        ports:
+        - containerPort: 9445
+          name: health-probe
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health-probe
       - name: kube-rbac-proxy
         image: gcr.io/kubebuilder/kube-rbac-proxy:v0.4.0
         args:

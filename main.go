@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 	"path"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/vmware-tanzu/vm-operator/controllers"
+	"github.com/vmware-tanzu/vm-operator/controllers/infra/capability"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
@@ -195,15 +197,29 @@ func main() {
 		ctx *pkgctx.ControllerManagerContext,
 		mgr ctrlmgr.Manager) error {
 
-		if err := controllers.AddToManager(ctx, mgr); err != nil {
-			return err
+		// Always load the capability controller.
+		if err := capability.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize infra capability controller: %w", err)
 		}
-		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-			if err := services.AddToManager(ctx, mgr); err != nil {
+
+		containerType := os.Getenv("VMOP_CONTAINER_TYPE")
+		switch containerType {
+		case "controller-manager":
+			if err := controllers.AddToManager(ctx, mgr); err != nil {
 				return err
 			}
+			if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+				if err := services.AddToManager(ctx, mgr); err != nil {
+					return err
+				}
+			}
+		case "admission-webhook", "conversion-webhook":
+			return webhooks.AddToManager(ctx, mgr)
+		default:
+			return fmt.Errorf("invalid container type: %s", containerType)
 		}
-		return webhooks.AddToManager(ctx, mgr)
+
+		return nil
 	}
 
 	setupLog.Info("creating controller manager")

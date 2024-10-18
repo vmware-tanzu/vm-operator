@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- deployment.yaml
+- service.yaml
+
+replacements:
+- source:
+    fieldPath: spec.template.spec.containers.[name=manager].ports.[name=https].containerPort
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: system
+    name: conversion-webhook
+  targets:
+  - select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: conversion-webhook
+    fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SERVICE_CONTAINER_PORT].value
+- source:
+    fieldPath: spec.template.spec.containers.[name=manager].volumeMounts.[name=cert].mountPath
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: system
+    name: conversion-webhook
+  targets:
+  - select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: conversion-webhook
+    fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SECRET_VOLUME_MOUNT_PATH].value

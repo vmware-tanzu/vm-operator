@@ -16,9 +16,12 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/external/appplatform/api/vmw_v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/webconsoleurl"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -37,11 +40,12 @@ func unitTestsReconcile() {
 		ctx            *builder.UnitTestContextForController
 		fakeVMProvider *providerfake.VMProvider
 
-		reconciler *webconsolerequest.Reconciler
-		wcrCtx     *pkgctx.WebConsoleRequestContextV1
-		wcr        *vmopv1.VirtualMachineWebConsoleRequest
-		vm         *vmopv1.VirtualMachine
-		proxySvc   *corev1.Service
+		reconciler  *webconsolerequest.Reconciler
+		wcrCtx      *pkgctx.WebConsoleRequestContextV1
+		wcr         *vmopv1.VirtualMachineWebConsoleRequest
+		vm          *vmopv1.VirtualMachine
+		proxySvc    *corev1.Service
+		proxySvcDNS *vmw_v1alpha1.SupervisorProperties
 	)
 
 	BeforeEach(func() {
@@ -130,6 +134,72 @@ func unitTestsReconcile() {
 				// Checking the label key only because UID will not be set to a resource during unit test.
 				Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(webconsolerequest.UUIDLabelKey))
 			})
+		})
+
+		When("SimplifiedEnablement Feature is true", func() {
+			JustBeforeEach(func() {
+				reconciler = webconsolerequest.NewReconciler(
+					pkgcfg.UpdateContext(
+						ctx,
+						func(config *pkgcfg.Config) {
+							config.Features.SimplifiedEnablement = true
+						},
+					),
+					ctx.Client,
+					ctx.Logger,
+					ctx.Recorder,
+					ctx.VMProvider,
+				)
+			})
+
+			scenarios := []struct {
+				name             string
+				apiServerDNSName []string
+				expectedProxy    string
+			}{
+				{
+					name:             "API Server DNS Name is set",
+					apiServerDNSName: []string{"domain-1.test"},
+					expectedProxy:    "domain-1.test",
+				},
+				{
+					name:             "API Server DNS Name is not set",
+					apiServerDNSName: []string{},
+					expectedProxy:    "dummy-proxy-ip",
+				},
+			}
+
+			for _, scenario := range scenarios {
+				When(scenario.name, func() {
+					JustBeforeEach(func() {
+						proxySvcDNS = &vmw_v1alpha1.SupervisorProperties{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      webconsoleurl.SupervisorServiceObjName,
+								Namespace: webconsoleurl.SupervisorServiceObjNamespace,
+							},
+							Spec: vmw_v1alpha1.SupervisorPropertiesSpec{
+								APIServerDNSNames: scenario.apiServerDNSName,
+							},
+						}
+						initObjects = append(initObjects, proxySvcDNS)
+						ctx = suite.NewUnitTestContextForController(initObjects...)
+						reconciler = webconsolerequest.NewReconciler(
+							ctx,
+							ctx.Client,
+							ctx.Logger,
+							ctx.Recorder,
+							ctx.VMProvider,
+						)
+					})
+
+					It("returns success and sets ProxyAddr", func() {
+						err := reconciler.ReconcileNormal(wcrCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal(scenario.expectedProxy))
+					})
+				})
+			}
 		})
 	})
 }

@@ -12,4 +12,4 @@ kind: MutatingWebhookConfiguration
 metadata:
   name: mutating-webhook-configuration
   labels:
-    "webhooks.vmoperator.vmware.com": "true"
+    webhooks.vmoperator.vmware.com: "true"

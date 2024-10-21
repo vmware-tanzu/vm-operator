@@ -82,8 +82,8 @@ func cdromTests() {
 
 			BeforeEach(func() {
 				// Create a fake K8s client with both namespace & cluster scope ISO type images and their content library item objects.
-				k8sInitObjs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)
-				k8sInitObjs = append(k8sInitObjs, builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, ns, cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)...)
+				k8sInitObjs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
+				k8sInitObjs = append(k8sInitObjs, builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)...)
 				k8sClient = builder.NewFakeClient(k8sInitObjs...)
 			})
 
@@ -486,10 +486,10 @@ func cdromTests() {
 				})
 			})
 
-			When("VM.Spec.Cdrom specifies a VMI without provider ref", func() {
+			When("VM.Spec.Cdrom specifies a VMI not ready", func() {
 
 				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, false, false, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, false, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -505,14 +505,60 @@ func cdromTests() {
 				})
 
 				It("should return an error", func() {
-					Expect(resultErr.Error()).To(ContainSubstring("provider ref is nil for VirtualMachineImage"))
+					Expect(resultErr.Error()).To(ContainSubstring("image condition is not ready"))
+				})
+			})
+
+			When("VM.Spec.Cdrom specifies a VMI of non-ISO type", func() {
+
+				BeforeEach(func() {
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeOvf)
+
+					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: cdromName1,
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: vmiName,
+								Kind: vmiKind,
+							},
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(resultErr.Error()).To(ContainSubstring("image type \"OVF\" is not ISO"))
+				})
+			})
+
+			When("VM.Spec.Cdrom specifies a VMI without provider ref", func() {
+
+				BeforeEach(func() {
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, false, false, imgregv1a1.ContentLibraryItemTypeIso)
+
+					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: cdromName1,
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: vmiName,
+								Kind: vmiKind,
+							},
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(resultErr.Error()).To(ContainSubstring("image provider ref is empty"))
 				})
 			})
 
 			When("VM.Spec.Cdrom specifies a VMI with provider ref object not found", func() {
 
 				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, false, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, false, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -553,10 +599,10 @@ func cdromTests() {
 				})
 			})
 
-			When("VM.Spec.Cdrom specifies a CVMI without provider ref", func() {
+			When("VM.Spec.Cdrom specifies a CVMI not ready", func() {
 
 				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, ns, cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, false, false, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, false, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -572,14 +618,60 @@ func cdromTests() {
 				})
 
 				It("should return an error", func() {
-					Expect(resultErr.Error()).To(ContainSubstring("provider ref is nil for ClusterVirtualMachineImage"))
+					Expect(resultErr.Error()).To(ContainSubstring("image condition is not ready"))
+				})
+			})
+
+			When("VM.Spec.Cdrom specifies a CVMI of non-ISO type", func() {
+
+				BeforeEach(func() {
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeOvf)
+
+					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: cdromName1,
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: cvmiName,
+								Kind: cvmiKind,
+							},
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(resultErr.Error()).To(ContainSubstring("image type \"OVF\" is not ISO"))
+				})
+			})
+
+			When("VM.Spec.Cdrom specifies a CVMI without provider ref", func() {
+
+				BeforeEach(func() {
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, false, false, imgregv1a1.ContentLibraryItemTypeIso)
+
+					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: cdromName1,
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: cvmiName,
+								Kind: cvmiKind,
+							},
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(resultErr.Error()).To(ContainSubstring("image provider ref is empty"))
 				})
 			})
 
 			When("VM.Spec.Cdrom specifies a CVMI with provider ref object not found", func() {
 
 				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, ns, cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, false, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, false, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -620,33 +712,10 @@ func cdromTests() {
 				})
 			})
 
-			When("VM.Spec.Cdrom specifies a non-ISO type image", func() {
-
-				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeOvf)
-
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
-							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
-						},
-					}
-				})
-
-				It("should return an error", func() {
-					Expect(resultErr.Error()).To(ContainSubstring("expected ISO type image, got OVF"))
-				})
-			})
-
 			When("VM.Spec.Cdrom specifies an image file with empty storage URI", func() {
 
 				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, "", ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, "", ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -669,7 +738,7 @@ func cdromTests() {
 			When("VM.Spec.Cdrom specifies a connected CD-ROM but cannot find the content library item to sync", func() {
 
 				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, "invalid-item-uuid", true, true, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, "invalid-item-uuid", true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -732,7 +801,7 @@ func cdromTests() {
 					)
 					Expect(itemID).ToNot(BeEmpty())
 
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, itemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, itemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -761,7 +830,7 @@ func cdromTests() {
 			When("VM.Spec.Cdrom specifies an image file backed by multiple CD-ROM devices", func() {
 
 				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -845,8 +914,8 @@ func cdromTests() {
 
 			BeforeEach(func() {
 				// Create a fake K8s client with both namespace & cluster scope ISO type images and their content library item objects.
-				k8sInitObjs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)
-				k8sInitObjs = append(k8sInitObjs, builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, ns, cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)...)
+				k8sInitObjs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
+				k8sInitObjs = append(k8sInitObjs, builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)...)
 				k8sClient = builder.NewFakeClient(k8sInitObjs...)
 			})
 
@@ -1010,7 +1079,7 @@ func cdromTests() {
 						},
 					}
 
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
@@ -1033,7 +1102,7 @@ func cdromTests() {
 			When("Updating a CD-ROM device that doesn't exist in the VM", func() {
 
 				BeforeEach(func() {
-					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, imgregv1a1.ContentLibraryItemTypeIso)
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
 					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{

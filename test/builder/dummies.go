@@ -562,7 +562,7 @@ func DummyVirtualMachineWebConsoleRequest(namespace, wcrName, vmName, pubKey str
 
 func DummyImageAndItemObjectsForCdromBacking(
 	name, ns, kind, storageURI, libItemUUID string,
-	imgHasProviderRef, itemObjExists bool,
+	imgReady, imgHasProviderRef, itemObjExists bool,
 	itemType imgregv1a1.ContentLibraryItemType) []ctrlclient.Object {
 	var imageObj, itemObj ctrlclient.Object
 
@@ -572,6 +572,18 @@ func DummyImageAndItemObjectsForCdromBacking(
 	if imgHasProviderRef {
 		imgSpec.ProviderRef = &vmopv1common.LocalObjectRef{
 			Name: name,
+		}
+	}
+
+	imgStatus := vmopv1.VirtualMachineImageStatus{
+		Type: string(itemType),
+	}
+	if imgReady {
+		imgStatus.Conditions = []metav1.Condition{
+			{
+				Type:   vmopv1.ReadyConditionType,
+				Status: metav1.ConditionTrue,
+			},
 		}
 	}
 
@@ -594,7 +606,8 @@ func DummyImageAndItemObjectsForCdromBacking(
 				Name:      name,
 				Namespace: ns,
 			},
-			Spec: imgSpec,
+			Spec:   imgSpec,
+			Status: imgStatus,
 		}
 
 		itemObj = &imgregv1a1.ContentLibraryItem{
@@ -610,7 +623,8 @@ func DummyImageAndItemObjectsForCdromBacking(
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name,
 			},
-			Spec: imgSpec,
+			Spec:   imgSpec,
+			Status: imgStatus,
 		}
 
 		itemObj = &imgregv1a1.ClusterContentLibraryItem{

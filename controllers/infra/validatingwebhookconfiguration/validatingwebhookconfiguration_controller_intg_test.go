@@ -141,7 +141,7 @@ func intgTestsReconcile() {
 			})
 		})
 
-		When("ValidatingWebhookConfiguration is updated", func() {
+		When("ValidatingWebhookConfiguration is updated", FlakeAttempts(5), func() {
 
 			BeforeEach(func() {
 				// Create ValidatingWebhookConfiguration

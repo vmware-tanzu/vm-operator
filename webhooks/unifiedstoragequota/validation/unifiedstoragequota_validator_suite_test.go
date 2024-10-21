@@ -22,7 +22,7 @@ var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
 	"vmservice.cns.vsphere.vmware.com")
 
 func TestWebhook(t *testing.T) {
-	suite.Register(t, "Validation webhook suite", intgTests, nil)
+	suite.Register(t, "Validation webhook suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

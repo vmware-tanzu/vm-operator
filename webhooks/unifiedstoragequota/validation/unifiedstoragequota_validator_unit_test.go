@@ -13,9 +13,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	admissionv1 "k8s.io/api/admission/v1"
 	v1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -38,890 +39,111 @@ const (
 	dummyNamespaceName = "dummy-vm-namespace-for-webhook-validation"
 )
 
-func TestRequestedCapacityHandler_HandleCreate(t *testing.T) {
-	type testCase struct {
-		description    string
-		vm             *vmopv1.VirtualMachine
-		sc             *v1.StorageClass
-		vmi            *vmopv1.VirtualMachineImage
-		cvmi           *vmopv1.ClusterVirtualMachineImage
-		interceptors   interceptor.Funcs
-		dummyConverter *DummyConverter
-		dummyDecoder   DummyDecoder
-		allowed        bool
-		status         int32
-		expected       validation.RequestedCapacity
-	}
+func unitTests() {
+	Describe("WriteResponse", testRequestedCapacityHandlerWriteResponse)
+	Describe("ServeHTTP", testRequestedCapacityHandlerServeHTTP)
+	Describe("Handle", testRequestedCapacityHandlerHandle)
+	Describe("HandleCreate", testRequestedCapacityHandlerHandleCreate)
+	Describe("HandleUpdate", testRequestedCapacityHandlerHandleUpdate)
+}
 
-	testCases := []testCase{
-		{
-			description: "Error converting from unstructured",
-			vm:          builder.DummyVirtualMachine(),
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: true,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusBadRequest,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "Storage Class not found",
-			vm:          builder.DummyVirtualMachine(),
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusNotFound,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "Error getting storage class",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			interceptors: interceptor.Funcs{
-				Get: func(
-					ctx context.Context,
-					client ctrlclient.WithWatch,
-					key ctrlclient.ObjectKey,
-					obj ctrlclient.Object,
-					opts ...ctrlclient.GetOption) error {
+func testRequestedCapacityHandlerWriteResponse() {
 
-					if _, ok := obj.(*v1.StorageClass); ok {
-						return errors.New("fake error")
-					}
+	var (
+		capacityResponse  *validation.CapacityResponse
+		requestedCapacity *validation.RequestedCapacity
 
-					return client.Get(ctx, key, obj, opts...)
-				},
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusInternalServerError,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "Image is nil",
-			vm:          &vmopv1.VirtualMachine{},
-			sc:          builder.DummyStorageClass(),
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusBadRequest,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "VMI not found",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusNotFound,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "Error getting VMI",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			vmi:         builder.DummyVirtualMachineImage(builder.DummyVMIName),
-			interceptors: interceptor.Funcs{
-				Get: func(
-					ctx context.Context,
-					client ctrlclient.WithWatch,
-					key ctrlclient.ObjectKey,
-					obj ctrlclient.Object,
-					opts ...ctrlclient.GetOption) error {
+		w       *httptest.ResponseRecorder
+		handler *validation.RequestedCapacityHandler
+	)
 
-					if _, ok := obj.(*vmopv1.VirtualMachineImage); ok {
-						return errors.New("fake error")
-					}
+	BeforeEach(func() {
+		capacityResponse = &validation.CapacityResponse{}
 
-					return client.Get(ctx, key, obj, opts...)
-				},
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusInternalServerError,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "CVMI not found",
-			vm: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					Image: &vmopv1.VirtualMachineImageRef{
-						Kind: "ClusterVirtualMachineImage",
-					},
-				},
-			},
-			sc: builder.DummyStorageClass(),
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusNotFound,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "Error getting CVMI",
-			vm: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					Image: &vmopv1.VirtualMachineImageRef{
-						Kind: "ClusterVirtualMachineImage",
-					},
-				},
-			},
-			sc:   builder.DummyStorageClass(),
-			cvmi: builder.DummyClusterVirtualMachineImage(builder.DummyVMIName),
-			interceptors: interceptor.Funcs{
-				Get: func(
-					ctx context.Context,
-					client ctrlclient.WithWatch,
-					key ctrlclient.ObjectKey,
-					obj ctrlclient.Object,
-					opts ...ctrlclient.GetOption) error {
+		fakeClient := builder.NewFakeClient()
+		fakeManagerContext := fake.NewControllerManagerContext()
+		fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
-					if _, ok := obj.(*vmopv1.ClusterVirtualMachineImage); ok {
-						return errors.New("fake error")
-					}
+		handler = &validation.RequestedCapacityHandler{
+			Client:         fakeClient,
+			WebhookContext: fakeWebhookContext,
+			Converter: &DummyConverter{
+				converter: runtime.DefaultUnstructuredConverter,
+				shouldErr: false,
+			},
+			Decoder: DummyDecoder{
+				decoder:   admission.NewDecoder(builder.NewScheme()),
+				shouldErr: false,
+			},
+		}
+	})
 
-					return client.Get(ctx, key, obj, opts...)
-				},
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusInternalServerError,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "Disks is empty in image status",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			vmi:         builder.DummyVirtualMachineImage(builder.DummyVMIName),
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusNotFound,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "Boot disk has empty capacity",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			vmi: &vmopv1.VirtualMachineImage{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: builder.DummyVMIName,
-				},
-				Status: vmopv1.VirtualMachineImageStatus{
-					Name: builder.DummyVMIName,
-					ProductInfo: vmopv1.VirtualMachineImageProductInfo{
-						FullVersion: builder.DummyDistroVersion,
-					},
-					OSInfo: vmopv1.VirtualMachineImageOSInfo{
-						Type: builder.DummyOSType,
-					},
-					Disks: []vmopv1.VirtualMachineImageDiskInfo{
-						{
-							Capacity: nil,
-						},
-					},
-				},
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusNotFound,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "vm uses vmi",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			vmi: &vmopv1.VirtualMachineImage{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      builder.DummyVMIName,
-					Namespace: dummyNamespaceName,
-				},
-				Status: vmopv1.VirtualMachineImageStatus{
-					Name: builder.DummyVMIName,
-					ProductInfo: vmopv1.VirtualMachineImageProductInfo{
-						FullVersion: builder.DummyDistroVersion,
-					},
-					OSInfo: vmopv1.VirtualMachineImageOSInfo{
-						Type: builder.DummyOSType,
-					},
-					Disks: []vmopv1.VirtualMachineImageDiskInfo{
-						{
-							Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-						},
-					},
-				},
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed: true,
-			status:  http.StatusOK,
-			expected: validation.RequestedCapacity{
+	JustBeforeEach(func() {
+		w = httptest.NewRecorder()
+
+		handler.WriteResponse(w, *capacityResponse)
+
+		respBody := w.Body.String()
+		err := json.Unmarshal([]byte(respBody), &requestedCapacity)
+
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(requestedCapacity.Capacity.String()).To(Equal(capacityResponse.Capacity.String()))
+		Expect(requestedCapacity.StorageClassName).To(Equal(capacityResponse.StorageClassName))
+		Expect(requestedCapacity.StoragePolicyID).To(Equal(capacityResponse.StoragePolicyID))
+	})
+
+	AfterEach(func() {
+		w = nil
+		capacityResponse = nil
+		requestedCapacity = nil
+	})
+
+	When("request is not allowed", func() {
+		BeforeEach(func() {
+			capacityResponse.Response = webhook.Errored(http.StatusBadRequest, errors.New("bad request"))
+		})
+
+		It("should write the correct http response code and reason in response body", func() {
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
+			Expect(requestedCapacity.Reason).To(Equal(capacityResponse.Response.Result.Message))
+		})
+	})
+
+	When("request is allowed", func() {
+		BeforeEach(func() {
+			capacityResponse.RequestedCapacity = validation.RequestedCapacity{
 				Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 				StoragePolicyID:  "id42",
 				StorageClassName: "dummy-storage-class",
-			},
-		},
-		{
-			description: "vm uses cvmi",
-			vm: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					Image: &vmopv1.VirtualMachineImageRef{
-						Name: builder.DummyVMIName,
-						Kind: "ClusterVirtualMachineImage",
-					},
-				},
-			},
-			sc: builder.DummyStorageClass(),
-			cvmi: &vmopv1.ClusterVirtualMachineImage{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: builder.DummyVMIName,
-				},
-				Status: vmopv1.VirtualMachineImageStatus{
-					Name: builder.DummyVMIName,
-					ProductInfo: vmopv1.VirtualMachineImageProductInfo{
-						FullVersion: builder.DummyDistroVersion,
-					},
-					OSInfo: vmopv1.VirtualMachineImageOSInfo{
-						Type: builder.DummyOSType,
-					},
-					Disks: []vmopv1.VirtualMachineImageDiskInfo{
-						{
-							Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-						},
-					},
-				},
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed: true,
-			status:  http.StatusOK,
-			expected: validation.RequestedCapacity{
-				Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-				StoragePolicyID:  "id42",
-				StorageClassName: "dummy-storage-class",
-			},
-		},
-		{
-			description: "invalid image kind",
-			vm: &vmopv1.VirtualMachine{
-				Spec: vmopv1.VirtualMachineSpec{
-					Image: &vmopv1.VirtualMachineImageRef{
-						Name: builder.DummyVMIName,
-						Kind: "INVALID",
-					},
-				},
-			},
-			sc: builder.DummyStorageClass(),
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusBadRequest,
-			expected: validation.RequestedCapacity{},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.description, func(t *testing.T) {
-			tc.vm.Name = dummyVMName
-			tc.vm.Namespace = dummyNamespaceName
-
-			var objects []ctrlclient.Object
-			if tc.sc != nil {
-				objects = append(objects, tc.sc)
-				tc.vm.Spec.StorageClass = tc.sc.Name
 			}
-			if tc.vmi != nil {
-				objects = append(objects, tc.vmi)
-			}
-			if tc.cvmi != nil {
-				objects = append(objects, tc.cvmi)
-			}
-			obj, _ := builder.ToUnstructured(tc.vm)
-
-			var oldObj *unstructured.Unstructured
-
-			fakeClient := builder.NewFakeClientWithInterceptors(tc.interceptors, objects...)
-			fakeManagerContext := fake.NewControllerManagerContext()
-			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
-
-			fakeWebhookRequestContext := fake.NewWebhookRequestContext(fakeWebhookContext, obj, oldObj)
-
-			fakeHandler := &validation.RequestedCapacityHandler{
-				Client:         fakeClient,
-				WebhookContext: fakeWebhookContext,
-				Converter:      tc.dummyConverter,
-				Decoder:        tc.dummyDecoder,
-			}
-			resp := fakeHandler.HandleCreate(fakeWebhookRequestContext)
-
-			g := NewWithT(t)
-
-			g.Expect(resp.Allowed).To(Equal(tc.allowed))
-			g.Expect(resp.Result.Code).To(Equal(tc.status))
-
-			g.Expect(resp.Capacity.String()).To(Equal(tc.expected.Capacity.String()))
-			g.Expect(resp.StoragePolicyID).To(Equal(tc.expected.StoragePolicyID))
-			g.Expect(resp.StorageClassName).To(Equal(tc.expected.StorageClassName))
+			capacityResponse.Response = webhook.Allowed("")
 		})
-	}
+
+		It("should write http status ok response code and empty reason in response body", func() {
+			Expect(w.Code).To(Equal(http.StatusOK))
+			Expect(requestedCapacity.Reason).To(BeEmpty())
+		})
+	})
 }
 
-func TestRequestedCapacityHandler_HandleUpdate(t *testing.T) {
-	type testCase struct {
-		description    string
-		vm             *vmopv1.VirtualMachine
-		sc             *v1.StorageClass
-		bootDisk       *vmopv1.VirtualMachineAdvancedSpec
-		oldBootDisk    *vmopv1.VirtualMachineAdvancedSpec
-		interceptors   interceptor.Funcs
-		dummyConverter *DummyConverter
-		dummyDecoder   DummyDecoder
-		allowed        bool
-		status         int32
-		expected       validation.RequestedCapacity
-	}
+func testRequestedCapacityHandlerServeHTTP() {
+	Context("With an invalid request", func() {
+		var (
+			req  *http.Request
+			resp *httptest.ResponseRecorder
 
-	testCases := []testCase{
-		{
-			description: "error converting obj from unstructured",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
-			},
-			dummyConverter: &DummyConverter{
-				converter:    runtime.DefaultUnstructuredConverter,
-				invocations:  0,
-				shouldErr:    true,
-				errThreshold: 0,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusBadRequest,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "error converting old obj from unstructured",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
-			},
-			dummyConverter: &DummyConverter{
-				converter:    runtime.DefaultUnstructuredConverter,
-				invocations:  0,
-				shouldErr:    true,
-				errThreshold: 1,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusBadRequest,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "updated boot disk size is nil",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			bootDisk:    nil,
-			oldBootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  true,
-			status:   http.StatusOK,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "old boot disk size is nil, no change in capacity",
-			vm:          dummyVMWithStatusVolumes(),
-			sc:          builder.DummyStorageClass(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: nil,
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  true,
-			status:   http.StatusOK,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "old boot disk size is nil, no volumes",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: nil,
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed: true,
-			status:  http.StatusOK,
-			expected: validation.RequestedCapacity{
-				Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-				StoragePolicyID:  "id42",
-				StorageClassName: "dummy-storage-class",
-			},
-		},
-		{
-			description: "change in boot disk size, increase",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed: true,
-			status:  http.StatusOK,
-			expected: validation.RequestedCapacity{
-				Capacity:         *resource.NewQuantity(5*1024*1024*1024, resource.BinarySI),
-				StoragePolicyID:  "id42",
-				StorageClassName: "dummy-storage-class",
-			},
-		},
-		{
-			description: "change in boot disk size, decrease",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  true,
-			status:   http.StatusOK,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "no change in boot disk size",
-			vm:          builder.DummyVirtualMachine(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  true,
-			status:   http.StatusOK,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "storage class not found",
-			vm:          builder.DummyVirtualMachine(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusNotFound,
-			expected: validation.RequestedCapacity{},
-		},
-		{
-			description: "error getting storage class",
-			vm:          builder.DummyVirtualMachine(),
-			sc:          builder.DummyStorageClass(),
-			bootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
-			},
-			oldBootDisk: &vmopv1.VirtualMachineAdvancedSpec{
-				BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-			},
-			interceptors: interceptor.Funcs{
-				Get: func(
-					ctx context.Context,
-					client ctrlclient.WithWatch,
-					key ctrlclient.ObjectKey,
-					obj ctrlclient.Object,
-					opts ...ctrlclient.GetOption) error {
-					if _, ok := obj.(*v1.StorageClass); ok {
-						return errors.New("fake error")
-					}
+			handler *validation.RequestedCapacityHandler
+		)
 
-					return client.Get(ctx, key, obj, opts...)
-				},
-			},
-			dummyConverter: &DummyConverter{
-				converter: runtime.DefaultUnstructuredConverter,
-				shouldErr: false,
-			},
-			dummyDecoder: DummyDecoder{
-				decoder:   admission.NewDecoder(builder.NewScheme()),
-				shouldErr: false,
-			},
-			allowed:  false,
-			status:   http.StatusInternalServerError,
-			expected: validation.RequestedCapacity{},
-		},
-	}
+		BeforeEach(func() {
+			resp = httptest.NewRecorder()
 
-	for _, tc := range testCases {
-		t.Run(tc.description, func(t *testing.T) {
-			tc.vm.Name = dummyVMName
-			tc.vm.Namespace = dummyNamespaceName
-			tc.vm.Spec.Advanced = tc.bootDisk
-
-			var objects []ctrlclient.Object
-			if tc.sc != nil {
-				objects = append(objects, tc.sc)
-				tc.vm.Spec.StorageClass = tc.sc.Name
-			}
-
-			obj, _ := builder.ToUnstructured(tc.vm)
-
-			var oldVM *vmopv1.VirtualMachine
-			var oldObj *unstructured.Unstructured
-			oldVM = tc.vm.DeepCopy()
-			oldVM.Spec.Advanced = tc.oldBootDisk
-			oldObj, _ = builder.ToUnstructured(oldVM)
-
-			fakeClient := builder.NewFakeClientWithInterceptors(tc.interceptors, objects...)
-			fakeManagerContext := fake.NewControllerManagerContext()
-			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
-
-			fakeWebhookRequestContext := fake.NewWebhookRequestContext(fakeWebhookContext, obj, oldObj)
-
-			fakeHandler := &validation.RequestedCapacityHandler{
-				Client:         fakeClient,
-				WebhookContext: fakeWebhookContext,
-				Converter:      tc.dummyConverter,
-				Decoder:        tc.dummyDecoder,
-			}
-			resp := fakeHandler.HandleUpdate(fakeWebhookRequestContext)
-
-			g := NewWithT(t)
-
-			g.Expect(resp.Allowed).To(Equal(tc.allowed))
-			g.Expect(resp.Result.Code).To(Equal(tc.status))
-
-			g.Expect(resp.Capacity.String()).To(Equal(tc.expected.Capacity.String()))
-			g.Expect(resp.StoragePolicyID).To(Equal(tc.expected.StoragePolicyID))
-			g.Expect(resp.StorageClassName).To(Equal(tc.expected.StorageClassName))
-		})
-	}
-}
-
-func TestRequestedCapacityHandler_Handle(t *testing.T) {
-	type testCase struct {
-		description  string
-		vm           *vmopv1.VirtualMachine
-		oldVM        *vmopv1.VirtualMachine
-		operation    admissionv1.Operation
-		interceptors interceptor.Funcs
-		allowed      bool
-		status       int32
-	}
-
-	testCases := []testCase{
-		{
-			description: "Create - Error decoding raw obj",
-			operation:   admissionv1.Create,
-			allowed:     false,
-			status:      http.StatusBadRequest,
-		},
-		{
-			description: "Update - Error decoding raw obj",
-			operation:   admissionv1.Update,
-			allowed:     false,
-			status:      http.StatusBadRequest,
-		},
-		{
-			description: "Update - Error decoding raw old obj",
-			vm:          builder.DummyVirtualMachine(),
-			operation:   admissionv1.Update,
-			allowed:     false,
-			status:      http.StatusBadRequest,
-		},
-		{
-			description: "Create",
-			vm:          builder.DummyVirtualMachine(),
-			operation:   admissionv1.Create,
-			allowed:     true,
-			status:      http.StatusOK,
-		},
-		{
-			description: "Update",
-			vm:          builder.DummyVirtualMachine(),
-			oldVM:       builder.DummyVirtualMachine(),
-			operation:   admissionv1.Update,
-			allowed:     true,
-			status:      http.StatusOK,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.description, func(t *testing.T) {
-			sc := builder.DummyStorageClass()
-			vmi := builder.DummyVirtualMachineImage(builder.DummyVMIName)
-			vmi.Namespace = dummyNamespaceName
-			vmi.Status = vmopv1.VirtualMachineImageStatus{
-				Disks: []vmopv1.VirtualMachineImageDiskInfo{
-					{
-						Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-					},
-				},
-			}
-
-			if tc.vm != nil {
-				tc.vm.Name = dummyVMName
-				tc.vm.Namespace = dummyNamespaceName
-				tc.vm.Spec.StorageClass = sc.Name
-			}
-
-			objects := []ctrlclient.Object{
-				sc,
-				vmi,
-			}
-
-			fakeClient := builder.NewFakeClientWithInterceptors(tc.interceptors, objects...)
-			fakeManagerContext := fake.NewControllerManagerContext()
-			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
-
-			fakeHandler := &validation.RequestedCapacityHandler{
-				Client:         fakeClient,
-				WebhookContext: fakeWebhookContext,
-				Converter: &DummyConverter{
-					converter: runtime.DefaultUnstructuredConverter,
-					shouldErr: false,
-				},
-				Decoder: DummyDecoder{
-					decoder:   admission.NewDecoder(builder.NewScheme()),
-					shouldErr: false,
-				},
-			}
-
-			var obj, oldObj []byte
-
-			if tc.vm != nil {
-				obj, _ = json.Marshal(tc.vm)
-			}
-			if tc.oldVM != nil {
-				oldObj, _ = json.Marshal(tc.oldVM)
-			}
-
-			req := admission.Request{
-				AdmissionRequest: admissionv1.AdmissionRequest{
-					Operation: tc.operation,
-					Object: runtime.RawExtension{
-						Raw: obj,
-					},
-					OldObject: runtime.RawExtension{
-						Raw: oldObj,
-					},
-				},
-			}
-
-			resp := fakeHandler.Handle(req)
-
-			g := NewWithT(t)
-
-			g.Expect(resp.Allowed).To(Equal(tc.allowed))
-			g.Expect(resp.Result.Code).To(Equal(tc.status))
-		})
-	}
-}
-
-func TestRequestedCapacityHandler_ServeHTTP(t *testing.T) {
-	type errTestCase struct {
-		description string
-		req         *http.Request
-		status      int32
-	}
-
-	errTestCases := []errTestCase{
-		{
-			description: "empty body should return BadRequest",
-			req:         &http.Request{Body: nil},
-			status:      http.StatusBadRequest,
-		},
-		{
-			description: "NoBody should return BadRequest",
-			req:         &http.Request{Body: http.NoBody},
-			status:      http.StatusBadRequest,
-		},
-		{
-			description: "undecodable body should return BadRequest",
-			req: &http.Request{
-				Header: http.Header{"Content-Type": []string{"application/json"}},
-				Body:   nopCloser{Reader: bytes.NewBufferString("{")},
-			},
-			status: http.StatusBadRequest,
-		},
-		{
-			description: "infinite body should return RequestEntityTooLarge",
-			req: &http.Request{
-				Header: http.Header{"Content-Type": []string{"application/json"}},
-				Method: http.MethodPost,
-				Body:   nopCloser{Reader: rand.Reader},
-			},
-			status: http.StatusRequestEntityTooLarge,
-		},
-		{
-			description: "wrong content-type should return BadRequest",
-			req: &http.Request{
-				Header: http.Header{"Content-Type": []string{"application/foo"}},
-				Body:   nopCloser{Reader: bytes.NewBuffer(nil)},
-			},
-			status: http.StatusBadRequest,
-		},
-	}
-
-	for _, tc := range errTestCases {
-		t.Run(tc.description, func(t *testing.T) {
 			fakeClient := builder.NewFakeClient()
 			fakeManagerContext := fake.NewControllerManagerContext()
 			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
-			fakeHandler := &validation.RequestedCapacityHandler{
+			handler = &validation.RequestedCapacityHandler{
 				Client:         fakeClient,
 				WebhookContext: fakeWebhookContext,
 				Converter: &DummyConverter{
@@ -933,45 +155,94 @@ func TestRequestedCapacityHandler_ServeHTTP(t *testing.T) {
 					shouldErr: false,
 				},
 			}
-			resp := httptest.NewRecorder()
-
-			fakeHandler.ServeHTTP(resp, tc.req)
-
-			g := NewWithT(t)
-
-			g.Expect(resp.Code).To(Equal(int(tc.status)))
 		})
-	}
 
-	type testCase struct {
-		description string
-		operation   admissionv1.Operation
-		status      int32
-		expected    validation.RequestedCapacity
-	}
+		JustBeforeEach(func() {
+			handler.ServeHTTP(resp, req)
+		})
 
-	testCases := []testCase{
-		{
-			description: "should return correct response code and body on create",
-			operation:   admissionv1.Create,
-			status:      http.StatusOK,
-			expected: validation.RequestedCapacity{
-				Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-				StoragePolicyID:  "id42",
-				StorageClassName: "dummy-storage-class",
-			},
-		},
-		{
-			description: "should return correct response code and body on update",
-			operation:   admissionv1.Update,
-			status:      http.StatusOK,
-			expected:    validation.RequestedCapacity{},
-		},
-	}
+		AfterEach(func() {
+			req = nil
+			resp = nil
+		})
 
-	for _, tc := range testCases {
-		t.Run(tc.description, func(t *testing.T) {
-			sc := builder.DummyStorageClass()
+		When("request has an empty body", func() {
+			BeforeEach(func() {
+				req = &http.Request{Body: nil}
+			})
+
+			It("should write StatusBadRequest code", func() {
+				Expect(resp.Code).To(Equal(http.StatusBadRequest))
+			})
+		})
+
+		When("request has a NoBody body", func() {
+			BeforeEach(func() {
+				req = &http.Request{Body: http.NoBody}
+			})
+
+			It("should write StatusBadRequest code", func() {
+				Expect(resp.Code).To(Equal(http.StatusBadRequest))
+			})
+		})
+
+		When("request body cannot be decoded", func() {
+			BeforeEach(func() {
+				req = &http.Request{
+					Header: http.Header{"Content-Type": []string{"application/json"}},
+					Body:   nopCloser{Reader: bytes.NewBufferString("{")},
+				}
+			})
+
+			It("should write StatusBadRequest code", func() {
+				Expect(resp.Code).To(Equal(http.StatusBadRequest))
+			})
+		})
+
+		When("request body is infinite", func() {
+			BeforeEach(func() {
+				req = &http.Request{
+					Header: http.Header{"Content-Type": []string{"application/json"}},
+					Method: http.MethodPost,
+					Body:   nopCloser{Reader: rand.Reader},
+				}
+			})
+
+			It("should write StatusRequestEntityTooLarge code", func() {
+				Expect(resp.Code).To(Equal(http.StatusRequestEntityTooLarge))
+			})
+		})
+
+		When("request body has wrong content-type", func() {
+			BeforeEach(func() {
+				req = &http.Request{
+					Header: http.Header{"Content-Type": []string{"application/foo"}},
+					Body:   nopCloser{Reader: bytes.NewBuffer(nil)},
+				}
+			})
+
+			It("should write StatusBadRequest code", func() {
+				Expect(resp.Code).To(Equal(http.StatusBadRequest))
+			})
+		})
+	})
+
+	Context("With a valid request", func() {
+		var (
+			actual, expected *validation.RequestedCapacity
+
+			handler *validation.RequestedCapacityHandler
+
+			withObjects []ctrlclient.Object
+			sc          *v1.StorageClass
+			vmi         *vmopv1.VirtualMachineImage
+
+			operation admissionv1.Operation
+			ar        *admissionv1.AdmissionReview
+		)
+
+		BeforeEach(func() {
+			sc = builder.DummyStorageClass()
 
 			vm := builder.DummyVirtualMachine()
 			vm.Name = dummyVMName
@@ -980,6 +251,123 @@ func TestRequestedCapacityHandler_ServeHTTP(t *testing.T) {
 
 			oldVM := vm.DeepCopy()
 
+			obj, _ := json.Marshal(vm)
+			oldObj, _ := json.Marshal(oldVM)
+
+			ar = &admissionv1.AdmissionReview{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "AdmissionReview",
+					APIVersion: "admission.k8s.io/v1",
+				},
+				Request: &admissionv1.AdmissionRequest{
+					Object: runtime.RawExtension{
+						Raw: obj,
+					},
+					OldObject: runtime.RawExtension{
+						Raw: oldObj,
+					},
+				},
+			}
+
+			vmi = builder.DummyVirtualMachineImage(builder.DummyVMIName)
+			vmi.Namespace = dummyNamespaceName
+			vmi.Status = vmopv1.VirtualMachineImageStatus{
+				Disks: []vmopv1.VirtualMachineImageDiskInfo{
+					{
+						Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			}
+			withObjects = []ctrlclient.Object{sc, vmi}
+
+			fakeClient := builder.NewFakeClient(withObjects...)
+			fakeManagerContext := fake.NewControllerManagerContext()
+			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
+
+			handler = &validation.RequestedCapacityHandler{
+				Client:         fakeClient,
+				WebhookContext: fakeWebhookContext,
+				Converter: &DummyConverter{
+					converter: runtime.DefaultUnstructuredConverter,
+				},
+				Decoder: DummyDecoder{
+					decoder: admission.NewDecoder(builder.NewScheme()),
+				},
+			}
+		})
+
+		JustBeforeEach(func() {
+			ar.Request.Operation = operation
+
+			body, _ := json.Marshal(ar)
+
+			req := httptest.NewRequest(http.MethodPost, "/getrequestedcapacityforvirtualmachine", bytes.NewReader(body))
+			req.Header.Add("Content-Type", "application/json")
+
+			resp := httptest.NewRecorder()
+
+			handler.ServeHTTP(resp, req)
+
+			respBody := resp.Body.String()
+			err := json.Unmarshal([]byte(respBody), &actual)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Code).To(Equal(http.StatusOK))
+		})
+
+		When("admission request operation is create", func() {
+			BeforeEach(func() {
+				operation = admissionv1.Create
+			})
+
+			JustBeforeEach(func() {
+				expected = &validation.RequestedCapacity{
+					Capacity:         *vmi.Status.Disks[0].Capacity,
+					StorageClassName: sc.Name,
+					StoragePolicyID:  sc.Parameters["storagePolicyID"],
+				}
+			})
+
+			It("should write StatusOK response code and correct response body", func() {
+				Expect(actual.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(actual.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(actual.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("admission request operation is update", func() {
+			BeforeEach(func() {
+				operation = admissionv1.Update
+			})
+
+			JustBeforeEach(func() {
+				expected = &validation.RequestedCapacity{}
+			})
+
+			It("should write StatusOK response code and correct response body", func() {
+				Expect(actual.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(actual.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(actual.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+	})
+}
+
+func testRequestedCapacityHandlerHandle() {
+	var (
+		vm, oldVM   *vmopv1.VirtualMachine
+		obj, oldObj []byte
+
+		handler *validation.RequestedCapacityHandler
+		req     admission.Request
+		resp    validation.CapacityResponse
+
+		operation admissionv1.Operation
+	)
+
+	Context("Handle", func() {
+		BeforeEach(func() {
+			sc := builder.DummyStorageClass()
 			vmi := builder.DummyVirtualMachineImage(builder.DummyVMIName)
 			vmi.Namespace = dummyNamespaceName
 			vmi.Status = vmopv1.VirtualMachineImageStatus{
@@ -990,16 +378,13 @@ func TestRequestedCapacityHandler_ServeHTTP(t *testing.T) {
 				},
 			}
 
-			objects := []ctrlclient.Object{
-				sc,
-				vmi,
-			}
+			withObjects := []ctrlclient.Object{sc, vmi}
 
-			fakeClient := builder.NewFakeClient(objects...)
+			fakeClient := builder.NewFakeClient(withObjects...)
 			fakeManagerContext := fake.NewControllerManagerContext()
 			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
-			fakeHandler := &validation.RequestedCapacityHandler{
+			handler = &validation.RequestedCapacityHandler{
 				Client:         fakeClient,
 				WebhookContext: fakeWebhookContext,
 				Converter: &DummyConverter{
@@ -1011,19 +396,12 @@ func TestRequestedCapacityHandler_ServeHTTP(t *testing.T) {
 					shouldErr: false,
 				},
 			}
+		})
 
-			var obj, oldObj []byte
-
-			obj, _ = json.Marshal(vm)
-			oldObj, _ = json.Marshal(oldVM)
-
-			ar := admissionv1.AdmissionReview{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "AdmissionReview",
-					APIVersion: "admission.k8s.io/v1",
-				},
-				Request: &admissionv1.AdmissionRequest{
-					Operation: tc.operation,
+		JustBeforeEach(func() {
+			req = admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Operation: operation,
 					Object: runtime.RawExtension{
 						Raw: obj,
 					},
@@ -1033,110 +411,761 @@ func TestRequestedCapacityHandler_ServeHTTP(t *testing.T) {
 				},
 			}
 
-			body, _ := json.Marshal(ar)
-
-			req := httptest.NewRequest(http.MethodPost, "/getrequestedcapacityforvirtualmachine", bytes.NewReader(body))
-			req.Header.Add("Content-Type", "application/json")
-
-			resp := httptest.NewRecorder()
-
-			fakeHandler.ServeHTTP(resp, req)
-
-			g := NewWithT(t)
-
-			g.Expect(resp.Code).To(Equal(int(tc.status)))
-
-			var actual *validation.RequestedCapacity
-			respBody := resp.Body.String()
-			err := json.Unmarshal([]byte(respBody), &actual)
-
-			g.Expect(err).NotTo(HaveOccurred())
-
-			g.Expect(actual.Capacity.String()).To(Equal(tc.expected.Capacity.String()))
-			g.Expect(actual.StoragePolicyID).To(Equal(tc.expected.StoragePolicyID))
-			g.Expect(actual.StorageClassName).To(Equal(tc.expected.StorageClassName))
+			resp = handler.Handle(req)
 		})
-	}
+
+		AfterEach(func() {
+			vm = nil
+			oldVM = nil
+		})
+
+		When("there is an admission request with a create operation", func() {
+			BeforeEach(func() {
+				operation = admissionv1.Create
+			})
+
+			When("there is an error decoding the raw object", func() {
+
+				It("should write StatusBadRequest code to the response object", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
+				})
+			})
+
+			When("a valid request object is passed in", func() {
+				BeforeEach(func() {
+					vm = builder.DummyVirtualMachine()
+					vm.Name = dummyVMName
+					vm.Namespace = dummyNamespaceName
+					vm.Spec.StorageClass = builder.DummyStorageClassName
+					obj, _ = json.Marshal(vm)
+				})
+
+				It("should write StatusOK code to the response object", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+				})
+			})
+		})
+
+		When("there is an admission request with an update operation", func() {
+			BeforeEach(func() {
+				operation = admissionv1.Update
+			})
+
+			When("there is an error decoding the raw object", func() {
+
+				It("should write StatusBadRequest code to the response object", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
+				})
+			})
+
+			When("there is an error decoding the raw old object", func() {
+				BeforeEach(func() {
+					vm = builder.DummyVirtualMachine()
+					vm.Name = dummyVMName
+					vm.Namespace = dummyNamespaceName
+					vm.Spec.StorageClass = builder.DummyStorageClassName
+
+					obj, _ = json.Marshal(vm)
+				})
+
+				It("should write StatusBadRequest code to the response object", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
+				})
+			})
+
+			When("a valid request object is passed in", func() {
+				BeforeEach(func() {
+					vm = builder.DummyVirtualMachine()
+					vm.Name = dummyVMName
+					vm.Namespace = dummyNamespaceName
+					vm.Spec.StorageClass = builder.DummyStorageClassName
+					obj, _ = json.Marshal(vm)
+
+					oldVM = vm.DeepCopy()
+					oldObj, _ = json.Marshal(oldVM)
+				})
+
+				It("should write StatusOK code to the response object", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+				})
+			})
+		})
+	})
 }
 
-func TestRequestedCapacityHandler_WriteResponse(t *testing.T) {
-	type testCase struct {
-		description string
-		err         error
-		allowed     bool
-		status      int32
-	}
+func testRequestedCapacityHandlerHandleCreate() {
+	var (
+		interceptors interceptor.Funcs
+		withObjects  []ctrlclient.Object
 
-	testCases := []testCase{
-		{
-			description: "request not allowed should have correct reason and status code",
-			err:         errors.New("bad request"),
-			allowed:     false,
-			status:      http.StatusBadRequest,
-		},
-		{
-			description: "request allowed; should have correct status",
-			allowed:     true,
-		},
-	}
+		dummyConverter *DummyConverter
+		dummyDecoder   *DummyDecoder
 
-	for _, tc := range testCases {
-		t.Run(tc.description, func(t *testing.T) {
-			testResponse := validation.CapacityResponse{}
+		obj, oldObj *unstructured.Unstructured
+		vm          *vmopv1.VirtualMachine
 
-			if tc.allowed {
-				testResponse.RequestedCapacity = validation.RequestedCapacity{
-					Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
-					StoragePolicyID:  "id42",
-					StorageClassName: "dummy-storage-class",
-				}
-				testResponse.Response = webhook.Allowed("")
-			} else {
-				testResponse.Response = webhook.Errored(tc.status, tc.err)
+		resp, expected validation.CapacityResponse
+	)
+
+	When("HandleCreate is called", func() {
+		BeforeEach(func() {
+			expected = validation.CapacityResponse{}
+
+			interceptors = interceptor.Funcs{}
+			withObjects = []ctrlclient.Object{}
+
+			dummyConverter = &DummyConverter{
+				converter: runtime.DefaultUnstructuredConverter,
+			}
+			dummyDecoder = &DummyDecoder{
+				decoder: admission.NewDecoder(builder.NewScheme()),
 			}
 
-			w := httptest.NewRecorder()
+			vm = builder.DummyVirtualMachine()
+		})
 
-			fakeClient := builder.NewFakeClient()
+		JustBeforeEach(func() {
+			fakeClient := builder.NewFakeClientWithInterceptors(interceptors, withObjects...)
 			fakeManagerContext := fake.NewControllerManagerContext()
 			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
+
+			vm.Name = dummyVMName
+			vm.Namespace = dummyNamespaceName
+			vm.Spec.StorageClass = builder.DummyStorageClassName
+
+			obj, _ = builder.ToUnstructured(vm)
+			fakeWebhookRequestContext := fake.NewWebhookRequestContext(fakeWebhookContext, obj, oldObj)
 
 			fakeHandler := &validation.RequestedCapacityHandler{
 				Client:         fakeClient,
 				WebhookContext: fakeWebhookContext,
-				Converter: &DummyConverter{
-					converter: runtime.DefaultUnstructuredConverter,
-					shouldErr: false,
-				},
-				Decoder: DummyDecoder{
-					decoder:   admission.NewDecoder(builder.NewScheme()),
-					shouldErr: false,
-				},
+				Converter:      dummyConverter,
+				Decoder:        *dummyDecoder,
 			}
-
-			fakeHandler.WriteResponse(w, testResponse)
-
-			g := NewWithT(t)
-
-			var actual *validation.RequestedCapacity
-			respBody := w.Body.String()
-			err := json.Unmarshal([]byte(respBody), &actual)
-
-			g.Expect(err).NotTo(HaveOccurred())
-
-			g.Expect(actual.Capacity.String()).To(Equal(testResponse.Capacity.String()))
-			g.Expect(actual.StoragePolicyID).To(Equal(testResponse.StoragePolicyID))
-			g.Expect(actual.StorageClassName).To(Equal(testResponse.StorageClassName))
-
-			if tc.allowed {
-				g.Expect(w.Code).To(Equal(http.StatusOK))
-				g.Expect(actual.Reason).To(BeEmpty())
-			} else {
-				g.Expect(w.Code).To(Equal(int(tc.status)))
-				g.Expect(actual.Reason).To(Equal(tc.err.Error()))
-			}
+			resp = fakeHandler.HandleCreate(fakeWebhookRequestContext)
 		})
-	}
+
+		When("there is an error converting from unstructured", func() {
+			BeforeEach(func() {
+				dummyConverter.shouldErr = true
+			})
+
+			It("should write StatusBadRequest code to the response object", func() {
+				Expect(resp.Allowed).To(BeFalse())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("storage class is not found", func() {
+			It("should write StatusNotFound code to the response object", func() {
+				Expect(resp.Allowed).To(BeFalse())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		Context("storage class is present", func() {
+			BeforeEach(func() {
+				withObjects = append(withObjects, builder.DummyStorageClass())
+			})
+
+			When("there is an error getting storage class", func() {
+				BeforeEach(func() {
+					interceptors = interceptor.Funcs{
+						Get: func(
+							ctx context.Context,
+							client ctrlclient.WithWatch,
+							key ctrlclient.ObjectKey,
+							obj ctrlclient.Object,
+							opts ...ctrlclient.GetOption) error {
+
+							if _, ok := obj.(*v1.StorageClass); ok {
+								return errors.New("fake error")
+							}
+
+							return client.Get(ctx, key, obj, opts...)
+						},
+					}
+				})
+
+				It("should write StatusInternalServerError and an empty RequestedCapacity to the response", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+
+					Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+					Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+					Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+				})
+			})
+
+			When("vm image is nil", func() {
+				BeforeEach(func() {
+					vm = &vmopv1.VirtualMachine{}
+				})
+
+				It("should write StatusBadRequest code and an empty RequestedCapacity to the response", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
+
+					Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+					Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+					Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+				})
+			})
+
+			Context("vmi is specified as vm image kind", func() {
+				var vmi *vmopv1.VirtualMachineImage
+
+				BeforeEach(func() {
+					vmi = builder.DummyVirtualMachineImage(builder.DummyVMIName)
+					vmi.Namespace = dummyNamespaceName
+					withObjects = append(withObjects, vmi)
+				})
+
+				AfterEach(func() {
+					vmi = nil
+				})
+
+				When("VMI is not found", func() {
+					BeforeEach(func() {
+						vm.Spec.Image.Name = builder.DummyCVMIName
+					})
+
+					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeFalse())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("there is an error getting VMI for vm", func() {
+					BeforeEach(func() {
+						interceptors = interceptor.Funcs{
+							Get: func(
+								ctx context.Context,
+								client ctrlclient.WithWatch,
+								key ctrlclient.ObjectKey,
+								obj ctrlclient.Object,
+								opts ...ctrlclient.GetOption) error {
+
+								if _, ok := obj.(*vmopv1.VirtualMachineImage); ok {
+									return errors.New("fake error")
+								}
+
+								return client.Get(ctx, key, obj, opts...)
+							},
+						}
+					})
+
+					It("should write StatusInternalServerError and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeFalse())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("disks section is empty in image status", func() {
+					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeFalse())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("boot disk has an empty capacity", func() {
+					BeforeEach(func() {
+						vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+							{
+								Capacity: nil,
+							},
+						}
+					})
+
+					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeFalse())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("when boot disk capacity is non-empty", func() {
+					BeforeEach(func() {
+						vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+							{
+								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							},
+						}
+
+						expected = validation.CapacityResponse{
+							RequestedCapacity: validation.RequestedCapacity{
+								Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								StoragePolicyID:  "id42",
+								StorageClassName: "dummy-storage-class",
+							},
+						}
+					})
+
+					It("should write StatusOK code and the correct RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeTrue())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+			})
+
+			Context("cvmi is specified as vm image kind", func() {
+				var cvmi *vmopv1.ClusterVirtualMachineImage
+
+				BeforeEach(func() {
+					cvmi = builder.DummyClusterVirtualMachineImage(builder.DummyCVMIName)
+					withObjects = append(withObjects, cvmi)
+
+					vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+						Kind: "ClusterVirtualMachineImage",
+						Name: builder.DummyCVMIName,
+					}
+				})
+
+				AfterEach(func() {
+					cvmi = nil
+				})
+
+				When("CVMI is not found", func() {
+					BeforeEach(func() {
+						vm.Spec.Image.Name = builder.DummyVMIName
+					})
+
+					It("should write StatusNotFound and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeFalse())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("there is an error getting CVMI for vm", func() {
+					BeforeEach(func() {
+						interceptors = interceptor.Funcs{
+							Get: func(
+								ctx context.Context,
+								client ctrlclient.WithWatch,
+								key ctrlclient.ObjectKey,
+								obj ctrlclient.Object,
+								opts ...ctrlclient.GetOption) error {
+
+								if _, ok := obj.(*vmopv1.ClusterVirtualMachineImage); ok {
+									return errors.New("fake error")
+								}
+
+								return client.Get(ctx, key, obj, opts...)
+							},
+						}
+					})
+
+					It("should write StatusInternalServerError and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeFalse())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("disks section is empty in image status", func() {
+					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeFalse())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("boot disk has an empty capacity", func() {
+					BeforeEach(func() {
+						cvmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+							{
+								Capacity: nil,
+							},
+						}
+						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
+					})
+
+					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeFalse())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("when boot disk capacity is non-empty", func() {
+					BeforeEach(func() {
+						cvmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+							{
+								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							},
+						}
+						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
+
+						expected = validation.CapacityResponse{
+							RequestedCapacity: validation.RequestedCapacity{
+								Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								StoragePolicyID:  "id42",
+								StorageClassName: "dummy-storage-class",
+							},
+						}
+					})
+
+					It("should write StatusOK code and the correct RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeTrue())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+			})
+
+			When("vm uses invalid image kind", func() {
+				BeforeEach(func() {
+					vm = &vmopv1.VirtualMachine{
+						Spec: vmopv1.VirtualMachineSpec{
+							Image: &vmopv1.VirtualMachineImageRef{
+								Name: builder.DummyVMIName,
+								Kind: "INVALID",
+							},
+						},
+					}
+				})
+
+				It("should write StatusBadRequest and an empty RequestedCapacity to the response", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
+
+					Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+					Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+					Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+				})
+			})
+		})
+	})
+}
+
+func testRequestedCapacityHandlerHandleUpdate() {
+	var (
+		interceptors interceptor.Funcs
+		withObjects  []ctrlclient.Object
+
+		dummyConverter *DummyConverter
+		dummyDecoder   *DummyDecoder
+
+		obj, oldObj *unstructured.Unstructured
+		vm, oldVM   *vmopv1.VirtualMachine
+
+		resp, expected validation.CapacityResponse
+	)
+
+	When("HandleUpdate is called", func() {
+
+		BeforeEach(func() {
+			expected = validation.CapacityResponse{}
+
+			interceptors = interceptor.Funcs{}
+			withObjects = []ctrlclient.Object{builder.DummyStorageClass()}
+
+			dummyConverter = &DummyConverter{
+				converter: runtime.DefaultUnstructuredConverter,
+			}
+			dummyDecoder = &DummyDecoder{
+				decoder: admission.NewDecoder(builder.NewScheme()),
+			}
+
+			vm = builder.DummyVirtualMachine()
+			vm.Name = dummyVMName
+			vm.Namespace = dummyNamespaceName
+			vm.Spec.StorageClass = builder.DummyStorageClassName
+			oldVM = vm.DeepCopy()
+		})
+
+		JustBeforeEach(func() {
+			fakeClient := builder.NewFakeClientWithInterceptors(interceptors, withObjects...)
+			fakeManagerContext := fake.NewControllerManagerContext()
+			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
+
+			obj, _ = builder.ToUnstructured(vm)
+			oldObj, _ = builder.ToUnstructured(oldVM)
+			fakeWebhookRequestContext := fake.NewWebhookRequestContext(fakeWebhookContext, obj, oldObj)
+
+			fakeHandler := &validation.RequestedCapacityHandler{
+				Client:         fakeClient,
+				WebhookContext: fakeWebhookContext,
+				Converter:      dummyConverter,
+				Decoder:        *dummyDecoder,
+			}
+			resp = fakeHandler.HandleUpdate(fakeWebhookRequestContext)
+		})
+
+		When("there is an error converting obj from unstructured", func() {
+			BeforeEach(func() {
+				dummyConverter.shouldErr = true
+				dummyConverter.invocations = 0
+				dummyConverter.errThreshold = 0
+			})
+
+			It("should write StatusBadRequest and an empty RequestedCapacity to the response", func() {
+				Expect(resp.Allowed).To(BeFalse())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("there is an error converting old obj from unstructured", func() {
+			BeforeEach(func() {
+				dummyConverter.shouldErr = true
+				dummyConverter.invocations = 0
+				dummyConverter.errThreshold = 1
+			})
+
+			It("should write StatusBadRequest and an empty RequestedCapacity to the response", func() {
+				Expect(resp.Allowed).To(BeFalse())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("updated boot disk size is nil", func() {
+			BeforeEach(func() {
+				vm.Spec.Advanced = nil
+				oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+				}
+			})
+
+			It("should write StatusOK and an empty RequestedCapacity to the response", func() {
+				Expect(resp.Allowed).To(BeTrue())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("old VM boot disk size is nil", func() {
+
+			When("VM has no volumes", func() {
+				BeforeEach(func() {
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					}
+
+					expected = validation.CapacityResponse{
+						RequestedCapacity: validation.RequestedCapacity{
+							Capacity:         *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							StoragePolicyID:  "id42",
+							StorageClassName: "dummy-storage-class",
+						},
+					}
+				})
+
+				It("should write StatusOK and the correct RequestedCapacity to the response", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+					Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+					Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+					Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+				})
+			})
+
+			When("VM has volumes", func() {
+				BeforeEach(func() {
+					vm = dummyVMWithStatusVolumes()
+					vm.Name = dummyVMName
+					vm.Namespace = dummyNamespaceName
+					vm.Spec.StorageClass = builder.DummyStorageClassName
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					}
+					oldVM = vm.DeepCopy()
+				})
+
+				It("should write correct RequestedCapacity to the response", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+					Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+					Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+					Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+				})
+			})
+		})
+
+		When("there is an increase in boot disk size", func() {
+			BeforeEach(func() {
+				oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+				}
+
+				expected = validation.CapacityResponse{
+					RequestedCapacity: validation.RequestedCapacity{
+						Capacity:         *resource.NewQuantity(5*1024*1024*1024, resource.BinarySI),
+						StoragePolicyID:  "id42",
+						StorageClassName: "dummy-storage-class",
+					},
+				}
+			})
+
+			It("should write the difference to the response", func() {
+				Expect(resp.Allowed).To(BeTrue())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("there is a decrease in boot disk size", func() {
+
+			BeforeEach(func() {
+				oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+			})
+
+			It("should write zero capacity to the response", func() {
+				Expect(resp.Allowed).To(BeTrue())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("there is no change in boot disk size", func() {
+			BeforeEach(func() {
+				oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+			})
+
+			It("should write zero capacity to the response", func() {
+				Expect(resp.Allowed).To(BeTrue())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("storage class is not found", func() {
+			BeforeEach(func() {
+				oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.StorageClass = "NOTFOUND"
+			})
+
+			It("should write StatusNotFound to the response", func() {
+				Expect(resp.Allowed).To(BeFalse())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+
+		When("there is an error getting storage class", func() {
+			BeforeEach(func() {
+				oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+				}
+				interceptors = interceptor.Funcs{
+					Get: func(
+						ctx context.Context,
+						client ctrlclient.WithWatch,
+						key ctrlclient.ObjectKey,
+						obj ctrlclient.Object,
+						opts ...ctrlclient.GetOption) error {
+						if _, ok := obj.(*v1.StorageClass); ok {
+							return errors.New("fake error")
+						}
+
+						return client.Get(ctx, key, obj, opts...)
+					},
+				}
+			})
+
+			It("should write StatusInternalServerError to the response", func() {
+				Expect(resp.Allowed).To(BeFalse())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+
+				Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+				Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+				Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+			})
+		})
+	})
 }
 
 type DummyConverter struct {

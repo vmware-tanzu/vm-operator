@@ -1099,7 +1099,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 				vs.vcClient.VimClient(),
 				vmCtx.VM,
 				vmCtx.MoVM,
-				&configSpec); err != nil {
+				&createArgs.ConfigSpec); err != nil {
 
 				return err
 			}

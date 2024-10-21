@@ -1570,7 +1570,12 @@ func vmTests() {
 							It("should succeed", func() {
 								_, err := createOrUpdateAndGetVcVM(ctx, vm)
 								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).To(BeNil())
+
+								_, err = createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
+
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
@@ -1591,7 +1596,12 @@ func vmTests() {
 							It("should succeed", func() {
 								_, err := createOrUpdateAndGetVcVM(ctx, vm)
 								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).To(BeNil())
+
+								_, err = createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
+
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
@@ -1613,7 +1623,12 @@ func vmTests() {
 						It("should succeed", func() {
 							_, err := createOrUpdateAndGetVcVM(ctx, vm)
 							Expect(err).ToNot(HaveOccurred())
+							Expect(vm.Status.Crypto).To(BeNil())
+
+							_, err = createOrUpdateAndGetVcVM(ctx, vm)
+							Expect(err).ToNot(HaveOccurred())
 							Expect(vm.Status.Crypto).ToNot(BeNil())
+
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 								[]vmopv1.VirtualMachineEncryptionType{
 									vmopv1.VirtualMachineEncryptionTypeConfig,
@@ -1649,7 +1664,12 @@ func vmTests() {
 								It("should succeed", func() {
 									_, err := createOrUpdateAndGetVcVM(ctx, vm)
 									Expect(err).ToNot(HaveOccurred())
+									Expect(vm.Status.Crypto).To(BeNil())
+
+									_, err = createOrUpdateAndGetVcVM(ctx, vm)
+									Expect(err).ToNot(HaveOccurred())
 									Expect(vm.Status.Crypto).ToNot(BeNil())
+
 									Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 										[]vmopv1.VirtualMachineEncryptionType{
 											vmopv1.VirtualMachineEncryptionTypeConfig,
@@ -1695,7 +1715,12 @@ func vmTests() {
 							It("should succeed", func() {
 								_, err := createOrUpdateAndGetVcVM(ctx, vm)
 								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).To(BeNil())
+
+								_, err = createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
+
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
@@ -1717,7 +1742,12 @@ func vmTests() {
 							It("should succeed", func() {
 								_, err := createOrUpdateAndGetVcVM(ctx, vm)
 								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).To(BeNil())
+
+								_, err = createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
+
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
@@ -1740,7 +1770,12 @@ func vmTests() {
 						It("should succeed", func() {
 							_, err := createOrUpdateAndGetVcVM(ctx, vm)
 							Expect(err).ToNot(HaveOccurred())
+							Expect(vm.Status.Crypto).To(BeNil())
+
+							_, err = createOrUpdateAndGetVcVM(ctx, vm)
+							Expect(err).ToNot(HaveOccurred())
 							Expect(vm.Status.Crypto).ToNot(BeNil())
+
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 								[]vmopv1.VirtualMachineEncryptionType{
 									vmopv1.VirtualMachineEncryptionTypeConfig,
@@ -1763,7 +1798,12 @@ func vmTests() {
 							It("should succeed", func() {
 								_, err := createOrUpdateAndGetVcVM(ctx, vm)
 								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).To(BeNil())
+
+								_, err = createOrUpdateAndGetVcVM(ctx, vm)
+								Expect(err).ToNot(HaveOccurred())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
+
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,

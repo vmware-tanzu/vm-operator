@@ -63,8 +63,10 @@ func SprintfStateNotSynced(op string, msgs ...string) string {
 type Reason uint8
 
 const (
-	ReasonEncryptionClassNotFound Reason = 1 << iota
+	ReasonInternalError Reason = 1 << iota
+	ReasonEncryptionClassNotFound
 	ReasonEncryptionClassInvalid
+	ReasonNoDefaultKeyProvider
 	ReasonInvalidState
 	ReasonInvalidChanges
 	ReasonReconfigureError
@@ -77,10 +79,14 @@ func (r Reason) MaxValue() Reason {
 
 func (r Reason) StringValue() string {
 	switch r {
+	case ReasonInternalError:
+		return "InternalError"
 	case ReasonEncryptionClassNotFound:
 		return "EncryptionClassNotFound"
 	case ReasonEncryptionClassInvalid:
 		return "EncryptionClassInvalid"
+	case ReasonNoDefaultKeyProvider:
+		return "NoDefaultKeyProvider"
 	case ReasonInvalidState:
 		return "InvalidState"
 	case ReasonInvalidChanges:

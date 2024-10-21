@@ -18,6 +18,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto/internal"
@@ -35,17 +36,33 @@ type cryptoKey struct {
 }
 
 type reconcileArgs struct {
-	k8sClient      ctrlclient.Client
-	vimClient      *vim25.Client
-	vm             *vmopv1.VirtualMachine
-	moVM           mo.VirtualMachine
-	configSpec     ptrCfgSpec
-	curKey         cryptoKey
-	newKey         cryptoKey
-	isEncStorClass bool
+	k8sClient             ctrlclient.Client
+	vimClient             *vim25.Client
+	vm                    *vmopv1.VirtualMachine
+	moVM                  mo.VirtualMachine
+	configSpec            ptrCfgSpec
+	curKey                cryptoKey
+	newKey                cryptoKey
+	isEncStorClass        bool
+	hasVTPM               bool
+	addVTPM               bool
+	remVTPM               bool
+	encryptionClassName   string
+	useDefaultKeyProvider bool
 }
 
-//nolint:gocyclo // The allowed complexity is 30, this is 31.
+var (
+	ErrMustUseVTPMOrEncryptedStorageClass = errors.New(
+		"must use encrypted StorageClass or have vTPM")
+
+	ErrMustNotUseVTPMOrEncryptedStorageClass = errors.New(
+		"vTPM and/or encrypted StorageClass require encryption")
+
+	ErrNoDefaultKeyProvider = errors.New("no default key provider")
+
+	ErrInvalidKeyProvider = errors.New("invalid key provider")
+)
+
 func (r reconciler) Reconcile(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -71,10 +88,8 @@ func (r reconciler) Reconcile(
 	}
 
 	var (
-		err    error
-		msgs   []string
-		reason Reason
-		args   = reconcileArgs{
+		err  error
+		args = reconcileArgs{
 			k8sClient:  k8sClient,
 			vimClient:  vimClient,
 			vm:         vm,
@@ -82,6 +97,19 @@ func (r reconciler) Reconcile(
 			configSpec: configSpec,
 		}
 	)
+
+	// Record the VM's desired EncryptionClassName and whether or not to use
+	// the default provider for rekeying existing VMs.
+	if c := vm.Spec.Crypto; c == nil {
+		args.useDefaultKeyProvider = true
+	} else {
+		args.encryptionClassName = c.EncryptionClassName
+		if c.UseDefaultKeyProvider == nil {
+			args.useDefaultKeyProvider = true
+		} else {
+			args.useDefaultKeyProvider = *c.UseDefaultKeyProvider
+		}
+	}
 
 	// Check to if the VM is currently encrypted and record the current provider
 	// ID and key ID.
@@ -95,75 +123,350 @@ func (r reconciler) Reconcile(
 	if err != nil {
 		return err
 	}
-	if args.isEncStorClass {
-		internal.MarkEncryptedStorageClass(ctx)
-	}
 
-	// Do not proceed further if the VM is paused.
 	if paused.ByAdmin(moVM) || paused.ByDevOps(vm) {
+		// Do not proceed further if the VM is paused.
 		return nil
 	}
 
-	// Get the new provider ID and key ID.
-	if args.newKey, reason, msgs, err = getNewCryptoKey(ctx, args); err != nil {
+	// Record whether the VM has, is adding, or is removing a vTPM.
+	args.hasVTPM, args.addVTPM, args.remVTPM = hasVTPM(moVM, configSpec)
+
+	if args.moVM.Config == nil {
+		// A new VM is being created.
+		return r.reconcileCreate(ctx, args)
+	}
+
+	// An existing VM is being updated.
+	return r.reconcileUpdate(ctx, args)
+}
+
+func (r reconciler) reconcileCreate(
+	ctx context.Context,
+	args reconcileArgs) error {
+
+	var err error
+
+	if args.encryptionClassName != "" {
+
+		//
+		// The new VM specifies an EncryptionClass.
+		//
+
+		// Get the provider and key from the EncryptionClass.
+		args.newKey, err = getCryptoKeyFromEncryptionClass(ctx, args)
+		if err != nil {
+			return setConditionAndReturnErr(args, err, ReasonInternalError)
+		}
+
+		if !args.hasVTPM && !args.addVTPM && !args.isEncStorClass {
+			// The VM does not meet the requirements for encryption.
+			return setConditionAndReturnErr(
+				args,
+				ErrMustUseVTPMOrEncryptedStorageClass,
+				ReasonInvalidState)
+		}
+
+		// Encrypt the VM with the provider & key from the EncryptionClass.
+		return doOp(ctx, args, doEncrypt)
+	}
+
+	// Attempt to get the default key provider.
+	args.newKey = getCryptoKeyFromDefaultProvider(ctx, args)
+
+	if args.newKey.provider == "" {
+
+		//
+		// There is no default key provider.
+		//
+
+		if args.hasVTPM || args.addVTPM || args.isEncStorClass {
+
+			// The VM has a configuration that requires encryption.
+			return setConditionAndReturnErr(
+				args,
+				ErrMustNotUseVTPMOrEncryptedStorageClass,
+				ReasonNoDefaultKeyProvider)
+		}
+
+	} else {
+
+		//
+		// There is a default key provider.
+		//
+
+		if args.hasVTPM || args.addVTPM || args.isEncStorClass {
+
+			//
+			// The new VM meets the requirements to be encrypted.
+			//
+
+			// Encrypt the VM with the default key provider.
+			return doOp(ctx, args, doEncrypt)
+		}
+	}
+
+	// The new VM does not use encryption.
+	return nil
+}
+
+func (r reconciler) reconcileUpdate(
+	ctx context.Context,
+	args reconcileArgs) error {
+
+	var (
+		err     error
+		changed bool
+	)
+
+	if args.encryptionClassName != "" {
+		// The existing VM specifies an EncryptionClass.
+		changed, err = r.reconcileUpdateEncryptionClass(ctx, args)
+
+	} else if args.useDefaultKeyProvider {
+		// The existing VM indicates the default key provider should be used in
+		// absence of the EncryptionClass.
+		changed, err = r.reconcileUpdateDefaultKeyProvider(ctx, args)
+	}
+
+	if err != nil {
 		return err
 	}
 
-	var op string
-	switch {
-	case args.curKey.provider == "" && args.newKey.provider != "":
-		op = "encrypting"
-		if reason == 0 && len(msgs) == 0 {
-			r, m, err := onEncrypt(ctx, args)
-			if err != nil {
-				return err
-			}
-			reason |= r
-			msgs = append(msgs, m...)
-		}
-	case args.curKey.provider != "" && args.newKey.provider != "" &&
-		((args.curKey.provider != args.newKey.provider) ||
-			(args.curKey.provider == args.newKey.provider && args.curKey.id != args.newKey.id)):
+	if changed {
+		// A change was made to the existing VM to update its encryption state.
+		return nil
+	}
 
-		op = "recrypting"
-		if reason == 0 && len(msgs) == 0 {
-			r, m, err := onRecrypt(ctx, args)
-			if err != nil {
-				return err
-			}
-			reason |= r
-			msgs = append(msgs, m...)
-		}
-	case args.curKey.provider != "":
-		op = "updating encrypted"
-		if reason == 0 && len(msgs) == 0 {
-			r, m, err := validateUpdateEncrypted(args)
-			if err != nil {
-				return err
-			}
-			reason |= r
-			msgs = append(msgs, m...)
-		}
+	//
+	// The existing VM is not subject to any changes, i.e. its observed
+	// encryption state is synchronized with its desired encryption state.
+	//
 
-	case args.curKey.provider == "":
-		op = "updating unencrypted"
-		if reason == 0 && len(msgs) == 0 {
-			r, m, err := validateUpdateUnencrypted(args)
-			if err != nil {
-				return err
-			}
-			reason |= r
-			msgs = append(msgs, m...)
+	// Update the VM's status.
+	return updateStatus(ctx, args)
+}
+
+func (r reconciler) reconcileUpdateEncryptionClass(
+	ctx context.Context,
+	args reconcileArgs) (bool, error) {
+
+	var err error
+
+	// Get the provider and key from the EncryptionClass.
+	args.newKey, err = getCryptoKeyFromEncryptionClass(ctx, args)
+	if err != nil {
+		return false, setConditionAndReturnErr(args, err, ReasonInternalError)
+	}
+
+	if args.curKey.provider == "" {
+
+		//
+		// The existing VM is not encrypted.
+		//
+
+		// Encrypt the existing VM.
+		return true, doOp(ctx, args, doEncrypt)
+	}
+
+	//
+	// The existing VM is encrypted.
+	//
+
+	if args.curKey.provider != args.newKey.provider {
+
+		//
+		// The existing VM's key provider is different than the
+		// specified key provider.
+		//
+
+		// Recrypt the existing VM.
+		return true, doOp(ctx, args, doRecrypt)
+
+	}
+
+	//
+	// The existing VM's key provider is the same as the specified provider.
+	//
+
+	if args.newKey.id != "" {
+
+		//
+		// The specified key is non-empty. Please note, empty keys are ignored
+		// as the keys *will* be empty when the default provider is used since
+		// keys are generated on-demand by vSphere when a default provider is
+		// used.
+		//
+
+		if args.newKey.id != args.curKey.id {
+
+			//
+			// The specified key is different than the existing key, which
+			// means the existing VM should be recrypted.
+			//
+
+			// Recrypt the existing VM.
+			return true, doOp(ctx, args, doRecrypt)
 		}
 	}
+
+	return false, nil
+}
+
+func (r reconciler) reconcileUpdateDefaultKeyProvider(
+	ctx context.Context,
+	args reconcileArgs) (bool, error) {
+
+	// Attempt to get the default key provider.
+	args.newKey = getCryptoKeyFromDefaultProvider(ctx, args)
+
+	if args.curKey.provider == "" {
+
+		//
+		// The existing VM is not encrypted.
+		//
+
+		if args.newKey.provider != "" {
+
+			//
+			// There is a default key provider.
+			//
+
+			// Encrypt the existing VM.
+			return true, doOp(ctx, args, doEncrypt)
+		}
+
+	} else {
+
+		//
+		// The existing VM is encrypted.
+		//
+
+		if args.newKey.provider == "" {
+
+			//
+			// There is no default key provider.
+			//
+
+			return false, setConditionAndReturnErr(
+				args,
+				ErrNoDefaultKeyProvider,
+				ReasonNoDefaultKeyProvider)
+		}
+
+		if args.curKey.provider != args.newKey.provider {
+
+			//
+			// The existing VM's key provider is different than the
+			// specified key provider.
+			//
+
+			// Recrypt the existing VM.
+			return true, doOp(ctx, args, doRecrypt)
+		}
+	}
+
+	return false, nil
+}
+
+func setConditionAndReturnErr(args reconcileArgs, err error, r Reason) error {
+	if err == ErrInvalidKeyProvider {
+		r = ReasonEncryptionClassInvalid
+	} else if apierrors.IsNotFound(err) {
+		r = ReasonEncryptionClassNotFound
+	}
+	conditions.MarkFalse(
+		args.vm,
+		vmopv1.VirtualMachineEncryptionSynced,
+		r.String(),
+		err.Error())
+	return err
+}
+
+func updateStatus(ctx context.Context, args reconcileArgs) error {
+
+	if args.curKey.provider == "" {
+
+		//
+		// The existing VM is not encrypted.
+		//
+
+		args.vm.Status.Crypto = nil
+		conditions.Delete(args.vm, vmopv1.VirtualMachineEncryptionSynced)
+		return nil
+	}
+
+	//
+	// The existing VM is encrypted.
+	//
+
+	conditions.MarkTrue(args.vm, vmopv1.VirtualMachineEncryptionSynced)
+
+	if args.vm.Status.Crypto == nil {
+		args.vm.Status.Crypto = &vmopv1.VirtualMachineCryptoStatus{}
+	}
+	args.vm.Status.Crypto.ProviderID = args.curKey.provider
+	args.vm.Status.Crypto.KeyID = args.curKey.id
+
+	if args.isEncStorClass {
+		args.vm.Status.Crypto.Encrypted = []vmopv1.VirtualMachineEncryptionType{
+			vmopv1.VirtualMachineEncryptionTypeConfig,
+			vmopv1.VirtualMachineEncryptionTypeDisks,
+		}
+	} else if args.hasVTPM && !args.remVTPM {
+		args.vm.Status.Crypto.Encrypted = []vmopv1.VirtualMachineEncryptionType{
+			vmopv1.VirtualMachineEncryptionTypeConfig,
+		}
+	}
+
+	return doOp(ctx, args, doUpdateEncrypted)
+}
+
+func doOp(
+	ctx context.Context,
+	args reconcileArgs,
+	fn func(context.Context, reconcileArgs) (string, Reason, []string, error)) error {
+
+	// Please note, the return err is ignored here since it is not used anywhere
+	// in the various functions that can be "fn." The reason the pattern is
+	// retained is to avoid any refactoring later if there *does* need to be an
+	// error returned from one of these functions.
+	op, reason, msgs, _ := fn(ctx, args)
 
 	if reason == 0 && len(msgs) == 0 {
 		internal.SetOperation(ctx, op)
 	} else {
-		markEncryptionStateNotSynced(vm, op, reason, msgs...)
+		markEncryptionStateNotSynced(args.vm, op, reason, msgs...)
 	}
 
 	return nil
+}
+
+func doEncrypt(
+	ctx context.Context,
+	args reconcileArgs) (string, Reason, []string, error) {
+
+	op := "encrypting"
+	r, m, err := onEncrypt(ctx, args)
+	return op, r, m, err
+}
+
+func doRecrypt(
+	ctx context.Context,
+	args reconcileArgs) (string, Reason, []string, error) {
+
+	op := "recrypting"
+	r, m, err := onRecrypt(ctx, args)
+	return op, r, m, err
+}
+
+func doUpdateEncrypted(
+	ctx context.Context,
+	args reconcileArgs) (string, Reason, []string, error) {
+
+	op := "updating encrypted"
+	r, m, err := validateUpdateEncrypted(args)
+	return op, r, m, err
 }
 
 func getCurCryptoKey(moVM mo.VirtualMachine) cryptoKey {
@@ -180,144 +483,45 @@ func getCurCryptoKey(moVM mo.VirtualMachine) cryptoKey {
 	return curKey
 }
 
-func getNewCryptoKey(
+func getCryptoKeyFromEncryptionClass(
 	ctx context.Context,
-	args reconcileArgs) (cryptoKey, Reason, []string, error) {
-
-	key, reason, msgs, err := getNewCryptoKeyFromEncryptionClass(ctx, args)
-	if err != nil || reason > 0 || len(msgs) > 0 {
-		// If there was an error getting the key from the encryption class or
-		// any reason/messages were set, return that information early.
-		return cryptoKey{}, reason, msgs, err
-	}
-
-	// The field spec.crypto.UseDefaultProvider defaults to true, so let's
-	// assume it is true if nil.
-	useDefaultProvider := true
-	if crypto := args.vm.Spec.Crypto; crypto != nil &&
-		crypto.UseDefaultKeyProvider != nil {
-
-		useDefaultProvider = *crypto.UseDefaultKeyProvider
-	}
-
-	// The provider was not found via the encryption class and the user has
-	// specified not to use the default provider, so go ahead and return.
-	if key.provider == "" && !useDefaultProvider {
-		return cryptoKey{}, 0, nil, nil
-	}
-
-	// Create a new VIM crypto manager that points to the CryptoManagerKmip
-	// singleton on vSphere.
-	m := crypto.NewManagerKmip(args.vimClient)
-
-	if key.provider != "" {
-
-		// The encryption class specified a provider, so we need to verify it is
-		// valid. Then, if a key was specified, we need to verify that also.
-
-		ok, err := m.IsValidProvider(ctx, key.provider)
-		if err != nil {
-			return cryptoKey{}, 0, nil, err
-		}
-		if !ok {
-			reason |= ReasonEncryptionClassInvalid
-			msgs = append(msgs, "specify encryption class with a valid provider")
-		}
-		if key.id != "" {
-			ok, err := m.IsValidKey(ctx, key.id)
-			if err != nil {
-				return cryptoKey{}, 0, nil, err
-			}
-			if !ok {
-				reason |= ReasonEncryptionClassInvalid
-				msgs = append(msgs, "specify encryption class with a valid key")
-			}
-		}
-		if reason > 0 || len(msgs) > 0 {
-			return cryptoKey{}, reason, msgs, nil
-		}
-		return key, 0, nil, nil
-	}
-
-	//
-	// At this point we know the provider was not discovered via the encryption
-	// class and the VM wants to try and use the default provider, so we need to
-	// figure out if one exists.
-	//
-
-	if key.provider, _ = m.GetDefaultKmsClusterID(
-		ctx, nil, true); key.provider != "" {
-
-		// Ensure key.id="" so vSphere generates a key using the default
-		// provider.
-		key.id = ""
-
-		// Indicate this is the default provider for use later.
-		key.isDefaultProvider = true
-
-		return key, 0, nil, nil
-	}
-
-	// There is no default provider. This is not an error, so just return an
-	// empty provider ID indicating no provider is available.
-	return cryptoKey{}, 0, nil, nil
-}
-
-func getNewCryptoKeyFromEncryptionClass(
-	ctx context.Context,
-	args reconcileArgs) (cryptoKey, Reason, []string, error) {
-
-	var objName string
-	if crypto := args.vm.Spec.Crypto; crypto != nil {
-		objName = crypto.EncryptionClassName
-	}
-	if objName == "" {
-		// When no encryption class is specified, there is nothing else to do.
-		return cryptoKey{}, 0, nil, nil
-	}
-
-	// When an encryption class is specified, get the provider ID and key ID
-	// from the encryption class.
+	args reconcileArgs) (cryptoKey, error) {
 
 	var (
-		key    cryptoKey
-		reason Reason
-		msgs   []string
 		obj    byokv1.EncryptionClass
 		objKey = ctrlclient.ObjectKey{
 			Namespace: args.vm.Namespace,
-			Name:      objName,
+			Name:      args.vm.Spec.Crypto.EncryptionClassName,
 		}
 	)
 
 	if err := args.k8sClient.Get(ctx, objKey, &obj); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return cryptoKey{}, 0, nil, err
-		}
-
-		reason |= ReasonEncryptionClassNotFound
-		msgs = append(msgs, "specify encryption class that exists")
-
-		// Allow the other reconciliation logic to continue.
-		// The VM's encryption state can be synced once the encryption
-		// class is ready.
-		return cryptoKey{}, reason, msgs, nil
+		return cryptoKey{}, err
 
 	}
 
-	key.provider, key.id = obj.Spec.KeyProvider, obj.Spec.KeyID
-	if key.provider != "" {
-		// Return the key from the encryption class.
-		return key, 0, nil, nil
+	m := crypto.NewManagerKmip(args.vimClient)
+	if ok, _ := m.IsValidProvider(ctx, obj.Spec.KeyProvider); !ok {
+		return cryptoKey{}, ErrInvalidKeyProvider
 	}
 
-	// Allow the other reconciliation logic to continue.
-	// The VM's encryption state can be synced once the encryption
-	// class is ready.
-	reason |= ReasonEncryptionClassInvalid
-	msgs = append(msgs, "specify encryption class with a non-empty provider")
-	return cryptoKey{}, reason, msgs, nil
+	return cryptoKey{
+		id:       obj.Spec.KeyID,
+		provider: obj.Spec.KeyProvider,
+	}, nil
+}
 
+func getCryptoKeyFromDefaultProvider(
+	ctx context.Context,
+	args reconcileArgs) cryptoKey {
+
+	m := crypto.NewManagerKmip(args.vimClient)
+	providerID, _ := m.GetDefaultKmsClusterID(ctx, nil, true)
+	return cryptoKey{
+		id:                "",
+		provider:          providerID,
+		isDefaultProvider: true,
+	}
 }
 
 func onEncrypt(
@@ -380,18 +584,15 @@ func onRecrypt(
 	return 0, nil, nil
 }
 
+//nolint:unparam
 func validateEncrypt(args reconcileArgs) (Reason, []string, error) {
 	var (
 		msgs   []string
 		reason Reason
 	)
-	if has, add := hasVTPM(args.moVM, args.configSpec); !has && !add && !args.isEncStorClass {
-		if args.newKey.isDefaultProvider {
-			return 0, nil, errors.New(
-				"encrypting vm requires compatible storage class or vTPM")
-		}
-		reason |= ReasonInvalidState
-		msgs = append(msgs, "use encryption storage class or have vTPM")
+	if r, m := validateStorageClassAndVTPM(args); r != 0 || len(m) > 0 {
+		reason |= r
+		msgs = append(msgs, m...)
 	}
 	if r, m := validatePoweredOffNoSnapshots(args.moVM); len(m) > 0 {
 		reason |= r
@@ -404,18 +605,15 @@ func validateEncrypt(args reconcileArgs) (Reason, []string, error) {
 	return reason, msgs, nil
 }
 
+//nolint:unparam
 func validateRecrypt(args reconcileArgs) (Reason, []string, error) {
 	var (
 		msgs   []string
 		reason Reason
 	)
-	if has, add := hasVTPM(args.moVM, args.configSpec); !has && !add && !args.isEncStorClass {
-		if args.newKey.isDefaultProvider {
-			return 0, nil, errors.New(
-				"recrypting vm requires compatible storage class or vTPM")
-		}
-		reason |= ReasonInvalidState
-		msgs = append(msgs, "use encryption storage class or have vTPM")
+	if r, m := validateStorageClassAndVTPM(args); r != 0 || len(m) > 0 {
+		reason |= r
+		msgs = append(msgs, m...)
 	}
 	if hasSnapshotTree(args.moVM) {
 		msgs = append(msgs, "not have snapshot tree")
@@ -428,18 +626,15 @@ func validateRecrypt(args reconcileArgs) (Reason, []string, error) {
 	return reason, msgs, nil
 }
 
+//nolint:unparam
 func validateUpdateEncrypted(args reconcileArgs) (Reason, []string, error) {
 	var (
 		msgs   []string
 		reason Reason
 	)
-	if has, add := hasVTPM(args.moVM, args.configSpec); !has && !add && !args.isEncStorClass {
-		if args.newKey.isDefaultProvider {
-			return 0, nil, errors.New(
-				"updating encrypted vm requires compatible storage class or vTPM")
-		}
-		reason |= ReasonInvalidState
-		msgs = append(msgs, "use encryption storage class or have vTPM")
+	if r, m := validateStorageClassAndVTPM(args); r != 0 || len(m) > 0 {
+		reason |= r
+		msgs = append(msgs, m...)
 	}
 	if isChangingSecretKey(args.configSpec) {
 		msgs = append(msgs, "not add/remove/modify secret key")
@@ -452,34 +647,27 @@ func validateUpdateEncrypted(args reconcileArgs) (Reason, []string, error) {
 	return reason, msgs, nil
 }
 
-//nolint:unparam
-func validateUpdateUnencrypted(args reconcileArgs) (Reason, []string, error) {
+func validateStorageClassAndVTPM(args reconcileArgs) (Reason, []string) {
 	var (
 		msgs   []string
 		reason Reason
 	)
-
-	if has, add := hasVTPM(args.moVM, args.configSpec); has || add || args.isEncStorClass {
-		if args.isEncStorClass {
-			reason |= ReasonInvalidState
-			msgs = append(msgs, "not use encryption storage class")
-		}
-		if has {
-			reason |= ReasonInvalidState
-			msgs = append(msgs, "not have vTPM")
-		}
-		if add {
-			reason |= ReasonInvalidChanges
-			msgs = append(msgs, "not add vTPM")
-		}
+	if args.remVTPM {
+		reason |= ReasonInvalidChanges
+		msgs = append(msgs, "not remove vTPM")
 	}
-	return reason, msgs, nil
+	if !args.hasVTPM && !args.addVTPM && !args.isEncStorClass {
+		reason |= ReasonInvalidState
+		msgs = append(msgs, "use encryption storage class or have vTPM")
+	}
+	return reason, msgs
 }
 
-func hasVTPM(moVM mo.VirtualMachine, configSpec ptrCfgSpec) (bool, bool) {
+func hasVTPM(moVM mo.VirtualMachine, configSpec ptrCfgSpec) (bool, bool, bool) {
 	var (
 		has bool
 		add bool
+		rem bool
 	)
 	if c := moVM.Config; c != nil {
 		for i := range c.Hardware.Device {
@@ -489,9 +677,6 @@ func hasVTPM(moVM mo.VirtualMachine, configSpec ptrCfgSpec) (bool, bool) {
 			}
 		}
 	}
-	if configSpec == nil {
-		return has, add
-	}
 	for i := range configSpec.DeviceChange {
 		if devChange := configSpec.DeviceChange[i]; devChange != nil {
 			if devSpec := devChange.GetVirtualDeviceConfigSpec(); devSpec != nil {
@@ -499,14 +684,14 @@ func hasVTPM(moVM mo.VirtualMachine, configSpec ptrCfgSpec) (bool, bool) {
 					if devSpec.Operation == vimtypes.VirtualDeviceConfigSpecOperationAdd {
 						add = true
 					} else if devSpec.Operation == vimtypes.VirtualDeviceConfigSpecOperationRemove {
-						has = false
+						rem = true
 					}
 					break
 				}
 			}
 		}
 	}
-	return has, add
+	return has, add, rem
 }
 
 func validatePoweredOffNoSnapshots(moVM mo.VirtualMachine) (Reason, []string) {

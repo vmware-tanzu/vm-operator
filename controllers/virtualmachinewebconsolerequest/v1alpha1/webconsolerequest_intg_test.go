@@ -19,6 +19,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/webconsoleurl"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -82,8 +83,8 @@ func intgTestsReconcile() {
 
 		proxySvc = &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      webconsolerequest.ProxyAddrServiceName,
-				Namespace: webconsolerequest.ProxyAddrServiceNamespace,
+				Name:      webconsoleurl.ProxyAddrServiceName,
+				Namespace: webconsoleurl.ProxyAddrServiceNamespace,
 			},
 			Spec: corev1.ServiceSpec{
 				Type: corev1.ServiceTypeLoadBalancer,

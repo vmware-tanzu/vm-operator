@@ -72,8 +72,8 @@ func unitTestsReconcile() {
 
 		proxySvc = &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      webconsolerequest.ProxyAddrServiceName,
-				Namespace: webconsolerequest.ProxyAddrServiceNamespace,
+				Name:      webconsoleurl.ProxyAddrServiceName,
+				Namespace: webconsoleurl.ProxyAddrServiceNamespace,
 			},
 			Status: corev1.ServiceStatus{
 				LoadBalancer: corev1.LoadBalancerStatus{

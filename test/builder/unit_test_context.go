@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -28,10 +28,15 @@ type UnitTestContext struct {
 
 // NewUnitTestContext returns a new UnitTestContext.
 func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
+	return NewUnitTestContextWithParentContext(
+		ctxop.WithContext(pkgcfg.NewContext()), initObjects...)
+}
+
+func NewUnitTestContextWithParentContext(ctx context.Context, initObjects ...client.Object) *UnitTestContext {
 	fakeClient := NewFakeClient(initObjects...)
 
 	return &UnitTestContext{
-		Context: ctxop.WithContext(pkgcfg.NewContext()),
+		Context: ctx,
 		Client:  fakeClient,
 		Scheme:  fakeClient.Scheme(),
 	}

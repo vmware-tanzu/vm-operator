@@ -24,7 +24,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
@@ -62,7 +64,8 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 	BeforeEach(func() {
 		r = pkgcrypto.New()
 
-		vcsimCtx := builder.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		vcsimCtx := builder.NewTestContextForVCSim(
+			ctxop.WithContext(pkgcfg.NewContext()), builder.VCSimTestConfig{})
 		ctx = vcsimCtx
 		ctx = r.WithContext(ctx)
 		ctx = vmconfig.WithContext(ctx)

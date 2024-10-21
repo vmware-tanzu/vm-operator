@@ -61,6 +61,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
@@ -211,10 +212,11 @@ const (
 )
 
 func NewTestContextForVCSim(
+	parentCtx context.Context,
 	config VCSimTestConfig,
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
-	ctx := newTestContextForVCSim(config, initObjects)
+	ctx := newTestContextForVCSim(parentCtx, config, initObjects)
 
 	ctx.setupEnv(config)
 	ctx.setupVCSim(config)
@@ -236,7 +238,7 @@ func NewIntegrationTestContextForVCSim(
 	initProvidersFn pkgmgr.InitializeProvidersFunc,
 	initEnvFn InitVCSimEnvFn) *IntegrationTestContextForVCSim {
 
-	utVcSimCtx := newTestContextForVCSim(config, nil)
+	utVcSimCtx := newTestContextForVCSim(ctxop.WithContext(pkgcfg.NewContext()), config, nil)
 	utVcSimCtx.Context = ctx
 
 	itVcSimCtx := IntegrationTestContextForVCSim{
@@ -279,17 +281,24 @@ func (s *TestSuite) NewTestContextForVCSim(
 	config VCSimTestConfig,
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
-	return NewTestContextForVCSim(config, initObjects...)
+	return NewTestContextForVCSim(ctxop.WithContext(pkgcfg.NewContext()), config, initObjects...)
 }
 
+func (s *TestSuite) NewTestContextForVCSimWithParentContext(
+	ctx context.Context,
+	config VCSimTestConfig,
+	initObjects ...ctrlclient.Object) *TestContextForVCSim {
+	return NewTestContextForVCSim(ctx, config, initObjects...)
+}
 func newTestContextForVCSim(
+	parentCtx context.Context,
 	config VCSimTestConfig,
 	initObjects []ctrlclient.Object) *TestContextForVCSim {
 
 	fakeRecorder, _ := NewFakeRecorder()
 
 	ctx := &TestContextForVCSim{
-		UnitTestContext: NewUnitTestContext(initObjects...),
+		UnitTestContext: NewUnitTestContextWithParentContext(parentCtx, initObjects...),
 		PodNamespace:    "vmop-pod-test",
 		Recorder:        fakeRecorder,
 	}

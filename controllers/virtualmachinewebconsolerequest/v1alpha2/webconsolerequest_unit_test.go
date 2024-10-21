@@ -16,7 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/external/appplatform/api/vmw_v1alpha1"
+	appv1a1 "github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -45,7 +45,7 @@ func unitTestsReconcile() {
 		wcr         *vmopv1.VirtualMachineWebConsoleRequest
 		vm          *vmopv1.VirtualMachine
 		proxySvc    *corev1.Service
-		proxySvcDNS *vmw_v1alpha1.SupervisorProperties
+		proxySvcDNS *appv1a1.SupervisorProperties
 	)
 
 	BeforeEach(func() {
@@ -172,12 +172,12 @@ func unitTestsReconcile() {
 			for _, scenario := range scenarios {
 				When(scenario.name, func() {
 					JustBeforeEach(func() {
-						proxySvcDNS = &vmw_v1alpha1.SupervisorProperties{
+						proxySvcDNS = &appv1a1.SupervisorProperties{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      webconsoleurl.SupervisorServiceObjName,
 								Namespace: webconsoleurl.SupervisorServiceObjNamespace,
 							},
-							Spec: vmw_v1alpha1.SupervisorPropertiesSpec{
+							Spec: appv1a1.SupervisorPropertiesSpec{
 								APIServerDNSNames: scenario.apiServerDNSName,
 							},
 						}

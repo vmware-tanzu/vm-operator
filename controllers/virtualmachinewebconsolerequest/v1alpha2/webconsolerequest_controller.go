@@ -224,7 +224,6 @@ func (r *Reconciler) ProxyAddress(ctx *pkgctx.WebConsoleRequestContextV1) (strin
 
 	// Attempt to use the API Server DNS Names to get the proxy address.
 	proxyAddress, err := webconsoleurl.ProxyServiceDNSName(ctx, r)
-
 	if err != nil {
 		return "", fmt.Errorf("failed to get proxy service URL: %w", err)
 	}

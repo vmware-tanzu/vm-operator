@@ -14,8 +14,7 @@ type ContextKeyType uint8
 const ContextKeyValue ContextKeyType = 0
 
 type State struct {
-	Operation      string
-	IsEncStorClass bool
+	Operation string
 }
 
 func FromContext(ctx context.Context) State {
@@ -33,16 +32,6 @@ func SetOperation(ctx context.Context, op string) {
 		ContextKeyValue,
 		func(val State) State {
 			val.Operation = op
-			return val
-		})
-}
-
-func MarkEncryptedStorageClass(ctx context.Context) {
-	ctxgen.SetContext(
-		ctx,
-		ContextKeyValue,
-		func(val State) State {
-			val.IsEncStorClass = true
 			return val
 		})
 }

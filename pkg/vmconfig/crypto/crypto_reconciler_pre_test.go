@@ -16,6 +16,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -257,300 +258,26 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 			err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 		})
 
-		When("moVM.config is nil", func() {
+		When("creating a new vm", func() {
+
 			BeforeEach(func() {
 				moVM.Config = nil
 			})
-			It("should not panic", func() {
-				Expect(err).ToNot(HaveOccurred())
-			})
-		})
 
-		When("spec.crypto is nil", func() {
-			BeforeEach(func() {
-				vm.Spec.Crypto = nil
-			})
-
-			It("should not return an error, set a condition, or update the config spec", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(conditions.Has(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeFalse())
-				Expect(configSpec).To(Equal(&vimtypes.VirtualMachineConfigSpec{}))
-			})
-		})
-
-		When("encryptionClassName is empty", func() {
-
-			BeforeEach(func() {
-				vm.Spec.Crypto.EncryptionClassName = ""
-			})
-
-			When("there is not default key provider", func() {
-
-				Context("vm is not encrypted", func() {
+			When("spec.crypto.encryptionClassName is non-empty", func() {
+				When("the EncryptionClass does not exit", func() {
 					BeforeEach(func() {
-						moVM.Config.KeyId = nil
-						vm.Spec.StorageClass = storageClass1.Name
+						vm.Spec.Crypto.EncryptionClassName += "-fake"
 					})
-
-					When("using encryption storage class", func() {
-						BeforeEach(func() {
-							vm.Spec.StorageClass = storageClass2.Name
-						})
-						It(shouldSetEncryptionSyncedWithInvalidState, func() {
-							Expect(err).ToNot(HaveOccurred())
-							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-							Expect(c).ToNot(BeNil())
-							Expect(c.Status).To(Equal(metav1.ConditionFalse))
-							Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidState).String()))
-							Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating unencrypted", "not use encryption storage class")))
-						})
-
-						When("have vtpm", func() {
-							BeforeEach(func() {
-								moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
-									&vimtypes.VirtualTPM{},
-								}
-							})
-							It(shouldSetEncryptionSyncedWithInvalidState, func() {
-								Expect(err).ToNot(HaveOccurred())
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidState).String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating unencrypted", "not use encryption storage class and not have vTPM")))
-							})
-						})
-
-						When("adding vtpm", func() {
-							BeforeEach(func() {
-								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-									&vimtypes.VirtualDeviceConfigSpec{
-										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-										Device:    &vimtypes.VirtualTPM{},
-									},
-								}
-							})
-							It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
-								Expect(err).ToNot(HaveOccurred())
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges | pkgcrypto.ReasonInvalidState).String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating unencrypted", "not use encryption storage class and not add vTPM")))
-							})
-						})
-					})
-
-					When("have vtpm", func() {
-						BeforeEach(func() {
-							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
-								&vimtypes.VirtualTPM{},
-							}
-						})
-						It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
-							Expect(err).ToNot(HaveOccurred())
-							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-							Expect(c).ToNot(BeNil())
-							Expect(c.Status).To(Equal(metav1.ConditionFalse))
-							Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidState).String()))
-							Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating unencrypted", "not have vTPM")))
-						})
-					})
-
-					When("adding vtpm", func() {
-						BeforeEach(func() {
-							configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-								&vimtypes.VirtualDeviceConfigSpec{
-									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-									Device:    &vimtypes.VirtualTPM{},
-								},
-							}
-						})
-						It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
-							Expect(err).ToNot(HaveOccurred())
-							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-							Expect(c).ToNot(BeNil())
-							Expect(c.Status).To(Equal(metav1.ConditionFalse))
-							Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
-							Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating unencrypted", "not add vTPM")))
-						})
-					})
-
-					When("spec.crypto.UseDefaultKeyProvider=nil", func() {
-						BeforeEach(func() {
-							vm.Spec.Crypto.UseDefaultKeyProvider = nil
-						})
-						It("should not return an error, set a condition, or update the config spec", func() {
-							Expect(err).ToNot(HaveOccurred())
-							Expect(conditions.Has(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeFalse())
-							Expect(configSpec).To(Equal(&vimtypes.VirtualMachineConfigSpec{}))
-						})
-					})
-
-					When("spec.crypto.UseDefaultKeyProvider=false", func() {
-						BeforeEach(func() {
-							*vm.Spec.Crypto.UseDefaultKeyProvider = false
-						})
-						It("should not return an error, set a condition, or update the config spec", func() {
-							Expect(err).ToNot(HaveOccurred())
-							Expect(conditions.Has(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeFalse())
-							Expect(configSpec).To(Equal(&vimtypes.VirtualMachineConfigSpec{}))
-						})
-					})
-
-				})
-
-				Context("encrypted vm", func() {
-					When("modifying secret key", func() {
-						DescribeTable(
-							shouldSetEncryptionSyncedWithInvalidChanges,
-							func(key string) {
-
-								Expect(r.Reconcile(
-									ctx,
-									k8sClient,
-									vimClient,
-									vm,
-									moVM,
-									&vimtypes.VirtualMachineConfigSpec{
-										ExtraConfig: []vimtypes.BaseOptionValue{
-											&vimtypes.OptionValue{
-												Key:   key,
-												Value: "",
-											},
-										},
-									}),
-								).To(Succeed())
-
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidChanges.String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not add/remove/modify secret key")))
-							},
-							func(key string) string {
-								return fmt.Sprintf("when key=%s", key)
-							},
-							Entry(nil, "ancestordatafilekeys"),
-							Entry(nil, "cryptostate"),
-							Entry(nil, "datafilekey"),
-							Entry(nil, "encryption.required"),
-							Entry(nil, "encryption.required.vtpm"),
-							Entry(nil, "encryption.unspecified.default"),
-						)
+					It("should return an error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(apierrors.IsNotFound(err)).To(BeTrue())
+						c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassNotFound.String()))
 					})
 				})
-			})
-
-			When("there is default key provider", func() {
-
-				BeforeEach(func() {
-					Expect(cryptoManager.MarkDefault(ctx, provider3ID)).To(Succeed())
-				})
-
-				When("vm is not encrypted", func() {
-					BeforeEach(func() {
-						moVM.Config.KeyId = nil
-					})
-
-					When("default provider is not native", func() {
-						BeforeEach(func() {
-							Expect(cryptoManager.MarkDefault(ctx, provider2ID)).To(Succeed())
-						})
-						It("should encrypt the VM", func() {
-							Expect(err).ToNot(HaveOccurred())
-							Expect(conditions.Has(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeFalse())
-							Expect(configSpec.Crypto).ToNot(BeNil())
-							cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
-							Expect(ok).To(BeTrue())
-							Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
-							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider2ID))
-						})
-					})
-
-					It("should encrypt the VM", func() {
-						Expect(err).ToNot(HaveOccurred())
-						Expect(conditions.Has(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeFalse())
-						Expect(configSpec.Crypto).ToNot(BeNil())
-						cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
-						Expect(ok).To(BeTrue())
-						Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
-						Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider3ID))
-					})
-
-					When("storage class is not encrypted and there is no vTPM", func() {
-						BeforeEach(func() {
-							vm.Spec.StorageClass = storageClass1.Name
-						})
-						It("should return an error", func() {
-							Expect(err).To(MatchError("encrypting vm requires compatible storage class or vTPM"))
-						})
-					})
-				})
-
-				When("vm is encrypted", func() {
-					When("recrypting vm", func() {
-						BeforeEach(func() {
-							moVM.Config.KeyId = &vimtypes.CryptoKeyId{
-								KeyId: "123",
-								ProviderId: &vimtypes.KeyProviderId{
-									Id: provider2ID,
-								},
-							}
-						})
-
-						When("storage class is not encrypted and there is no vTPM", func() {
-							BeforeEach(func() {
-								vm.Spec.StorageClass = storageClass1.Name
-							})
-							It("should return an error", func() {
-								Expect(err).To(MatchError("recrypting vm requires compatible storage class or vTPM"))
-							})
-						})
-					})
-					When("updating encrypted vm", func() {
-						BeforeEach(func() {
-							moVM.Config.KeyId = &vimtypes.CryptoKeyId{
-								ProviderId: &vimtypes.KeyProviderId{
-									Id: provider3ID,
-								},
-							}
-						})
-						When("storage class is not encrypted and there is no vTPM", func() {
-							BeforeEach(func() {
-								vm.Spec.StorageClass = storageClass1.Name
-							})
-							It("should return an error", func() {
-								Expect(err).To(MatchError("updating encrypted vm requires compatible storage class or vTPM"))
-							})
-						})
-					})
-				})
-			})
-
-		})
-
-		When("encryptionClassName is not empty", func() {
-
-			When("encryption class does not exist", func() {
-				BeforeEach(func() {
-					withObjs = []ctrlclient.Object{
-						storageClass1,
-						storageClass2,
-						vm,
-					}
-				})
-				It(shouldSetEncryptionSyncedToFalse, func() {
-					Expect(err).ToNot(HaveOccurred())
-					c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-					Expect(c).ToNot(BeNil())
-					Expect(c.Status).To(Equal(metav1.ConditionFalse))
-					Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassNotFound.String()))
-					Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify encryption class that exists")))
-				})
-			})
-
-			When("encryption class does exist", func() {
 
 				When("there is a non-404 error getting the encryption class", func() {
 					BeforeEach(func() {
@@ -568,86 +295,234 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 						}
 					})
 					It("should return an error", func() {
+						Expect(err).To(HaveOccurred())
 						Expect(err).To(MatchError("fake"))
+						c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal(pkgcrypto.ReasonInternalError.String()))
+						Expect(c.Message).To(Equal("fake"))
 					})
 				})
 
-				When("encryption class is not ready", func() {
-					When("providerID is empty", func() {
-						BeforeEach(func() {
-							encClass.Spec.KeyProvider = ""
-						})
-						It(shouldSetEncryptionSyncedToFalse, func() {
-							Expect(err).ToNot(HaveOccurred())
-							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-							Expect(c).ToNot(BeNil())
-							Expect(c.Status).To(Equal(metav1.ConditionFalse))
-							Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassInvalid.String()))
-							Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify encryption class with a non-empty provider")))
-						})
+				When("the EncryptionClass specifies an invalid provider", func() {
+					BeforeEach(func() {
+						encClass.Spec.KeyProvider = "fake"
 					})
-					When("providerID is invalid", func() {
+					It("should return an error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(pkgcrypto.ErrInvalidKeyProvider))
+						c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassInvalid.String()))
+						Expect(c.Message).To(Equal(pkgcrypto.ErrInvalidKeyProvider.Error()))
+					})
+				})
+
+				When("the EncryptionClass exists", func() {
+					When("the vm is being created with a vtpm", func() {
 						BeforeEach(func() {
-							encClass.Spec.KeyProvider = "invalid-provider-id"
+							configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+									Device:    &vimtypes.VirtualTPM{},
+								},
+							}
+							vm.Spec.StorageClass = storageClass1.Name
 						})
-						It(shouldSetEncryptionSyncedToFalse, func() {
+						It("should deploy an encrypted vm", func() {
 							Expect(err).ToNot(HaveOccurred())
 							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-							Expect(c).ToNot(BeNil())
-							Expect(c.Status).To(Equal(metav1.ConditionFalse))
-							Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassInvalid.String()))
-							Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify encryption class with a valid provider")))
+							Expect(c).To(BeNil())
+							Expect(configSpec.Crypto).ToNot(BeNil())
+							cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+							Expect(ok).To(BeTrue())
+							Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider1Key1ID))
+							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
 						})
 					})
 
-					When("keyID is invalid", func() {
+					When("the vm uses an encrypted StorageClass", func() {
 						BeforeEach(func() {
-							encClass.Spec.KeyID = "invalid-key-id"
+							configSpec.DeviceChange = nil
+							vm.Spec.StorageClass = storageClass2.Name
 						})
-						It(shouldSetEncryptionSyncedToFalse, func() {
+						It("should deploy an encrypted vm", func() {
 							Expect(err).ToNot(HaveOccurred())
 							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-							Expect(c).ToNot(BeNil())
-							Expect(c.Status).To(Equal(metav1.ConditionFalse))
-							Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassInvalid.String()))
-							Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify encryption class with a valid key")))
+							Expect(c).To(BeNil())
+							cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+							Expect(ok).To(BeTrue())
+							Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider1Key1ID))
+							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
 						})
 					})
 
-					When("providerID and keyID are invalid", func() {
+					When("the vm is not being created with a vtpm or use an encrypted StorageClass", func() {
 						BeforeEach(func() {
-							encClass.Spec.KeyProvider = "invalid-provider-id"
-							encClass.Spec.KeyID = "invalid-key-id"
+							configSpec.DeviceChange = nil
+							vm.Spec.StorageClass = storageClass1.Name
 						})
-						It(shouldSetEncryptionSyncedToFalse, func() {
-							Expect(err).ToNot(HaveOccurred())
+						It("should return an error", func() {
+							Expect(err).To(MatchError(pkgcrypto.ErrMustUseVTPMOrEncryptedStorageClass))
 							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
 							Expect(c).ToNot(BeNil())
 							Expect(c.Status).To(Equal(metav1.ConditionFalse))
-							Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassInvalid.String()))
-							Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify encryption class with a valid provider and specify encryption class with a valid key")))
+							Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
+							Expect(c.Message).To(Equal(pkgcrypto.ErrMustUseVTPMOrEncryptedStorageClass.Error()))
+						})
+					})
+				})
+			})
+
+			When("spec.crypto.encryptionClassName is empty", func() {
+
+				BeforeEach(func() {
+					vm.Spec.Crypto = nil
+				})
+
+				When("there is a default key provider", func() {
+					BeforeEach(func() {
+						Expect(cryptoManager.MarkDefault(ctx, provider1ID)).To(Succeed())
+					})
+
+					When("the vm is being created with a vtpm", func() {
+						BeforeEach(func() {
+							configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+									Device:    &vimtypes.VirtualTPM{},
+								},
+							}
+							vm.Spec.StorageClass = storageClass1.Name
+						})
+						It("should deploy an encrypted vm", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).To(BeNil())
+							cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+							Expect(ok).To(BeTrue())
+							Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
+							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+						})
+					})
+
+					When("the vm uses an encrypted StorageClass", func() {
+						BeforeEach(func() {
+							configSpec.DeviceChange = nil
+							vm.Spec.StorageClass = storageClass2.Name
+						})
+						It("should deploy an encrypted vm", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).To(BeNil())
+							cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+							Expect(ok).To(BeTrue())
+							Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
+							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+						})
+					})
+
+					When("the vm is not being created with a vtpm or use an encrypted StorageClass", func() {
+						BeforeEach(func() {
+							configSpec.DeviceChange = nil
+							vm.Spec.StorageClass = storageClass1.Name
+						})
+						It("should deploy an unencrypted vm", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).To(BeNil())
+							Expect(configSpec.Crypto).To(BeNil())
 						})
 					})
 				})
 
-				When("encryption class is ready", func() {
+				When("there is not a default key provider", func() {
 
-					When("updating encrypted", func() {
+					When("the vm is being created with a vtpm", func() {
+						BeforeEach(func() {
+							configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+								&vimtypes.VirtualDeviceConfigSpec{
+									Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+									Device:    &vimtypes.VirtualTPM{},
+								},
+							}
+							vm.Spec.StorageClass = storageClass1.Name
+						})
+						It("should return an error", func() {
+							Expect(err).To(MatchError(pkgcrypto.ErrMustNotUseVTPMOrEncryptedStorageClass))
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(pkgcrypto.ReasonNoDefaultKeyProvider.String()))
+							Expect(c.Message).To(Equal(pkgcrypto.ErrMustNotUseVTPMOrEncryptedStorageClass.Error()))
+						})
+					})
+
+					When("the vm uses an encrypted StorageClass", func() {
+						BeforeEach(func() {
+							configSpec.DeviceChange = nil
+							vm.Spec.StorageClass = storageClass2.Name
+						})
+						It("should return an error", func() {
+							Expect(err).To(MatchError(pkgcrypto.ErrMustNotUseVTPMOrEncryptedStorageClass))
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(pkgcrypto.ReasonNoDefaultKeyProvider.String()))
+							Expect(c.Message).To(Equal(pkgcrypto.ErrMustNotUseVTPMOrEncryptedStorageClass.Error()))
+						})
+					})
+
+					When("the vm is not being created with a vtpm or use an encrypted StorageClass", func() {
+						BeforeEach(func() {
+							configSpec.DeviceChange = nil
+							vm.Spec.StorageClass = storageClass1.Name
+						})
+						It("should deploy an unencrypted vm", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).To(BeNil())
+							Expect(configSpec.Crypto).To(BeNil())
+						})
+					})
+				})
+			})
+		})
+
+		When("updating existing vm", func() {
+
+			When("spec.crypto.encryptionClassName is empty", func() {
+
+				BeforeEach(func() {
+					vm.Spec.Crypto = nil
+				})
+
+				When("there is a default key provider", func() {
+					BeforeEach(func() {
+						Expect(cryptoManager.MarkDefault(ctx, provider1ID)).To(Succeed())
+					})
+					When("the vm is already encrypted", func() {
 						BeforeEach(func() {
 							moVM.Config.KeyId = &vimtypes.CryptoKeyId{
-								KeyId: encClass.Spec.KeyID,
+								KeyId: provider1Key2ID,
 								ProviderId: &vimtypes.KeyProviderId{
-									Id: encClass.Spec.KeyProvider,
+									Id: provider1ID,
 								},
 							}
 						})
-
-						When("storage class is not encrypted and no vTPM", func() {
-							BeforeEach(func() {
-								vm.Spec.StorageClass = storageClass1.Name
+						When("the providers are the same", func() {
+							It("should set EncryptionSynced=true", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
 							})
-							When("storage class is not encrypted and no vTPM", func() {
-								It(shouldSetEncryptionSyncedToFalse, func() {
+							When("the vm does not have an encrypted storage class", func() {
+								BeforeEach(func() {
+									vm.Spec.StorageClass = storageClass1.Name
+								})
+
+								It("should set EncryptionSynced=false with InvalidState", func() {
 									Expect(err).ToNot(HaveOccurred())
 									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
 									Expect(c).ToNot(BeNil())
@@ -655,236 +530,196 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
 									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "use encryption storage class or have vTPM")))
 								})
-								When("has vTPM being removed", func() {
+
+								When("the vm has a vtpm", func() {
 									BeforeEach(func() {
 										moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
 											&vimtypes.VirtualTPM{},
 										}
-										configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-											&vimtypes.VirtualDeviceConfigSpec{
-												Device:    &vimtypes.VirtualTPM{},
-												Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
-											},
-										}
 									})
-									It("should return an error", func() {
+									It("should set EncryptionSynced=true", func() {
 										Expect(err).ToNot(HaveOccurred())
-										c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-										Expect(c).ToNot(BeNil())
-										Expect(c.Status).To(Equal(metav1.ConditionFalse))
-										Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
-										Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "use encryption storage class or have vTPM")))
+										Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+									})
+
+									When("the vtpm is being removed", func() {
+										BeforeEach(func() {
+											configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+												&vimtypes.VirtualDeviceConfigSpec{
+													Device:    &vimtypes.VirtualTPM{},
+													Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+												},
+											}
+										})
+										It("should set EncryptionSynced=false with InvalidChanges", func() {
+											Expect(err).ToNot(HaveOccurred())
+											c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+											Expect(c).ToNot(BeNil())
+											Expect(c.Status).To(Equal(metav1.ConditionFalse))
+											Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidChanges.String()))
+											Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not remove vTPM")))
+										})
 									})
 								})
 							})
 						})
-
-						When("no changes", func() {
-							It("should not return an error or set condition", func() {
-								Expect(err).ToNot(HaveOccurred())
-								Expect(conditions.Has(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeFalse())
-							})
-						})
-
-						When("adding encrypted disk with policy", func() {
+						When("the new provider is different than the current provider", func() {
 							BeforeEach(func() {
-								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-									&vimtypes.VirtualDeviceConfigSpec{
-										Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
-											Crypto: &vimtypes.CryptoSpecEncrypt{},
-										},
-										Device:    &vimtypes.VirtualDisk{},
-										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-											&vimtypes.VirtualMachineDefinedProfileSpec{
-												ProfileData: &vimtypes.VirtualMachineProfileRawData{
-													ExtensionKey: "com.vmware.vim.sips",
-													ObjectData:   profileWithIOFilters,
-												},
-											},
-										},
-									},
-								}
+								Expect(cryptoManager.MarkDefault(ctx, provider2ID)).To(Succeed())
 							})
-							It("should not return an error or set condition", func() {
-								Expect(err).ToNot(HaveOccurred())
-								Expect(conditions.Has(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeFalse())
-							})
-						})
-
-						When("adding encrypted devices sans policy", func() {
-							BeforeEach(func() {
-								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-									&vimtypes.VirtualDeviceConfigSpec{
-										Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
-											Crypto: &vimtypes.CryptoSpecEncrypt{},
-										},
-										Device:    &vimtypes.VirtualDisk{},
-										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-									},
-								}
-							})
-							It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
+							It("should recrypt the vm", func() {
 								Expect(err).ToNot(HaveOccurred())
 								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify policy when encrypting devices")))
-							})
-						})
-
-						When("editing encrypted devices sans policy", func() {
-							BeforeEach(func() {
-								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-									&vimtypes.VirtualDeviceConfigSpec{
-										Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
-											Crypto: &vimtypes.CryptoSpecEncrypt{},
-										},
-										Device:    &vimtypes.VirtualDisk{},
-										Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
-									},
-								}
-							})
-							It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
-								Expect(err).ToNot(HaveOccurred())
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify policy when encrypting devices")))
-							})
-						})
-
-						When("encrypting raw disks", func() {
-							BeforeEach(func() {
-								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-									&vimtypes.VirtualDeviceConfigSpec{
-										Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
-											Crypto: &vimtypes.CryptoSpecEncrypt{},
-										},
-										Device: &vimtypes.VirtualDisk{
-											VirtualDevice: vimtypes.VirtualDevice{
-												Backing: &vimtypes.VirtualDiskRawDiskVer2BackingInfo{},
-											},
-										},
-										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-											&vimtypes.VirtualMachineDefinedProfileSpec{
-												ProfileData: &vimtypes.VirtualMachineProfileRawData{
-													ExtensionKey: "com.vmware.vim.sips",
-													ObjectData:   profileWithIOFilters,
-												},
-											},
-										},
-									},
-								}
-							})
-							It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
-								Expect(err).ToNot(HaveOccurred())
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not encrypt raw disks")))
-							})
-						})
-
-						When("encrypting non-disk devices", func() {
-							BeforeEach(func() {
-								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-									&vimtypes.VirtualDeviceConfigSpec{
-										Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
-											Crypto: &vimtypes.CryptoSpecEncrypt{},
-										},
-										Device:    &vimtypes.VirtualAHCIController{},
-										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-											&vimtypes.VirtualMachineDefinedProfileSpec{
-												ProfileData: &vimtypes.VirtualMachineProfileRawData{
-													ExtensionKey: "com.vmware.vim.sips",
-													ObjectData:   profileWithIOFilters,
-												},
-											},
-										},
-									},
-								}
-							})
-							It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
-								Expect(err).ToNot(HaveOccurred())
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not encrypt non-disk devices")))
-							})
-						})
-
-						When("adding encrypted disk with policy and multiple backings", func() {
-							BeforeEach(func() {
-								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-									&vimtypes.VirtualDeviceConfigSpec{
-										Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
-											Crypto: &vimtypes.CryptoSpecEncrypt{},
-											Parent: &vimtypes.VirtualDeviceConfigSpecBackingSpec{},
-										},
-										Device:    &vimtypes.VirtualDisk{},
-										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-											&vimtypes.VirtualMachineDefinedProfileSpec{
-												ProfileData: &vimtypes.VirtualMachineProfileRawData{
-													ExtensionKey: "com.vmware.vim.sips",
-													ObjectData:   profileWithIOFilters,
-												},
-											},
-										},
-									},
-								}
-							})
-							It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
-								Expect(err).ToNot(HaveOccurred())
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not encrypt devices with multiple backings")))
+								Expect(c).To(BeNil())
+								cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.NewKeyId.KeyId).To(BeEmpty())
+								Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider2ID))
 							})
 						})
 					})
 
-					When("encrypting", func() {
-
-						assertIsEncrypt := func() {
-							ExpectWithOffset(1, err).ToNot(HaveOccurred())
-							ExpectWithOffset(1, conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeNil())
-							ExpectWithOffset(1, configSpec.Crypto).ToNot(BeNil())
-							ExpectWithOffset(1, configSpec.Crypto).To(Equal(&vimtypes.CryptoSpecEncrypt{
-								CryptoKeyId: vimtypes.CryptoKeyId{
-									KeyId: encClass.Spec.KeyID,
-									ProviderId: &vimtypes.KeyProviderId{
-										Id: encClass.Spec.KeyProvider,
-									},
-								},
-							}))
-						}
-
+					When("the vm is not already encrypted", func() {
 						BeforeEach(func() {
 							moVM.Config.KeyId = nil
 						})
-
-						When("storage class is not encrypted and no vTPM", func() {
+						It("should encrypt the vm", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).To(BeNil())
+							cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+							Expect(ok).To(BeTrue())
+							Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
+							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+						})
+						When("the vm has a vtpm but not encrypted storage class", func() {
 							BeforeEach(func() {
+								moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+									&vimtypes.VirtualTPM{},
+								}
 								vm.Spec.StorageClass = storageClass1.Name
 							})
-							When("storage class is not encrypted and no vTPM", func() {
-								It(shouldSetEncryptionSyncedToFalse, func() {
+							It("should encrypt the vm", func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+								Expect(c).To(BeNil())
+								cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
+								Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+							})
+
+							When("the vtpm is being removed", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Device:    &vimtypes.VirtualTPM{},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+										},
+									}
+								})
+								It("should return an error", func() {
 									Expect(err).ToNot(HaveOccurred())
 									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
 									Expect(c).ToNot(BeNil())
 									Expect(c.Status).To(Equal(metav1.ConditionFalse))
-									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
-									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("encrypting", "use encryption storage class or have vTPM")))
+									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidChanges.String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("encrypting", "not remove vTPM")))
 								})
+							})
+						})
+					})
+				})
+
+				When("there is not a default key provider", func() {
+					BeforeEach(func() {
+						Expect(cryptoManager.SetDefaultKmsClusterId(ctx, "", nil)).To(Succeed())
+					})
+
+					When("the vm is encrypted", func() {
+						It("should return an error", func() {
+							Expect(err).To(HaveOccurred())
+							Expect(err).To(MatchError(pkgcrypto.ErrNoDefaultKeyProvider))
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(pkgcrypto.ReasonNoDefaultKeyProvider.String()))
+						})
+					})
+
+					When("the vm is not encrypted", func() {
+						BeforeEach(func() {
+							moVM.Config.KeyId = nil
+							moVM.Config.Hardware.Device = nil
+							vm.Spec.StorageClass = storageClass1.Name
+						})
+						It("should be a no-op", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).To(BeNil())
+							Expect(configSpec.Crypto).To(BeNil())
+						})
+					})
+				})
+			})
+
+			When("spec.crypto.encryptionClassName is non-empty", func() {
+				When("the EncryptionClass does not exit", func() {
+					BeforeEach(func() {
+						vm.Spec.Crypto.EncryptionClassName += "-fake"
+					})
+					It("should return an error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(apierrors.IsNotFound(err)).To(BeTrue())
+						c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassNotFound.String()))
+					})
+				})
+
+				When("the EncryptionClass exists", func() {
+
+					When("the vm is not already encrypted", func() {
+						BeforeEach(func() {
+							moVM.Config.KeyId = nil
+						})
+
+						It("should encrypt the vm", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+							Expect(c).To(BeNil())
+							cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+							Expect(ok).To(BeTrue())
+							Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider1Key1ID))
+							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+						})
+
+						When("the vm is powered on", func() {
+							BeforeEach(func() {
+								moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+							})
+							It("should set EncryptionSynced=false with InvalidState", func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+								Expect(c).ToNot(BeNil())
+								Expect(c.Status).To(Equal(metav1.ConditionFalse))
+								Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
+								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("encrypting", "be powered off")))
+							})
+						})
+
+						When("vm has snapshots", func() {
+							BeforeEach(func() {
+								moVM.Snapshot = getSnapshotInfoWithLinearChain()
+							})
+							It(shouldSetEncryptionSyncedWithInvalidState, func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+								Expect(c).ToNot(BeNil())
+								Expect(c.Status).To(Equal(metav1.ConditionFalse))
+								Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
+								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("encrypting", "not have snapshots")))
 							})
 						})
 
@@ -910,175 +745,107 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							})
 						})
 
-						When("vm is powered on", func() {
+						When("adding encrypted disk with policy", func() {
 							BeforeEach(func() {
-								moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+								configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+									&vimtypes.VirtualDeviceConfigSpec{
+										Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+											Crypto: &vimtypes.CryptoSpecEncrypt{},
+										},
+										Device:    &vimtypes.VirtualDisk{},
+										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+											&vimtypes.VirtualMachineDefinedProfileSpec{
+												ProfileData: &vimtypes.VirtualMachineProfileRawData{
+													ExtensionKey: "com.vmware.vim.sips",
+													ObjectData:   profileWithIOFilters,
+												},
+											},
+										},
+									},
+								}
 							})
-							It(shouldSetEncryptionSyncedWithInvalidState, func() {
-								Expect(err).ToNot(HaveOccurred())
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("encrypting", "be powered off")))
-							})
-						})
-						When("vm has snapshots", func() {
-							BeforeEach(func() {
-								moVM.Snapshot = getSnapshotInfoWithLinearChain()
-							})
-							It(shouldSetEncryptionSyncedWithInvalidState, func() {
-								Expect(err).ToNot(HaveOccurred())
-								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-								Expect(c).ToNot(BeNil())
-								Expect(c.Status).To(Equal(metav1.ConditionFalse))
-								Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
-								Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("encrypting", "not have snapshots")))
-							})
-						})
-						When("vm is powered off with no snapshots", func() {
 							It("should encrypt the vm", func() {
-								assertIsEncrypt()
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+								Expect(c).To(BeNil())
+								cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider1Key1ID))
+								Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
 							})
 						})
 					})
-					When("recrypting", func() {
 
-						When("new providerID", func() {
+					When("the vm is already encrypted", func() {
+						When("the new provider is different than the current provider", func() {
 							BeforeEach(func() {
-								encClass.Spec.KeyProvider = provider2ID
-							})
-							When("vm has snapshot tree", func() {
-								BeforeEach(func() {
-									moVM.Snapshot = getSnapshotInfoWithTree()
-								})
-								It(shouldSetEncryptionSyncedWithInvalidState, func() {
-									Expect(err).ToNot(HaveOccurred())
-									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-									Expect(c).ToNot(BeNil())
-									Expect(c.Status).To(Equal(metav1.ConditionFalse))
-									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
-									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "not have snapshot tree")))
-								})
-							})
-						})
-						When("new keyID", func() {
-							BeforeEach(func() {
-								encClass.Spec.KeyID = provider1Key2ID
-							})
-							When("vm has snapshot tree", func() {
-								BeforeEach(func() {
-									moVM.Snapshot = getSnapshotInfoWithTree()
-								})
-								It(shouldSetEncryptionSyncedWithInvalidState, func() {
-									Expect(err).ToNot(HaveOccurred())
-									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-									Expect(c).ToNot(BeNil())
-									Expect(c.Status).To(Equal(metav1.ConditionFalse))
-									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
-									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "not have snapshot tree")))
-								})
-							})
-						})
-						When("new providerID and new keyID", func() {
-							BeforeEach(func() {
-								encClass.Spec.KeyProvider = provider2ID
-								encClass.Spec.KeyID = provider2Key1ID
-							})
-							When("vm has snapshot tree", func() {
-								BeforeEach(func() {
-									moVM.Snapshot = getSnapshotInfoWithTree()
-								})
-								It(shouldSetEncryptionSyncedWithInvalidState, func() {
-									Expect(err).ToNot(HaveOccurred())
-									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-									Expect(c).ToNot(BeNil())
-									Expect(c.Status).To(Equal(metav1.ConditionFalse))
-									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
-									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "not have snapshot tree")))
-								})
-							})
-
-							assertIsRecrypt := func() {
-								ExpectWithOffset(1, err).ToNot(HaveOccurred())
-								ExpectWithOffset(1, conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeNil())
-								ExpectWithOffset(1, configSpec.Crypto).ToNot(BeNil())
-								ExpectWithOffset(1, configSpec.Crypto).To(Equal(&vimtypes.CryptoSpecShallowRecrypt{
-									NewKeyId: vimtypes.CryptoKeyId{
-										KeyId: encClass.Spec.KeyID,
-										ProviderId: &vimtypes.KeyProviderId{
-											Id: encClass.Spec.KeyProvider,
-										},
+								moVM.Config.KeyId = &vimtypes.CryptoKeyId{
+									KeyId: provider2Key1ID,
+									ProviderId: &vimtypes.KeyProviderId{
+										Id: provider2ID,
 									},
-								}))
-							}
+								}
+							})
+							It("should recrypt the vm", func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+								Expect(c).To(BeNil())
+								cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(provider1Key1ID))
+								Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider1ID))
+							})
 
-							When("storage class is not encrypted and no vTPM", func() {
+							When("the vm does not have an encrypted storage class", func() {
 								BeforeEach(func() {
 									vm.Spec.StorageClass = storageClass1.Name
 								})
-								When("storage class is not encrypted and no vTPM", func() {
-									It(shouldSetEncryptionSyncedToFalse, func() {
-										Expect(err).ToNot(HaveOccurred())
-										c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
-										Expect(c).ToNot(BeNil())
-										Expect(c.Status).To(Equal(metav1.ConditionFalse))
-										Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
-										Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "use encryption storage class or have vTPM")))
-									})
+
+								It("should set EncryptionSynced=false with InvalidState", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "use encryption storage class or have vTPM")))
+								})
+							})
+						})
+
+						When("the providers and keys are the same", func() {
+							It("should set EncryptionSynced=true", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+							})
+
+							When("adding encrypted disk with policy", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: &vimtypes.CryptoSpecEncrypt{},
+											},
+											Device:    &vimtypes.VirtualDisk{},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+											Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+												&vimtypes.VirtualMachineDefinedProfileSpec{
+													ProfileData: &vimtypes.VirtualMachineProfileRawData{
+														ExtensionKey: "com.vmware.vim.sips",
+														ObjectData:   profileWithIOFilters,
+													},
+												},
+											},
+										},
+									}
+								})
+								It("should set EncryptionSynced=true", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
 								})
 							})
 
-							When("powered off", func() {
-								BeforeEach(func() {
-									moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
-								})
-								It("should recrypt the vm", func() {
-									assertIsRecrypt()
-								})
-								When("has linear snapshot chain", func() {
-									BeforeEach(func() {
-										moVM.Snapshot = getSnapshotInfoWithLinearChain()
-									})
-									It("should recrypt the vm", func() {
-										assertIsRecrypt()
-									})
-								})
-							})
-							When("powered on", func() {
-								BeforeEach(func() {
-									moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
-								})
-								It("should recrypt the vm", func() {
-									assertIsRecrypt()
-								})
-								When("has linear snapshot chain", func() {
-									BeforeEach(func() {
-										moVM.Snapshot = getSnapshotInfoWithLinearChain()
-									})
-									It("should recrypt the vm", func() {
-										assertIsRecrypt()
-									})
-								})
-							})
-							When("suspended", func() {
-								BeforeEach(func() {
-									moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStateSuspended
-								})
-								It("should recrypt the vm", func() {
-									assertIsRecrypt()
-								})
-								When("has linear snapshot chain", func() {
-									BeforeEach(func() {
-										moVM.Snapshot = getSnapshotInfoWithLinearChain()
-									})
-									It("should recrypt the vm", func() {
-										assertIsRecrypt()
-									})
-								})
-							})
-
-							When("adding encrypted disk sans policy", func() {
+							When("adding encrypted devices sans policy", func() {
 								BeforeEach(func() {
 									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
 										&vimtypes.VirtualDeviceConfigSpec{
@@ -1090,21 +857,233 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 										},
 									}
 								})
-								It(shouldSetEncryptionSyncedWithInvalidChanges, func() {
+								It("should set EncryptionSynced=false with InvalidChanges", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidChanges.String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify policy when encrypting devices")))
+								})
+							})
+
+							When("editing encrypted devices sans policy", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: &vimtypes.CryptoSpecEncrypt{},
+											},
+											Device:    &vimtypes.VirtualDisk{},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+										},
+									}
+								})
+								It("should set EncryptionSynced=false with InvalidChanges", func() {
 									Expect(err).ToNot(HaveOccurred())
 									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
 									Expect(c).ToNot(BeNil())
 									Expect(c.Status).To(Equal(metav1.ConditionFalse))
 									Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
-									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "specify policy when encrypting devices")))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "specify policy when encrypting devices")))
+								})
+							})
+
+							When("encrypting raw disks", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: &vimtypes.CryptoSpecEncrypt{},
+											},
+											Device: &vimtypes.VirtualDisk{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Backing: &vimtypes.VirtualDiskRawDiskVer2BackingInfo{},
+												},
+											},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+											Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+												&vimtypes.VirtualMachineDefinedProfileSpec{
+													ProfileData: &vimtypes.VirtualMachineProfileRawData{
+														ExtensionKey: "com.vmware.vim.sips",
+														ObjectData:   profileWithIOFilters,
+													},
+												},
+											},
+										},
+									}
+								})
+								It("should set EncryptionSynced=false with InvalidChanges", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not encrypt raw disks")))
+								})
+							})
+
+							When("encrypting non-disk devices", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: &vimtypes.CryptoSpecEncrypt{},
+											},
+											Device:    &vimtypes.VirtualAHCIController{},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+											Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+												&vimtypes.VirtualMachineDefinedProfileSpec{
+													ProfileData: &vimtypes.VirtualMachineProfileRawData{
+														ExtensionKey: "com.vmware.vim.sips",
+														ObjectData:   profileWithIOFilters,
+													},
+												},
+											},
+										},
+									}
+								})
+								It("should set EncryptionSynced=false with InvalidChanges", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not encrypt non-disk devices")))
+								})
+							})
+
+							When("adding encrypted disk with policy and multiple backings", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: &vimtypes.CryptoSpecEncrypt{},
+												Parent: &vimtypes.VirtualDeviceConfigSpecBackingSpec{},
+											},
+											Device:    &vimtypes.VirtualDisk{},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+											Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+												&vimtypes.VirtualMachineDefinedProfileSpec{
+													ProfileData: &vimtypes.VirtualMachineProfileRawData{
+														ExtensionKey: "com.vmware.vim.sips",
+														ObjectData:   profileWithIOFilters,
+													},
+												},
+											},
+										},
+									}
+								})
+								It("should set EncryptionSynced=false with InvalidChanges", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal((pkgcrypto.ReasonInvalidChanges).String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not encrypt devices with multiple backings")))
 								})
 							})
 						})
 
+						When("the secret keys are modified", func() {
+							DescribeTable(
+								"should set EncryptionSynced=false with InvalidChanges",
+								func(key string) {
+									Expect(r.Reconcile(
+										ctx,
+										k8sClient,
+										vimClient,
+										vm,
+										moVM,
+										&vimtypes.VirtualMachineConfigSpec{
+											ExtraConfig: []vimtypes.BaseOptionValue{
+												&vimtypes.OptionValue{
+													Key:   key,
+													Value: "",
+												},
+											},
+										}),
+									).To(Succeed())
+
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidChanges.String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("updating encrypted", "not add/remove/modify secret key")))
+								},
+								func(key string) string {
+									return fmt.Sprintf("when key=%s", key)
+								},
+								Entry(nil, "ancestordatafilekeys"),
+								Entry(nil, "cryptostate"),
+								Entry(nil, "datafilekey"),
+								Entry(nil, "encryption.required"),
+								Entry(nil, "encryption.required.vtpm"),
+								Entry(nil, "encryption.unspecified.default"),
+							)
+						})
+
+						When("the new key is different than the current key", func() {
+							BeforeEach(func() {
+								moVM.Config.KeyId = &vimtypes.CryptoKeyId{
+									KeyId: provider1Key2ID,
+									ProviderId: &vimtypes.KeyProviderId{
+										Id: provider1ID,
+									},
+								}
+							})
+							It("should recrypt the vm", func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+								Expect(c).To(BeNil())
+								cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(provider1Key1ID))
+								Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider1ID))
+							})
+
+							When("vm has snapshot tree", func() {
+								BeforeEach(func() {
+									moVM.Snapshot = getSnapshotInfoWithTree()
+								})
+								It("should set EncryptionSynced=false with InvalidState", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "not have snapshot tree")))
+								})
+							})
+
+							When("adding encrypted devices sans policy", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: &vimtypes.CryptoSpecEncrypt{},
+											},
+											Device:    &vimtypes.VirtualDisk{},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+										},
+									}
+								})
+								It("should set EncryptionSynced=false with InvalidChanges", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidChanges.String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "specify policy when encrypting devices")))
+								})
+							})
+						})
 					})
+
 				})
 			})
 		})
+
 	})
 
 })
@@ -1123,15 +1102,25 @@ func getSnapshotInfoWithTree() *vimtypes.VirtualMachineSnapshotInfo {
 				Name: "1",
 				ChildSnapshotList: []vimtypes.VirtualMachineSnapshotTree{
 					{
-						Name: "1a",
+						Name: "2a",
+						ChildSnapshotList: []vimtypes.VirtualMachineSnapshotTree{
+							{
+								Name: "2ai",
+							},
+						},
 					},
 					{
-						Name: "1b",
+						Name: "2b",
+						ChildSnapshotList: []vimtypes.VirtualMachineSnapshotTree{
+							{
+								Name: "2bi",
+							},
+							{
+								Name: "2bii",
+							},
+						},
 					},
 				},
-			},
-			{
-				Name: "2",
 			},
 		},
 	}

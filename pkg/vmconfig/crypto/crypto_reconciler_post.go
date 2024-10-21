@@ -10,10 +10,8 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto/internal"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto/internal"
 )
 
 //nolint:gocyclo
@@ -35,40 +33,7 @@ func (r reconciler) OnResult(
 
 	state := internal.FromContext(ctx)
 
-	// Update the VM's crypto status.
-	if key := getCurCryptoKey(moVM); key.provider == "" && key.id == "" {
-		vm.Status.Crypto = nil
-	} else {
-		if vm.Status.Crypto == nil {
-			vm.Status.Crypto = &vmopv1.VirtualMachineCryptoStatus{}
-		}
-		vm.Status.Crypto.ProviderID = key.provider
-		vm.Status.Crypto.KeyID = key.id
-
-		if state.IsEncStorClass {
-			vm.Status.Crypto.Encrypted = []vmopv1.VirtualMachineEncryptionType{
-				vmopv1.VirtualMachineEncryptionTypeConfig,
-				vmopv1.VirtualMachineEncryptionTypeDisks,
-			}
-		} else if ok, _ := hasVTPM(moVM, nil); ok {
-			vm.Status.Crypto.Encrypted = []vmopv1.VirtualMachineEncryptionType{
-				vmopv1.VirtualMachineEncryptionTypeConfig,
-			}
-		}
-	}
-
 	if resultErr == nil {
-
-		// If no reconfigure error occurred then we need to check if there was
-		// a crypto update as part of the reconfigure.
-
-		if state.Operation == "encrypting" || state.Operation == "recrypting" {
-
-			// A crypto update was successful, so indicate that the encryption
-			// state of this VM is synced.
-			conditions.MarkTrue(vm, vmopv1.VirtualMachineEncryptionSynced)
-		}
-
 		return nil
 	}
 

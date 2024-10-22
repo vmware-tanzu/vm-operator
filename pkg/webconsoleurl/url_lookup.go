@@ -36,7 +36,7 @@ func ProxyAddress(ctx context.Context, r client.Client) (string, error) {
 	}
 
 	// If no API Server DNS Name exists, fall back to using the virtual IP.
-	if len(proxyAddress) == 0 {
+	if proxyAddress == "" {
 		return ProxyAddressFromVirtualIP(ctx, r)
 	}
 
@@ -49,9 +49,7 @@ func ProxyServiceDNSName(ctx context.Context, r client.Client) (string, error) {
 	proxySvc := &appv1a1.SupervisorProperties{}
 	proxySvcObjectKey := client.ObjectKey{Name: SupervisorServiceObjName, Namespace: SupervisorServiceObjNamespace}
 
-	err := r.Get(ctx, proxySvcObjectKey, proxySvc)
-
-	if err != nil {
+	if err := r.Get(ctx, proxySvcObjectKey, proxySvc); err != nil {
 		return "", fmt.Errorf("failed to get proxy address service  %s: %w", proxySvcObjectKey, err)
 	}
 
@@ -67,10 +65,11 @@ func ProxyServiceDNSName(ctx context.Context, r client.Client) (string, error) {
 func ProxyAddressFromVirtualIP(ctx context.Context, r client.Client) (string, error) {
 	proxySvc := &corev1.Service{}
 	proxySvcObjectKey := client.ObjectKey{Name: ProxyAddrServiceName, Namespace: ProxyAddrServiceNamespace}
-	err := r.Get(ctx, proxySvcObjectKey, proxySvc)
-	if err != nil {
+
+	if err := r.Get(ctx, proxySvcObjectKey, proxySvc); err != nil {
 		return "", fmt.Errorf("failed to get proxy address service  %s: %w", proxySvcObjectKey, err)
 	}
+
 	if len(proxySvc.Status.LoadBalancer.Ingress) == 0 {
 		return "", fmt.Errorf("no ingress found for proxy address service %s", proxySvcObjectKey)
 	}

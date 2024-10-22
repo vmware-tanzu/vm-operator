@@ -203,8 +203,7 @@ func unitTestsReconcile() {
 					})
 
 					It("returns success and sets ProxyAddr", func() {
-						err := reconciler.ReconcileNormal(wcrCtx)
-						Expect(err).ToNot(HaveOccurred())
+						Expect(reconciler.ReconcileNormal(wcrCtx)).To(Succeed())
 
 						Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal(scenario.expectedProxy))
 					})

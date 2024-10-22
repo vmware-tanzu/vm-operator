@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -97,7 +97,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 }
 
 // NewValidator returns the package's Validator.
-func NewValidator(client client.Client) builder.Validator {
+func NewValidator(client ctrlclient.Client) builder.Validator {
 	return validator{
 		client: client,
 		// TODO BMV Use the Context.scheme instead
@@ -106,7 +106,7 @@ func NewValidator(client client.Client) builder.Validator {
 }
 
 type validator struct {
-	client    client.Client
+	client    ctrlclient.Client
 	converter runtime.UnstructuredConverter
 }
 
@@ -446,7 +446,7 @@ func (v validator) validateStorageClass(ctx *pkgctx.WebhookRequestContext, vm *v
 	scName := vm.Spec.StorageClass
 
 	sc := &storagev1.StorageClass{}
-	if err := v.client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
+	if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: scName}, sc); err != nil {
 		if apierrors.IsNotFound(err) {
 			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotFoundFmt, scName)))
 		}
@@ -456,7 +456,7 @@ func (v validator) validateStorageClass(ctx *pkgctx.WebhookRequestContext, vm *v
 	// This is what enforces that the storage policy has been associated with this namespace.
 	if pkgcfg.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
 		storagePolicyQuotas := &spqv1.StoragePolicyQuotaList{}
-		if err := v.client.List(ctx, storagePolicyQuotas, client.InNamespace(vm.Namespace)); err != nil {
+		if err := v.client.List(ctx, storagePolicyQuotas, ctrlclient.InNamespace(vm.Namespace)); err != nil {
 			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
 		}
 
@@ -470,7 +470,7 @@ func (v validator) validateStorageClass(ctx *pkgctx.WebhookRequestContext, vm *v
 
 	} else {
 		resourceQuotas := &corev1.ResourceQuotaList{}
-		if err := v.client.List(ctx, resourceQuotas, client.InNamespace(vm.Namespace)); err != nil {
+		if err := v.client.List(ctx, resourceQuotas, ctrlclient.InNamespace(vm.Namespace)); err != nil {
 			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
 		}
 
@@ -838,7 +838,7 @@ func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1
 		if vol.PersistentVolumeClaim == nil {
 			allErrs = append(allErrs, field.Required(volPath.Child("persistentVolumeClaim"), ""))
 		} else {
-			allErrs = append(allErrs, v.validateVolumeWithPVC(vol, volPath)...)
+			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vm, vol, volPath)...)
 		}
 	}
 
@@ -846,6 +846,8 @@ func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1
 }
 
 func (v validator) validateVolumeWithPVC(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath *field.Path) field.ErrorList {
 
@@ -855,14 +857,36 @@ func (v validator) validateVolumeWithPVC(
 		claimName = vol.PersistentVolumeClaim.ClaimName
 	)
 
-	if claimName == "" {
-		allErrs = append(
-			allErrs,
-			field.Required(pvcPath.Child("claimName"), ""))
-	}
-
 	if vol.PersistentVolumeClaim.ReadOnly {
 		allErrs = append(allErrs, field.NotSupported(pvcPath.Child("readOnly"), true, []string{"false"}))
+	}
+
+	if claimName == "" {
+		allErrs = append(allErrs, field.Required(pvcPath.Child("claimName"), ""))
+		return allErrs
+	}
+
+	if vol.PersistentVolumeClaim.InstanceVolumeClaim != nil {
+		return allErrs
+	}
+
+	// For now, make this check best effort. There's an ask to provide immediate feedback but
+	// ideally the validation webhooks should just deal with internal consistency.
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: claimName, Namespace: vm.Namespace}, pvc); err != nil {
+		return allErrs
+	}
+
+	if scName := pvc.Spec.StorageClassName; scName != nil && *scName != "" {
+		// Or just check for "-wffc" suffix instead?
+		sc := &storagev1.StorageClass{}
+		if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: *scName}, sc); err == nil {
+			if mode := sc.VolumeBindingMode; mode != nil && *mode == storagev1.VolumeBindingWaitForFirstConsumer {
+				allErrs = append(allErrs,
+					field.Forbidden(pvcPath,
+						"PVC with WaitForFirstConsumer StorageClass is not supported for VirtualMachines"))
+			}
+		}
 	}
 
 	return allErrs
@@ -1235,7 +1259,7 @@ func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virtual
 
 func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookRequestContext) (bool, error) {
 	configMap := &corev1.ConfigMap{}
-	configMapKey := client.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
+	configMapKey := ctrlclient.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
 	if err := v.client.Get(ctx, configMapKey, configMap); err != nil {
 		return false, fmt.Errorf("error get ConfigMap: %s while validating TCP readiness probe port: %v", configMapKey, err)
 	}

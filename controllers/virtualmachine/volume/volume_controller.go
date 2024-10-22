@@ -742,7 +742,7 @@ func (r *Reconciler) processAttachments(
 	// still exist are included in the Status. This is more than a little odd.
 	volumeStatuses = append(volumeStatuses, r.preserveOrphanedAttachmentStatus(ctx, orphanedAttachments)...)
 
-	// Remove any managed volumes volumes from the existing status.
+	// Remove any managed volumes from the existing status.
 	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
 			return e.Type != vmopv1.VirtualMachineStorageDiskTypeClassic

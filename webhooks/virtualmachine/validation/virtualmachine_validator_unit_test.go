@@ -1219,6 +1219,64 @@ func unitTestsValidateCreate() {
 		})
 	})
 
+	Context("Volumes", func() {
+		DescribeTable("PVC with StorageClass",
+			doTest,
+			Entry("Immediate",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						sc := builder.DummyStorageClass()
+						sc.VolumeBindingMode = ptr.To(storagev1.VolumeBindingImmediate)
+						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+						pvc := builder.DummyPersistentVolumeClaim()
+						pvc.Namespace = ctx.vm.Namespace
+						pvc.Spec.StorageClassName = &sc.Name
+						Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "test-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: pvc.Name,
+									},
+								},
+							},
+						})
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("WaitForFirstConsumer",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						sc := builder.DummyStorageClass()
+						sc.VolumeBindingMode = ptr.To(storagev1.VolumeBindingWaitForFirstConsumer)
+						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+						pvc := builder.DummyPersistentVolumeClaim()
+						pvc.Namespace = ctx.vm.Namespace
+						pvc.Spec.StorageClassName = &sc.Name
+						Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "test-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: pvc.Name,
+									},
+								},
+							},
+						})
+					},
+					validate: doValidateWithMsg(
+						`spec.volumes[1].persistentVolumeClaim: Forbidden: PVC with WaitForFirstConsumer StorageClass is not supported for VirtualMachines`),
+				},
+			),
+		)
+	})
+
 	Context("Bootstrap", func() {
 
 		DescribeTable("bootstrap create", doTest,
@@ -3539,6 +3597,64 @@ func unitTestsValidateUpdate() {
 			},
 		),
 	)
+
+	Context("Volumes", func() {
+		DescribeTable("PVC with StorageClass",
+			doTest,
+			Entry("Immediate",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						sc := builder.DummyStorageClass()
+						sc.VolumeBindingMode = ptr.To(storagev1.VolumeBindingImmediate)
+						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+						pvc := builder.DummyPersistentVolumeClaim()
+						pvc.Namespace = ctx.vm.Namespace
+						pvc.Spec.StorageClassName = &sc.Name
+						Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "test-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: pvc.Name,
+									},
+								},
+							},
+						})
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("WaitForFirstConsumer",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						sc := builder.DummyStorageClass()
+						sc.VolumeBindingMode = ptr.To(storagev1.VolumeBindingWaitForFirstConsumer)
+						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+						pvc := builder.DummyPersistentVolumeClaim()
+						pvc.Namespace = ctx.vm.Namespace
+						pvc.Spec.StorageClassName = &sc.Name
+						Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "test-vol",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: pvc.Name,
+									},
+								},
+							},
+						})
+					},
+					validate: doValidateWithMsg(
+						`spec.volumes[1].persistentVolumeClaim: Forbidden: PVC with WaitForFirstConsumer StorageClass is not supported for VirtualMachines`),
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateDelete() {

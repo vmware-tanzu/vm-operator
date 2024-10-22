@@ -1,6 +1,5 @@
-// Copyright (c) 2024 Broadcom. All Rights Reserved.
-// Broadcom Confidential. The term "Broadcom" refers to Broadcom Inc.
-// and/or its subsidiaries.
+// Copyright (c) 2024 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 // NOTE: Boilerplate only.  Ignore this file.
 
@@ -11,7 +10,7 @@
 // +k8s:defaulter-gen=TypeMeta
 // +groupName=appplatform.vmware.com
 // +versionName=v1alpha1
-package vmw_v1alpha1
+package v1alpha1
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"

@@ -1,8 +1,7 @@
-// Copyright (c) 2024 Broadcom. All Rights Reserved.
-// Broadcom Confidential. The term "Broadcom" refers to Broadcom Inc.
-// and/or its subsidiaries.
+// Copyright (c) 2024 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
-package vmw_v1alpha1
+package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,7 +11,6 @@ func init() {
 	SchemeBuilder.Register(&SupervisorProperties{}, &SupervisorPropertiesList{})
 }
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 // Important: Run "make" to regenerate code after modifying this file
 

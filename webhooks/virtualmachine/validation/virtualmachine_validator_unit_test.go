@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apivalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -3399,6 +3400,145 @@ func unitTestsValidateUpdate() {
 			),
 		)
 	})
+
+	DescribeTable(
+		"spec.className",
+		doTest,
+
+		//
+		// RESIZE_CPU is disabled, FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled
+		//
+		Entry("require spec.className for privileged user when FSS_RESIZE_CPU & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET are disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+						config.Features.VMResizeCPUMemory = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "className"), "", apivalidation.FieldImmutableErrorMsg).Error(),
+				),
+			},
+		),
+		Entry("require spec.className for unprivileged user when FSS_RESIZE_CPU & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET are disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+						config.Features.VMResizeCPUMemory = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "className"), "", apivalidation.FieldImmutableErrorMsg).Error(),
+				),
+			},
+		),
+
+		//
+		// RESIZE_CPU is disabled, FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled
+		//
+		Entry("allow empty spec.className for privileged user when FSS_RESIZE_CPU is disabled & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+						config.Features.VMResizeCPUMemory = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "className"), "", apivalidation.FieldImmutableErrorMsg).Error(),
+				),
+			},
+		),
+		Entry("require spec.className for unprivileged user when FSS_RESIZE_CPU is disabled & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+						config.Features.VMResizeCPUMemory = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "className"), "", apivalidation.FieldImmutableErrorMsg).Error(),
+				),
+			},
+		),
+
+		//
+		// RESIZE_CPU is enabled, FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled
+		//
+		Entry("require spec.className for privileged user when FSS_RESIZE_CPU is enabled & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+						config.Features.VMResizeCPUMemory = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "className"), "").Error(),
+				),
+			},
+		),
+		Entry("require spec.className for unprivileged user when FSS_RESIZE_CPU is enabled & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+						config.Features.VMResizeCPUMemory = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "className"), "").Error(),
+				),
+			},
+		),
+
+		//
+		// RESIZE_CPU is enabled, FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled
+		//
+		Entry("allow empty spec.className for privileged user when FSS_RESIZE_CPU & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET are enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+						config.Features.VMResizeCPUMemory = true
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("require spec.className for unprivileged user when FSS_RESIZE_CPU & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET are enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+						config.Features.VMResizeCPUMemory = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "className"), "").Error(),
+				),
+			},
+		),
+	)
 }
 
 func unitTestsValidateDelete() {

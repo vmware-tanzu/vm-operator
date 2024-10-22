@@ -418,7 +418,18 @@ func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 	}
 
 	if vm.Spec.ClassName == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec", "className"), ""))
+		if pkgcfg.FromContext(ctx).Features.VMImportNewNet {
+			if !ctx.IsPrivilegedAccount {
+				// Restrict creating classless VM resources to privileged users.
+				allErrs = append(
+					allErrs,
+					field.Required(field.NewPath("spec", "className"), ""))
+			}
+		} else {
+			allErrs = append(
+				allErrs,
+				field.Required(field.NewPath("spec", "className"), ""))
+		}
 	}
 
 	return allErrs

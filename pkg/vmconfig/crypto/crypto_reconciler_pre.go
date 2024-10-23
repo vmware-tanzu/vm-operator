@@ -6,8 +6,6 @@ package crypto
 import (
 	"context"
 	"errors"
-	"regexp"
-	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/crypto"
@@ -465,7 +463,7 @@ func doUpdateEncrypted(
 	args reconcileArgs) (string, Reason, []string, error) {
 
 	op := "updating encrypted"
-	r, m, err := validateUpdateEncrypted(args)
+	r, m, err := validateUpdateEncrypted(ctx, args)
 	return op, r, m, err
 }
 
@@ -530,7 +528,7 @@ func onEncrypt(
 
 	logger := logr.FromContextOrDiscard(ctx)
 
-	reason, msgs, err := validateEncrypt(args)
+	reason, msgs, err := validateEncrypt(ctx, args)
 	if reason > 0 || len(msgs) > 0 || err != nil {
 		return reason, msgs, err
 	}
@@ -559,7 +557,7 @@ func onRecrypt(
 
 	logger := logr.FromContextOrDiscard(ctx)
 
-	reason, msgs, err := validateRecrypt(args)
+	reason, msgs, err := validateRecrypt(ctx, args)
 	if reason > 0 || len(msgs) > 0 || err != nil {
 		return reason, msgs, err
 	}
@@ -584,8 +582,10 @@ func onRecrypt(
 	return 0, nil, nil
 }
 
-//nolint:unparam
-func validateEncrypt(args reconcileArgs) (Reason, []string, error) {
+func validateEncrypt(
+	ctx context.Context,
+	args reconcileArgs) (Reason, []string, error) {
+
 	var (
 		msgs   []string
 		reason Reason
@@ -598,15 +598,19 @@ func validateEncrypt(args reconcileArgs) (Reason, []string, error) {
 		reason |= r
 		msgs = append(msgs, m...)
 	}
-	if r, m := validateDeviceChanges(args.configSpec); len(m) > 0 {
+	if r, m, err := validateDeviceChanges(ctx, args); err != nil {
+		return 0, nil, err
+	} else if len(m) > 0 {
 		reason |= r
 		msgs = append(msgs, m...)
 	}
 	return reason, msgs, nil
 }
 
-//nolint:unparam
-func validateRecrypt(args reconcileArgs) (Reason, []string, error) {
+func validateRecrypt(
+	ctx context.Context,
+	args reconcileArgs) (Reason, []string, error) {
+
 	var (
 		msgs   []string
 		reason Reason
@@ -619,15 +623,19 @@ func validateRecrypt(args reconcileArgs) (Reason, []string, error) {
 		msgs = append(msgs, "not have snapshot tree")
 		reason |= ReasonInvalidState
 	}
-	if r, m := validateDeviceChanges(args.configSpec); len(m) > 0 {
+	if r, m, err := validateDeviceChanges(ctx, args); err != nil {
+		return 0, nil, err
+	} else if len(m) > 0 {
 		reason |= r
 		msgs = append(msgs, m...)
 	}
 	return reason, msgs, nil
 }
 
-//nolint:unparam
-func validateUpdateEncrypted(args reconcileArgs) (Reason, []string, error) {
+func validateUpdateEncrypted(
+	ctx context.Context,
+	args reconcileArgs) (Reason, []string, error) {
+
 	var (
 		msgs   []string
 		reason Reason
@@ -640,7 +648,9 @@ func validateUpdateEncrypted(args reconcileArgs) (Reason, []string, error) {
 		msgs = append(msgs, "not add/remove/modify secret key")
 		reason |= ReasonInvalidChanges
 	}
-	if r, m := validateDeviceChanges(args.configSpec); len(m) > 0 {
+	if r, m, err := validateDeviceChanges(ctx, args); err != nil {
+		return 0, nil, err
+	} else if len(m) > 0 {
 		reason |= r
 		msgs = append(msgs, m...)
 	}
@@ -712,17 +722,26 @@ func validatePoweredOffNoSnapshots(moVM mo.VirtualMachine) (Reason, []string) {
 	return reason, msgs
 }
 
-func validateDeviceChanges(configSpec ptrCfgSpec) (Reason, []string) {
+func validateDeviceChanges(
+	ctx context.Context,
+	args reconcileArgs) (Reason, []string, error) {
 
 	var (
 		msgs   []string
 		reason Reason
 	)
 
-	for i := range configSpec.DeviceChange {
-		if devChange := configSpec.DeviceChange[i]; devChange != nil {
+	for i := range args.configSpec.DeviceChange {
+		if devChange := args.configSpec.DeviceChange[i]; devChange != nil {
 			devSpec := devChange.GetVirtualDeviceConfigSpec()
-			if isAddEditDeviceSpecEncryptedSansPolicy(devSpec) {
+			if ok, err := isAddEditDeviceSpecEncryptedSansPolicy(
+				ctx,
+				args,
+				devSpec); err != nil {
+
+				return 0, nil, err
+
+			} else if ok {
 				msgs = append(msgs, "specify policy when encrypting devices")
 				reason |= ReasonInvalidChanges
 			}
@@ -741,7 +760,7 @@ func validateDeviceChanges(configSpec ptrCfgSpec) (Reason, []string) {
 		}
 	}
 
-	return reason, msgs
+	return reason, msgs, nil
 }
 
 var secretKeys = map[string]struct{}{
@@ -766,7 +785,11 @@ func isChangingSecretKey(configSpec ptrCfgSpec) bool {
 	return false
 }
 
-func isAddEditDeviceSpecEncryptedSansPolicy(spec ptrDevCfgSpec) bool {
+func isAddEditDeviceSpecEncryptedSansPolicy(
+	ctx context.Context,
+	args reconcileArgs,
+	spec ptrDevCfgSpec) (bool, error) {
+
 	if spec != nil {
 		switch spec.Operation {
 		case vimtypes.VirtualDeviceConfigSpecOperationAdd,
@@ -779,31 +802,38 @@ func isAddEditDeviceSpecEncryptedSansPolicy(spec ptrDevCfgSpec) bool {
 					*vimtypes.CryptoSpecShallowRecrypt:
 
 					for i := range spec.Profile {
-						if doesProfileHaveIOFilters(spec.Profile[i]) {
-							return false
+						if ok, err := isEncryptedProfile(
+							ctx,
+							args,
+							spec.Profile[i]); err != nil {
+
+							return false, err
+
+						} else if ok {
+
+							return false, nil // is encrypted/recrypted with policy
 						}
 					}
-					return true // is encrypted/recrypted sans policy
+
+					return true, nil // is encrypted/recrypted sans policy
 				}
 			}
 		}
 	}
-	return false
+	return false, nil
 }
 
-var whiteSpaceRegex = regexp.MustCompile(`[\s\t\n\r]`)
+func isEncryptedProfile(ctx context.Context,
+	args reconcileArgs,
+	spec vimtypes.BaseVirtualMachineProfileSpec) (bool, error) {
 
-func doesProfileHaveIOFilters(spec vimtypes.BaseVirtualMachineProfileSpec) bool {
 	if profile, ok := spec.(*vimtypes.VirtualMachineDefinedProfileSpec); ok {
-		if data := profile.ProfileData; data != nil {
-			if data.ExtensionKey == "com.vmware.vim.sips" {
-				return strings.Contains(
-					whiteSpaceRegex.ReplaceAllString(data.ObjectData, ""),
-					"<namespace>IOFILTERS</namespace>")
-			}
-		}
+		return kubeutil.IsEncryptedStorageProfile(
+			ctx,
+			args.k8sClient,
+			profile.ProfileId)
 	}
-	return false
+	return false, nil
 }
 
 func isEncryptedDeviceNonDisk(spec ptrDevCfgSpec) bool {

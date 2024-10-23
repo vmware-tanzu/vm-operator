@@ -218,14 +218,43 @@ func IsEncryptedStorageClass(
 	k8sClient ctrlclient.Client,
 	storageClassName string) (bool, error) {
 
-	var storageClass storagev1.StorageClass
+	var obj storagev1.StorageClass
 	if err := k8sClient.Get(
 		ctx,
 		ctrlclient.ObjectKey{Name: storageClassName},
-		&storageClass); err != nil {
+		&obj); err != nil {
 
 		return false, ctrlclient.IgnoreNotFound(err)
 	}
+
+	return isEncryptedStorageClass(ctx, k8sClient, obj)
+}
+
+// IsEncryptedStorageProfile returns true if the provided storage profile ID was
+// marked as encrypted.
+func IsEncryptedStorageProfile(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	profileID string) (bool, error) {
+
+	var obj storagev1.StorageClassList
+	if err := k8sClient.List(ctx, &obj); err != nil {
+		return false, err
+	}
+
+	for i := range obj.Items {
+		if pid, _ := GetStoragePolicyID(obj.Items[i]); pid == profileID {
+			return isEncryptedStorageClass(ctx, k8sClient, obj.Items[i])
+		}
+	}
+
+	return false, nil
+}
+
+func isEncryptedStorageClass(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	storageClass storagev1.StorageClass) (bool, error) {
 
 	var (
 		obj    corev1.ConfigMap

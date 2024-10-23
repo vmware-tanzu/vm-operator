@@ -1,6 +1,6 @@
+---
 # The following manifests contain a self-signed issuer CR and a certificate CR.
 # More document can be found at https://docs.cert-manager.io
-# WARNING: Targets CertManager 0.11 check https://docs.cert-manager.io/en/latest/tasks/upgrading/index.html for breaking changes
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -15,11 +15,13 @@ metadata:
   name: serving-cert
   namespace: system
 spec:
-  # WEBHOOK_SERVICE_NAME_PLACEHOLDER and WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER will be substituted by kustomize
   dnsNames:
-  - WEBHOOK_SERVICE_NAME_PLACEHOLDER.WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER.svc
-  - WEBHOOK_SERVICE_NAME_PLACEHOLDER.WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER.svc.cluster.local
+  - ADMISSION_WEBHOOK_SERVICE_NAME_PLACEHOLDER.ADMISSION_WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER.svc
+  - ADMISSION_WEBHOOK_SERVICE_NAME_PLACEHOLDER.ADMISSION_WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER.svc.cluster.local
+  - CONVERSION_WEBHOOK_SERVICE_NAME_PLACEHOLDER.CONVERSION_WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER.svc
+  - CONVERSION_WEBHOOK_SERVICE_NAME_PLACEHOLDER.CONVERSION_WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER.svc.cluster.local
   issuerRef:
     kind: Issuer
     name: selfsigned-issuer
-  secretName: webhook-server-cert # this secret will not be prefixed, since it's not managed by kustomize
+  # This secret will not be prefixed, since it not managed by kustomize.
+  secretName: webhook-server-cert

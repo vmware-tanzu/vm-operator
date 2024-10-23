@@ -85,11 +85,12 @@ GOVULNCHECK        := $(TOOLS_BIN_DIR)/govulncheck
 KIND               := $(TOOLS_BIN_DIR)/kind
 
 # Allow overriding manifest generation destination directory
-MANIFEST_ROOT     ?= config
-CRD_ROOT          ?= $(MANIFEST_ROOT)/crd/bases
-EXTERNAL_CRD_ROOT ?= $(MANIFEST_ROOT)/crd/external-crds
-WEBHOOK_ROOT      ?= $(MANIFEST_ROOT)/webhook
-RBAC_ROOT         ?= $(MANIFEST_ROOT)/rbac
+MANIFEST_ROOT          ?= config
+CRD_ROOT               ?= $(MANIFEST_ROOT)/crd/bases
+EXTERNAL_CRD_ROOT      ?= $(MANIFEST_ROOT)/crd/external-crds
+WEBHOOK_ROOT           ?= $(MANIFEST_ROOT)/webhooks
+ADMISSION_WEBHOOK_ROOT ?= $(WEBHOOK_ROOT)/admission
+RBAC_ROOT              ?= $(MANIFEST_ROOT)/rbac
 
 # Image URL to use all building/pushing image targets
 IMAGE ?= vmoperator-controller
@@ -332,7 +333,7 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 		output:none
 	$(CONTROLLER_GEN) \
 		paths=./webhooks/... \
-		output:webhook:dir=$(WEBHOOK_ROOT) \
+		output:webhook:dir=$(ADMISSION_WEBHOOK_ROOT) \
 		webhook
 	$(CONTROLLER_GEN) \
 		paths=./controllers/... \

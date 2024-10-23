@@ -41,6 +41,9 @@ spec:
           requests:
             cpu: 100m
             memory: 75Mi
+        env:
+        - name: VMOP_CONTAINER_TYPE
+          value: controller-manager
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
       terminationGracePeriodSeconds: 10

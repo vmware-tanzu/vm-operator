@@ -1,0 +1,65 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: conversion-webhook
+  namespace: system
+  labels:
+    webhook: conversion
+    controller-tools.k8s.io: "1.0"
+spec:
+  selector:
+    matchLabels:
+      webhook: conversion
+      controller-tools.k8s.io: "1.0"
+  template:
+    metadata:
+      labels:
+        webhook: conversion
+        controller-tools.k8s.io: "1.0"
+        name: vmoperator-conversion-webhook
+    spec:
+      containers:
+      - name: manager
+        command:
+        - /manager
+        image: controller:latest
+        imagePullPolicy: Never
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 75Mi
+        env:
+        - name: VMOP_CONTAINER_TYPE
+          value: conversion-webhook
+        - name: WEBHOOK_SERVICE_NAMESPACE
+          value: WEBHOOK_SERVICE_NAMESPACE_PLACEHOLDER
+        - name: WEBHOOK_SERVICE_NAME
+          value: WEBHOOK_SERVICE_NAME_PLACEHOLDER
+        - name: WEBHOOK_SECRET_NAMESPACE
+          value: WEBHOOK_SECRET_NAMESPACE_PLACEHOLDER
+        - name: WEBHOOK_SECRET_NAME
+          value: WEBHOOK_SECRET_NAME_PLACEHOLDER
+        - name: WEBHOOK_SECRET_VOLUME_MOUNT_PATH
+          value: WEBHOOK_SECRET_VOLUME_MOUNT_PATH_VALUE
+        - name: WEBHOOK_SERVICE_CONTAINER_PORT
+          value: WEBHOOK_SERVICE_CONTAINER_PORT_STRING
+        ports:
+        - name: https
+          containerPort: 9879
+          protocol: TCP
+        volumeMounts:
+        - name: cert
+          mountPath: /tmp/k8s-webhook-server/serving-certs
+          readOnly: true
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      terminationGracePeriodSeconds: 10  
+      volumes:
+      - name: cert
+        secret:
+          defaultMode: 420
+          secretName: WEBHOOK_SECRET_NAME_PLACEHOLDER

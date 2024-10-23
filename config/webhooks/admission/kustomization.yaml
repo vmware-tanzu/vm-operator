@@ -1,0 +1,79 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configurations:
+- kustomizeconfig.yaml
+
+resources:
+- deployment.yaml
+- service.yaml
+- manifests.yaml
+- storage_quota_webhook_configuration.yaml
+
+patches:
+- path: manifests_label_patch.yaml
+- path: webhookcainjection_patch.yaml
+
+replacements:
+- source:
+    fieldPath: spec.template.spec.containers.[name=manager].ports.[name=https].containerPort
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: system
+    name: admission-webhook
+  targets:
+  - select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: admission-webhook
+    fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SERVICE_CONTAINER_PORT].value
+- source:
+    fieldPath: spec.template.spec.containers.[name=manager].volumeMounts.[name=cert].mountPath
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: system
+    name: admission-webhook
+  targets:
+  - select:
+      group: apps
+      version: v1
+      kind: Deployment
+      namespace: system
+      name: admission-webhook
+    fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SECRET_VOLUME_MOUNT_PATH].value
+
+# Update the name of the service in the Mutating and Validating webhook configs.
+- source:
+    fieldPath: metadata.name
+    version: v1
+    kind: Service
+    namespace: system
+    name: admission-webhook-service
+  targets:
+  - select:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: MutatingWebhookConfiguration
+      name: mutating-webhook-configuration
+    fieldPaths:
+    - webhooks.*.clientConfig.service.name
+- source:
+    fieldPath: metadata.name
+    version: v1
+    kind: Service
+    namespace: system
+    name: admission-webhook-service
+  targets:
+  - select:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: ValidatingWebhookConfiguration
+      name: validating-webhook-configuration
+    fieldPaths:
+    - webhooks.*.clientConfig.service.name

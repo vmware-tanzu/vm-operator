@@ -221,6 +221,19 @@ spec:
                         type: object
                     type: object
                 type: object
+              reservedProfileID:
+                description: |-
+                  ReservedProfileID describes the reservation profile associated with
+                  the namespace-scoped VirtualMachineClass object.
+                type: string
+              reservedSlots:
+                description: |-
+                  ReservedSlots describes the number of slots reserved for VMs that use
+                  this VirtualMachineClass.
+                  This field is only valid in conjunction with reservedProfileID.
+                format: int32
+                minimum: 0
+                type: integer
             type: object
           status:
             description: |-
@@ -438,6 +451,19 @@ spec:
                         type: object
                     type: object
                 type: object
+              reservedProfileID:
+                description: |-
+                  ReservedProfileID describes the reservation profile associated with
+                  the namespace-scoped VirtualMachineClass object.
+                type: string
+              reservedSlots:
+                description: |-
+                  ReservedSlots describes the number of slots reserved for VMs that use
+                  this VirtualMachineClass.
+                  This field is only valid in conjunction with reservedProfileID.
+                format: int32
+                minimum: 0
+                type: integer
             type: object
           status:
             description: VirtualMachineClassStatus defines the observed state of VirtualMachineClass.

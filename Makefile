@@ -398,6 +398,7 @@ endif
 generate-go-conversions:
 	cd api && \
 	$(abspath $(CONVERSION_GEN)) \
+		-v 10 \
 		--output-file=zz_generated.conversion.go \
 		--go-header-file=$(abspath hack/boilerplate/boilerplate.generatego.txt) \
 		--extra-peer-dirs='./v1alpha2/sysprep/conversion/v1alpha2,./v1alpha2/sysprep/conversion/v1alpha3' \

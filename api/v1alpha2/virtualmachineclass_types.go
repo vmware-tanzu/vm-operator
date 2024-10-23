@@ -151,6 +151,20 @@ type VirtualMachineClassSpec struct {
 	// +kubebuilder:validation:Type=object
 	// +kubebuilder:pruning:PreserveUnknownFields
 	ConfigSpec json.RawMessage `json:"configSpec,omitempty"`
+
+	// +optional
+
+	// ReservedProfileID describes the reservation profile associated with
+	// the namespace-scoped VirtualMachineClass object.
+	ReservedProfileID string `json:"reservedProfileID,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+
+	// ReservedSlots describes the number of slots reserved for VMs that use
+	// this VirtualMachineClass.
+	// This field is only valid in conjunction with reservedProfileID.
+	ReservedSlots int32 `json:"reservedSlots,omitempty"`
 }
 
 // VirtualMachineClassStatus defines the observed state of VirtualMachineClass.

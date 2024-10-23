@@ -5,7 +5,6 @@ package v1alpha1_test
 
 import (
 	"math"
-	"strconv"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -107,21 +106,16 @@ func TestVirtualMachineClassConversion(t *testing.T) {
 	})
 
 	t.Run("VirtualMachineClass spoke-hub", func(t *testing.T) {
-		t.Run("class w reserved slots gt math.MaxInt32", func(t *testing.T) {
+		t.Run("class w reserved slots math.MaxInt32", func(t *testing.T) {
 			spoke := vmopv1a1.VirtualMachineClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						"vmoperator.vmware.com/reserved-slots": strconv.Itoa(math.MaxInt32 + 2),
-					},
+				Spec: vmopv1a1.VirtualMachineClassSpec{
+					ReservedSlots: math.MaxInt32,
 				},
 			}
 
 			expectedHub := vmopv1.VirtualMachineClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{},
-				},
 				Spec: vmopv1.VirtualMachineClassSpec{
-					ReservedSlots: 0,
+					ReservedSlots: math.MaxInt32,
 				},
 			}
 
@@ -131,21 +125,16 @@ func TestVirtualMachineClassConversion(t *testing.T) {
 			g.Expect(apiequality.Semantic.DeepEqual(hub, expectedHub)).To(BeTrue(), cmp.Diff(hub, expectedHub))
 		})
 
-		t.Run("class w reserved slots lt -math.MaxInt32", func(t *testing.T) {
+		t.Run("class w reserved slots -math.MaxInt32", func(t *testing.T) {
 			spoke := vmopv1a1.VirtualMachineClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						"vmoperator.vmware.com/reserved-slots": strconv.Itoa(-math.MaxInt32 - 2),
-					},
+				Spec: vmopv1a1.VirtualMachineClassSpec{
+					ReservedSlots: -math.MaxInt32,
 				},
 			}
 
 			expectedHub := vmopv1.VirtualMachineClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{},
-				},
 				Spec: vmopv1.VirtualMachineClassSpec{
-					ReservedSlots: 0,
+					ReservedSlots: -math.MaxInt32,
 				},
 			}
 

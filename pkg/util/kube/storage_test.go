@@ -367,6 +367,101 @@ var _ = Describe("IsEncryptedStorageClass", func() {
 	})
 })
 
+var _ = Describe("IsEncryptedStorageProfile", func() {
+	var (
+		ok           bool
+		ctx          context.Context
+		err          error
+		client       ctrlclient.Client
+		funcs        interceptor.Funcs
+		withObjs     []ctrlclient.Object
+		storageClass storagev1.StorageClass
+		profile      string
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			PodNamespace: fakeString,
+		})
+		funcs = interceptor.Funcs{}
+		storageClass = storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fakeString,
+				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: "fake",
+			},
+		}
+		withObjs = []ctrlclient.Object{&storageClass}
+		profile = "fake"
+	})
+
+	JustBeforeEach(func() {
+		client = fake.NewClientBuilder().
+			WithObjects(withObjs...).
+			WithInterceptorFuncs(funcs).
+			Build()
+
+		Expect(kubeutil.MarkEncryptedStorageClass(
+			ctx,
+			client,
+			storageClass,
+			true)).To(Succeed())
+
+		ok, err = kubeutil.IsEncryptedStorageProfile(
+			ctx, client, profile)
+	})
+
+	When("getting the StorageClass returns an error", func() {
+		BeforeEach(func() {
+			funcs.List = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				list ctrlclient.ObjectList,
+				opts ...ctrlclient.ListOption) error {
+
+				if _, ok := list.(*storagev1.StorageClassList); ok {
+					return apierrors.NewInternalError(errors.New(fakeString))
+				}
+
+				return client.List(ctx, list, opts...)
+			}
+		})
+		It("should return the error", func() {
+			Expect(err).To(MatchError(apierrors.NewInternalError(errors.New(fakeString)).Error()))
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	When("there are no StorageClasses", func() {
+		BeforeEach(func() {
+			withObjs = nil
+		})
+		It("should return false", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	When("there is a StorageClass but does not match the profile ID", func() {
+		BeforeEach(func() {
+			profile = "fake1"
+		})
+		It("should return false", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	When("there is a StorageClass that matches the profile ID", func() {
+		It("should return true", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeTrue())
+		})
+	})
+})
+
 var _ = Describe("EncryptedStorageClass", func() {
 	var (
 		ctx          context.Context

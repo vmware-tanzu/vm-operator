@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/crypto"
+	"github.com/vmware/govmomi/pbm/simulator"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -172,6 +173,9 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "my-storage-class-2",
 				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				"storagePolicyID": simulator.DefaultEncryptionProfileID,
 			},
 		}
 
@@ -735,6 +739,11 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 										},
 										Device:    &vimtypes.VirtualDisk{},
 										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+											&vimtypes.VirtualMachineDefinedProfileSpec{
+												ProfileId: "fake",
+											},
+										},
 									},
 								}
 							})
@@ -759,10 +768,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 											&vimtypes.VirtualMachineDefinedProfileSpec{
-												ProfileData: &vimtypes.VirtualMachineProfileRawData{
-													ExtensionKey: "com.vmware.vim.sips",
-													ObjectData:   profileWithIOFilters,
-												},
+												ProfileId: simulator.DefaultEncryptionProfileID,
 											},
 										},
 									},
@@ -833,10 +839,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 											Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 												&vimtypes.VirtualMachineDefinedProfileSpec{
-													ProfileData: &vimtypes.VirtualMachineProfileRawData{
-														ExtensionKey: "com.vmware.vim.sips",
-														ObjectData:   profileWithIOFilters,
-													},
+													ProfileId: simulator.DefaultEncryptionProfileID,
 												},
 											},
 										},
@@ -907,10 +910,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 											Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 												&vimtypes.VirtualMachineDefinedProfileSpec{
-													ProfileData: &vimtypes.VirtualMachineProfileRawData{
-														ExtensionKey: "com.vmware.vim.sips",
-														ObjectData:   profileWithIOFilters,
-													},
+													ProfileId: simulator.DefaultEncryptionProfileID,
 												},
 											},
 										},
@@ -937,10 +937,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 											Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 												&vimtypes.VirtualMachineDefinedProfileSpec{
-													ProfileData: &vimtypes.VirtualMachineProfileRawData{
-														ExtensionKey: "com.vmware.vim.sips",
-														ObjectData:   profileWithIOFilters,
-													},
+													ProfileId: simulator.DefaultEncryptionProfileID,
 												},
 											},
 										},
@@ -968,10 +965,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 											Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 											Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 												&vimtypes.VirtualMachineDefinedProfileSpec{
-													ProfileData: &vimtypes.VirtualMachineProfileRawData{
-														ExtensionKey: "com.vmware.vim.sips",
-														ObjectData:   profileWithIOFilters,
-													},
+													ProfileId: simulator.DefaultEncryptionProfileID,
 												},
 											},
 										},
@@ -1144,25 +1138,3 @@ func getSnapshotInfoWithLinearChain() *vimtypes.VirtualMachineSnapshotInfo {
 		},
 	}
 }
-
-const profileWithIOFilters = `<?xml version="1.0" encoding="UTF-8"?>
-<storageProfile xsi:type="StorageProfile">
-    <constraints>
-        <subProfiles>
-            <capability>
-                <capabilityId>
-                    <id>vmwarevmcrypt@encryption</id>
-                    <namespace>IOFILTERS</namespace>
-                    <constraint></constraint>
-                </capabilityId>
-            </capability>
-            <name>Rule-Set 1: IOFILTERS</name>
-        </subProfiles>
-    </constraints>
-    <createdBy>None</createdBy>
-    <creationTime>1970-01-01T00:00:00Z</creationTime>
-    <lastUpdatedTime>1970-01-01T00:00:00Z</lastUpdatedTime>
-    <generationId>1</generationId>
-    <name>None</name>
-    <profileId>Phony Profile ID</profileId>
-</storageProfile>`

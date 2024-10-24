@@ -20,6 +20,7 @@ import (
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
@@ -35,15 +36,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
-
-type testFailClient struct {
-	client.Client
-}
-
-// This is used for returning an error while unit testing.
-func (f *testFailClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	return apierrors.NewForbidden(schema.GroupResource{}, "", errors.New("insufficient quota for creating PVC"))
-}
 
 func unitTests() {
 	Describe(
@@ -65,6 +57,7 @@ func unitTestsReconcile() {
 
 	var (
 		initObjects         []client.Object
+		withFuncs           interceptor.Funcs
 		ctx                 *builder.UnitTestContextForController
 		instanceStorageTest bool
 
@@ -136,6 +129,7 @@ func unitTestsReconcile() {
 		ctx.Client = fake.NewClientBuilder().
 			WithScheme(ctx.Client.Scheme()).
 			WithObjects(initObjects...).
+			WithInterceptorFuncs(withFuncs).
 			WithStatusSubresource(builder.KnownObjectTypes()...).
 			WithIndex(
 				&cnsv1alpha1.CnsNodeVmAttachment{},
@@ -175,6 +169,7 @@ func unitTestsReconcile() {
 		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
+		withFuncs = interceptor.Funcs{}
 		volCtx = nil
 		reconciler = nil
 		instanceStorageTest = false
@@ -262,13 +257,21 @@ func unitTestsReconcile() {
 				})
 			})
 
-			It("Storage policy quota is insufficient - PVCs should not create", func() {
-				tfc := testFailClient{reconciler.Client}
-				reconciler.Client = &tfc
-				err := reconciler.ReconcileNormal(volCtx)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("insufficient quota"))
-				expectPVCsStatus(volCtx, ctx, true, false, 0)
+			When("Storage policy quota is insufficient - PVCs should not create", func() {
+				BeforeEach(func() {
+					withFuncs = interceptor.Funcs{
+						Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							return apierrors.NewForbidden(schema.GroupResource{}, "", errors.New("insufficient quota for creating PVC"))
+						},
+					}
+				})
+
+				It("returns error", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("insufficient quota"))
+					expectPVCsStatus(volCtx, ctx, true, false, 0)
+				})
 			})
 
 			When("VM has nil spec.crypto", func() {

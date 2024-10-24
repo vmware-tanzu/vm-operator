@@ -73,6 +73,8 @@ linters-settings:
         pkg: github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1
       - alias: capv1
         pkg: github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1
+      - alias: appv1a1
+        pkg: github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1
 
       - alias: pkgcfg
         pkg: github.com/vmware-tanzu/vm-operator/pkg/config

@@ -91,3 +91,20 @@ func IsValidDomainName(s string) bool {
 	// character, the domain name only has 253 characters of available space.
 	return len(s) <= 253 && fqdnNameRx.MatchString(s)
 }
+
+func Dedupe(slice []string) []string {
+	// Create a map to track unique elements
+	seen := make(map[string]bool)
+	result := []string{}
+
+	// Iterate over the slice
+	for _, str := range slice {
+		// Check if the element has been seen before
+		if !seen[str] {
+			seen[str] = true
+			result = append(result, str)
+		}
+	}
+
+	return result
+}

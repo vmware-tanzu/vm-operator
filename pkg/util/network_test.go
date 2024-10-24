@@ -65,3 +65,14 @@ var _ = DescribeTable("IsValidDomainName",
 	Entry("three segments", "a.b.com", true),
 	Entry("exceeds 253 chars", strings.Repeat("a", 254), false),
 )
+
+var _ = DescribeTable("Dedupe",
+	func(s []string, expected []string) {
+		Ω(util.Dedupe(s)).Should(Equal(expected))
+	},
+	Entry("empty string list", []string{}, []string{}),
+	Entry("unique one string list", []string{"1.1.2.2"}, []string{"1.1.2.2"}),
+	Entry("unique two string list", []string{"1.1.2.2", "1.2.3.4"}, []string{"1.1.2.2", "1.2.3.4"}),
+	Entry("duplicate two string list", []string{"1.1.2.2", "1.1.2.2", "1.2.3.4", "1.2.3.4"}, []string{"1.1.2.2", "1.2.3.4"}),
+	Entry("duplicate three string list", []string{"1.1.2.2", "1.2.3.4", "1.1.2.2", "1.2.3.4", "1.1.2.2", "1.2.3.4"}, []string{"1.1.2.2", "1.2.3.4"}),
+)

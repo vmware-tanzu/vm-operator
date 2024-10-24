@@ -48,5 +48,8 @@ webhooks:
     - virtualmachines
   sideEffects: None
   matchConditions:
-  - expression: oldObject.spec.advanced.bootDiskCapacity != object.spec.advanced.bootDiskCapacity
+  - expression: has(object.spec.advanced) && has(object.spec.advanced.bootDiskCapacity)
+      && ((!has(oldObject.spec.advanced) || !has(oldObject.spec.advanced.bootDiskCapacity))
+      || (has(oldObject.spec.advanced) && has(oldObject.spec.advanced.bootDiskCapacity)
+      && object.spec.advanced.bootDiskCapacity != oldObject.spec.advanced.bootDiskCapacity))
     name: boot-disk-change

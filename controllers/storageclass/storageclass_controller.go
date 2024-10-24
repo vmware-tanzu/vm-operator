@@ -100,7 +100,9 @@ func (r *Reconciler) ReconcileNormal(
 
 	policyID, err := kubeutil.GetStoragePolicyID(*obj)
 	if err != nil {
-		return err
+		logr.FromContextOrDiscard(ctx).Error(err, "failed to get storage policy ID")
+		// Don't return an error: an update to the StorageClass will cause a reconcile.
+		return nil
 	}
 
 	ok, err := r.vmProvider.DoesProfileSupportEncryption(ctx, policyID)

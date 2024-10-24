@@ -84,6 +84,22 @@ const (
 	VirtualMachineStorageDiskTypeManaged VirtualMachineVolumeType = "Managed"
 )
 
+type VirtualMachineVolumeCryptoStatus struct {
+	// +optional
+
+	// ProviderID describes the provider ID used to encrypt the volume.
+	// Please note, this field will be empty if the volume is not
+	// encrypted.
+	ProviderID string `json:"providerID,omitempty"`
+
+	// +optional
+
+	// KeyID describes the key ID used to encrypt the volume.
+	// Please note, this field will be empty if the volume is not
+	// encrypted.
+	KeyID string `json:"keyID,omitempty"`
+}
+
 // VirtualMachineVolumeStatus defines the observed state of a
 // VirtualMachineVolume instance.
 type VirtualMachineVolumeStatus struct {
@@ -94,6 +110,11 @@ type VirtualMachineVolumeStatus struct {
 
 	// Type is the type of the attached volume.
 	Type VirtualMachineVolumeType `json:"type"`
+
+	// +optional
+
+	// Crypto describes the volume's encryption status.
+	Crypto *VirtualMachineVolumeCryptoStatus `json:"crypto,omitempty"`
 
 	// +optional
 

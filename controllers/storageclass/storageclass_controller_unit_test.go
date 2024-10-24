@@ -112,7 +112,11 @@ func unitTestsReconcile() {
 		When("no storage policy ID", func() {
 			It("should return an error", func() {
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(`StorageClass "my-storage-class" does not have 'storagePolicyID' parameter`))
+				Expect(err).To(MatchError(
+					kubeutil.ErrMissingParameter{
+						StorageClassName: "my-storage-class",
+						ParameterName:    "storagePolicyID",
+					}))
 			})
 		})
 		When("not encrypted", func() {
@@ -123,7 +127,7 @@ func unitTestsReconcile() {
 			})
 			It("marks item as encrypted and returns success", func() {
 				Expect(err).ToNot(HaveOccurred())
-				ok, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
+				ok, _, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ok).To(BeFalse())
 			})
@@ -136,7 +140,7 @@ func unitTestsReconcile() {
 			})
 			It("marks item as encrypted and returns success", func() {
 				Expect(err).ToNot(HaveOccurred())
-				ok, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
+				ok, _, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ok).To(BeTrue())
 			})

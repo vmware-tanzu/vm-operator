@@ -119,17 +119,50 @@ func GetPVCZoneConstraints(
 	return zones, nil
 }
 
+// ErrMissingParameter is returned from GetStoragePolicyID if the StorageClass
+// does not have the storage policy ID parameter.
+type ErrMissingParameter struct {
+	StorageClassName string
+	ParameterName    string
+}
+
+func (e ErrMissingParameter) String() string {
+	return fmt.Sprintf(
+		"StorageClass %q does not have %q parameter",
+		e.StorageClassName, e.ParameterName)
+}
+
+func (e ErrMissingParameter) Error() string {
+	return e.String()
+}
+
 // GetStoragePolicyID returns the storage policy ID for a given StorageClass.
 // If no ID is found, an error is returned.
 func GetStoragePolicyID(obj storagev1.StorageClass) (string, error) {
 	policyID, ok := obj.Parameters[internal.StoragePolicyIDParameter]
 	if !ok {
-		return "", fmt.Errorf(
-			"StorageClass %q does not have '"+
-				internal.StoragePolicyIDParameter+"' parameter",
-			obj.Name)
+		return "", ErrMissingParameter{
+			StorageClassName: obj.Name,
+			ParameterName:    internal.StoragePolicyIDParameter,
+		}
 	}
 	return policyID, nil
+}
+
+// SetStoragePolicyID sets the storage policy ID on the given StorageClass.
+// An empty id removes the parameter from the StorageClass.
+func SetStoragePolicyID(obj *storagev1.StorageClass, id string) {
+	if obj == nil {
+		panic("storageClass is nil")
+	}
+	if id == "" {
+		delete(obj.Parameters, internal.StoragePolicyIDParameter)
+		return
+	}
+	if obj.Parameters == nil {
+		obj.Parameters = map[string]string{}
+	}
+	obj.Parameters[internal.StoragePolicyIDParameter] = id
 }
 
 // MarkEncryptedStorageClass records the provided StorageClass as encrypted.
@@ -211,20 +244,21 @@ func MarkEncryptedStorageClass(
 	return k8sClient.Patch(ctx, &obj, objPatch)
 }
 
-// IsEncryptedStorageClass returns true if the provided StorageClass was marked
-// as encrypted.
+// IsEncryptedStorageClass returns true if the provided StorageClass name was
+// marked as encrypted. If encryption is supported, the StorageClass's profile
+// ID is also returned.
 func IsEncryptedStorageClass(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
-	storageClassName string) (bool, error) {
+	name string) (bool, string, error) {
 
 	var obj storagev1.StorageClass
 	if err := k8sClient.Get(
 		ctx,
-		ctrlclient.ObjectKey{Name: storageClassName},
+		ctrlclient.ObjectKey{Name: name},
 		&obj); err != nil {
 
-		return false, ctrlclient.IgnoreNotFound(err)
+		return false, "", ctrlclient.IgnoreNotFound(err)
 	}
 
 	return isEncryptedStorageClass(ctx, k8sClient, obj)
@@ -244,7 +278,11 @@ func IsEncryptedStorageProfile(
 
 	for i := range obj.Items {
 		if pid, _ := GetStoragePolicyID(obj.Items[i]); pid == profileID {
-			return isEncryptedStorageClass(ctx, k8sClient, obj.Items[i])
+			ok, _, err := isEncryptedStorageClass(
+				ctx,
+				k8sClient,
+				obj.Items[i])
+			return ok, err
 		}
 	}
 
@@ -254,7 +292,7 @@ func IsEncryptedStorageProfile(
 func isEncryptedStorageClass(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
-	storageClass storagev1.StorageClass) (bool, error) {
+	storageClass storagev1.StorageClass) (bool, string, error) {
 
 	var (
 		obj    corev1.ConfigMap
@@ -266,8 +304,13 @@ func isEncryptedStorageClass(
 	)
 
 	if err := k8sClient.Get(ctx, objKey, &obj); err != nil {
-		return false, ctrlclient.IgnoreNotFound(err)
+		return false, "", ctrlclient.IgnoreNotFound(err)
 	}
 
-	return slices.Contains(obj.OwnerReferences, ownerRef), nil
+	if slices.Contains(obj.OwnerReferences, ownerRef) {
+		profileID, err := GetStoragePolicyID(storageClass)
+		return true, profileID, err
+	}
+
+	return false, "", nil
 }

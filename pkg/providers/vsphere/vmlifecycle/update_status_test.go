@@ -547,6 +547,12 @@ var _ = Describe("UpdateStatus", func() {
 												FileName: "[datastore] vm/my-disk-100.vmdk",
 											},
 											Uuid: "100",
+											KeyId: &vimtypes.CryptoKeyId{
+												KeyId: "my-key-id",
+												ProviderId: &vimtypes.KeyProviderId{
+													Id: "my-provider-id",
+												},
+											},
 										},
 										Key: 100,
 									},
@@ -610,6 +616,12 @@ var _ = Describe("UpdateStatus", func() {
 												FileName: "[datastore] vm/my-disk-105.vmdk",
 											},
 											Uuid: "105",
+											KeyId: &vimtypes.CryptoKeyId{
+												KeyId: "my-key-id",
+												ProviderId: &vimtypes.KeyProviderId{
+													Id: "my-provider-id",
+												},
+											},
 										},
 										Key: 105,
 									},
@@ -788,6 +800,10 @@ var _ = Describe("UpdateStatus", func() {
 								Name:     "my-disk-100",
 								DiskUUID: "100",
 								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+									KeyID:      "my-key-id",
+									ProviderID: "my-provider-id",
+								},
 								Attached: true,
 								Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
@@ -846,6 +862,10 @@ var _ = Describe("UpdateStatus", func() {
 								Name:     "my-disk-100",
 								DiskUUID: "100",
 								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+									KeyID:      "my-key-id",
+									ProviderID: "my-provider-id",
+								},
 								Attached: true,
 								Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
@@ -886,6 +906,10 @@ var _ = Describe("UpdateStatus", func() {
 								Name:     "my-disk-105",
 								DiskUUID: "105",
 								Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+									KeyID:      "my-key-id",
+									ProviderID: "my-provider-id",
+								},
 								Attached: false,
 								Limit:    vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
 								Used:     vmlifecycle.BytesToResourceGiB(500 + (50 * oneGiBInBytes)),
@@ -912,6 +936,10 @@ var _ = Describe("UpdateStatus", func() {
 								Name:     "my-disk-100",
 								DiskUUID: "100",
 								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+									ProviderID: "my-provider-id",
+									KeyID:      "my-key-id",
+								},
 								Attached: true,
 								Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),

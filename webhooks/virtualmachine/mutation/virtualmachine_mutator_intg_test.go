@@ -597,8 +597,9 @@ func intgTestsMutating() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: storClassName,
 				},
-				Provisioner: "fake",
+				Provisioner: fakeString,
 			}
+			kubeutil.SetStoragePolicyID(&storClass, fakeString)
 
 			ctx.vm.Spec.StorageClass = storClass.Name
 

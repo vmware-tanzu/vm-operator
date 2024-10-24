@@ -110,13 +110,9 @@ func unitTestsReconcile() {
 
 	When("Normal", func() {
 		When("no storage policy ID", func() {
-			It("should return an error", func() {
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(
-					kubeutil.ErrMissingParameter{
-						StorageClassName: "my-storage-class",
-						ParameterName:    "storagePolicyID",
-					}))
+			It("should not return an error", func() {
+				// StorageClass update will cause a reconcile so don't need to return an error.
+				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 		When("not encrypted", func() {

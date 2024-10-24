@@ -827,21 +827,32 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 			// existing status with the usage information.
 			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
 			vm.Status.Volumes[diskIndex].Used = BytesToResourceGiB(di.UniqueSize)
+			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
+				vm.Status.Volumes[diskIndex].Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
+					ProviderID: di.CryptoKey.ProviderID,
+					KeyID:      di.CryptoKey.KeyID,
+				}
+			}
 		} else if !isFCD {
 			// The disk is a classic, non-FCD that must be added to the list of
 			// volume statuses.
 			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
 			dp := diskPath.Path
-			vm.Status.Volumes = append(
-				vm.Status.Volumes,
-				vmopv1.VirtualMachineVolumeStatus{
-					Name:     strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
-					Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-					Attached: true,
-					DiskUUID: diskUUID,
-					Limit:    BytesToResourceGiB(di.CapacityInBytes),
-					Used:     BytesToResourceGiB(di.UniqueSize),
-				})
+			volStatus := vmopv1.VirtualMachineVolumeStatus{
+				Name:     strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
+				Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+				Attached: true,
+				DiskUUID: diskUUID,
+				Limit:    BytesToResourceGiB(di.CapacityInBytes),
+				Used:     BytesToResourceGiB(di.UniqueSize),
+			}
+			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
+				volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
+					ProviderID: di.CryptoKey.ProviderID,
+					KeyID:      di.CryptoKey.KeyID,
+				}
+			}
+			vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
 		}
 	}
 

@@ -274,7 +274,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 			When("spec.crypto.encryptionClassName is non-empty", func() {
 				When("the EncryptionClass does not exit", func() {
 					BeforeEach(func() {
-						vm.Spec.Crypto.EncryptionClassName += "-fake"
+						vm.Spec.Crypto.EncryptionClassName += fakeString
 					})
 					It("should return an error", func() {
 						Expect(err).To(HaveOccurred())
@@ -296,25 +296,25 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							opts ...ctrlclient.GetOption) error {
 
 							if _, ok := obj.(*byokv1.EncryptionClass); ok {
-								return errors.New("fake")
+								return errors.New(fakeString)
 							}
 							return client.Get(ctx, key, obj, opts...)
 						}
 					})
 					It("should return an error", func() {
 						Expect(err).To(HaveOccurred())
-						Expect(err).To(MatchError("fake"))
+						Expect(err).To(MatchError(fakeString))
 						c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
 						Expect(c).ToNot(BeNil())
 						Expect(c.Status).To(Equal(metav1.ConditionFalse))
 						Expect(c.Reason).To(Equal(pkgcrypto.ReasonInternalError.String()))
-						Expect(c.Message).To(Equal("fake"))
+						Expect(c.Message).To(Equal(fakeString))
 					})
 				})
 
 				When("the EncryptionClass specifies an invalid provider", func() {
 					BeforeEach(func() {
-						encClass.Spec.KeyProvider = "fake"
+						encClass.Spec.KeyProvider = fakeString
 					})
 					It("should return an error", func() {
 						Expect(err).To(HaveOccurred())
@@ -652,6 +652,104 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							Expect(c.Status).To(Equal(metav1.ConditionFalse))
 							Expect(c.Reason).To(Equal(pkgcrypto.ReasonNoDefaultKeyProvider.String()))
 						})
+
+						When("vm is paused", func() {
+							Context("by admin", func() {
+								BeforeEach(func() {
+									moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+													KeyId: &vimtypes.CryptoKeyId{},
+												},
+											},
+										},
+									}
+									moVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   vmopv1.PauseVMExtraConfigKey,
+											Value: "true",
+										},
+									}
+								})
+								It("should update the status without returning an error", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(vm.Status.Crypto).ToNot(BeNil())
+									Expect(vm.Status.Crypto).To(Equal(&vmopv1.VirtualMachineCryptoStatus{
+										Encrypted: []vmopv1.VirtualMachineEncryptionType{
+											vmopv1.VirtualMachineEncryptionTypeConfig,
+											vmopv1.VirtualMachineEncryptionTypeDisks,
+										},
+										ProviderID: provider1ID,
+										KeyID:      provider1Key1ID,
+									}))
+								})
+							})
+
+							Context("by devops", func() {
+								BeforeEach(func() {
+									moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+													KeyId: &vimtypes.CryptoKeyId{},
+												},
+											},
+										},
+									}
+									vm.Annotations = map[string]string{
+										vmopv1.PauseAnnotation: "",
+									}
+								})
+								It("should update the status without returning an error", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(vm.Status.Crypto).ToNot(BeNil())
+									Expect(vm.Status.Crypto).To(Equal(&vmopv1.VirtualMachineCryptoStatus{
+										Encrypted: []vmopv1.VirtualMachineEncryptionType{
+											vmopv1.VirtualMachineEncryptionTypeConfig,
+											vmopv1.VirtualMachineEncryptionTypeDisks,
+										},
+										ProviderID: provider1ID,
+										KeyID:      provider1Key1ID,
+									}))
+								})
+							})
+
+							Context("by admin and devops", func() {
+								BeforeEach(func() {
+									moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+													KeyId: &vimtypes.CryptoKeyId{},
+												},
+											},
+										},
+									}
+									moVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   vmopv1.PauseVMExtraConfigKey,
+											Value: "true",
+										},
+									}
+									vm.Annotations = map[string]string{
+										vmopv1.PauseAnnotation: "",
+									}
+								})
+								It("should update the status without returning an error", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(vm.Status.Crypto).ToNot(BeNil())
+									Expect(vm.Status.Crypto).To(Equal(&vmopv1.VirtualMachineCryptoStatus{
+										Encrypted: []vmopv1.VirtualMachineEncryptionType{
+											vmopv1.VirtualMachineEncryptionTypeConfig,
+											vmopv1.VirtualMachineEncryptionTypeDisks,
+										},
+										ProviderID: provider1ID,
+										KeyID:      provider1Key1ID,
+									}))
+								})
+							})
+						})
 					})
 
 					When("the vm is not encrypted", func() {
@@ -673,7 +771,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 			When("spec.crypto.encryptionClassName is non-empty", func() {
 				When("the EncryptionClass does not exit", func() {
 					BeforeEach(func() {
-						vm.Spec.Crypto.EncryptionClassName += "-fake"
+						vm.Spec.Crypto.EncryptionClassName += fakeString
 					})
 					It("should return an error", func() {
 						Expect(err).To(HaveOccurred())
@@ -741,7 +839,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 										Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 										Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 											&vimtypes.VirtualMachineDefinedProfileSpec{
-												ProfileId: "fake",
+												ProfileId: fakeString,
 											},
 										},
 									},
@@ -1050,6 +1148,191 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 									Expect(c.Status).To(Equal(metav1.ConditionFalse))
 									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidState.String()))
 									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "not have snapshot tree")))
+								})
+							})
+
+							When("there are encrypted disks", func() {
+								BeforeEach(func() {
+									moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Key: 1,
+												Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+													KeyId: &vimtypes.CryptoKeyId{},
+												},
+											},
+										},
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Key: 2,
+												Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+													KeyId: &vimtypes.CryptoKeyId{},
+												},
+											},
+										},
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Key: 3,
+												Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+													KeyId: &vimtypes.CryptoKeyId{},
+												},
+											},
+											VDiskId: &vimtypes.ID{}, // FCD
+										},
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Key: 4,
+												Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+													KeyId: &vimtypes.CryptoKeyId{},
+												},
+											},
+										},
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Key: 5,
+												Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+													KeyId: &vimtypes.CryptoKeyId{},
+												},
+											},
+										},
+									}
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Device: &vimtypes.VirtualDisk{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 2,
+													Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+														KeyId: &vimtypes.CryptoKeyId{},
+													},
+												},
+												CapacityInBytes: 100,
+											},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+										},
+										&vimtypes.VirtualDeviceConfigSpec{
+											Device: &vimtypes.VirtualDisk{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 5,
+													Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+														KeyId: &vimtypes.CryptoKeyId{},
+													},
+												},
+											},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+										},
+									}
+								})
+								It("should recrypt the vm and the disks", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).To(BeNil())
+									cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+									Expect(ok).To(BeTrue())
+									Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(provider1Key1ID))
+									Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider1ID))
+									Expect(configSpec.DeviceChange).To(HaveLen(4))
+
+									Expect(configSpec.DeviceChange).To(ConsistOf(
+										&vimtypes.VirtualDeviceConfigSpec{
+											Device: &vimtypes.VirtualDisk{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 1,
+													Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+														KeyId: &vimtypes.CryptoKeyId{},
+													},
+												},
+											},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: configSpec.Crypto,
+											},
+										},
+										&vimtypes.VirtualDeviceConfigSpec{
+											Device: &vimtypes.VirtualDisk{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 2,
+													Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+														KeyId: &vimtypes.CryptoKeyId{},
+													},
+												},
+												CapacityInBytes: 100,
+											},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: configSpec.Crypto,
+											},
+										},
+										&vimtypes.VirtualDeviceConfigSpec{
+											Device: &vimtypes.VirtualDisk{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 4,
+													Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+														KeyId: &vimtypes.CryptoKeyId{},
+													},
+												},
+											},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: configSpec.Crypto,
+											},
+										},
+										&vimtypes.VirtualDeviceConfigSpec{
+											Device: &vimtypes.VirtualDisk{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 5,
+													Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+														KeyId: &vimtypes.CryptoKeyId{},
+													},
+												},
+											},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+										},
+									))
+								})
+							})
+
+							When("shallow recrypting devices sans policy", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: &vimtypes.CryptoSpecShallowRecrypt{},
+											},
+											Device:    &vimtypes.VirtualDisk{},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+										},
+									}
+								})
+								It("should recrypt the vm", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).To(BeNil())
+									cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+									Expect(ok).To(BeTrue())
+									Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(provider1Key1ID))
+									Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider1ID))
+								})
+							})
+
+							When("deep recrypting devices sans policy", func() {
+								BeforeEach(func() {
+									configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+										&vimtypes.VirtualDeviceConfigSpec{
+											Backing: &vimtypes.VirtualDeviceConfigSpecBackingSpec{
+												Crypto: &vimtypes.CryptoSpecDeepRecrypt{},
+											},
+											Device:    &vimtypes.VirtualDisk{},
+											Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+										},
+									}
+								})
+								It("should set EncryptionSynced=false with InvalidChanges", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).ToNot(BeNil())
+									Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									Expect(c.Reason).To(Equal(pkgcrypto.ReasonInvalidChanges.String()))
+									Expect(c.Message).To(Equal(pkgcrypto.SprintfStateNotSynced("recrypting", "specify policy when encrypting devices")))
 								})
 							})
 

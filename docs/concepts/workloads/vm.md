@@ -476,14 +476,14 @@ The field `spec.crypto` may be used in conjunction with a VM's storage class and
 
 #### Encryption type
 
-The type of encryption depends on the storage class and hardware present in the VM as the chart below illustrates:
+The type of encryption used by the VM is reported in the list `status.crypto.encrypted`. The list may contain the values `Config` and/or `Disks`, depending on the storage class and hardware present in the VM as the chart below illustrates:
 
 |                          | Config | Disks |
 |--------------------------|:------:|:-----:|
 | Encryption storage class |    ✓   |   ✓   |
 | vTPM                     |    ✓   |       |
 
-The `Config` type refers to all files related to a VM except for virtual disks. The `Disks` type refers to a VM's virtual disks except for PVCs. To ascertain the encryption status of a PVC, please refer directly to the PVC resource.
+The `Config` type refers to all files related to a VM except for virtual disks. The `Disks` type indicates at least one of a VM's virtual disks is encrypted. To determine which of the VM's disks are encrypted, please refer to `status.volumes[].crypto`. 
 
 #### Default Key Provider
 

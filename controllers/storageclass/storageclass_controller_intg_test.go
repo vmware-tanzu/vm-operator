@@ -59,7 +59,7 @@ func intgTestsReconcile() {
 		})
 		It("should eventually mark the storage class as encrypted in the context", func() {
 			Eventually(func(g Gomega) {
-				ok, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
+				ok, _, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ok).To(BeTrue())
 			})
@@ -69,7 +69,7 @@ func intgTestsReconcile() {
 	Context("reconciling a plain storage class", func() {
 		It("should never mark the storage class as encrypted in the context", func() {
 			Consistently(func(g Gomega) {
-				ok, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
+				ok, _, err := kubeutil.IsEncryptedStorageClass(ctx, ctx.Client, obj.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ok).To(BeFalse())
 			})

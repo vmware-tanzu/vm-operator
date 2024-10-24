@@ -50,14 +50,25 @@ type reconcileArgs struct {
 }
 
 var (
+	// ErrMustUseVTPMOrEncryptedStorageClass is returned by the Reconcile
+	// function if an EncryptionClass is specified without using an encrypted
+	// StorageClass or vTPM.
 	ErrMustUseVTPMOrEncryptedStorageClass = errors.New(
 		"must use encrypted StorageClass or have vTPM")
 
+	// ErrMustNotUseVTPMOrEncryptedStorageClass is returned by the Reconcile
+	// function is an encrypted StorageClass or vTPM are used without specifying
+	// an EncryptionClass or if there is no default key provider.
 	ErrMustNotUseVTPMOrEncryptedStorageClass = errors.New(
 		"vTPM and/or encrypted StorageClass require encryption")
 
+	// ErrNoDefaultKeyProvider is returned by the Reconcile function if an
+	// existing VM is encrypted, no EncryptionClass is specified, and there is
+	// no default key provider.
 	ErrNoDefaultKeyProvider = errors.New("no default key provider")
 
+	// ErrInvalidKeyProvider is returned if the key provider specified by an
+	// EncryptionClass is invalid.
 	ErrInvalidKeyProvider = errors.New("invalid key provider")
 )
 
@@ -113,8 +124,8 @@ func (r reconciler) Reconcile(
 	// ID and key ID.
 	args.curKey = getCurCryptoKey(moVM)
 
-	// Check whether or not the storage class is encrypted.
-	args.isEncStorClass, err = kubeutil.IsEncryptedStorageClass(
+	// Check whether or not the StorageClass supports encryption.
+	args.isEncStorClass, _, err = kubeutil.IsEncryptedStorageClass(
 		ctx,
 		k8sClient,
 		vm.Spec.StorageClass)
@@ -123,8 +134,8 @@ func (r reconciler) Reconcile(
 	}
 
 	if paused.ByAdmin(moVM) || paused.ByDevOps(vm) {
-		// Do not proceed further if the VM is paused.
-		return nil
+		// If the VM is paused, just update the status.
+		return updateStatus(ctx, args, false)
 	}
 
 	// Record whether the VM has, is adding, or is removing a vTPM.
@@ -242,7 +253,7 @@ func (r reconciler) reconcileUpdate(
 	//
 
 	// Update the VM's status.
-	return updateStatus(ctx, args)
+	return updateStatus(ctx, args, true)
 }
 
 func (r reconciler) reconcileUpdateEncryptionClass(
@@ -381,7 +392,10 @@ func setConditionAndReturnErr(args reconcileArgs, err error, r Reason) error {
 	return err
 }
 
-func updateStatus(ctx context.Context, args reconcileArgs) error {
+func updateStatus(
+	ctx context.Context,
+	args reconcileArgs,
+	doValidation bool) error {
 
 	if args.curKey.provider == "" {
 
@@ -406,18 +420,47 @@ func updateStatus(ctx context.Context, args reconcileArgs) error {
 	args.vm.Status.Crypto.ProviderID = args.curKey.provider
 	args.vm.Status.Crypto.KeyID = args.curKey.id
 
-	if args.isEncStorClass {
-		args.vm.Status.Crypto.Encrypted = []vmopv1.VirtualMachineEncryptionType{
-			vmopv1.VirtualMachineEncryptionTypeConfig,
+	// Because the VM has an encryption key, we know the VM's config files /
+	// home dir are/is encrypted.
+	args.vm.Status.Crypto.Encrypted = []vmopv1.VirtualMachineEncryptionType{
+		vmopv1.VirtualMachineEncryptionTypeConfig,
+	}
+
+	// Check to see if the any of the VM's disks are encrypted.
+	if args.moVM.Config != nil && areAnyDisksEncrypted(args) {
+		args.vm.Status.Crypto.Encrypted = append(
+			args.vm.Status.Crypto.Encrypted,
 			vmopv1.VirtualMachineEncryptionTypeDisks,
-		}
-	} else if args.hasVTPM && !args.remVTPM {
-		args.vm.Status.Crypto.Encrypted = []vmopv1.VirtualMachineEncryptionType{
-			vmopv1.VirtualMachineEncryptionTypeConfig,
-		}
+		)
+	}
+
+	if !doValidation {
+		return nil
 	}
 
 	return doOp(ctx, args, doUpdateEncrypted)
+}
+
+func areAnyDisksEncrypted(args reconcileArgs) bool {
+	for _, baseDev := range args.moVM.Config.Hardware.Device {
+		if disk, ok := baseDev.(*vimtypes.VirtualDisk); ok {
+			switch tBack := disk.Backing.(type) {
+			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+				if tBack.KeyId != nil {
+					return true
+				}
+			case *vimtypes.VirtualDiskSeSparseBackingInfo:
+				if tBack.KeyId != nil {
+					return true
+				}
+			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+				if tBack.KeyId != nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func doOp(
@@ -571,15 +614,105 @@ func onRecrypt(
 		},
 	}
 
+	recryptedDisks := onRecryptDisks(args)
+
 	logger.Info(
 		"Recrypt VM",
 		"currentKeyID", args.curKey.id,
 		"currentProviderID", args.curKey.provider,
 		"newKeyID", args.newKey.id,
 		"newProviderID", args.newKey.provider,
-		"newProviderIsDefault", args.newKey.isDefaultProvider)
+		"newProviderIsDefault", args.newKey.isDefaultProvider,
+		"recryptedDisks", recryptedDisks)
 
 	return 0, nil, nil
+}
+
+func onRecryptDisks(args reconcileArgs) []string {
+	var fileNames []string
+	for _, baseDev := range args.moVM.Config.Hardware.Device {
+		if disk, ok := baseDev.(*vimtypes.VirtualDisk); ok {
+			if disk.VDiskId == nil { // Skip FCDs
+
+				switch tBack := disk.Backing.(type) {
+				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+					if tBack.KeyId != nil {
+						if updateDiskBackingForRecrypt(args, disk) {
+							fileNames = append(fileNames, tBack.FileName)
+						}
+					}
+				case *vimtypes.VirtualDiskSeSparseBackingInfo:
+					if tBack.KeyId != nil {
+						if updateDiskBackingForRecrypt(args, disk) {
+							fileNames = append(fileNames, tBack.FileName)
+						}
+					}
+				case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+					if tBack.KeyId != nil {
+						if updateDiskBackingForRecrypt(args, disk) {
+							fileNames = append(fileNames, tBack.FileName)
+						}
+					}
+				}
+			}
+		}
+	}
+	return fileNames
+}
+
+func updateDiskBackingForRecrypt(
+	args reconcileArgs,
+	disk *vimtypes.VirtualDisk) bool {
+
+	devSpec := getOrCreateDeviceChangeForDisk(args, disk)
+	if devSpec == nil {
+		return false
+	}
+
+	if devSpec.Backing == nil {
+		devSpec.Backing = &vimtypes.VirtualDeviceConfigSpecBackingSpec{}
+	}
+
+	// Set the device change's crypto spec to be the same as the VM's.
+	devSpec.Backing.Crypto = args.configSpec.Crypto
+
+	return true
+}
+
+// getOrCreateDeviceChangeForDisk returns the device change for the specified
+// disk. If there is an existing Edit change, that is returned. If there is an
+// existing Add/Remove change, nil is returned. Otherwise a new Edit change is
+// returned.
+func getOrCreateDeviceChangeForDisk(
+	args reconcileArgs,
+	disk *vimtypes.VirtualDisk) *vimtypes.VirtualDeviceConfigSpec {
+
+	for i := range args.configSpec.DeviceChange {
+		if dc := args.configSpec.DeviceChange[i]; dc != nil {
+			if ds := dc.GetVirtualDeviceConfigSpec(); ds != nil {
+				if bd := ds.Device; bd != nil {
+					if vd := bd.GetVirtualDevice(); vd != nil {
+						if vd.Key == disk.Key {
+							if ds.Operation == vimtypes.VirtualDeviceConfigSpecOperationEdit {
+								return ds
+							}
+							return nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	ds := &vimtypes.VirtualDeviceConfigSpec{
+		Device:    disk,
+		Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+		Backing:   &vimtypes.VirtualDeviceConfigSpecBackingSpec{},
+	}
+
+	args.configSpec.DeviceChange = append(args.configSpec.DeviceChange, ds)
+
+	return ds
 }
 
 func validateEncrypt(
@@ -797,9 +930,14 @@ func isAddEditDeviceSpecEncryptedSansPolicy(
 
 			if backing := spec.Backing; backing != nil {
 				switch backing.Crypto.(type) {
+
+				case *vimtypes.CryptoSpecShallowRecrypt:
+					// shallowRecrypt sans policy is supported
+
 				case *vimtypes.CryptoSpecEncrypt,
-					*vimtypes.CryptoSpecDeepRecrypt,
-					*vimtypes.CryptoSpecShallowRecrypt:
+					*vimtypes.CryptoSpecDeepRecrypt:
+
+					// encrypt/deepRecrypt require policy
 
 					for i := range spec.Profile {
 						if ok, err := isEncryptedProfile(
@@ -811,11 +949,13 @@ func isAddEditDeviceSpecEncryptedSansPolicy(
 
 						} else if ok {
 
-							return false, nil // is encrypted/recrypted with policy
+							// encrypt/deepRecrypt with policy
+							return false, nil
 						}
 					}
 
-					return true, nil // is encrypted/recrypted sans policy
+					// encrypt/deepRecrypt with policy
+					return true, nil
 				}
 			}
 		}

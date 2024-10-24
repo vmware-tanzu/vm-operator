@@ -577,7 +577,7 @@ func SetDefaultEncryptionClass(
 	}
 
 	// Check if the VM's storage class supports encryption.
-	if ok, err := kubeutil.IsEncryptedStorageClass(
+	if ok, _, err := kubeutil.IsEncryptedStorageClass(
 		ctx,
 		k8sClient,
 		vm.Spec.StorageClass); err != nil {

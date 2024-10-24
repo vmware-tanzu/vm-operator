@@ -60,8 +60,60 @@ var _ = DescribeTable("GetStoragePolicyID",
 		"does not have policy ID",
 		"",
 		fakeString,
-		`StorageClass "my-storage-class" does not have 'storagePolicyID' parameter`),
+		kubeutil.ErrMissingParameter{
+			StorageClassName: "my-storage-class",
+			ParameterName:    internal.StoragePolicyIDParameter,
+		}.Error()),
 )
+
+var _ = Describe("SetStoragePolicyID", func() {
+	var (
+		obj storagev1.StorageClass
+	)
+
+	BeforeEach(func() {
+		obj = storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fakeString,
+			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: fakeString,
+			},
+		}
+	})
+
+	When("storageClass is nil", func() {
+		It("should panic", func() {
+			Expect(func() {
+				kubeutil.SetStoragePolicyID(nil, "")
+			}).To(PanicWith("storageClass is nil"))
+		})
+	})
+	When("id is empty", func() {
+		It("should remove the policy ID from the StorageClass", func() {
+			id, err := kubeutil.GetStoragePolicyID(obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(id).To(Equal(fakeString))
+
+			kubeutil.SetStoragePolicyID(&obj, "")
+
+			id, err = kubeutil.GetStoragePolicyID(obj)
+			Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
+				StorageClassName: fakeString,
+				ParameterName:    internal.StoragePolicyIDParameter,
+			}))
+			Expect(id).To(BeEmpty())
+		})
+	})
+	When("id is non-empty", func() {
+		It("should set the policy ID on the StorageClass", func() {
+			kubeutil.SetStoragePolicyID(&obj, fakeString+"1")
+			id, err := kubeutil.GetStoragePolicyID(obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(id).To(Equal(fakeString + "1"))
+		})
+	})
+})
 
 var _ = Describe("GetPVCZoneConstraints", func() {
 
@@ -316,7 +368,7 @@ var _ = Describe("IsEncryptedStorageClass", func() {
 			WithInterceptorFuncs(funcs).
 			Build()
 
-		ok, err = kubeutil.IsEncryptedStorageClass(
+		ok, _, err = kubeutil.IsEncryptedStorageClass(
 			ctx, client, storageClass.Name)
 	})
 
@@ -390,11 +442,11 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 				UID:  types.UID(uuid.NewString()),
 			},
 			Parameters: map[string]string{
-				internal.StoragePolicyIDParameter: "fake",
+				internal.StoragePolicyIDParameter: fakeString,
 			},
 		}
 		withObjs = []ctrlclient.Object{&storageClass}
-		profile = "fake"
+		profile = fakeString
 	})
 
 	JustBeforeEach(func() {
@@ -446,7 +498,7 @@ var _ = Describe("IsEncryptedStorageProfile", func() {
 
 	When("there is a StorageClass but does not match the profile ID", func() {
 		BeforeEach(func() {
-			profile = "fake1"
+			profile = fakeString + "1"
 		})
 		It("should return false", func() {
 			Expect(err).ToNot(HaveOccurred())
@@ -480,6 +532,9 @@ var _ = Describe("EncryptedStorageClass", func() {
 				Name: fakeString,
 				UID:  types.UID(uuid.NewString()),
 			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: fakeString,
+			},
 		}
 	})
 
@@ -495,18 +550,20 @@ var _ = Describe("EncryptedStorageClass", func() {
 			Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, true)).To(Succeed())
 		})
 		It("should return true", func() {
-			ok, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+			ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ok).To(BeTrue())
+			Expect(pid).To(Equal(fakeString))
 		})
 		When("the storage class is marked as encrypted again", func() {
 			JustBeforeEach(func() {
 				Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, true)).To(Succeed())
 			})
 			It("should return true", func() {
-				ok, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+				ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ok).To(BeTrue())
+				Expect(pid).To(Equal(fakeString))
 			})
 		})
 		When("the storage class is marked as unencrypted", func() {
@@ -514,9 +571,11 @@ var _ = Describe("EncryptedStorageClass", func() {
 				Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, false)).To(Succeed())
 			})
 			It("should return false", func() {
-				ok, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+				ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ok).To(BeFalse())
+				Expect(pid).To(BeEmpty())
+
 			})
 
 			When("the storage class is marked as encrypted again", func() {
@@ -524,9 +583,10 @@ var _ = Describe("EncryptedStorageClass", func() {
 					Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, true)).To(Succeed())
 				})
 				It("should return true", func() {
-					ok, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+					ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(ok).To(BeTrue())
+					Expect(pid).To(Equal(fakeString))
 				})
 			})
 		})
@@ -537,9 +597,10 @@ var _ = Describe("EncryptedStorageClass", func() {
 				Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, false)).To(Succeed())
 			})
 			It("should return false for the second storage class", func() {
-				ok, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+				ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ok).To(BeFalse())
+				Expect(pid).To(BeEmpty())
 			})
 		})
 	})
@@ -549,17 +610,19 @@ var _ = Describe("EncryptedStorageClass", func() {
 			Expect(kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, false)).To(Succeed())
 		})
 		It("should return false", func() {
-			ok, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+			ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ok).To(BeFalse())
+			Expect(pid).To(BeEmpty())
 		})
 	})
 
 	When("the storage class is not marked at all", func() {
 		It("should return false", func() {
-			ok, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+			ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ok).To(BeFalse())
+			Expect(pid).To(BeEmpty())
 		})
 	})
 
@@ -580,9 +643,10 @@ var _ = Describe("EncryptedStorageClass", func() {
 			}
 		})
 		It("should return an error for IsEncryptedStorageClass", func() {
-			ok, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
+			ok, pid, err := kubeutil.IsEncryptedStorageClass(ctx, client, storageClass.Name)
 			Expect(err).To(MatchError(apierrors.NewInternalError(errors.New(fakeString)).Error()))
 			Expect(ok).To(BeFalse())
+			Expect(pid).To(BeEmpty())
 		})
 		It("should return an error for MarkEncryptedStorageClass", func() {
 			err := kubeutil.MarkEncryptedStorageClass(ctx, client, storageClass, false)
@@ -624,6 +688,9 @@ var _ = Describe("EncryptedStorageClass", func() {
 			for i := range storageClasses {
 				storageClasses[i].Name = strconv.Itoa(i)
 				storageClasses[i].Provisioner = fakeString
+				storageClasses[i].Parameters = map[string]string{
+					internal.StoragePolicyIDParameter: fakeString,
+				}
 				Expect(client.Create(ctx, &storageClasses[i])).To(Succeed())
 			}
 		})
@@ -683,10 +750,11 @@ var _ = Describe("EncryptedStorageClass", func() {
 				Expect(refs).To(ContainElements(expRefs...))
 
 				for i := range storageClasses {
-					ok, err := kubeutil.IsEncryptedStorageClass(
+					ok, pid, err := kubeutil.IsEncryptedStorageClass(
 						ctx, client, storageClasses[i].Name)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(ok).To(BeTrue())
+					Expect(pid).To(Equal(fakeString))
 				}
 			})
 		})
@@ -733,10 +801,11 @@ var _ = Describe("EncryptedStorageClass", func() {
 				Expect(refs).To(BeEmpty())
 
 				for i := range storageClasses {
-					ok, err := kubeutil.IsEncryptedStorageClass(
+					ok, pid, err := kubeutil.IsEncryptedStorageClass(
 						ctx, client, storageClasses[i].Name)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(ok).To(BeFalse())
+					Expect(pid).To(BeEmpty())
 				}
 			})
 		})
@@ -801,13 +870,15 @@ var _ = Describe("EncryptedStorageClass", func() {
 				Expect(refs).To(ContainElements(expRefs...))
 
 				for i := range storageClasses {
-					ok, err := kubeutil.IsEncryptedStorageClass(
+					ok, pid, err := kubeutil.IsEncryptedStorageClass(
 						ctx, client, storageClasses[i].Name)
 					Expect(err).ToNot(HaveOccurred())
 					if i%2 == 0 {
 						Expect(ok).To(BeFalse())
+						Expect(pid).To(BeEmpty())
 					} else {
 						Expect(ok).To(BeTrue())
+						Expect(pid).To(Equal(fakeString))
 					}
 				}
 			})

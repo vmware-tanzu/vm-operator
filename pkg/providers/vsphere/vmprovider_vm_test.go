@@ -1493,7 +1493,6 @@ func vmTests() {
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
-										vmopv1.VirtualMachineEncryptionTypeDisks,
 									}))
 								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.NativeKeyProviderID))
 								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
@@ -1514,7 +1513,6 @@ func vmTests() {
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
-										vmopv1.VirtualMachineEncryptionTypeDisks,
 									}))
 								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass1ProviderID))
 								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
@@ -1536,7 +1534,6 @@ func vmTests() {
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 								[]vmopv1.VirtualMachineEncryptionType{
 									vmopv1.VirtualMachineEncryptionTypeConfig,
-									vmopv1.VirtualMachineEncryptionTypeDisks,
 								}))
 							Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass1ProviderID))
 							Expect(vm.Status.Crypto.KeyID).To(Equal(nsInfo.EncryptionClass1KeyID))
@@ -1579,7 +1576,6 @@ func vmTests() {
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
-										vmopv1.VirtualMachineEncryptionTypeDisks,
 									}))
 								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.NativeKeyProviderID))
 								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
@@ -1605,7 +1601,6 @@ func vmTests() {
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
-										vmopv1.VirtualMachineEncryptionTypeDisks,
 									}))
 								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass1ProviderID))
 								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
@@ -1632,7 +1627,6 @@ func vmTests() {
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 								[]vmopv1.VirtualMachineEncryptionType{
 									vmopv1.VirtualMachineEncryptionTypeConfig,
-									vmopv1.VirtualMachineEncryptionTypeDisks,
 								}))
 							Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass2ProviderID))
 							Expect(vm.Status.Crypto.KeyID).To(Equal(nsInfo.EncryptionClass2KeyID))
@@ -1724,7 +1718,6 @@ func vmTests() {
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
-										vmopv1.VirtualMachineEncryptionTypeDisks,
 									}))
 								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.NativeKeyProviderID))
 								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
@@ -1751,7 +1744,6 @@ func vmTests() {
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 									[]vmopv1.VirtualMachineEncryptionType{
 										vmopv1.VirtualMachineEncryptionTypeConfig,
-										vmopv1.VirtualMachineEncryptionTypeDisks,
 									}))
 								Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass2ProviderID))
 								Expect(vm.Status.Crypto.KeyID).ToNot(BeEmpty())
@@ -1779,7 +1771,6 @@ func vmTests() {
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
 								[]vmopv1.VirtualMachineEncryptionType{
 									vmopv1.VirtualMachineEncryptionTypeConfig,
-									vmopv1.VirtualMachineEncryptionTypeDisks,
 								}))
 							Expect(vm.Status.Crypto.ProviderID).To(Equal(ctx.EncryptionClass2ProviderID))
 							Expect(vm.Status.Crypto.KeyID).To(Equal(nsInfo.EncryptionClass2KeyID))

@@ -517,7 +517,7 @@ func (v validator) validateCrypto(
 		encClassNamePath = cryptoPath.Child("encryptionClassName")
 	)
 
-	if ok, err := kubeutil.IsEncryptedStorageClass(
+	if ok, _, err := kubeutil.IsEncryptedStorageClass(
 		ctx,
 		v.client,
 		vm.Spec.StorageClass); err != nil {

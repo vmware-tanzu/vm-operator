@@ -745,11 +745,9 @@ type VirtualMachineCryptoStatus struct {
 	//
 	// - Config -- This refers to all of the files related to a VM except any
 	//             virtual disks.
-	// - Disk   -- This refers to all of the VM's virtual disks that are *not*
-	//             PVCs.
-	//
-	// To determine whether or not a PVC is encrypted, please refer to the PVC
-	// resource.
+	// - Disks  -- This refers to at least one of the VM's attached disks. To
+	//             determine the encryption state of the individual disks,
+	//             please refer to status.volumes[].crypto.
 	Encrypted []VirtualMachineEncryptionType `json:"encrypted,omitempty"`
 
 	// +optional

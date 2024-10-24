@@ -947,11 +947,7 @@ func (vs *vSphereVMProvider) vmCreateGetBootstrap(
 		return err
 	}
 
-	createArgs.BootstrapData.Data = bsData.Data
-	createArgs.BootstrapData.VAppData = bsData.VAppData
-	createArgs.BootstrapData.VAppExData = bsData.VAppExData
-	createArgs.BootstrapData.CloudConfig = bsData.CloudConfig
-	createArgs.BootstrapData.Sysprep = bsData.Sysprep
+	createArgs.BootstrapData = bsData
 
 	return nil
 }

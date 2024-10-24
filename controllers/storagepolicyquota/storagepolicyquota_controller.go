@@ -5,6 +5,7 @@ package storagepolicyquota
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -135,6 +136,7 @@ func (r *Reconciler) ReconcileNormal(
 	}
 
 	// Create the StoragePolicyUsage resources.
+	var errs []error
 	for i := range objs {
 		dst := spqv1.StoragePolicyUsage{
 			ObjectMeta: metav1.ObjectMeta{
@@ -167,9 +169,9 @@ func (r *Reconciler) ReconcileNormal(
 			&dst,
 			fn); err != nil {
 
-			return err
+			errs = append(errs, err)
 		}
 	}
 
-	return err
+	return errors.Join(errs...)
 }

@@ -44,6 +44,7 @@ func unitTestsReconcile() {
 		storageQuotaName = "my-storage-quota"
 		storageClassName = "my-storage-class"
 		storagePolicyID  = "my-storage-policy"
+		caBundle         = "fake-ca-bundle"
 	)
 
 	var (
@@ -75,7 +76,7 @@ func unitTestsReconcile() {
 			Webhooks: []admissionv1.ValidatingWebhook{
 				{
 					ClientConfig: admissionv1.WebhookClientConfig{
-						CABundle: []byte("fake-ca-bundle"),
+						CABundle: []byte(caBundle),
 					},
 				},
 			},
@@ -173,6 +174,7 @@ func unitTestsReconcile() {
 				ExpectWithOffset(1, obj.Spec.ResourceKind).To(Equal("VirtualMachine"))
 				ExpectWithOffset(1, obj.Spec.StorageClassName).To(Equal(storageClassName))
 				ExpectWithOffset(1, obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
+				ExpectWithOffset(1, obj.Spec.CABundle).To(Equal([]byte(caBundle)))
 			}
 
 			When("a StoragePolicyUsage resource does not exist", func() {

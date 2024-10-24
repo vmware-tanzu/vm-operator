@@ -25,6 +25,8 @@ import (
 func DefaultWatchedPropertyPaths() []string {
 	return []string{
 		"config.extraConfig",
+		"config.hardware.device",
+		"config.keyId",
 		"guest.ipStack",
 		"guest.net",
 		"summary.config.name",

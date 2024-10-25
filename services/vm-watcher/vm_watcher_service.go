@@ -41,7 +41,10 @@ func AddToManager(
 		return err
 	}
 
-	return mgr.Add(New(ctx, mgr.GetClient(), ctx.VMProvider))
+	return mgr.Add(New(
+		logr.NewContext(ctx, ctx.Logger),
+		mgr.GetClient(),
+		ctx.VMProvider))
 }
 
 type Service struct {

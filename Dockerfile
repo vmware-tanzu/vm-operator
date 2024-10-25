@@ -1,5 +1,5 @@
 # Go version used to build the binaries.
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.23.2
 
 ## Docker image used to build the binaries.
 FROM golang:${GO_VERSION} as builder

@@ -30,45 +30,59 @@ kubectl apply -n <NAMESPACE> -f ${{ config.repo_url_raw }}/main/docs/concepts/wo
 
 ## Working with VMs
 
-When a VM gets created, it is scheduled to run on a [`Node`](https://kubernetes.io/docs/concepts/architecture/nodes/) in your cluster. Regardless where VM Operator is running, the `Node` represents an underlying hypervisor. For example, on vSphere Supervisor a `Node` represents an ESXi host.
+VMs are scheduled to run on a [`Node`](https://kubernetes.io/docs/concepts/architecture/nodes/) in the cluster. Regardless where VM Operator is running, the `Node` represents an underlying hypervisor. For example, on vSphere Supervisor a `Node` represents an ESXi host.
 
-The VM remains on that `Node` until the VM resource is deleted or, if supported by the underlying platform, the VM is rescheduled on another `Node` via live-migration (ex. vMotion) due to an unexpected failure of planned maintenance resulting in a `Node`'s underlying hypervisor going offline. There may also be situations where a VM cannot be rescheduled with live-migration due to some hardware dependency. In these instances the VM is powered off and then is powered back onto a compatible `Node` if one is available. If no other `Nodes` can support the VM, its controller will continue to try powering on the VM until such time a compatible `Node` becomes available.
+The VM remains on that `Node` until the VM resource is deleted or, if supported by the underlying platform, the VM is rescheduled on another `Node` via live-migration (ex. vMotion). There may also be situations where a VM cannot be rescheduled with live-migration due to some hardware dependency. In these instances, depending on how the infrastructure administrator has configured the platform, the VM may be automatically or manually powered off and then powered on again on a compatible `Node` if one is available. If no other `Nodes` can support the VM, its controller will continue to try powering on the VM until such time a compatible `Node` becomes available.
 
-The name of a VM must be a valid [DNS subdomain](https://kubernetes.io/docs/concepts/overview/working-with-objects/names#dns-subdomain-names) value, but this can produce unexpected results for the VM's hostname. For best compatibility, the name should follow the more restrictive rules for a [DNS label](https://kubernetes.io/docs/concepts/overview/working-with-objects/names#dns-label-names).
+The name of a VM must be a valid [DNS subdomain](https://kubernetes.io/docs/concepts/overview/working-with-objects/names#dns-subdomain-names) value, but this can produce unexpected results for the VM's host name. For best compatibility, the name should follow the more restrictive rules for a [DNS label](https://kubernetes.io/docs/concepts/overview/working-with-objects/names#dns-label-names).
 
 ### VM Image
 
-A VM's disk(s) are supplied by a VM Image, and thus its name must be specified when creating a new VM. The following commands may be used to discover the available VM Images:
+The `VirtualMachineImage` is a namespace-scoped resource from which a VM's disk image(s) is/are derived. This is why the name of a `VirtualMachineImage` resource must be specified when creating a new VM. It is also possible to deploy a new VM with the cluster-scoped `ClusterVirtualMachineImage` resource. The following commands may be used to discover the available images:
 
-```shell title="Get available VM Images for a Namespace"
-kubectl get -n <NAMESPACE> vmimage
-```
+=== "Get images for a namespace"
 
-```shell title="Get available VM Images for cluster"
-kubectl get clustervmimage
-```
+    ```shell
+    kubectl get -n <NAMESPACE> vmimage
+    ```
 
-For more information on VM Images, please see the documentation for [`VirtualMachineImage`](../images/vm-image.md).
+=== "Get images for a cluster"
+
+    ```shell
+    kubectl get clustervmimage
+    ```
+
+For more information on `VirtualMachineImage` and `ClusterVirtualMachineImage` resources, please see the documentation for [`VirtualMachineImage`](../images/vm-image.md).
 
 ### VM Class
 
-A VM's virtual hardware is derived from a VM Class, which is why the name of a VM Class is required when creating a VM. The VM Classes available in a given namespace may be discovered with:
+A `VirtualMachineClass` is a namespace-scoped resource from which a VM's virtual hardware is derived. This is why the name of a `VirtualMachineClass` is required when creating a VM. The `VirtualMachineClass` resources available in a given namespace may be discovered with:
 
 ```shell
 kubectl get -n <NAMESPACE> vmclass
 ```
 
-For more information on VM Classes, please see the documentation for [`VirtualMachineClass`](./vm-class.md).
+For more information on `VirtualMachineClass` resources, please see the documentation for [`VirtualMachineClass`](./vm-class.md).
 
 ### Storage Class
 
-A Storage Class defines a VM's storage policy and is required to create a new VM. Use the following command to discover a cluster's available storage classes:
+A `StorageClass` is a cluster-scoped resource that defines a VM's storage policy and is required to create a new VM. The following command may be used to discover a cluster's available `StorageClass` resources:
 
 ```shell
 kubectl get storageclass
 ```
 
-For more information on Storage Classes, please see the documentation for [`StorageClass`](https://kubernetes.io/docs/concepts/storage/storage-classes/).
+For more information on `StorageClass` resources, please see the documentation for [`StorageClass`](https://kubernetes.io/docs/concepts/storage/storage-classes/).
+
+### Encryption Class
+
+An `EncryptionClass`  is a namespace-scoped resource that defines the key provider and key used to encrypt a VM. The following command may be used to discover a namespace's available `EncryptionClass` resources:
+
+```shell
+kubectl get -n <NAMESPACE> encryptionclass
+```
+
+For more information on `EncryptionClass` resources, please see the [Encryption](#encryption) section below.
 
 ## Updating a VM
 
@@ -129,6 +143,131 @@ The VM's `spec.ClassName` field can be edited to point to a different class, cau
 The VM must either be powered off or transitioning from powered off to powered on to be resized.
 
 By default, the VM will be resized once to reflect the new class. That is, if the `VirtualMachineClass` itself is later updated, the VM will not be resized again. The `vmoperator.vmware.com/same-vm-class-resize` annotation can be added to a VM to resize the VM as the class itself changes.
+
+## Encryption
+
+The field `spec.crypto` may be used in conjunction with a VM's storage class and/or virtual trusted platform module (vTPM) to control a VM's encryption level.
+
+### Encrypting a VM
+
+A VM may be encrypted with either:
+
+* the default key provider
+* an `EncryptionClass` resource
+
+#### Default Key Provider
+
+By default, `spec.crypto.useDefaultKeyProvider` is true, meaning that if there is a default key provider and the VM has an encryption storage class and/or vTPM, the VM will be subject to some level of encryption. For example, if there was a default key provider present, it would be used to encrypt the following VM:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha3
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className:    my-vm-class
+  imageName:    vmi-0a0044d7c690bcbea
+  storageClass: my-encrypted-storage-class
+```
+
+#### EncryptionClass
+
+It is also possible to set `spec.crypto.encryptionClassName` to the name of an `EncryptionClass` resource in the same namespace as the VM. This resource specifies the provider and key ID used to encrypt workloads. For example, the following VM would be deployed and encrypted using the `EncryptionClass` named `my-encryption-class`:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha3
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className:    my-vm-class
+  imageName:    vmi-0a0044d7c690bcbea
+  storageClass: my-encrypted-storage-class
+  crypto:
+    encryptionClassName: my-encryption-class
+```
+
+### Rekeying a VM
+
+Users can rekey VMs and their [classic disks](#volume-type) by:
+
+* Switching to a different `EncryptionClass` by changing the value of `spec.crypto.encryptionClassName`.
+* Using the default key provider, if one exists, by removing `spec.crypto.encryptionClassName`.
+
+Either change results in the VM and its [classic disks](#volume-type) being rekeyed using the new key provider.
+
+### Decrypting a VM
+
+It is not possible to decrypt an encrypted VM using VM Operator.
+
+### Encryption Status
+
+The following fields may be used to determine the encryption status of a VM:
+
+| Name | Description |
+|------|-------------|
+| `status.crypto.encrypted` | The observed state of the VM's encryption. May be `Config`, `Disks`, or both. |
+| `status.crypto.providerID` | The provider ID used to encrypt the VM. |
+| `status.crypto.keyID` | The key ID used to encrypt the VM. |
+
+For example, the following is an example of the status of a VM encrypted with an encryption storage class:
+
+```yaml
+status:
+  crypto:
+    encrypted:
+    - Config
+    - Disks
+    providerID: my-key-provider-id
+    keyID: my-key-id
+```
+
+#### Encryption Type
+
+The type of encryption used by the VM is reported in the list `status.crypto.encrypted`. The list may contain the values `Config` and/or `Disks`, depending on the storage class and hardware present in the VM as the chart below illustrates:
+
+|                          | Config | Disks |
+|--------------------------|:------:|:-----:|
+| Encryption storage class |    ✓   |   ✓   |
+| vTPM                     |    ✓   |       |
+
+The `Config` type refers to all files related to a VM except for virtual disks. The `Disks` type indicates at least one of a VM's virtual disks is encrypted. To determine which of the VM's disks are encrypted, please refer to [`status.volumes[].crypto`](#volume-status). 
+
+#### EncryptionSynced Condition
+
+The condition `VirtualMachineEncryptionSynced` is also used to report whether or not the VM's desired encryption state was synchronized. For example, a VM that should be encrypted but is powered on may have the following condition:
+
+```yaml
+status:
+  conditions:
+  - type: VirtualMachineEncryptionSynced
+    status: False
+    reason: InvalidState
+    message: Must be powered off to encrypt VM.
+```
+
+If the VM requested encryption and it was successful, then the condition will be:
+
+```yaml
+status:
+  conditions:
+  - type: VirtualMachineEncryptionSynced
+    status: True
+```
+
+When `VirtualMachineEncryptionSynced` has `status: False`, the `reason` field may be set to one of or combination of the following values:
+
+| Reason | Description |
+|--------|-------------|
+| `EncryptionClassNotFound` | The resource specified with `spec.crypto.encryptionClassName` cannot be found. |
+| `EncryptionClassInvalid` |  The resource specified with `spec.crypto.encryptionClassName` contains an invalid provider and/or key ID. |
+| `InvalidState` | The VM cannot be encrypted, rekeyed, or updated in its current state. |
+| `InvalidChanges` | The VM has pending changes that would prohibit an encrypt, rekey, or update operation. |
+| `ReconfigureError` |  An encrypt, rekey, or update operation was attempted but failed due to a reason related to encryption. |
+
+If the condition is ever false, please refer first to the condition's `reason` field and then `message` for more information.
 
 ## Networking
 
@@ -315,7 +454,74 @@ The above data does _not_ represent the _observed_ network configuration of the 
 
 ## Storage
 
-Deployed VMs inherit the storage defined in the `VirtualMachineImage`. To provide additional storage, users may leverage [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes):
+A VM deployed from a `VirtualMachineImage` or `ClusterVirtualMachineImage` inherit the disk(s) from those images. Additional storage may also be provided by using [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes).
+
+### Storage Usage
+
+The following fields summarize a `VirtualMachine` resource's overall storage usage:
+
+| Name | Description |
+|------|-------------|
+| `status.storage.committed` | The total storage space committed to this `VirtualMachine`. |
+| `status.storage.uncommitted` | The total storage space potentially used by this `VirtualMachine` |
+| `status.storage.unshared` | The total storage space occupied by this VirtualMachine that is not shared with any other `VirtualMachine`. |
+
+For example, the following illustrates the storage usage for a `VirtualMachine`:
+
+```yaml
+status:
+  storage:
+    committed: 6Gi
+    uncommitted: 7Gi
+    unshared: 2Gi
+```
+
+Individual volume usage may be determined by inspecting [`status.volumes`](#volume-status).
+
+
+### Storage Quota
+
+`VirtualMachine` resources on a vSphere Supervisor must adhere to the namespace's storage quota:
+
+#### Storage Quota Reservation
+
+Deploying a `VirtualMachine` resource will fail an admission check unless the total capacity required by the disk(s) from the `VirtualMachineImage` or `ClusterVirtualMachineImage` is less than or equal to the amount of free space available in the namespace according to its storage quota. For example, consider the following:
+
+* A VM is deployed from an image that has a disk which is only `2Gi` in size, but has the capacity to grow to `100Gi`.
+* The storage quota for the namespace is `500Gi` and there is currently only `50Gi` available.
+
+The VM in the above scenario will fail the admission check. While the image's disk is only `2Gi` in size and there are `50Gi` of free space in the namespace, the disk's _total_ capacity is `100Gi`, which exceeds the quota.
+
+#### Storage Quota Usage
+
+Deployed `VirtualMachine` resources contribute to the total storage usage in a given namespace. The usage of a `VirtualMachine` is not calculated based on the total possible space the VM _can_consume, rather usage is the total number of unshared bytes on disk used by a `VirtualMachine` less the space used by any of the VM's [managed volumes](#volume-type). For example, consider the following:
+
+* A VM is using `2Gi` of unshared space.
+* The VM has three volumes, two of which are managed that, combined, consume `1Gi`.
+
+In the above scenario, the VM's total usage will be reported as `1Gi`.
+
+
+### Volumes
+
+A `VirtualMachine` resource's disks are referred to as _volumes_.
+
+#### Volume Type
+
+There are two types of volumes: _Managed_ and _Classic_:
+
+* **Managed** volumes refer to storage that is provided by [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes).
+* **Classic** volumes refer to the disk(s) that came from the `VirtualMachineImage` or `ClusterVirtualMachineImage` from which the `VirtualMachine` was deployed.
+
+#### Adding Volumes
+
+##### Adding Classic Volumes
+
+There is no support for adding classic vSphere disks directly to `VirtualMachine` resources. Additional storage _must_ be provided by managed volumes, i.e. [PersistentVolumeClaims](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims).
+
+##### Adding Managed Volumes
+
+The following steps describe how to provide additional storage with [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes):
 
 1. Create a [PersistentVolumeClaim](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims) resource by picking a `StorageClass` associated with the namespace in which the VM exists:
 
@@ -360,9 +566,76 @@ Deployed VMs inherit the storage defined in the `VirtualMachineImage`. To provid
 
 6. Mount the disk and begin using it.
 
-## Power States
+#### Volume Status
 
-### On, Off, & Suspend
+The field `status.volumes` described the observed state of a `VirtualMachine` resource's volumes, including information about the volume's usage and encryption properties:
+
+=== "Volume Properties"
+
+    | Name | Description |
+    |------|-------------|
+    | `attached` | Whether or not the volume has been successfully attached to the `VirtualMachine`. |
+    | `crypto` | An optional field set only if the volume is encrypted. |
+    | `diskUUID` | The unique identifier of the volume's underlying disk. |
+    | `error` | The last observed error that may have occurred when attaching/detaching the disk. |
+    | `limit` | The maximum amount of space that may be used by this volume. |
+    | `name` | The name of the volume. For managed disks this is the name from `spec.volumes` and for classic disks this is the name of the underlying disk. |
+    | `type` | The [type](#volume-type) of the attached volume, i.e. either `Classic` or `Managed` |
+    | `used` | The total storage space occupied by this VirtualMachine that is not shared with any other `VirtualMachine`. |
+
+=== "Encryption Properties"
+
+    If the field `crypto` is set, it will contain the following information:
+
+    | Name | Description |
+    |------|-------------|
+    | `keyID` | The identifier of the key used to encrypt the volume.  |
+    | `providerID` | The identifier of the provider used to encrypt the volume. |
+
+The following example shows the status for a single, classic, encrypted volume:
+
+```yaml
+status:
+  volumes:
+  - attached: true
+    crypto:
+      keyID: "19"
+      providerID: gce2e-standard
+    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
+    limit: 10Gi
+    name: my-vm
+    type: Classic
+    used: 2Gi
+```
+
+The status may also reflect multiple volumes, both classic and managed:
+
+```yaml
+status:
+  volumes:
+  - attached: true
+    crypto:
+      keyID: "19"
+      providerID: gce2e-standard
+    diskUUID: 6000C295-760e-e736-3a10-1395a8749300
+    limit: 10Gi
+    name: my-vm
+    type: Classic
+    used: 2Gi
+  - attached: true
+    diskUUID: 6000C299-8a21-f2ad-7084-2195c255f905
+    limit: 1Gi
+    name: my-disk-1
+    type: Managed
+    used: "0"
+```
+
+
+## Power Management
+
+### Power States
+
+#### On, Off, & Suspend
 
 The field `spec.powerState` controls the power state of a VM and may be set to one of the following values:
 
@@ -372,19 +645,19 @@ The field `spec.powerState` controls the power state of a VM and may be set to o
 | `PoweredOff` | Powers off a powered on or suspended VM (controlled by `spec.powerOffMode`) |
 | `Suspended` | Suspends a powered on VM (controlled by `spec.suspendMode`) |
 
-### Restart
+#### Restart
 
 It is possible to restart a powered on VM by setting `spec.nextRestartTime` to `now` (case-insensitive). A mutating webhook transforms `now` into an RFC3339Nano-formatted string. During the VM's reconciliation, the value of `spec.nextRestartTime` is compared to the last time the VM was restarted by VM Operator. If `spec.nextRestartTime` occurs _after_ the last time a restart occurred, then the VM is restarted in accordance with `spec.restartMode`.
 
 Please note that it is not possible to schedule future restarts by assigning an explicit RFC3339Nano-formatted string to `spec.nextRestartTime`. The only valid values for `spec.nextRestartTime` are an empty string when creating a VM and `now` (case-insensitive) when updating/patching an existing VM.
 
 
-### Default Power State on Create
+#### Default Power State on Create
 
 When updating a VM's power state, an empty string is not allowed -- the desired power state must be specified explicitly. However, on create, the VM's power state may be omitted. When this occurs, the power state defaults to `PoweredOn`.
 
 
-### Transitions
+#### Transitions
 
 Please note that there are supported power state transitions, and if a power state is requested that is not a supported transition, an error will be returned from a validating webhook.
 
@@ -426,7 +699,7 @@ Please note that there are supported power state transitions, and if a power sta
 </table>
 
 
-## Power Op Mode
+### Power Op Mode
 
 The fields `spec.powerOffMode`, `spec.suspendMode`, and `spec.restartMode` control how a VM is powered off, suspended, and restarted:
 
@@ -436,151 +709,41 @@ The fields `spec.powerOffMode`, `spec.suspendMode`, and `spec.restartMode` contr
 | `Soft` | The guest is shutdown, suspended, or restarted gracefully (requires VM Tools) |  |
 | `TrySoft` | Attempts a graceful shutdown/standby/restart if VM Tools is present, otherwise falls back to a hard operation the VM has not achieved the desired power state after five minutes. | ✓ |
 
-## VM UUIDs
+## Identifiers
 
-The `spec.instanceUUID` and `spec.biosUUID` fields both default to a random v4 UUID. These fields can only be specified by privileged accounts when creating a VM and cannot be updated.
-This instanceUUID is used by VirtualCenter to uniquely identify all virtual machine instances, including those that may share the same BIOS UUID.
+In addition to the `VirtualMachine` resource's object name, i.e. `metadata.name`, there are several other methods by which a VM can be identified:
 
-The value of `spec.instanceUUID` is used to set the vSphere VM `config.instanceUuid` field, which in turn is used to populate the VM's `status.instanceUUID`. An instanceUUID can be used to find the vSphere VM, for example:
-``` bash
-govc vm.info -vm.uuid $(k get vm -o jsonpath='{.spec.instanceUUID}' -n $ns $name)
-```
+### BIOS UUID
 
-The value of `spec.biosUUID` is used to set the vSphere VM `config.uuid` field, which in turn is used to populate the VM's `status.biosUUID`. A biosUUID can be used to find the vSphere VM, for example:
-``` bash
+The field `spec.biosUUID` defaults to a random V4 UUID. This field is immutable and may only be set manually when creating a VM by a privileged user, such as a service account. The value of `spec.biosUUID` is generally unique across all VMs running in a hypervisor, but there may be cases where it is duplicated, such as when a backed-up VM is restored to a new VM. The value of `spec.biosUUID` is assigned to a vSphere VM's `config.uuid` property, which is why it is possible to discover a vSphere VM with this value using the following command:
+
+```shell
 govc vm.info -vm.uuid $(k get vm -o jsonpath='{.spec.biosUUID}' -n $ns $name)
 ```
 
-## Guest IDs
+### Instance UUID
 
-The `spec.guestID` is an optional field that can be used to specify the guest operating system identifier when creating a new VM or powering on an existing VM.
+The field `spec.biosUUID` defaults to a random V4 UUID. This field is immutable and may only be set manually when creating a VM by a privileged user, such as a service account. The instance UUID is used by vSphere to uniquely identify all VMs, including those that may share the same BIOS UUID. The value of `spec.instanceUUID` is assigned to a vSphere VM's `config.instanceUUID` property, which is why it is possible to discover a vSphere VM with this value using the following command:
 
-A complete list of supported guest IDs can be found [here](https://dp-downloads.broadcom.com/api-content/apis/API_VWSA_001/8.0U2/html/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html).
+```shell
+govc vm.info -vm.uuid $(k get vm -o jsonpath='{.spec.instanceUUID}' -n $ns $name)
+```
 
-The `govc` command can be used to query the currently supported guest IDs for a given vSphere environment:
+## Guest OS
 
-``` bash
-$ govc vm.option.info -cluster CLUSTER_NAME
-...
+### Guest ID
+
+The optional field `spec.guestID` that may be used when deploying a VM to specify its guest operating system identifier. This field may also be updated when a VM is powered off. The value of this field is derived from the list of [supported guest identifiers](https://dp-downloads.broadcom.com/api-content/apis/API_VWSA_001/8.0U2/html/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html). The following command may be used to query the currently supported guest identifiers for a given vSphere environment:
+
+```shell
+govc vm.option.info -cluster CLUSTER_NAME
+```
+
+The above command will emit output similar to the following:
+
+```shell
 almalinux_64Guest           AlmaLinux (64-bit)
 rockylinux_64Guest          Rocky Linux (64-bit)
 windows2022srvNext_64Guest  Microsoft Windows Server 2025 (64-bit)
 ...
 ```
-
-## Crypto
-
-The field `spec.crypto` may be used in conjunction with a VM's storage class and/or virtual trusted platform module (vTPM) to control a VM's encryption level.
-
-### Encrypting a VM
-
-#### Encryption type
-
-The type of encryption used by the VM is reported in the list `status.crypto.encrypted`. The list may contain the values `Config` and/or `Disks`, depending on the storage class and hardware present in the VM as the chart below illustrates:
-
-|                          | Config | Disks |
-|--------------------------|:------:|:-----:|
-| Encryption storage class |    ✓   |   ✓   |
-| vTPM                     |    ✓   |       |
-
-The `Config` type refers to all files related to a VM except for virtual disks. The `Disks` type indicates at least one of a VM's virtual disks is encrypted. To determine which of the VM's disks are encrypted, please refer to `status.volumes[].crypto`. 
-
-#### Default Key Provider
-
-By default, `spec.crypto.useDefaultKeyProvider` is true, meaning that if there is a default key provider and the VM has an encryption storage class and/or vTPM, the VM will be subject to some level of encryption. For example, if there was a default key provider present, it would be used to encrypt the following VM:
-
-```yaml
-apiVersion: vmoperator.vmware.com/v1alpha3
-kind: VirtualMachine
-metadata:
-  name: my-vm
-  namespace: my-namespace
-spec:
-  className:    my-vm-class
-  imageName:    vmi-0a0044d7c690bcbea
-  storageClass: my-encrypted-storage-class
-```
-
-#### Encryption Class
-
-It is also possible to set `spec.crypto.encryptionClassName` to the name of an `EncryptionClass` resource in the same namespace as the VM. This resource specifies the provider and key ID used to encrypt workloads. For example, the following VM would be deployed and encrypted using the `EncryptionClass` named `my-encryption-class`:
-
-```yaml
-apiVersion: vmoperator.vmware.com/v1alpha3
-kind: VirtualMachine
-metadata:
-  name: my-vm
-  namespace: my-namespace
-spec:
-  className:    my-vm-class
-  imageName:    vmi-0a0044d7c690bcbea
-  storageClass: my-encrypted-storage-class
-  crypto:
-    encryptionClassName: my-encryption-class
-```
-
-### Rekeying a VM
-
-Users can rekey VMs by switching to a different `EncryptionClass` or setting a currently non-empty `spec.crypto.encryptionClassName` to an empty value. This will result in the VM being rekeyed using the default key provider if it exists. If it does not, then the VM could be left in a state where it cannot be powered on.
-
-### Decrypting a VM
-
-It is not possible to decrypt an encrypted VM using VM Operator.
-
-### Status
-
-#### Observed type, provider, & key
-
-The following fields may be used to determine the encryption status of a VM:
-
-| Name | Description |
-|------|-------------|
-| `status.crypto.encrypted` | The observed state of the VM's encryption. May be `config`, `disks`, or both. |
-| `status.crypto.providerID` | The provider ID used to encrypt the VM. |
-| `status.crypto.keyID` | The key ID used to encrypt the VM. |
-
-For example, the following is an example of the status of a VM encrypted with an encryption storage class:
-
-```yaml
-status:
-  crypto:
-    encrypted:
-    - config
-    - disks
-    providerID: my-key-provider-id
-    keyID: my-key-id
-```
-
-#### EncryptionSynced Condition
-
-The condition `VirtualMachineEncryptionSynced` is also used to report whether or not the VM's desired encryption state was synchronized. For example, a VM that should be encrypted but is powered on may have the following condition:
-
-```yaml
-status:
-  conditions:
-  - type: VirtualMachineEncryptionSynced
-    status: False
-    reason: InvalidState
-    message: Must be powered off to encrypt VM.
-```
-
-If the VM requested encryption and it was successful, then the condition will be:
-
-```yaml
-status:
-  conditions:
-  - type: VirtualMachineEncryptionSynced
-    status: True
-```
-
-When `VirtualMachineEncryptionSynced` has `status: False`, the `reason` field may be set to one of or combination of the following values:
-
-| Reason | Description |
-|--------|-------------|
-| `EncryptionClassNotFound` | The resource specified with `spec.crypto.encryptionClassName` cannot be found. |
-| `EncryptionClassInvalid` |  The resource specified with `spec.crypto.encryptionClassName` contains an invalid provider and/or key ID. |
-| `InvalidState` | The VM cannot be encrypted, rekeyed, or updated in its current state. |
-| `InvalidChanges` | The VM has pending changes that would prohibit an encrypt, rekey, or update operation. |
-| `ReconfigureError` |  An encrypt, rekey, or update operation was attempted but failed due to a reason related to encryption. |
-
-If the condition is ever false, please refer first to the condition's `reason` field and then `message` for more information.

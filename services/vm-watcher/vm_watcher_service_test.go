@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2/textlogger"
 
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -30,7 +31,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	vmwatcher "github.com/vmware-tanzu/vm-operator/services/vm-watcher"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
-	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 var _ = Describe(
@@ -55,8 +55,12 @@ var _ = Describe(
 			numNewClientCalls = 0
 			vsClient = nil
 			vsClientMu = sync.RWMutex{}
-			ctx = context.Background()
-			ctx = logr.NewContext(ctx, testutil.GinkgoLogr(4))
+			ctx = logr.NewContext(
+				context.Background(),
+				textlogger.NewLogger(textlogger.NewConfig(
+					textlogger.Verbosity(4),
+					textlogger.Output(GinkgoWriter),
+				)))
 		})
 
 		JustBeforeEach(func() {

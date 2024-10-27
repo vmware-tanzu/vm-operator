@@ -11,15 +11,14 @@ import (
 	"path"
 	"time"
 
-	"github.com/go-logr/logr"
-	"k8s.io/client-go/util/flowcontrol"
-	"k8s.io/klog/v2"
-	"k8s.io/klog/v2/textlogger"
-
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/client-go/util/flowcontrol"
+	"k8s.io/component-base/logs"
+	logsv1 "k8s.io/component-base/logs/api/v1"
+	_ "k8s.io/component-base/logs/json/register"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	ctrlsig "sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -35,7 +34,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	"github.com/vmware-tanzu/vm-operator/services"
 	"github.com/vmware-tanzu/vm-operator/webhooks"
-	// +kubebuilder:scaffold:imports
 )
 
 const (
@@ -45,29 +43,110 @@ const (
 	serverCertName = "tls.crt"
 )
 
-var defaultConfig = pkgcfg.FromEnv()
+var (
+	ctx              context.Context
+	mgr              pkgmgr.Manager
+	managerOpts      pkgmgr.Options
+	rateLimiterQPS   int
+	rateLimiterBurst int
+	defaultConfig    = pkgcfg.FromEnv()
+	logOptions       = logs.NewOptions()
+	setupLog         = klog.Background().WithName("setup")
+)
 
+// main is the entrypoint for the application. Please note, unless otherwise
+// stated, the order of the functions in main is by-design, and the functions
+// should only be re-ordered with care.
 func main() {
-	klog.InitFlags(nil)
-	ctrllog.SetLogger(textlogger.NewLogger(textlogger.NewConfig()))
-	setupLog := ctrllog.Log.WithName("entrypoint")
+	setupLog.Info("Starting VM Operator controller",
+		"version", pkg.BuildVersion,
+		"buildnumber", pkg.BuildNumber,
+		"buildtype", pkg.BuildType,
+		"commit", pkg.BuildCommit)
 
-	setupLog.Info("Starting VM Operator controller", "version", pkg.BuildVersion,
-		"buildnumber", pkg.BuildNumber, "buildtype", pkg.BuildType, "commit", pkg.BuildCommit)
+	initContext()
 
-	rateLimiterQPS := flag.Int(
+	initFlags()
+
+	initLogging()
+
+	initFeatures()
+
+	initRateLimiting()
+
+	waitForWebhookCertificates()
+
+	initManager()
+
+	initWebhookServer()
+
+	setupLog.Info("Starting controller manager")
+	sigHandler := ctrlsig.SetupSignalHandler()
+	if err := mgr.Start(sigHandler); err != nil {
+		setupLog.Error(err, "Problem running controller manager")
+		os.Exit(1)
+	}
+}
+
+// initFeatures updates our enabled/disabled features based on the capabilities.
+// The inability to get the capabilities should not prevent the container from
+// starting as the features will be processed later by the capabilities
+// controller.
+func initFeatures() {
+	setupLog.Info("Initial features from environment",
+		"features", pkgcfg.FromContext(ctx).Features)
+
+	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
+	if err != nil {
+		setupLog.Error(err, "Failed to create client for updating capabilities")
+	} else if _, err := capabilities.UpdateCapabilities(ctx, c); err != nil {
+		setupLog.Error(err, "Failed to update capabilities")
+	}
+
+	setupLog.Info("Initial features from capabilities",
+		"features", pkgcfg.FromContext(ctx).Features)
+}
+
+func initContext() {
+	ctx = pkgcfg.WithConfig(defaultConfig)
+	ctx = cource.WithContext(ctx)
+	ctx = watcher.WithContext(ctx)
+}
+
+func initRateLimiting() {
+	if rateLimiterQPS == 0 && rateLimiterBurst == 0 {
+		return
+	}
+	cfg := ctrl.GetConfigOrDie()
+
+	qps, burst := rateLimiterQPS, rateLimiterBurst
+	if qps != 0 {
+		cfg.QPS = float32(qps)
+	}
+	if burst != 0 {
+		cfg.Burst = burst
+	}
+	if burst != 0 && qps != 0 {
+		setupLog.Info("Configuring rate limiter", "QPS", qps, "burst", burst)
+		cfg.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(cfg.QPS, cfg.Burst)
+	}
+
+	managerOpts.KubeConfig = cfg
+}
+
+func initFlags() {
+	flag.IntVar(
+		&rateLimiterQPS,
 		"rate-limit-requests-per-second",
 		defaultConfig.RateLimitQPS,
 		"The default number of requests per second to configure the k8s client rate limiter to allow.",
 	)
-	rateLimiterBurst := flag.Int(
+	flag.IntVar(
+		&rateLimiterBurst,
 		"rate-limit-max-requests",
 		defaultConfig.RateLimitBurst,
 		"The default number of maximum burst requests per second to configure the k8s client rate limiter to allow.",
 	)
-
-	var managerOpts pkgmgr.Options
-
 	flag.StringVar(
 		&managerOpts.MetricsAddr,
 		"metrics-addr",
@@ -160,129 +239,43 @@ func main() {
 		"Should be true if we're running nodes in containers (with vcsim).",
 	)
 
+	logsv1.AddGoFlags(logOptions, flag.CommandLine)
+
+	// Set log level 2 as default.
+	if err := flag.Set("v", "2"); err != nil {
+		setupLog.Error(err, "Failed to set default log level")
+		os.Exit(1)
+	}
+
 	flag.Parse()
-
-	if managerOpts.WatchNamespace != "" {
-		setupLog.Info(
-			"Watching objects only in namespace for reconciliation",
-			"namespace", managerOpts.WatchNamespace)
-	}
-
-	if *rateLimiterQPS != 0 || *rateLimiterBurst != 0 {
-		cfg := ctrl.GetConfigOrDie()
-
-		qps, burst := *rateLimiterQPS, *rateLimiterBurst
-		if qps != 0 {
-			cfg.QPS = float32(qps)
-		}
-		if burst != 0 {
-			cfg.Burst = burst
-		}
-		if burst != 0 && qps != 0 {
-			setupLog.Info("Configuring rate limiter", "QPS", qps, "burst", burst)
-			cfg.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(cfg.QPS, cfg.Burst)
-		}
-
-		managerOpts.KubeConfig = cfg
-	}
-
-	setupLog.Info("wait for webhook certificates")
-	waitForWebhookCertificates(setupLog, managerOpts)
-
-	// Create a function that adds all of the controllers, services, and
-	// webhooks to the manager.
-	addToManager := func(
-		ctx *pkgctx.ControllerManagerContext,
-		mgr ctrlmgr.Manager) error {
-
-		if err := controllers.AddToManager(ctx, mgr); err != nil {
-			return err
-		}
-		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-			if err := services.AddToManager(ctx, mgr); err != nil {
-				return err
-			}
-		}
-		return webhooks.AddToManager(ctx, mgr)
-	}
-
-	setupLog.Info("creating controller manager")
-	managerOpts.InitializeProviders = pkgmgrinit.InitializeProviders
-	managerOpts.AddToManager = addToManager
-
-	ctx := pkgcfg.WithConfig(defaultConfig)
-	ctx = cource.WithContext(ctx)
-	ctx = watcher.WithContext(ctx)
-
-	initFeaturesFromCapabilities(ctx, setupLog)
-	setupLog.Info("Initial features", "features", pkgcfg.FromContext(ctx).Features)
-
-	mgr, err := pkgmgr.New(ctx, managerOpts)
-	if err != nil {
-		setupLog.Error(err, "problem creating controller manager")
-		os.Exit(1)
-	}
-
-	setupLog.Info("setting up webhook server TLS config")
-	webhookServer := mgr.GetWebhookServer()
-	srv := webhookServer.(*webhook.DefaultServer)
-	configureWebhookTLS(&srv.Options)
-
-	setupLog.Info("adding readiness check to controller manager")
-	if err := mgr.AddReadyzCheck("webhook", webhookServer.StartedChecker()); err != nil {
-		setupLog.Error(err, "unable to create readiness check")
-		os.Exit(1)
-	}
-
-	setupLog.Info("starting controller manager")
-	sigHandler := ctrlsig.SetupSignalHandler()
-	if err := mgr.Start(sigHandler); err != nil {
-		setupLog.Error(err, "problem running controller manager")
-		os.Exit(1)
-	}
 }
 
-func configureWebhookTLS(opts *webhook.Options) {
-	tlsCfgFunc := func(cfg *tls.Config) {
-		cfg.MinVersion = tls.VersionTLS12
-		cfg.CipherSuites = []uint16{
-			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-		}
+func initLogging() {
+	if err := logsv1.ValidateAndApply(logOptions, nil); err != nil {
+		setupLog.Error(err, "Failed to validate logging configuration")
+		os.Exit(1)
 	}
-	opts.TLSOpts = []func(*tls.Config){
-		tlsCfgFunc,
-	}
+
+	// klog.Background will automatically use the right logger.
+	ctrl.SetLogger(klog.Background())
 }
 
-func waitForWebhookCertificates(setupLog logr.Logger, managerOpts pkgmgr.Options) {
+func waitForWebhookCertificates() {
+	setupLog.Info("Waiting for webhook certificates")
 	waitOnCertsStartTime := time.Now()
 	for {
 		select {
 		case <-certDirReady(managerOpts.WebhookSecretVolumeMountPath):
 			return
 		case <-time.After(time.Second * 5):
-			setupLog.Info("waiting on certificates", "elapsed", time.Since(waitOnCertsStartTime).String())
+			setupLog.Info(
+				"Waiting on certificates",
+				"elapsed", time.Since(waitOnCertsStartTime).String())
 		}
 	}
 }
 
-// initFeaturesFromCapabilities updates our enabled/disabled features based on
-// the capabilities. The inability to get the capabilities should not prevent
-// the container from starting as the features will be processed later by the
-// capabilities controller.
-func initFeaturesFromCapabilities(ctx context.Context, logger logr.Logger) {
-	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
-	if err != nil {
-		logger.Error(err, "failed to create client for updating capabilities")
-	} else if _, err := capabilities.UpdateCapabilities(ctx, c); err != nil {
-		logger.Error(err, "failed to update capabilities")
-	}
-}
-
-// CertDirReady returns a channel that is closed when there are certificates
+// certDirReady returns a channel that is closed when there are certificates
 // available in the configured certificate directory. If CertDir is
 // empty or the specified directory does not exist, then the returned channel
 // is never closed.
@@ -306,4 +299,64 @@ func certDirReady(certDir string) <-chan struct{} {
 		}
 	}()
 	return done
+}
+
+func initManager() {
+	// Create a function that adds all of the controllers, services, and
+	// webhooks to the manager.
+	addToManager := func(
+		ctx *pkgctx.ControllerManagerContext,
+		mgr ctrlmgr.Manager) error {
+
+		if err := controllers.AddToManager(ctx, mgr); err != nil {
+			return err
+		}
+		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+			if err := services.AddToManager(ctx, mgr); err != nil {
+				return err
+			}
+		}
+		return webhooks.AddToManager(ctx, mgr)
+	}
+
+	setupLog.Info("Creating controller manager")
+	managerOpts.InitializeProviders = pkgmgrinit.InitializeProviders
+	managerOpts.AddToManager = addToManager
+	if managerOpts.WatchNamespace != "" {
+		setupLog.Info(
+			"Watching objects only in namespace for reconciliation",
+			"namespace", managerOpts.WatchNamespace)
+	}
+
+	var err error
+	mgr, err = pkgmgr.New(ctx, managerOpts)
+	if err != nil {
+		setupLog.Error(err, "Problem creating controller manager")
+		os.Exit(1)
+	}
+}
+
+func initWebhookServer() {
+	setupLog.Info("Setting up webhook server TLS config")
+	webhookServer := mgr.GetWebhookServer()
+	srv := webhookServer.(*webhook.DefaultServer)
+
+	tlsCfgFunc := func(cfg *tls.Config) {
+		cfg.MinVersion = tls.VersionTLS12
+		cfg.CipherSuites = []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		}
+	}
+	srv.Options.TLSOpts = []func(*tls.Config){
+		tlsCfgFunc,
+	}
+
+	setupLog.Info("Adding readiness check to controller manager")
+	if err := mgr.AddReadyzCheck("webhook", webhookServer.StartedChecker()); err != nil {
+		setupLog.Error(err, "Unable to create readiness check")
+		os.Exit(1)
+	}
 }

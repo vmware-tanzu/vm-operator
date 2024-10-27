@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -108,16 +109,19 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		return nil, fmt.Errorf("unable to create manager: %w", err)
 	}
 
+	// Prefix the logger with the pod name.
+	logger := opts.Logger.WithName(opts.PodName)
+
 	// Build the controller manager pkgctx.
 	controllerManagerContext := &pkgctx.ControllerManagerContext{
-		Context:                 ctx,
+		Context:                 logr.NewContext(ctx, logger),
 		Namespace:               opts.PodNamespace,
 		Name:                    opts.PodName,
 		ServiceAccountName:      opts.PodServiceAccountName,
 		LeaderElectionID:        opts.LeaderElectionID,
 		LeaderElectionNamespace: opts.PodNamespace,
 		MaxConcurrentReconciles: opts.MaxConcurrentReconciles,
-		Logger:                  opts.Logger.WithName(opts.PodName),
+		Logger:                  logger,
 		Recorder:                record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
 		ContainerNode:           opts.ContainerNode,
 		SyncPeriod:              opts.SyncPeriod,

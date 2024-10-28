@@ -56,6 +56,9 @@ var _ = Describe("OnResult", Label(testlabels.Crypto), func() {
 	}
 
 	When("it should panic", func() {
+		BeforeEach(func() {
+			reconfigErr = errors.New(fakeString)
+		})
 		When("ctx is nil", func() {
 			BeforeEach(func() {
 				ctx = nil
@@ -65,18 +68,6 @@ var _ = Describe("OnResult", Label(testlabels.Crypto), func() {
 					_ = r.OnResult(ctx, vm, moVM, reconfigErr)
 				}
 				Expect(fn).To(PanicWith("context is nil"))
-			})
-		})
-
-		When("moVM.config is nil", func() {
-			BeforeEach(func() {
-				moVM.Config = nil
-			})
-			It("should panic", func() {
-				fn := func() {
-					_ = r.OnResult(ctx, vm, moVM, reconfigErr)
-				}
-				Expect(fn).To(PanicWith("moVM.config is nil"))
 			})
 		})
 

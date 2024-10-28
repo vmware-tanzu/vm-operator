@@ -18,24 +18,21 @@ import (
 func (r reconciler) OnResult(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine,
+	_ mo.VirtualMachine,
 	resultErr error) error {
+
+	if resultErr == nil {
+		return nil
+	}
 
 	if ctx == nil {
 		panic("context is nil")
-	}
-	if moVM.Config == nil {
-		panic("moVM.config is nil")
 	}
 	if vm == nil {
 		panic("vm is nil")
 	}
 
 	state := internal.FromContext(ctx)
-
-	if resultErr == nil {
-		return nil
-	}
 
 	// Determine the message to put on the condition.
 	var msgs []string

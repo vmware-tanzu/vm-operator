@@ -107,7 +107,7 @@ func UpdateCapabilitiesFeatures[T updateCapTypes](
 	if newFeat := pkgcfg.FromContext(ctx).Features; oldFeat != newFeat {
 		logger.Info(
 			"Updated features from capabilities",
-			"diff", cmp.Diff(newFeat, oldFeat))
+			"diff", cmp.Diff(oldFeat, newFeat))
 
 		return true
 	}

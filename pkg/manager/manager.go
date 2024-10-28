@@ -52,7 +52,6 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 	opts.defaults()
 
 	_ = clientgoscheme.AddToScheme(opts.Scheme)
-	_ = vmopv1.AddToScheme(opts.Scheme)
 	_ = ncpv1alpha1.AddToScheme(opts.Scheme)
 	_ = cnsv1alpha1.AddToScheme(opts.Scheme)
 	_ = netopv1alpha1.AddToScheme(opts.Scheme)

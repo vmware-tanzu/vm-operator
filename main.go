@@ -11,6 +11,8 @@ import (
 	"path"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/component-base/logs"
@@ -22,6 +24,8 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	ctrlsig "sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers"
 	"github.com/vmware-tanzu/vm-operator/pkg"
@@ -96,7 +100,11 @@ func initFeatures() {
 	setupLog.Info("Initial features from environment",
 		"features", pkgcfg.FromContext(ctx).Features)
 
-	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = capv1.AddToScheme(scheme)
+
+	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
 	if err != nil {
 		setupLog.Error(err, "Failed to create client for updating capabilities")
 	} else if _, err := capabilities.UpdateCapabilities(ctx, c); err != nil {

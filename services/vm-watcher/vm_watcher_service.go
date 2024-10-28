@@ -41,10 +41,7 @@ func AddToManager(
 		return err
 	}
 
-	return mgr.Add(New(
-		logr.NewContext(ctx, ctx.Logger),
-		mgr.GetClient(),
-		ctx.VMProvider))
+	return mgr.Add(New(ctx, mgr.GetClient(), ctx.VMProvider))
 }
 
 type Service struct {
@@ -76,9 +73,10 @@ func (s Service) Start(ctx context.Context) error {
 	ctx = watcher.JoinContext(ctx, s.ctx)
 	ctx = pkgcfg.JoinContext(ctx, s.ctx)
 
-	ctx = logr.NewContext(
-		ctx,
-		logr.FromContextOrDiscard(s.ctx).WithName("VMWatcherService"))
+	logger := logr.FromContextOrDiscard(s.ctx).WithName("VMWatcherService")
+	ctx = logr.NewContext(ctx, logger)
+
+	logger.Info("Starting VM watcher service")
 
 	for ctx.Err() == nil {
 		if err := s.waitForChanges(ctx); err != nil {
@@ -134,13 +132,13 @@ func (s Service) waitForChanges(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("got vsphere client")
+	logger.Info("Got vsphere client")
 
 	refs, err := s.vmFolderRefs(ctx)
 	if err != nil {
 		return err
 	}
-	logger.Info("got vm service folders", "refs", refs)
+	logger.Info("Got vm service folders", "refs", refs)
 
 	// Start the watcher.
 	w, err := watcher.Start(
@@ -154,13 +152,11 @@ func (s Service) waitForChanges(ctx context.Context) error {
 		return err
 	}
 
-	logger.Info("started watching vms")
-
 	for {
 		select {
 		case result := <-w.Result():
 			if result == emptyResult {
-				logger.Info("received empty result, watcher is closed")
+				logger.Info("Received empty result, watcher is closed")
 				return w.Err()
 			}
 
@@ -177,13 +173,13 @@ func (s Service) waitForChanges(ctx context.Context) error {
 
 			if !result.Verified {
 				logger.V(4).Info(
-					"received result but unable to validate vm",
+					"Received result but unable to validate vm",
 					"result", result)
 				continue
 			}
 
 			// Enqueue a reconcile request for the VM.
-			logger.V(4).Info("received result", "result", result)
+			logger.V(4).Info("Received result", "result", result)
 			chanSource <- event.GenericEvent{
 				Object: &vmopv1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{

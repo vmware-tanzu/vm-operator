@@ -214,7 +214,8 @@ func Start(
 	containerRefs ...moRef) (*Watcher, error) {
 
 	logger := logr.FromContextOrDiscard(ctx).WithName("vSphereWatcher")
-	ctx = logr.NewContext(ctx, logger)
+
+	logger.Info("Started watching VMs")
 
 	w, err := newWatcher(
 		ctx,
@@ -275,7 +276,7 @@ func (w *Watcher) onUpdate(
 	ou []vimtypes.ObjectUpdate) bool {
 
 	logger := logr.FromContextOrDiscard(ctx)
-	logger.V(4).Info("onUpdate", "objectUpdates", ou)
+	logger.V(4).Info("OnUpdate", "objectUpdates", ou)
 
 	updates := map[moRef]objUpdate{}
 
@@ -314,7 +315,6 @@ func (w *Watcher) onObject(
 	update objUpdate) error {
 
 	logger := logr.FromContextOrDiscard(ctx).
-		V(4).
 		WithName("onObject").
 		WithValues("obj", obj)
 
@@ -381,7 +381,7 @@ func (w *Watcher) onObject(
 			Verified:  verified,
 		}
 
-		logger.Info("sending result", "result", r)
+		logger.V(4).Info("Sending result", "result", r)
 
 		go func(r Result) {
 			w.chanResult <- r

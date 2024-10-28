@@ -19,6 +19,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2/textlogger"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -378,6 +379,13 @@ var _ = Describe(
 		})
 
 		JustBeforeEach(func() {
+			ctx = logr.NewContext(
+				context.Background(),
+				textlogger.NewLogger(textlogger.NewConfig(
+					textlogger.Verbosity(2),
+					textlogger.Output(GinkgoWriter),
+				)))
+
 			ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
 			ctx = pkgcfg.UpdateContext(
 				ctx,

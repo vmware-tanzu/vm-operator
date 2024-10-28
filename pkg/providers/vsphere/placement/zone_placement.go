@@ -20,9 +20,9 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 type Constraints struct {
@@ -57,7 +57,7 @@ func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result, needZo
 	}
 
 	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
-		if instancestorage.IsPresent(vmCtx.VM) {
+		if vmopv1util.IsInstanceStoragePresent(vmCtx.VM) {
 			res.InstanceStoragePlacement = true
 
 			if hostMoID := vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey]; hostMoID != "" {

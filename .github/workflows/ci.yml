@@ -159,6 +159,22 @@ jobs:
     - name: Vulncheck Go
       run: make vulncheck-go
 
+  build-image:
+    needs:
+    - verify-go-modules
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Build Image
+      run: GOOS=linux GOARCH=amd64 make image-build
+
   build-manager:
     needs:
     - verify-go-modules

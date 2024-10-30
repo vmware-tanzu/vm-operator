@@ -170,7 +170,7 @@ prereqs:
 ## --------------------------------------
 
 help: ## Display this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ## --------------------------------------
 ## Testing
@@ -606,7 +606,7 @@ kind-down: delete-kind-cluster
 kind-down: ## Delete kind cluster
 
 .PHONY: deploy-local-kind
-deploy-local-kind: docker-build load-kind 
+deploy-local-kind: image-build load-kind
 
 .PHONY: kind-deploy
 kind-deploy: deploy-local-kind
@@ -707,21 +707,39 @@ docs-serve-docker: ## Serve docs w container
 ## Docker
 ## --------------------------------------
 
-.PHONY: docker-build
-docker-build: ## Build the container image
-	hack/build-container.sh -i $(IMAGE) -t $(IMAGE_TAG) -v $(BUILD_VERSION) -n $(BUILD_NUMBER)
+.PHONY: image-build
+image-build: GOOS=linux
+image-build: ## Build container image
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" hack/build-container.sh \
+	  -i "$(IMAGE)" \
+	  -t "$(IMAGE_TAG)" \
+	  -v "$(BUILD_VERSION)" \
+	  -n "$(BUILD_NUMBER)" \
+	  -o "$(abspath $(ARTIFACTS_DIR))/$(IMAGE)-$(GOOS)_$(GOARCH).tar"
 
-.PHONY: docker-push
-docker-push: prereqs  ## Push the container image
+.PHONY: image-build-amd64
+image-build-amd64: ## Build amd64 container image
+	GOARCH=amd64 $(MAKE) image-build
+
+.PHONY: image-build-arm64
+image-build-arm64: ## Build arm64 container image
+	GOARCH=arm64 $(MAKE) image-build
+
+.PHONY: image-push
+image-push: ## Push container image
 	$(CRI_BIN) push ${IMG}
 
-.PHONY: docker-remove
-docker-remove: ## Remove the container image
+.PHONY: image-remove
+image-remove: ## Remove container image
 	@if [[ "`$(CRI_BIN) images -q ${IMG} 2>/dev/null`" != "" ]]; then \
 		echo "Remove container ${IMG}"; \
 		$(CRI_BIN) rmi ${IMG}; \
 	fi
 
+# The following are for backwards compatibility.
+docker-build: image-build
+docker-push: image-push
+docker-remove: image-remove
 
 ## --------------------------------------
 ## Vulnerability Checks
@@ -737,7 +755,7 @@ vulncheck-go: $(GOVULNCHECK)
 ## --------------------------------------
 
 .PHONY: clean
-clean: docker-remove ## Remove all generated files
+clean: image-remove ## Remove all generated files
 	rm -rf bin *.out $(ARTIFACTS_DIR)
 
 .PHONY: verify

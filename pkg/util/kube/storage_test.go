@@ -183,7 +183,7 @@ var _ = Describe("GetPVCZoneConstraints", func() {
 		})
 	})
 
-	Context("Bound PVC with Immediate StorageClass and Unbound PVC with WFFC StorageClass ", func() {
+	Context("Bound PVC with Immediate StorageClass and Unbound PVC with WFFC StorageClass", func() {
 
 		It("Returns success with common zones", func() {
 			immdSC := *builder.DummyStorageClass()
@@ -224,6 +224,39 @@ var _ = Describe("GetPVCZoneConstraints", func() {
 				},
 				Status: corev1.PersistentVolumeClaimStatus{
 					Phase: corev1.ClaimPending,
+				},
+			}
+
+			zones, err := kubeutil.GetPVCZoneConstraints(storageClasses, pvcs)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(zones.UnsortedList()).To(ConsistOf("zone1"))
+		})
+	})
+
+	Context("Bound PVC with accessible zones that include zones not requested", func() {
+
+		It("Returns success with common zones", func() {
+			immdSC := *builder.DummyStorageClass()
+			immdSC.VolumeBindingMode = ptr.To(storagev1.VolumeBindingImmediate)
+
+			storageClasses := map[string]storagev1.StorageClass{
+				immdSC.Name: immdSC,
+			}
+
+			pvcs := make([]corev1.PersistentVolumeClaim, 1)
+			pvcs[0] = corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "bound-pvc",
+					Annotations: map[string]string{
+						"csi.vsphere.volume-requested-topology":  `[{"topology.kubernetes.io/zone":"zone1"},{"topology.kubernetes.io/zone":"zone2"},{"topology.kubernetes.io/zone":"zone3"}]`,
+						"csi.vsphere.volume-accessible-topology": `[{"topology.kubernetes.io/zone":"zone1"},{"topology.kubernetes.io/zone":"zoneX"}]`,
+					},
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: &immdSC.Name,
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimBound,
 				},
 			}
 

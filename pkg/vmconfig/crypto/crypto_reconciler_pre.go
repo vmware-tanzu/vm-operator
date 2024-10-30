@@ -70,6 +70,10 @@ var (
 	// ErrInvalidKeyProvider is returned if the key provider specified by an
 	// EncryptionClass is invalid.
 	ErrInvalidKeyProvider = errors.New("invalid key provider")
+
+	// ErrInvalidKeyID is returned if the key id specified by an
+	// EncryptionClass is invalid.
+	ErrInvalidKeyID = errors.New("invalid key id")
 )
 
 func (r reconciler) Reconcile(
@@ -379,7 +383,7 @@ func (r reconciler) reconcileUpdateDefaultKeyProvider(
 }
 
 func setConditionAndReturnErr(args reconcileArgs, err error, r Reason) error {
-	if err == ErrInvalidKeyProvider {
+	if err == ErrInvalidKeyProvider || err == ErrInvalidKeyID {
 		r = ReasonEncryptionClassInvalid
 	} else if apierrors.IsNotFound(err) {
 		r = ReasonEncryptionClassNotFound
@@ -544,6 +548,13 @@ func getCryptoKeyFromEncryptionClass(
 	m := crypto.NewManagerKmip(args.vimClient)
 	if ok, _ := m.IsValidProvider(ctx, obj.Spec.KeyProvider); !ok {
 		return cryptoKey{}, ErrInvalidKeyProvider
+	}
+
+	isNative, _ := m.IsNativeProvider(ctx, obj.Spec.KeyProvider)
+	if !isNative && obj.Spec.KeyID != "" {
+		if ok, _ := m.IsValidKey(ctx, obj.Spec.KeyProvider, obj.Spec.KeyID); !ok {
+			return cryptoKey{}, ErrInvalidKeyID
+		}
 	}
 
 	return cryptoKey{

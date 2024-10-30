@@ -327,6 +327,22 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 					})
 				})
 
+				When("the EncryptionClass specifies an invalid key id", func() {
+					BeforeEach(func() {
+						encClass.Spec.KeyProvider = provider1ID
+						encClass.Spec.KeyID = "invalid"
+					})
+					It("should return an error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(pkgcrypto.ErrInvalidKeyID))
+						c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal(pkgcrypto.ReasonEncryptionClassInvalid.String()))
+						Expect(c.Message).To(Equal(pkgcrypto.ErrInvalidKeyID.Error()))
+					})
+				})
+
 				When("the EncryptionClass exists", func() {
 					When("the vm is being created with a vtpm", func() {
 						BeforeEach(func() {

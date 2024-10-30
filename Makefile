@@ -92,6 +92,7 @@ WEBHOOK_ROOT      ?= $(MANIFEST_ROOT)/webhook
 RBAC_ROOT         ?= $(MANIFEST_ROOT)/rbac
 
 # Image URL to use all building/pushing image targets
+BASE_IMAGE ?= gcr.io/distroless/base-debian12
 IMAGE ?= vmoperator-controller
 IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
@@ -149,8 +150,37 @@ NET_OP_API_SLUG := github.com/vmware-tanzu/net-operator-api
 
 BUILD_TYPE ?= dev
 BUILD_NUMBER ?= 00000000
+
+BUILD_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 BUILD_COMMIT ?= $(shell git rev-parse --short HEAD)
-export BUILD_VERSION ?= $(shell git describe --always --match "v*" | sed 's/v//')
+
+# ex. 1.2.3+abcdefg+4.5.6+hijklmn
+ifeq (,$(strip $(PRDCT_VERSION)))
+PRDCT_VERSION := $(shell git describe --always --match 'v*' 2>/dev/null | awk -F- '{gsub(/^v/,"",$$1);gsub(/^g/,"+",$$3);print $$1$$3}')
+endif
+
+ifeq (,$(strip $(BUILD_VERSION)))
+
+# ex. 1.2.3+abcdefg+4.5.6+hijklmn
+BUILD_VERSION := $(PRDCT_VERSION)
+
+ifneq (, $(strip,$(BUILD_NUMBER)))
+# ex. 1.2.3+abcdefg+4.5.6+hijklmn+7891011
+BUILD_VERSION := $(BUILD_VERSION)+$(BUILD_NUMBER)
+endif
+
+endif
+
+# ex. 1.2.3-abcdefg-4.5.6-hijklmn-7891011
+IMAGE_VERSION ?= $(subst +,-,$(BUILD_VERSION))
+
+IMAGE_FILE ?= $(abspath $(ARTIFACTS_DIR))/$(IMAGE)-$(GOOS)_$(GOARCH).tar
+
+export BUILD_BRANCH
+export BUILD_COMMIT
+export BUILD_VERSION
+
+CGO_ENABLED ?= 0
 
 BUILDINFO_LDFLAGS = "\
 -X $(PROJECT_SLUG)/pkg.BuildVersion=$(BUILD_VERSION) \
@@ -210,7 +240,7 @@ coverage: ## Show test coverage in browser
 .PHONY: $(MANAGER) manager-only
 manager-only: $(MANAGER) ## Build manager binary only
 $(MANAGER):
-	CGO_ENABLED=0 go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) .
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=$(CGO_ENABLED) go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) .
 
 .PHONY: manager
 manager: prereqs generate lint-go manager-only ## Build manager binary
@@ -218,7 +248,7 @@ manager: prereqs generate lint-go manager-only ## Build manager binary
 .PHONY: $(WEB_CONSOLE_VALIDATOR) web-console-validator-only
 web-console-validator-only: $(WEB_CONSOLE_VALIDATOR) ## Build web-console-validator binary only
 $(WEB_CONSOLE_VALIDATOR):
-	CGO_ENABLED=0 go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/web-console-validator/main.go
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=$(CGO_ENABLED) go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/web-console-validator/main.go
 
 .PHONY: web-console-validator
 web-console-validator: prereqs generate lint-go web-console-validator-only ## Build web-console-validator binary
@@ -709,21 +739,26 @@ docs-serve-docker: ## Serve docs w container
 
 .PHONY: image-build
 image-build: GOOS=linux
+image-build: manager-only web-console-validator-only
 image-build: ## Build container image
 	GOOS="$(GOOS)" GOARCH="$(GOARCH)" hack/build-container.sh \
 	  -i "$(IMAGE)" \
 	  -t "$(IMAGE_TAG)" \
 	  -v "$(BUILD_VERSION)" \
+	  -V "$(IMAGE_VERSION)" \
 	  -n "$(BUILD_NUMBER)" \
-	  -o "$(abspath $(ARTIFACTS_DIR))/$(IMAGE)-$(GOOS)_$(GOARCH).tar"
+	  -B "$(BASE_IMAGE)" \
+	  -o "$(IMAGE_FILE)"
 
 .PHONY: image-build-amd64
+image-build-amd64: GOARCH=amd64
+image-build-amd64: image-build
 image-build-amd64: ## Build amd64 container image
-	GOARCH=amd64 $(MAKE) image-build
 
 .PHONY: image-build-arm64
+image-build-arm64: GOARCH=arm64
+image-build-arm64: image-build
 image-build-arm64: ## Build arm64 container image
-	GOARCH=arm64 $(MAKE) image-build
 
 .PHONY: image-push
 image-push: ## Push container image

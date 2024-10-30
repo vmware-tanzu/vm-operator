@@ -175,38 +175,6 @@ jobs:
     - name: Build Image
       run: GOOS=linux GOARCH=amd64 make image-build
 
-  build-manager:
-    needs:
-    - verify-go-modules
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
-    - name: Install Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache: true
-        cache-dependency-path: '**/go.sum'
-    - name: Build Manager
-      run: make manager-only
-
-  build-web-console-validator:
-    needs:
-    - verify-go-modules
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
-    - name: Install Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache: true
-        cache-dependency-path: '**/go.sum'
-    - name: Build Web Console Validator
-      run: make web-console-validator-only
-
   test:
     needs:
     - verify-go-modules

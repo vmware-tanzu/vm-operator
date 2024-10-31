@@ -20,6 +20,7 @@ type NetplanEthernet struct {
 	SetName     string                    `json:"set-name,omitempty"`
 	Dhcp4       bool                      `json:"dhcp4,omitempty"`
 	Dhcp6       bool                      `json:"dhcp6,omitempty"`
+	AcceptRA    bool                      `json:"accept-ra,omitempty"`
 	Addresses   []string                  `json:"addresses,omitempty"`
 	Gateway4    string                    `json:"gateway4,omitempty"`
 	Gateway6    string                    `json:"gateway6,omitempty"`
@@ -64,6 +65,9 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*Netplan, error) {
 
 		npEth.Dhcp4 = r.DHCP4
 		npEth.Dhcp6 = r.DHCP6
+		// Right now we can set the same value as DHCPv6 configuration
+		// and in some future separate/specialize if required
+		npEth.AcceptRA = r.DHCP6
 
 		if !npEth.Dhcp4 {
 			for _, ipConfig := range r.IPConfigs {

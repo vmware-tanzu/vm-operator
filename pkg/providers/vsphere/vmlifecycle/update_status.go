@@ -240,7 +240,7 @@ func convertNetDNSConfigInfo(dnsConfig *vimtypes.NetDnsConfigInfo) *vmopv1.Virtu
 		DomainName:    dnsConfig.DomainName,
 		HostName:      dnsConfig.HostName,
 		Nameservers:   util.Dedupe(dnsConfig.IpAddress),
-		SearchDomains: dnsConfig.SearchDomain,
+		SearchDomains: util.Dedupe(dnsConfig.SearchDomain),
 	}
 }
 

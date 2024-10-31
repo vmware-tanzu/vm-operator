@@ -92,17 +92,17 @@ func IsValidDomainName(s string) bool {
 	return len(s) <= 253 && fqdnNameRx.MatchString(s)
 }
 
-func Dedupe(slice []string) []string {
+func Dedupe[T comparable](slice []T) []T {
 	// Create a map to track unique elements
-	seen := make(map[string]bool)
-	result := []string{}
+	seen := make(map[T]struct{})
+	result := []T{}
 
 	// Iterate over the slice
-	for _, str := range slice {
+	for _, item := range slice {
 		// Check if the element has been seen before
-		if !seen[str] {
-			seen[str] = true
-			result = append(result, str)
+		if _, exists := seen[item]; !exists {
+			seen[item] = struct{}{}
+			result = append(result, item)
 		}
 	}
 

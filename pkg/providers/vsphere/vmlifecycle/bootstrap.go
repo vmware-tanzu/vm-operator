@@ -195,7 +195,7 @@ func GetBootstrapArgs(
 		}
 
 		if len(bsa.DNSServers) == 0 {
-			// GOSC will this for its global config.
+			// GOSC will set this for its global config.
 			bsa.DNSServers = ns
 		}
 

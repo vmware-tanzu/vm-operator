@@ -322,6 +322,46 @@ var _ = Describe("UpdateStatus", func() {
 			})
 		})
 
+		Context("DNS", func() {
+			When("DNSConfig has duplicate IpAddress and duplicate SearchDomain", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest = &vimtypes.GuestInfo{
+						IpStack: []vimtypes.GuestStackInfo{
+							{
+								DnsConfig: &vimtypes.NetDnsConfigInfo{
+									HostName:   "my-vm",
+									DomainName: "local.domain",
+									IpAddress: []string{
+										"10.211.0.1",
+										"10.211.0.2",
+										"10.211.0.1",
+										"10.211.0.2",
+									},
+									SearchDomain: []string{
+										"foo.local", "bar.local",
+										"foo.local", "bar.local",
+									},
+								},
+							},
+						},
+					}
+				})
+
+				It("Skips duplicate Nameservers and duplicate SearchDomain", func() {
+					network := vmCtx.VM.Status.Network
+					Expect(network).ToNot(BeNil())
+					Expect(network.IPStacks).To(HaveLen(1))
+					Expect(network.IPStacks[0].DNS).ToNot(BeNil())
+					Expect(network.IPStacks[0].DNS.HostName).To(Equal("my-vm"))
+					Expect(network.IPStacks[0].DNS.DomainName).To(Equal("local.domain"))
+					Expect(network.IPStacks[0].DNS.Nameservers).To(HaveLen(2))
+					Expect(network.IPStacks[0].DNS.Nameservers).To(Equal([]string{"10.211.0.1", "10.211.0.2"}))
+					Expect(network.IPStacks[0].DNS.SearchDomains).To(HaveLen(2))
+					Expect(network.IPStacks[0].DNS.SearchDomains).To(Equal([]string{"foo.local", "bar.local"}))
+				})
+			})
+		})
+
 		Context("IPRoutes", func() {
 			BeforeEach(func() {
 				vmCtx.MoVM.Guest = &vimtypes.GuestInfo{

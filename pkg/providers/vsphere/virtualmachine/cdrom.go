@@ -99,7 +99,10 @@ func UpdateCdromDeviceChanges(
 
 	// Ensure all CD-ROM devices are assigned to controllers with proper slots.
 	// This may result new controllers to be added if none is available.
-	newControllers := ensureAllCdromsHaveControllers(expectedBackingFileNameToCdrom, newCurDevices)
+	newControllers, err := ensureAllCdromsHaveControllers(expectedBackingFileNameToCdrom, newCurDevices)
+	if err != nil {
+		return nil, err
+	}
 	deviceChanges = append(deviceChanges, newControllers...)
 
 	// Check and update existing CD-ROM devices' connection state if needed.
@@ -320,12 +323,12 @@ func createNewCdrom(
 // ensureAllCdromsHaveControllers ensures all CD-ROM device are assigned to an
 // available controller on the VM. First connect to one of the VM's two IDE
 // channels if one is free. If they are both in use, connect to the VM's SATA
-// controller if one is present. Otherwise, add a new AHCI (SATA) controller to
+// controller if one is present. Otherwise, add a new SATA (AHCI) controller to
 // the VM and assign the CD-ROM to it.
-// It returns a list of device changes if a new controller is added.
+// It returns a list of device changes if any new controllers are added.
 func ensureAllCdromsHaveControllers(
 	expectedCdromDevices map[string]vimtypes.BaseVirtualDevice,
-	curDevices object.VirtualDeviceList) []vimtypes.BaseVirtualDeviceConfigSpec {
+	curDevices object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 
 	var newControllerChanges []vimtypes.BaseVirtualDeviceConfigSpec
 
@@ -336,32 +339,39 @@ func ensureAllCdromsHaveControllers(
 		}
 
 		if ide := curDevices.PickController((*vimtypes.VirtualIDEController)(nil)); ide != nil {
+			// IDE controller is available.
 			curDevices.AssignController(cdrom, ide)
 		} else if sata := curDevices.PickController((*vimtypes.VirtualSATAController)(nil)); sata != nil {
+			// SATA controller is available.
 			curDevices.AssignController(cdrom, sata)
 		} else {
-			ahci, controllerChanges, updatedCurDevices := addNewAHCIController(curDevices)
-			// Update curDevices to include new controllers so that next CD-ROM
-			// can be assigned to them without adding new controllers.
-			curDevices = updatedCurDevices
-			curDevices.AssignController(cdrom, ahci)
+			// No existing IDE or SATA controller is available, add a new one.
+			sata, controllerChanges, updatedCurDevices, err := addNewSATAController(curDevices)
+			if err != nil {
+				return nil, fmt.Errorf("error adding a new SATA controller: %w", err)
+			}
+			curDevices.AssignController(cdrom, sata)
 			newControllerChanges = append(newControllerChanges, controllerChanges...)
+			curDevices = updatedCurDevices
 		}
 
-		// Update curDevices so that next CD-ROM device can be assigned to a
-		// controller in correct slot (unit number).
+		// Update curDevices with assigned CD-ROM for correct slot (unit number)
+		// allocation in the next CD-ROM assignment.
 		curDevices = append(curDevices, cdrom)
 	}
 
-	return newControllerChanges
+	return newControllerChanges, nil
 }
 
-// addNewAHCIController adds a new AHCI (SATA) controller to the VM and returns
-// the AHCI controller and the other device changes required to add it to VM.
-func addNewAHCIController(curDevices object.VirtualDeviceList) (
-	*vimtypes.VirtualAHCIController,
+// addNewSATAController adds a new SATA (AHCI) controller to the VM and returns:
+// - the new SATA controller,
+// - a list of device changes adding the new controller and PCI (if added)
+// - updated current devices list with the new controller and PCI (if added).
+func addNewSATAController(curDevices object.VirtualDeviceList) (
+	vimtypes.BaseVirtualController,
 	[]vimtypes.BaseVirtualDeviceConfigSpec,
-	object.VirtualDeviceList) {
+	object.VirtualDeviceList,
+	error) {
 
 	var (
 		pciController *vimtypes.VirtualPCIController
@@ -388,24 +398,19 @@ func addNewAHCIController(curDevices object.VirtualDeviceList) (
 		curDevices = append(curDevices, pciController)
 	}
 
-	ahciController := &vimtypes.VirtualAHCIController{
-		VirtualSATAController: vimtypes.VirtualSATAController{
-			VirtualController: vimtypes.VirtualController{
-				VirtualDevice: vimtypes.VirtualDevice{
-					Key: curDevices.NewKey(),
-				},
-			},
-		},
+	sata, err := curDevices.CreateSATAController()
+	if err != nil {
+		return nil, nil, curDevices, err
 	}
-	curDevices.AssignController(ahciController, pciController)
 
+	curDevices.AssignController(sata, pciController)
 	deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-		Device:    ahciController,
+		Device:    sata,
 		Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 	})
-	curDevices = append(curDevices, ahciController)
+	curDevices = append(curDevices, sata)
 
-	return ahciController, deviceChanges, curDevices
+	return sata.(vimtypes.BaseVirtualController).GetVirtualController(), deviceChanges, curDevices, nil
 }
 
 // updateCurCdromsConnectionState updates the connection state of the given

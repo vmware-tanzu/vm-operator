@@ -41,11 +41,11 @@ func cdromTests() {
 		cvmiKind          = "ClusterVirtualMachineImage"
 		cdromName1        = "cdrom1"
 		cdromName2        = "cdrom2"
-		cdromDeviceKey1   = 3000
-		cdromDeviceKey2   = 3001
-		ideControllerKey  = 200
-		sataControllerKey = 15000
-		pciControllerKey  = 100
+		cdromDeviceKey1   = int32(3000)
+		cdromDeviceKey2   = int32(3001)
+		ideControllerKey  = int32(200)
+		sataControllerKey = int32(15000)
+		pciControllerKey  = int32(100)
 	)
 
 	Context("UpdateCdromDeviceChanges", func() {
@@ -171,11 +171,9 @@ func cdromTests() {
 							curDevices = object.VirtualDeviceList{
 								&vimtypes.VirtualPCIController{
 									VirtualController: vimtypes.VirtualController{
-										BusNumber: 0,
 										VirtualDevice: vimtypes.VirtualDevice{
 											Key: pciControllerKey,
 										},
-										Device: []int32{}, // can have 32 devices assigned
 									},
 								},
 							}
@@ -199,7 +197,7 @@ func cdromTests() {
 
 							Expect(ahciChange.GetVirtualDeviceConfigSpec().Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
 							ahci := ahciChange.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualAHCIController)
-							Expect(ahci.ControllerKey).To(Equal(int32(pciControllerKey)))
+							Expect(ahci.ControllerKey).To(Equal(pciControllerKey))
 
 							verifyCdromDeviceConfigSpec(result[0], vimtypes.VirtualDeviceConfigSpecOperationAdd, true, true, ahci.Key, 0, vmiFileName)
 						})
@@ -301,6 +299,86 @@ func cdromTests() {
 				})
 			})
 
+			When("VM.Spec.Cdrom adds multiple new CD-ROM devices assigning to different SATA controllers", func() {
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: cdromName1,
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: vmiName,
+								Kind: vmiKind,
+							},
+						},
+						{
+							Name: cdromName2,
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: cvmiName,
+								Kind: cvmiKind,
+							},
+						},
+					}
+
+					// Create a SATA controller with 29 devices already assigned.
+					// This ensures only one more device can be assigned to this controller.
+					assigned := []int32{}
+					for i := 0; i < 29; i++ {
+						assigned = append(assigned, int32(i))
+					}
+					curDevices = object.VirtualDeviceList{
+						&vimtypes.VirtualPCIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: pciControllerKey,
+								},
+								Device: []int32{sataControllerKey},
+							},
+						},
+						&vimtypes.VirtualAHCIController{
+							VirtualSATAController: vimtypes.VirtualSATAController{
+								VirtualController: vimtypes.VirtualController{
+									BusNumber: 0,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: sataControllerKey,
+									},
+									Device: assigned,
+								},
+							},
+						},
+					}
+				})
+
+				It("should add new CD-ROMs and SATA controller with expected config", func() {
+					var (
+						newSataKey          int32
+						cdromControllerKeys []int32
+					)
+
+					// Expect 3 new devices: 2 CD-ROMs and 1 SATA controller.
+					Expect(result).To(HaveLen(3))
+
+					for _, r := range result {
+						Expect(r.GetVirtualDeviceConfigSpec().Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
+						if sata, ok := r.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualAHCIController); ok {
+							Expect(sata.ControllerKey).To(Equal(pciControllerKey))
+							// The bus number should be 1 since the existing SATA controller has bus number 0.
+							Expect(sata.BusNumber).To(Equal(int32(1)))
+							Expect(sata.Device).To(HaveLen(1))
+							newSataKey = sata.Key
+						} else if cdrom, ok := r.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualCdrom); ok {
+							cdromControllerKeys = append(cdromControllerKeys, cdrom.ControllerKey)
+						} else {
+							Fail("unexpected device change")
+						}
+					}
+
+					By("Verify CD-ROM devices are assigned to expected SATA controllers")
+					Expect(cdromControllerKeys).To(HaveLen(2))
+					Expect(cdromControllerKeys).To(ContainElement(sataControllerKey))
+					Expect(cdromControllerKeys).To(ContainElement(newSataKey))
+				})
+			})
+
 			When("VM.Spec.Cdrom removes existing CD-ROM devices", func() {
 
 				BeforeEach(func() {
@@ -344,7 +422,7 @@ func cdromTests() {
 					Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
 					cdrom, ok := devSpec.Device.(*vimtypes.VirtualCdrom)
 					Expect(ok).To(BeTrue())
-					Expect(cdrom.Key).To(Equal(int32(cdromDeviceKey2)))
+					Expect(cdrom.Key).To(Equal(cdromDeviceKey2))
 				})
 			})
 
@@ -449,7 +527,7 @@ func cdromTests() {
 					Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))
 					removed, ok := devSpec.Device.(*vimtypes.VirtualCdrom)
 					Expect(ok).To(BeTrue())
-					Expect(removed.Key).To(Equal(int32(cdromDeviceKey1)))
+					Expect(removed.Key).To(Equal(cdromDeviceKey1))
 				})
 			})
 		})
@@ -870,6 +948,88 @@ func cdromTests() {
 
 				It("should return an error", func() {
 					Expect(resultErr.Error()).To(ContainSubstring("found multiple CD-ROMs with same backing file name"))
+				})
+			})
+
+			When("error adding a new SATA controller", func() {
+
+				BeforeEach(func() {
+					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
+
+					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: cdromName1,
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: vmiName,
+								Kind: vmiKind,
+							},
+						},
+					}
+
+					// Create 4 SATA controllers (max supported) with full devices assigned to each.
+					// This would cause CD-ROM assignment to create a new SATA and fail due to exceeding SATA limits.
+					assigned := []int32{}
+					for i := 0; i < 30; i++ {
+						assigned = append(assigned, int32(i))
+					}
+					curDevices = object.VirtualDeviceList{
+						&vimtypes.VirtualPCIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: pciControllerKey,
+								},
+								Device: []int32{sataControllerKey, sataControllerKey + 1, sataControllerKey + 2, sataControllerKey + 3},
+							},
+						},
+						&vimtypes.VirtualAHCIController{
+							VirtualSATAController: vimtypes.VirtualSATAController{
+								VirtualController: vimtypes.VirtualController{
+									BusNumber: 0,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: sataControllerKey,
+									},
+									Device: assigned,
+								},
+							},
+						},
+						&vimtypes.VirtualAHCIController{
+							VirtualSATAController: vimtypes.VirtualSATAController{
+								VirtualController: vimtypes.VirtualController{
+									BusNumber: 1,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: sataControllerKey + 1,
+									},
+									Device: assigned,
+								},
+							},
+						},
+						&vimtypes.VirtualAHCIController{
+							VirtualSATAController: vimtypes.VirtualSATAController{
+								VirtualController: vimtypes.VirtualController{
+									BusNumber: 2,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: sataControllerKey + 2,
+									},
+									Device: assigned,
+								},
+							},
+						},
+						&vimtypes.VirtualAHCIController{
+							VirtualSATAController: vimtypes.VirtualSATAController{
+								VirtualController: vimtypes.VirtualController{
+									BusNumber: 3,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: sataControllerKey + 3,
+									},
+									Device: assigned,
+								},
+							},
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(resultErr.Error()).To(ContainSubstring("error adding a new SATA controller"))
 				})
 			})
 		})

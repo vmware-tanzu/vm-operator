@@ -53,7 +53,7 @@ var _ = Describe("GetSysprepSecretData", func() {
 		productIDSecretName := "product_id_secret"
 		BeforeEach(func() {
 			inlineSysprep = vmopv1sysprep.Sysprep{
-				UserData: &vmopv1sysprep.UserData{
+				UserData: vmopv1sysprep.UserData{
 					ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{
 						Name: productIDSecretName,
 						Key:  "product_id",
@@ -249,7 +249,7 @@ var _ = Describe("Sysprep GetSecretResources", func() {
 		productIDSecretName := "product_id_secret"
 		BeforeEach(func() {
 			inlineSysprep = vmopv1sysprep.Sysprep{
-				UserData: &vmopv1sysprep.UserData{
+				UserData: vmopv1sysprep.UserData{
 					ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{
 						Name: productIDSecretName,
 						Key:  "product_id",
@@ -375,7 +375,7 @@ var _ = Describe("Sysprep GetSecretResources", func() {
 		secretName := "same-secret"
 		BeforeEach(func() {
 			inlineSysprep = vmopv1sysprep.Sysprep{
-				UserData: &vmopv1sysprep.UserData{
+				UserData: vmopv1sysprep.UserData{
 					ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{
 						Name: secretName,
 						Key:  "product_id",

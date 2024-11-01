@@ -122,7 +122,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 						},
 						TimeZone: 4,
 					},
-					UserData: &vmopv1sysprep.UserData{
+					UserData: vmopv1sysprep.UserData{
 						FullName:  "foo-bar",
 						OrgName:   "foo-org",
 						ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{Key: "product_id_key"},
@@ -188,7 +188,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 					bsArgs.Sysprep = nil
 				})
 
-				It("does not set", func() {
+				It("still sets some fields", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(custSpec).ToNot(BeNil())
 
@@ -198,6 +198,8 @@ var _ = Describe("SysPrep Bootstrap", func() {
 					name, ok := sysPrep.UserData.ComputerName.(*vimtypes.CustomizationFixedName)
 					Expect(ok).To(BeTrue())
 					Expect(name.Name).To(Equal(hostName))
+
+					Expect(sysPrep.GuiUnattended.TimeZone).To(Equal(int32(85)))
 				})
 			})
 		})

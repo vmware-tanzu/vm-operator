@@ -717,13 +717,19 @@ spec:
                                         - name
                                         type: object
                                       timeZone:
+                                        default: 85
                                         description: |-
                                           TimeZone is the time zone index for the virtual machine.
 
                                           Please note that numbers correspond to time zones listed at
                                           https://bit.ly/3Rzv8oL.
+
+                                          Defaults to UTC.
                                         format: int32
+                                        minimum: 0
                                         type: integer
+                                    required:
+                                    - timeZone
                                     type: object
                                   identification:
                                     description: Identification is a representation
@@ -827,6 +833,8 @@ spec:
                                     - fullName
                                     - orgName
                                     type: object
+                                required:
+                                - userData
                                 type: object
                             type: object
                           vAppConfig:

@@ -26,10 +26,16 @@ func GetSysprepSecretData(
 		productID, password, domainPwd string
 	)
 
-	if userData := in.UserData; userData != nil && userData.ProductID != nil {
+	if in.UserData.ProductID != nil {
 		// this is an optional secret key selector even when FullName or OrgName are set.
-		err := util.GetSecretData(ctx, k8sClient, secretNamespace, userData.ProductID.Name, userData.ProductID.Key, &productID)
-		if err != nil {
+		if err := util.GetSecretData(
+			ctx,
+			k8sClient,
+			secretNamespace,
+			in.UserData.ProductID.Name,
+			in.UserData.ProductID.Key,
+			&productID); err != nil {
+
 			return SecretData{}, err
 		}
 	}
@@ -84,16 +90,16 @@ func GetSecretResources(
 		}
 	}
 
-	if userData := in.UserData; userData != nil && userData.ProductID != nil {
+	if in.UserData.ProductID != nil {
 		s, err := util.GetSecretResource(
 			ctx,
 			k8sClient,
 			secretNamespace,
-			userData.ProductID.Name)
+			in.UserData.ProductID.Name)
 		if err != nil {
 			return nil, err
 		}
-		captureSecret(s, userData.ProductID.Name)
+		captureSecret(s, in.UserData.ProductID.Name)
 	}
 
 	if guiUnattended := in.GUIUnattended; guiUnattended != nil && guiUnattended.AutoLogon {

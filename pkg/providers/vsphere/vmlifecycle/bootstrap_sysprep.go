@@ -91,12 +91,18 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 	bootstrapData := bsArgs.BootstrapData
 	sysprepCustomization := &vimtypes.CustomizationSysprep{}
 
-	if from.GUIUnattended != nil {
-		sysprepCustomization.GuiUnattended = vimtypes.CustomizationGuiUnattended{
-			TimeZone:       from.GUIUnattended.TimeZone,
-			AutoLogon:      from.GUIUnattended.AutoLogon,
-			AutoLogonCount: from.GUIUnattended.AutoLogonCount,
-		}
+	sysprepCustomization.GuiUnattended = vimtypes.CustomizationGuiUnattended{}
+
+	if from.GUIUnattended == nil {
+		// If spec.bootstrap.sysprep.guiUnattended is not set, then default
+		// the timezone to UTC, which is 85 per the Microsoft documentation at
+		// https://learn.microsoft.com/en-us/previous-versions/windows/embedded/ms912391(v=winembedded.11).
+		sysprepCustomization.GuiUnattended.TimeZone = 85
+	} else {
+		sysprepCustomization.GuiUnattended.TimeZone = from.GUIUnattended.TimeZone
+		sysprepCustomization.GuiUnattended.AutoLogon = from.GUIUnattended.AutoLogon
+		sysprepCustomization.GuiUnattended.AutoLogonCount = from.GUIUnattended.AutoLogonCount
+
 		if bootstrapData.Sysprep != nil && bootstrapData.Sysprep.Password != "" {
 			sysprepCustomization.GuiUnattended.Password = &vimtypes.CustomizationPassword{
 				Value:     bootstrapData.Sysprep.Password,
@@ -111,14 +117,12 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 			Name: bsArgs.HostName,
 		},
 	}
-	if from.UserData != nil {
-		sysprepCustomization.UserData.FullName = from.UserData.FullName
-		sysprepCustomization.UserData.OrgName = from.UserData.OrgName
-		// In the case of a VMI with volume license key, this might not be set.
-		// Hence, add a check to see if the productID is set to empty.
-		if bootstrapData.Sysprep != nil && bootstrapData.Sysprep.ProductID != "" {
-			sysprepCustomization.UserData.ProductId = bootstrapData.Sysprep.ProductID
-		}
+	sysprepCustomization.UserData.FullName = from.UserData.FullName
+	sysprepCustomization.UserData.OrgName = from.UserData.OrgName
+	// In the case of a VMI with volume license key, this might not be set.
+	// Hence, add a check to see if the productID is set to empty.
+	if bootstrapData.Sysprep != nil && bootstrapData.Sysprep.ProductID != "" {
+		sysprepCustomization.UserData.ProductId = bootstrapData.Sysprep.ProductID
 	}
 
 	if from.GUIRunOnce != nil {

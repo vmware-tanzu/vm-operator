@@ -84,7 +84,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 							Identification: &vmopv1sysprep.Identification{
 								DomainAdmin: "my-admin",
 							},
-							UserData: &vmopv1sysprep.UserData{
+							UserData: vmopv1sysprep.UserData{
 								FullName: "vmware",
 							},
 						},
@@ -591,7 +591,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 							Sysprep: &vmopv1sysprep.Sysprep{
-								UserData: &vmopv1sysprep.UserData{
+								UserData: vmopv1sysprep.UserData{
 									FullName: "test-user",
 									OrgName:  "test-org",
 									ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{

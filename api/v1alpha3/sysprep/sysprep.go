@@ -39,10 +39,8 @@ type Sysprep struct {
 	// Server 2003.
 	LicenseFilePrintData *LicenseFilePrintData `json:"licenseFilePrintData,omitempty"`
 
-	// +optional
-
 	// UserData is a representation of the Sysprep UserData key.
-	UserData *UserData `json:"userData,omitempty"`
+	UserData UserData `json:"userData"`
 }
 
 // GUIRunOnce maps to the GuiRunOnce key in the sysprep.xml answer file.
@@ -98,13 +96,16 @@ type GUIUnattended struct {
 	// `password`.
 	Password *PasswordSecretKeySelector `json:"password,omitempty"`
 
-	// +optional
+	// +kubebuilder:default=85
+	// +kubebuilder:validation:Minimum=0
 
 	// TimeZone is the time zone index for the virtual machine.
 	//
 	// Please note that numbers correspond to time zones listed at
 	// https://bit.ly/3Rzv8oL.
-	TimeZone int32 `json:"timeZone,omitempty"`
+	//
+	// Defaults to UTC.
+	TimeZone int32 `json:"timeZone"`
 }
 
 // PasswordSecretKeySelector references the password value from a Secret resource

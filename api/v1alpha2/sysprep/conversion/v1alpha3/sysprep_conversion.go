@@ -22,7 +22,11 @@ func Convert_sysprep_Sysprep_To_sysprep_Sysprep(
 	}
 	out.GUIUnattended = (*vmopv1a2sysprep.GUIUnattended)(unsafe.Pointer(in.GUIUnattended))
 	out.LicenseFilePrintData = (*vmopv1a2sysprep.LicenseFilePrintData)(unsafe.Pointer(in.LicenseFilePrintData))
-	out.UserData = (*vmopv1a2sysprep.UserData)(unsafe.Pointer(in.UserData))
+	out.UserData = &vmopv1a2sysprep.UserData{
+		FullName:  in.UserData.FullName,
+		OrgName:   in.UserData.OrgName,
+		ProductID: (*vmopv1a2sysprep.ProductIDSecretKeySelector)(unsafe.Pointer(in.UserData.ProductID)),
+	}
 	if id := in.Identification; id != nil {
 		out.Identification = &vmopv1a2sysprep.Identification{
 			DomainAdmin:         id.DomainAdmin,

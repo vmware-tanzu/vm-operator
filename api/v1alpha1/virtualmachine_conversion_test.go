@@ -42,6 +42,19 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(apiequality.Semantic.DeepEqual(hubBefore, hubAfter)).To(BeTrue(), cmp.Diff(hubBefore, hubAfter))
 	}
 
+	hubSpokeHubEx := func(g *WithT, hub, hubAfter ctrlconversion.Hub, spoke ctrlconversion.Convertible) {
+		hubBefore := hub.DeepCopyObject().(ctrlconversion.Hub)
+
+		// First convert hub to spoke
+		dstCopy := spoke.DeepCopyObject().(ctrlconversion.Convertible)
+		g.Expect(dstCopy.ConvertFrom(hubBefore)).To(Succeed())
+
+		// Convert spoke back to hub and check if the resulting hub is equal to the hub before the round trip
+		g.Expect(dstCopy.ConvertTo(hubAfter)).To(Succeed())
+
+		g.Expect(apiequality.Semantic.DeepEqual(hubBefore, hubAfter)).To(BeTrue(), cmp.Diff(hubBefore, hubAfter))
+	}
+
 	spokeHubSpoke := func(g *WithT, spoke ctrlconversion.Convertible, hub ctrlconversion.Hub) {
 		spokeBefore := spoke.DeepCopyObject().(ctrlconversion.Convertible)
 
@@ -375,7 +388,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 							Identification: &vmopv1sysprep.Identification{
 								DomainAdmin: "my-admin",
 							},
-							UserData: &vmopv1sysprep.UserData{
+							UserData: vmopv1sysprep.UserData{
 								FullName: "vmware",
 							},
 						},
@@ -385,6 +398,31 @@ func TestVirtualMachineConversion(t *testing.T) {
 		}
 
 		hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine and partial inline sysprep", func(t *testing.T) {
+		t.Run("hub-spoke-hub", func(t *testing.T) {
+			g := NewWithT(t)
+			hub := vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+							Sysprep: &vmopv1sysprep.Sysprep{
+								UserData: vmopv1sysprep.UserData{
+									FullName: "test-user",
+									OrgName:  "test-org",
+									ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{
+										Key:  "product_id",
+										Name: "vm-w9w4mn9xr2",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			hubSpokeHubEx(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a1.VirtualMachine{})
+		})
 	})
 
 	t.Run("VirtualMachine hub-spoke-hub with Sysprep and vAppConfig", func(t *testing.T) {

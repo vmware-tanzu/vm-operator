@@ -606,7 +606,7 @@ func vmUtilTests() {
 				productIDSecretName := "product_id_secret"
 				BeforeEach(func() {
 					vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{
-						UserData: &sysprep.UserData{
+						UserData: sysprep.UserData{
 							ProductID: &sysprep.ProductIDSecretKeySelector{
 								Name: productIDSecretName,
 								Key:  "product_id",
@@ -1186,7 +1186,7 @@ func vmUtilTests() {
 				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 						Sysprep: &sysprep.Sysprep{
-							UserData: &sysprep.UserData{
+							UserData: sysprep.UserData{
 								ProductID: &sysprep.ProductIDSecretKeySelector{
 									Name: "dummy-sysprep-secret",
 								},

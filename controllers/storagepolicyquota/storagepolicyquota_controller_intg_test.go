@@ -38,6 +38,9 @@ func intgTestsReconcile() {
 		storageQuotaName = "my-storage-quota"
 		storageClassName = "my-storage-class"
 		storagePolicyID  = "my-storage-policy"
+
+		caBundle        = "fake-ca-bundle"
+		caBundleUpdated = "updated-ca-bundle"
 	)
 
 	var (
@@ -54,8 +57,13 @@ func intgTestsReconcile() {
 	})
 
 	Context("Reconcile", func() {
+		var (
+			validatingWebhookConfiguration *admissionv1.ValidatingWebhookConfiguration
+			storageClass                   *storagev1.StorageClass
+		)
+
 		BeforeEach(func() {
-			validatingWebhookConfiguration := &admissionv1.ValidatingWebhookConfiguration{
+			validatingWebhookConfiguration = &admissionv1.ValidatingWebhookConfiguration{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: spqutil.ValidatingWebhookConfigName,
 				},
@@ -68,7 +76,7 @@ func intgTestsReconcile() {
 								Namespace: "vmware-system-vmop",
 								Path:      ptr.To("/default-validate-vmoperator-vmware-com-v1alpha3-virtualmachine"),
 							},
-							CABundle: []byte("fake-ca-bundle"),
+							CABundle: []byte(caBundle),
 						},
 						FailurePolicy: ptr.To(admissionv1.Fail),
 						Name:          "default.validating.virtualmachine.v1alpha3.vmoperator.vmware.com",
@@ -77,6 +85,17 @@ func intgTestsReconcile() {
 				},
 			}
 			Expect(ctx.Client.Create(ctx, validatingWebhookConfiguration)).To(Succeed())
+
+			storageClass = &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: storageClassName,
+				},
+				Provisioner: "fake",
+				Parameters: map[string]string{
+					"storagePolicyID": storagePolicyID,
+				},
+			}
+			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 
 			obj := spqv1.StoragePolicyQuota{
 				ObjectMeta: metav1.ObjectMeta{
@@ -98,17 +117,11 @@ func intgTestsReconcile() {
 			}
 			storageQuotaUID = obj.UID
 			Expect(ctx.Client.Status().Update(ctx, &obj)).To(Succeed())
-			Expect(ctx.Client.Create(
-				ctx,
-				&storagev1.StorageClass{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: storageClassName,
-					},
-					Provisioner: "fake",
-					Parameters: map[string]string{
-						"storagePolicyID": storagePolicyID,
-					},
-				})).To(Succeed())
+		})
+
+		AfterEach(func() {
+			Expect(ctx.Client.Delete(ctx, validatingWebhookConfiguration)).To(Succeed())
+			Expect(ctx.Client.Delete(ctx, storageClass)).To(Succeed())
 		})
 
 		It("should result in the creation of a StoragePolicyUsage resource", func() {
@@ -136,7 +149,41 @@ func intgTestsReconcile() {
 				g.Expect(obj.Spec.ResourceKind).To(Equal("VirtualMachine"))
 				g.Expect(obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
 				g.Expect(obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.PodNamespace))
-				g.Expect(obj.Spec.CABundle).To(Equal([]byte("fake-ca-bundle")))
+				g.Expect(obj.Spec.CABundle).To(Equal([]byte(caBundle)))
+			}).Should(Succeed())
+		})
+
+		It("reconciles a change to ValidatingWebhookConfiguration", func() {
+			Eventually(func(g Gomega) {
+				var spu spqv1.StoragePolicyUsage
+				dstKey := client.ObjectKey{
+					Namespace: ctx.Namespace,
+					Name:      spqutil.StoragePolicyUsageName(storageClassName),
+				}
+				g.Expect(ctx.Client.Get(ctx, dstKey, &spu)).To(Succeed())
+
+				g.Expect(spu.Spec.CABundle).To(Equal([]byte(caBundle)))
+			}).Should(Succeed())
+
+			var obj admissionv1.ValidatingWebhookConfiguration
+			objKey := client.ObjectKey{
+				Name: spqutil.ValidatingWebhookConfigName,
+			}
+			Expect(ctx.Client.Get(ctx, objKey, &obj)).To(Succeed())
+
+			obj.Webhooks[0].ClientConfig.CABundle = []byte(caBundleUpdated)
+
+			Expect(ctx.Client.Update(ctx, &obj)).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				var spu spqv1.StoragePolicyUsage
+				dstKey := client.ObjectKey{
+					Namespace: ctx.Namespace,
+					Name:      spqutil.StoragePolicyUsageName(storageClassName),
+				}
+				g.Expect(ctx.Client.Get(ctx, dstKey, &spu)).To(Succeed())
+
+				g.Expect(spu.Spec.CABundle).To(Equal([]byte(caBundleUpdated)))
 			}).Should(Succeed())
 		})
 	})

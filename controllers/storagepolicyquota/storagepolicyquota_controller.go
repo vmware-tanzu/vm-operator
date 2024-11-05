@@ -10,10 +10,12 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
@@ -44,9 +46,21 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx.Namespace,
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(controlledType).
-		Complete(r)
+	builder := ctrl.NewControllerManagedBy(mgr).
+		For(controlledType)
+
+	// Add a watch on ValidatingWebhookConfiguration so that any updates
+	// to webhook CA Bundle will trigger reconciliation and update the
+	// appropriate StoragePolicyUsage(s)
+	if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota {
+		builder = builder.Watches(
+			&admissionv1.ValidatingWebhookConfiguration{},
+			handler.EnqueueRequestsFromMapFunc(
+				spqutil.ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(ctx, r.Client),
+			))
+	}
+
+	return builder.Complete(r)
 }
 
 func NewReconciler(
@@ -85,6 +99,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyquotas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyusages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyusages/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;watch
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)

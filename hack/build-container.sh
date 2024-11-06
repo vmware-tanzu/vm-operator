@@ -71,7 +71,7 @@ build() {
 
     if [ -n "${OUT_FILE:-}" ]; then
         mkdir -p "$(dirname "${OUT_FILE}")"
-        "${CRI_BIN}" save "${IMAGE}":"${IMAGE_TAG}" -o "${OUT_FILE}"
+        "${CRI_BIN}" save "${IMAGE}":"${IMAGE_VERSION}" -o "${OUT_FILE}"
     fi
 }
 

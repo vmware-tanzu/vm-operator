@@ -1,3 +1,3 @@
 module github.com/vmware-tanzu/vm-operator/pkg/backup/api
 
-go 1.23
+go 1.18

@@ -301,27 +301,27 @@ fix: lint-go ## Tries to fix errors reported by lint-go-full target
 ## Generate
 ## --------------------------------------
 
+reverse = $(if $(1),$(call reverse,$(wordlist 2,$(words $(1)),$(1)))) $(firstword $(1))
+GO_MOD_FILES := $(call reverse,$(shell find . -name go.mod))
+GO_MOD_OP := tidy
+
+.PHONY: $(GO_MOD_FILES)
+$(GO_MOD_FILES):
+	go -C $(@D) mod $(GO_MOD_OP)
+
 .PHONY: modules
+modules: $(GO_MOD_FILES)
 modules: ## Validates the modules
-	go mod tidy
-	cd hack/tools && go mod tidy
-	cd api && go mod tidy
-	cd pkg/backup/api && go mod tidy
-	cd pkg/constants/testlabels && go mod tidy
 
 .PHONY: modules-vendor
+modules-vendor: GO_MOD_OP=vendor
+modules-vendor: $(GO_MOD_FILES)
 modules-vendor: ## Vendors the modules
-	go mod vendor
-	cd hack/tools && go mod vendor
-	cd api && go mod vendor
-	cd pkg/constants/testlabels && go mod vendor
 
 .PHONY: modules-download
+modules-download: GO_MOD_OP=download
+modules-download: $(GO_MOD_FILES)
 modules-download: ## Downloads and caches the modules
-	go mod download
-	cd hack/tools && go mod download
-	cd api && go mod download
-	cd pkg/constants/testlabels && go mod download
 
 .PHONY: generate
 generate: ## Generate code

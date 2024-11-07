@@ -69,5 +69,5 @@ type AvailabilityZoneList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&AvailabilityZone{}, &AvailabilityZoneList{})
+	objectTypes = append(objectTypes, &AvailabilityZone{}, &AvailabilityZoneList{})
 }

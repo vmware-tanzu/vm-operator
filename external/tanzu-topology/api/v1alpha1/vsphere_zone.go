@@ -42,5 +42,5 @@ type VSphereZoneList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&VSphereZone{}, &VSphereZoneList{})
+	objectTypes = append(objectTypes, &VSphereZone{}, &VSphereZoneList{})
 }

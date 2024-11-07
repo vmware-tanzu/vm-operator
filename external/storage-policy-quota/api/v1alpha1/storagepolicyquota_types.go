@@ -90,5 +90,5 @@ type StoragePolicyQuotaList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&StoragePolicyQuota{}, &StoragePolicyQuotaList{})
+	objectTypes = append(objectTypes, &StoragePolicyQuota{}, &StoragePolicyQuotaList{})
 }

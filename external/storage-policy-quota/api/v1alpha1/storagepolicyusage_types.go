@@ -74,5 +74,5 @@ type StoragePolicyUsageList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&StoragePolicyUsage{}, &StoragePolicyUsageList{})
+	objectTypes = append(objectTypes, &StoragePolicyUsage{}, &StoragePolicyUsageList{})
 }

@@ -89,5 +89,5 @@ type ZoneList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&Zone{}, &ZoneList{})
+	objectTypes = append(objectTypes, &Zone{}, &ZoneList{})
 }

@@ -193,6 +193,9 @@ func backupTests() {
 					JustBeforeEach(func() {
 						if IncrementalRestore {
 							vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = vT2
+							vmCtx.VM.Status.Conditions = []metav1.Condition{
+								{Type: vmopv1.VirtualMachineBackupUpToDateCondition, Status: "True"},
+							}
 						}
 
 						oldVM := vmCtx.VM.DeepCopy()
@@ -234,6 +237,7 @@ func backupTests() {
 						}
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						// getExpectedBackupObjectYaml empties the expected VM yaml's status
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 

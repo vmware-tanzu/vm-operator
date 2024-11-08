@@ -23,6 +23,7 @@ import (
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+	appv1a1 "github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
@@ -60,6 +61,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 	_ = spqv1.AddToScheme(opts.Scheme)
 	_ = byokv1.AddToScheme(opts.Scheme)
 	_ = capv1.AddToScheme(opts.Scheme)
+	_ = appv1a1.AddToScheme(opts.Scheme)
 
 	_ = vmopv1a1.AddToScheme(opts.Scheme)
 	_ = vmopv1a2.AddToScheme(opts.Scheme)

@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha2_test
@@ -16,9 +16,12 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
+	appv1a1 "github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	proxyaddr "github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -37,11 +40,12 @@ func unitTestsReconcile() {
 		ctx            *builder.UnitTestContextForController
 		fakeVMProvider *providerfake.VMProvider
 
-		reconciler *webconsolerequest.Reconciler
-		wcrCtx     *pkgctx.WebConsoleRequestContextV1
-		wcr        *vmopv1.VirtualMachineWebConsoleRequest
-		vm         *vmopv1.VirtualMachine
-		proxySvc   *corev1.Service
+		reconciler  *webconsolerequest.Reconciler
+		wcrCtx      *pkgctx.WebConsoleRequestContextV1
+		wcr         *vmopv1.VirtualMachineWebConsoleRequest
+		vm          *vmopv1.VirtualMachine
+		proxySvc    *corev1.Service
+		proxySvcDNS *appv1a1.SupervisorProperties
 	)
 
 	BeforeEach(func() {
@@ -63,8 +67,8 @@ func unitTestsReconcile() {
 
 		proxySvc = &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      webconsolerequest.ProxyAddrServiceName,
-				Namespace: webconsolerequest.ProxyAddrServiceNamespace,
+				Name:      proxyaddr.ProxyAddrServiceName,
+				Namespace: proxyaddr.ProxyAddrServiceNamespace,
 			},
 			Status: corev1.ServiceStatus{
 				LoadBalancer: corev1.LoadBalancerStatus{
@@ -130,6 +134,36 @@ func unitTestsReconcile() {
 				// Checking the label key only because UID will not be set to a resource during unit test.
 				Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(webconsolerequest.UUIDLabelKey))
 			})
+		})
+
+		When("SimplifiedEnablement is enabled", func() {
+			JustBeforeEach(func() {
+				pkgcfg.UpdateContext(ctx,
+					func(config *pkgcfg.Config) {
+						config.Features.SimplifiedEnablement = true
+					},
+				)
+			})
+
+			DescribeTable("DNS Names",
+				func(apiServerDNSName []string, expectedProxy string) {
+					proxySvcDNS = &appv1a1.SupervisorProperties{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "supervisor-env-props",
+							Namespace: "vmware-system-supervisor-services",
+						},
+						Spec: appv1a1.SupervisorPropertiesSpec{
+							APIServerDNSNames: apiServerDNSName,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, proxySvcDNS)).To(Succeed())
+
+					Expect(reconciler.ReconcileNormal(wcrCtx)).To(Succeed())
+					Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal(expectedProxy))
+				},
+				Entry("API Server DNS Name is set", []string{"domain-1.test"}, "domain-1.test"),
+				Entry("API Server DNS Name is not set", []string{}, "dummy-proxy-ip"),
+			)
 		})
 	})
 }

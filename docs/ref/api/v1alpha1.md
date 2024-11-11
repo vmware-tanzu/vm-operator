@@ -819,6 +819,11 @@ VirtualMachine.
 The contents of this field are the VirtualMachineConfigSpec data object
 (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator
 field "_typeName" to preserve type information. |
+| `reservedProfileID` _string_ | ReservedProfileID describes the reservation profile associated with
+the namespace-scoped VirtualMachineClass object. |
+| `reservedSlots` _integer_ | ReservedSlots describes the number of slots reserved for VMs that use
+this VirtualMachineClass.
+This field is only valid in conjunction with reservedProfileID. |
 
 ### VirtualMachineClassStatus
 

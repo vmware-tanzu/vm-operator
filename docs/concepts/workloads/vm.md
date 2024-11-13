@@ -84,6 +84,15 @@ kubectl get -n <NAMESPACE> encryptionclass
 
 For more information on `EncryptionClass` resources, please see the [Encryption](#encryption) section below.
 
+## Supported hardware
+
+Virtual machines deployed and managed by VM Operator support _all_ the same hardware and configuration options as any other VM on vSphere. The only difference is from where the hardware/configuration information is derived:
+
+* **Disks** come from an admin or DevOps curated [VM image](#vm-image).
+* **Hardware** comes from an admin-curated [VM class](#vm-class) as well as the DevOps-provided VM specification.
+
+As long as they are specified in the VM class, features such as virtual GPUs, device groups, and SR-IOV NICs are all supported.
+
 ## Updating a VM
 
 It is possible to update parts of an existing `VirtualMachine` resource. Some fields are completely immutable while some _can_ be modified depending on the VM's power state and whether or not the field has already been set to a non-empty value. The following table highlights what fields may or may not be updated and under what conditions:

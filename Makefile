@@ -351,6 +351,7 @@ generate-go: ## Generate golang sources
 		paths=github.com/vmware-tanzu/vm-operator/external/capabilities/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 	$(MAKE) -C ./pkg/util/cloudinit/schema $@
+	$(MAKE) -C ./pkg/util/netplan/schema $@
 
 .PHONY: generate-manifests
 generate-manifests: $(CONTROLLER_GEN)

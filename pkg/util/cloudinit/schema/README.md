@@ -12,4 +12,4 @@ This directory contains schema files relates to Cloud-Init:
 
 ## Generating the Go source code
 
-Run `make generate-go`. If the local system has `npm`, it is used to install `quicktype`, which is then used to generate `cloudconfig.go` from the schema. Otherwise a container image is built from `Dockerfile.quicktype` which is then used to generate the Go source code.
+Run `make generate-go` to generate the Go source code. If the local system has `npm`, it is used, otherwise a container image is used with either Docker or Podman.

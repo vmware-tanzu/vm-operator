@@ -18,13 +18,14 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
 )
 
 type CloudInitMetadata struct {
 	InstanceID    string          `json:"instance-id,omitempty"`
 	LocalHostname string          `json:"local-hostname,omitempty"`
 	Hostname      string          `json:"hostname,omitempty"`
-	Network       network.Netplan `json:"network,omitempty"`
+	Network       netplan.Network `json:"network,omitempty"`
 	PublicKeys    string          `json:"public-keys,omitempty"`
 }
 
@@ -160,7 +161,7 @@ func BootStrapCloudInit(
 
 func GetCloudInitMetadata(
 	instanceID, hostName, domainName string,
-	netplan *network.Netplan,
+	netplan *netplan.Network,
 	sshPublicKeys string) (string, error) {
 
 	fqdn := hostName

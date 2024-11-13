@@ -153,6 +153,27 @@ The VM must either be powered off or transitioning from powered off to powered o
 
 By default, the VM will be resized once to reflect the new class. That is, if the `VirtualMachineClass` itself is later updated, the VM will not be resized again. The `vmoperator.vmware.com/same-vm-class-resize` annotation can be added to a VM to resize the VM as the class itself changes.
 
+#### ClassConfigurationSynced Condition
+
+The condition `VirtualMachineClassConfigurationSynced` is used to report whether or not the VM's configuration was synchronized to the class.
+If the configuration it, then the condition will be:
+
+```yaml
+status:
+  conditions:
+  - type: VirtualMachineClassConfigurationSynced
+    status: True
+```
+When `VirtualMachineClassConfigurationSynced` has `status: False`, the `reason` field may be set to one of the following values:
+
+| Reason             | Description                                                                                                                                  |
+|--------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| `ClassNotFound`    | The resource specified with the `spec.className` field cannot be found.                                                                      |
+| `ClassNameChanged` | The resource specified with the `spec.className` field has been changed, and a resize will be performed at the next appropriate power state. |
+| `SameClassResize`  | The resource pointed to by the `spec.className` field has been updated, and a resize will be performed at the next appropriate power state.   |
+
+If the condition is ever false, please refer first to the condition's `reason` field and then `message` for more information.
+
 ## Encryption
 
 The field `spec.crypto` may be used in conjunction with a VM's storage class and/or virtual trusted platform module (vTPM) to control a VM's encryption level.

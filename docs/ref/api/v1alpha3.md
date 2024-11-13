@@ -877,11 +877,9 @@ encryption. There may be two values in this list:
 
 - Config -- This refers to all of the files related to a VM except any
             virtual disks.
-- Disk   -- This refers to all of the VM's virtual disks that are *not*
-            PVCs.
-
-To determine whether or not a PVC is encrypted, please refer to the PVC
-resource. |
+- Disks  -- This refers to at least one of the VM's attached disks. To
+            determine the encryption state of the individual disks,
+            please refer to status.volumes[].crypto. |
 | `providerID` _string_ | ProviderID describes the provider ID used to encrypt the VirtualMachine.
 Please note, this field will be empty if the VirtualMachine is not
 encrypted. |
@@ -2392,6 +2390,24 @@ in the same namespace.
 More information is available at
 https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims. |
 
+### VirtualMachineVolumeCryptoStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
+
+| Field | Description |
+| --- | --- |
+| `providerID` _string_ | ProviderID describes the provider ID used to encrypt the volume.
+Please note, this field will be empty if the volume is not
+encrypted. |
+| `keyID` _string_ | KeyID describes the key ID used to encrypt the volume.
+Please note, this field will be empty if the volume is not
+encrypted. |
+
 ### VirtualMachineVolumeProvisioningMode
 
 _Underlying type:_ `string`
@@ -2435,6 +2451,7 @@ _Appears in:_
 | --- | --- |
 | `name` _string_ | Name is the name of the attached volume. |
 | `type` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | Type is the type of the attached volume. |
+| `crypto` _[VirtualMachineVolumeCryptoStatus](#virtualmachinevolumecryptostatus)_ | Crypto describes the volume's encryption status. |
 | `limit` _[Quantity](#quantity)_ | Limit describes the storage limit for the volume. |
 | `used` _[Quantity](#quantity)_ | Used describes the observed, non-shared size of the volume on disk.
 For example, if this is a linked-clone's boot volume, this value

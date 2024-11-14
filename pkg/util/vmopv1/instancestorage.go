@@ -1,7 +1,7 @@
 // Copyright (c) 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package instancestorage
+package vmopv1
 
 import (
 	"strings"
@@ -11,8 +11,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
-// IsPresent checks if VM Spec has instance volumes added to its Volumes list.
-func IsPresent(vm *vmopv1.VirtualMachine) bool {
+// IsInstanceStoragePresent checks if VM Spec has instance volumes added to its Volumes list.
+func IsInstanceStoragePresent(vm *vmopv1.VirtualMachine) bool {
 	for _, vol := range vm.Spec.Volumes {
 		if pvc := vol.PersistentVolumeClaim; pvc != nil && pvc.InstanceVolumeClaim != nil {
 			return true
@@ -21,8 +21,8 @@ func IsPresent(vm *vmopv1.VirtualMachine) bool {
 	return false
 }
 
-// FilterVolumes returns instance storage volumes present in VM spec.
-func FilterVolumes(vm *vmopv1.VirtualMachine) []vmopv1.VirtualMachineVolume {
+// FilterInstanceStorageVolumes returns instance storage volumes present in VM spec.
+func FilterInstanceStorageVolumes(vm *vmopv1.VirtualMachine) []vmopv1.VirtualMachineVolume {
 	var volumes []vmopv1.VirtualMachineVolume
 	for _, vol := range vm.Spec.Volumes {
 		if pvc := vol.PersistentVolumeClaim; pvc != nil && pvc.InstanceVolumeClaim != nil {
@@ -34,8 +34,10 @@ func FilterVolumes(vm *vmopv1.VirtualMachine) []vmopv1.VirtualMachineVolume {
 }
 
 func IsInsufficientQuota(err error) bool {
-	if apierrors.IsForbidden(err) && (strings.Contains(err.Error(), "insufficient quota") || strings.Contains(err.Error(), "exceeded quota")) {
-		return true
+	if apierrors.IsForbidden(err) {
+		e := err.Error()
+		return strings.Contains(e, "insufficient quota") || strings.Contains(e, "exceeded quota")
 	}
+
 	return false
 }

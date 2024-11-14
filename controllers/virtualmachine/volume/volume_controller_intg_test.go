@@ -25,8 +25,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -154,7 +154,7 @@ func intgTestsReconcile() {
 		vm := getVirtualMachine(objKey)
 		Expect(vm).ToNot(BeNil())
 
-		volumes := instancestorage.FilterVolumes(vm)
+		volumes := vmopv1util.FilterInstanceStorageVolumes(vm)
 		Expect(volumes).ToNot(BeEmpty())
 
 		Eventually(func() bool {
@@ -185,7 +185,7 @@ func intgTestsReconcile() {
 		vm := getVirtualMachine(objKey)
 		Expect(vm).ToNot(BeNil())
 
-		volumes := instancestorage.FilterVolumes(vm)
+		volumes := vmopv1util.FilterInstanceStorageVolumes(vm)
 		Expect(volumes).ToNot(BeEmpty())
 
 		Eventually(func() bool {
@@ -209,7 +209,7 @@ func intgTestsReconcile() {
 		vm := getVirtualMachine(objKey)
 		Expect(vm).ToNot(BeNil())
 
-		volumes := instancestorage.FilterVolumes(vm)
+		volumes := vmopv1util.FilterInstanceStorageVolumes(vm)
 		Expect(volumes).ToNot(BeEmpty())
 
 		for _, vol := range volumes {
@@ -323,7 +323,7 @@ func intgTestsReconcile() {
 			Specify("PVCs are created with the expected annotation", func() {
 				Expect(ctx.Client.Get(ctx, vmKey, vm)).To(Succeed())
 
-				volumes := instancestorage.FilterVolumes(vm)
+				volumes := vmopv1util.FilterInstanceStorageVolumes(vm)
 				Expect(volumes).ToNot(BeEmpty())
 
 				Eventually(func(g Gomega) {

@@ -38,10 +38,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -271,7 +271,7 @@ func (r *Reconciler) reconcileResult(ctx *pkgctx.VolumeContext) ctrl.Result {
 	if pkgcfg.FromContext(ctx).Features.InstanceStorage {
 		// Requeue the request if all instance storage PVCs are not bound.
 		_, pvcsBound := ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]
-		if !pvcsBound && instancestorage.IsPresent(ctx.VM) {
+		if !pvcsBound && vmopv1util.IsInstanceStoragePresent(ctx.VM) {
 			return ctrl.Result{RequeueAfter: wait.Jitter(
 				pkgcfg.FromContext(ctx).InstanceStorage.SeedRequeueDuration,
 				pkgcfg.FromContext(ctx).InstanceStorage.JitterMaxFactor,
@@ -344,7 +344,7 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *pkgctx.VolumeContext) (bo
 
 	// If the VM Spec doesn't have any instance storage volumes, there is nothing for us to do.
 	// We do not support removing - or changing really - this type of volume.
-	isVolumes := instancestorage.FilterVolumes(ctx.VM)
+	isVolumes := vmopv1util.FilterInstanceStorageVolumes(ctx.VM)
 	if len(isVolumes) == 0 {
 		return true, nil
 	}
@@ -538,7 +538,7 @@ func (r *Reconciler) createInstanceStoragePVC(
 	// We merely consider creating non-existing PVCs in reconcileInstanceStoragePVCs flow.
 	// We specifically don't need of CreateOrUpdate / CreateOrPatch.
 	if err := r.Create(ctx, pvc); err != nil {
-		if instancestorage.IsInsufficientQuota(err) {
+		if vmopv1util.IsInsufficientQuota(err) {
 			r.recorder.EmitEvent(ctx.VM, "Create", err, true)
 		}
 		return err

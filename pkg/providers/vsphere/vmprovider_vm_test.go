@@ -38,12 +38,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -2049,7 +2049,7 @@ func vmTests() {
 					isStorage vmopv1.InstanceStorage) {
 
 					ExpectWithOffset(1, isStorage.Volumes).ToNot(BeEmpty())
-					isVolumes := instancestorage.FilterVolumes(vm)
+					isVolumes := vmopv1util.FilterInstanceStorageVolumes(vm)
 					ExpectWithOffset(1, isVolumes).To(HaveLen(len(isStorage.Volumes)))
 
 					for _, isVol := range isStorage.Volumes {
@@ -2094,7 +2094,7 @@ func vmTests() {
 					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeFalse())
 
 					By("Instance storage volumes should be added to VM", func() {
-						Expect(instancestorage.IsPresent(vm)).To(BeTrue())
+						Expect(vmopv1util.IsInstanceStoragePresent(vm)).To(BeTrue())
 						expectInstanceStorageVolumes(vm, vmClass.Spec.Hardware.InstanceStorage)
 					})
 

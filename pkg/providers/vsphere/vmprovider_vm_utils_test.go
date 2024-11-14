@@ -21,9 +21,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	vsphere "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -911,7 +911,7 @@ func vmUtilTests() {
 			isStorage vmopv1.InstanceStorage) {
 
 			ExpectWithOffset(1, isStorage.Volumes).ToNot(BeEmpty())
-			isVolumes := instancestorage.FilterVolumes(vm)
+			isVolumes := vmopv1util.FilterInstanceStorageVolumes(vm)
 			ExpectWithOffset(1, isVolumes).To(HaveLen(len(isStorage.Volumes)))
 
 			for _, isVol := range isStorage.Volumes {
@@ -939,7 +939,7 @@ func vmUtilTests() {
 			It("VM Class does not contain instance storage volumes", func() {
 				is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 				Expect(is).To(BeFalse())
-				Expect(instancestorage.FilterVolumes(vmCtx.VM)).To(BeEmpty())
+				Expect(vmopv1util.FilterInstanceStorageVolumes(vmCtx.VM)).To(BeEmpty())
 			})
 
 			When("Instance Volume is added in VM Class", func() {
@@ -957,13 +957,13 @@ func vmUtilTests() {
 					is := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 					Expect(is).To(BeTrue())
 
-					isVolumesBefore := instancestorage.FilterVolumes(vmCtx.VM)
+					isVolumesBefore := vmopv1util.FilterInstanceStorageVolumes(vmCtx.VM)
 					expectInstanceStorageVolumes(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)
 
 					// Instance Storage is already configured, should not patch again
 					is = vsphere.AddInstanceStorageVolumes(vmCtx, vmClass.Spec.Hardware.InstanceStorage)
 					Expect(is).To(BeTrue())
-					isVolumesAfter := instancestorage.FilterVolumes(vmCtx.VM)
+					isVolumesAfter := vmopv1util.FilterInstanceStorageVolumes(vmCtx.VM)
 					Expect(isVolumesAfter).To(HaveLen(len(isVolumesBefore)))
 					Expect(isVolumesAfter).To(Equal(isVolumesBefore))
 				})

@@ -38,7 +38,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
@@ -904,10 +903,10 @@ func (v validator) validateInstanceStorageVolumes(
 
 	var oldVMInstanceStorageVolumes []vmopv1.VirtualMachineVolume
 	if oldVM != nil {
-		oldVMInstanceStorageVolumes = instancestorage.FilterVolumes(oldVM)
+		oldVMInstanceStorageVolumes = vmopv1util.FilterInstanceStorageVolumes(oldVM)
 	}
 
-	if !equality.Semantic.DeepEqual(instancestorage.FilterVolumes(vm), oldVMInstanceStorageVolumes) {
+	if !equality.Semantic.DeepEqual(vmopv1util.FilterInstanceStorageVolumes(vm), oldVMInstanceStorageVolumes) {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "volumes"), addingModifyingInstanceVolumesNotAllowed))
 	}
 

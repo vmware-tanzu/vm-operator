@@ -21,7 +21,6 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -492,7 +491,7 @@ func AddInstanceStorageVolumes(
 	vmCtx pkgctx.VirtualMachineContext,
 	is vmopv1.InstanceStorage) bool {
 
-	if instancestorage.IsPresent(vmCtx.VM) {
+	if vmopv1util.IsInstanceStoragePresent(vmCtx.VM) {
 		// Instance storage disks are copied from the class to the VM only once, regardless
 		// if the class changes.
 		return true

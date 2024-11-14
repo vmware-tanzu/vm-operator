@@ -14,6 +14,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apirecord "k8s.io/client-go/tools/record"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
@@ -23,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -467,601 +469,823 @@ var _ = Describe("UpdateStatus", func() {
 			})
 		})
 
-		Context("Storage", func() {
-			const oneGiBInBytes = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
+	})
 
-			Context("status.changeBlockTracking", func() {
-				When("moVM.config is nil", func() {
+	Context("Storage", func() {
+		const oneGiBInBytes = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
+
+		Context("status.changeBlockTracking", func() {
+			When("moVM.config is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config = nil
+				})
+				Specify("status.changeBlockTracking is nil", func() {
+					Expect(vmCtx.VM.Status.ChangeBlockTracking).To(BeNil())
+				})
+			})
+			When("moVM.config is not nil", func() {
+				When("moVM.config.changeTrackingEnabled is nil", func() {
 					BeforeEach(func() {
-						vmCtx.MoVM.Config = nil
+						vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+							ChangeTrackingEnabled: nil,
+						}
 					})
 					Specify("status.changeBlockTracking is nil", func() {
 						Expect(vmCtx.VM.Status.ChangeBlockTracking).To(BeNil())
 					})
 				})
-				When("moVM.config is not nil", func() {
-					When("moVM.config.changeTrackingEnabled is nil", func() {
-						BeforeEach(func() {
-							vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
-								ChangeTrackingEnabled: nil,
-							}
-						})
-						Specify("status.changeBlockTracking is nil", func() {
-							Expect(vmCtx.VM.Status.ChangeBlockTracking).To(BeNil())
-						})
-					})
-					When("moVM.config.changeTrackingEnabled is true", func() {
-						BeforeEach(func() {
-							vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
-								ChangeTrackingEnabled: ptr.To(true),
-							}
-						})
-						Specify("status.changeBlockTracking is true", func() {
-							Expect(vmCtx.VM.Status.ChangeBlockTracking).To(Equal(ptr.To(true)))
-						})
-					})
-					When("moVM.config.changeTrackingEnabled is false", func() {
-						BeforeEach(func() {
-							vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
-								ChangeTrackingEnabled: ptr.To(false),
-							}
-						})
-						Specify("status.changeBlockTracking is false", func() {
-							Expect(vmCtx.VM.Status.ChangeBlockTracking).To(Equal(ptr.To(false)))
-						})
-					})
-				})
-			})
-
-			Context("status.storage", func() {
-				When("moVM.summary.storage is nil", func() {
+				When("moVM.config.changeTrackingEnabled is true", func() {
 					BeforeEach(func() {
-						vmCtx.MoVM.Summary.Storage = nil
-					})
-					When("status.storage is nil", func() {
-						BeforeEach(func() {
-							vmCtx.VM.Status.Storage = nil
-						})
-						Specify("status.storage to be unchanged", func() {
-							Expect(vmCtx.VM.Status.Storage).To(BeNil())
-						})
-					})
-					When("status.storage is not nil", func() {
-						BeforeEach(func() {
-							vmCtx.VM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{}
-						})
-						Specify("status.storage to be unchanged", func() {
-							Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{}))
-						})
-					})
-				})
-				When("moVM.summary.storage is not nil", func() {
-					BeforeEach(func() {
-						vmCtx.MoVM.Summary.Storage = &vimtypes.VirtualMachineStorageSummary{
-							Committed:   10 * oneGiBInBytes,
-							Uncommitted: 20 * oneGiBInBytes,
-							Unshared:    5 * oneGiBInBytes,
+						vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+							ChangeTrackingEnabled: ptr.To(true),
 						}
 					})
-					When("status.storage is nil", func() {
-						BeforeEach(func() {
-							vmCtx.VM.Status.Storage = nil
-						})
-						Specify("status.storage to be initialized", func() {
-							Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-								Committed:   vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-								Uncommitted: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
-								Unshared:    vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
-							}))
-						})
+					Specify("status.changeBlockTracking is true", func() {
+						Expect(vmCtx.VM.Status.ChangeBlockTracking).To(Equal(ptr.To(true)))
 					})
-					When("status.storage is not nil", func() {
-						BeforeEach(func() {
-							vmCtx.VM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
-								Committed:   vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
-								Uncommitted: vmlifecycle.BytesToResourceGiB(6 * oneGiBInBytes),
-								Unshared:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-							}
-						})
-						Specify("status.storage to be updated", func() {
-							Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-								Committed:   vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-								Uncommitted: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
-								Unshared:    vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
-							}))
-						})
+				})
+				When("moVM.config.changeTrackingEnabled is false", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+							ChangeTrackingEnabled: ptr.To(false),
+						}
+					})
+					Specify("status.changeBlockTracking is false", func() {
+						Expect(vmCtx.VM.Status.ChangeBlockTracking).To(Equal(ptr.To(false)))
 					})
 				})
 			})
+		})
 
-			Context("status.volumes", func() {
+		Context("status.storage", func() {
+			When("moVM.summary.storage is nil", func() {
 				BeforeEach(func() {
-					vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
-						Hardware: vimtypes.VirtualHardware{
-							Device: []vimtypes.BaseVirtualDevice{
-								// classic
-								&vimtypes.VirtualDisk{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-												FileName: "[datastore] vm/my-disk-100.vmdk",
-											},
-											Uuid: "100",
-											KeyId: &vimtypes.CryptoKeyId{
-												KeyId: "my-key-id",
-												ProviderId: &vimtypes.KeyProviderId{
-													Id: "my-provider-id",
-												},
+					vmCtx.MoVM.Summary.Storage = nil
+				})
+				When("status.storage is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Status.Storage = nil
+					})
+					Specify("status.storage to be unchanged", func() {
+						Expect(vmCtx.VM.Status.Storage).To(BeNil())
+					})
+				})
+				When("status.storage is not nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{}
+					})
+					Specify("status.storage to be unchanged", func() {
+						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{}))
+					})
+				})
+			})
+			When("moVM.summary.storage is not nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Summary.Storage = &vimtypes.VirtualMachineStorageSummary{
+						Committed:   10 * oneGiBInBytes,
+						Uncommitted: 20 * oneGiBInBytes,
+						Unshared:    5 * oneGiBInBytes,
+					}
+				})
+				When("status.storage is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Status.Storage = nil
+					})
+					Specify("status.storage to be initialized", func() {
+						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+							Committed:   vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Uncommitted: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
+							Unshared:    vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
+						}))
+					})
+				})
+				When("status.storage is not nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
+							Committed:   vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
+							Uncommitted: vmlifecycle.BytesToResourceGiB(6 * oneGiBInBytes),
+							Unshared:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+						}
+					})
+					Specify("status.storage to be updated", func() {
+						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+							Committed:   vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Uncommitted: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
+							Unshared:    vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
+						}))
+					})
+				})
+			})
+		})
+
+		Context("status.volumes", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							// classic
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[datastore] vm/my-disk-100.vmdk",
+										},
+										Uuid: "100",
+										KeyId: &vimtypes.CryptoKeyId{
+											KeyId: "my-key-id",
+											ProviderId: &vimtypes.KeyProviderId{
+												Id: "my-provider-id",
 											},
 										},
-										Key: 100,
 									},
-									CapacityInBytes: 10 * oneGiBInBytes,
+									Key: 100,
 								},
-								// classic
-								&vimtypes.VirtualDisk{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
-											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-												FileName: "[datastore] vm/my-disk-101.vmdk",
-											},
-											Uuid: "101",
+								CapacityInBytes: 10 * oneGiBInBytes,
+							},
+							// classic
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[datastore] vm/my-disk-101.vmdk",
 										},
-										Key: 101,
+										Uuid: "101",
 									},
-									CapacityInBytes: 1 * oneGiBInBytes,
+									Key: 101,
 								},
-								// classic
-								&vimtypes.VirtualDisk{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Backing: &vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo{
-											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-												FileName: "[datastore] vm/my-disk-102.vmdk",
-											},
-											Uuid: "102",
+								CapacityInBytes: 1 * oneGiBInBytes,
+							},
+							// classic
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[datastore] vm/my-disk-102.vmdk",
 										},
-										Key: 102,
+										Uuid: "102",
 									},
-									CapacityInBytes: 2 * oneGiBInBytes,
+									Key: 102,
 								},
-								// classic
-								&vimtypes.VirtualDisk{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
-											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-												FileName: "[datastore] vm/my-disk-103.vmdk",
-											},
-											Uuid: "103",
+								CapacityInBytes: 2 * oneGiBInBytes,
+							},
+							// classic
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[datastore] vm/my-disk-103.vmdk",
 										},
-										Key: 103,
+										Uuid: "103",
 									},
-									CapacityInBytes: 3 * oneGiBInBytes,
+									Key: 103,
 								},
-								// classic
-								&vimtypes.VirtualDisk{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Backing: &vimtypes.VirtualDiskRawDiskVer2BackingInfo{
-											DescriptorFileName: "[datastore] vm/my-disk-104.vmdk",
-											Uuid:               "104",
+								CapacityInBytes: 3 * oneGiBInBytes,
+							},
+							// classic
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualDiskRawDiskVer2BackingInfo{
+										DescriptorFileName: "[datastore] vm/my-disk-104.vmdk",
+										Uuid:               "104",
+									},
+									Key: 104,
+								},
+								CapacityInBytes: 4 * oneGiBInBytes,
+							},
+							// managed
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[datastore] vm/my-disk-105.vmdk",
 										},
-										Key: 104,
-									},
-									CapacityInBytes: 4 * oneGiBInBytes,
-								},
-								// managed
-								&vimtypes.VirtualDisk{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
-											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-												FileName: "[datastore] vm/my-disk-105.vmdk",
-											},
-											Uuid: "105",
-											KeyId: &vimtypes.CryptoKeyId{
-												KeyId: "my-key-id",
-												ProviderId: &vimtypes.KeyProviderId{
-													Id: "my-provider-id",
-												},
+										Uuid: "105",
+										KeyId: &vimtypes.CryptoKeyId{
+											KeyId: "my-key-id",
+											ProviderId: &vimtypes.KeyProviderId{
+												Id: "my-provider-id",
 											},
 										},
-										Key: 105,
 									},
-									VDiskId: &vimtypes.ID{
-										Id: "my-fcd-1",
-									},
+									Key: 105,
 								},
+								VDiskId: &vimtypes.ID{
+									Id: "my-fcd-1",
+								},
+							},
+						},
+					},
+				}
+				vmCtx.MoVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
+					Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+						{
+							Key: 100,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{0, 10},
+								},
+							},
+						},
+						{
+							Key: 101,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{1, 11},
+								},
+							},
+						},
+						{
+							Key: 102,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{2, 12},
+								},
+							},
+						},
+						{
+							Key: 103,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{3, 13},
+								},
+							},
+						},
+						{
+							Key: 104,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{4, 14},
+								},
+							},
+						},
+						{
+							Key: 105,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{5, 15},
+								},
+							},
+						},
+					},
+					File: []vimtypes.VirtualMachineFileLayoutExFileInfo{
+						{
+							Key:        0,
+							Size:       500,
+							UniqueSize: 500,
+						},
+						{
+							Key:        10,
+							Size:       2 * oneGiBInBytes,
+							UniqueSize: 1 * oneGiBInBytes,
+						},
+
+						{
+							Key:        1,
+							Size:       500,
+							UniqueSize: 500,
+						},
+						{
+							Key:        11,
+							Size:       0.5 * oneGiBInBytes,
+							UniqueSize: 0.25 * oneGiBInBytes,
+						},
+
+						{
+							Key:        2,
+							Size:       500,
+							UniqueSize: 500,
+						},
+						{
+							Key:        12,
+							Size:       1 * oneGiBInBytes,
+							UniqueSize: 0.5 * oneGiBInBytes,
+						},
+
+						{
+							Key:        3,
+							Size:       500,
+							UniqueSize: 500,
+						},
+						{
+							Key:        13,
+							Size:       2 * oneGiBInBytes,
+							UniqueSize: 1 * oneGiBInBytes,
+						},
+
+						{
+							Key:        4,
+							Size:       500,
+							UniqueSize: 500,
+						},
+						{
+							Key:        14,
+							Size:       3 * oneGiBInBytes,
+							UniqueSize: 2 * oneGiBInBytes,
+						},
+
+						{
+							Key:        5,
+							Size:       500,
+							UniqueSize: 500,
+						},
+						{
+							Key:        15,
+							Size:       50 * oneGiBInBytes,
+							UniqueSize: 50 * oneGiBInBytes,
+						},
+					},
+				}
+				vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
+			})
+			When("moVM.config is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config = nil
+				})
+				Specify("status.volumes is unchanged", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
+				})
+			})
+			When("moVM.config.hardware.device is empty", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.Device = nil
+				})
+				Specify("status.volumes is unchanged", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
+				})
+			})
+			When("moVM.layoutEx is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.LayoutEx = nil
+				})
+				Specify("status.volumes is unchanged", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
+				})
+			})
+			When("moVM.layoutEx.disk is empty", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.LayoutEx.Disk = nil
+				})
+				Specify("status.volumes is unchanged", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
+				})
+			})
+			When("moVM.layoutEx.file is empty", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.LayoutEx.Disk = nil
+				})
+				Specify("status.volumes is unchanged", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
+				})
+			})
+			When("vm.status.volumes does not have pvcs", func() {
+				Specify("status.volumes includes the classic disks", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-100",
+							DiskUUID: "100",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								KeyID:      "my-key-id",
+								ProviderID: "my-provider-id",
+							},
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-101",
+							DiskUUID: "101",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-102",
+							DiskUUID: "102",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-103",
+							DiskUUID: "103",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-104",
+							DiskUUID: "104",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
+						},
+					}))
+				})
+			})
+
+			When("vm.status.volumes has a pvc", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-105",
+							DiskUUID: "105",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Attached: false,
+							Limit:    vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
+						},
+					}
+				})
+				Specify("status.volumes includes the pvc and classic disks", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-100",
+							DiskUUID: "100",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								KeyID:      "my-key-id",
+								ProviderID: "my-provider-id",
+							},
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-101",
+							DiskUUID: "101",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-102",
+							DiskUUID: "102",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-103",
+							DiskUUID: "103",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-104",
+							DiskUUID: "104",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-105",
+							DiskUUID: "105",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								KeyID:      "my-key-id",
+								ProviderID: "my-provider-id",
+							},
+							Attached: false,
+							Limit:    vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (50 * oneGiBInBytes)),
+						},
+					}))
+				})
+			})
+
+			When("vm.status.volumes has a stale classic disk", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-106",
+							DiskUUID: "106",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+						},
+					}
+				})
+				Specify("status.volumes no longer includes the stale classic disk", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-100",
+							DiskUUID: "100",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								ProviderID: "my-provider-id",
+								KeyID:      "my-key-id",
+							},
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-101",
+							DiskUUID: "101",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-102",
+							DiskUUID: "102",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-103",
+							DiskUUID: "103",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-104",
+							DiskUUID: "104",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
+						},
+					}))
+				})
+			})
+
+			When("there is a classic disk w an invalid path", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.
+						Device[0].(*vimtypes.VirtualDisk).
+						Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).
+						FileName = "invalid"
+				})
+				Specify("status.volumes omits the classic disk w invalid path", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-101",
+							DiskUUID: "101",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-102",
+							DiskUUID: "102",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-103",
+							DiskUUID: "103",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:     "my-disk-104",
+							DiskUUID: "104",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached: true,
+							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
+						},
+					}))
+				})
+			})
+		})
+	})
+
+	Context("ReadinessProbe", func() {
+
+		var (
+			chanRecord chan string
+		)
+
+		BeforeEach(func() {
+			chanRecord = make(chan string, 10)
+
+			vmCtx.Context = record.WithContext(
+				vmCtx.Context,
+				record.New(&apirecord.FakeRecorder{Events: chanRecord}))
+
+			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+				config.Features.WorkloadDomainIsolation = true
+				config.AsyncSignalDisabled = false
+			})
+		})
+
+		assertEvent := func(msg string) {
+			var e string
+			EventuallyWithOffset(1, chanRecord).Should(Receive(&e, Equal(msg)))
+		}
+
+		When("there is no probe", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.ReadinessProbe = nil
+			})
+			It("should not update status", func() {
+				Expect(conditions.Has(vmCtx.VM, vmopv1.ReadyConditionType)).To(BeFalse())
+			})
+		})
+
+		When("there is a TCP probe", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+					TCPSocket: &vmopv1.TCPSocketAction{},
+				}
+			})
+			It("should not update status", func() {
+				Expect(conditions.Has(vmCtx.VM, vmopv1.ReadyConditionType)).To(BeFalse())
+			})
+		})
+
+		When("there is a GuestHeartbeat probe", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+					GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+				}
+			})
+			When("threshold is green", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus = vmopv1.GreenHeartbeatStatus
+				})
+				When("vm is green", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.GuestHeartbeatStatus = vimtypes.ManagedEntityStatusGreen
+					})
+					It("should mark ready=true", func() {
+						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.ReadyConditionType)).To(BeTrue())
+						assertEvent("Normal Ready ")
+					})
+				})
+				When("vm is red", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.GuestHeartbeatStatus = vimtypes.ManagedEntityStatusRed
+					})
+					It("should mark ready=false", func() {
+						c := conditions.Get(vmCtx.VM, vmopv1.ReadyConditionType)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal("NotReady"))
+						Expect(c.Message).To(Equal("heartbeat status \"red\" is below threshold"))
+						assertEvent("Normal NotReady heartbeat status \"red\" is below threshold")
+					})
+				})
+				When("vm is unknown color", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.GuestHeartbeatStatus = "unknown"
+					})
+					It("should mark ready=Unknown", func() {
+						c := conditions.Get(vmCtx.VM, vmopv1.ReadyConditionType)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+						assertEvent("Normal Unknown ")
+					})
+				})
+			})
+		})
+
+		When("there is a GuestInfo probe", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{}
+			})
+			When("specific match", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						GuestInfo: []vmopv1.GuestInfoAction{
+							{
+								Key:   "hello",
+								Value: "^world$",
 							},
 						},
 					}
-					vmCtx.MoVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
-						Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
-							{
-								Key: 100,
-								Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-									{
-										FileKey: []int32{0, 10},
-									},
-								},
+				})
+				When("match exists", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.hello",
+								Value: "world",
 							},
-							{
-								Key: 101,
-								Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-									{
-										FileKey: []int32{1, 11},
-									},
-								},
-							},
-							{
-								Key: 102,
-								Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-									{
-										FileKey: []int32{2, 12},
-									},
-								},
-							},
-							{
-								Key: 103,
-								Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-									{
-										FileKey: []int32{3, 13},
-									},
-								},
-							},
-							{
-								Key: 104,
-								Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-									{
-										FileKey: []int32{4, 14},
-									},
-								},
-							},
-							{
-								Key: 105,
-								Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-									{
-										FileKey: []int32{5, 15},
-									},
-								},
-							},
-						},
-						File: []vimtypes.VirtualMachineFileLayoutExFileInfo{
-							{
-								Key:        0,
-								Size:       500,
-								UniqueSize: 500,
-							},
-							{
-								Key:        10,
-								Size:       2 * oneGiBInBytes,
-								UniqueSize: 1 * oneGiBInBytes,
-							},
+						}
+					})
+					It("should mark ready=true", func() {
+						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.ReadyConditionType)).To(BeTrue())
+						assertEvent("Normal Ready ")
+					})
+				})
 
+				When("match does not exist", func() {
+					It("should mark ready=false", func() {
+						c := conditions.Get(vmCtx.VM, vmopv1.ReadyConditionType)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal("NotReady"))
+						assertEvent("Normal NotReady ")
+					})
+				})
+			})
+			When("wildcard match", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						GuestInfo: []vmopv1.GuestInfoAction{
 							{
-								Key:        1,
-								Size:       500,
-								UniqueSize: 500,
-							},
-							{
-								Key:        11,
-								Size:       0.5 * oneGiBInBytes,
-								UniqueSize: 0.25 * oneGiBInBytes,
-							},
-
-							{
-								Key:        2,
-								Size:       500,
-								UniqueSize: 500,
-							},
-							{
-								Key:        12,
-								Size:       1 * oneGiBInBytes,
-								UniqueSize: 0.5 * oneGiBInBytes,
-							},
-
-							{
-								Key:        3,
-								Size:       500,
-								UniqueSize: 500,
-							},
-							{
-								Key:        13,
-								Size:       2 * oneGiBInBytes,
-								UniqueSize: 1 * oneGiBInBytes,
-							},
-
-							{
-								Key:        4,
-								Size:       500,
-								UniqueSize: 500,
-							},
-							{
-								Key:        14,
-								Size:       3 * oneGiBInBytes,
-								UniqueSize: 2 * oneGiBInBytes,
-							},
-
-							{
-								Key:        5,
-								Size:       500,
-								UniqueSize: 500,
-							},
-							{
-								Key:        15,
-								Size:       50 * oneGiBInBytes,
-								UniqueSize: 50 * oneGiBInBytes,
+								Key: "hello",
 							},
 						},
 					}
-					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{}
 				})
-				When("moVM.config is nil", func() {
+				When("match exists", func() {
 					BeforeEach(func() {
-						vmCtx.MoVM.Config = nil
-					})
-					Specify("status.volumes is unchanged", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
-					})
-				})
-				When("moVM.config.hardware.device is empty", func() {
-					BeforeEach(func() {
-						vmCtx.MoVM.Config.Hardware.Device = nil
-					})
-					Specify("status.volumes is unchanged", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
-					})
-				})
-				When("moVM.layoutEx is nil", func() {
-					BeforeEach(func() {
-						vmCtx.MoVM.LayoutEx = nil
-					})
-					Specify("status.volumes is unchanged", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
-					})
-				})
-				When("moVM.layoutEx.disk is empty", func() {
-					BeforeEach(func() {
-						vmCtx.MoVM.LayoutEx.Disk = nil
-					})
-					Specify("status.volumes is unchanged", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
-					})
-				})
-				When("moVM.layoutEx.file is empty", func() {
-					BeforeEach(func() {
-						vmCtx.MoVM.LayoutEx.Disk = nil
-					})
-					Specify("status.volumes is unchanged", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{}))
-					})
-				})
-				When("vm.status.volumes does not have pvcs", func() {
-					Specify("status.volumes includes the classic disks", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:     "my-disk-100",
-								DiskUUID: "100",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
-									KeyID:      "my-key-id",
-									ProviderID: "my-provider-id",
-								},
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-101",
-								DiskUUID: "101",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-102",
-								DiskUUID: "102",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-103",
-								DiskUUID: "103",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-104",
-								DiskUUID: "104",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
-							},
-						}))
-					})
-				})
-
-				When("vm.status.volumes has a pvc", func() {
-					BeforeEach(func() {
-						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:     "my-disk-105",
-								DiskUUID: "105",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
-								Attached: false,
-								Limit:    vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
+						vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.hello",
+								Value: "there",
 							},
 						}
 					})
-					Specify("status.volumes includes the pvc and classic disks", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:     "my-disk-100",
-								DiskUUID: "100",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
-									KeyID:      "my-key-id",
-									ProviderID: "my-provider-id",
-								},
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-101",
-								DiskUUID: "101",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-102",
-								DiskUUID: "102",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-103",
-								DiskUUID: "103",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-104",
-								DiskUUID: "104",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-105",
-								DiskUUID: "105",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
-								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
-									KeyID:      "my-key-id",
-									ProviderID: "my-provider-id",
-								},
-								Attached: false,
-								Limit:    vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (50 * oneGiBInBytes)),
-							},
-						}))
+					It("should mark ready=true", func() {
+						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.ReadyConditionType)).To(BeTrue())
+						assertEvent("Normal Ready ")
 					})
 				})
 
-				When("vm.status.volumes has a stale classic disk", func() {
-					BeforeEach(func() {
-						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+				When("match does not exist", func() {
+					It("should mark ready=false", func() {
+						c := conditions.Get(vmCtx.VM, vmopv1.ReadyConditionType)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal("NotReady"))
+						assertEvent("Normal NotReady ")
+					})
+				})
+			})
+
+			When("multiple actions", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						GuestInfo: []vmopv1.GuestInfoAction{
 							{
-								Name:     "my-disk-106",
-								DiskUUID: "106",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+								Key:   "hello",
+								Value: "world|there",
+							},
+							{
+								Key:   "fu",
+								Value: "bar",
+							},
+						},
+					}
+				})
+				When("match exists", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.hello",
+								Value: "world",
+							},
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.fu",
+								Value: "high bar",
 							},
 						}
 					})
-					Specify("status.volumes no longer includes the stale classic disk", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:     "my-disk-100",
-								DiskUUID: "100",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
-									ProviderID: "my-provider-id",
-									KeyID:      "my-key-id",
-								},
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-101",
-								DiskUUID: "101",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-102",
-								DiskUUID: "102",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-103",
-								DiskUUID: "103",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-104",
-								DiskUUID: "104",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
-							},
-						}))
+					It("should mark ready=true", func() {
+						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.ReadyConditionType)).To(BeTrue())
+						assertEvent("Normal Ready ")
 					})
 				})
 
-				When("there is a classic disk w an invalid path", func() {
+				When("match does not exist", func() {
 					BeforeEach(func() {
-						vmCtx.MoVM.Config.Hardware.
-							Device[0].(*vimtypes.VirtualDisk).
-							Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).
-							FileName = "invalid"
+						vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.hello",
+								Value: "there",
+							},
+						}
 					})
-					Specify("status.volumes omits the classic disk w invalid path", func() {
-						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:     "my-disk-101",
-								DiskUUID: "101",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-102",
-								DiskUUID: "102",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-103",
-								DiskUUID: "103",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
-							},
-							{
-								Name:     "my-disk-104",
-								DiskUUID: "104",
-								Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Attached: true,
-								Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
-								Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
-							},
-						}))
+					It("should mark ready=false", func() {
+						c := conditions.Get(vmCtx.VM, vmopv1.ReadyConditionType)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal("NotReady"))
+						assertEvent("Normal NotReady ")
 					})
 				})
 			})

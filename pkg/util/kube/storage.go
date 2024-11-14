@@ -69,9 +69,15 @@ func GetPVCZoneConstraints(
 
 		switch pvc.Status.Phase {
 		case corev1.ClaimBound:
-			// Easy case: if this PVC is already bound then just get its accessible zones, if any
-			// (the PVC's StorageClass should be Immediate).
 			z = getPVCAccessibleZones(pvc)
+			if z.Len() > 1 {
+				if reqZones := getPVCRequestedZones(pvc); reqZones.Len() > 0 {
+					// A PVC's accessible zones are all the zones that the PV datastore is accessible on,
+					// which may include zones that were not requested. Constrain our candidates to the
+					// accessible zones which were also requested.
+					z = z.Intersection(reqZones)
+				}
+			}
 
 		case corev1.ClaimPending:
 			var isImmediate bool

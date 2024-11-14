@@ -29,6 +29,7 @@ func DefaultWatchedPropertyPaths() []string {
 		"config.keyId",
 		"guest.ipStack",
 		"guest.net",
+		"guestHeartbeatStatus",
 		"summary.config.name",
 		"summary.guest",
 		"summary.overallStatus",

@@ -9,9 +9,11 @@ import (
 	"net"
 	"path"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -29,6 +31,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -94,6 +97,12 @@ func UpdateStatus(
 	vm.Status.HardwareVersion = int32(hardwareVersion)
 	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest)
 	updateStorageStatus(vmCtx.VM, vmCtx.MoVM)
+
+	if pkgcfg.FromContext(vmCtx).Features.WorkloadDomainIsolation &&
+		!pkgcfg.FromContext(vmCtx).AsyncSignalDisabled {
+
+		updateProbeStatus(vmCtx, vm, vmCtx.MoVM)
+	}
 
 	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {
@@ -879,4 +888,162 @@ const byteToGiB = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
 // number of bytes.
 func BytesToResourceGiB(b int64) *resource.Quantity {
 	return ptr.To(resource.MustParse(fmt.Sprintf("%dGi", b/byteToGiB)))
+}
+
+type probeResult uint8
+
+const (
+	probeResultUnknown probeResult = iota
+	probeResultSuccess
+	probeResultFailure
+)
+
+const (
+	probeReasonReady    string = "Ready"
+	probeReasonNotReady string = "NotReady"
+	probeReasonUnknown  string = "Unknown"
+)
+
+func heartbeatValue(value string) int {
+	switch value {
+	case string(vmopv1.GreenHeartbeatStatus):
+		return 3
+	case string(vmopv1.YellowHeartbeatStatus):
+		return 2
+	case string(vmopv1.RedHeartbeatStatus):
+		return 1
+	case string(vmopv1.GrayHeartbeatStatus):
+		return 0
+	default:
+		return -1
+	}
+}
+
+// updateProbeStatus updates a VM's status with the results of the configured
+// readiness probes.
+// Please note, this function returns early if the configured probe is TCP.
+func updateProbeStatus(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine) {
+
+	p := vm.Spec.ReadinessProbe
+	if p == nil || p.TCPSocket != nil {
+		return
+	}
+
+	var (
+		result    probeResult
+		resultMsg string
+	)
+
+	switch {
+	case p.GuestHeartbeat != nil:
+		result, resultMsg = updateProbeStatusHeartbeat(vm, moVM)
+	case p.GuestInfo != nil:
+		result, resultMsg = updateProbeStatusGuestInfo(vm, moVM)
+	}
+
+	var cond *metav1.Condition
+	switch result {
+	case probeResultSuccess:
+		cond = conditions.TrueCondition(vmopv1.ReadyConditionType)
+	case probeResultFailure:
+		cond = conditions.FalseCondition(
+			vmopv1.ReadyConditionType, probeReasonNotReady, resultMsg)
+	default:
+		cond = conditions.UnknownCondition(
+			vmopv1.ReadyConditionType, probeReasonUnknown, resultMsg)
+	}
+
+	// Emit event whe the condition is added or its status changes.
+	if c := conditions.Get(vm, cond.Type); c == nil || c.Status != cond.Status {
+		recorder := vmoprecord.FromContext(ctx)
+		if cond.Status == metav1.ConditionTrue {
+			recorder.Eventf(vm, probeReasonReady, "")
+		} else {
+			recorder.Eventf(vm, cond.Reason, cond.Message)
+		}
+
+		// Log the time when the VM changes its readiness condition.
+		logr.FromContextOrDiscard(ctx).Info(
+			"VM resource readiness probe condition updated",
+			"condition.status", cond.Status,
+			"time", cond.LastTransitionTime,
+			"reason", cond.Reason)
+	}
+
+	conditions.Set(vm, cond)
+}
+
+func updateProbeStatusHeartbeat(
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine) (probeResult, string) {
+
+	chb := string(moVM.GuestHeartbeatStatus)
+	mhb := string(vm.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus)
+	chv := heartbeatValue(chb)
+	if chv < 0 {
+		return probeResultUnknown, ""
+	}
+	if mhv := heartbeatValue(mhb); chv < mhv {
+		return probeResultFailure, fmt.Sprintf(
+			"heartbeat status %q is below threshold", chb)
+	}
+	return probeResultSuccess, ""
+}
+
+func updateProbeStatusGuestInfo(
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine) (probeResult, string) { //nolint:unparam
+
+	numProbes := len(vm.Spec.ReadinessProbe.GuestInfo)
+	if numProbes == 0 {
+		return probeResultUnknown, ""
+	}
+
+	// Build the list of guestinfo keys.
+	var (
+		guestInfoKeys    = make([]string, numProbes)
+		guestInfoKeyVals = make(map[string]string, numProbes)
+	)
+	for i := range vm.Spec.ReadinessProbe.GuestInfo {
+		gi := vm.Spec.ReadinessProbe.GuestInfo[i]
+		giKey := fmt.Sprintf("guestinfo.%s", gi.Key)
+		guestInfoKeys[i] = giKey
+		guestInfoKeyVals[giKey] = gi.Value
+	}
+
+	if moVM.Config == nil {
+		panic("moVM.Config is nil")
+	}
+
+	results := object.OptionValueList(moVM.Config.ExtraConfig).StringMap()
+
+	for i := range guestInfoKeys {
+		key := guestInfoKeys[i]
+		expectedVal := guestInfoKeyVals[key]
+
+		actualVal, ok := results[key]
+		if !ok {
+			return probeResultFailure, ""
+		}
+
+		if expectedVal == "" {
+			// Matches everything.
+			continue
+		}
+
+		expectedValRx, err := regexp.Compile(expectedVal)
+		if err != nil {
+			// Treat an invalid expressions as a wildcard too.
+			continue
+		}
+
+		if !expectedValRx.MatchString(actualVal) {
+			return probeResultFailure, ""
+		}
+	}
+
+	return probeResultSuccess, ""
 }

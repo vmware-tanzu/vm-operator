@@ -280,6 +280,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	ctx = ctxop.WithContext(ctx)
 
+	ctx = record.WithContext(ctx, r.Recorder)
+
 	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -451,9 +453,20 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		r.Recorder.EmitEvent(ctx.VM, "ReconcileNormal", err, true)
 	}
 
-	// Always check if this VM needs to be in the probe queue. We want to do this even if
-	// the VM hasn't been created yet so the condition is updated.
-	r.Prober.AddToProberManager(ctx.VM)
+	if !pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation ||
+		pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+
+		// Add the VM to the probe manager. This is idempotent.
+		r.Prober.AddToProberManager(ctx.VM)
+
+	} else if p := ctx.VM.Spec.ReadinessProbe; p != nil && p.TCPSocket != nil {
+		// TCP probes still use the probe manager.
+		r.Prober.AddToProberManager(ctx.VM)
+	} else {
+		// Remove the probe in case it *was* a TCP probe but switched to one
+		// of the other types.
+		r.Prober.RemoveFromProberManager(ctx.VM)
+	}
 
 	if err != nil {
 		return err

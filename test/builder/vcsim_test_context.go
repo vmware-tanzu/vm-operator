@@ -297,6 +297,8 @@ func newTestContextForVCSim(
 
 	fakeRecorder, _ := NewFakeRecorder()
 
+	parentCtx = record.WithContext(parentCtx, fakeRecorder)
+
 	ctx := &TestContextForVCSim{
 		UnitTestContext: NewUnitTestContextWithParentContext(parentCtx, initObjects...),
 		PodNamespace:    "vmop-pod-test",
@@ -312,6 +314,7 @@ func newTestContextForVCSim(
 	ctx.ClustersPerZone = clustersPerZone
 	// TODO: this can be removed once FSS_WCP_WORKLOAD_DOMAIN_ISOLATION enabled.
 	ctx.withWorkloadIsolation = config.WithWorkloadIsolation
+
 	return ctx
 }
 

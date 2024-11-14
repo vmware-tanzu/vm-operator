@@ -5,7 +5,6 @@ package virtualmachine
 
 import (
 	"fmt"
-	"net/http"
 
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
@@ -14,13 +13,11 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
 	sourceVirtualMachineType = "VirtualMachine"
-
-	// vAPICtxActIDHttpHeader represents the http header in vAPI to pass down the activation ID.
-	vAPICtxActIDHttpHeader = "vapi-ctx-actid"
 
 	itemDescriptionFormat = "virtualmachinepublishrequest.vmoperator.vmware.com: %s\n"
 )
@@ -59,6 +56,7 @@ func CreateOVF(
 
 	// Use vmpublish uid as the act id passed down to the content library service, so that we can track
 	// the task status by the act id.
-	ctxHeader := client.WithHeader(vmCtx, http.Header{vAPICtxActIDHttpHeader: []string{actID}})
-	return vcenter.NewManager(client).CreateOVF(ctxHeader, ovf)
+	return vcenter.NewManager(client).CreateOVF(
+		pkgutil.WithVAPIActivationID(vmCtx, client, actID),
+		ovf)
 }

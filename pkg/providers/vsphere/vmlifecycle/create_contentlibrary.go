@@ -59,7 +59,10 @@ func deployOVF(
 
 	vmCtx.Logger.Info("Deploying OVF Library Item", "itemID", item.ID, "itemName", item.Name, "deploy", deploy)
 
-	return vcenter.NewManager(restClient).DeployLibraryItem(vmCtx, item.ID, deploy)
+	return vcenter.NewManager(restClient).DeployLibraryItem(
+		util.WithVAPIActivationID(vmCtx, restClient, vmCtx.VM.Spec.InstanceUUID),
+		item.ID,
+		deploy)
 }
 
 func createVM(

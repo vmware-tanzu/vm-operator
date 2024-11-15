@@ -27,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -3013,6 +3014,52 @@ func unitTestsValidateUpdate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.network.interfaces: Forbidden: network interfaces cannot be added or removed`),
+				},
+			),
+
+			Entry("allow interface name change if VM has test failover label",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if ctx.oldVM.Labels == nil {
+							ctx.oldVM.Labels = make(map[string]string)
+						}
+						ctx.oldVM.Labels[backupapi.TestFailoverLabelKey] = "foo"
+
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces[0].Name = "eth100"
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow changing network interface network if VM has test failover label",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if ctx.oldVM.Labels == nil {
+							ctx.oldVM.Labels = make(map[string]string)
+						}
+						ctx.oldVM.Labels[backupapi.TestFailoverLabelKey] = "foo"
+
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:    "eth0",
+									Network: &common.PartialObjectRef{Name: "my-network"},
+								},
+							},
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces[0].Network.Name = "my-other-network"
+					},
+					expectAllowed: true,
 				},
 			),
 		)

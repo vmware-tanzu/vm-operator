@@ -10,7 +10,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -47,6 +46,7 @@ func vmResizeTests() {
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.AsyncSignalDisabled = true
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
@@ -66,21 +66,6 @@ func vmResizeTests() {
 		enc := vimtypes.NewJSONEncoder(&w)
 		ExpectWithOffset(2, enc.Encode(cs)).To(Succeed())
 		return w.Bytes()
-	}
-
-	createOrUpdateAndGetVcVM := func(
-		ctx *builder.TestContextForVCSim,
-		vm *vmopv1.VirtualMachine) (*object.VirtualMachine, error) {
-
-		err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-		if err != nil {
-			return nil, err
-		}
-
-		ExpectWithOffset(1, vm.Status.UniqueID).ToNot(BeEmpty())
-		vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
-		ExpectWithOffset(1, vcVM).ToNot(BeNil())
-		return vcVM, nil
 	}
 
 	createVMClass := func(cs vimtypes.VirtualMachineConfigSpec, name ...string) *vmopv1.VirtualMachineClass {
@@ -197,8 +182,7 @@ func vmResizeTests() {
 				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 				vm.Spec.StorageClass = ctx.StorageClassName
 
-				_, err := createOrUpdateAndGetVcVM(ctx, vm)
-				Expect(err).ToNot(HaveOccurred())
+				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 			})
 
 			Context("Powered off VM", func() {
@@ -216,7 +200,7 @@ func vmResizeTests() {
 						newVMClass := createVMClass(newCS)
 						vm.Spec.ClassName = newVMClass.Name
 
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
 						var o mo.VirtualMachine
@@ -237,7 +221,7 @@ func vmResizeTests() {
 							newVMClass := createVMClass(newCS)
 							vm.Spec.ClassName = newVMClass.Name
 
-							vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+							vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 							Expect(err).ToNot(HaveOccurred())
 
 							var o mo.VirtualMachine
@@ -274,7 +258,7 @@ func vmResizeTests() {
 							updateVMClassPolicies(newVMClass, polices)
 
 							By("Resize set reservations", func() {
-								vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 								Expect(err).ToNot(HaveOccurred())
 
 								var o mo.VirtualMachine
@@ -288,7 +272,7 @@ func vmResizeTests() {
 
 							By("Resize back to initial class removes reservations", func() {
 								vm.Spec.ClassName = vmClass.Name
-								vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 								Expect(err).ToNot(HaveOccurred())
 
 								var o mo.VirtualMachine
@@ -318,7 +302,7 @@ func vmResizeTests() {
 					vm.Spec.ClassName = newVMClass.Name
 
 					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
 					var o mo.VirtualMachine
@@ -355,7 +339,7 @@ func vmResizeTests() {
 						updateVMClassPolicies(newVMClass, polices)
 
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
 						var o mo.VirtualMachine
@@ -381,7 +365,7 @@ func vmResizeTests() {
 						delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
 
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
 						var o mo.VirtualMachine
@@ -406,7 +390,7 @@ func vmResizeTests() {
 						Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, vmClass.Name)).To(Succeed())
 
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
 						var o mo.VirtualMachine
@@ -429,7 +413,7 @@ func vmResizeTests() {
 						updateVMClass(vmClass, newCS)
 
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
 						var o mo.VirtualMachine
@@ -452,7 +436,7 @@ func vmResizeTests() {
 
 						vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
 						var o mo.VirtualMachine
@@ -470,8 +454,7 @@ func vmResizeTests() {
 
 				It("Resize Pending", func() {
 					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-					_, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
 					newCS := configSpec
@@ -480,7 +463,7 @@ func vmResizeTests() {
 					newVMClass := createVMClass(newCS)
 					vm.Spec.ClassName = newVMClass.Name
 
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
 					By("Does not resize", func() {
@@ -502,8 +485,7 @@ func vmResizeTests() {
 
 				It("Has Same Class Resize Annotation", func() {
 					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-					_, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
 					newCS := configSpec
@@ -512,7 +494,7 @@ func vmResizeTests() {
 					updateVMClass(vmClass, newCS)
 
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
 					By("Does not resize", func() {
@@ -546,7 +528,7 @@ func vmResizeTests() {
 					updateVMClass(vmClass, newCS)
 
 					By("Does not resize without annotation", func() {
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
 						var o mo.VirtualMachine
@@ -557,7 +539,7 @@ func vmResizeTests() {
 					})
 
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
 					var o mo.VirtualMachine
@@ -580,7 +562,7 @@ func vmResizeTests() {
 					delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
 
 					By("Does not resize without same class annotation", func() {
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
 						var o mo.VirtualMachine
@@ -594,7 +576,7 @@ func vmResizeTests() {
 					})
 
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
 					var o mo.VirtualMachine
@@ -608,8 +590,7 @@ func vmResizeTests() {
 
 				It("Powered On brownfield VM", func() {
 					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-					_, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
 					// Remove annotation so the VM appears to be from before this feature.
@@ -622,7 +603,7 @@ func vmResizeTests() {
 					updateVMClass(vmClass, newCS)
 
 					vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
 					By("Does not resize powered on VM", func() {
@@ -678,8 +659,7 @@ func vmResizeTests() {
 			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 			vm.Spec.StorageClass = ctx.StorageClassName
 
-			_, err := createOrUpdateAndGetVcVM(ctx, vm)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 		})
 
 		Context("ChangeBlockTracking", func() {
@@ -688,7 +668,7 @@ func vmResizeTests() {
 					ChangeBlockTracking: vimtypes.NewBool(true),
 				}
 
-				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				var o mo.VirtualMachine
@@ -711,7 +691,7 @@ func vmResizeTests() {
 					ChangeBlockTracking: vimtypes.NewBool(true),
 				}
 
-				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				var o mo.VirtualMachine
@@ -739,7 +719,7 @@ func vmResizeTests() {
 					ChangeBlockTracking: vimtypes.NewBool(true),
 				}
 
-				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				var o mo.VirtualMachine

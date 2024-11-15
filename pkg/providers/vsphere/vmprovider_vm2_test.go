@@ -70,6 +70,7 @@ func vmE2ETests() {
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.AsyncSignalDisabled = true
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
@@ -137,10 +138,10 @@ func vmE2ETests() {
 		})
 
 		It("DoIt without an NPE", func() {
-			err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+			err := createOrUpdateVM(ctx, vmProvider, vm)
 			Expect(err).ToNot(HaveOccurred())
 
-			err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+			err = createOrUpdateVM(ctx, vmProvider, vm)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
@@ -188,7 +189,7 @@ func vmE2ETests() {
 			})
 
 			It("DoIt", func() {
-				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				err := createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
 				Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
@@ -222,7 +223,7 @@ func vmE2ETests() {
 					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 				})
 
-				err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				err = createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				By("has expected conditions", func() {
@@ -296,7 +297,7 @@ func vmE2ETests() {
 			})
 
 			It("DoIt", func() {
-				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				err := createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
 				Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
@@ -331,7 +332,7 @@ func vmE2ETests() {
 					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 				})
 
-				err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				err = createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				By("has expected conditions", func() {
@@ -407,7 +408,7 @@ func vmE2ETests() {
 			})
 
 			It("DoIt", func() {
-				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				err := createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("subnetPort is not ready yet"))
 				Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
@@ -439,7 +440,7 @@ func vmE2ETests() {
 					Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
 				})
 
-				err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				err = createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				By("has expected conditions", func() {

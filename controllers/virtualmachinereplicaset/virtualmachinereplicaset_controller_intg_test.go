@@ -19,7 +19,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -124,13 +124,15 @@ func intgTestsReconcile() {
 		dummyInstanceUUID := "instanceUUID1234"
 
 		BeforeEach(func() {
-			intgFakeVMProvider.Lock()
-			intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				// Used below just to check for something in the Status is updated.
-				vm.Status.InstanceUUID = dummyInstanceUUID
-				return nil
-			}
-			intgFakeVMProvider.Unlock()
+			providerfake.SetCreateOrUpdateFunction(
+				ctx,
+				intgFakeVMProvider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					// Used below just to check for something in the Status is
+					// updated.
+					vm.Status.InstanceUUID = dummyInstanceUUID
+					return nil
+				})
 		})
 
 		AfterEach(func() {

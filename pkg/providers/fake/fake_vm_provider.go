@@ -16,6 +16,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
@@ -28,9 +29,10 @@ import (
 // expected to evolve as more tests get added in the future.
 
 type funcs struct {
-	CreateOrUpdateVirtualMachineFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
-	DeleteVirtualMachineFn         func(ctx context.Context, vm *vmopv1.VirtualMachine) error
-	PublishVirtualMachineFn        func(ctx context.Context, vm *vmopv1.VirtualMachine,
+	CreateOrUpdateVirtualMachineFn      func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	CreateOrUpdateVirtualMachineAsyncFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error)
+	DeleteVirtualMachineFn              func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	PublishVirtualMachineFn             func(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
 	GetVirtualMachinePropertiesFn      func(ctx context.Context, vm *vmopv1.VirtualMachine, propertyPaths []string) (map[string]any, error)
@@ -90,6 +92,16 @@ func (s *VMProvider) CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv
 	}
 	s.addToVMMap(vm)
 	return nil
+}
+
+func (s *VMProvider) CreateOrUpdateVirtualMachineAsync(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.CreateOrUpdateVirtualMachineAsyncFn != nil {
+		return s.CreateOrUpdateVirtualMachineAsyncFn(ctx, vm)
+	}
+	s.addToVMMap(vm)
+	return nil, nil
 }
 
 func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error {
@@ -393,4 +405,36 @@ func NewVMProvider() *VMProvider {
 		vmPubMap:          map[string]vimtypes.TaskInfoState{},
 	}
 	return &provider
+}
+
+func SetCreateOrUpdateFunction(
+	ctx context.Context,
+	provider *VMProvider,
+	fn func(
+		ctx context.Context,
+		vm *vmopv1.VirtualMachine,
+	) error,
+) {
+	provider.Lock()
+	defer provider.Unlock()
+
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+		if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+
+			provider.CreateOrUpdateVirtualMachineAsyncFn = func(
+				ctx context.Context,
+				vm *vmopv1.VirtualMachine) (<-chan error, error) {
+
+				chanErr := make(chan error)
+				close(chanErr)
+
+				return chanErr, fn(ctx, vm)
+			}
+
+			return
+		}
+
+	}
+
+	provider.CreateOrUpdateVirtualMachineFn = fn
 }

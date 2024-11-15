@@ -318,26 +318,46 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	if err := r.ReconcileNormal(vmCtx); err != nil {
+	if err = r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
 		vmCtx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: requeueDelay(vmCtx)}, nil
+	// Requeue after N amount of time according to the state of the VM.
+	return ctrl.Result{RequeueAfter: requeueDelay(vmCtx, err)}, nil
 }
 
-// Determine if we should request a non-zero requeue delay in order to trigger a non-rate limited reconcile
-// at some point in the future.  Use this delay-based reconcile to trigger a specific reconcile to discovery the VM IP
-// address rather than relying on the resync period to do.
+// Determine if we should request a non-zero requeue delay in order to trigger a
+// non-rate limited reconcile at some point in the future.
 //
-// TODO: It would be much preferable to determine that a non-error resync is required at the source of the determination that
-// TODO: the VM IP isn't available rather than up here in the reconcile loop.  However, in the interest of time, we are making
-// TODO: this determination here and will have to refactor at some later date.
-func requeueDelay(ctx *pkgctx.VirtualMachineContext) time.Duration {
-	// If the VM is in Creating phase, the reconciler has run out of threads to Create VMs on the provider. Do not queue
-	// immediately to avoid exponential backoff.
-	if !conditions.IsTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
+// When async signal is disabled, this is used to trigger a specific reconcile
+// to discovery the VM IP address rather than relying on the resync period to
+// do.
+//
+// TODO
+// It would be much preferable to determine that a non-error resync is required
+// at the source of the determination that the VM IP is not available rather
+// than up here in the reconcile loop. However, in the interest of time, we are
+// making this determination here and will have to refactor at some later date.
+func requeueDelay(
+	ctx *pkgctx.VirtualMachineContext,
+	err error) time.Duration {
+
+	// If there were too many concurrent create operations or if the VM is in
+	// Creating phase, the reconciler has run out of threads or goroutines to
+	// Create VMs on the provider. Do not queue immediately to avoid exponential
+	// backoff.
+	if ignoredCreateErr(err) ||
+		!conditions.IsTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated) {
+
 		return pkgcfg.FromContext(ctx).CreateVMRequeueDelay
+	}
+
+	// Do not requeue for the IP address if async signal is enabled.
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation &&
+		!pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+
+		return 0
 	}
 
 	if ctx.VM.Status.PowerState == vmopv1.VirtualMachinePowerStateOn {
@@ -441,14 +461,54 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	// Upgrade schema fields where needed
 	upgradeSchema(ctx)
 
-	err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM)
+	var (
+		err     error
+		chanErr <-chan error
+	)
+
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation &&
+		!pkgcfg.FromContext(ctx).AsyncSignalDisabled &&
+		!pkgcfg.FromContext(ctx).AsyncCreateDisabled {
+		//
+		// Non-blocking create
+		//
+		chanErr, err = r.VMProvider.CreateOrUpdateVirtualMachineAsync(ctx, ctx.VM)
+	} else {
+		//
+		// Blocking create
+		//
+		err = r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM)
+	}
 
 	switch {
-	case ctxop.IsCreate(ctx):
-		r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
+	case ctxop.IsCreate(ctx) && !ignoredCreateErr(err):
+
+		if chanErr == nil {
+			//
+			// Blocking create
+			//
+			r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
+		} else {
+			//
+			// Non-blocking create
+			//
+			if err != nil {
+				// Failed before goroutine.
+				r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
+			} else {
+				// Emit event once goroutine is complete.
+				go func(obj client.Object) {
+					err := <-chanErr
+					r.Recorder.EmitEvent(obj, "Create", err, false)
+				}(ctx.VM.DeepCopy())
+			}
+		}
 	case ctxop.IsUpdate(ctx):
+
 		r.Recorder.EmitEvent(ctx.VM, "Update", err, false)
-	case err != nil:
+
+	case err != nil && !ignoredCreateErr(err):
+
 		// Catch all event for neither create nor update op.
 		r.Recorder.EmitEvent(ctx.VM, "ReconcileNormal", err, true)
 	}
@@ -477,6 +537,18 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 func getIsDefaultVMClassController(ctx context.Context) bool {
 	if v := pkgcfg.FromContext(ctx).DefaultVMClassControllerName; v == "" || v == vmClassControllerName {
+		return true
+	}
+	return false
+}
+
+// ignoredCreateErr is written this way in order to illustrate coverage more
+// accurately.
+func ignoredCreateErr(err error) bool {
+	if err == providers.ErrDuplicateCreate {
+		return true
+	}
+	if err == providers.ErrTooManyCreates {
 		return true
 	}
 	return false

@@ -25,6 +25,7 @@ const (
 	JSONExtraConfig
 	LogSensitiveData
 	AsyncSignalDisabled
+	AsyncCreateDisabled
 	InstanceStoragePVPlacementFailedTTL
 	InstanceStorageJitterMaxFactor
 	InstanceStorageSeedRequeueDuration
@@ -110,6 +111,8 @@ func (n VarName) String() string {
 		return "LOG_SENSITIVE_DATA"
 	case AsyncSignalDisabled:
 		return "ASYNC_SIGNAL_DISABLED"
+	case AsyncCreateDisabled:
+		return "ASYNC_CREATE_DISABLED"
 	case InstanceStoragePVPlacementFailedTTL:
 		return "INSTANCE_STORAGE_PV_PLACEMENT_FAILED_TTL"
 	case InstanceStorageJitterMaxFactor:

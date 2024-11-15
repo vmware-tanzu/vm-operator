@@ -5,6 +5,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -16,9 +17,22 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
+var (
+	// ErrTooManyCreates is returned from the CreateOrUpdateVirtualMachine and
+	// CreateOrUpdateVirtualMachineAsync functions when the number of create
+	// threads/goroutines have reached the allowed limit.
+	ErrTooManyCreates = errors.New("too many creates")
+
+	// ErrDuplicateCreate is returned from the CreateOrUpdateVirtualMachineAsync
+	// function if it is called for a VM while a create goroutine for that VM is
+	// already executing.
+	ErrDuplicateCreate = errors.New("duplicate create")
+)
+
 // VirtualMachineProviderInterface is a pluggable interface for VM Providers.
 type VirtualMachineProviderInterface interface {
 	CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	CreateOrUpdateVirtualMachineAsync(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error)
 	DeleteVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	PublishVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)

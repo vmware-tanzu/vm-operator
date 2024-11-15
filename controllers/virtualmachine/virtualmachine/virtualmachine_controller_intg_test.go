@@ -29,6 +29,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -105,11 +106,13 @@ func intgTestsReconcile() {
 		dummyInstanceUUID := uuid.NewString()
 
 		BeforeEach(func() {
-			intgFakeVMProvider.Lock()
-			intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				return nil
-			}
-			intgFakeVMProvider.Unlock()
+			providerfake.SetCreateOrUpdateFunction(
+				ctx,
+				intgFakeVMProvider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					return nil
+				},
+			)
 		})
 
 		AfterEach(func() {
@@ -128,6 +131,19 @@ func intgTestsReconcile() {
 		})
 
 		It("Reconciles after VirtualMachine creation", func() {
+			var createAttempts int32
+
+			By("Exceed number of allowed concurrent create operations", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						atomic.AddInt32(&createAttempts, 1)
+						return providers.ErrTooManyCreates
+					},
+				)
+			})
+
 			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 
@@ -135,14 +151,43 @@ func intgTestsReconcile() {
 				waitForVirtualMachineFinalizer(ctx, vmKey)
 			})
 
+			Eventually(func(g Gomega) {
+				g.Expect(atomic.LoadInt32(&createAttempts)).To(BeNumerically(">=", int32(3)))
+				g.Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeFalse())
+			}, "5s").Should(
+				Succeed(),
+				"waiting for reconcile to be requeued at least three times")
+
+			atomic.StoreInt32(&createAttempts, 0)
+
+			By("Causing duplicate creates", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						atomic.AddInt32(&createAttempts, 1)
+						return providers.ErrDuplicateCreate
+					},
+				)
+			})
+
+			Eventually(func(g Gomega) {
+				g.Expect(atomic.LoadInt32(&createAttempts)).To(BeNumerically(">=", int32(3)))
+				g.Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeFalse())
+			}, "5s").Should(
+				Succeed(),
+				"waiting for reconcile to be requeued at least three times")
+
 			By("Set InstanceUUID in CreateOrUpdateVM", func() {
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-					// Just using InstanceUUID here for a field to update.
-					vm.Status.InstanceUUID = dummyInstanceUUID
-					return nil
-				}
-				intgFakeVMProvider.Unlock()
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						// Just using InstanceUUID here for a field to update.
+						vm.Status.InstanceUUID = dummyInstanceUUID
+						return nil
+					},
+				)
 			})
 
 			By("VirtualMachine should have InstanceUUID set", func() {
@@ -155,13 +200,15 @@ func intgTestsReconcile() {
 			})
 
 			By("Set Created condition in CreateOrUpdateVM", func() {
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-					vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-					conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
-					return nil
-				}
-				intgFakeVMProvider.Unlock()
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+						conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+						return nil
+					},
+				)
 			})
 
 			By("VirtualMachine should have Created condition set", func() {
@@ -174,14 +221,16 @@ func intgTestsReconcile() {
 			})
 
 			By("Set IP address in CreateOrUpdateVM", func() {
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-					vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
-						PrimaryIP4: dummyIPAddress,
-					}
-					return nil
-				}
-				intgFakeVMProvider.Unlock()
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+							PrimaryIP4: dummyIPAddress,
+						}
+						return nil
+					},
+				)
 			})
 
 			By("VirtualMachine should have IP address set", func() {
@@ -213,13 +262,15 @@ func intgTestsReconcile() {
 			biosUUID := uuid.NewString()
 
 			BeforeEach(func() {
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-					vm.Status.InstanceUUID = instanceUUID
-					vm.Status.BiosUUID = biosUUID
-					return nil
-				}
-				intgFakeVMProvider.Unlock()
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						vm.Status.InstanceUUID = instanceUUID
+						vm.Status.BiosUUID = biosUUID
+						return nil
+					},
+				)
 			})
 
 			// NOTE: mutating webhook sets the default spec.instanceUUID, but is not run in this test -
@@ -261,13 +312,15 @@ func intgTestsReconcile() {
 		})
 
 		It("Reconciles after VirtualMachineClass change", func() {
-			intgFakeVMProvider.Lock()
-			intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				// Set this so requeueDelay() returns 0.
-				conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
-				return nil
-			}
-			intgFakeVMProvider.Unlock()
+			providerfake.SetCreateOrUpdateFunction(
+				ctx,
+				intgFakeVMProvider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					// Set this so requeueDelay() returns 0.
+					conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+					return nil
+				},
+			)
 
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 			// Wait for initial reconcile.
@@ -283,12 +336,14 @@ func intgTestsReconcile() {
 
 			instanceUUID := uuid.NewString()
 
-			intgFakeVMProvider.Lock()
-			intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				vm.Status.InstanceUUID = instanceUUID
-				return nil
-			}
-			intgFakeVMProvider.Unlock()
+			providerfake.SetCreateOrUpdateFunction(
+				ctx,
+				intgFakeVMProvider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					vm.Status.InstanceUUID = instanceUUID
+					return nil
+				},
+			)
 
 			vmClass := builder.DummyVirtualMachineClass(vm.Spec.ClassName)
 			vmClass.Namespace = vm.Namespace
@@ -390,6 +445,8 @@ var _ = Describe(
 			ctx = pkgcfg.UpdateContext(
 				ctx,
 				func(config *pkgcfg.Config) {
+					config.AsyncSignalDisabled = false
+					config.AsyncCreateDisabled = false
 					config.Features.WorkloadDomainIsolation = true
 				},
 			)
@@ -400,10 +457,14 @@ var _ = Describe(
 			provider.VSphereClientFn = func(ctx context.Context) (*vsclient.Client, error) {
 				return vsclient.NewClient(ctx, vcSimCtx.VCClientConfig)
 			}
-			provider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, obj *vmopv1.VirtualMachine) error {
-				atomic.AddInt32(&numCreateOrUpdateCalls, 1)
-				return nil
-			}
+			providerfake.SetCreateOrUpdateFunction(
+				ctx,
+				provider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					atomic.AddInt32(&numCreateOrUpdateCalls, 1)
+					return nil
+				},
+			)
 
 			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
 				ctx,

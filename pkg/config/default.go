@@ -38,6 +38,7 @@ func Default() Config {
 		MaxCreateVMsOnProvider:       80,
 		MaxConcurrentReconciles:      1,
 		AsyncSignalDisabled:          false,
+		AsyncCreateDisabled:          false,
 		CreateVMRequeueDelay:         10 * time.Second,
 		PoweredOnVMHasIPRequeueDelay: 10 * time.Second,
 		NetworkProviderType:          NetworkProviderTypeNamed,

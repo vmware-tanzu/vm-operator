@@ -6,7 +6,6 @@ package virtualmachine_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -77,6 +76,7 @@ func unitTestsReconcile() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.MaxDeployThreadsOnProvider = 16
+			config.Features.WorkloadDomainIsolation = false
 		})
 
 		fakeProbeManagerIf := proberfake.NewFakeProberManager()
@@ -160,9 +160,13 @@ func unitTestsReconcile() {
 		Context("ProberManager", func() {
 
 			It("Should call add to Prober Manager if ReconcileNormal fails", func() {
-				fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-					return errors.New(providerError)
-				}
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						return errors.New(providerError)
+					},
+				)
 
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(err).To(HaveOccurred())
@@ -179,50 +183,112 @@ func unitTestsReconcile() {
 			})
 		})
 
-		It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				ctxop.MarkCreate(ctx)
-				return nil
-			}
+		When("blocking create", func() {
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.AsyncCreateDisabled = true
+				})
+			})
+			It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						ctxop.MarkCreate(ctx)
+						return nil
+					},
+				)
+				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				expectEvents(ctx, "CreateSuccess")
+			})
 
-			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
-			expectEvents(ctx, "CreateSuccess")
+			It("Should emit CreateFailure event if ReconcileNormal causes a failed VM create", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						ctxop.MarkCreate(ctx)
+						return errors.New("fake")
+					},
+				)
+
+				Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
+				expectEvents(ctx, "CreateFailure")
+			})
 		})
 
-		It("Should emit CreateFailure event if ReconcileNormal causes a failed VM create", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				ctxop.MarkCreate(ctx)
-				return fmt.Errorf("fake")
-			}
+		When("non-blocking create", func() {
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.WorkloadDomainIsolation = true
+					config.AsyncSignalDisabled = false
+					config.AsyncCreateDisabled = false
+				})
+			})
+			It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						ctxop.MarkCreate(ctx)
+						return nil
+					},
+				)
+				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				expectEvents(ctx, "CreateSuccess")
+			})
 
-			Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
-			expectEvents(ctx, "CreateFailure")
+			It("Should emit CreateFailure event if ReconcileNormal causes a failed VM create", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						ctxop.MarkCreate(ctx)
+						return errors.New("fake")
+					},
+				)
+
+				Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
+				expectEvents(ctx, "CreateFailure")
+			})
 		})
 
 		It("Should emit UpdateSuccess event if ReconcileNormal causes a successful VM update", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				ctxop.MarkUpdate(ctx)
-				return nil
-			}
+			providerfake.SetCreateOrUpdateFunction(
+				vmCtx,
+				fakeVMProvider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					ctxop.MarkUpdate(ctx)
+					return nil
+				},
+			)
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
 			expectEvents(ctx, "UpdateSuccess")
 		})
 
 		It("Should emit UpdateFailure event if ReconcileNormal causes a failed VM update", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				ctxop.MarkUpdate(ctx)
-				return fmt.Errorf("fake")
-			}
+			providerfake.SetCreateOrUpdateFunction(
+				vmCtx,
+				fakeVMProvider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					ctxop.MarkUpdate(ctx)
+					return errors.New("fake")
+				},
+			)
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
 			expectEvents(ctx, "UpdateFailure")
 		})
 
 		It("Should emit ReconcileNormalFailure if ReconcileNormal fails for neither create or update op", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				return fmt.Errorf("fake")
-			}
+			providerfake.SetCreateOrUpdateFunction(
+				vmCtx,
+				fakeVMProvider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					return errors.New("fake")
+				},
+			)
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
 			expectEvents(ctx, "ReconcileNormalFailure")

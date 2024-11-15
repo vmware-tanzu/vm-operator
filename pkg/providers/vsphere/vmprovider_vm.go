@@ -22,6 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
@@ -30,6 +31,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -76,6 +79,10 @@ var (
 	createCountLock       sync.Mutex
 	concurrentCreateCount int
 
+	// currentlyCreating tracks the VMs currently being created in a
+	// non-blocking goroutine.
+	currentlyCreating sync.Map
+
 	// SkipVMImageCLProviderCheck skips the checks that a VM Image has a Content Library item provider
 	// since a VirtualMachineImage created for a VM template won't have either. This has been broken for
 	// a long time but was otherwise masked on how the tests used to be organized.
@@ -86,10 +93,31 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) error {
 
+	return vs.createOrUpdateVirtualMachine(ctx, vm, nil)
+}
+
+func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) (<-chan error, error) {
+
+	chanErr := make(chan error)
+	err := vs.createOrUpdateVirtualMachine(ctx, vm, chanErr)
+	return chanErr, err
+}
+
+func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	chanErr chan error) error {
+
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "createOrUpdateVM")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
+		Context: context.WithValue(
+			ctx,
+			vimtypes.ID{},
+			vs.getOpID(vm, "createOrUpdateVM"),
+		),
+		Logger: log.WithValues("vmName", vm.NamespacedName()),
+		VM:     vm,
 	}
 
 	client, err := vs.getVcClient(vmCtx)
@@ -98,36 +126,104 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 	}
 
 	// Set the VC UUID annotation on the VM before attempting creation or
-	// update. Among other things, the annotation facilitates differential handling
-	// of restore and fail-over operations.
+	// update. Among other things, the annotation facilitates differential
+	// handling of restore and fail-over operations.
 	if vm.Annotations == nil {
 		vm.Annotations = make(map[string]string)
 	}
-	vm.Annotations[vmopv1.ManagerID] = client.VimClient().ServiceContent.About.InstanceUuid
+	vCenterInstanceUUID := client.VimClient().ServiceContent.About.InstanceUuid
+	vm.Annotations[vmopv1.ManagerID] = vCenterInstanceUUID
 
-	vcVM, err := vs.getVM(vmCtx, client, false)
+	// Check to see if the VM can be found on the underlying platform.
+	foundVM, err := vs.getVM(vmCtx, client, false)
 	if err != nil {
 		return err
 	}
 
-	if vcVM == nil {
-		var createArgs *VMCreateArgs
+	if foundVM != nil {
+		// Mark that this is an update operation.
+		ctxop.MarkUpdate(vmCtx)
 
-		vcVM, createArgs, err = vs.createVirtualMachine(vmCtx, client)
+		if chanErr != nil {
+			defer close(chanErr)
+		}
+		return vs.updateVirtualMachine(vmCtx, foundVM, client, nil)
+	}
+
+	// Mark that this is a create operation.
+	ctxop.MarkCreate(vmCtx)
+
+	createArgs, err := vs.getCreateArgs(vmCtx, client)
+	if err != nil {
+		return err
+	}
+
+	// Do not allow more than N create threads/goroutines.
+	//
+	// - In blocking create mode, this ensures there are reconciler threads
+	//   available to reconcile non-create operations.
+	//
+	// - In non-blocking create mode, this ensures the number of goroutines
+	//   spawned to create VMs does not take up too much memory.
+	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx)
+	if !allowed {
+		return providers.ErrTooManyCreates
+	}
+
+	if chanErr == nil {
+
+		vmCtx.Logger.V(4).Info("Doing a blocking create")
+
+		defer createDeferFn()
+
+		newVM, err := vs.createVirtualMachine(vmCtx, client, createArgs)
 		if err != nil {
 			return err
 		}
 
-		if vcVM == nil {
-			// Creation was not ready or blocked for some reason. We depend on the controller
-			// to eventually retry the create.
-			return nil
+		if newVM != nil {
+			// If the create actually occurred, fall-through to an update
+			// post-reconfigure.
+			return vs.createdVirtualMachineFallthroughUpdate(
+				vmCtx,
+				newVM,
+				client,
+				createArgs)
 		}
-
-		return vs.createdVirtualMachineFallthroughUpdate(vmCtx, vcVM, client, createArgs)
 	}
 
-	return vs.updateVirtualMachine(vmCtx, vcVM, client, nil)
+	if _, ok := currentlyCreating.LoadOrStore(
+		vm.NamespacedName(),
+		struct{}{}); ok {
+
+		// If the VM is already being created in a goroutine, then there is no
+		// need to create it again.
+		//
+		// However, we need to make sure we decrement the number of concurrent
+		// creates before returning.
+		createDeferFn()
+		return providers.ErrDuplicateCreate
+	}
+
+	vmCtx.Logger.V(4).Info("Doing a non-blocking create")
+
+	// Create a copy of the context and replace its VM with a copy to
+	// ensure modifications in the goroutine below are not impacted or
+	// impact the operations above us in the call stack.
+	copyOfCtx := vmCtx
+	copyOfCtx.VM = vmCtx.VM.DeepCopy()
+
+	// Start a goroutine to create the VM in the background.
+	go vs.createVirtualMachineAsync(
+		copyOfCtx,
+		client,
+		createArgs,
+		chanErr,
+		createDeferFn)
+
+	// Return with no error. The VM will be re-enqueued once the create
+	// completes with success or failure.
+	return nil
 }
 
 func (vs *vSphereVMProvider) DeleteVirtualMachine(
@@ -388,66 +484,117 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 	return nil
 }
 
-func (vs *vSphereVMProvider) createVirtualMachine(
+func (vs *vSphereVMProvider) getCreateArgs(
 	vmCtx pkgctx.VirtualMachineContext,
-	vcClient *vcclient.Client) (*object.VirtualMachine, *VMCreateArgs, error) {
+	vcClient *vcclient.Client) (*VMCreateArgs, error) {
 
 	createArgs, err := vs.vmCreateGetArgs(vmCtx, vcClient)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	err = vs.vmCreateDoPlacement(vmCtx, vcClient, createArgs)
-	if err != nil {
-		return nil, nil, err
+	if err := vs.vmCreateDoPlacement(vmCtx, vcClient, createArgs); err != nil {
+		return nil, err
 	}
 
-	err = vs.vmCreateGetFolderAndRPMoIDs(vmCtx, vcClient, createArgs)
-	if err != nil {
-		return nil, nil, err
+	if err := vs.vmCreateGetFolderAndRPMoIDs(vmCtx, vcClient, createArgs); err != nil {
+		return nil, err
 	}
 
-	err = vs.vmCreatePathName(vmCtx, vcClient, createArgs)
-	if err != nil {
-		return nil, nil, err
+	if err := vs.vmCreatePathName(vmCtx, vcClient, createArgs); err != nil {
+		return nil, err
 	}
 
-	err = vs.vmCreateFixupConfigSpec(vmCtx, vcClient, createArgs)
-	if err != nil {
-		return nil, nil, err
+	if err := vs.vmCreateFixupConfigSpec(vmCtx, vcClient, createArgs); err != nil {
+		return nil, err
 	}
 
-	err = vs.vmCreateIsReady(vmCtx, vcClient, createArgs)
-	if err != nil {
-		return nil, nil, err
+	if err := vs.vmCreateIsReady(vmCtx, vcClient, createArgs); err != nil {
+		return nil, err
 	}
 
-	// BMV: This is about where we used to do this check but it prb make more sense to do
-	// earlier, as to limit wasted work. Before DoPlacement() is likely the best place so
-	// the window between the placement decision and creating the VM on VC is small(ish).
-	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx)
-	if !allowed {
-		return nil, nil, nil
-	}
-	defer createDeferFn()
+	return createArgs, nil
+}
+
+func (vs *vSphereVMProvider) createVirtualMachine(
+	ctx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	args *VMCreateArgs) (*object.VirtualMachine, error) {
 
 	moRef, err := vmlifecycle.CreateVirtualMachine(
-		vmCtx,
+		ctx,
 		vcClient.RestClient(),
 		vcClient.VimClient(),
 		vcClient.Finder(),
-		&createArgs.CreateArgs)
+		&args.CreateArgs)
 
 	if err != nil {
-		vmCtx.Logger.Error(err, "CreateVirtualMachine failed")
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionCreated, "Error", err.Error())
-		return nil, nil, err
+		ctx.Logger.Error(err, "CreateVirtualMachine failed")
+		conditions.MarkFalse(
+			ctx.VM,
+			vmopv1.VirtualMachineConditionCreated,
+			"Error",
+			err.Error())
+		return nil, err
 	}
 
-	vmCtx.VM.Status.UniqueID = moRef.Reference().Value
-	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
+	ctx.VM.Status.UniqueID = moRef.Reference().Value
+	conditions.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
 
-	return object.NewVirtualMachine(vcClient.VimClient(), *moRef), createArgs, nil
+	return object.NewVirtualMachine(vcClient.VimClient(), *moRef), nil
+}
+
+func (vs *vSphereVMProvider) createVirtualMachineAsync(
+	ctx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	args *VMCreateArgs,
+	chanErr chan error,
+	createDeferFn func()) {
+
+	defer func() {
+		close(chanErr)
+		createDeferFn()
+		currentlyCreating.Delete(ctx.VM.NamespacedName())
+	}()
+
+	moRef, vimErr := vmlifecycle.CreateVirtualMachine(
+		ctx,
+		vcClient.RestClient(),
+		vcClient.VimClient(),
+		vcClient.Finder(),
+		&args.CreateArgs)
+
+	if vimErr != nil {
+		chanErr <- vimErr
+		ctx.Logger.Error(vimErr, "CreateVirtualMachine failed")
+	}
+
+	_, k8sErr := controllerutil.CreateOrPatch(
+		ctx,
+		vs.k8sClient,
+		ctx.VM,
+		func() error {
+
+			if vimErr != nil {
+				conditions.MarkFalse(
+					ctx.VM,
+					vmopv1.VirtualMachineConditionCreated,
+					"Error",
+					vimErr.Error())
+				return nil //nolint:nilerr
+			}
+
+			ctx.VM.Status.UniqueID = moRef.Reference().Value
+			conditions.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
+
+			return nil
+		},
+	)
+
+	if k8sErr != nil {
+		chanErr <- k8sErr
+		ctx.Logger.Error(k8sErr, "Failed to patch VM status after create")
+	}
 }
 
 func (vs *vSphereVMProvider) createdVirtualMachineFallthroughUpdate(

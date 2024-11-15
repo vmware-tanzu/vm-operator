@@ -100,10 +100,23 @@ type Config struct {
 	// such as passwords. Defaults to false.
 	LogSensitiveData bool
 
-	// AsyncSignalDisabled may be set to false to disable the vm-watcher service
+	// AsyncSignalDisabled may be set to true to disable the vm-watcher service
 	// used to reconcile VirtualMachine objects if their backend state has
 	// changed.
+	//
+	// Please note, this flag has no impact if Features.WorkloadDomainIsolation
+	// is false.
+	//
+	// Defaults to false.
 	AsyncSignalDisabled bool
+
+	// AsyncCreateDisabled may be set to true to disable non-blocking create
+	// operations.
+	//
+	// Please note, this flag has no impact if AsyncSignalDisabled is true.
+	//
+	// Defaults to false.
+	AsyncCreateDisabled bool
 }
 
 // GetMaxDeployThreadsOnProvider returns MaxDeployThreadsOnProvider if it is >0

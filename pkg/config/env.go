@@ -28,6 +28,7 @@ func FromEnv() Config {
 	setStringSlice(env.PrivilegedUsers, &config.PrivilegedUsers)
 	setBool(env.LogSensitiveData, &config.LogSensitiveData)
 	setBool(env.AsyncSignalDisabled, &config.AsyncSignalDisabled)
+	setBool(env.AsyncCreateDisabled, &config.AsyncCreateDisabled)
 
 	setDuration(env.InstanceStoragePVPlacementFailedTTL, &config.InstanceStorage.PVPlacementFailedTTL)
 	setFloat64(env.InstanceStorageJitterMaxFactor, &config.InstanceStorage.JitterMaxFactor)

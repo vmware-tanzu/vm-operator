@@ -33,6 +33,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
+	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -1192,6 +1193,12 @@ func (v validator) validateImmutableNetwork(ctx *pkgctx.WebhookRequestContext, v
 
 	if len(oldInterfaces) != len(newInterfaces) {
 		return append(allErrs, field.Forbidden(p.Child("interfaces"), "network interfaces cannot be added or removed"))
+	}
+
+	// Skip comparing interfaces if this is a test fail-over to allow vendors to
+	// connect network each interface to test network.
+	if _, ok := vm.Labels[backupapi.TestFailoverLabelKey]; ok {
+		return allErrs
 	}
 
 	for i := range newInterfaces {

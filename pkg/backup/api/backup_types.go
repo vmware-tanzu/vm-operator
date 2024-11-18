@@ -3,6 +3,9 @@
 
 package api
 
+// GroupName specifies the group name for VM operator.
+const GroupName = "vmoperator.vmware.com"
+
 // ToPersistentVolumeAccessModes returns a string slice from a slice of T.
 // This is useful when converting a slice of corev1.PersistentVolumeAccessMode
 // to a string slice.
@@ -105,4 +108,20 @@ const (
 	// specifying this key, backup/restore and/or disaster recovery solutions are
 	// responsible to register the VM with Supervisor.
 	DisableAutoRegistrationExtraConfigKey = "vmservice.virtualmachine.disableAutomaticRegistration"
+
+	// TestFailoverLabelKey label signifies that a VirtualMachine is going through
+	// a test recovery plan scenario. Typically, this involves failing over a VM
+	// to a dedicated temporary network so as to not exhaust, and cause IP address
+	// collisions with the production network. This label on a VirtualMachine
+	// custom resource allows vendors to change the VM's network interface to
+	// connect to the test network after the VM is registered post a failover.
+	//
+	// VM operator does not support mutable networks, so this label allows only
+	// select vendors (e.g., SRM) to support recovery plan test workflows while we
+	// build support for true network mutability.
+	//
+	// The value of this label does not matter. Its presence is considered a
+	// sufficient evidence to indicate that the virtual machine is going through
+	// test fail-over.
+	TestFailoverLabelKey = "virtualmachine." + GroupName + "/test-failover"
 )

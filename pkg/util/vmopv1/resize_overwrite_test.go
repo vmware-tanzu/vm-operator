@@ -424,3 +424,346 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 		})
 	})
 })
+
+var _ = DescribeTable("ReconcileNetworkDeviceConnectionState",
+
+	func(ci *vimtypes.VirtualMachineConfigInfo, cs, expCs *vimtypes.VirtualMachineConfigSpec) {
+		vmopv1util.ReconcileNetworkDeviceConnectionState(ci, cs)
+		if cs == nil {
+			Expect(expCs).To(BeNil())
+		} else {
+			Expect(reflect.DeepEqual(cs, expCs)).To(BeTrue(), cmp.Diff(cs, expCs))
+		}
+	},
+
+	Entry(
+		"VM does not yet exist",
+		nil,
+		nil,
+		nil,
+	),
+	Entry(
+		"VM does not yet exist and non-empty ConfigSpec",
+		nil,
+		&vimtypes.VirtualMachineConfigSpec{
+			Name: "hello",
+		},
+		&vimtypes.VirtualMachineConfigSpec{
+			Name: "hello",
+		},
+	),
+	Entry(
+		"VM has NICs that are all connected and start connected",
+		&vimtypes.VirtualMachineConfigInfo{
+			Hardware: vimtypes.VirtualHardware{
+				Device: []vimtypes.BaseVirtualDevice{
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4001,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{},
+		&vimtypes.VirtualMachineConfigSpec{},
+	),
+	Entry(
+		"VM has NICs that are all connected, but one does not start connected",
+		&vimtypes.VirtualMachineConfigInfo{
+			Hardware: vimtypes.VirtualHardware{
+				Device: []vimtypes.BaseVirtualDevice{
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4001,
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{},
+		&vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4001,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+			},
+		},
+	),
+
+	Entry(
+		"VM has NICs that are not connected and/or do not start connected",
+		&vimtypes.VirtualMachineConfigInfo{
+			Hardware: vimtypes.VirtualHardware{
+				Device: []vimtypes.BaseVirtualDevice{
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      false,
+								StartConnected: false,
+							},
+						},
+					},
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4001,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      false,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{},
+		&vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4001,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+			},
+		},
+	),
+
+	Entry(
+		"VM has existing and pending NICs that are not connected and/or do not start connected",
+		&vimtypes.VirtualMachineConfigInfo{
+			Hardware: vimtypes.VirtualHardware{
+				Device: []vimtypes.BaseVirtualDevice{
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      false,
+								StartConnected: false,
+							},
+						},
+					},
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4001,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      false,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -4000,
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -4001,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: false,
+							},
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -4000,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -4001,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4001,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+			},
+		},
+	),
+
+	Entry(
+		"VM has existing NIC that is disconnected and already has pending change",
+		&vimtypes.VirtualMachineConfigInfo{
+			Hardware: vimtypes.VirtualHardware{
+				Device: []vimtypes.BaseVirtualDevice{
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key:           4000,
+							ControllerKey: 1,
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key:           4000,
+							ControllerKey: 1,
+							Connectable: &vimtypes.VirtualDeviceConnectInfo{
+								Connected:      true,
+								StartConnected: true,
+							},
+						},
+					},
+				},
+			},
+		},
+	),
+
+	Entry(
+		"VM has existing NIC that is disconnected but is being removed",
+		&vimtypes.VirtualMachineConfigInfo{
+			Hardware: vimtypes.VirtualHardware{
+				Device: []vimtypes.BaseVirtualDevice{
+					&vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+						},
+					},
+				},
+			},
+		},
+		&vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+					Device: &vimtypes.VirtualEthernetCard{
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: 4000,
+						},
+					},
+				},
+			},
+		},
+	),
+)

@@ -1,8 +1,0 @@
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: supervisor-properties-reader
-rules:
-- apiGroups: ["appplatform.vmware.com"]
-  resources: ["supervisorproperties"]
-  verbs: ["get", "list"]

@@ -25,7 +25,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	proxyaddr "github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
 )
 
 const (
@@ -171,7 +171,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.WebConsoleRequestContext) error
 
 	v1a3VM := &vmopv1.VirtualMachine{}
 	if err := ctx.VM.ConvertTo(v1a3VM); err != nil {
-		return fmt.Errorf("failed to convert VM to v1a2: %w", err)
+		return fmt.Errorf("failed to convert VM to hub: %w", err)
 	}
 
 	ticket, err := r.VMProvider.GetVirtualMachineWebMKSTicket(ctx, v1a3VM, ctx.WebConsoleRequest.Spec.PublicKey)

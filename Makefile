@@ -369,7 +369,7 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 		webhook
 	$(CONTROLLER_GEN) \
 		paths=./controllers/... \
-		paths=./pkg/topology/... \
+		paths=./pkg/... \
 		paths=./webhooks/... \
 		output:rbac:dir=$(RBAC_ROOT) \
 		rbac:roleName=manager-role

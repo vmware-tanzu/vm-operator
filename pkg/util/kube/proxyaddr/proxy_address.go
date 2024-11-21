@@ -23,6 +23,8 @@ const (
 	ProxyAddrServiceNamespace = "kube-system"
 )
 
+// +kubebuilder:rbac:groups=appplatform.vmware.com,resources=supervisorproperties,verbs=get;list;watch
+
 // ProxyAddress first attempts to get the proxy address through the API Server DNS Names.
 // If that is unset, though, fall back to using the virtual IP.
 func ProxyAddress(ctx context.Context, r client.Client) (string, error) {

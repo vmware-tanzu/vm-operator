@@ -24,7 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	proxyaddr "github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
 )
 
 const (

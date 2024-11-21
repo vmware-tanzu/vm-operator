@@ -48,6 +48,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - appplatform.vmware.com
+  resources:
+  - supervisorproperties
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - cns.vmware.com
   resources:
   - cnsnodevmattachments

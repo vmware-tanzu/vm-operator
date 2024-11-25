@@ -121,6 +121,23 @@ var _ = Describe("CreateConfigSpec", func() {
 					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(0)))
 				})
 			})
+
+			Context("VM Class has request but no limits", func() {
+				BeforeEach(func() {
+					vmClassSpec.Policies.Resources.Limits = vmopv1.VirtualMachineResourceSpec{}
+				})
+
+				It("returns expected config spec", func() {
+					Expect(configSpec.CpuAllocation.Shares).ToNot(BeNil())
+					Expect(configSpec.CpuAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
+					Expect(configSpec.CpuAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
+					Expect(configSpec.CpuAllocation.Reservation).To(HaveValue(BeEquivalentTo(2684354560000)))
+					Expect(configSpec.MemoryAllocation.Shares).ToNot(BeNil())
+					Expect(configSpec.MemoryAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
+					Expect(configSpec.MemoryAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
+					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(2048)))
+				})
+			})
 		})
 
 		When("VM has no bios or instance uuid", func() {

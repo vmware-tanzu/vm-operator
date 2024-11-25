@@ -110,6 +110,8 @@ func CreateConfigSpec(
 		if !res.Limits.Cpu.IsZero() {
 			lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
 			configSpec.CpuAllocation.Limit = &lim
+		} else {
+			configSpec.CpuAllocation.Limit = ptr.To[int64](-1)
 		}
 	} else if configSpec.CpuAllocation == nil {
 		// Default to best effort.
@@ -139,6 +141,8 @@ func CreateConfigSpec(
 		if !res.Limits.Memory.IsZero() {
 			lim := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
 			configSpec.MemoryAllocation.Limit = &lim
+		} else {
+			configSpec.MemoryAllocation.Limit = ptr.To[int64](-1)
 		}
 	} else if configSpec.MemoryAllocation == nil {
 		// Default to best effort.

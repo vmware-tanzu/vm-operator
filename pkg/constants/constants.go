@@ -30,6 +30,10 @@ const (
 	// persistent volumes.
 	MinSupportedHWVersionForPVC = vimtypes.VMX15
 
+	// MinSupportedHWVersionForVTPM is the supported virtual hardware version
+	// for a Virtual Trusted Platform Module (vTPM).
+	MinSupportedHWVersionForVTPM = vimtypes.VMX14
+
 	// MinSupportedHWVersionForPCIPassthruDevices is the supported virtual
 	// hardware version for NVidia PCI devices.
 	MinSupportedHWVersionForPCIPassthruDevices = vimtypes.VMX17

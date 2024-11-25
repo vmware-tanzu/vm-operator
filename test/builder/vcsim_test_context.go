@@ -949,7 +949,7 @@ func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.Clus
 	return ccrs
 }
 
-func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicyA2(
+func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicy(
 	name string,
 	nsInfo WorkloadNamespaceInfo) (*vmopv1.VirtualMachineSetResourcePolicy, *object.Folder) {
 

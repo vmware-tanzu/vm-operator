@@ -383,6 +383,25 @@ var _ = DescribeTable("DetermineHardwareVersion",
 		},
 		vimtypes.HardwareVersion(20),
 	),
+	Entry(
+		"spec.minHardwareVersion is 11, vm has vTPM, image version is 10",
+		vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				MinHardwareVersion: 11,
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Device: &vimtypes.VirtualTPM{},
+				},
+			},
+		},
+		vmopv1.VirtualMachineImageStatus{
+			HardwareVersion: &[]int32{10}[0],
+		},
+		pkgconst.MinSupportedHWVersionForVTPM,
+	),
 )
 
 var _ = DescribeTable("HasPVC",

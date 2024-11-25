@@ -187,11 +187,14 @@ func DetermineHardwareVersion(
 	// is higher than the one required by PVCs, first check if the VM has any
 	// PCI pass-through devices, then check if the VM has any PVCs.
 	var minVerFromDevs vimtypes.HardwareVersion
-	if pkgutil.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange) {
+	switch {
+	case pkgutil.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange):
 		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPCIPassthruDevices)
-	} else if HasPVC(vm) {
+	case HasPVC(vm):
 		// This only catches volumes set at VM create time.
 		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForPVC)
+	case hasvTPM(configSpec.DeviceChange):
+		minVerFromDevs = max(imageVersion, constants.MinSupportedHWVersionForVTPM)
 	}
 
 	// Return the larger of the two versions. If both versions are zero, then
@@ -203,6 +206,15 @@ func DetermineHardwareVersion(
 func HasPVC(vm vmopv1.VirtualMachine) bool {
 	for i := range vm.Spec.Volumes {
 		if vm.Spec.Volumes[i].PersistentVolumeClaim != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func hasvTPM(devChanges []vimtypes.BaseVirtualDeviceConfigSpec) bool {
+	for i := range devChanges {
+		if _, ok := devChanges[i].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualTPM); ok {
 			return true
 		}
 	}

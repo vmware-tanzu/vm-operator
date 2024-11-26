@@ -134,7 +134,7 @@ func getVM() {
 
 	Context("Gets VM with ResourcePolicy by inventory", func() {
 		BeforeEach(func() {
-			resourcePolicy, folder := ctx.CreateVirtualMachineSetResourcePolicyA2("getvm-test", nsInfo)
+			resourcePolicy, folder := ctx.CreateVirtualMachineSetResourcePolicy("getvm-test", nsInfo)
 			if vmCtx.VM.Spec.Reserved == nil {
 				vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
 			}

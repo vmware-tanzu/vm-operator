@@ -219,7 +219,7 @@ func vcSimPlacement() {
 
 			Context("VM is in child RP via ResourcePolicy", func() {
 				It("returns success", func() {
-					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicy("my-child-rp", nsInfo)
 					Expect(resourcePolicy).ToNot(BeNil())
 					childRPName := resourcePolicy.Spec.ResourcePool.Name
 					Expect(childRPName).ToNot(BeEmpty())
@@ -303,7 +303,7 @@ func vcSimPlacement() {
 
 				Context("VM is in child RP via ResourcePolicy", func() {
 					It("returns success", func() {
-						resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+						resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicy("my-child-rp", nsInfo)
 						Expect(resourcePolicy).ToNot(BeNil())
 						childRPName := resourcePolicy.Spec.ResourcePool.Name
 						Expect(childRPName).ToNot(BeEmpty())
@@ -411,7 +411,7 @@ func vcSimPlacement() {
 
 			Context("VM is in child RP via ResourcePolicy", func() {
 				It("returns success", func() {
-					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicy("my-child-rp", nsInfo)
 					Expect(resourcePolicy).ToNot(BeNil())
 					childRPName := resourcePolicy.Spec.ResourcePool.Name
 					Expect(childRPName).ToNot(BeEmpty())
@@ -496,7 +496,7 @@ func vcSimPlacement() {
 
 			Context("VM is in child RP via ResourcePolicy", func() {
 				It("returns success", func() {
-					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicy("my-child-rp", nsInfo)
 					Expect(resourcePolicy).ToNot(BeNil())
 					childRPName := resourcePolicy.Spec.ResourcePool.Name
 					Expect(childRPName).ToNot(BeEmpty())

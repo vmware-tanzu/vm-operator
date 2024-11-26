@@ -75,7 +75,7 @@ func getResourcePoolTests() {
 	Context("GetChildResourcePool", func() {
 		It("returns success", func() {
 			// Quick way for a child RP is to create a VMSetResourcePolicy.
-			resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+			resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicy("my-child-rp", nsInfo)
 			Expect(resourcePolicy).ToNot(BeNil())
 			childRPName := resourcePolicy.Spec.ResourcePool.Name
 			Expect(childRPName).ToNot(BeEmpty())
@@ -123,7 +123,7 @@ func createDeleteExistResourcePoolChild() {
 
 		parentRPMoID = nsRP.Reference().Value
 
-		resourcePolicy, _ = ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+		resourcePolicy, _ = ctx.CreateVirtualMachineSetResourcePolicy("my-child-rp", nsInfo)
 		Expect(resourcePolicy).ToNot(BeNil())
 	})
 

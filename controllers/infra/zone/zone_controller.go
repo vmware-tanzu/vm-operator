@@ -71,7 +71,7 @@ func NewReconciler(
 }
 
 // Finalizer is the finalizer placed on Zone objects by VM Operator.
-const Finalizer = "vmoperator.vmware.com/finalizer"
+const Finalizer = "vmoperator.vmware.com/zone-finalizer"
 
 // Reconciler reconciles a StoragePolicyQuota object.
 type Reconciler struct {

@@ -21,6 +21,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 			pkgcfg.NewContext(),
 			func(config *pkgcfg.Config) {
 				config.Features.PodVMOnStretchedSupervisor = true
+				config.Features.UnifiedStorageQuota = true
 			},
 		),
 	),

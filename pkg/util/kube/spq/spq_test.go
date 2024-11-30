@@ -17,8 +17,11 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -721,6 +724,375 @@ var _ = Describe("GetWebhookCABundle", func() {
 		It("should return an error", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unable to get CA bundle from secret"))
+		})
+	})
+})
+
+var _ = Describe("ValidatingWebhookConfigurationToStoragePolicyQuotaMapper", func() {
+	const (
+		caBundle  = "fake-ca-bundle"
+		fakeName  = "fake-name"
+		namespace = "default"
+	)
+	var (
+		ctx       context.Context
+		k8sClient ctrlclient.Client
+		withFuncs interceptor.Funcs
+		withObjs  []ctrlclient.Object
+		obj       ctrlclient.Object
+		mapFn     handler.MapFunc
+		mapFnCtx  context.Context
+		mapFnObj  ctrlclient.Object
+		reqs      []reconcile.Request
+	)
+
+	BeforeEach(func() {
+		reqs = nil
+		withObjs = nil
+		withFuncs = interceptor.Funcs{}
+
+		ctx = context.Background()
+		mapFnCtx = ctx
+
+		obj = &admissionv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: spqutil.ValidatingWebhookConfigName,
+			},
+			Webhooks: []admissionv1.ValidatingWebhook{
+				{
+					ClientConfig: admissionv1.WebhookClientConfig{
+						CABundle: []byte(caBundle),
+					},
+				},
+			},
+		}
+		mapFnObj = obj
+	})
+
+	JustBeforeEach(func() {
+		withObjs = append(withObjs, obj)
+		k8sClient = builder.NewFakeClientWithInterceptors(withFuncs, withObjs...)
+		Expect(k8sClient).ToNot(BeNil())
+	})
+
+	Context("expected panic", func() {
+		When("context is nil", func() {
+			JustBeforeEach(func() {
+				ctx = nil
+			})
+
+			It("should panic", func() {
+				Expect(func() {
+					_ = spqutil.ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(ctx, k8sClient)
+				}).To(PanicWith("context is nil"))
+			})
+		})
+
+		When("client is nil", func() {
+			JustBeforeEach(func() {
+				k8sClient = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_ = spqutil.ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(ctx, k8sClient)
+				}).To(PanicWith("client is nil"))
+			})
+		})
+
+		Context("in returned MapFunc", func() {
+			JustBeforeEach(func() {
+				mapFn = spqutil.ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(ctx, k8sClient)
+				Expect(mapFn).NotTo(BeNil())
+			})
+
+			When("context is nil", func() {
+				BeforeEach(func() {
+					mapFnCtx = nil
+				})
+
+				It("should panic", func() {
+					Expect(func() {
+						_ = mapFn(mapFnCtx, mapFnObj)
+					}).To(PanicWith("context is nil"))
+				})
+			})
+
+			When("object is nil", func() {
+				JustBeforeEach(func() {
+					mapFnObj = nil
+				})
+
+				It("should panic", func() {
+					Expect(func() {
+						_ = mapFn(mapFnCtx, mapFnObj)
+					}).To(PanicWith("object is nil"))
+				})
+			})
+
+			When("object is not valid type", func() {
+				JustBeforeEach(func() {
+					mapFnObj = &admissionv1.MutatingWebhookConfiguration{}
+				})
+
+				It("should panic", func() {
+					Expect(func() {
+						_ = mapFn(mapFnCtx, mapFnObj)
+					}).To(PanicWith(fmt.Sprintf("object is %T", mapFnObj)))
+				})
+			})
+		})
+	})
+
+	Context("no panic is expected", func() {
+		JustBeforeEach(func() {
+			mapFn = spqutil.ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(ctx, k8sClient)
+			Expect(mapFn).NotTo(BeNil())
+
+			reqs = mapFn(mapFnCtx, mapFnObj)
+		})
+
+		When("ValidatingWebhookConfiguration name does not match", func() {
+			BeforeEach(func() {
+				obj.SetName(fakeName)
+			})
+
+			Specify("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+
+		When("there is an error getting CA Bundle from ValidatingWebhookConfiguration", func() {
+			BeforeEach(func() {
+				obj = &admissionv1.ValidatingWebhookConfiguration{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: spqutil.ValidatingWebhookConfigName,
+					},
+					Webhooks: []admissionv1.ValidatingWebhook{},
+				}
+			})
+
+			Specify("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+
+		When("there is an error listing StoragePolicyUsages", func() {
+			BeforeEach(func() {
+				withFuncs.List = func(
+					ctx context.Context,
+					client ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if _, ok := list.(*spqv1.StoragePolicyUsageList); ok {
+						return errors.New("fake error")
+					}
+
+					return client.List(ctx, list, opts...)
+				}
+			})
+
+			Specify("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+
+		Context("", func() {
+			BeforeEach(func() {
+				withObjs = append(withObjs,
+					&spqv1.StoragePolicyUsage{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespace,
+							Name:      spqutil.StoragePolicyUsageName("storage-class-x"),
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: "storage-class-x",
+									Kind: spqutil.StoragePolicyQuotaKind,
+								},
+							},
+						},
+						Spec: spqv1.StoragePolicyUsageSpec{
+							StoragePolicyId:       "fake-123",
+							StorageClassName:      "storage-class-x",
+							ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+							CABundle:              []byte(caBundle),
+						},
+					},
+					&spqv1.StoragePolicyUsage{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespace,
+							Name:      spqutil.StoragePolicyUsageName("storage-class-y"),
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: "storage-class-y",
+									Kind: spqutil.StoragePolicyQuotaKind,
+								},
+							},
+						},
+						Spec: spqv1.StoragePolicyUsageSpec{
+							StoragePolicyId:       "fake-456",
+							StorageClassName:      "storage-class-y",
+							ResourceExtensionName: "fake.cns.vsphere.vmware.com",
+							CABundle:              []byte("fake"),
+						},
+					},
+					&spqv1.StoragePolicyUsage{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespace,
+							Name:      spqutil.StoragePolicyUsageName("storage-class-z"),
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: "storage-class-z",
+									Kind: spqutil.StoragePolicyQuotaKind,
+								},
+							},
+						},
+						Spec: spqv1.StoragePolicyUsageSpec{
+							StoragePolicyId:       "fake-789",
+							StorageClassName:      "storage-class-z",
+							ResourceExtensionName: "fake.cns.vsphere.vmware.com",
+							CABundle:              []byte("fake"),
+						},
+					},
+				)
+			})
+
+			When("there are no matching StoragePolicyUsages", func() {
+				Specify("no reconcile requests should be returned", func() {
+					Expect(reqs).To(BeEmpty())
+				})
+
+				When("OwnerReference is not set", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs,
+							&spqv1.StoragePolicyUsage{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: namespace,
+									Name:      spqutil.StoragePolicyUsageName("storage-class-a"),
+								},
+								Spec: spqv1.StoragePolicyUsageSpec{
+									StoragePolicyId:       "fake-1",
+									StorageClassName:      "storage-class-a",
+									ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+									CABundle:              []byte("outdated"),
+								},
+							},
+						)
+					})
+
+					Specify("no reconcile requests should be returned", func() {
+						Expect(reqs).To(BeEmpty())
+					})
+				})
+			})
+
+			When("there is a single matching StoragePolicyUsage", func() {
+				BeforeEach(func() {
+					withObjs = append(withObjs,
+						&spqv1.StoragePolicyUsage{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: namespace,
+								Name:      spqutil.StoragePolicyUsageName("storage-class-a"),
+								OwnerReferences: []metav1.OwnerReference{
+									{
+										Name: "storage-class-a",
+										Kind: spqutil.StoragePolicyQuotaKind,
+									},
+								},
+							},
+							Spec: spqv1.StoragePolicyUsageSpec{
+								StoragePolicyId:       "fake-1",
+								StorageClassName:      "storage-class-a",
+								ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+								CABundle:              []byte("outdated"),
+							},
+						},
+					)
+				})
+
+				Specify("one reconcile request should be returned", func() {
+					Expect(reqs).To(ConsistOf(
+						reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Namespace: namespace,
+								Name:      "storage-class-a",
+							},
+						},
+					))
+				})
+			})
+
+			When("there are multiple matching StoragePolicyUsages", func() {
+				BeforeEach(func() {
+					withObjs = append(withObjs,
+						&spqv1.StoragePolicyUsage{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: namespace,
+								Name:      spqutil.StoragePolicyUsageName("storage-class-a"),
+								OwnerReferences: []metav1.OwnerReference{
+									{
+										Name: "storage-class-a",
+										Kind: spqutil.StoragePolicyQuotaKind,
+									},
+								},
+							},
+							Spec: spqv1.StoragePolicyUsageSpec{
+								StoragePolicyId:       "fake-1",
+								StorageClassName:      "storage-class-a",
+								ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+								CABundle:              []byte("outdated"),
+							},
+						},
+						&spqv1.StoragePolicyUsage{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: namespace,
+								Name:      spqutil.StoragePolicyUsageName("storage-class-c"),
+							},
+							Spec: spqv1.StoragePolicyUsageSpec{
+								StoragePolicyId:       "fake-3",
+								StorageClassName:      "storage-class-c",
+								ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+								CABundle:              []byte("outdated"),
+							},
+						},
+						&spqv1.StoragePolicyUsage{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace: namespace,
+								Name:      spqutil.StoragePolicyUsageName("storage-class-b"),
+								OwnerReferences: []metav1.OwnerReference{
+									{
+										Name: "storage-class-b",
+										Kind: spqutil.StoragePolicyQuotaKind,
+									},
+								},
+							},
+							Spec: spqv1.StoragePolicyUsageSpec{
+								StoragePolicyId:       "fake-2",
+								StorageClassName:      "storage-class-b",
+								ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+								CABundle:              []byte("outdated"),
+							},
+						},
+					)
+				})
+
+				Specify("an equal number of reconcile requests should be returned", func() {
+					Expect(reqs).To(ConsistOf(
+						reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Namespace: namespace,
+								Name:      "storage-class-a",
+							},
+						},
+						reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Namespace: namespace,
+								Name:      "storage-class-b",
+							},
+						},
+					))
+				})
+			})
 		})
 	})
 })

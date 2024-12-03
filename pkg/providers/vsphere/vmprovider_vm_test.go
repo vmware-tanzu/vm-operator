@@ -43,6 +43,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
@@ -74,6 +75,7 @@ func vmTests() {
 
 	BeforeEach(func() {
 		parentCtx = ctxop.WithContext(pkgcfg.NewContext())
+		parentCtx = ovfcache.WithContext(parentCtx)
 		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 			config.AsyncCreateDisabled = true
 			config.AsyncSignalDisabled = true

@@ -64,6 +64,7 @@ import (
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -281,7 +282,10 @@ func (s *TestSuite) NewTestContextForVCSim(
 	config VCSimTestConfig,
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
-	return NewTestContextForVCSim(ctxop.WithContext(pkgcfg.NewContext()), config, initObjects...)
+	ctx := pkgcfg.NewContext()
+	ctx = ctxop.WithContext(ctx)
+	ctx = ovfcache.WithContext(ctx)
+	return NewTestContextForVCSim(ctx, config, initObjects...)
 }
 
 func (s *TestSuite) NewTestContextForVCSimWithParentContext(

@@ -17,6 +17,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/context/fake"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 )
 
 // UnitTestContext is used for general purpose unit testing.
@@ -28,8 +29,12 @@ type UnitTestContext struct {
 
 // NewUnitTestContext returns a new UnitTestContext.
 func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
-	return NewUnitTestContextWithParentContext(
-		ctxop.WithContext(pkgcfg.NewContext()), initObjects...)
+
+	ctx := pkgcfg.NewContext()
+	ctx = ctxop.WithContext(ctx)
+	ctx = ovfcache.WithContext(ctx)
+
+	return NewUnitTestContextWithParentContext(ctx, initObjects...)
 }
 
 func NewUnitTestContextWithParentContext(ctx context.Context, initObjects ...client.Object) *UnitTestContext {

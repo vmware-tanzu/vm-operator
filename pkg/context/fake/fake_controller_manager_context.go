@@ -11,13 +11,17 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 )
 
 // NewControllerManagerContext returns a fake ControllerManagerContext for unit
 // testing reconcilers and webhooks with a fake client.
 func NewControllerManagerContext() *pkgctx.ControllerManagerContext {
+	ctx := pkgcfg.NewContext()
+	ctx = ovfcache.WithContext(ctx)
+
 	return &pkgctx.ControllerManagerContext{
-		Context:                 pkgcfg.NewContext(),
+		Context:                 ctx,
 		Logger:                  ctrllog.Log.WithName(ControllerManagerName),
 		Namespace:               ControllerManagerNamespace,
 		Name:                    ControllerManagerName,

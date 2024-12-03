@@ -35,6 +35,7 @@ import (
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	"github.com/vmware-tanzu/vm-operator/services"
 	"github.com/vmware-tanzu/vm-operator/webhooks"
@@ -119,6 +120,7 @@ func initContext() {
 	ctx = pkgcfg.WithConfig(defaultConfig)
 	ctx = cource.WithContext(ctx)
 	ctx = watcher.WithContext(ctx)
+	ctx = ovfcache.WithContext(ctx)
 }
 
 func initRateLimiting() {

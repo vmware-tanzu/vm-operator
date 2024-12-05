@@ -522,6 +522,59 @@ var _ = DescribeTable("IsImageLessVM",
 	),
 )
 
+var _ = DescribeTable("ImageRefsEqual",
+	func(
+		ref1 *vmopv1.VirtualMachineImageRef,
+		ref2 *vmopv1.VirtualMachineImageRef,
+		expected bool,
+	) {
+		Ω(vmopv1util.ImageRefsEqual(ref1, ref2)).Should(Equal(expected))
+	},
+	Entry(
+		"both refs nil",
+		nil,
+		nil,
+		true,
+	),
+	Entry(
+		"ref1 is nil, ref2 is not",
+		nil,
+		&vmopv1.VirtualMachineImageRef{
+			Name: "dummy",
+		},
+		false,
+	),
+	Entry(
+		"ref1 is not nil, ref2 is nil",
+		&vmopv1.VirtualMachineImageRef{
+			Name: "dummy",
+		},
+		nil,
+		false,
+	),
+	Entry(
+		"both not nil, one containing an extra field",
+		&vmopv1.VirtualMachineImageRef{
+			Name: "dummy",
+		},
+		&vmopv1.VirtualMachineImageRef{
+			Name: "dummy",
+			Kind: "ClusterVirtualMachineImage",
+		},
+		false,
+	),
+	Entry(
+		"both not nil, same values",
+		&vmopv1.VirtualMachineImageRef{
+			Name: "dummy",
+		},
+		&vmopv1.VirtualMachineImageRef{
+			Name: "dummy",
+		},
+		true,
+	),
+)
+
 var _ = Describe("SyncStorageUsageForNamespace", func() {
 	var (
 		ctx          context.Context

@@ -58,7 +58,7 @@ var _ = Describe(
 			ctx = logr.NewContext(
 				context.Background(),
 				textlogger.NewLogger(textlogger.NewConfig(
-					textlogger.Verbosity(4),
+					textlogger.Verbosity(5),
 					textlogger.Output(GinkgoWriter),
 				)))
 		})
@@ -424,6 +424,50 @@ var _ = Describe(
 					Specify("a reconcile request should not be received because the VM entered the watcher's scope already verified", func() {
 						chanSource := cource.FromContext(ctx, "VirtualMachine")
 						Consistently(chanSource, time.Second*5).ShouldNot(Receive())
+					})
+
+					When("the vm's k8s object is being deleted", func() {
+						BeforeEach(func() {
+							initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+								vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vmList).ToNot(BeEmpty())
+								vm := vmList[0]
+								obj := builder.DummyBasicVirtualMachine(
+									vmName,
+									ctx.NSInfo.Namespace)
+
+								By("creating vm in k8s", func() {
+									Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+									obj.Status.UniqueID = vm.Reference().Value
+									Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
+								})
+
+								By("deleting vm in k8s", func() {
+									// Add a fake finalizer to prevent the VM
+									// from being removed entirely. We want the
+									// VM to exist with a non-zero deletion
+									// time stamp.
+									obj.Finalizers = []string{"fake.com/finalizer"}
+									Expect(ctx.Client.Update(ctx, obj)).To(Succeed())
+									Expect(ctx.Client.Delete(ctx, obj)).To(Succeed())
+								})
+
+								By("moving vm into zone's folder", func() {
+									t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+										Folder: ptr.To(ctx.NSInfo.Folder.Reference()),
+									}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+									Expect(err).ToNot(HaveOccurred())
+									Expect(t).ToNot(BeNil())
+									Expect(t.Wait(ctx)).To(Succeed())
+								})
+							}
+						})
+
+						Specify("a reconcile request should not be received because the VM is being deleted", func() {
+							chanSource := cource.FromContext(ctx, "VirtualMachine")
+							Consistently(chanSource, time.Second*5).ShouldNot(Receive())
+						})
 					})
 				})
 

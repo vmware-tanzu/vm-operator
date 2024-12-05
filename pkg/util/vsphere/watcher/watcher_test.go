@@ -50,6 +50,7 @@ var _ = Describe("Start", func() {
 		cluster2vm1 *object.VirtualMachine
 
 		lookupFnVerified bool
+		lookupFnDeleted  bool
 	)
 
 	addNamespaceName := func(
@@ -74,7 +75,7 @@ var _ = Describe("Start", func() {
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContext()
 		ctx, cancel = context.WithCancel(ctx)
-		ctx = logr.NewContext(ctx, testutil.GinkgoLogr(4))
+		ctx = logr.NewContext(ctx, testutil.GinkgoLogr(5))
 		ctx = watcher.WithContext(ctx)
 
 		closeServerOnce = sync.Once{}
@@ -158,12 +159,18 @@ var _ = Describe("Start", func() {
 			},
 			func(
 				_ context.Context,
-				moRef vimtypes.ManagedObjectReference) (string, string, bool) {
+				moRef vimtypes.ManagedObjectReference,
+				namespace, name string) watcher.LookupNamespacedNameResult {
 
 				if moRef == cluster2vm1.Reference() {
-					return "my-namespace-4", "my-name-1", lookupFnVerified
+					return watcher.LookupNamespacedNameResult{
+						Namespace: "my-namespace-4",
+						Name:      "my-name-1",
+						Verified:  lookupFnVerified,
+						Deleted:   lookupFnDeleted,
+					}
 				}
-				return "", "", false
+				return watcher.LookupNamespacedNameResult{}
 			},
 			cluster1.Reference())
 		Expect(err).ToNot(HaveOccurred())
@@ -614,6 +621,20 @@ var _ = Describe("Start", func() {
 				Specify("the result channel should not receive a result", func() {
 					// Assert no result is signalled because the object entered
 					// the watcher in a verified state.
+					assertNoResult()
+
+					// Assert no error either.
+					assertNoError()
+				})
+			})
+
+			When("the lookup function returns hasDeletionTimestamp=true", func() {
+				BeforeEach(func() {
+					lookupFnDeleted = true
+				})
+				Specify("the result channel should not receive a result", func() {
+					// Assert no result is signalled because the object has a
+					// deletion timestamp.
 					assertNoResult()
 
 					// Assert no error either.

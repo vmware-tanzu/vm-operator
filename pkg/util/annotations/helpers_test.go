@@ -46,3 +46,37 @@ var _ = DescribeTable(
 	Entry("present but empty ", map[string]string{vmopv1.ForceEnableBackupAnnotation: ""}, true),
 	Entry("present and not empty ", map[string]string{vmopv1.ForceEnableBackupAnnotation: "true"}, true),
 )
+
+var _ = DescribeTable(
+	"HasRegisterVM",
+	func(in map[string]string, out bool) {
+		vm := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: in,
+			},
+		}
+		actual := annotations.HasRegisterVM(vm)
+		Expect(actual).To(Equal(out))
+	},
+	Entry("nil", nil, false),
+	Entry("not present", map[string]string{"foo": "bar"}, false),
+	Entry("present but empty ", map[string]string{vmopv1.RegisteredVMAnnotation: ""}, true),
+	Entry("present and not empty ", map[string]string{vmopv1.RegisteredVMAnnotation: "true"}, true),
+)
+
+var _ = DescribeTable(
+	"HasImportVM",
+	func(in map[string]string, out bool) {
+		vm := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: in,
+			},
+		}
+		actual := annotations.HasImportVM(vm)
+		Expect(actual).To(Equal(out))
+	},
+	Entry("nil", nil, false),
+	Entry("not present", map[string]string{"foo": "bar"}, false),
+	Entry("present but empty ", map[string]string{vmopv1.ImportedVMAnnotation: ""}, true),
+	Entry("present and not empty ", map[string]string{vmopv1.ImportedVMAnnotation: "true"}, true),
+)

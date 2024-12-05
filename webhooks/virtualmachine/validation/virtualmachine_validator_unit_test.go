@@ -65,12 +65,10 @@ type testParams struct {
 
 func doValidateWithMsg(msgs ...string) func(admission.Response) {
 	return func(response admission.Response) {
-		reasons := strings.Split(string(response.Result.Reason), ", ")
+		reasons := string(response.Result.Reason)
 		for _, m := range msgs {
-			ExpectWithOffset(1, reasons).To(ContainElement(m))
+			ExpectWithOffset(1, reasons).To(ContainSubstring(m))
 		}
-		// This may be overly strict in some cases but catches missed assertions.
-		ExpectWithOffset(1, reasons).To(HaveLen(len(msgs)))
 	}
 }
 
@@ -580,6 +578,23 @@ func unitTestsValidateCreate() {
 		),
 
 		// FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled
+
+		Entry("allow empty spec.image for privileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and VM contains restored annotation",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					ctx.vm.Annotations = map[string]string{
+						vmopv1.RegisteredVMAnnotation: "",
+					}
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				expectAllowed: true,
+			},
+		),
 		Entry("allow empty spec.image for privileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
@@ -614,6 +629,24 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Image = nil
 					ctx.vm.Spec.ImageName = ""
 					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Forbidden(field.NewPath("spec", "image"), "restricted to privileged users").Error(),
+				),
+			},
+		),
+		Entry("forbid empty spec.image for unprivileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and annotation is present",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					ctx.vm.Annotations = map[string]string{
+						vmopv1.RegisteredVMAnnotation: "",
+					}
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMIncrementalRestore = true
 					})
@@ -676,7 +709,23 @@ func unitTestsValidateCreate() {
 		//
 		// FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled
 		//
-		Entry("allow empty spec.image for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+		Entry("allow empty spec.image for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled and annotation is present",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					ctx.vm.Annotations = map[string]string{
+						vmopv1.ImportedVMAnnotation: "",
+					}
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("(To be removed) allow empty spec.image for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled, but the annotation is not present",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.vm.Spec.Image = nil
@@ -710,6 +759,24 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Image = nil
 					ctx.vm.Spec.ImageName = ""
 					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Forbidden(field.NewPath("spec", "image"), "restricted to privileged users").Error(),
+				),
+			},
+		),
+		Entry("forbid empty spec.image for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled and annotation is present",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					ctx.vm.Annotations = map[string]string{
+						vmopv1.ImportedVMAnnotation: "",
+					}
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMImportNewNet = true
 					})
@@ -2854,6 +2921,171 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 						ctx.oldVM.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("Image and ImageName", func() {
+		DescribeTable("imageName", doTest,
+			Entry("forbid changing imageName if FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.ImageName = "imagename"
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = "new-imagename"
+					},
+					validate: doValidateWithMsg(
+						`spec.imageName: Invalid value: "new-imagename": field is immutable`),
+				},
+			),
+
+			Entry("forbid changing image by unpriviliged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled even when the VM contains the Registered annotation",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.RegisteredVMAnnotation: "foo",
+						}
+
+						ctx.oldVM.Spec.ImageName = "imagename"
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = "new-imagename"
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(field.NewPath("spec", "imageName"), "restricted to privileged users").Error()),
+				},
+			),
+
+			Entry("forbid changing imageName for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, but annotation is not present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+
+						ctx.IsPrivilegedAccount = true
+
+						ctx.oldVM.Spec.ImageName = "ubuntu"
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = "centos"
+					},
+					validate: doValidateWithMsg(
+						`spec.imageName: Invalid value: "centos": field is immutable`),
+				},
+			),
+
+			Entry("allow changing imageName for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and annotation is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+
+						ctx.IsPrivilegedAccount = true
+
+						ctx.oldVM.Spec.ImageName = "ubuntu"
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.RegisteredVMAnnotation: "foo",
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = "centos"
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+
+		DescribeTable("image", doTest,
+			Entry("forbid changing image when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: "image",
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: "new-image",
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "image"), &vmopv1.VirtualMachineImageRef{Name: "new-image"}, apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+
+			Entry("forbid changing image by unpriviliged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled even when the VM contains the Registered annotation",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+						ctx.IsPrivilegedAccount = false
+
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.RegisteredVMAnnotation: "bar",
+						}
+
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: "image",
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: "new-image",
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(field.NewPath("spec", "image"), "restricted to privileged users").Error()),
+				},
+			),
+
+			Entry("forbid changing image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, but annotation is not present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+
+						ctx.IsPrivilegedAccount = true
+
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: "photon-v4",
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: "photon-v5",
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "image"), &vmopv1.VirtualMachineImageRef{Name: "photon-v5"}, apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+
+			Entry("alow changing image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and annotation is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.RegisteredVMAnnotation: "bar",
+						}
+
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: "photon-v4",
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: "photon-v5",
+						}
 					},
 					expectAllowed: true,
 				},

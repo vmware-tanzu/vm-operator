@@ -63,7 +63,29 @@ var defaultIgnoredExtraConfigKeys = []string{
 
 type moRef = vimtypes.ManagedObjectReference
 
-type lookupNamespacedNameFn func(context.Context, moRef) (string, string, bool)
+// LookupNamespacedNameResult is returned from a call to lookup the namespaced
+// name of a vSphere VM.
+type LookupNamespacedNameResult struct {
+	Namespace string
+	Name      string
+
+	// Verified indicates whether or not the VM's Kubernetes resource has the
+	// vSphere VM's managed object ID in status.uniqueID.
+	Verified bool
+
+	// Deleted indicates whether the VM's Kubernetes resource has a
+	// non-zero deletion timestamp.
+	Deleted bool
+}
+
+// lookupNamespacedNameFn queries the namespace and name for a vSphere VM by
+// searching for the VM's Kubernetes resource using the VM's managed object ID.
+// If the namespace and name are already known, they are instead used to query
+// the VM to make the lookup more efficient.
+type lookupNamespacedNameFn func(
+	ctx context.Context,
+	vmRef moRef,
+	namespace, name string) LookupNamespacedNameResult
 
 type Result struct {
 	// Namespace is the namespace to which the VirtualMachine resource belongs.
@@ -323,6 +345,7 @@ func (w *Watcher) onObject(
 		namespace string
 		name      string
 		verified  bool
+		deleted   bool
 	)
 
 	// This update will be skipped if after removing all of the changes for
@@ -342,13 +365,34 @@ func (w *Watcher) onObject(
 		}
 	}
 	if ignoredChanges == len(update.changes) {
+		logger.V(5).Info("skipping async signal", "reason", "ignored changes")
 		return nil
 	}
 
 	if w.lookupNamespacedName != nil {
-		if namespace == "" || name == "" || update.kind == vimtypes.ObjectUpdateKindEnter {
-			namespace, name, verified = w.lookupNamespacedName(ctx, obj)
+		r := w.lookupNamespacedName(ctx, obj, namespace, name)
+		if r.Namespace != "" {
+			namespace = r.Namespace
 		}
+		if r.Name != "" {
+			name = r.Name
+		}
+		verified = r.Verified
+		deleted = r.Deleted
+	}
+
+	if deleted {
+		// Do not enqueue an async reconcile for a VM's Kubernetes resource that
+		// is already being deleted. This avoids an infinite loop caused by the
+		// fact that vSphere's Delete API invokes Reload internally on the VM.
+		// The Reload API causes a MODIFY event to be sent to all property
+		// collectors for the VM, resulting in this watcher triggering another
+		// reconcile. Since the VM is being deleted, we would then issue another
+		// Delete call to the vSphere VM, triggering another Reload call,
+		// triggering another property collector signal. Rinse and repeat.
+		logger.V(5).Info("skipping async signal",
+			"reason", "vm is being deleted")
+		return nil
 	}
 
 	if update.kind == vimtypes.ObjectUpdateKindEnter && verified {
@@ -357,6 +401,8 @@ func (w *Watcher) onObject(
 		// result when the object is entering the scope of the watcher and the
 		// corresponding Kubernetes object already exists with a matching
 		// status.uniqueID field.
+		logger.V(5).Info("skipping async signal",
+			"reason", "verified vm entered scope")
 		return nil
 	}
 

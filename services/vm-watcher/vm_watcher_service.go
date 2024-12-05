@@ -200,7 +200,24 @@ func (s Service) waitForChanges(ctx context.Context) error {
 // indexed for fast lookup.
 func (s Service) lookupNamespacedName(
 	ctx context.Context,
-	moRef vimtypes.ManagedObjectReference) (string, string, bool) {
+	moRef vimtypes.ManagedObjectReference,
+	namespace, name string) watcher.LookupNamespacedNameResult {
+
+	if namespace != "" && name != "" {
+		var obj vmopv1.VirtualMachine
+		if err := s.Client.Get(
+			ctx,
+			ctrlclient.ObjectKey{Namespace: namespace, Name: name},
+			&obj); err == nil {
+
+			return watcher.LookupNamespacedNameResult{
+				Namespace: obj.Namespace,
+				Name:      obj.Name,
+				Verified:  obj.Status.UniqueID != "",
+				Deleted:   !obj.DeletionTimestamp.IsZero(),
+			}
+		}
+	}
 
 	var list vmopv1.VirtualMachineList
 	if err := s.Client.List(
@@ -209,9 +226,14 @@ func (s Service) lookupNamespacedName(
 		ctrlclient.MatchingFields{"status.uniqueID": moRef.Value}); err == nil {
 
 		if len(list.Items) == 1 {
-			return list.Items[0].Namespace, list.Items[0].Name, true
+			return watcher.LookupNamespacedNameResult{
+				Namespace: list.Items[0].Namespace,
+				Name:      list.Items[0].Name,
+				Verified:  true,
+				Deleted:   !list.Items[0].DeletionTimestamp.IsZero(),
+			}
 		}
 	}
 
-	return "", "", false
+	return watcher.LookupNamespacedNameResult{}
 }

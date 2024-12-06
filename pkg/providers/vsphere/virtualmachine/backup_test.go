@@ -692,6 +692,40 @@ func backupTests() {
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 						}
 					})
+
+					It("Should clear PVC disk data in ExtraConfig when no PVCs", func() {
+						dummyPVC := builder.DummyPersistentVolumeClaim()
+						diskUUIDToPVC := map[string]corev1.PersistentVolumeClaim{
+							vcSimDiskUUID: *dummyPVC,
+						}
+
+						backupOpts := virtualmachine.BackupVirtualMachineOptions{
+							VMCtx:         vmCtx,
+							VcVM:          vcVM,
+							DiskUUIDToPVC: diskUUIDToPVC,
+						}
+
+						if IncrementalRestore {
+							backupOpts.BackupVersion = vT2
+						}
+
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+
+						backupOpts.DiskUUIDToPVC = nil
+
+						if IncrementalRestore {
+							backupOpts.BackupVersion = vT3
+						}
+
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.PVCDiskDataExtraConfigKey, "", true)
+
+						if IncrementalRestore {
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT3, false)
+							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
+						}
+					})
 				})
 			})
 
@@ -999,6 +1033,33 @@ func backupTests() {
 							// Verify the backup version remains the same which indicates the backup was skipped.
 							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT1, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
+						})
+					})
+
+					When("VM already has classic disk data backup in ExtraConfig", func() {
+						JustBeforeEach(func() {
+							backupOpts := virtualmachine.BackupVirtualMachineOptions{
+								VMCtx:            vmCtx,
+								VcVM:             vcVM,
+								ClassicDiskUUIDs: map[string]struct{}{vcSimDiskUUID: {}},
+								BackupVersion:    vT1,
+							}
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						})
+
+						It("Should clear classic disk data backup if no classic disks in ExtraConfig", func() {
+							backupOpts := virtualmachine.BackupVirtualMachineOptions{
+								VMCtx:            vmCtx,
+								VcVM:             vcVM,
+								ClassicDiskUUIDs: nil,
+								BackupVersion:    vT2,
+							}
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.ClassicDiskDataExtraConfigKey, "", true)
+
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT2, false)
+							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 						})
 					})
 				})

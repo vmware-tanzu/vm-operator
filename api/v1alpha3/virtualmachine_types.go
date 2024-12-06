@@ -197,6 +197,18 @@ const (
 	// ManagerID on a VirtualMachine contains the UUID of the
 	// VMware vCenter (VC) that is managing this virtual machine.
 	ManagerID = GroupName + "/manager-id"
+
+	// RegisteredVMAnnotation on a VirtualMachine represents that a virtual machine has
+	// been registered using the RegisterVM API after a restore, or a fail-over operation by
+	// a vendor. The presence of this annotation is used to bypass some validation checks
+	// that are otherwise applicable to all VirtualMachine create/update requests.
+	RegisteredVMAnnotation = GroupName + "/registered-vm"
+
+	// ImportedVMAnnotation on a VirtualMachine represents that a traditional virtual
+	// machine has been imported into Supervisor using the ImportVM API. The presence of this
+	// annotation is used to bypass some validation checks that are otherwise applicable
+	// to all VirtualMachine create/update requests.
+	ImportedVMAnnotation = GroupName + "/imported-vm"
 )
 
 const (

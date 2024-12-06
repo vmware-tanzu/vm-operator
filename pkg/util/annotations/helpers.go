@@ -9,6 +9,14 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
+func HasRegisterVM(o metav1.Object) bool {
+	return hasAnnotation(o, vmopv1.RegisteredVMAnnotation)
+}
+
+func HasImportVM(o metav1.Object) bool {
+	return hasAnnotation(o, vmopv1.ImportedVMAnnotation)
+}
+
 func HasForceEnableBackup(o metav1.Object) bool {
 	return hasAnnotation(o, vmopv1.ForceEnableBackupAnnotation)
 }

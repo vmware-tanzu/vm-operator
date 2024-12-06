@@ -40,6 +40,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
@@ -279,7 +280,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	ctx = ctxop.WithContext(ctx)
-
+	ctx = ovfcache.JoinContext(ctx, r.Context)
 	ctx = record.WithContext(ctx, r.Recorder)
 
 	vm := &vmopv1.VirtualMachine{}

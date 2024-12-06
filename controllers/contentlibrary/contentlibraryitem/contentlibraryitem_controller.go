@@ -30,6 +30,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	imgutil "github.com/vmware-tanzu/vm-operator/pkg/util/image"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -93,6 +94,7 @@ type Reconciler struct {
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+	ctx = ovfcache.JoinContext(ctx, r.Context)
 
 	logger := r.Logger.WithValues("clItemName", req.Name, "namespace", req.Namespace)
 	logger.Info("Reconciling ContentLibraryItem")

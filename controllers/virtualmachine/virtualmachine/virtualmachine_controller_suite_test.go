@@ -16,6 +16,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -23,14 +24,15 @@ import (
 var intgFakeVMProvider = providerfake.NewVMProvider()
 
 var suite = builder.NewTestSuiteForControllerWithContext(
-	cource.WithContext(
-		pkgcfg.UpdateContext(pkgcfg.NewContextWithDefaultConfig(), func(config *pkgcfg.Config) {
-			config.SyncPeriod = 60 * time.Minute
-			config.CreateVMRequeueDelay = 1 * time.Second
-			config.PoweredOnVMHasIPRequeueDelay = 1 * time.Second
-			config.AsyncSignalDisabled = true
-			config.AsyncCreateDisabled = true
-		})),
+	ovfcache.WithContext(
+		cource.WithContext(
+			pkgcfg.UpdateContext(pkgcfg.NewContextWithDefaultConfig(), func(config *pkgcfg.Config) {
+				config.SyncPeriod = 60 * time.Minute
+				config.CreateVMRequeueDelay = 1 * time.Second
+				config.PoweredOnVMHasIPRequeueDelay = 1 * time.Second
+				config.AsyncSignalDisabled = true
+				config.AsyncCreateDisabled = true
+			}))),
 	virtualmachine.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = intgFakeVMProvider

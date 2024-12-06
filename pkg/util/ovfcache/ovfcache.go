@@ -31,7 +31,12 @@ func WithContext(parent context.Context) context.Context {
 		maxItems,
 		expireAfter,
 		expireCheckInterval)
+}
 
+// JoinContext returns a context with the OVF cache from the right or left, in
+// that order.
+func JoinContext(left, right context.Context) context.Context {
+	return internal.JoinContext(left, right)
 }
 
 // SetGetter assigns to the context the function used to retrieve an OVF

@@ -7,87 +7,75 @@ import (
 	"strings"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-// Netplan representation described in https://via.vmw.com/cloud-init-netplan // FIXME: 404.
-type Netplan struct {
-	Version   int                        `json:"version,omitempty"`
-	Ethernets map[string]NetplanEthernet `json:"ethernets,omitempty"`
-}
-
-type NetplanEthernet struct {
-	Match       NetplanEthernetMatch      `json:"match,omitempty"`
-	SetName     string                    `json:"set-name,omitempty"`
-	Dhcp4       bool                      `json:"dhcp4,omitempty"`
-	Dhcp6       bool                      `json:"dhcp6,omitempty"`
-	Addresses   []string                  `json:"addresses,omitempty"`
-	Gateway4    string                    `json:"gateway4,omitempty"`
-	Gateway6    string                    `json:"gateway6,omitempty"`
-	MTU         int64                     `json:"mtu,omitempty"`
-	Nameservers NetplanEthernetNameserver `json:"nameservers,omitempty"`
-	Routes      []NetplanEthernetRoute    `json:"routes,omitempty"`
-}
-
-type NetplanEthernetMatch struct {
-	MacAddress string `json:"macaddress,omitempty"`
-}
-
-type NetplanEthernetNameserver struct {
-	Addresses []string `json:"addresses,omitempty"`
-	Search    []string `json:"search,omitempty"`
-}
-
-type NetplanEthernetRoute struct {
-	To     string `json:"to"`
-	Via    string `json:"via"`
-	Metric int32  `json:"metric,omitempty"`
-}
-
-func NetPlanCustomization(result NetworkInterfaceResults) (*Netplan, error) {
-	netPlan := &Netplan{
+func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, error) {
+	netPlan := &netplan.Network{
 		Version:   constants.NetPlanVersion,
-		Ethernets: make(map[string]NetplanEthernet),
+		Ethernets: make(map[string]netplan.Ethernet),
 	}
 
 	for _, r := range result.Results {
-		npEth := NetplanEthernet{
-			Match: NetplanEthernetMatch{
-				MacAddress: NormalizeNetplanMac(r.MacAddress),
+		npEth := netplan.Ethernet{
+			Match: &netplan.Match{
+				Macaddress: ptr.To(NormalizeNetplanMac(r.MacAddress)),
 			},
-			SetName: r.GuestDeviceName,
-			MTU:     r.MTU,
-			Nameservers: NetplanEthernetNameserver{
+			SetName: &r.GuestDeviceName,
+			MTU:     &r.MTU,
+			Nameservers: &netplan.Nameserver{
 				Addresses: r.Nameservers,
 				Search:    r.SearchDomains,
 			},
 		}
 
-		npEth.Dhcp4 = r.DHCP4
-		npEth.Dhcp6 = r.DHCP6
+		npEth.Dhcp4 = &r.DHCP4
+		npEth.Dhcp6 = &r.DHCP6
 
-		if !npEth.Dhcp4 {
-			for _, ipConfig := range r.IPConfigs {
+		if !*npEth.Dhcp4 {
+			for i := range r.IPConfigs {
+				ipConfig := r.IPConfigs[i]
 				if ipConfig.IsIPv4 {
-					if npEth.Gateway4 == "" {
-						npEth.Gateway4 = ipConfig.Gateway
+					if npEth.Gateway4 == nil || *npEth.Gateway4 == "" {
+						npEth.Gateway4 = &ipConfig.Gateway
 					}
-					npEth.Addresses = append(npEth.Addresses, ipConfig.IPCIDR)
+					npEth.Addresses = append(
+						npEth.Addresses,
+						netplan.Address{
+							String: &ipConfig.IPCIDR,
+						},
+					)
 				}
 			}
 		}
-		if !npEth.Dhcp6 {
-			for _, ipConfig := range r.IPConfigs {
+		if !*npEth.Dhcp6 {
+			for i := range r.IPConfigs {
+				ipConfig := r.IPConfigs[i]
 				if !ipConfig.IsIPv4 {
-					if npEth.Gateway6 == "" {
-						npEth.Gateway6 = ipConfig.Gateway
+					if npEth.Gateway6 == nil || *npEth.Gateway6 == "" {
+						npEth.Gateway6 = &ipConfig.Gateway
 					}
-					npEth.Addresses = append(npEth.Addresses, ipConfig.IPCIDR)
+					npEth.Addresses = append(
+						npEth.Addresses,
+						netplan.Address{
+							String: &ipConfig.IPCIDR,
+						},
+					)
 				}
 			}
 		}
 
-		for _, route := range r.Routes {
-			npEth.Routes = append(npEth.Routes, NetplanEthernetRoute(route))
+		for i := range r.Routes {
+			route := r.Routes[i]
+			npEth.Routes = append(
+				npEth.Routes,
+				netplan.Route{
+					To:     &route.To,
+					Metric: ptr.To(int64(route.Metric)),
+					Via:    &route.Via,
+				},
+			)
 		}
 
 		netPlan.Ethernets[r.Name] = npEth

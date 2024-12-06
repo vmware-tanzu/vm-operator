@@ -11,6 +11,8 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 var _ = Describe("Netplan", func() {
@@ -33,17 +35,17 @@ var _ = Describe("Netplan", func() {
 
 		var (
 			results network.NetworkInterfaceResults
-			netplan *network.Netplan
+			config  *netplan.Network
 			err     error
 		)
 
 		BeforeEach(func() {
 			results.Results = nil
-			netplan = nil
+			config = nil
 		})
 
 		JustBeforeEach(func() {
-			netplan, err = network.NetPlanCustomization(results)
+			config, err = network.NetPlanCustomization(results)
 		})
 
 		Context("IPv4/6 Static adapter", func() {
@@ -83,30 +85,30 @@ var _ = Describe("Netplan", func() {
 
 			It("returns success", func() {
 				Expect(err).ToNot(HaveOccurred())
-				Expect(netplan).ToNot(BeNil())
-				Expect(netplan.Version).To(Equal(constants.NetPlanVersion))
+				Expect(config).ToNot(BeNil())
+				Expect(config.Version).To(Equal(constants.NetPlanVersion))
 
-				Expect(netplan.Ethernets).To(HaveLen(1))
-				Expect(netplan.Ethernets).To(HaveKey(ifName))
+				Expect(config.Ethernets).To(HaveLen(1))
+				Expect(config.Ethernets).To(HaveKey(ifName))
 
-				np := netplan.Ethernets[ifName]
-				Expect(np.Match.MacAddress).To(Equal(macAddr1Norm))
-				Expect(np.SetName).To(Equal(guestDevName))
-				Expect(np.Dhcp4).To(BeFalse())
-				Expect(np.Dhcp6).To(BeFalse())
+				np := config.Ethernets[ifName]
+				Expect(*np.Match.Macaddress).To(Equal(macAddr1Norm))
+				Expect(*np.SetName).To(Equal(guestDevName))
+				Expect(*np.Dhcp4).To(BeFalse())
+				Expect(*np.Dhcp6).To(BeFalse())
 				Expect(np.Addresses).To(HaveLen(2))
-				Expect(np.Addresses[0]).To(Equal(ipv4CIDR))
-				Expect(np.Addresses[1]).To(Equal(ipv6 + fmt.Sprintf("/%d", ipv6Subnet)))
-				Expect(np.Gateway4).To(Equal(ipv4Gateway))
-				Expect(np.Gateway6).To(Equal(ipv6Gateway))
-				Expect(np.MTU).To(BeEquivalentTo(1500))
+				Expect(np.Addresses[0]).To(Equal(netplan.Address{String: ptr.To(ipv4CIDR)}))
+				Expect(np.Addresses[1]).To(Equal(netplan.Address{String: ptr.To(ipv6 + fmt.Sprintf("/%d", ipv6Subnet))}))
+				Expect(*np.Gateway4).To(Equal(ipv4Gateway))
+				Expect(*np.Gateway6).To(Equal(ipv6Gateway))
+				Expect(*np.MTU).To(BeEquivalentTo(1500))
 				Expect(np.Nameservers.Addresses).To(Equal([]string{dnsServer1}))
 				Expect(np.Nameservers.Search).To(Equal([]string{searchDomain1}))
 				Expect(np.Routes).To(HaveLen(1))
 				route := np.Routes[0]
-				Expect(route.To).To(Equal("185.107.56.59"))
-				Expect(route.Via).To(Equal("10.1.1.1"))
-				Expect(route.Metric).To(BeEquivalentTo(42))
+				Expect(*route.To).To(Equal("185.107.56.59"))
+				Expect(*route.Via).To(Equal("10.1.1.1"))
+				Expect(*route.Metric).To(BeEquivalentTo(42))
 			})
 		})
 
@@ -128,18 +130,18 @@ var _ = Describe("Netplan", func() {
 
 			It("returns success", func() {
 				Expect(err).ToNot(HaveOccurred())
-				Expect(netplan).ToNot(BeNil())
-				Expect(netplan.Version).To(Equal(constants.NetPlanVersion))
+				Expect(config).ToNot(BeNil())
+				Expect(config.Version).To(Equal(constants.NetPlanVersion))
 
-				Expect(netplan.Ethernets).To(HaveLen(1))
-				Expect(netplan.Ethernets).To(HaveKey(ifName))
+				Expect(config.Ethernets).To(HaveLen(1))
+				Expect(config.Ethernets).To(HaveKey(ifName))
 
-				np := netplan.Ethernets[ifName]
-				Expect(np.Match.MacAddress).To(Equal(macAddr1Norm))
-				Expect(np.SetName).To(Equal(guestDevName))
-				Expect(np.Dhcp4).To(BeTrue())
-				Expect(np.Dhcp6).To(BeTrue())
-				Expect(np.MTU).To(BeEquivalentTo(9000))
+				np := config.Ethernets[ifName]
+				Expect(*np.Match.Macaddress).To(Equal(macAddr1Norm))
+				Expect(*np.SetName).To(Equal(guestDevName))
+				Expect(*np.Dhcp4).To(BeTrue())
+				Expect(*np.Dhcp6).To(BeTrue())
+				Expect(*np.MTU).To(BeEquivalentTo(9000))
 				Expect(np.Nameservers.Addresses).To(Equal([]string{dnsServer1}))
 				Expect(np.Nameservers.Search).To(Equal([]string{searchDomain1}))
 				Expect(np.Routes).To(BeEmpty())

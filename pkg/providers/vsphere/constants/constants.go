@@ -49,7 +49,7 @@ const (
 
 	// NetPlanVersion points to the version used for Network config.
 	// For more information, please see https://cloudinit.readthedocs.io/en/latest/topics/network-config-format-v2.html
-	NetPlanVersion = 2
+	NetPlanVersion = int64(2)
 
 	PCIPassthruMMIOOverrideAnnotation = pkg.VMOperatorKey + "/pci-passthru-64bit-mmio-size"
 	PCIPassthruMMIOExtraConfigKey     = "pciPassthru.use64bitMMIO"    //nolint:gosec

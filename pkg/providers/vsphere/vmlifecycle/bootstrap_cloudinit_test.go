@@ -20,10 +20,11 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 var _ = Describe("CloudInit Bootstrap", func() {
@@ -288,7 +289,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			uid           string
 			hostName      string
 			domainName    string
-			netPlan       *network.Netplan
+			netPlan       *netplan.Network
 			sshPublicKeys string
 
 			mdYaml string
@@ -299,11 +300,11 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			uid = "my-uid"
 			hostName = "my-hostname"
 			domainName = ""
-			netPlan = &network.Netplan{
+			netPlan = &netplan.Network{
 				Version: 42,
-				Ethernets: map[string]network.NetplanEthernet{
+				Ethernets: map[string]netplan.Ethernet{
 					"eth0": {
-						SetName: "eth0",
+						SetName: ptr.To("eth0"),
 					},
 				},
 			}
@@ -328,7 +329,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				Expect(ciMetadata.InstanceID).To(Equal(uid))
 				Expect(ciMetadata.Hostname).To(Equal(hostName))
 				Expect(ciMetadata.PublicKeys).To(Equal(sshPublicKeys))
-				Expect(ciMetadata.Network.Version).To(Equal(42))
+				Expect(ciMetadata.Network.Version).To(BeEquivalentTo(42))
 				Expect(ciMetadata.Network.Ethernets).To(HaveKey("eth0"))
 			})
 		})
@@ -347,7 +348,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				Expect(ciMetadata.InstanceID).To(Equal(uid))
 				Expect(ciMetadata.Hostname).To(Equal(hostName + "." + domainName))
 				Expect(ciMetadata.PublicKeys).To(Equal(sshPublicKeys))
-				Expect(ciMetadata.Network.Version).To(Equal(42))
+				Expect(ciMetadata.Network.Version).To(BeEquivalentTo(42))
 				Expect(ciMetadata.Network.Ethernets).To(HaveKey("eth0"))
 			})
 		})

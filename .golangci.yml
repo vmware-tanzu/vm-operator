@@ -190,6 +190,7 @@ issues:
   exclude-dirs:
   - external
   - pkg/util/cloudinit/schema
+  - pkg/util/netplan/schema
   exclude-files:
   - ".*generated.*\\.go"
   exclude:

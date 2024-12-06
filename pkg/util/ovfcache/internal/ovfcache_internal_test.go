@@ -65,6 +65,62 @@ var _ = Describe("WithContext", func() {
 	})
 })
 
+var _ = Describe("JoinContext", func() {
+
+	const (
+		maxItems            = 3
+		expireAfter         = 3 * time.Second
+		expireCheckInterval = 1 * time.Second
+	)
+
+	var (
+		left  context.Context
+		right context.Context
+	)
+
+	BeforeEach(func() {
+		left = internal.WithContext(
+			context.Background(),
+			maxItems,
+			expireAfter,
+			expireCheckInterval)
+
+		right = internal.WithContext(
+			context.Background(),
+			maxItems,
+			expireAfter,
+			expireCheckInterval)
+	})
+
+	AfterEach(func() {
+		left, right = nil, nil
+	})
+
+	When("left has the cache", func() {
+		BeforeEach(func() {
+			right = context.Background()
+		})
+		It("should have the cache", func() {
+			Expect(internal.Cache(internal.JoinContext(left, right))).To(Equal(internal.Cache(left)))
+		})
+	})
+
+	When("right has the cache", func() {
+		BeforeEach(func() {
+			left = context.Background()
+		})
+		It("should have the cache", func() {
+			Expect(internal.Cache(internal.JoinContext(left, right))).To(Equal(internal.Cache(right)))
+		})
+	})
+
+	When("both have the cache", func() {
+		It("should have the right cache", func() {
+			Expect(internal.Cache(internal.JoinContext(left, right))).To(Equal(internal.Cache(right)))
+		})
+	})
+})
+
 var _ = Describe("GetOVFEnvelope", func() {
 
 	const (

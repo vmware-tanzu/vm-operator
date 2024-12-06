@@ -18,7 +18,7 @@ import (
 
 type contextKeyType uint8
 
-type contextValueType struct {
+type ContextValueType struct {
 	cache *pkgutil.Cache[VersionedOVFEnvelope]
 	locks *pkgutil.LockPool[string, *sync.RWMutex]
 	getFn GetterFn
@@ -45,7 +45,7 @@ func WithContext(
 	return ctxgen.WithContext(
 		parent,
 		contextKeyValue,
-		func() contextValueType {
+		func() ContextValueType {
 			cache := pkgutil.NewCache[VersionedOVFEnvelope](
 				expireAfter,
 				expireCheckInterval,
@@ -66,7 +66,7 @@ func WithContext(
 				}
 			}()
 
-			return contextValueType{
+			return ContextValueType{
 				cache: cache,
 				locks: locks,
 			}
@@ -81,8 +81,17 @@ func Put(
 	return ctxgen.FromContext(
 		ctx,
 		contextKeyValue,
-		func(curVal contextValueType) pkgutil.CachePutResult {
+		func(curVal ContextValueType) pkgutil.CachePutResult {
 			return curVal.cache.Put(itemID, env)
+		})
+}
+
+func Cache(ctx context.Context) ContextValueType {
+	return ctxgen.FromContext(
+		ctx,
+		contextKeyValue,
+		func(curVal ContextValueType) ContextValueType {
+			return curVal
 		})
 }
 
@@ -93,7 +102,7 @@ func GetLock(
 	return ctxgen.FromContext(
 		ctx,
 		contextKeyValue,
-		func(curVal contextValueType) sync.Locker {
+		func(curVal ContextValueType) sync.Locker {
 			return curVal.locks.Get(itemID)
 		})
 }
@@ -102,7 +111,7 @@ func SetGetter(parent context.Context, getter GetterFn) {
 	ctxgen.SetContext(
 		parent,
 		contextKeyValue,
-		func(curVal contextValueType) contextValueType {
+		func(curVal ContextValueType) ContextValueType {
 			curVal.getFn = getter
 			return curVal
 		})
@@ -115,7 +124,7 @@ func GetOVFEnvelope(
 	ctxgen.ExecWithContext(
 		ctx,
 		contextKeyValue,
-		func(val contextValueType) {
+		func(val ContextValueType) {
 			logger := logr.FromContextOrDiscard(ctx).
 				WithValues(
 					"itemID", itemID,
@@ -164,4 +173,14 @@ func GetOVFEnvelope(
 		})
 	return env, err
 
+}
+
+func JoinContext(left, right context.Context) context.Context {
+	return ctxgen.JoinContext(
+		left,
+		right,
+		contextKeyValue,
+		func(dst, src ContextValueType) ContextValueType {
+			return src
+		})
 }

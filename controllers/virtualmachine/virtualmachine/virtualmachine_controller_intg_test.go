@@ -32,6 +32,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
@@ -452,6 +453,7 @@ var _ = Describe(
 			)
 			ctx = cource.WithContext(ctx)
 			ctx = watcher.WithContext(ctx)
+			ctx = ovfcache.WithContext(ctx)
 
 			provider = providerfake.NewVMProvider()
 			provider.VSphereClientFn = func(ctx context.Context) (*vsclient.Client, error) {

@@ -44,7 +44,7 @@ func BootStrapLinuxPrep(
 	var configSpec *vimtypes.VirtualMachineConfigSpec
 	if vAppConfigSpec != nil {
 		configSpec = &vimtypes.VirtualMachineConfigSpec{}
-		configSpec.VAppConfig = GetOVFVAppConfigForConfigSpec(
+		configSpec.VAppConfig, err = GetOVFVAppConfigForConfigSpec(
 			config,
 			vAppConfigSpec,
 			bsArgs.BootstrapData.VAppData,
@@ -52,5 +52,5 @@ func BootStrapLinuxPrep(
 			bsArgs.TemplateRenderFn)
 	}
 
-	return configSpec, customSpec, nil
+	return configSpec, customSpec, err
 }

@@ -12,7 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	appv1a1 "github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1"
-	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 const (
@@ -28,10 +27,6 @@ const (
 // ProxyAddress first attempts to get the proxy address through the API Server DNS Names.
 // If that is unset, though, fall back to using the virtual IP.
 func ProxyAddress(ctx context.Context, r client.Client) (string, error) {
-	if !pkgcfg.FromContext(ctx).Features.SimplifiedEnablement {
-		return proxyAddressFromVirtualIP(ctx, r)
-	}
-
 	// Attempt to use the API Server DNS Names to get the proxy address.
 	proxyAddress, err := proxyServiceDNSName(ctx, r)
 	if err != nil {

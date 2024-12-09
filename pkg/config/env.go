@@ -63,7 +63,6 @@ func FromEnv() Config {
 	setBool(env.FSSVMImportNewNet, &config.Features.VMImportNewNet)
 	setBool(env.FSSVMIncrementalRestore, &config.Features.VMIncrementalRestore)
 	setBool(env.FSSBringYourOwnEncryptionKey, &config.Features.BringYourOwnEncryptionKey)
-	setBool(env.FSSSimplifiedEnablement, &config.Features.SimplifiedEnablement)
 
 	setBool(env.FSSSVAsyncUpgrade, &config.Features.SVAsyncUpgrade)
 	if !config.Features.SVAsyncUpgrade {

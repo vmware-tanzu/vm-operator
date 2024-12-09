@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -151,6 +152,37 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
 	return admission.Allowed("")
+}
+
+// Updates to VM's image are only allowed if it is a Registered VM (used for failover
+// in disaster recovery).
+func (v validator) validateImageOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if vmopv1util.IsImagelessVM(*vm) && pkgcfg.FromContext(ctx).Features.VMIncrementalRestore {
+		if annotations.HasRegisterVM(vm) {
+			if !vmopv1util.ImageRefsEqual(vm.Spec.Image, oldVM.Spec.Image) {
+				if !ctx.IsPrivilegedAccount {
+					allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "image"), restrictedToPrivUsers))
+				}
+			}
+
+			if oldVM.Spec.ImageName != vm.Spec.ImageName {
+				if !ctx.IsPrivilegedAccount {
+					allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "imageName"), restrictedToPrivUsers))
+				}
+			}
+
+			return allErrs
+		}
+	}
+
+	allErrs = append(allErrs,
+		validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, field.NewPath("spec", "imageName"))...)
+	allErrs = append(allErrs,
+		validation.ValidateImmutableField(vm.Spec.Image, oldVM.Spec.Image, field.NewPath("spec", "image"))...)
+
+	return allErrs
 }
 
 // ValidateUpdate validates if the given VirtualMachineSpec update is valid.
@@ -369,8 +401,19 @@ func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *
 	case vmopv1util.IsImagelessVM(*vm) &&
 		(pkgcfg.FromContext(ctx).Features.VMImportNewNet ||
 			pkgcfg.FromContext(ctx).Features.VMIncrementalRestore):
+		// TODO: Simplify this once mobility operator starts creating VMs with correct annotation.
+		// Skip validations on images if it is a VM created using ImportVM, or RegisterVM.
+		if annotations.HasImportVM(vm) || annotations.HasRegisterVM(vm) {
+			// Restrict creating imageless VM resources to privileged users.
+			if !ctx.IsPrivilegedAccount {
+				allErrs = append(allErrs, field.Forbidden(f, restrictedToPrivUsers))
+			}
+
+			return allErrs
+		}
 
 		// Restrict creating imageless VM resources to privileged users.
+		// TODO: This should be removed once all consumers have migrated to using annotations.
 		if !ctx.IsPrivilegedAccount {
 			allErrs = append(allErrs, field.Forbidden(f, restrictedToPrivUsers))
 		}
@@ -1143,8 +1186,7 @@ func (v validator) validateImmutableFields(ctx *pkgctx.WebhookRequestContext, vm
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
-	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.Image, oldVM.Spec.Image, specPath.Child("image"))...)
-	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, specPath.Child("imageName"))...)
+	allErrs = append(allErrs, v.validateImageOnUpdate(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateClassOnUpdate(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
 	// New VMs always have non-empty biosUUID. Existing VMs being upgraded may have an empty biosUUID.
@@ -1288,21 +1330,29 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 	annotationPath := field.NewPath("metadata", "annotations")
 
 	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
 	if vm.Annotations[vmopv1.FirstBootDoneAnnotation] != oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vm.Annotations[vmopv1.RegisteredVMAnnotation] != oldVM.Annotations[vmopv1.RegisteredVMAnnotation] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.RegisteredVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vm.Annotations[vmopv1.ImportedVMAnnotation] != oldVM.Annotations[vmopv1.ImportedVMAnnotation] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
 	// The following annotations will be added by the mutation webhook upon VM creation.
 	if !reflect.DeepEqual(oldVM, &vmopv1.VirtualMachine{}) {
 		if vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] != oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] {
-			allErrs = append(allErrs, field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(constants.CreatedAtBuildVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
 		}
 
 		if vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] != oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] {
-			allErrs = append(allErrs, field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(constants.CreatedAtSchemaVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
 		}
 	}
 

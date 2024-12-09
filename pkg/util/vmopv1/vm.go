@@ -233,6 +233,19 @@ func IsImagelessVM(vm vmopv1.VirtualMachine) bool {
 	return vm.Spec.Image == nil && vm.Spec.ImageName == ""
 }
 
+// ImageRefsEqual returns true if the two image refs match.
+func ImageRefsEqual(ref1, ref2 *vmopv1.VirtualMachineImageRef) bool {
+	if ref1 == nil && ref2 == nil {
+		return true
+	}
+
+	if ref1 != nil && ref2 != nil {
+		return *ref1 == *ref2
+	}
+
+	return false
+}
+
 // SyncStorageUsageForNamespace updates the StoragePolicyUsage resource for
 // the given namespace and storage class with the reported usage information
 // for VMs in that namespace that use the specified storage class.

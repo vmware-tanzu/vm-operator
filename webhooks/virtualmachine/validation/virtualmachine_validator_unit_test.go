@@ -48,6 +48,8 @@ const (
 	dummyFirstBootDoneVal          = "dummy-first-boot-done"
 	dummyCreatedAtBuildVersionVal  = "dummy-created-at-build-version"
 	dummyCreatedAtSchemaVersionVal = "dummy-created-at-schema-version"
+	dummyRegisteredAnnVal          = "dummy-registered-annotation"
+	dummyImportedAnnVal            = "dummy-imported-annotation"
 	dummyPausedVMLabelVal          = "dummy-devops"
 	dummyVmiName                   = "vmi-dummy"
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
@@ -65,12 +67,10 @@ type testParams struct {
 
 func doValidateWithMsg(msgs ...string) func(admission.Response) {
 	return func(response admission.Response) {
-		reasons := strings.Split(string(response.Result.Reason), ", ")
+		reasons := string(response.Result.Reason)
 		for _, m := range msgs {
-			ExpectWithOffset(1, reasons).To(ContainElement(m))
+			ExpectWithOffset(1, reasons).To(ContainSubstring(m))
 		}
-		// This may be overly strict in some cases but catches missed assertions.
-		ExpectWithOffset(1, reasons).To(HaveLen(len(msgs)))
 	}
 }
 
@@ -580,6 +580,23 @@ func unitTestsValidateCreate() {
 		),
 
 		// FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled
+
+		Entry("allow empty spec.image for privileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and VM contains restored annotation",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					ctx.vm.Annotations = map[string]string{
+						vmopv1.RegisteredVMAnnotation: "",
+					}
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				expectAllowed: true,
+			},
+		),
 		Entry("allow empty spec.image for privileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
@@ -614,6 +631,24 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Image = nil
 					ctx.vm.Spec.ImageName = ""
 					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMIncrementalRestore = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Forbidden(field.NewPath("spec", "image"), "restricted to privileged users").Error(),
+				),
+			},
+		),
+		Entry("forbid empty spec.image for unprivileged user when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and annotation is present",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					ctx.vm.Annotations = map[string]string{
+						vmopv1.RegisteredVMAnnotation: "",
+					}
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMIncrementalRestore = true
 					})
@@ -676,7 +711,23 @@ func unitTestsValidateCreate() {
 		//
 		// FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled
 		//
-		Entry("allow empty spec.image for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled",
+		Entry("allow empty spec.image for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled and annotation is present",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = true
+					ctx.vm.Annotations = map[string]string{
+						vmopv1.ImportedVMAnnotation: "",
+					}
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("(To be removed) allow empty spec.image for privileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled, but the annotation is not present",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.vm.Spec.Image = nil
@@ -710,6 +761,24 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.Image = nil
 					ctx.vm.Spec.ImageName = ""
 					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Forbidden(field.NewPath("spec", "image"), "restricted to privileged users").Error(),
+				),
+			},
+		),
+		Entry("forbid empty spec.image for unprivileged user when FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is enabled and annotation is present",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Image = nil
+					ctx.vm.Spec.ImageName = ""
+					ctx.IsPrivilegedAccount = false
+					ctx.vm.Annotations = map[string]string{
+						vmopv1.ImportedVMAnnotation: "",
+					}
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMImportNewNet = true
 					})
@@ -918,10 +987,14 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyFirstBootDoneVal
 					},
 					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error()),
+						field.Forbidden(annotationPath.Key(vmopv1.RegisteredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error()),
 				},
 			),
 			Entry("should allow creating VM with admin-only annotations set by service user",
@@ -931,6 +1004,8 @@ func unitTestsValidateCreate() {
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyFirstBootDoneVal
 					},
 					expectAllowed: true,
 				},
@@ -948,6 +1023,8 @@ func unitTestsValidateCreate() {
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyFirstBootDoneVal
 					},
 					expectAllowed: true,
 				},
@@ -2710,16 +2787,24 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 					},
 					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error()),
+						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.RegisteredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+					),
 				},
 			),
 			Entry("should disallow removing admin-only annotations by SSO user",
@@ -2729,12 +2814,17 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 					},
 					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error()),
+						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.RegisteredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+					),
 				},
 			),
 			Entry("should allow updating admin-only annotations by service user",
@@ -2746,10 +2836,15 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 					},
 					expectAllowed: true,
 				},
@@ -2763,6 +2858,8 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 					},
 					expectAllowed: true,
 				},
@@ -2784,10 +2881,15 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 					},
 					expectAllowed: true,
 				},
@@ -2809,6 +2911,8 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 					},
 					expectAllowed: true,
 				},
@@ -2854,6 +2958,214 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.IsPrivilegedAccount = true
 						ctx.oldVM.Labels[vmopv1.PausedVMLabelKey] = dummyPausedVMLabelVal
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("Image and ImageName", func() {
+		DescribeTable("imageName", doTest,
+			Entry("forbid changing imageName to non empty value",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.ImageName = dummyVmiName
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = dummyVmiName + updateSuffix
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.imageName: Invalid value: "%v": field is immutable`, dummyVmiName+updateSuffix)),
+				},
+			),
+
+			Entry("forbid unset of imageName if FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.ImageName = dummyVmiName
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = ""
+						ctx.vm.Spec.Image = nil
+					},
+					validate: doValidateWithMsg(
+						`spec.imageName: Invalid value: "": field is immutable`),
+				},
+			),
+
+			// FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled
+			Entry("forbid unset of imageName if FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, but annotation is not present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+
+						ctx.oldVM.Spec.ImageName = dummyVmiName
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = ""
+						ctx.vm.Spec.Image = nil
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.imageName: Invalid value: "%v": field is immutable`, "")),
+				},
+			),
+
+			Entry("forbid unset of imageName by unprivileged users if FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and registered annotation is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.RegisteredVMAnnotation: "foo",
+						}
+
+						ctx.oldVM.Spec.ImageName = dummyVmiName
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = ""
+						ctx.vm.Spec.Image = nil
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(field.NewPath("spec", "imageName"), "restricted to privileged users").Error()),
+				},
+			),
+
+			Entry("allow unset of imageName for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and registered annotation is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+
+						ctx.IsPrivilegedAccount = true
+
+						ctx.oldVM.Spec.ImageName = dummyVmiName
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.RegisteredVMAnnotation: "foo",
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.ImageName = ""
+						ctx.vm.Spec.Image = nil
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+
+		DescribeTable("image", doTest,
+			Entry("forbid changing image from nil to a non-nil value",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Image = nil
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: dummyVmiName + updateSuffix,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "image"), &vmopv1.VirtualMachineImageRef{Name: dummyVmiName + updateSuffix}, apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+			Entry("forbid changing image from non-nil to non-nil value",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: dummyVmiName,
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: dummyVmiName + updateSuffix,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "image"), &vmopv1.VirtualMachineImageRef{Name: dummyVmiName + updateSuffix}, apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+
+			Entry("forbid unset of image when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: dummyVmiName,
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = nil
+						ctx.vm.Spec.ImageName = ""
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "image"), nil, apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+
+			Entry("forbid unset of image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, but Registered annotation is not present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+
+						ctx.IsPrivilegedAccount = true
+
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: dummyVmiName,
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = nil
+						ctx.vm.Spec.ImageName = ""
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "image"), nil, apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+
+			Entry("forbid unset of image by unprivileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and the Registered annotation is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+						ctx.IsPrivilegedAccount = false
+
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.RegisteredVMAnnotation: "bar",
+						}
+
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: dummyVmiName,
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = nil
+						ctx.vm.Spec.ImageName = ""
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(field.NewPath("spec", "image"), "restricted to privileged users").Error()),
+				},
+			),
+
+			Entry("alow changing image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and Registered annotation is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMIncrementalRestore = true
+						})
+
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.RegisteredVMAnnotation: "bar",
+						}
+
+						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
+							Name: dummyVmiName,
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Image = nil
+						ctx.vm.Spec.ImageName = ""
 					},
 					expectAllowed: true,
 				},

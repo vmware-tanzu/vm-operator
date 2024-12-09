@@ -32,6 +32,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 type NetworkInterfaceResults struct {
@@ -113,17 +114,23 @@ func CreateAndWaitForNetworkInterfaces(
 	vimClient *vim25.Client,
 	finder *find.Finder,
 	clusterMoRef *vimtypes.ManagedObjectReference,
-	interfaces []vmopv1.VirtualMachineNetworkInterfaceSpec) (NetworkInterfaceResults, error) {
+	networkSpec *vmopv1.VirtualMachineNetworkSpec) (NetworkInterfaceResults, error) {
 
 	networkType := pkgcfg.FromContext(vmCtx).NetworkProviderType
 	if networkType == "" {
 		return NetworkInterfaceResults{}, fmt.Errorf("no network provider set")
 	}
 
-	results := make([]NetworkInterfaceResult, 0, len(interfaces))
+	var defaultToGlobalNameservers, defaultToGlobalSearchDomains bool
+	if bootstrap := vmCtx.VM.Spec.Bootstrap; bootstrap != nil && bootstrap.CloudInit != nil {
+		defaultToGlobalNameservers = ptr.DerefWithDefault(bootstrap.CloudInit.UseGlobalNameserversAsDefault, true)
+		defaultToGlobalSearchDomains = ptr.DerefWithDefault(bootstrap.CloudInit.UseGlobalSearchDomainsAsDefault, true)
+	}
 
-	for i := range interfaces {
-		interfaceSpec := &interfaces[i]
+	results := make([]NetworkInterfaceResult, 0, len(networkSpec.Interfaces))
+
+	for i := range networkSpec.Interfaces {
+		interfaceSpec := &networkSpec.Interfaces[i]
 
 		var result *NetworkInterfaceResult
 		var err error
@@ -146,7 +153,13 @@ func CreateAndWaitForNetworkInterfaces(
 				fmt.Errorf("network interface %q error: %w", interfaceSpec.Name, err)
 		}
 
-		applyInterfaceSpecToResult(interfaceSpec, result)
+		applyInterfaceSpecToResult(
+			networkSpec,
+			interfaceSpec,
+			defaultToGlobalNameservers,
+			defaultToGlobalSearchDomains,
+			result)
+
 		results = append(results, *result)
 	}
 
@@ -162,7 +175,10 @@ func CreateAndWaitForNetworkInterfaces(
 // applyInterfaceSpecToResult applies the InterfaceSpec to results. Much of the InterfaceSpec - like DHCP -
 // cannot be specified to the underlying network provider so apply those overrides to the results.
 func applyInterfaceSpecToResult(
+	networkSpec *vmopv1.VirtualMachineNetworkSpec,
 	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec,
+	defaultToGlobalNameservers bool,
+	defaultToGlobalSearchDomains bool,
 	result *NetworkInterfaceResult) {
 
 	// We don't really support IPv6 yet so don't enable it when the underlying provider didn't return any IPs.
@@ -206,8 +222,18 @@ func applyInterfaceSpecToResult(
 
 	result.DHCP4 = dhcp4
 	result.DHCP6 = dhcp6
-	result.Nameservers = interfaceSpec.Nameservers
-	result.SearchDomains = interfaceSpec.SearchDomains
+
+	if n := interfaceSpec.Nameservers; len(n) > 0 {
+		result.Nameservers = n
+	} else if defaultToGlobalNameservers {
+		result.Nameservers = networkSpec.Nameservers
+	}
+
+	if d := interfaceSpec.SearchDomains; len(d) > 0 {
+		result.SearchDomains = d
+	} else if defaultToGlobalSearchDomains {
+		result.SearchDomains = networkSpec.SearchDomains
+	}
 
 	if interfaceSpec.MTU != nil {
 		result.MTU = *interfaceSpec.MTU

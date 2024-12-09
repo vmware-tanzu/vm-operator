@@ -115,6 +115,26 @@ type VirtualMachineBootstrapCloudInitSpec struct {
 	// SSHAuthorizedKeys is a list of public keys that CloudInit will apply to
 	// the guest's default user.
 	SSHAuthorizedKeys []string `json:"sshAuthorizedKeys,omitempty"`
+
+	// +optional
+	// +kubebuilder:default:true
+
+	// UseGlobalNameserversAsDefault will use the global nameservers specified in
+	// the NetworkSpec as the per-interface nameservers when the per-interface
+	// nameservers is not provided.
+	//
+	// Defaults to true if omitted.
+	UseGlobalNameserversAsDefault *bool `json:"useGlobalNameserversAsDefault,omitempty"`
+
+	// +optional
+	// +kubebuilder:default:true
+
+	// UseGlobalSearchDomainsAsDefault will use the global search domains specified
+	// in the NetworkSpec as the per-interface search domains when the per-interface
+	// search domains is not provided.
+	//
+	// Defaults to true if omitted.
+	UseGlobalSearchDomainsAsDefault *bool `json:"useGlobalSearchDomainsAsDefault,omitempty"`
 }
 
 // VirtualMachineBootstrapLinuxPrepSpec describes the LinuxPrep configuration

@@ -145,6 +145,10 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Please note this feature is available only with the following bootstrap
 	// providers: CloudInit and Sysprep.
 	//
+	// When using CloudInit and UseGlobalNameserversAsDefault is either unset or
+	// true, if nameservers is not provided, the global nameservers will be used
+	// instead.
+	//
 	// Please note that Linux allows only three nameservers
 	// (https://linux.die.net/man/5/resolv.conf).
 	Nameservers []string `json:"nameservers,omitempty"`
@@ -164,6 +168,10 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	//
 	// Please note this feature is available only with the following bootstrap
 	// providers: CloudInit.
+	//
+	// When using CloudInit and UseGlobalSearchDomainsAsDefault is either unset
+	// or true, if search domains is not provided, the global search domains
+	// will be used instead.
 	SearchDomains []string `json:"searchDomains,omitempty"`
 }
 
@@ -244,7 +252,10 @@ type VirtualMachineNetworkSpec struct {
 	//
 	// Please note global nameservers are only available with the following
 	// bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
-	// provider supports per-interface nameservers.
+	// provider supports per-interface nameservers. However, when Cloud-Init
+	// is used and UseGlobalNameserversAsDefault is true, the global
+	// nameservers will be used when the per-interface nameservers is not
+	// provided.
 	//
 	// Please note that Linux allows only three nameservers
 	// (https://linux.die.net/man/5/resolv.conf).
@@ -257,7 +268,9 @@ type VirtualMachineNetworkSpec struct {
 	//
 	// Please note global search domains are only available with the following
 	// bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
-	// provider supports per-interface search domains.
+	// provider supports per-interface search domains. However, when Cloud-Init
+	// is used and UseGlobalSearchDomainsAsDefault is true, the global search
+	// domains will be used when the per-interface search domains is not provided.
 	SearchDomains []string `json:"searchDomains,omitempty"`
 
 	// +optional

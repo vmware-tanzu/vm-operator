@@ -516,6 +516,16 @@ base64-encoded, or gzipped and base64-encoded.
 Please note this field and CloudConfig are mutually exclusive. |
 | `sshAuthorizedKeys` _string array_ | SSHAuthorizedKeys is a list of public keys that CloudInit will apply to
 the guest's default user. |
+| `useGlobalNameserversAsDefault` _boolean_ | UseGlobalNameserversAsDefault will use the global nameservers specified in
+the NetworkSpec as the per-interface nameservers when the per-interface
+nameservers is not provided.
+
+Defaults to true if omitted. |
+| `useGlobalSearchDomainsAsDefault` _boolean_ | UseGlobalSearchDomainsAsDefault will use the global search domains specified
+in the NetworkSpec as the per-interface search domains when the per-interface
+search domains is not provided.
+
+Defaults to true if omitted. |
 
 ### VirtualMachineBootstrapLinuxPrepSpec
 
@@ -1433,6 +1443,10 @@ nameservers.
 Please note this feature is available only with the following bootstrap
 providers: CloudInit and Sysprep.
 
+When using CloudInit and UseGlobalNameserversAsDefault is either unset or
+true, if nameservers is not provided, the global nameservers will be used
+instead.
+
 Please note that Linux allows only three nameservers
 (https://linux.die.net/man/5/resolv.conf). |
 | `routes` _[VirtualMachineNetworkRouteSpec](#virtualmachinenetworkroutespec) array_ | Routes is a list of optional, static routes.
@@ -1443,7 +1457,11 @@ providers: CloudInit. |
 addresses with DNS.
 
 Please note this feature is available only with the following bootstrap
-providers: CloudInit. |
+providers: CloudInit.
+
+When using CloudInit and UseGlobalSearchDomainsAsDefault is either unset
+or true, if search domains is not provided, the global search domains
+will be used instead. |
 
 ### VirtualMachineNetworkInterfaceStatus
 
@@ -1556,7 +1574,10 @@ nameservers. These are applied globally.
 
 Please note global nameservers are only available with the following
 bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
-provider supports per-interface nameservers.
+provider supports per-interface nameservers. However, when Cloud-Init
+is used and UseGlobalNameserversAsDefault is true, the global
+nameservers will be used when the per-interface nameservers is not
+provided.
 
 Please note that Linux allows only three nameservers
 (https://linux.die.net/man/5/resolv.conf). |
@@ -1565,7 +1586,9 @@ addresses with DNS. These are applied globally.
 
 Please note global search domains are only available with the following
 bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
-provider supports per-interface search domains. |
+provider supports per-interface search domains. However, when Cloud-Init
+is used and UseGlobalSearchDomainsAsDefault is true, the global search
+domains will be used when the per-interface search domains is not provided. |
 | `interfaces` _[VirtualMachineNetworkInterfaceSpec](#virtualmachinenetworkinterfacespec) array_ | Interfaces is the list of network interfaces used by this VM.
 
 If the Interfaces field is empty and the Disabled field is false, then

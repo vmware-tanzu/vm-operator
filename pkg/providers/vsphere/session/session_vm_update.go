@@ -616,7 +616,7 @@ func (s *Session) ensureNetworkInterfaces(
 		s.Client.VimClient(),
 		s.Finder,
 		&s.ClusterMoRef,
-		networkSpec.Interfaces)
+		networkSpec)
 	if err != nil {
 		return network2.NetworkInterfaceResults{}, err
 	}

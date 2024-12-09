@@ -89,7 +89,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 							Name: "cloud-init-secret",
 							Key:  "user-data",
 						},
-						SSHAuthorizedKeys: []string{"my-ssh-key"},
+						SSHAuthorizedKeys:               []string{"my-ssh-key"},
+						UseGlobalNameserversAsDefault:   ptrOf(true),
+						UseGlobalSearchDomainsAsDefault: ptrOf(true),
 					},
 				},
 				Network: &vmopv1.VirtualMachineNetworkSpec{
@@ -258,7 +260,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 							Name: "cloudinit-secret",
 							Key:  "my-key",
 						},
-						SSHAuthorizedKeys: []string{"my-ssh-key"},
+						SSHAuthorizedKeys:               []string{"my-ssh-key"},
+						UseGlobalNameserversAsDefault:   ptrOf(true),
+						UseGlobalSearchDomainsAsDefault: ptrOf(false),
 					},
 				},
 			},
@@ -282,7 +286,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 							},
 						},
-						SSHAuthorizedKeys: []string{"my-ssh-key"},
+						SSHAuthorizedKeys:               []string{"my-ssh-key"},
+						UseGlobalNameserversAsDefault:   ptrOf(false),
+						UseGlobalSearchDomainsAsDefault: ptrOf(true),
 					},
 				},
 			},
@@ -305,6 +311,32 @@ func TestVirtualMachineConversion(t *testing.T) {
 		}
 
 		hubSpokeHub(g, &hub, &vmopv1a1.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine hub-spoke-hub with CloudInit w/ just the UseGlobal...AsDefaults", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub1 := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						UseGlobalNameserversAsDefault: ptrOf(true),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub1, &vmopv1a1.VirtualMachine{})
+
+		hub2 := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						UseGlobalSearchDomainsAsDefault: ptrOf(true),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub2, &vmopv1a1.VirtualMachine{})
 	})
 
 	t.Run("VirtualMachine hub-spoke-hub with LinuxPrep", func(t *testing.T) {

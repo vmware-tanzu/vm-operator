@@ -869,6 +869,8 @@ func restore_v1alpha3_VirtualMachineBootstrapSpec(
 			dstCloudInit.CloudConfig = srcCloudInit.CloudConfig
 			dstCloudInit.RawCloudConfig = mergeSecretKeySelector(dstCloudInit.RawCloudConfig, srcCloudInit.RawCloudConfig)
 			dstCloudInit.SSHAuthorizedKeys = srcCloudInit.SSHAuthorizedKeys
+			dstCloudInit.UseGlobalNameserversAsDefault = srcCloudInit.UseGlobalNameserversAsDefault
+			dstCloudInit.UseGlobalSearchDomainsAsDefault = srcCloudInit.UseGlobalSearchDomainsAsDefault
 		}
 	}
 

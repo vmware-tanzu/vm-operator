@@ -34,9 +34,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 		testConfig builder.VCSimTestConfig
 		ctx        *builder.TestContextForVCSim
 
-		vmCtx          pkgctx.VirtualMachineContext
-		vm             *vmopv1.VirtualMachine
-		interfaceSpecs []vmopv1.VirtualMachineNetworkInterfaceSpec
+		vmCtx       pkgctx.VirtualMachineContext
+		vm          *vmopv1.VirtualMachine
+		networkSpec *vmopv1.VirtualMachineNetworkSpec
 
 		results     network.NetworkInterfaceResults
 		err         error
@@ -53,7 +53,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			},
 		}
 
-		interfaceSpecs = nil
+		networkSpec = &vmopv1.VirtualMachineNetworkSpec{}
 	})
 
 	JustBeforeEach(func() {
@@ -71,7 +71,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			ctx.VCClient.Client,
 			ctx.Finder,
 			nil,
-			interfaceSpecs)
+			networkSpec)
 	})
 
 	AfterEach(func() {
@@ -90,7 +90,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 		Context("network exists", func() {
 			BeforeEach(func() {
-				interfaceSpecs = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name:    "eth0",
 						Network: &common.PartialObjectRef{Name: networkName},
@@ -119,7 +119,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 			Context("Overrides with provided InterfaceSpec", func() {
 				BeforeEach(func() {
-					interfaceSpecs = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name:            "my-network-interface",
 							GuestDeviceName: "eth42",
@@ -179,19 +179,46 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					})
 
 					Expect(result.MTU).To(BeEquivalentTo(9000))
-					Expect(result.Nameservers).To(ConsistOf("9.9.9.9"))
-					Expect(result.SearchDomains).To(ConsistOf("vmware.com"))
+					Expect(result.Nameservers).To(HaveExactElements("9.9.9.9"))
+					Expect(result.SearchDomains).To(HaveExactElements("vmware.com"))
 					Expect(result.Routes).To(HaveLen(1))
 					Expect(result.Routes[0].To).To(Equal("10.10.10.10"))
 					Expect(result.Routes[0].Via).To(Equal("5.5.5.5"))
 					Expect(result.Routes[0].Metric).To(BeEquivalentTo(42))
+				})
+
+				Context("Bootstrap has use globals as defaults", func() {
+					BeforeEach(func() {
+						vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+								UseGlobalNameserversAsDefault:   ptr.To(true),
+								UseGlobalSearchDomainsAsDefault: ptr.To(true),
+							},
+						}
+
+						networkSpec.Nameservers = []string{"149.112.112.112"}
+						networkSpec.SearchDomains = []string{"broadcom.net"}
+						networkSpec.Interfaces[0].Nameservers = nil
+						networkSpec.Interfaces[0].SearchDomains = nil
+					})
+
+					It("returns success", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(results.Results).To(HaveLen(1))
+
+						result := results.Results[0]
+						By("has expected values", func() {
+							Expect(result.Nameservers).To(HaveExactElements("149.112.112.112"))
+							Expect(result.SearchDomains).To(HaveExactElements("broadcom.net"))
+						})
+					})
 				})
 			})
 		})
 
 		Context("network does not exist", func() {
 			BeforeEach(func() {
-				interfaceSpecs = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name:    "eth0",
 						Network: &common.PartialObjectRef{Name: "bogus"},
@@ -220,7 +247,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 		Context("Simulate workflow", func() {
 			BeforeEach(func() {
-				interfaceSpecs = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
@@ -280,7 +307,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					ctx.VCClient.Client,
 					ctx.Finder,
 					nil,
-					interfaceSpecs)
+					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(results.Results).To(HaveLen(1))
@@ -370,7 +397,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						ctx.VCClient.Client,
 						ctx.Finder,
 						nil,
-						interfaceSpecs)
+						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(results.Results).To(HaveLen(1))
@@ -412,7 +439,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 		Context("Simulate workflow", func() {
 			BeforeEach(func() {
-				interfaceSpecs = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
@@ -473,7 +500,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					ctx.VCClient.Client,
 					ctx.Finder,
 					nil,
-					interfaceSpecs)
+					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(results.Results).To(HaveLen(1))
@@ -503,7 +530,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					ctx.VCClient.Client,
 					ctx.Finder,
 					&clusterMoRef,
-					interfaceSpecs)
+					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(results.Results).To(HaveLen(1))
 				Expect(results.Results[0].Backing).ToNot(BeNil())
@@ -575,7 +602,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						ctx.VCClient.Client,
 						ctx.Finder,
 						nil,
-						interfaceSpecs)
+						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(results.Results).To(HaveLen(1))
@@ -605,7 +632,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						ctx.VCClient.Client,
 						ctx.Finder,
 						&clusterMoRef,
-						interfaceSpecs)
+						networkSpec)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(results.Results).To(HaveLen(1))
 					Expect(results.Results[0].Backing).ToNot(BeNil())
@@ -630,7 +657,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 		Context("Simulate workflow", func() {
 			BeforeEach(func() {
-				interfaceSpecs = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: interfaceName,
 						Network: &common.PartialObjectRef{
@@ -692,7 +719,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					ctx.VCClient.Client,
 					ctx.Finder,
 					nil,
-					interfaceSpecs)
+					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(results.Results).To(HaveLen(1))
@@ -722,7 +749,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					ctx.VCClient.Client,
 					ctx.Finder,
 					&clusterMoRef,
-					interfaceSpecs)
+					networkSpec)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(results.Results).To(HaveLen(1))
 				Expect(results.Results[0].Backing).ToNot(BeNil())

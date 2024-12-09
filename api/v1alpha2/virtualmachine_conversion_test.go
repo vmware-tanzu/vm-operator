@@ -67,10 +67,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 							Name: "cloud-init-secret",
 							Key:  "user-data",
 						},
-						SSHAuthorizedKeys: []string{"my-ssh-key"},
+						SSHAuthorizedKeys:               []string{"my-ssh-key"},
+						UseGlobalNameserversAsDefault:   ptrOf(true),
+						UseGlobalSearchDomainsAsDefault: ptrOf(true),
 					},
 					LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-						HardwareClockIsUTC: &[]bool{true}[0],
+						HardwareClockIsUTC: ptrOf(true),
 						TimeZone:           "my-tz",
 					},
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{

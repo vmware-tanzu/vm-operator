@@ -17,7 +17,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
 	appv1a1 "github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1"
-	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
@@ -136,14 +135,7 @@ func unitTestsReconcile() {
 			})
 		})
 
-		When("SimplifiedEnablement is enabled", func() {
-			JustBeforeEach(func() {
-				pkgcfg.UpdateContext(ctx,
-					func(config *pkgcfg.Config) {
-						config.Features.SimplifiedEnablement = true
-					},
-				)
-			})
+		When("Web Console returns correct proxy address", func() {
 
 			DescribeTable("DNS Names",
 				func(apiServerDNSName []string, expectedProxy string) {

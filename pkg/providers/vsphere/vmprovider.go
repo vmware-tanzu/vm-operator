@@ -242,7 +242,7 @@ func (vs *vSphereVMProvider) getVM(
 	client *vcclient.Client,
 	notFoundReturnErr bool) (*object.VirtualMachine, error) {
 
-	vcVM, err := vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.VimClient(), client.Datacenter(), client.Finder())
+	vcVM, err := vcenter.GetVirtualMachine(vmCtx, client.VimClient(), client.Datacenter(), client.Finder())
 	if err != nil {
 		return nil, err
 	}

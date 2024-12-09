@@ -10,22 +10,18 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 )
 
-// GetVirtualMachine gets the VM from VC, either by the MoID, UUID, or the inventory path.
+// GetVirtualMachine gets the VM from VC, either by the Instance UUID, BIOS UUID, or MoID.
 func GetVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
-	k8sClient ctrlclient.Client,
 	vimClient *vim25.Client,
 	datacenter *object.Datacenter,
 	finder *find.Finder) (*object.VirtualMachine, error) {
 
-	// Find by instance UUID.
+	// Find by Instance UUID.
 	if id := vmCtx.VM.UID; id != "" {
 		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, string(id), true); err == nil {
 			return vm, nil
@@ -46,8 +42,7 @@ func GetVirtualMachine(
 		}
 	}
 
-	// Find by inventory path.
-	return findVMByInventory(vmCtx, k8sClient, vimClient, finder)
+	return nil, nil
 }
 
 func findVMByMoID(
@@ -89,74 +84,5 @@ func findVMByUUID(
 	}
 
 	vmCtx.Logger.V(4).Info("Found VM via UUID", "uuid", uuid, "isInstanceUUID", isInstanceUUID)
-	return vm, nil
-}
-
-func findVMByInventory(
-	vmCtx pkgctx.VirtualMachineContext,
-	k8sClient ctrlclient.Client,
-	vimClient *vim25.Client,
-	finder *find.Finder) (*object.VirtualMachine, error) {
-
-	// Note that we'll usually only get here to find the VM via its inventory path when we're first
-	// creating the VM. To determine the path, we need the NS Folder MoID and the VM's ResourcePolicy,
-	// if set, and we'll fetch these again as a part of createVirtualMachine(). For now, just re-fetch
-	// but we could pass the Folder MoID and ResourcePolicy to save a bit of duplicated work.
-
-	folderMoID, err := topology.GetNamespaceFolderMoID(vmCtx, k8sClient, vmCtx.VM.Namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	// While we strictly only need the Folder's ManagedObjectReference below, use the Finder
-	// here to check if it actually exists.
-	folder, err := GetFolderByMoID(vmCtx, finder, folderMoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get namespace Folder: %w", err)
-	}
-
-	// When the VM has a ResourcePolicy, the VM is placed in a child folder under the namespace's folder.
-	var policyName string
-	if reserved := vmCtx.VM.Spec.Reserved; reserved != nil {
-		policyName = reserved.ResourcePolicyName
-	}
-	if policyName != "" {
-		resourcePolicy := &vmopv1.VirtualMachineSetResourcePolicy{}
-
-		key := ctrlclient.ObjectKey{Name: policyName, Namespace: vmCtx.VM.Namespace}
-		if err := k8sClient.Get(vmCtx, key, resourcePolicy); err != nil {
-			// Note that if VM does not exist, and we're about to create it, the ResourcePolicy is Get()
-			// again so the corresponding condition is almost always true if we don't hit an error here.
-			// Creating the VM with an explicit InstanceUUID is the easiest way out to avoid this.
-			return nil, fmt.Errorf("failed to get VirtualMachineSetResourcePolicy: %w", err)
-		}
-
-		if folderName := resourcePolicy.Spec.Folder; folderName != "" {
-			childFolder, err := GetChildFolder(vmCtx, folder, folderName)
-			if err != nil {
-				vmCtx.Logger.Error(err, "Failed to get VirtualMachineSetResourcePolicy child Folder",
-					"parentPath", folder.InventoryPath, "folderName", folderName, "policyName", policyName)
-				return nil, err
-			}
-
-			folder = childFolder
-		}
-	}
-
-	ref, err := object.NewSearchIndex(vimClient).FindChild(vmCtx, folder.Reference(), vmCtx.VM.Name)
-	if err != nil {
-		return nil, err
-	} else if ref == nil {
-		// VM does not exist.
-		return nil, nil
-	}
-
-	vm, ok := ref.(*object.VirtualMachine)
-	if !ok {
-		return nil, fmt.Errorf("found VM reference was not a VM but a %T", ref)
-	}
-
-	vmCtx.Logger.V(4).Info("Found VM via inventory",
-		"parentFolderMoID", folder.Reference().Value, "moID", vm.Reference().Value)
 	return vm, nil
 }

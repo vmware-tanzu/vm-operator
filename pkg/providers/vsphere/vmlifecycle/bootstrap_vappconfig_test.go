@@ -21,6 +21,7 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 	const key, value = "fooKey", "fooValue"
 
 	var (
+		err              error
 		configInfo       *vimtypes.VirtualMachineConfigInfo
 		vAppConfigSpec   *vmopv1.VirtualMachineBootstrapVAppConfigSpec
 		bsArgs           vmlifecycle.BootstrapArgs
@@ -53,12 +54,22 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 	Context("GetOVFVAppConfigForConfigSpec", func() {
 
 		JustBeforeEach(func() {
-			baseVMConfigSpec = vmlifecycle.GetOVFVAppConfigForConfigSpec(
+			baseVMConfigSpec, err = vmlifecycle.GetOVFVAppConfigForConfigSpec(
 				configInfo,
 				vAppConfigSpec,
 				bsArgs.VAppData,
 				bsArgs.VAppExData,
 				bsArgs.TemplateRenderFn)
+		})
+
+		When("config.vAppConfig is nil", func() {
+			BeforeEach(func() {
+				configInfo.VAppConfig = nil
+			})
+			It("Should return an error", func() {
+				Expect(err).To(MatchError("vAppConfig is not yet available"))
+				Expect(baseVMConfigSpec).To(BeNil())
+			})
 		})
 
 		Context("Empty input", func() {

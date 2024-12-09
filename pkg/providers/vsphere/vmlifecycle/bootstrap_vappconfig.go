@@ -5,6 +5,7 @@ package vmlifecycle
 
 import (
 	"context"
+	"errors"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -17,15 +18,19 @@ func BootstrapVAppConfig(
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	configSpec := &vimtypes.VirtualMachineConfigSpec{}
-	configSpec.VAppConfig = GetOVFVAppConfigForConfigSpec(
+	var (
+		err        error
+		configSpec vimtypes.VirtualMachineConfigSpec
+	)
+
+	configSpec.VAppConfig, err = GetOVFVAppConfigForConfigSpec(
 		config,
 		vAppConfigSpec,
 		bsArgs.BootstrapData.VAppData,
 		bsArgs.BootstrapData.VAppExData,
 		bsArgs.TemplateRenderFn)
 
-	return configSpec, nil, nil
+	return &configSpec, nil, err
 }
 
 func GetOVFVAppConfigForConfigSpec(
@@ -33,16 +38,15 @@ func GetOVFVAppConfigForConfigSpec(
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	vAppData map[string]string,
 	vAppExData map[string]map[string]string,
-	templateRenderFn TemplateRenderFunc) vimtypes.BaseVmConfigSpec {
+	templateRenderFn TemplateRenderFunc) (vimtypes.BaseVmConfigSpec, error) {
 
-	if config.VAppConfig == nil {
-		// BMV: Should we really silently return here and below?
-		return nil
+	var vAppConfigInfo *vimtypes.VmConfigInfo
+	if config.VAppConfig != nil {
+		vAppConfigInfo = config.VAppConfig.GetVmConfigInfo()
 	}
 
-	vAppConfigInfo := config.VAppConfig.GetVmConfigInfo()
 	if vAppConfigInfo == nil {
-		return nil
+		return nil, errors.New("vAppConfig is not yet available")
 	}
 
 	if len(vAppConfigSpec.Properties) > 0 {
@@ -65,7 +69,7 @@ func GetOVFVAppConfigForConfigSpec(
 		}
 	}
 
-	return GetMergedvAppConfigSpec(vAppData, vAppConfigInfo.Property)
+	return GetMergedvAppConfigSpec(vAppData, vAppConfigInfo.Property), nil
 }
 
 // GetMergedvAppConfigSpec prepares a vApp VmConfigSpec which will set the provided key/value fields.

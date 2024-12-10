@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -10,7 +10,7 @@ import (
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinewebconsolerequest/v1alpha2/validation"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinewebconsolerequest/validation"
 )
 
 // suite is used for unit and integration testing this webhook.

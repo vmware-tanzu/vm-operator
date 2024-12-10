@@ -1,7 +1,7 @@
 // Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha2
+package virtualmachinewebconsolerequest
 
 import (
 	"context"
@@ -32,8 +32,8 @@ const (
 	UUIDLabelKey      = "vmoperator.vmware.com/webconsolerequest-uuid"
 )
 
-// AddToManager adds this package's controller to the provided manager.
-func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
+// addToManager adds this package's controller to the provided manager.
+func addToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controlledType     = &vmopv1.VirtualMachineWebConsoleRequest{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()

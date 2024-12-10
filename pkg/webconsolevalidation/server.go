@@ -9,14 +9,14 @@ import (
 	"net/http"
 	"time"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
+
+const UUIDLabelKey = "vmoperator.vmware.com/webconsolerequest-uuid"
 
 // Server represents a web console validation server.
 type Server struct {
@@ -25,27 +25,9 @@ type Server struct {
 }
 
 // NewServer creates a new web console validation server.
-func NewServer(
-	addr, path string,
-	inClusterConfigFunc func() (*rest.Config, error),
-	addToSchemeFunc func(*runtime.Scheme) error,
-	newClientFunc func(*rest.Config, ctrlclient.Options) (ctrlclient.Client, error)) (*Server, error) {
+func NewServer(addr, path string, client ctrlclient.Client) (*Server, error) {
 	if addr == "" || path == "" {
 		return nil, errors.New("server addr and path cannot be empty")
-	}
-
-	// Init Kubernetes client.
-	restConfig, err := inClusterConfigFunc()
-	if err != nil {
-		return nil, err
-	}
-	scheme := runtime.NewScheme()
-	if err := addToSchemeFunc(scheme); err != nil {
-		return nil, err
-	}
-	client, err := newClientFunc(restConfig, ctrlclient.Options{Scheme: scheme})
-	if err != nil {
-		return nil, err
 	}
 
 	return &Server{
@@ -107,10 +89,26 @@ func isResourceFound(
 	uuid, namespace string,
 	kubeClient ctrlclient.Client) (bool, error) {
 	labelSelector := ctrlclient.MatchingLabels{
-		v1alpha1.UUIDLabelKey: uuid,
+		UUIDLabelKey: uuid,
 	}
 
 	// TODO: Use an Informer to avoid hitting the API server for every request.
+	vmwcrObjectList := &vmopv1.VirtualMachineWebConsoleRequestList{}
+	if err := kubeClient.List(
+		ctx,
+		vmwcrObjectList,
+		ctrlclient.InNamespace(namespace),
+		labelSelector,
+	); err != nil {
+		return false, err
+	}
+
+	if len(vmwcrObjectList.Items) > 0 {
+		return true, nil
+	}
+
+	// NOTE: In v1a1 this CRD has a different name - WebConsoleRequest - so this
+	// is still required until we stop supporting v1a1.
 	wcrObjectList := &vmopv1a1.WebConsoleRequestList{}
 	if err := kubeClient.List(
 		ctx,

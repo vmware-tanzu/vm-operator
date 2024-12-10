@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -64,7 +64,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 	wcr := builder.DummyVirtualMachineWebConsoleRequest("some-namespace", "some-name", "some-vm-name", publicKeyPem)
 	wcr.Labels = map[string]string{
-		v1alpha2.UUIDLabelKey: "some-uuid",
+		virtualmachinewebconsolerequest.UUIDLabelKey: "some-uuid",
 	}
 	obj, err := builder.ToUnstructured(wcr)
 	Expect(err).ToNot(HaveOccurred())
@@ -162,7 +162,7 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.updateUUIDLabel {
-			ctx.wcr.Labels[v1alpha2.UUIDLabelKey] = "new-uuid"
+			ctx.wcr.Labels[virtualmachinewebconsolerequest.UUIDLabelKey] = "new-uuid"
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured((ctx.wcr))

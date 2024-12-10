@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation
@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -176,14 +176,14 @@ func (v validator) webConsoleRequestFromUnstructured(obj runtime.Unstructured) (
 func (v validator) validateUUIDLabel(wcr, oldwcr *vmopv1.VirtualMachineWebConsoleRequest) field.ErrorList {
 	var allErrs field.ErrorList
 
-	oldUUIDLabelVal := oldwcr.Labels[webconsolerequest.UUIDLabelKey]
+	oldUUIDLabelVal := oldwcr.Labels[virtualmachinewebconsolerequest.UUIDLabelKey]
 	if oldUUIDLabelVal == "" {
 		return allErrs
 	}
 
-	newUUIDLabelVal := wcr.Labels[webconsolerequest.UUIDLabelKey]
+	newUUIDLabelVal := wcr.Labels[virtualmachinewebconsolerequest.UUIDLabelKey]
 	labelsPath := field.NewPath("metadata", "labels")
-	allErrs = append(allErrs, validation.ValidateImmutableField(newUUIDLabelVal, oldUUIDLabelVal, labelsPath.Key(webconsolerequest.UUIDLabelKey))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(newUUIDLabelVal, oldUUIDLabelVal, labelsPath.Key(virtualmachinewebconsolerequest.UUIDLabelKey))...)
 
 	return allErrs
 }

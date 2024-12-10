@@ -4,7 +4,7 @@
 package webconsolevalidation_test
 
 import (
-	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -13,12 +13,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/webconsolevalidation"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -30,81 +29,26 @@ func serverUnitTests() {
 		serverAddr = "localhost:8080"
 	)
 
-	var (
-		inClusterConfig = func() (*rest.Config, error) {
-			return &rest.Config{}, nil
-		}
-		addToScheme = func(*runtime.Scheme) error {
-			return nil
-		}
-		//nolint:unparam
-		newClient = func(*rest.Config, ctrlclient.Options) (ctrlclient.Client, error) {
-			return builder.NewFakeClient(), nil
-		}
-	)
-
 	Context("NewServer", func() {
 
 		When("Server addr or path is empty", func() {
 
 			It("should return an error", func() {
-				_, err := webconsolevalidation.NewServer("", serverPath, nil, nil, nil)
+				_, err := webconsolevalidation.NewServer("", serverPath, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal("server addr and path cannot be empty"))
 
-				_, err = webconsolevalidation.NewServer(serverAddr, "", nil, nil, nil)
+				_, err = webconsolevalidation.NewServer(serverAddr, "", nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal("server addr and path cannot be empty"))
 			})
 
 		})
 
-		When("InClusterConfig returns an error", func() {
-
-			It("should return the error", func() {
-				errInClusterConfig := func() (*rest.Config, error) {
-					return nil, errors.New("in-cluster config error")
-				}
-
-				_, err := webconsolevalidation.NewServer(serverAddr, serverPath, errInClusterConfig, addToScheme, newClient)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("in-cluster config error"))
-			})
-
-		})
-
-		When("AddToScheme returns an error", func() {
-
-			It("should return the error", func() {
-				errAddToScheme := func(*runtime.Scheme) error {
-					return errors.New("add to scheme error")
-				}
-
-				_, err := webconsolevalidation.NewServer(serverAddr, serverPath, inClusterConfig, errAddToScheme, newClient)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("add to scheme error"))
-			})
-
-		})
-
-		When("NewClient returns an error", func() {
-
-			It("should return the error", func() {
-				errNewClient := func(config *rest.Config, options ctrlclient.Options) (ctrlclient.Client, error) {
-					return nil, errors.New("new client error")
-				}
-
-				_, err := webconsolevalidation.NewServer(serverAddr, serverPath, inClusterConfig, addToScheme, errNewClient)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("new client error"))
-			})
-
-		})
-
-		When("Everything works as expected", func() {
+		When("All Server parameters are provided", func() {
 
 			It("should initialize a new Server successfully", func() {
-				server, err := webconsolevalidation.NewServer(serverAddr, serverPath, inClusterConfig, addToScheme, newClient)
+				server, err := webconsolevalidation.NewServer(serverAddr, serverPath, fake.NewFakeClient())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(server).NotTo(BeNil())
 				Expect(server.Addr).To(Equal(serverAddr))
@@ -181,21 +125,64 @@ func serverUnitTests() {
 
 		Context("requests with all params set", func() {
 
+			const (
+				wcrUUID   = "test-uuid-wcr"
+				vmwcrUUID = "test-uuid-vmwcr"
+				namespace = "test-namespace"
+			)
+
 			BeforeEach(func() {
 				wcr := &vmopv1a1.WebConsoleRequest{}
-				wcr.Namespace = "test-namespace"
+				wcr.Namespace = namespace
 				wcr.Labels = map[string]string{
-					v1alpha1.UUIDLabelKey: "test-uuid-1234",
+					webconsolevalidation.UUIDLabelKey: wcrUUID,
 				}
 				initObjects = append(initObjects, wcr)
+
+				vmwcr := &vmopv1.VirtualMachineWebConsoleRequest{}
+				vmwcr.Namespace = namespace
+				vmwcr.Labels = map[string]string{
+					webconsolevalidation.UUIDLabelKey: vmwcrUUID,
+				}
+				initObjects = append(initObjects, vmwcr)
+			})
+
+			When("an error occurs while getting the VirtualMachineWebConsoleRequest resource", func() {
+
+				It("should return http.StatusInternalServerError (500)", func() {
+					// Use a fake client with the v1alpha1 scheme only to cause an
+					// error when getting the VirtualMachineWebConsoleRequestList CR.
+					scheme := runtime.NewScheme()
+					Expect(vmopv1a1.AddToScheme(scheme)).To(Succeed())
+					server.KubeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+
+					url := fmt.Sprintf("/?uuid=%s&namespace=%s", vmwcrUUID, namespace)
+					responseCode := fakeValidationRequest(url, server)
+					Expect(responseCode).To(Equal(http.StatusInternalServerError))
+				})
+
+			})
+
+			When("UUID matches an existing VirtualMachineWebConsoleRequest resource", func() {
+
+				It("should return http.StatusOK (200)", func() {
+					url := fmt.Sprintf("/?uuid=%s&namespace=%s", vmwcrUUID, namespace)
+					responseCode := fakeValidationRequest(url, server)
+					Expect(responseCode).To(Equal(http.StatusOK))
+				})
+
 			})
 
 			When("an error occurs while getting the WebConsoleRequest resource", func() {
 
 				It("should return http.StatusInternalServerError (500)", func() {
-					// Use the default fake client to cause an error when getting the CR.
-					server.KubeClient = fake.NewFakeClient()
-					url := "/?uuid=test-uuid-1234&namespace=test-namespace"
+					// Use a fake client with the vmopv1 scheme only to cause an
+					// error when getting the v1alpha1 WebConsoleRequestList CR.
+					scheme := runtime.NewScheme()
+					Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
+					server.KubeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+
+					url := fmt.Sprintf("/?uuid=%s&namespace=%s", wcrUUID, namespace)
 					responseCode := fakeValidationRequest(url, server)
 					Expect(responseCode).To(Equal(http.StatusInternalServerError))
 				})
@@ -205,27 +192,32 @@ func serverUnitTests() {
 			When("UUID matches an existing WebConsoleRequest resource", func() {
 
 				It("should return http.StatusOK (200)", func() {
-					url := "/?uuid=test-uuid-1234&namespace=test-namespace"
+					url := fmt.Sprintf("/?uuid=%s&namespace=test-namespace", wcrUUID)
 					responseCode := fakeValidationRequest(url, server)
 					Expect(responseCode).To(Equal(http.StatusOK))
 				})
 
 			})
 
-			When("Namespace doesn't match any WebConsoleRequest resource", func() {
+			When("Namespace doesn't match any WebConsoleRequest or VirtualMachineWebConsoleRequest resource", func() {
 
 				It("should return http.StatusForbidden (403)", func() {
-					url := "/?uuid=test-uuid-1234&namespace=non-existent-namespace"
+					nonExistentNamespace := "non-existent-namespace"
+					url := fmt.Sprintf("/?uuid=%s&namespace=%s", wcrUUID, nonExistentNamespace)
 					responseCode := fakeValidationRequest(url, server)
+					Expect(responseCode).To(Equal(http.StatusForbidden))
+
+					url = fmt.Sprintf("/?uuid=%s&namespace=%s", vmwcrUUID, nonExistentNamespace)
+					responseCode = fakeValidationRequest(url, server)
 					Expect(responseCode).To(Equal(http.StatusForbidden))
 				})
 
 			})
 
-			When("UUID doesn't match any WebConsoleRequest resource", func() {
+			When("UUID doesn't match any WebConsoleRequest or VirtualMachineWebConsoleRequest resource", func() {
 
 				It("should return http.StatusForbidden (403)", func() {
-					url := "/?uuid=non-existent-uuid&namespace=test-namespace"
+					url := fmt.Sprintf("/?uuid=%s&namespace=%s", "non-existent-uuid", namespace)
 					responseCode := fakeValidationRequest(url, server)
 					Expect(responseCode).To(Equal(http.StatusForbidden))
 				})

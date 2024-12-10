@@ -39,8 +39,6 @@ spec:
           value: "false"
         - name: FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
           value: "false"
-        - name: FSS_WCP_SIMPLIFIED_ENABLEMENT
-          value: "false"
 
         #
         # Feature state switch flags beneath this line are enabled on main and

@@ -61,32 +61,6 @@ var _ = Describe("Test Proxy Address", func() {
 			withFuncs, initialObjects...)
 	})
 
-	When("Simplified Enablement FSS is disabled", func() {
-		BeforeEach(func() {
-			api = &appv1a1.SupervisorProperties{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "supervisor-env-props",
-					Namespace: "vmware-system-supervisor-services",
-				},
-				Spec: appv1a1.SupervisorPropertiesSpec{
-					APIServerDNSNames: []string{apiServerDNSName},
-				},
-			}
-			ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.SimplifiedEnablement = false
-			})
-
-			initialObjects = []ctrlclient.Object{proxySvc, api}
-		})
-
-		It("Should always return the virtual IP", func() {
-			str, err := ProxyAddress(ctx, client)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(str).To(Equal(virtualIP))
-		})
-
-	})
-
 	When("API Server DNS Names is NOT set", func() {
 		BeforeEach(func() {
 			api = &appv1a1.SupervisorProperties{
@@ -98,9 +72,6 @@ var _ = Describe("Test Proxy Address", func() {
 					APIServerDNSNames: []string{},
 				},
 			}
-			ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.SimplifiedEnablement = true
-			})
 
 			initialObjects = []ctrlclient.Object{proxySvc, api}
 		})
@@ -124,9 +95,6 @@ var _ = Describe("Test Proxy Address", func() {
 					APIServerDNSNames: []string{apiServerDNSName},
 				},
 			}
-			ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.SimplifiedEnablement = true
-			})
 
 			initialObjects = []ctrlclient.Object{proxySvc, api}
 		})

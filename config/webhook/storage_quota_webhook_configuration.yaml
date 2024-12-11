@@ -27,6 +27,9 @@ webhooks:
     resources:
     - virtualmachines
   sideEffects: None
+  matchConditions:
+  - expression: has(object.spec.image)
+    name: has-image
 - admissionReviewVersions:
   - v1
   - v1beta1

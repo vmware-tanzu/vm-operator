@@ -117,13 +117,14 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 		})
 	}
 
-	pvcDiskData, classicDiskData, err := getDesiredDiskDataForBackup(opts, curExCfg)
+	pvcDiskData, classicDiskData, err := getDesiredDiskDataForBackup(opts)
 	if err != nil {
 		opts.VMCtx.Logger.Error(err, "failed to get disk data for backup")
 		return err
 	}
 
-	if pvcDiskData == "" {
+	curPvcDiskData, _ := curExCfg.GetString(backupapi.PVCDiskDataExtraConfigKey)
+	if pvcDiskData == curPvcDiskData {
 		opts.VMCtx.Logger.V(4).Info("Skipping PVC disk data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
@@ -133,7 +134,8 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 	}
 
 	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
-		if classicDiskData == "" {
+		curClassDiskData, _ := curExCfg.GetString(backupapi.ClassicDiskDataExtraConfigKey)
+		if classicDiskData == curClassDiskData {
 			opts.VMCtx.Logger.V(4).Info("Skipping classic disk data backup as unchanged")
 		} else {
 			ecToUpdate = append(ecToUpdate, &vimtypes.OptionValue{
@@ -240,20 +242,20 @@ func canPerformBackup(opts BackupVirtualMachineOptions, backupVersionEcVal, back
 
 	storedVersion, err := strconv.ParseInt(backupVersionEcVal, 10, 64)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, fmt.Sprintf("failed to parse backup version extraConfig key to int64 : %v", backupVersionEcVal))
+		opts.VMCtx.Logger.Error(err, "failed to parse backup version ExtraConfig value to int64", "version", backupVersionEcVal)
 		return false, err
 	}
 
 	currVersion, err := strconv.ParseInt(backupVersionAnnotation, 10, 64)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, fmt.Sprintf("failed to parse backup version annotation to int64: %v", backupVersionAnnotation))
+		opts.VMCtx.Logger.Error(err, "failed to parse backup version annotation value to int64", "version", backupVersionAnnotation)
 		return false, err
 	}
 
-	// if the storedVersion in the backup is older than the annotation, this is a restore.
+	// If the storedVersion in the backup is older than the annotation, this is a restore.
 	if currVersion > storedVersion {
-		opts.VMCtx.Logger.Info(fmt.Sprintf("Skipping VM backup as a restore is detected: current version: %s greater than backup extraconfig version: %s, wait for VM registration",
-			backupVersionAnnotation, backupVersionEcVal))
+		opts.VMCtx.Logger.Info("Skipping VM backup because restore is detected: current version is greater than backup ExtraConfig version. Wait for VM registration",
+			"currentVersion", backupVersionAnnotation, "extraConfigVersion", backupVersionEcVal)
 		return false, nil
 	}
 
@@ -401,14 +403,7 @@ func getBackupResourceVersions(ecResourceData string) (map[string]string, error)
 	return resourceVersions, nil
 }
 
-func getDesiredDiskDataForBackup(
-	opts BackupVirtualMachineOptions,
-	extraConfig pkgutil.OptionValues) (string, string, error) {
-
-	// Return an empty string to skip backup if no disk data is specified.
-	if len(opts.DiskUUIDToPVC) == 0 && len(opts.ClassicDiskUUIDs) == 0 {
-		return "", "", nil
-	}
+func getDesiredDiskDataForBackup(opts BackupVirtualMachineOptions) (string, string, error) {
 
 	deviceList, err := opts.VcVM.Device(opts.VMCtx)
 	if err != nil {
@@ -438,36 +433,29 @@ func getDesiredDiskDataForBackup(
 		}
 	}
 
-	pvcDiskDataJSON, err := json.Marshal(pvcDiskData)
-	if err != nil {
-		return "", "", err
-	}
-	pvcDiskDataBackup, err := pkgutil.EncodeGzipBase64(string(pvcDiskDataJSON))
-	if err != nil {
-		return "", "", err
-	}
-
-	// Return an empty string to skip backup if PVC disk data is unchanged.
-	curBackup, _ := extraConfig.GetString(backupapi.PVCDiskDataExtraConfigKey)
-	if pvcDiskDataBackup == curBackup {
-		pvcDiskDataBackup = ""
+	var pvcDiskDataBackup string
+	if len(pvcDiskData) > 0 {
+		pvcDiskDataJSON, err := json.Marshal(pvcDiskData)
+		if err != nil {
+			return "", "", err
+		}
+		pvcDiskDataBackup, err = pkgutil.EncodeGzipBase64(string(pvcDiskDataJSON))
+		if err != nil {
+			return "", "", err
+		}
 	}
 
 	var classicDiskDataBackup string
-	if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
-		classicDiskDataJSON, err := json.Marshal(classicDiskData)
-		if err != nil {
-			return "", "", err
-		}
-		classicDiskDataBackup, err = pkgutil.EncodeGzipBase64(string(classicDiskDataJSON))
-		if err != nil {
-			return "", "", err
-		}
-
-		// Return an empty string to skip backup if classic disk data is unchanged.
-		curBackup, _ := extraConfig.GetString(backupapi.ClassicDiskDataExtraConfigKey)
-		if classicDiskDataBackup == curBackup {
-			classicDiskDataBackup = ""
+	if len(classicDiskData) > 0 {
+		if pkgcfg.FromContext(opts.VMCtx).Features.VMIncrementalRestore {
+			classicDiskDataJSON, err := json.Marshal(classicDiskData)
+			if err != nil {
+				return "", "", err
+			}
+			classicDiskDataBackup, err = pkgutil.EncodeGzipBase64(string(classicDiskDataJSON))
+			if err != nil {
+				return "", "", err
+			}
 		}
 	}
 

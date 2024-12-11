@@ -4,15 +4,14 @@
 package validation_test
 
 import (
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/validation/field"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -99,7 +98,7 @@ func intgTestsValidateCreate() {
 		ctx = nil
 	})
 
-	fieldPath := field.NewPath("spec", "resourcepool", "reservations", "memory")
+	fieldPath := field.NewPath("spec", "resourcePool", "reservations", "memory")
 	DescribeTable("create table", validateCreate,
 		Entry("should work", true, "", nil),
 		Entry("should not work for invalid", false,

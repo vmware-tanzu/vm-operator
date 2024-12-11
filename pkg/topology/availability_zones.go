@@ -109,10 +109,14 @@ func GetNamespaceFolderAndRPMoIDs(
 		if err != nil && !errors.Is(err, ErrNoZones) {
 			return "", nil, err
 		}
+
 		for _, zone := range zones {
-			folderMoID = zone.Spec.ManagedVMs.FolderMoID
+			if folderMoID == "" {
+				folderMoID = zone.Spec.ManagedVMs.FolderMoID
+			}
 			rpMoIDs = append(rpMoIDs, zone.Spec.ManagedVMs.PoolMoIDs...)
 		}
+
 		return folderMoID, rpMoIDs, nil
 	}
 
@@ -123,7 +127,9 @@ func GetNamespaceFolderAndRPMoIDs(
 
 	for _, az := range availabilityZones {
 		if nsInfo, ok := az.Spec.Namespaces[namespace]; ok {
-			folderMoID = nsInfo.FolderMoId
+			if folderMoID == "" {
+				folderMoID = nsInfo.FolderMoId
+			}
 			if len(nsInfo.PoolMoIDs) != 0 {
 				rpMoIDs = append(rpMoIDs, nsInfo.PoolMoIDs...)
 			} else {

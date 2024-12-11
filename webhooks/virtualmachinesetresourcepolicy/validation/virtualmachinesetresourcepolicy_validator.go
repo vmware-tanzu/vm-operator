@@ -107,9 +107,9 @@ func (v validator) validateSpec(ctx *pkgctx.WebhookRequestContext, vmRP *vmopv1.
 	var fieldErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
-	fieldErrs = append(fieldErrs, v.validateResourcePool(ctx, specPath.Child("resourcepool"), vmRP.Spec.ResourcePool)...)
+	fieldErrs = append(fieldErrs, v.validateResourcePool(ctx, specPath.Child("resourcePool"), vmRP.Spec.ResourcePool)...)
 	fieldErrs = append(fieldErrs, v.validateFolder(ctx, specPath.Child("folder"), vmRP.Spec.Folder)...)
-	fieldErrs = append(fieldErrs, v.validateClusterModules(ctx, specPath.Child("clustermodules"), vmRP.Spec.ClusterModuleGroups)...)
+	fieldErrs = append(fieldErrs, v.validateClusterModules(ctx, specPath.Child("clusterModuleGroups"), vmRP.Spec.ClusterModuleGroups)...)
 
 	return fieldErrs
 }
@@ -152,9 +152,9 @@ func (v validator) validateAllowedChanges(ctx *pkgctx.WebhookRequestContext, vmR
 	specPath := field.NewPath("spec")
 
 	// Validate all fields under spec which are not allowed to change.
-	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.ResourcePool, oldVMRP.Spec.ResourcePool, specPath.Child("resourcepool"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.ResourcePool, oldVMRP.Spec.ResourcePool, specPath.Child("resourcePool"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.Folder, oldVMRP.Spec.Folder, specPath.Child("folder"))...)
-	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.ClusterModuleGroups, oldVMRP.Spec.ClusterModuleGroups, specPath.Child("clustermodules"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.ClusterModuleGroups, oldVMRP.Spec.ClusterModuleGroups, specPath.Child("clusterModuleGroups"))...)
 
 	return allErrs
 }

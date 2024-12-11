@@ -32,14 +32,20 @@ func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 		return false, err
 	}
 
-	folderExists, err := vcenter.DoesChildFolderExist(ctx, client.VimClient(), folderMoID, resourcePolicy.Spec.Folder)
-	if err != nil {
-		return false, err
+	folderExists := true
+	if folderName := resourcePolicy.Spec.Folder; folderName != "" {
+		folderExists, err = vcenter.DoesChildFolderExist(ctx, client.VimClient(), folderMoID, folderName)
+		if err != nil {
+			return false, err
+		}
 	}
 
-	rpExists, err := vcenter.DoesChildResourcePoolExist(ctx, client.VimClient(), rpMoID, resourcePolicy.Spec.ResourcePool.Name)
-	if err != nil {
-		return false, err
+	rpExists := true
+	if rpName := resourcePolicy.Spec.ResourcePool.Name; rpName != "" {
+		rpExists, err = vcenter.DoesChildResourcePoolExist(ctx, client.VimClient(), rpMoID, rpName)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, client.VimClient(), rpMoID)
@@ -67,7 +73,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 	ctx context.Context,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
-	folderMoID, rpMoIDs, err := vs.getNamespaceFolderAndRPMoIDs(ctx, resourcePolicy.Namespace)
+	folderMoID, rpMoIDs, err := topology.GetNamespaceFolderAndRPMoIDs(ctx, vs.k8sClient, resourcePolicy.Namespace)
 	if err != nil {
 		return err
 	}
@@ -80,24 +86,34 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 	vimClient := client.VimClient()
 	var errs []error
 
-	_, err = vcenter.CreateFolder(ctx, vimClient, folderMoID, resourcePolicy.Spec.Folder)
-	if err != nil {
-		errs = append(errs, err)
+	if folderName := resourcePolicy.Spec.Folder; folderName != "" {
+		if folderMoID != "" {
+			_, err = vcenter.CreateFolder(ctx, vimClient, folderMoID, folderName)
+			if err != nil {
+				errs = append(errs, err)
+			}
+		} else {
+			errs = append(errs, fmt.Errorf("cannot create child folder because Namespace folder not found"))
+		}
 	}
 
 	for _, rpMoID := range rpMoIDs {
-		_, err := vcenter.CreateOrUpdateChildResourcePool(ctx, vimClient, rpMoID, &resourcePolicy.Spec.ResourcePool)
-		if err != nil {
-			errs = append(errs, err)
+		if rpSpec := &resourcePolicy.Spec.ResourcePool; rpSpec.Name != "" {
+			_, err := vcenter.CreateOrUpdateChildResourcePool(ctx, vimClient, rpMoID, rpSpec)
+			if err != nil {
+				errs = append(errs, err)
+			}
 		}
 
-		clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
-		if err == nil {
-			clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
-			err = vs.createClusterModules(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
-		}
-		if err != nil {
-			errs = append(errs, err)
+		if len(resourcePolicy.Spec.ClusterModuleGroups) > 0 {
+			clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
+			if err == nil {
+				clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
+				err = vs.createClusterModules(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
+			}
+			if err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 
@@ -109,7 +125,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 	ctx context.Context,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
-	folderMoID, rpMoIDs, err := vs.getNamespaceFolderAndRPMoIDs(ctx, resourcePolicy.Namespace)
+	folderMoID, rpMoIDs, err := topology.GetNamespaceFolderAndRPMoIDs(ctx, vs.k8sClient, resourcePolicy.Namespace)
 	if err != nil {
 		return err
 	}
@@ -132,8 +148,10 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
 	errs = append(errs, vs.deleteClusterModules(ctx, clusterModuleProvider, resourcePolicy)...)
 
-	if err := vcenter.DeleteChildFolder(ctx, vimClient, folderMoID, resourcePolicy.Spec.Folder); err != nil {
-		errs = append(errs, err)
+	if folderName := resourcePolicy.Spec.Folder; folderMoID != "" && folderName != "" {
+		if err := vcenter.DeleteChildFolder(ctx, vimClient, folderMoID, folderName); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	return apierrorsutil.NewAggregate(errs)
@@ -245,20 +263,4 @@ func (vs *vSphereVMProvider) deleteClusterModules(
 
 	resourcePolicy.Status.ClusterModules = errModStatus
 	return errs
-}
-
-func (vs *vSphereVMProvider) getNamespaceFolderAndRPMoIDs(
-	ctx context.Context,
-	namespace string) (string, []string, error) {
-
-	folderMoID, rpMoIDs, err := topology.GetNamespaceFolderAndRPMoIDs(ctx, vs.k8sClient, namespace)
-	if err != nil {
-		return "", nil, err
-	}
-
-	if folderMoID == "" {
-		return "", nil, fmt.Errorf("namespace %s not present in any AvailabilityZones", namespace)
-	}
-
-	return folderMoID, rpMoIDs, nil
 }

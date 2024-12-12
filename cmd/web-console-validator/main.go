@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	klog "k8s.io/klog/v2"
 	"k8s.io/klog/v2/textlogger"
@@ -16,6 +17,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/webconsolevalidation"
 )
@@ -56,12 +58,34 @@ func main() {
 
 	flag.Parse()
 
+	restConfig, err := rest.InClusterConfig()
+	if err != nil {
+		logger.Error(err, "Failed to get Kubernetes in-cluster config")
+		os.Exit(1)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := vmopv1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "Failed to add vm-operator v1alpha3 scheme")
+		os.Exit(1)
+	}
+	// NOTE: In v1a1 this CRD has a different name - WebConsoleRequest - so this
+	// is still required until we stop supporting v1a1.
+	if err := vmopv1a1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "Failed to add vm-operator v1alpha1 scheme")
+		os.Exit(1)
+	}
+
+	client, err := ctrlclient.New(restConfig, ctrlclient.Options{Scheme: scheme})
+	if err != nil {
+		logger.Error(err, "Failed to initialize controller-runtime client")
+		os.Exit(1)
+	}
+
 	server, err := webconsolevalidation.NewServer(
 		":"+strconv.Itoa(*serverPort),
 		*serverPath,
-		rest.InClusterConfig,
-		vmopv1a1.AddToScheme,
-		ctrlclient.New,
+		client,
 	)
 	if err != nil {
 		logger.Error(err, "Failed to initialize web-console validation server")

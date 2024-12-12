@@ -1,7 +1,7 @@
 // Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha2_test
+package virtualmachinewebconsolerequest_test
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	proxyaddr "github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -143,8 +143,8 @@ func intgTestsReconcile() {
 
 			Expect(wcr.Status.ProxyAddr).To(Equal("192.168.0.1"))
 			Expect(wcr.Status.Response).To(Equal(ticket))
-			Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
-			Expect(wcr.Labels).To(HaveKeyWithValue(webconsolerequest.UUIDLabelKey, string(wcr.UID)))
+			Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), virtualmachinewebconsolerequest.DefaultExpiryTime))
+			Expect(wcr.Labels).To(HaveKeyWithValue(virtualmachinewebconsolerequest.UUIDLabelKey, string(wcr.UID)))
 		})
 	})
 }

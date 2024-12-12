@@ -1,7 +1,7 @@
 // Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha2_test
+package virtualmachinewebconsolerequest_test
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
 	appv1a1 "github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -39,7 +39,7 @@ func unitTestsReconcile() {
 		ctx            *builder.UnitTestContextForController
 		fakeVMProvider *providerfake.VMProvider
 
-		reconciler  *webconsolerequest.Reconciler
+		reconciler  *virtualmachinewebconsolerequest.Reconciler
 		wcrCtx      *pkgctx.WebConsoleRequestContextV1
 		wcr         *vmopv1.VirtualMachineWebConsoleRequest
 		vm          *vmopv1.VirtualMachine
@@ -83,7 +83,7 @@ func unitTestsReconcile() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
-		reconciler = webconsolerequest.NewReconciler(
+		reconciler = virtualmachinewebconsolerequest.NewReconciler(
 			ctx,
 			ctx.Client,
 			ctx.Logger,
@@ -129,9 +129,9 @@ func unitTestsReconcile() {
 
 				Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("dummy-proxy-ip"))
 				Expect(wcrCtx.WebConsoleRequest.Status.Response).To(Equal(ticket))
-				Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
+				Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), virtualmachinewebconsolerequest.DefaultExpiryTime))
 				// Checking the label key only because UID will not be set to a resource during unit test.
-				Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(webconsolerequest.UUIDLabelKey))
+				Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(virtualmachinewebconsolerequest.UUIDLabelKey))
 			})
 		})
 

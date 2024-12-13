@@ -38,11 +38,6 @@ func backupTests() {
 		vcSimVMPath       = "DC0_C0_RP0_VM0"
 		vcSimDiskFileName = "[LocalDS_0] DC0_C0_RP0_VM0/disk1.vmdk"
 
-		// TODO(akutz) Do not hard-code this value. Instead use
-		//             QueryVirtualDiskUuid to find it from the file name.
-		//             However, there is a bug in vC Sim's implementation of
-		//             this function, so hard-code for now.
-		vcSimDiskUUID = "60c03576-c448-58e1-a47a-1165dd2c4120"
 		// dummy backup versions at timestamp t1, t2, t3.
 		vT1 = "1001"
 		vT2 = "1002"
@@ -52,10 +47,11 @@ func backupTests() {
 	)
 
 	var (
-		ctx        *builder.TestContextForVCSim
-		vcVM       *object.VirtualMachine
-		vmCtx      pkgctx.VirtualMachineContext
-		testConfig builder.VCSimTestConfig
+		ctx           *builder.TestContextForVCSim
+		vcVM          *object.VirtualMachine
+		vmCtx         pkgctx.VirtualMachineContext
+		testConfig    builder.VCSimTestConfig
+		vcSimDiskUUID string
 	)
 
 	BeforeEach(func() {
@@ -64,6 +60,12 @@ func backupTests() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig)
+
+		dskMgr := object.NewVirtualDiskManager(ctx.VCClient.Client)
+		var err error
+		vcSimDiskUUID, err = dskMgr.QueryVirtualDiskUuid(ctx, vcSimDiskFileName, ctx.Datacenter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(vcSimDiskUUID).ToNot(BeZero())
 	})
 
 	AfterEach(func() {

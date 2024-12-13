@@ -85,12 +85,10 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 						},
 					},
 				},
-				OperatingSystem: []ovf.OperatingSystemSection{
-					{
-						OSType:  ptr.To("dummy_os_type"),
-						ID:      int16(100),
-						Version: ptr.To("dummy_version"),
-					},
+				OperatingSystem: &ovf.OperatingSystemSection{
+					OSType:  ptr.To("dummy_os_type"),
+					ID:      int16(100),
+					Version: ptr.To("dummy_version"),
 				},
 				VirtualHardware: []ovf.VirtualHardwareSection{
 					{

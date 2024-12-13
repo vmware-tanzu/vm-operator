@@ -176,7 +176,7 @@ var _ = Describe("GetOVFEnvelope", func() {
 				ctx,
 				func(ctx context.Context, itemID string) (*ovf.Envelope, error) {
 					return &ovf.Envelope{
-						Product: &ovf.ProductSection{},
+						References: []ovf.File{},
 					}, nil
 				})
 		})
@@ -184,7 +184,7 @@ var _ = Describe("GetOVFEnvelope", func() {
 			env, err := internal.GetOVFEnvelope(ctx, fakeString, "v1")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(env).To(Equal(&ovf.Envelope{
-				Product: &ovf.ProductSection{},
+				References: []ovf.File{},
 			}))
 
 			// Change what the getter returns.
@@ -200,7 +200,7 @@ var _ = Describe("GetOVFEnvelope", func() {
 			env, err = internal.GetOVFEnvelope(ctx, fakeString, "v1")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(env).To(Equal(&ovf.Envelope{
-				Product: &ovf.ProductSection{},
+				References: []ovf.File{},
 			}))
 		})
 	})

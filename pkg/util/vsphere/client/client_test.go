@@ -92,7 +92,7 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 				Password:   expectedPassword,
 				CAFilePath: serverCertFile,
 				Insecure:   false,
-				Datacenter: "datacenter-2",
+				Datacenter: simulator.Map.Any("Datacenter").Reference().Value,
 			}
 		})
 

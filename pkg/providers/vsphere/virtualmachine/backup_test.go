@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
@@ -26,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 //nolint:gocyclo
@@ -34,8 +36,13 @@ func backupTests() {
 		// These are the default values of the vcsim VM that are used to
 		// construct the expected backup data in the following tests.
 		vcSimVMPath       = "DC0_C0_RP0_VM0"
-		vcSimDiskUUID     = "be8d2471-f32e-5c7e-a89b-22cb8e533890"
 		vcSimDiskFileName = "[LocalDS_0] DC0_C0_RP0_VM0/disk1.vmdk"
+
+		// TODO(akutz) Do not hard-code this value. Instead use
+		//             QueryVirtualDiskUuid to find it from the file name.
+		//             However, there is a bug in vC Sim's implementation of
+		//             this function, so hard-code for now.
+		vcSimDiskUUID = "60c03576-c448-58e1-a47a-1165dd2c4120"
 		// dummy backup versions at timestamp t1, t2, t3.
 		vT1 = "1001"
 		vT2 = "1002"
@@ -84,9 +91,10 @@ func backupTests() {
 				vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 				Expect(err).NotTo(HaveOccurred())
 
+				logger := testutil.GinkgoLogr(5)
 				vmCtx = pkgctx.VirtualMachineContext{
-					Context: ctx,
-					Logger:  suite.GetLogger().WithValues("vmName", vcVM.Name()),
+					Context: logr.NewContext(ctx, logger),
+					Logger:  logger.WithValues("vmName", vcVM.Name()),
 					VM:      builder.DummyVirtualMachine(),
 				}
 

@@ -3148,7 +3148,7 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("alow changing image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and Registered annotation is present",
+			Entry("allow changing image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and Registered annotation is present",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -3687,7 +3687,7 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("alow removing CD-ROM when VM is powered off",
+			Entry("allow removing CD-ROM when VM is powered off",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
@@ -4010,6 +4010,98 @@ func unitTestsValidateUpdate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.volumes[1].persistentVolumeClaim: Forbidden: PVC with WaitForFirstConsumer StorageClass is not supported for VirtualMachines`),
+				},
+			),
+		)
+	})
+
+	Context("Network", func() {
+
+		DescribeTable("network update", doTest,
+			Entry("allow Network go from nil to not-nil",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network = nil
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow Network go from not-nil to nil",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+						ctx.vm.Spec.Network = nil
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("disallow adding Network Interface",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+								{
+									Name: "eth1",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(`spec.network.interfaces: Forbidden: network interfaces cannot be added or removed`),
+				},
+			),
+			Entry("disallow Network Interface Name change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth1",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(`spec.network.interfaces[0].name: Forbidden: field is immutable`),
+				},
+			),
+			Entry("disallow Network Interface Network ref change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:    "eth0",
+									Network: &common.PartialObjectRef{Name: "net1"},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:    "eth0",
+									Network: &common.PartialObjectRef{Name: "net99"},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(`spec.network.interfaces[0].network: Forbidden: field is immutable`),
 				},
 			),
 		)

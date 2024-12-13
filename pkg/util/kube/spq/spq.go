@@ -4,14 +4,20 @@
 package spq
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -231,4 +237,89 @@ func GetWebhookCABundle(ctx context.Context, k8sClient client.Client) ([]byte, e
 	}
 
 	return caBundle, nil
+}
+
+func ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(
+	ctx context.Context,
+	k8sClient client.Client) handler.MapFunc {
+
+	if ctx == nil {
+		panic("context is nil")
+	}
+	if k8sClient == nil {
+		panic("client is nil")
+	}
+
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		if ctx == nil {
+			panic("context is nil")
+		}
+		if o == nil {
+			panic("object is nil")
+		}
+
+		obj, ok := o.(*admissionv1.ValidatingWebhookConfiguration)
+		if !ok {
+			panic(fmt.Sprintf("object is %T", o))
+		}
+
+		// If this is not the ValidatingWebhookConfiguration that we care about,
+		// then just return
+		if obj.Name != ValidatingWebhookConfigName {
+			return nil
+		}
+
+		logger := logr.FromContextOrDiscard(ctx).WithValues("name", o.GetName())
+		logger.V(4).Info("Reconciling all VirtualMachine StoragePolicyUsages with updated CA Bundle")
+
+		caBundle, err := GetWebhookCABundle(ctx, k8sClient)
+		if err != nil {
+			logger.Error(err, "Failed to get CA bundle from ValidatingWebhookConfiguration")
+			return nil
+		}
+
+		spuList := &spqv1.StoragePolicyUsageList{}
+		if err = k8sClient.List(ctx, spuList); err != nil {
+			if !apierrors.IsNotFound(err) {
+				logger.Error(err, "Failed to list StoragePolicyUsages for reconciliation due to ValidatingWebhookConfiguration watch")
+			}
+			return nil
+		}
+		// Populate reconcile requests for StoragePolicyQuotas whose StoragePolicyUsage
+		// CA Bundle differs from that of the ValidatingWebhookConfiguration
+		var requests []reconcile.Request
+		for _, spu := range spuList.Items {
+			// We only care about a VM's StoragePolicyUsage with an outdated CA Bundle
+			if spu.Spec.ResourceExtensionName == StoragePolicyQuotaExtensionName && !bytes.Equal(caBundle, spu.Spec.CABundle) {
+				// Get the owning object for this StoragePolicyUsage as we want to
+				// reconcile the StoragePolicyQuota in order to update the StoragePolicyUsage
+				// CA Bundle
+				var owningObj *metav1.OwnerReference
+				for i := range spu.OwnerReferences {
+					owner := &spu.OwnerReferences[i]
+					if owner.Kind == StoragePolicyQuotaKind {
+						owningObj = owner
+					}
+				}
+
+				if owningObj == nil {
+					logger.Error(err, "Failed to get the OwnerReference for StoragePolicyUsage %v", client.ObjectKeyFromObject(&spu))
+					continue
+				}
+
+				requests = append(requests, reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      owningObj.Name,
+						Namespace: spu.Namespace,
+					},
+				})
+			}
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info("Reconciling VirtualMachine StoragePolicyUsages due to ValidatingWebhookConfiguration watch")
+		}
+
+		return requests
+	}
 }

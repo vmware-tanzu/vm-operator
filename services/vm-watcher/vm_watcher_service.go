@@ -84,10 +84,18 @@ func (s Service) Start(ctx context.Context) error {
 			// error, then do not treat the error as fatal. This allows the
 			// loop to run again, kicking off another watcher with what should
 			// be updated credentials.
-			if !vsphereclient.IsInvalidLogin(err) &&
-				!vsphereclient.IsNotAuthenticatedError(err) {
+			if vsphereclient.IsInvalidLogin(err) ||
+				vsphereclient.IsNotAuthenticatedError(err) {
 
-				return err
+				logger.V(4).Error(
+					err,
+					"Authn/authz issue trying start vm watcher service")
+
+			} else {
+				// Log unexpected error.
+				logger.Error(
+					err,
+					"Unexpected error trying to start vm watcher service")
 			}
 		}
 	}

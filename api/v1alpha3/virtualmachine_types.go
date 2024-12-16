@@ -198,17 +198,25 @@ const (
 	// VMware vCenter (VC) that is managing this virtual machine.
 	ManagerID = GroupName + "/manager-id"
 
-	// RegisteredVMAnnotation on a VirtualMachine represents that a virtual machine has
-	// been registered using the RegisterVM API after a restore, or a fail-over operation by
-	// a vendor. The presence of this annotation is used to bypass some validation checks
-	// that are otherwise applicable to all VirtualMachine create/update requests.
-	RegisteredVMAnnotation = GroupName + "/registered-vm"
+	// RestoredVMAnnotation on a VirtualMachine represents that a virtual
+	// machine has been restored using the RegisterVM API, typically by a
+	// VADP based data protection vendor. The presence of this annotation is
+	// used to bypass some validation checks that are otherwise
+	// applicable to all VirtualMachine create/update requests.
+	RestoredVMAnnotation = GroupName + "/restored-vm"
 
 	// ImportedVMAnnotation on a VirtualMachine represents that a traditional virtual
 	// machine has been imported into Supervisor using the ImportVM API. The presence of this
 	// annotation is used to bypass some validation checks that are otherwise applicable
 	// to all VirtualMachine create/update requests.
 	ImportedVMAnnotation = GroupName + "/imported-vm"
+
+	// FailedOverVMAnnotation on a VirtualMachine resource represents that a virtual
+	// machine has been failed over from one site to the other, typically as part of a
+	// disaster recovery workflow.  The presence of this annotation is used to bypass
+	// some validation checks that are otherwise applicable to all VirtualMachine
+	// create/update requests.
+	FailedOverVMAnnotation = GroupName + "/failed-over-vm"
 )
 
 const (

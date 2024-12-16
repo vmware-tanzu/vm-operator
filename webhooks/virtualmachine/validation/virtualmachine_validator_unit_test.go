@@ -27,7 +27,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -50,6 +49,7 @@ const (
 	dummyCreatedAtSchemaVersionVal = "dummy-created-at-schema-version"
 	dummyRegisteredAnnVal          = "dummy-registered-annotation"
 	dummyImportedAnnVal            = "dummy-imported-annotation"
+	dummyFailedOverAnnVal          = "dummy-failedover-annotation"
 	dummyPausedVMLabelVal          = "dummy-devops"
 	dummyVmiName                   = "vmi-dummy"
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
@@ -588,7 +588,7 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.ImageName = ""
 					ctx.IsPrivilegedAccount = true
 					ctx.vm.Annotations = map[string]string{
-						vmopv1.RegisteredVMAnnotation: "",
+						vmopv1.RestoredVMAnnotation: "",
 					}
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMIncrementalRestore = true
@@ -647,7 +647,7 @@ func unitTestsValidateCreate() {
 					ctx.vm.Spec.ImageName = ""
 					ctx.IsPrivilegedAccount = false
 					ctx.vm.Annotations = map[string]string{
-						vmopv1.RegisteredVMAnnotation: "",
+						vmopv1.RestoredVMAnnotation: "",
 					}
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 						config.Features.VMIncrementalRestore = true
@@ -987,12 +987,14 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 					},
 					validate: doValidateWithMsg(
-						field.Forbidden(annotationPath.Key(vmopv1.RegisteredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error()),
 				},
@@ -1004,8 +1006,9 @@ func unitTestsValidateCreate() {
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 					},
 					expectAllowed: true,
 				},
@@ -1023,8 +1026,9 @@ func unitTestsValidateCreate() {
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyFirstBootDoneVal
-						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyFirstBootDoneVal
+						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 					},
 					expectAllowed: true,
 				},
@@ -2787,23 +2791,26 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(vmopv1.RegisteredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -2814,16 +2821,18 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(vmopv1.RegisteredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -2836,15 +2845,17 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
 					},
 					expectAllowed: true,
 				},
@@ -2858,8 +2869,9 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 					},
 					expectAllowed: true,
 				},
@@ -2881,15 +2893,17 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
 						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
-						ctx.vm.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
+						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
 					},
 					expectAllowed: true,
 				},
@@ -2911,8 +2925,9 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
 						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
-						ctx.oldVM.Annotations[vmopv1.RegisteredVMAnnotation] = dummyRegisteredAnnVal
+						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
+						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 					},
 					expectAllowed: true,
 				},
@@ -3012,7 +3027,7 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("forbid unset of imageName by unprivileged users if FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and registered annotation is present",
+			Entry("forbid unset of imageName by unprivileged users if FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and failover annotation is present",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -3020,7 +3035,7 @@ func unitTestsValidateUpdate() {
 						})
 						ctx.IsPrivilegedAccount = false
 						ctx.oldVM.Annotations = map[string]string{
-							vmopv1.RegisteredVMAnnotation: "foo",
+							vmopv1.FailedOverVMAnnotation: "foo",
 						}
 
 						ctx.oldVM.Spec.ImageName = dummyVmiName
@@ -3033,7 +3048,7 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("allow unset of imageName for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and registered annotation is present",
+			Entry("allow unset of imageName for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and failover annotation is present",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -3044,7 +3059,7 @@ func unitTestsValidateUpdate() {
 
 						ctx.oldVM.Spec.ImageName = dummyVmiName
 						ctx.oldVM.Annotations = map[string]string{
-							vmopv1.RegisteredVMAnnotation: "foo",
+							vmopv1.FailedOverVMAnnotation: "foo",
 						}
 						ctx.vm = ctx.oldVM.DeepCopy()
 						ctx.vm.Spec.ImageName = ""
@@ -3103,7 +3118,7 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("forbid unset of image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, but Registered annotation is not present",
+			Entry("forbid unset of image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, but failover annotation is not present",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -3124,7 +3139,7 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("forbid unset of image by unprivileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and the Registered annotation is present",
+			Entry("forbid unset of image by unprivileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled and the failover annotation is present",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -3133,7 +3148,7 @@ func unitTestsValidateUpdate() {
 						ctx.IsPrivilegedAccount = false
 
 						ctx.oldVM.Annotations = map[string]string{
-							vmopv1.RegisteredVMAnnotation: "bar",
+							vmopv1.FailedOverVMAnnotation: "bar",
 						}
 
 						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
@@ -3148,7 +3163,7 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("allow changing image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and Registered annotation is present",
+			Entry("allow changing image for privileged users when FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE is enabled, and failover annotation is present",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -3157,7 +3172,7 @@ func unitTestsValidateUpdate() {
 
 						ctx.IsPrivilegedAccount = true
 						ctx.oldVM.Annotations = map[string]string{
-							vmopv1.RegisteredVMAnnotation: "bar",
+							vmopv1.FailedOverVMAnnotation: "bar",
 						}
 
 						ctx.oldVM.Spec.Image = &vmopv1.VirtualMachineImageRef{
@@ -3329,13 +3344,13 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
-			Entry("allow interface name change if VM has test failover label",
+			Entry("allow interface name change if VM has failover label",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						if ctx.oldVM.Labels == nil {
 							ctx.oldVM.Labels = make(map[string]string)
 						}
-						ctx.oldVM.Labels[backupapi.TestFailoverLabelKey] = "foo"
+						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = "foo"
 
 						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
@@ -3351,13 +3366,13 @@ func unitTestsValidateUpdate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("allow changing network interface network if VM has test failover label",
+			Entry("allow changing network interface network if VM has failover label",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						if ctx.oldVM.Labels == nil {
 							ctx.oldVM.Labels = make(map[string]string)
 						}
-						ctx.oldVM.Labels[backupapi.TestFailoverLabelKey] = "foo"
+						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = "foo"
 
 						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{

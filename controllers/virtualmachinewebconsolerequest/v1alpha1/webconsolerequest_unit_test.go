@@ -1,10 +1,11 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1_test
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -114,7 +115,7 @@ func unitTestsReconcile() {
 
 	Context("ReconcileNormal", func() {
 		var (
-			v1a2ProviderCalled bool
+			v1a2ProviderCalled atomic.Bool
 		)
 
 		BeforeEach(func() {
@@ -123,21 +124,21 @@ func unitTestsReconcile() {
 
 		JustBeforeEach(func() {
 			fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
-				v1a2ProviderCalled = true
+				v1a2ProviderCalled.Store(true)
 				return v1a2Ticket, nil
 			}
 		})
 
 		AfterEach(func() {
 			fakeVMProvider.Reset()
-			v1a2ProviderCalled = false
+			v1a2ProviderCalled.Store(false)
 		})
 
 		It("returns success", func() {
 			err := reconciler.ReconcileNormal(wcrCtx)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(v1a2ProviderCalled).Should(BeTrue())
+			Expect(v1a2ProviderCalled.Load()).Should(BeTrue())
 			Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("dummy-proxy-ip"))
 			Expect(wcrCtx.WebConsoleRequest.Status.Response).To(Equal(v1a2Ticket))
 			Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))

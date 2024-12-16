@@ -5,6 +5,7 @@ package v1alpha1_test
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -43,7 +44,7 @@ func intgTestsReconcile() {
 		wcr                *vmopv1a1.WebConsoleRequest
 		vm                 *vmopv1a1.VirtualMachine
 		proxySvc           *corev1.Service
-		v1a2ProviderCalled bool
+		v1a2ProviderCalled atomic.Bool
 	)
 
 	getWebConsoleRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1a1.WebConsoleRequest {
@@ -99,7 +100,7 @@ func intgTestsReconcile() {
 
 		intgFakeVMProvider.Lock()
 		intgFakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
-			v1a2ProviderCalled = true
+			v1a2ProviderCalled.Store(true)
 			return v1a2Ticket, nil
 		}
 		intgFakeVMProvider.Unlock()
@@ -109,7 +110,7 @@ func intgTestsReconcile() {
 		ctx.AfterEach()
 		ctx = nil
 		intgFakeVMProvider.Reset()
-		v1a2ProviderCalled = false
+		v1a2ProviderCalled.Store(false)
 	})
 
 	Context("Reconcile", func() {
@@ -147,7 +148,7 @@ func intgTestsReconcile() {
 				g.Expect(wcr.Status.Response).ToNot(BeEmpty())
 			}).Should(Succeed(), "waiting response to be set")
 
-			Expect(v1a2ProviderCalled).Should(BeTrue())
+			Expect(v1a2ProviderCalled.Load()).Should(BeTrue())
 			Expect(wcr.Status.ProxyAddr).To(Equal("192.168.0.1"))
 			Expect(wcr.Status.Response).To(Equal(v1a2Ticket))
 			Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))

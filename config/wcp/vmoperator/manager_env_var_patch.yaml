@@ -112,6 +112,12 @@
     name: FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
     value: "<FSS_WCP_SUPERVISOR_ASYNC_UPGRADE_VALUE>"
 
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_VMSERVICE_FAST_DEPLOY
+    value: "<FSS_WCP_VMSERVICE_FAST_DEPLOY_VALUE>"
+
 #
 # Feature state switch flags beneath this line are enabled on main and only
 # retained in this file because it is used by internal testing to determine the

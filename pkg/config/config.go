@@ -147,6 +147,8 @@ type FeatureStates struct {
 	VMIncrementalRestore      bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
 	BringYourOwnEncryptionKey bool // FSS_WCP_VMSERVICE_BYOK
 	SVAsyncUpgrade            bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
+	// TODO(akutz) This FSS is placeholder.
+	FastDeploy bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
 }
 
 type InstanceStorage struct {

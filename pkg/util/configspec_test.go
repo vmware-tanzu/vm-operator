@@ -903,3 +903,398 @@ var _ = DescribeTable(
 		`{"_typeName":"VirtualMachineConfigSpec","vAppConfig":null}`,
 	),
 )
+
+var _ = DescribeTable(
+	"DatastoreNameFromStorageURI",
+	func(in, expected string) {
+		Expect(pkgutil.DatastoreNameFromStorageURI(in)).To(Equal(expected))
+	},
+	Entry(
+		"empty",
+		"",
+		"",
+	),
+	Entry(
+		"empty",
+		"invalid",
+		"",
+	),
+	Entry(
+		"just the datastore",
+		"[my-datastore-1]",
+		"my-datastore-1",
+	),
+	Entry(
+		"a full path",
+		"[my-datastore-1] my-vm/my-vm.vmx",
+		"my-datastore-1",
+	),
+)
+
+var _ = DescribeTable(
+	"CopyStorageControllersAndDisks",
+	func(
+		src, dst vimtypes.VirtualMachineConfigSpec,
+		storagePolicy string,
+		expected vimtypes.VirtualMachineConfigSpec) {
+
+		pkgutil.CopyStorageControllersAndDisks(&dst, src, storagePolicy)
+
+		Expect(reflect.DeepEqual(expected, dst)).To(BeTrue(), cmp.Diff(expected, dst))
+	},
+	Entry(
+		"empty",
+		vimtypes.VirtualMachineConfigSpec{},
+		vimtypes.VirtualMachineConfigSpec{},
+		"",
+		vimtypes.VirtualMachineConfigSpec{},
+	),
+	Entry(
+		"src is empty",
+		vimtypes.VirtualMachineConfigSpec{},
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "world",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"",
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "world",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	),
+	Entry(
+		"src has a disk with no controller",
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "hello",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -100,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+								ThinProvisioned:              ptr.To(true),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "world",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"fake-storage-policy",
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "world",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -100,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+								ThinProvisioned:              ptr.To(true),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+					Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+						&vimtypes.VirtualMachineDefinedProfileSpec{
+							ProfileId: "fake-storage-policy",
+						},
+					},
+				},
+			},
+		},
+	),
+
+	Entry(
+		"src has a disk with controller",
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "hello",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualAHCIController{
+						VirtualSATAController: vimtypes.VirtualSATAController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -100,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+								ThinProvisioned:              ptr.To(true),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+				},
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "world",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"fake-storage-policy",
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "world",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualAHCIController{
+						VirtualSATAController: vimtypes.VirtualSATAController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						VirtualDevice: vimtypes.VirtualDevice{
+							ControllerKey: -100,
+							Key:           -200,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{},
+								DiskMode:                     string(vimtypes.VirtualDiskModePersistent),
+								ThinProvisioned:              ptr.To(true),
+							},
+						},
+						CapacityInBytes: 10 * 1024 * 1024 * 1024,
+					},
+					Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+						&vimtypes.VirtualMachineDefinedProfileSpec{
+							ProfileId: "fake-storage-policy",
+						},
+					},
+				},
+			},
+		},
+	),
+
+	Entry(
+		"all supported controllers",
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "hello",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualAHCIController{
+						VirtualSATAController: vimtypes.VirtualSATAController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -100,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualBusLogicController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -101,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualLsiLogicController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -102,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualLsiLogicSASController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -103,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -104,
+								},
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualIDEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -105,
+							},
+						},
+					},
+				},
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.VirtualNVMEController{
+						VirtualController: vimtypes.VirtualController{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: -106,
+							},
+						},
+					},
+				},
+			},
+		},
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "world",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"fake-storage-policy",
+		vimtypes.VirtualMachineConfigSpec{
+			Name: "world",
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimtypes.ParaVirtualSCSIController{
+						VirtualSCSIController: vimtypes.VirtualSCSIController{
+							VirtualController: vimtypes.VirtualController{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	),
+)

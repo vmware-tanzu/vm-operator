@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"math/rand"
@@ -47,6 +48,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
@@ -153,11 +155,6 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	// Mark that this is a create operation.
 	ctxop.MarkCreate(vmCtx)
 
-	createArgs, err := vs.getCreateArgs(vmCtx, client)
-	if err != nil {
-		return err
-	}
-
 	// Do not allow more than N create threads/goroutines.
 	//
 	// - In blocking create mode, this ensures there are reconciler threads
@@ -165,16 +162,24 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	//
 	// - In non-blocking create mode, this ensures the number of goroutines
 	//   spawned to create VMs does not take up too much memory.
-	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx)
+	allowed, decrementConcurrentCreatesFn := vs.vmCreateConcurrentAllowed(vmCtx)
 	if !allowed {
 		return providers.ErrTooManyCreates
 	}
 
-	if chanErr == nil {
+	// cleanupFn tracks the function(s) that must be invoked upon leaving this
+	// function during a blocking create or after an async create.
+	cleanupFn := decrementConcurrentCreatesFn
 
+	if chanErr == nil {
 		vmCtx.Logger.V(4).Info("Doing a blocking create")
 
-		defer createDeferFn()
+		defer cleanupFn()
+
+		createArgs, err := vs.getCreateArgs(vmCtx, client)
+		if err != nil {
+			return err
+		}
 
 		newVM, err := vs.createVirtualMachine(vmCtx, client, createArgs)
 		if err != nil {
@@ -192,20 +197,40 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		}
 	}
 
+	// Update the cleanup function to include closing the error channel.
+	cleanupFn = func() {
+		close(chanErr)
+		decrementConcurrentCreatesFn()
+	}
+
 	if _, ok := currentlyCreating.LoadOrStore(
 		vm.NamespacedName(),
 		struct{}{}); ok {
 
 		// If the VM is already being created in a goroutine, then there is no
 		// need to create it again.
-		//
-		// However, we need to make sure we decrement the number of concurrent
-		// creates before returning.
-		createDeferFn()
+		cleanupFn()
 		return providers.ErrDuplicateCreate
 	}
 
 	vmCtx.Logger.V(4).Info("Doing a non-blocking create")
+
+	// Update the cleanup function to include indicating a concurrent create is
+	// no longer occurring.
+	cleanupFn = func() {
+		currentlyCreating.Delete(vmCtx.VM.NamespacedName())
+		close(chanErr)
+		decrementConcurrentCreatesFn()
+	}
+
+	// When doing async create, get the createArgs *after* we are guarded
+	// against duplicate creates.
+	createArgs, err := vs.getCreateArgs(vmCtx, client)
+	if err != nil {
+		// Before we return the error, we need to make sure we cleanup.
+		cleanupFn()
+		return err
+	}
 
 	// Create a copy of the context and replace its VM with a copy to
 	// ensure modifications in the goroutine below are not impacted or
@@ -219,7 +244,7 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		client,
 		createArgs,
 		chanErr,
-		createDeferFn)
+		cleanupFn)
 
 	// Return with no error. The VM will be re-enqueued once the create
 	// completes with success or failure.
@@ -435,6 +460,7 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 	if len(vmCtx.VM.Spec.Cdrom) == 0 {
 		return nil // only needed when deploying ISO library items
 	}
+
 	if createArgs.StorageProfileID == "" {
 		return nil
 	}
@@ -484,6 +510,33 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 	return nil
 }
 
+func (vs *vSphereVMProvider) vmCreatePathNameFromDatastoreRecommendation(
+	vmCtx pkgctx.VirtualMachineContext,
+	createArgs *VMCreateArgs) error {
+
+	if createArgs.ConfigSpec.Files == nil {
+		createArgs.ConfigSpec.Files = &vimtypes.VirtualMachineFileInfo{}
+	}
+	if createArgs.ConfigSpec.Files.VmPathName != "" {
+		return nil
+	}
+	if len(createArgs.Datastores) == 0 {
+		return errors.New("no compatible datastores")
+	}
+
+	createArgs.ConfigSpec.Files.VmPathName = fmt.Sprintf(
+		"[%s] %s/%s.vmx",
+		createArgs.Datastores[0].Name,
+		vmCtx.VM.UID,
+		vmCtx.VM.Name)
+
+	vmCtx.Logger.Info(
+		"vmCreatePathName",
+		"VmPathName", createArgs.ConfigSpec.Files.VmPathName)
+
+	return nil
+}
+
 func (vs *vSphereVMProvider) getCreateArgs(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (*VMCreateArgs, error) {
@@ -501,8 +554,14 @@ func (vs *vSphereVMProvider) getCreateArgs(
 		return nil, err
 	}
 
-	if err := vs.vmCreatePathName(vmCtx, vcClient, createArgs); err != nil {
-		return nil, err
+	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+		if err := vs.vmCreatePathNameFromDatastoreRecommendation(vmCtx, createArgs); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := vs.vmCreatePathName(vmCtx, vcClient, createArgs); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := vs.vmCreateFixupConfigSpec(vmCtx, vcClient, createArgs); err != nil {
@@ -523,9 +582,11 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 	moRef, err := vmlifecycle.CreateVirtualMachine(
 		ctx,
+		vs.k8sClient,
 		vcClient.RestClient(),
 		vcClient.VimClient(),
 		vcClient.Finder(),
+		vcClient.Datacenter(),
 		&args.CreateArgs)
 
 	if err != nil {
@@ -535,11 +596,29 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 			vmopv1.VirtualMachineConditionCreated,
 			"Error",
 			err.Error())
+
+		if pkgcfg.FromContext(ctx).Features.FastDeploy {
+			conditions.MarkFalse(
+				ctx.VM,
+				vmopv1.VirtualMachineConditionPlacementReady,
+				"Error",
+				err.Error())
+		}
+
 		return nil, err
 	}
 
 	ctx.VM.Status.UniqueID = moRef.Reference().Value
 	conditions.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
+
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		if zoneName := args.ZoneName; zoneName != "" {
+			if ctx.VM.Labels == nil {
+				ctx.VM.Labels = map[string]string{}
+			}
+			ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+		}
+	}
 
 	return object.NewVirtualMachine(vcClient.VimClient(), *moRef), nil
 }
@@ -549,19 +628,17 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 	vcClient *vcclient.Client,
 	args *VMCreateArgs,
 	chanErr chan error,
-	createDeferFn func()) {
+	cleanupFn func()) {
 
-	defer func() {
-		close(chanErr)
-		createDeferFn()
-		currentlyCreating.Delete(ctx.VM.NamespacedName())
-	}()
+	defer cleanupFn()
 
 	moRef, vimErr := vmlifecycle.CreateVirtualMachine(
 		ctx,
+		vs.k8sClient,
 		vcClient.RestClient(),
 		vcClient.VimClient(),
 		vcClient.Finder(),
+		vcClient.Datacenter(),
 		&args.CreateArgs)
 
 	if vimErr != nil {
@@ -581,7 +658,25 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 					vmopv1.VirtualMachineConditionCreated,
 					"Error",
 					vimErr.Error())
-				return nil //nolint:nilerr
+
+				if pkgcfg.FromContext(ctx).Features.FastDeploy {
+					conditions.MarkFalse(
+						ctx.VM,
+						vmopv1.VirtualMachineConditionPlacementReady,
+						"Error",
+						vimErr.Error())
+				}
+
+				return nil
+			}
+
+			if pkgcfg.FromContext(ctx).Features.FastDeploy {
+				if zoneName := args.ZoneName; zoneName != "" {
+					if ctx.VM.Labels == nil {
+						ctx.VM.Labels = map[string]string{}
+					}
+					ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				}
 			}
 
 			ctx.VM.Status.UniqueID = moRef.Reference().Value
@@ -755,6 +850,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		vmCtx,
 		vs.k8sClient,
 		vcClient.VimClient(),
+		vcClient.Finder(),
 		placementConfigSpec,
 		constraints)
 	if err != nil {
@@ -767,6 +863,18 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 
 	if result.HostMoRef != nil {
 		createArgs.HostMoID = result.HostMoRef.Value
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+		createArgs.Datastores = make([]vmlifecycle.DatastoreRef, len(result.Datastores))
+		for i := range result.Datastores {
+			createArgs.Datastores[i].DiskKey = result.Datastores[i].DiskKey
+			createArgs.Datastores[i].ForDisk = result.Datastores[i].ForDisk
+			createArgs.Datastores[i].MoRef = result.Datastores[i].MoRef
+			createArgs.Datastores[i].Name = result.Datastores[i].Name
+			createArgs.Datastores[i].URL = result.Datastores[i].URL
+			createArgs.Datastores[i].TopLevelDirectoryCreateSupported = result.Datastores[i].TopLevelDirectoryCreateSupported
+		}
 	}
 
 	if result.InstanceStoragePlacement {
@@ -789,12 +897,16 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	}
 
 	if result.ZonePlacement {
-		if vmCtx.VM.Labels == nil {
-			vmCtx.VM.Labels = map[string]string{}
+		if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+			createArgs.ZoneName = result.ZoneName
+		} else {
+			if vmCtx.VM.Labels == nil {
+				vmCtx.VM.Labels = map[string]string{}
+			}
+			// Note if the VM create fails for some reason, but this label gets updated on the k8s VM,
+			// then this is the pre-assigned zone on later create attempts.
+			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = result.ZoneName
 		}
-		// Note if the VM create fails for some reason, but this label gets updated on the k8s VM,
-		// then this is the pre-assigned zone on later create attempts.
-		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = result.ZoneName
 	}
 
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionPlacementReady)
@@ -1233,6 +1345,17 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		createArgs.ImageStatus,
 		minCPUFreq)
 
+	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+		if err := vs.vmCreateGenConfigSpecImage(vmCtx, createArgs); err != nil {
+			return err
+		}
+		createArgs.ConfigSpec.VmProfile = []vimtypes.BaseVirtualMachineProfileSpec{
+			&vimtypes.VirtualMachineDefinedProfileSpec{
+				ProfileId: createArgs.StorageProfileID,
+			},
+		}
+	}
+
 	// Get the encryption class details for the VM.
 	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
 		for _, r := range vmconfig.FromContext(vmCtx) {
@@ -1249,20 +1372,61 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		}
 	}
 
-	err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs)
-	if err != nil {
+	if err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs); err != nil {
 		return err
 	}
 
-	err = vs.vmCreateGenConfigSpecChangeBootDiskSize(vmCtx, createArgs)
-	if err != nil {
+	if err := vs.vmCreateGenConfigSpecChangeBootDiskSize(vmCtx, createArgs); err != nil {
 		return err
 	}
 
-	err = vs.vmCreateGenConfigSpecZipNetworkInterfaces(vmCtx, createArgs)
-	if err != nil {
+	if err := vs.vmCreateGenConfigSpecZipNetworkInterfaces(vmCtx, createArgs); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
+	vmCtx pkgctx.VirtualMachineContext,
+	createArgs *VMCreateArgs) error {
+
+	if createArgs.ImageStatus.Type != "OVF" {
+		return nil
+	}
+
+	if createArgs.ImageStatus.ProviderItemID == "" {
+		return errors.New("empty image provider item id")
+	}
+	if createArgs.ImageStatus.ProviderContentVersion == "" {
+		return errors.New("empty image provider content version")
+	}
+
+	ovf, err := ovfcache.GetOVFEnvelope(
+		vmCtx,
+		createArgs.ImageStatus.ProviderItemID,
+		createArgs.ImageStatus.ProviderContentVersion)
+	if err != nil {
+		return fmt.Errorf("failed to get ovf from cache: %w", err)
+	}
+
+	ovfConfigSpec, err := ovf.ToConfigSpec()
+	if err != nil {
+		return fmt.Errorf("failed to transform ovf to config spec: %w", err)
+	}
+
+	if createArgs.ConfigSpec.GuestId == "" {
+		createArgs.ConfigSpec.GuestId = ovfConfigSpec.GuestId
+	}
+
+	// Inherit the image's vAppConfig.
+	createArgs.ConfigSpec.VAppConfig = ovfConfigSpec.VAppConfig
+
+	// Inherit the image's disks and their controllers.
+	pkgutil.CopyStorageControllersAndDisks(
+		&createArgs.ConfigSpec,
+		ovfConfigSpec,
+		createArgs.StorageProfileID)
 
 	return nil
 }
@@ -1497,6 +1661,7 @@ func (vs *vSphereVMProvider) vmResizeGetArgs(
 			resizeArgs.VMClass.Spec,
 			vmopv1.VirtualMachineImageStatus{},
 			minCPUFreq)
+
 	}
 
 	return resizeArgs, nil

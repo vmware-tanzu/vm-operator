@@ -9,7 +9,9 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/exp/maps"
@@ -42,10 +44,26 @@ type Result struct {
 	ZoneName                 string
 	HostMoRef                *vimtypes.ManagedObjectReference
 	PoolMoRef                vimtypes.ManagedObjectReference
-	// TODO: Datastore, whatever else as we need it.
+	Datastores               []DatastoreResult
+
+	needZonePlacement      bool
+	needHostPlacement      bool
+	needDatastorePlacement bool
 }
 
-func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result, needZonePlacement, needInstanceStoragePlacement bool) {
+type DatastoreResult struct {
+	Name                             string
+	MoRef                            vimtypes.ManagedObjectReference
+	URL                              string
+	TopLevelDirectoryCreateSupported bool
+
+	// ForDisk is false if the recommendation is for the VM's home directory and
+	// true if for a disk. DiskKey is only valid if ForDisk is true.
+	ForDisk bool
+	DiskKey int32
+}
+
+func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
 	res.ZonePlacement = true
 
 	if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
@@ -53,7 +71,7 @@ func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result, needZo
 		res.ZoneName = zoneName
 	} else {
 		// VM does not have a zone already assigned so we need to select one.
-		needZonePlacement = true
+		res.needZonePlacement = true
 	}
 
 	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
@@ -65,9 +83,13 @@ func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result, needZo
 				res.HostMoRef = &vimtypes.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
 			} else {
 				// VM has InstanceStorage volumes so we need to select a host.
-				needInstanceStoragePlacement = true
+				res.needHostPlacement = true
 			}
 		}
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+		res.needDatastorePlacement = true
 	}
 
 	return
@@ -262,9 +284,10 @@ func getPlacementRecommendations(
 func getZonalPlacementRecommendations(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vim25.Client,
+	finder *find.Finder,
 	candidates map[string][]string,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	needsHost bool) map[string][]Recommendation {
+	needHostPlacement, needDatastorePlacement bool) map[string][]Recommendation {
 
 	rpMOToZone := map[vimtypes.ManagedObjectReference]string{}
 	var candidateRPMoRefs []vimtypes.ManagedObjectReference
@@ -282,7 +305,7 @@ func getZonalPlacementRecommendations(
 	if len(candidateRPMoRefs) == 1 {
 		// If there is only one candidate, we might be able to skip some work.
 
-		if needsHost {
+		if needHostPlacement || needDatastorePlacement {
 			// This is a hack until PlaceVmsXCluster() supports instance storage disks.
 			vmCtx.Logger.Info("Falling back into non-zonal placement since the only candidate needs host selected",
 				"rpMoID", candidateRPMoRefs[0].Value)
@@ -297,7 +320,14 @@ func getZonalPlacementRecommendations(
 	} else {
 		var err error
 
-		recs, err = ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec, needsHost)
+		recs, err = ClusterPlaceVMForCreate(
+			vmCtx,
+			vcClient,
+			finder,
+			candidateRPMoRefs,
+			configSpec,
+			needHostPlacement,
+			needDatastorePlacement)
 		if err != nil {
 			vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
 			return nil
@@ -338,15 +368,25 @@ func Placement(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
+	finder *find.Finder,
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	constraints Constraints) (*Result, error) {
 
-	existingRes, zonePlacement, instanceStoragePlacement := doesVMNeedPlacement(vmCtx)
-	if !zonePlacement && !instanceStoragePlacement {
-		return &existingRes, nil
+	curResult := doesVMNeedPlacement(vmCtx)
+	if !curResult.needZonePlacement &&
+		!curResult.needHostPlacement &&
+		!curResult.needDatastorePlacement {
+
+		// VM does not require any type of placement, so we can return early.
+		return &curResult, nil
 	}
 
-	candidates, err := getPlacementCandidates(vmCtx, client, vcClient, zonePlacement, constraints.ChildRPName)
+	candidates, err := getPlacementCandidates(
+		vmCtx,
+		client,
+		vcClient,
+		curResult.needZonePlacement,
+		constraints.ChildRPName)
 	if err != nil {
 		return nil, err
 	}
@@ -383,12 +423,17 @@ func Placement(
 	}
 
 	// TBD: May want to get the host for vGPU and other passthru devices too.
-	needsHost := instanceStoragePlacement
-
 	var recommendations map[string][]Recommendation
-	if zonePlacement {
-		recommendations = getZonalPlacementRecommendations(vmCtx, vcClient, candidates, configSpec, needsHost)
-	} else /* instanceStoragePlacement */ {
+	if curResult.needZonePlacement {
+		recommendations = getZonalPlacementRecommendations(
+			vmCtx,
+			vcClient,
+			finder,
+			candidates,
+			configSpec,
+			curResult.needHostPlacement,
+			curResult.needDatastorePlacement)
+	} else /* needHostPlacement or needDatastorePlacement */ {
 		recommendations = getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
 	}
 	if len(recommendations) == 0 {
@@ -396,15 +441,109 @@ func Placement(
 	}
 
 	zoneName, rec := MakePlacementDecision(recommendations)
-	vmCtx.Logger.V(5).Info("Placement decision result", "zone", zoneName, "recommendation", rec)
+	vmCtx.Logger.V(5).Info("Placement recommendation", "zone", zoneName, "recommendation", rec)
 
-	result := &Result{
-		ZonePlacement:            zonePlacement,
-		InstanceStoragePlacement: instanceStoragePlacement,
+	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+		// Get the name and type of the datastores.
+		if err := getDatastoreNameAndType(vmCtx, vcClient, &rec); err != nil {
+			return nil, err
+		}
+	}
+
+	result := Result{
+		ZonePlacement:            curResult.needZonePlacement,
+		InstanceStoragePlacement: curResult.needHostPlacement,
 		ZoneName:                 zoneName,
 		PoolMoRef:                rec.PoolMoRef,
 		HostMoRef:                rec.HostMoRef,
+		Datastores:               rec.Datastores,
 	}
 
-	return result, nil
+	vmCtx.Logger.V(4).Info("Placement result", "result", result)
+
+	return &result, nil
+}
+
+func getDatastoreNameAndType(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcClient *vim25.Client,
+	rec *Recommendation) error {
+
+	var objSet []vimtypes.ObjectSpec
+	for i := range rec.Datastores {
+		d := rec.Datastores[i]
+		if d.Name == "" {
+			objSet = append(objSet, vimtypes.ObjectSpec{
+				Obj: d.MoRef,
+			})
+		}
+	}
+
+	if len(objSet) == 0 {
+		return nil
+	}
+
+	pc := property.DefaultCollector(vcClient)
+	res, err := pc.RetrieveProperties(vmCtx, vimtypes.RetrieveProperties{
+		SpecSet: []vimtypes.PropertyFilterSpec{
+			{
+				PropSet: []vimtypes.PropertySpec{
+					{
+						Type: "Datastore",
+						PathSet: []string{
+							"capability.topLevelDirectoryCreateSupported",
+							"info.url",
+							"name",
+						},
+					},
+				},
+				ObjectSet: objSet,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get datastore names: %w", err)
+	}
+
+	for i := range res.Returnval {
+		r := res.Returnval[i]
+		for j := range rec.Datastores {
+			if r.Obj == rec.Datastores[j].MoRef {
+				for k := range r.PropSet {
+					p := r.PropSet[k]
+					switch p.Name {
+					case "capability.topLevelDirectoryCreateSupported":
+						switch tVal := p.Val.(type) {
+						case bool:
+							rec.Datastores[j].TopLevelDirectoryCreateSupported = tVal
+						default:
+							return fmt.Errorf(
+								"datastore %[1]s is not bool: %[2]T, %+[2]v",
+								p.Name, p.Val)
+						}
+					case "info.url":
+						switch tVal := p.Val.(type) {
+						case string:
+							rec.Datastores[j].URL = tVal
+						default:
+							return fmt.Errorf(
+								"datastore %[1]s is not string: %[2]T, %+[2]v",
+								p.Name, p.Val)
+						}
+					case "name":
+						switch tVal := p.Val.(type) {
+						case string:
+							rec.Datastores[j].Name = tVal
+						default:
+							return fmt.Errorf(
+								"datastore %[1]s is not string: %[2]T, %+[2]v",
+								p.Name, p.Val)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return nil
 }

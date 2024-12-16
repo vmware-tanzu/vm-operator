@@ -344,6 +344,7 @@ func (vmpr *VirtualMachinePublishRequest) SetConditions(conditions Conditions) {
 // +kubebuilder:resource:scope=Namespaced,shortName=vmpub
 // +kubebuilder:storageversion:false
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion
 
 // VirtualMachinePublishRequest defines the information necessary to publish a
 // VirtualMachine as a VirtualMachineImage to an image registry.
@@ -356,6 +357,7 @@ type VirtualMachinePublishRequest struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
 
 // VirtualMachinePublishRequestList contains a list of
 // VirtualMachinePublishRequest resources.

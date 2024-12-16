@@ -154,6 +154,7 @@ type VirtualMachineClassStatus struct {
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="VGPU-Devices-Profile-Names",type="string",priority=1,JSONPath=".spec.hardware.devices.vgpuDevices[*].profileName"
 // +kubebuilder:printcolumn:name="Passthrough-DeviceIDs",type="string",priority=1,JSONPath=".spec.hardware.devices.dynamicDirectPathIODevices[*].deviceID"
+// +kubebuilder:deprecatedversion
 
 // VirtualMachineClass is the Schema for the virtualmachineclasses API.
 // A VirtualMachineClass represents the desired specification and the observed status of a VirtualMachineClass
@@ -169,6 +170,7 @@ type VirtualMachineClass struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
 
 // VirtualMachineClassList contains a list of VirtualMachineClass.
 type VirtualMachineClassList struct {

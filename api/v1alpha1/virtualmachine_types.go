@@ -698,6 +698,7 @@ func (vm *VirtualMachine) SetConditions(conditions Conditions) {
 // +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".spec.imageName"
 // +kubebuilder:printcolumn:name="Primary-IP",type="string",priority=1,JSONPath=".status.vmIp"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:deprecatedversion
 
 // VirtualMachine is the Schema for the virtualmachines API.
 // A VirtualMachine represents the desired specification and the observed status of a VirtualMachine instance.  A
@@ -715,9 +716,10 @@ func (vm VirtualMachine) NamespacedName() string {
 	return vm.Namespace + "/" + vm.Name
 }
 
-// VirtualMachineList contains a list of VirtualMachine.
-//
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
+
+// VirtualMachineList contains a list of VirtualMachine.
 type VirtualMachineList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

@@ -221,8 +221,12 @@ var _ = Describe(
 		})
 
 		When("the port is invalid", func() {
+			var (
+				oldPort string
+			)
+
 			JustBeforeEach(func() {
-				vcSimCtx.Suite.StartErrExpected = true
+				vcSimCtx.Suite.StartErrExpected = false
 
 				Eventually(func(g Gomega) {
 					vsClientMu.RLock()
@@ -236,6 +240,7 @@ var _ = Describe(
 					vsClientMu.Lock()
 					defer vsClientMu.Unlock()
 
+					oldPort = vcSimCtx.VCClientConfig.Port
 					vcSimCtx.VCClientConfig.Port = "1"
 				})
 
@@ -247,10 +252,31 @@ var _ = Describe(
 				})
 			})
 
-			Specify("the service should fail", func() {
+			Specify("the service should be restarted once the port is fixed", func() {
 				Eventually(func(g Gomega) {
-					g.Expect(vcSimCtx.Suite.StartErr()).To(HaveOccurred())
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(2)))
+					vsClientMu.RLock()
+					defer vsClientMu.RUnlock()
+
+					g.Expect(vsClient.Valid()).To(BeFalse())
+					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
+				}).Should(Succeed())
+
+				By("fix the port", func() {
+					vsClientMu.Lock()
+					defer vsClientMu.Unlock()
+
+					vcSimCtx.VCClientConfig.Port = oldPort
+				})
+
+				Eventually(func(g Gomega) {
+					vsClientMu.RLock()
+					defer vsClientMu.RUnlock()
+
+					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(3)))
+				}).Should(Succeed())
+
+				Consistently(func(g Gomega) {
+					g.Expect(vcSimCtx.Suite.StartErr()).ToNot(HaveOccurred())
 				}).Should(Succeed())
 			})
 		})

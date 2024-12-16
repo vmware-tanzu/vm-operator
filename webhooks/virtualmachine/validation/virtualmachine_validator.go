@@ -1230,8 +1230,13 @@ func (v validator) validateImmutableNetwork(ctx *pkgctx.WebhookRequestContext, v
 
 	p := field.NewPath("spec", "network")
 
-	oldInterfaces := oldVM.Spec.Network.Interfaces
-	newInterfaces := vm.Spec.Network.Interfaces
+	var oldInterfaces, newInterfaces []vmopv1.VirtualMachineNetworkInterfaceSpec
+	if oldNetwork != nil {
+		oldInterfaces = oldNetwork.Interfaces
+	}
+	if newNetwork != nil {
+		newInterfaces = newNetwork.Interfaces
+	}
 
 	if len(oldInterfaces) != len(newInterfaces) {
 		return append(allErrs, field.Forbidden(p.Child("interfaces"), "network interfaces cannot be added or removed"))

@@ -139,6 +139,7 @@ type VirtualMachineServiceStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:deprecatedversion
 
 // VirtualMachineService is the Schema for the virtualmachineservices API.
 // A VirtualMachineService represents the desired specification and the observed status of a VirtualMachineService
@@ -157,6 +158,7 @@ func (s *VirtualMachineService) NamespacedName() string {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
 
 // VirtualMachineServiceList contains a list of VirtualMachineService.
 type VirtualMachineServiceList struct {

@@ -19,6 +19,9 @@ spec:
       jsonPath: .spec.uuid
       name: Content-Library-UUID
       type: string
+    deprecated: true
+    deprecationWarning: This API has been deprecated and is unsupported in future
+      versions
     name: v1alpha1
     schema:
       openAPIV3Schema:

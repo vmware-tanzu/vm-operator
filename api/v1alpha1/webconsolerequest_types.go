@@ -51,6 +51,7 @@ type WebConsoleRequestStatus struct {
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="This API has been deprecated and is unsupported in future versions"
 
 // WebConsoleRequest allows the creation of a one-time web console ticket that can be used to interact with the VM.
 type WebConsoleRequest struct {
@@ -66,6 +67,7 @@ func (s *WebConsoleRequest) NamespacedName() string {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion:warning="This API has been deprecated and is unsupported in future versions"
 
 // WebConsoleRequestList contains a list of WebConsoleRequests.
 type WebConsoleRequestList struct {

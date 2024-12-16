@@ -167,6 +167,7 @@ func (vmImage *VirtualMachineImage) SetConditions(conditions Conditions) {
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Image-Supported",type="boolean",priority=1,JSONPath=".status.imageSupported"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:deprecatedversion
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API
 // A VirtualMachineImage represents a VirtualMachine image (e.g. VM template) that can be used as the base image
@@ -181,6 +182,7 @@ type VirtualMachineImage struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
 
 // VirtualMachineImageList contains a list of VirtualMachineImage.
 type VirtualMachineImageList struct {
@@ -207,6 +209,7 @@ func (clusterVirtualMachineImage *ClusterVirtualMachineImage) SetConditions(cond
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Image-Supported",type="boolean",priority=1,JSONPath=".status.imageSupported"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:deprecatedversion
 
 // ClusterVirtualMachineImage is the schema for the clustervirtualmachineimage API
 // A ClusterVirtualMachineImage represents the desired specification and the observed status of a
@@ -220,6 +223,7 @@ type ClusterVirtualMachineImage struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
 
 // ClusterVirtualMachineImageList contains a list of ClusterVirtualMachineImage.
 type ClusterVirtualMachineImageList struct {

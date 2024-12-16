@@ -57,6 +57,7 @@ type ClusterModuleStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion:false
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion
 
 // VirtualMachineSetResourcePolicy is the Schema for the virtualmachinesetresourcepolicies API.
 type VirtualMachineSetResourcePolicy struct {
@@ -72,6 +73,7 @@ func (res VirtualMachineSetResourcePolicy) NamespacedName() string {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
 
 // VirtualMachineSetResourcePolicyList contains a list of VirtualMachineSetResourcePolicy.
 type VirtualMachineSetResourcePolicyList struct {

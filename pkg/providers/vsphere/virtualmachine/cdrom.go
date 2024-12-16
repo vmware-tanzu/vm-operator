@@ -203,7 +203,7 @@ func getBackingFileNameByImageRef(
 
 	// Subscribed content library item file may not always be stored in VC.
 	// Sync the item to ensure the file is available for CD-ROM connection.
-	if syncFile && (!itemStatus.Cached || itemStatus.SizeInBytes.Size() == 0) {
+	if syncFile && (!itemStatus.Cached || itemStatus.SizeInBytes.IsZero()) {
 		vmCtx.Logger.Info("Syncing content library item", "libItemUUID", libItemUUID)
 		libItem, err := libManager.GetLibraryItem(vmCtx, libItemUUID)
 		if err != nil {

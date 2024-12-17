@@ -48,20 +48,20 @@ var _ = DescribeTable(
 )
 
 var _ = DescribeTable(
-	"HasRegisterVM",
+	"HasRestoredVM",
 	func(in map[string]string, out bool) {
 		vm := &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: in,
 			},
 		}
-		actual := annotations.HasRegisterVM(vm)
+		actual := annotations.HasRestoredVM(vm)
 		Expect(actual).To(Equal(out))
 	},
 	Entry("nil", nil, false),
 	Entry("not present", map[string]string{"foo": "bar"}, false),
-	Entry("present but empty ", map[string]string{vmopv1.RegisteredVMAnnotation: ""}, true),
-	Entry("present and not empty ", map[string]string{vmopv1.RegisteredVMAnnotation: "true"}, true),
+	Entry("present but empty ", map[string]string{vmopv1.RestoredVMAnnotation: ""}, true),
+	Entry("present and not empty ", map[string]string{vmopv1.RestoredVMAnnotation: "true"}, true),
 )
 
 var _ = DescribeTable(
@@ -79,4 +79,21 @@ var _ = DescribeTable(
 	Entry("not present", map[string]string{"foo": "bar"}, false),
 	Entry("present but empty ", map[string]string{vmopv1.ImportedVMAnnotation: ""}, true),
 	Entry("present and not empty ", map[string]string{vmopv1.ImportedVMAnnotation: "true"}, true),
+)
+
+var _ = DescribeTable(
+	"HasFailOverVM",
+	func(in map[string]string, out bool) {
+		vm := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: in,
+			},
+		}
+		actual := annotations.HasFailOverVM(vm)
+		Expect(actual).To(Equal(out))
+	},
+	Entry("nil", nil, false),
+	Entry("not present", map[string]string{"foo": "bar"}, false),
+	Entry("present but empty ", map[string]string{vmopv1.FailedOverVMAnnotation: ""}, true),
+	Entry("present and not empty ", map[string]string{vmopv1.FailedOverVMAnnotation: "true"}, true),
 )

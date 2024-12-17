@@ -33,7 +33,6 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
-	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -154,13 +153,13 @@ func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Respo
 	return admission.Allowed("")
 }
 
-// Updates to VM's image are only allowed if it is a Registered VM (used for failover
-// in disaster recovery).
+// Updates to VM's image are only allowed if it is a failed over VM.
 func (v validator) validateImageOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
+	// Allow resetting of image if this is a failover operation.
 	if vmopv1util.IsImagelessVM(*vm) && pkgcfg.FromContext(ctx).Features.VMIncrementalRestore {
-		if annotations.HasRegisterVM(vm) {
+		if annotations.HasFailOverVM(vm) {
 			if !vmopv1util.ImageRefsEqual(vm.Spec.Image, oldVM.Spec.Image) {
 				if !ctx.IsPrivilegedAccount {
 					allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "image"), restrictedToPrivUsers))
@@ -402,8 +401,8 @@ func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *
 		(pkgcfg.FromContext(ctx).Features.VMImportNewNet ||
 			pkgcfg.FromContext(ctx).Features.VMIncrementalRestore):
 		// TODO: Simplify this once mobility operator starts creating VMs with correct annotation.
-		// Skip validations on images if it is a VM created using ImportVM, or RegisterVM.
-		if annotations.HasImportVM(vm) || annotations.HasRegisterVM(vm) {
+		// Skip validations on images if it is a VM that is imported, registered, or failed over.
+		if annotations.HasImportVM(vm) || annotations.HasRestoredVM(vm) || annotations.HasFailOverVM(vm) {
 			// Restrict creating imageless VM resources to privileged users.
 			if !ctx.IsPrivilegedAccount {
 				allErrs = append(allErrs, field.Forbidden(f, restrictedToPrivUsers))
@@ -1242,9 +1241,9 @@ func (v validator) validateImmutableNetwork(ctx *pkgctx.WebhookRequestContext, v
 		return append(allErrs, field.Forbidden(p.Child("interfaces"), "network interfaces cannot be added or removed"))
 	}
 
-	// Skip comparing interfaces if this is a test fail-over to allow vendors to
-	// connect network each interface to test network.
-	if _, ok := vm.Labels[backupapi.TestFailoverLabelKey]; ok {
+	// Skip comparing interfaces if this is a fail-over to allow vendors to
+	// connect network each interface to the test, or the production network.
+	if _, ok := vm.Annotations[vmopv1.FailedOverVMAnnotation]; ok {
 		return allErrs
 	}
 
@@ -1342,8 +1341,12 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
-	if vm.Annotations[vmopv1.RegisteredVMAnnotation] != oldVM.Annotations[vmopv1.RegisteredVMAnnotation] {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.RegisteredVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+	if vm.Annotations[vmopv1.RestoredVMAnnotation] != oldVM.Annotations[vmopv1.RestoredVMAnnotation] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vm.Annotations[vmopv1.FailedOverVMAnnotation] != oldVM.Annotations[vmopv1.FailedOverVMAnnotation] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
 	if vm.Annotations[vmopv1.ImportedVMAnnotation] != oldVM.Annotations[vmopv1.ImportedVMAnnotation] {

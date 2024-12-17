@@ -1724,11 +1724,60 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("disallow global nameservers and search domains with CloudInit",
+			Entry("allow global nameservers and search domains with CloudInit when UseGlobals...AsDefaults are nil",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+								UseGlobalNameserversAsDefault:   nil,
+								UseGlobalSearchDomainsAsDefault: nil,
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Nameservers: []string{
+								"8.8.8.8",
+								"2001:4860:4860::8888",
+							},
+							SearchDomains: []string{
+								"dev.local",
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow global nameservers and search domains with CloudInit when UseGlobals...AsDefaults are true",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+								UseGlobalNameserversAsDefault:   ptr.To(true),
+								UseGlobalSearchDomainsAsDefault: ptr.To(true),
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Nameservers: []string{
+								"8.8.8.8",
+								"2001:4860:4860::8888",
+							},
+							SearchDomains: []string{
+								"dev.local",
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow global nameservers and search domains with CloudInit when UseGlobals...AsDefaults are false",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+								UseGlobalNameserversAsDefault:   ptr.To(false),
+								UseGlobalSearchDomainsAsDefault: ptr.To(false),
+							},
 						}
 						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Nameservers: []string{
@@ -1742,8 +1791,8 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.nameservers: Invalid value: "not-an-ip,8.8.8.8,2001:4860:4860::8888": nameservers is available only with the following bootstrap providers: LinuxPrep and Sysprep`,
-						`spec.network.searchDomains: Invalid value: "dev.local": searchDomains is available only with the following bootstrap providers: LinuxPrep and Sysprep`,
+						`spec.network.nameservers: Invalid value: "not-an-ip,8.8.8.8,2001:4860:4860::8888": nameservers is only available for CloudInit when UseGlobalNameserversAsDefault is true`,
+						`spec.network.searchDomains: Invalid value: "dev.local": searchDomains is only available for CloudInit when UseGlobalSearchDomainsAsDefault is true`,
 						`spec.network.nameservers[0]: Invalid value: "not-an-ip": must be an IPv4 or IPv6 address`,
 					),
 				},

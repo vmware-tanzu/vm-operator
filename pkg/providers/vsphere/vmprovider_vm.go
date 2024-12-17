@@ -1187,7 +1187,7 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 		vcClient.VimClient(),
 		vcClient.Finder(),
 		nil, // Don't know the CCR yet (needed to resolve backings for NSX-T)
-		networkSpec.Interfaces)
+		networkSpec)
 	if err != nil {
 		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady, "NotReady", err.Error())
 		return err

@@ -43,6 +43,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
@@ -746,17 +747,27 @@ func (v validator) validateNetworkSpecWithBootStrap(
 	}
 
 	var (
+		cloudInit *vmopv1.VirtualMachineBootstrapCloudInitSpec
 		linuxPrep *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
 		sysPrep   *vmopv1.VirtualMachineBootstrapSysprepSpec
 	)
 
 	if vm.Spec.Bootstrap != nil {
+		cloudInit = vm.Spec.Bootstrap.CloudInit
 		linuxPrep = vm.Spec.Bootstrap.LinuxPrep
 		sysPrep = vm.Spec.Bootstrap.Sysprep
 	}
 
 	if len(networkSpec.Nameservers) > 0 {
-		if linuxPrep == nil && sysPrep == nil {
+		if cloudInit != nil {
+			if !ptr.DerefWithDefault(cloudInit.UseGlobalNameserversAsDefault, true) {
+				allErrs = append(allErrs, field.Invalid(
+					field.NewPath("spec", "network", "nameservers"),
+					strings.Join(networkSpec.Nameservers, ","),
+					"nameservers is only available for CloudInit when UseGlobalNameserversAsDefault is true",
+				))
+			}
+		} else if linuxPrep == nil && sysPrep == nil {
 			allErrs = append(allErrs, field.Invalid(
 				field.NewPath("spec", "network", "nameservers"),
 				strings.Join(networkSpec.Nameservers, ","),
@@ -766,7 +777,15 @@ func (v validator) validateNetworkSpecWithBootStrap(
 	}
 
 	if len(networkSpec.SearchDomains) > 0 {
-		if linuxPrep == nil && sysPrep == nil {
+		if cloudInit != nil {
+			if !ptr.DerefWithDefault(cloudInit.UseGlobalSearchDomainsAsDefault, true) {
+				allErrs = append(allErrs, field.Invalid(
+					field.NewPath("spec", "network", "searchDomains"),
+					strings.Join(networkSpec.SearchDomains, ","),
+					"searchDomains is only available for CloudInit when UseGlobalSearchDomainsAsDefault is true",
+				))
+			}
+		} else if linuxPrep == nil && sysPrep == nil {
 			allErrs = append(allErrs, field.Invalid(
 				field.NewPath("spec", "network", "searchDomains"),
 				strings.Join(networkSpec.SearchDomains, ","),

@@ -1445,6 +1445,8 @@ func autoConvert_v1alpha2_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_Virtu
 	out.CloudConfig = (*cloudinit.CloudConfig)(unsafe.Pointer(in.CloudConfig))
 	out.RawCloudConfig = (*common.SecretKeySelector)(unsafe.Pointer(in.RawCloudConfig))
 	out.SSHAuthorizedKeys = *(*[]string)(unsafe.Pointer(&in.SSHAuthorizedKeys))
+	out.UseGlobalNameserversAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalNameserversAsDefault))
+	out.UseGlobalSearchDomainsAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalSearchDomainsAsDefault))
 	return nil
 }
 
@@ -1458,6 +1460,8 @@ func autoConvert_v1alpha3_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_Virtu
 	out.CloudConfig = (*v1alpha2cloudinit.CloudConfig)(unsafe.Pointer(in.CloudConfig))
 	out.RawCloudConfig = (*v1alpha2common.SecretKeySelector)(unsafe.Pointer(in.RawCloudConfig))
 	out.SSHAuthorizedKeys = *(*[]string)(unsafe.Pointer(&in.SSHAuthorizedKeys))
+	out.UseGlobalNameserversAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalNameserversAsDefault))
+	out.UseGlobalSearchDomainsAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalSearchDomainsAsDefault))
 	return nil
 }
 

@@ -5,6 +5,7 @@ package zone
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -131,7 +132,7 @@ func (r *Reconciler) ReconcileDelete(
 				},
 				fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
 
-				if err != watcher.ErrAsyncSignalDisabled {
+				if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
 					return ctrl.Result{}, err
 				}
 			}
@@ -157,7 +158,7 @@ func (r *Reconciler) ReconcileNormal(
 				},
 				fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
 
-				if err != watcher.ErrAsyncSignalDisabled {
+				if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
 					return ctrl.Result{}, err
 				}
 			}

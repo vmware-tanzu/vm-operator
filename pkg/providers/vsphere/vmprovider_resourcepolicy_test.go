@@ -16,7 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	vsphere "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -67,6 +67,31 @@ func resourcePolicyTests() {
 			ctx.AfterEach()
 			ctx = nil
 			initObjects = nil
+		})
+
+		Context("Empty VirtualMachineSetResourcePolicy", func() {
+			It("Creates and Deletes successfully", func() {
+				resourcePolicy := &vmopv1.VirtualMachineSetResourcePolicy{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "empty-policy",
+						Namespace: nsInfo.Namespace,
+					},
+				}
+
+				By("Create", func() {
+					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+				})
+				By("Implicitly IsReady", func() {
+					for _, zoneName := range ctx.ZoneNames {
+						exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, zoneName, resourcePolicy)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(exists).To(BeTrue())
+					}
+				})
+				By("Delete", func() {
+					Expect(vmProvider.DeleteVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+				})
+			})
 		})
 
 		Context("VirtualMachineSetResourcePolicy", func() {

@@ -128,7 +128,7 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
-	reservationsPath := field.NewPath("spec", "resourcepool", "reservations")
+	reservationsPath := field.NewPath("spec", "resourcePool", "reservations")
 	detailMsg := "reservation value cannot exceed the limit value"
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),

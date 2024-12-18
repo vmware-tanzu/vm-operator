@@ -6,6 +6,7 @@ package mutation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -596,7 +597,7 @@ func SetDefaultEncryptionClass(
 		k8sClient,
 		vm.Namespace)
 	if err != nil {
-		if err == kubeutil.ErrNoDefaultEncryptionClass {
+		if errors.Is(err, kubeutil.ErrNoDefaultEncryptionClass) {
 			return false, nil
 		}
 		return false, err

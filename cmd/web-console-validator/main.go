@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"net/http"
 	"os"
@@ -93,7 +94,7 @@ func main() {
 	}
 
 	logger.Info("Starting the web-console validation server", "port", *serverPort, "path", *serverPath)
-	if err := server.Run(); err != nil && err != http.ErrServerClosed {
+	if err := server.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error(err, "Failed to run the web-console validation server")
 		os.Exit(1)
 	}

@@ -251,6 +251,22 @@ func unitTestsReconcile() {
 				Expect(reconciler.ReconcileNormal(vmCtx)).ShouldNot(Succeed())
 				expectEvents(ctx, "CreateFailure")
 			})
+
+			It("Should emit CreateFailure events if ReconcileNormal causes a failed VM create that reports multiple errors", func() {
+				fakeVMProvider.CreateOrUpdateVirtualMachineAsyncFn = func(
+					ctx context.Context,
+					vm *vmopv1.VirtualMachine) (<-chan error, error) {
+
+					ctxop.MarkCreate(ctx)
+					chanErr := make(chan error, 2)
+					chanErr <- errors.New("error1")
+					chanErr <- errors.New("error2")
+					return chanErr, nil
+				}
+
+				Expect(reconciler.ReconcileNormal(vmCtx)).To(Succeed())
+				expectEvents(ctx, "CreateFailure", "CreateFailure")
+			})
 		})
 
 		It("Should emit UpdateSuccess event if ReconcileNormal causes a successful VM update", func() {

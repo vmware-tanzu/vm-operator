@@ -116,8 +116,8 @@ github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0 h1:y
 github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0/go.mod h1:w6QJGm3crIA16ZIz1FVQXD2NVeJhOgGXxW05RbVTSTo=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20241112044858-9da8637c1b0d h1:z9lrzKVtNlujduv9BilzPxuge/LE2F0N1ms3TP4JZvw=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20241112044858-9da8637c1b0d/go.mod h1:Q4JzNkNMvjo7pXtlB5/R3oME4Nhah7fAObWgghVmtxk=
-github.com/vmware/govmomi v0.47.0-alpha.0.0.20241217002132-3def2df5dfb3 h1:yAJRiepA8WT+tizYK9TRxCoYTlp3h0t3CP9RL5jNZ3Q=
-github.com/vmware/govmomi v0.47.0-alpha.0.0.20241217002132-3def2df5dfb3/go.mod h1:bYwUHpGpisE4AOlDl5eph90T+cjJMIcKx/kaa5v5rQM=
+github.com/vmware/govmomi v0.47.0-alpha.0.0.20241219162111-46d5d8739f1e h1:xWk68LmieEMkyArGnvKLSn6APFUVbm/I5swqHX+3WGs=
+github.com/vmware/govmomi v0.47.0-alpha.0.0.20241219162111-46d5d8739f1e/go.mod h1:bYwUHpGpisE4AOlDl5eph90T+cjJMIcKx/kaa5v5rQM=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

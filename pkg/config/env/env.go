@@ -58,7 +58,7 @@ const (
 	FSSVMIncrementalRestore
 	FSSBringYourOwnEncryptionKey
 	FSSSVAsyncUpgrade
-
+	FSSFastDeploy
 	_varNameEnd
 )
 
@@ -176,6 +176,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_VMSERVICE_BYOK"
 	case FSSSVAsyncUpgrade:
 		return "FSS_WCP_SUPERVISOR_ASYNC_UPGRADE"
+	case FSSFastDeploy:
+		return "FSS_WCP_VMSERVICE_FAST_DEPLOY"
 	}
 	panic("unknown environment variable")
 }

@@ -84,15 +84,13 @@ func initImageStatusFromOVFVirtualSystem(
 
 	// Use operating system info from the first os section in the VM image, if one exists.
 	if os := ovfVirtualSystem.OperatingSystem; os != nil {
-		o := os
-
 		osInfo := &imageStatus.OSInfo
-		osInfo.ID = strconv.Itoa(int(o.ID))
-		if o.Version != nil {
-			osInfo.Version = *o.Version
+		osInfo.ID = strconv.Itoa(int(os.ID))
+		if os.Version != nil {
+			osInfo.Version = *os.Version
 		}
-		if o.OSType != nil {
-			osInfo.Type = *o.OSType
+		if os.OSType != nil {
+			osInfo.Type = *os.OSType
 		}
 	}
 

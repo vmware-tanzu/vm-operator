@@ -499,8 +499,17 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 			} else {
 				// Emit event once goroutine is complete.
 				go func(obj client.Object) {
-					err := <-chanErr
-					r.Recorder.EmitEvent(obj, "Create", err, false)
+					failed := false
+					for err := range chanErr {
+						if err != nil {
+							failed = true
+							r.Recorder.EmitEvent(obj, "Create", err, false)
+						}
+					}
+					if !failed {
+						// If no error the channel is just closed.
+						r.Recorder.EmitEvent(obj, "Create", nil, false)
+					}
 				}(ctx.VM.DeepCopy())
 			}
 		}

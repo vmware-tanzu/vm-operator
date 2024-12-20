@@ -3,8 +3,6 @@ module github.com/vmware-tanzu/vm-operator
 go 1.23
 
 replace (
-	github.com/envoyproxy/go-control-plane => github.com/envoyproxy/go-control-plane v0.9.4
-	github.com/envoyproxy/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v0.1.0
 	github.com/vmware-tanzu/vm-operator/api => ./api
 	github.com/vmware-tanzu/vm-operator/external/appplatform => ./external/appplatform
 	github.com/vmware-tanzu/vm-operator/external/byok => ./external/byok

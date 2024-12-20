@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -288,9 +289,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	logger := ctrl.Log.WithName("VirtualMachine").WithValues("name", vm.NamespacedName())
+
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		// Allow the use of an annotation to control whether fast-deploy is used
+		// per-VM to deploy the VM.
+		if val := vm.Annotations["vmoperator.vmware.com/fast-deploy"]; val != "" {
+			if ok, _ := strconv.ParseBool(val); !ok {
+				// Create a copy of the config so the feature-state for
+				// FastDeploy can also be influenced by a VM annotation.
+				cfg := pkgcfg.FromContext(ctx)
+				cfg.Features.FastDeploy = false
+				ctx = pkgcfg.WithContext(ctx, cfg)
+				logger.Info("Disabled fast-deploy for this VM")
+			}
+		}
+	}
+
 	vmCtx := &pkgctx.VirtualMachineContext{
 		Context: ctx,
-		Logger:  ctrl.Log.WithName("VirtualMachine").WithValues("name", vm.NamespacedName()),
+		Logger:  logger,
 		VM:      vm,
 	}
 

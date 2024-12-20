@@ -186,27 +186,29 @@ func CreateConfigSpecForPlacement(
 
 	configSpec.DeviceChange = deviceChangeCopy
 
-	// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
-	// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.
-	configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
-		Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
-		FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
-		Device: &vimtypes.VirtualDisk{
-			CapacityInBytes: 1024 * 1024,
-			VirtualDevice: vimtypes.VirtualDevice{
-				Key:        -42,
-				UnitNumber: ptr.To[int32](0),
-				Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
-					ThinProvisioned: ptr.To(true),
+	if !pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+		// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
+		// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.
+		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+			Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+			FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+			Device: &vimtypes.VirtualDisk{
+				CapacityInBytes: 1024 * 1024,
+				VirtualDevice: vimtypes.VirtualDevice{
+					Key:        -42,
+					UnitNumber: ptr.To[int32](0),
+					Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+						ThinProvisioned: ptr.To(true),
+					},
 				},
 			},
-		},
-		Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-			&vimtypes.VirtualMachineDefinedProfileSpec{
-				ProfileId: storageClassesToIDs[vmCtx.VM.Spec.StorageClass],
+			Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+				&vimtypes.VirtualMachineDefinedProfileSpec{
+					ProfileId: storageClassesToIDs[vmCtx.VM.Spec.StorageClass],
+				},
 			},
-		},
-	})
+		})
+	}
 
 	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
 		isVolumes := vmopv1util.FilterInstanceStorageVolumes(vmCtx.VM)

@@ -178,6 +178,11 @@ func (h *RequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContex
 		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, fmt.Errorf("unsupported image kind %s", vm.Spec.Image.Kind))}
 	}
 
+	// Skip ISO images as they don't have boot disks.
+	if imageStatus.Type == "ISO" {
+		return CapacityResponse{Response: webhook.Allowed("")}
+	}
+
 	if len(imageStatus.Disks) < 1 || imageStatus.Disks[0].Capacity == nil {
 		return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, errors.New("boot disk not found in image status"))}
 	}

@@ -682,6 +682,17 @@ func testRequestedCapacityHandlerHandleCreate() {
 					})
 				})
 
+				When("image type is ISO", func() {
+					BeforeEach(func() {
+						vmi.Status.Type = "ISO"
+					})
+
+					It("should write StatusOK code and an empty RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeTrue())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+					})
+				})
+
 				When("disks section is empty in image status", func() {
 					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
 						Expect(resp.Allowed).To(BeFalse())

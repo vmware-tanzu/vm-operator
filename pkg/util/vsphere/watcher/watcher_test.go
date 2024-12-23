@@ -213,8 +213,9 @@ var _ = Describe("Start", func() {
 		ExpectWithOffset(1, errors.As(w.Err(), &urlErr)).To(BeTrue())
 		ExpectWithOffset(1, urlErr.Op).To(Equal("Post"))
 
-		switch tErr := urlErr.Err.(type) {
-		case *net.OpError:
+		var tErr *net.OpError
+		switch {
+		case errors.As(urlErr.Err, &tErr):
 			ExpectWithOffset(1, tErr.Op).To(Equal("dial"))
 			ExpectWithOffset(1, tErr.Net).To(Equal("tcp"))
 			ExpectWithOffset(1, tErr.Err).ToNot(BeNil())
@@ -222,11 +223,11 @@ var _ = Describe("Start", func() {
 			ExpectWithOffset(1, errors.As(tErr.Err, &sysErr)).To(BeTrue())
 			ExpectWithOffset(1, sysErr.Syscall).To(Equal("connect"))
 		default:
-			ExpectWithOffset(1, tErr).To(HaveOccurred())
+			ExpectWithOffset(1, urlErr.Err).To(HaveOccurred())
 		}
 	}
 
-	When("the context is cancelled", FlakeAttempts(5), func() {
+	When("the context is cancelled", FlakeAttempts(1), func() {
 		JustBeforeEach(func() {
 			cancel()
 		})
@@ -247,7 +248,7 @@ var _ = Describe("Start", func() {
 		})
 	})
 
-	When("the connection to vSphere is interrupted", FlakeAttempts(5), func() {
+	When("the connection to vSphere is interrupted", FlakeAttempts(1), func() {
 		JustBeforeEach(func() {
 			closeServerOnce.Do(server.Close)
 		})

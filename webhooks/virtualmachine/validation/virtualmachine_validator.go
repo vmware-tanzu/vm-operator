@@ -21,6 +21,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/api/validation"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -40,7 +41,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -160,7 +160,8 @@ func (v validator) validateImageOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 
 	// Allow resetting of image if this is a failover operation.
 	if vmopv1util.IsImagelessVM(*vm) && pkgcfg.FromContext(ctx).Features.VMIncrementalRestore {
-		if annotations.HasFailOverVM(vm) {
+		if metav1.HasAnnotation(vm.ObjectMeta, vmopv1.FailedOverVMAnnotation) {
+
 			if !vmopv1util.ImageRefsEqual(vm.Spec.Image, oldVM.Spec.Image) {
 				if !ctx.IsPrivilegedAccount {
 					allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "image"), restrictedToPrivUsers))
@@ -403,7 +404,10 @@ func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *
 			pkgcfg.FromContext(ctx).Features.VMIncrementalRestore):
 		// TODO: Simplify this once mobility operator starts creating VMs with correct annotation.
 		// Skip validations on images if it is a VM that is imported, registered, or failed over.
-		if annotations.HasImportVM(vm) || annotations.HasRestoredVM(vm) || annotations.HasFailOverVM(vm) {
+		if metav1.HasAnnotation(vm.ObjectMeta, vmopv1.ImportedVMAnnotation) ||
+			metav1.HasAnnotation(vm.ObjectMeta, vmopv1.RestoredVMAnnotation) ||
+			metav1.HasAnnotation(vm.ObjectMeta, vmopv1.FailedOverVMAnnotation) {
+
 			// Restrict creating imageless VM resources to privileged users.
 			if !ctx.IsPrivilegedAccount {
 				allErrs = append(allErrs, field.Forbidden(f, restrictedToPrivUsers))

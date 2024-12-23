@@ -40,7 +40,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -231,7 +230,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 		VM:      vm,
 	}
 
-	if annotations.HasPaused(vm) {
+	if metav1.HasAnnotation(vm.ObjectMeta, vmopv1.PauseAnnotation) {
 		volCtx.Logger.Info("Skipping reconciliation since VirtualMachine contains the pause annotation")
 		return ctrl.Result{}, nil
 	}

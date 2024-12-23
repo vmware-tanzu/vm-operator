@@ -1347,7 +1347,7 @@ func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookReque
 	configMap := &corev1.ConfigMap{}
 	configMapKey := ctrlclient.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
 	if err := v.client.Get(ctx, configMapKey, configMap); err != nil {
-		return false, fmt.Errorf("error get ConfigMap: %s while validating TCP readiness probe port: %v", configMapKey, err)
+		return false, fmt.Errorf("error get ConfigMap: %s while validating TCP readiness probe port: %w", configMapKey, err)
 	}
 
 	return configMap.Data[isRestrictedNetworkKey] == "true", nil

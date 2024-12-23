@@ -6,6 +6,7 @@ package testutil
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -94,15 +95,21 @@ func ContainsError(err error, message string) bool {
 		if err.Error() == message {
 			return true
 		}
-		switch tErr := err.(type) {
-		case unwrappableError:
-			err = tErr.Unwrap()
-		case unwrappableErrorSlice:
-			for _, uErr := range tErr.Unwrap() {
+
+		var unwrap unwrappableError
+		var unwrapSlice unwrappableErrorSlice
+		switch {
+		case errors.As(err, &unwrap):
+			err = unwrap.Unwrap()
+		case errors.As(err, &unwrapSlice):
+			for _, uErr := range unwrapSlice.Unwrap() {
 				if ContainsError(uErr, message) {
 					return true
 				}
 			}
+			return false
+		default:
+			return false
 		}
 	}
 }

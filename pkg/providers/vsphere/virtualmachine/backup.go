@@ -297,7 +297,7 @@ func trimBackupFields(obj client.Object) {
 func getEncodedVMYaml(vm *vmopv1.VirtualMachine) (string, error) {
 	vmYAML, err := k8syaml.Marshal(vm)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal VM into YAML %+v: %v", vm, err)
+		return "", fmt.Errorf("failed to marshal VM into YAML %+v: %w", vm, err)
 	}
 
 	return pkgutil.EncodeGzipBase64(string(vmYAML))
@@ -364,7 +364,7 @@ func getDesiredAdditionalResourceYAMLForBackup(
 		trimBackupFields(resource)
 		marshaledYaml, err := k8syaml.Marshal(resource)
 		if err != nil {
-			return "", fmt.Errorf("failed to marshal object %q: %v", resource.GetName(), err)
+			return "", fmt.Errorf("failed to marshal object %q: %w", resource.GetName(), err)
 		}
 		sb.Write(marshaledYaml)
 		if i != len(resources)-1 {

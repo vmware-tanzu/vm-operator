@@ -555,10 +555,10 @@ func getIsDefaultVMClassController(ctx context.Context) bool {
 // ignoredCreateErr is written this way in order to illustrate coverage more
 // accurately.
 func ignoredCreateErr(err error) bool {
-	if err == providers.ErrDuplicateCreate {
+	if errors.Is(err, providers.ErrDuplicateCreate) {
 		return true
 	}
-	if err == providers.ErrTooManyCreates {
+	if errors.Is(err, providers.ErrTooManyCreates) {
 		return true
 	}
 	return false

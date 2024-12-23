@@ -383,7 +383,7 @@ func (r reconciler) reconcileUpdateDefaultKeyProvider(
 }
 
 func setConditionAndReturnErr(args reconcileArgs, err error, r Reason) error {
-	if err == ErrInvalidKeyProvider || err == ErrInvalidKeyID {
+	if errors.Is(err, ErrInvalidKeyProvider) || errors.Is(err, ErrInvalidKeyID) {
 		r = ReasonEncryptionClassInvalid
 	} else if apierrors.IsNotFound(err) {
 		r = ReasonEncryptionClassNotFound

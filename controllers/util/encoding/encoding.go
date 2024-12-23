@@ -6,6 +6,7 @@ package encoding
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 
@@ -33,7 +34,7 @@ func DecodeYAML(data []byte) (<-chan *unstructured.Unstructured, <-chan error) {
 		for {
 			buf, err := multidocReader.Read()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					return
 				}
 				chanErr <- fmt.Errorf("failed to read yaml data: %w", err)

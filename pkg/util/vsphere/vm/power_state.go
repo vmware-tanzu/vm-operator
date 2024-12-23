@@ -382,7 +382,7 @@ func doAndWaitOnSoftPowerOp(
 	defer cancel()
 
 	if err := waitForPowerStateFn(ctx, desiredPowerState); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return 0, fmt.Errorf("timed out waiting for power state %s", desiredPowerState)
 		}
 		return 0, fmt.Errorf("failed to wait for power state %s %w", desiredPowerState, err)
@@ -606,7 +606,7 @@ func doAndWaitOnSoftRestart(
 	defer cancel()
 
 	if err := powerOpFn(ctx); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return 0, errors.New("timed out while soft restarting vm")
 		}
 		return 0, fmt.Errorf("failed to soft restart vm %w", err)

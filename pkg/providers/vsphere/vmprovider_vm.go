@@ -20,6 +20,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -45,7 +46,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/annotations"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
@@ -693,7 +693,8 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	// Back up the VM at the end after a successful update.  TKG nodes are skipped
 	// from backup unless they specify the annotation to opt into backup.
 	if !kubeutil.HasCAPILabels(vmCtx.VM.Labels) ||
-		annotations.HasForceEnableBackup(vmCtx.VM) {
+		metav1.HasAnnotation(vmCtx.VM.ObjectMeta, vmopv1.ForceEnableBackupAnnotation) {
+
 		vmCtx.Logger.V(4).Info("Backing up VM Service managed VM")
 
 		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)

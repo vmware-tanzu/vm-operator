@@ -5,6 +5,7 @@ package spq
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -66,7 +67,8 @@ func GetStorageClassesForPolicy(
 				namespace,
 				o.Name)
 			if err != nil {
-				if _, ok := err.(NotFoundInNamespace); !ok {
+				var notFoundInNamespace NotFoundInNamespace
+				if !errors.As(err, &notFoundInNamespace) {
 					return nil, err
 				}
 			}

@@ -149,7 +149,7 @@ func GetVirtualMachineImageSpecAndStatus(
 	}
 
 	var (
-		obj    conditions.Getter
+		obj    ctrlclient.Object
 		objErr error
 		spec   vmopv1.VirtualMachineImageSpec
 		status vmopv1.VirtualMachineImageStatus
@@ -245,7 +245,7 @@ func GetVirtualMachineImageSpecAndStatus(
 	conditions.SetMirror(
 		vmCtx.VM,
 		vmopv1.VirtualMachineConditionImageReady,
-		obj,
+		obj.(conditions.Getter),
 		conditions.WithFallbackValue(false, "NotReady", vmiNotReadyMessage))
 	if conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady) {
 		return nil,

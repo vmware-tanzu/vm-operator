@@ -183,26 +183,23 @@ func (h *Helper) patchStatusConditions(ctx context.Context, obj client.Object, f
 	//
 	// NOTE: The checks and error below are done so that we don't panic if any of the objects don't satisfy the
 	// interface any longer, although this shouldn't happen because we already check when creating the patcher.
-	before, ok := h.beforeObject.(conditions.Getter)
+	beforeAsGetter, ok := h.beforeObject.(conditions.Getter)
 	if !ok {
-		return fmt.Errorf("object %s doesn't satisfy conditions.Getter, cannot patch", before.GetObjectKind())
+		return fmt.Errorf("object %s doesn't satisfy conditions.Getter, cannot patch", h.beforeObject.GetObjectKind())
 	}
-	after, ok := obj.(conditions.Getter)
+	afterAsGetter, ok := obj.(conditions.Getter)
 	if !ok {
-		return fmt.Errorf("object %s doesn't satisfy conditions.Getter, cannot patch", after.GetObjectKind())
+		return fmt.Errorf("object %s doesn't satisfy conditions.Getter, cannot patch", obj.GetObjectKind())
 	}
 
 	// Store the diff from the before/after object, and return early if there are no changes.
-	diff := conditions.NewPatch(
-		before,
-		after,
-	)
+	diff := conditions.NewPatch(beforeAsGetter, afterAsGetter)
 	if diff.IsZero() {
 		return nil
 	}
 
 	// Make a copy of the object and store the key used if we have conflicts.
-	key := client.ObjectKeyFromObject(after)
+	key := client.ObjectKeyFromObject(obj)
 
 	// Define and start a backoff loop to handle conflicts
 	// between controllers working on the same object.
@@ -216,8 +213,8 @@ func (h *Helper) patchStatusConditions(ctx context.Context, obj client.Object, f
 
 	// Start the backoff loop and return errors if any.
 	return wait.ExponentialBackoff(backoff, func() (bool, error) {
-		latest, ok := before.DeepCopyObject().(conditions.Setter)
-		if !ok {
+		latest := h.beforeObject.DeepCopyObject().(client.Object)
+		if _, ok := latest.(conditions.Setter); !ok {
 			return false, fmt.Errorf("object %s doesn't satisfy conditions.Setter, cannot patch", latest.GetObjectKind())
 		}
 
@@ -227,10 +224,16 @@ func (h *Helper) patchStatusConditions(ctx context.Context, obj client.Object, f
 		}
 
 		// Create the condition patch before merging conditions.
-		conditionsPatch := client.MergeFromWithOptions(latest.DeepCopyObject().(conditions.Setter), client.MergeFromWithOptimisticLock{})
+		conditionsPatch := client.MergeFromWithOptions(
+			latest.DeepCopyObject().(client.Object),
+			client.MergeFromWithOptimisticLock{})
 
 		// Set the condition patch previously created on the new object.
-		if err := diff.Apply(latest, conditions.WithForceOverwrite(forceOverwrite), conditions.WithOwnedConditions(ownedConditions...)); err != nil {
+		if err := diff.Apply(
+			latest.(conditions.Setter),
+			conditions.WithForceOverwrite(forceOverwrite),
+			conditions.WithOwnedConditions(ownedConditions...)); err != nil {
+
 			return false, err
 		}
 

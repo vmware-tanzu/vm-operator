@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2020-2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,8 +25,6 @@ import (
 	"github.com/onsi/gomega/format"
 	"github.com/onsi/gomega/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 var (
@@ -41,15 +39,15 @@ var (
 func TestGetAndHas(t *testing.T) {
 	g := NewWithT(t)
 
-	vm := &vmopv1.VirtualMachine{}
+	var obj nonKubeObj
 
-	g.Expect(Has(vm, "conditionBaz")).To(BeFalse())
-	g.Expect(Get(vm, "conditionBaz")).To(BeNil())
+	g.Expect(Has(&obj, "conditionBaz")).To(BeFalse())
+	g.Expect(Get(&obj, "conditionBaz")).To(BeNil())
 
-	vm.SetConditions(conditionList(TrueCondition("conditionBaz")))
+	obj.SetConditions(conditionList(TrueCondition("conditionBaz")))
 
-	g.Expect(Has(vm, "conditionBaz")).To(BeTrue())
-	g.Expect(Get(vm, "conditionBaz")).To(haveSameStateOf(TrueCondition("conditionBaz")))
+	g.Expect(Has(&obj, "conditionBaz")).To(BeTrue())
+	g.Expect(Get(&obj, "conditionBaz")).To(haveSameStateOf(TrueCondition("conditionBaz")))
 }
 
 func TestIsMethods(t *testing.T) {
@@ -90,7 +88,7 @@ func TestIsMethods(t *testing.T) {
 
 func TestMirror(t *testing.T) {
 	foo := FalseCondition("foo", "reason foo", "message foo")
-	ready := TrueCondition(vmopv1.ReadyConditionType)
+	ready := TrueCondition(ReadyConditionType)
 	readyBar := ready.DeepCopy()
 	readyBar.Type = "bar"
 
@@ -131,7 +129,7 @@ func TestSummary(t *testing.T) {
 	foo := TrueCondition("foo")
 	bar := FalseCondition("bar", "reason falseInfo1", "message falseInfo1")
 	baz := FalseCondition("baz", "reason falseInfo2", "message falseInfo2")
-	existingReady := FalseCondition(vmopv1.ReadyConditionType, "reason falseError1", "message falseError1") // NB. existing ready has higher priority than other conditions
+	existingReady := FalseCondition(ReadyConditionType, "reason falseError1", "message falseError1") // NB. existing ready has higher priority than other conditions
 
 	tests := []struct {
 		name    string
@@ -147,78 +145,78 @@ func TestSummary(t *testing.T) {
 		{
 			name: "Returns ready condition with the summary of existing conditions (with default options)",
 			from: getterWithConditions(foo, bar),
-			want: FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
+			want: FalseCondition(ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
 		},
 		{
 			name:    "Returns ready condition with the summary of existing conditions (using WithStepCounter options)",
 			from:    getterWithConditions(foo, bar),
 			options: []MergeOption{WithStepCounter()},
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "1 of 2 completed"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "1 of 2 completed"),
 		},
 		{
 			name:    "Returns ready condition with the summary of existing conditions (using WithStepCounterIf options)",
 			from:    getterWithConditions(foo, bar),
 			options: []MergeOption{WithStepCounterIf(false)},
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
 		},
 		{
 			name:    "Returns ready condition with the summary of existing conditions (using WithStepCounterIf options)",
 			from:    getterWithConditions(foo, bar),
 			options: []MergeOption{WithStepCounterIf(true)},
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "1 of 2 completed"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "1 of 2 completed"),
 		},
 		{
 			name:    "Returns ready condition with the summary of existing conditions (using WithStepCounterIf and WithStepCounterIfOnly options)",
 			from:    getterWithConditions(bar),
 			options: []MergeOption{WithStepCounter(), WithStepCounterIfOnly("bar")},
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "0 of 1 completed"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "0 of 1 completed"),
 		},
 		{
 			name:    "Returns ready condition with the summary of existing conditions (using WithStepCounterIf and WithStepCounterIfOnly options)",
 			from:    getterWithConditions(foo, bar),
 			options: []MergeOption{WithStepCounter(), WithStepCounterIfOnly("foo")},
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
 		},
 		{
 			name:    "Returns ready condition with the summary of selected conditions (using WithConditions options)",
 			from:    getterWithConditions(foo, bar),
 			options: []MergeOption{WithConditions("foo")}, // bar should be ignored
-			want:    TrueCondition(vmopv1.ReadyConditionType),
+			want:    TrueCondition(ReadyConditionType),
 		},
 		{
 			name:    "Returns ready condition with the summary of selected conditions (using WithConditions and WithStepCounter options)",
 			from:    getterWithConditions(foo, bar, baz),
 			options: []MergeOption{WithConditions("foo", "bar"), WithStepCounter()}, // baz should be ignored, total steps should be 2
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "1 of 2 completed"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "1 of 2 completed"),
 		},
 		{
 			name:    "Returns ready condition with the summary of selected conditions (using WithConditions and WithStepCounterIfOnly options)",
 			from:    getterWithConditions(bar),
 			options: []MergeOption{WithConditions("bar", "baz"), WithStepCounter(), WithStepCounterIfOnly("bar")}, // there is only bar, the step counter should be set and counts only a subset of conditions
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "0 of 1 completed"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "0 of 1 completed"),
 		},
 		{
 			name:    "Returns ready condition with the summary of selected conditions (using WithConditions and WithStepCounterIfOnly options - with inconsistent order between the two)",
 			from:    getterWithConditions(bar),
 			options: []MergeOption{WithConditions("baz", "bar"), WithStepCounter(), WithStepCounterIfOnly("bar", "baz")}, // conditions in WithStepCounterIfOnly could be in different order than in WithConditions
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "0 of 2 completed"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "0 of 2 completed"),
 		},
 		{
 			name:    "Returns ready condition with the summary of selected conditions (using WithConditions and WithStepCounterIfOnly options)",
 			from:    getterWithConditions(bar, baz),
 			options: []MergeOption{WithConditions("bar", "baz"), WithStepCounter(), WithStepCounterIfOnly("bar")}, // there is also baz, so the step counter should not be set
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
 		},
 		{
 			name:    "Ready condition respects merge order",
 			from:    getterWithConditions(bar, baz),
 			options: []MergeOption{WithConditions("baz", "bar")}, // baz should take precedence on bar
-			want:    FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo2", "message falseInfo2"),
+			want:    FalseCondition(ReadyConditionType, "reason falseInfo2", "message falseInfo2"),
 		},
 		{
 			name: "Ignores existing Ready condition when computing the summary",
 			from: getterWithConditions(existingReady, foo, bar),
-			want: FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
+			want: FalseCondition(ReadyConditionType, "reason falseInfo1", "message falseInfo1"),
 		},
 	}
 
@@ -237,8 +235,8 @@ func TestSummary(t *testing.T) {
 }
 
 func TestAggregate(t *testing.T) {
-	ready1 := TrueCondition(vmopv1.ReadyConditionType)
-	ready2 := FalseCondition(vmopv1.ReadyConditionType, "reason falseInfo1", "message falseInfo1")
+	ready1 := TrueCondition(ReadyConditionType)
+	ready2 := FalseCondition(ReadyConditionType, "reason falseInfo1", "message falseInfo1")
 	bar := FalseCondition("bar", "reason falseError1", "message falseError1") // NB. bar has higher priority than other conditions
 
 	tests := []struct {
@@ -281,7 +279,7 @@ func TestAggregate(t *testing.T) {
 }
 
 func getterWithConditions(conditions ...*metav1.Condition) Getter {
-	obj := &vmopv1.VirtualMachine{}
+	var obj nonKubeObj
 	obj.SetConditions(conditionList(conditions...))
 	return obj
 }

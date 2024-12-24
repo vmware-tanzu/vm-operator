@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2020-2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,8 +23,6 @@ import (
 
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 func TestNewPatch(t *testing.T) {
@@ -261,25 +259,24 @@ func TestApply(t *testing.T) {
 func TestApplyDoesNotAlterLastTransitionTime(t *testing.T) {
 	g := NewWithT(t)
 
-	before := &vmopv1.VirtualMachine{}
-	after := &vmopv1.VirtualMachine{
-		Status: vmopv1.VirtualMachineStatus{
-			Conditions: []metav1.Condition{
-				{
-					Type:               "foo",
-					Status:             metav1.ConditionTrue,
-					LastTransitionTime: metav1.NewTime(time.Now().UTC().Truncate(time.Second)),
-				},
+	var before nonKubeObj
+	after := nonKubeObj{
+		c: []metav1.Condition{
+			{
+				Type:               "foo",
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: metav1.NewTime(time.Now().UTC().Truncate(time.Second)),
 			},
 		},
 	}
-	latest := &vmopv1.VirtualMachine{}
+	var latest nonKubeObj
 
-	// latest has no conditions, so we are actually adding the condition but in this case we should not set the LastTransition Time
-	// but we should preserve the LastTransition set in after
+	// latest has no conditions, so we are actually adding the condition but in
+	// this case we should not set the lastTransitionTime, but we should
+	// preserve the LastTransition set in after
 
 	diff := NewPatch(before, after)
-	err := diff.Apply(latest)
+	err := diff.Apply(&latest)
 
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(latest.GetConditions()).To(Equal(after.GetConditions()))

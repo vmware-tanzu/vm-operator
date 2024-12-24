@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2020-2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,8 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 func TestUnstructuredGetConditions(t *testing.T) {
@@ -33,10 +31,10 @@ func TestUnstructuredGetConditions(t *testing.T) {
 
 	scheme := runtime.NewScheme()
 	g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
-	g.Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
+	scheme.AddKnownTypes(corev1.SchemeGroupVersion, &kubeObj{})
 
 	// GetConditions should return conditions from an unstructured object
-	c := &vmopv1.VirtualMachine{}
+	c := &kubeObj{}
 	c.SetConditions(conditionList(true1))
 	u := &unstructured.Unstructured{}
 	g.Expect(scheme.Convert(c, u, nil)).To(Succeed())
@@ -44,7 +42,7 @@ func TestUnstructuredGetConditions(t *testing.T) {
 	g.Expect(UnstructuredGetter(u).GetConditions()).To(haveSameConditionsOf(conditionList(true1)))
 
 	// GetConditions should return nil for an unstructured object with empty conditions
-	c = &vmopv1.VirtualMachine{}
+	c = &kubeObj{}
 	u = &unstructured.Unstructured{}
 	g.Expect(scheme.Convert(c, u, nil)).To(Succeed())
 
@@ -82,9 +80,9 @@ func TestUnstructuredSetConditions(t *testing.T) {
 	// gets an unstructured with empty conditions
 	scheme := runtime.NewScheme()
 	g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
-	g.Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
+	scheme.AddKnownTypes(corev1.SchemeGroupVersion, &kubeObj{})
 
-	c := &vmopv1.VirtualMachine{}
+	c := &kubeObj{}
 	u := &unstructured.Unstructured{}
 	g.Expect(scheme.Convert(c, u, nil)).To(Succeed())
 

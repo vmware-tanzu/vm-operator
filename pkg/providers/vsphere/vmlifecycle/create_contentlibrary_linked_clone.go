@@ -180,7 +180,7 @@ func getImageLinkedCloneInfo(
 		return imgInfo, nil
 	}
 
-	if err != vmopv1util.ErrImageNotSynced {
+	if !errors.Is(err, vmopv1util.ErrImageNotSynced) {
 		return vmopv1util.ImageDiskInfo{},
 			fmt.Errorf("failed to get image info before syncing: %w", err)
 	}

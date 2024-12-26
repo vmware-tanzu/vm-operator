@@ -75,7 +75,7 @@ spec:
 
 8.  :wave: The field `spec.bootstrap`, and the fields inside of it, are used to configure the VM's [bootstrap provider](#bootstrap-provider).
 
-9.  :wave: The field `spec.cdrom` is used to configure the VM's [CD-ROM](../concepts/workloads/vm/#cd-rom) devices to mount ISO images.
+9.  :wave: The field `spec.cdrom` is used to configure the VM's [CD-ROM](../../concepts/workloads/vm/#cd-rom) devices to mount ISO images.
 
 ## Bootstrap Provider
 

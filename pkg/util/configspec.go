@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"reflect"
+	"regexp"
 
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -202,4 +203,87 @@ func SafeConfigSpecToString(
 	in *vimtypes.VirtualMachineConfigSpec) (s string) {
 
 	return vimtypes.ToString(in)
+}
+
+var dsNameRX = regexp.MustCompile(`^\[([^\]].+)\].*$`)
+
+// DatastoreNameFromStorageURI returns the datastore name from a storage URI,
+// ex.: [my-datastore-1] vm-name/vm-name.vmx. The previous URI would return the
+// value "my-datastore-1".
+// An empty string is returned if there is no match.
+func DatastoreNameFromStorageURI(s string) string {
+	m := dsNameRX.FindStringSubmatch(s)
+	if len(m) == 0 {
+		return ""
+	}
+	return m[1]
+}
+
+// CopyStorageControllersAndDisks copies the storage controllers and disks from
+// the source spec to the destination. This function does not attempt to handle
+// any conflicts -- it is a blind copy. If the provided storagePolicyID is
+// non-empty, it is assigned to any all the copied disks.
+func CopyStorageControllersAndDisks(
+	dst *vimtypes.VirtualMachineConfigSpec,
+	src vimtypes.VirtualMachineConfigSpec,
+	storagePolicyID string) {
+
+	ctrlKeys := map[int32]struct{}{}
+	diskCtrlKeys := map[int32]struct{}{}
+
+	for i := range src.DeviceChange {
+		srcSpec := src.DeviceChange[i].GetVirtualDeviceConfigSpec()
+		if srcSpec.Operation == vimtypes.VirtualDeviceConfigSpecOperationAdd {
+
+			var dstSpec *vimtypes.VirtualDeviceConfigSpec
+
+			switch srcDev := srcSpec.Device.(type) {
+			case vimtypes.BaseVirtualSCSIController,
+				vimtypes.BaseVirtualSATAController,
+				*vimtypes.VirtualIDEController,
+				*vimtypes.VirtualNVMEController:
+
+				ctrlKeys[srcDev.GetVirtualDevice().Key] = struct{}{}
+
+				dstSpec = &vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					Device:    srcDev,
+				}
+
+			case *vimtypes.VirtualDisk:
+
+				diskCtrlKeys[srcDev.ControllerKey] = struct{}{}
+
+				dstSpec = &vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device:        srcDev,
+				}
+				if storagePolicyID != "" {
+					dstSpec.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
+						&vimtypes.VirtualMachineDefinedProfileSpec{
+							ProfileId: storagePolicyID,
+						},
+					}
+				}
+			}
+
+			if dstSpec != nil {
+				dst.DeviceChange = append(dst.DeviceChange, dstSpec)
+			}
+		}
+	}
+
+	// Remove any controllers that came from the OVF but are not used by disks.
+	RemoveDevicesFromConfigSpec(dst, func(bvd vimtypes.BaseVirtualDevice) bool {
+		if bvc, ok := bvd.(vimtypes.BaseVirtualController); ok {
+			vc := bvc.GetVirtualController()
+			if _, ok := ctrlKeys[vc.Key]; ok {
+				if _, ok := diskCtrlKeys[vc.Key]; !ok {
+					return true
+				}
+			}
+		}
+		return false
+	})
 }

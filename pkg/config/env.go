@@ -63,7 +63,7 @@ func FromEnv() Config {
 	setBool(env.FSSVMImportNewNet, &config.Features.VMImportNewNet)
 	setBool(env.FSSVMIncrementalRestore, &config.Features.VMIncrementalRestore)
 	setBool(env.FSSBringYourOwnEncryptionKey, &config.Features.BringYourOwnEncryptionKey)
-
+	setBool(env.FSSFastDeploy, &config.Features.FastDeploy)
 	setBool(env.FSSSVAsyncUpgrade, &config.Features.SVAsyncUpgrade)
 	if !config.Features.SVAsyncUpgrade {
 		// When SVAsyncUpgrade is enabled, we'll later use the capability CM to determine if

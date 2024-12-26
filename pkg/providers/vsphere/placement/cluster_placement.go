@@ -8,37 +8,107 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // Recommendation is the info about a placement recommendation.
 type Recommendation struct {
-	PoolMoRef vimtypes.ManagedObjectReference
-	HostMoRef *vimtypes.ManagedObjectReference
-	// TODO: Datastore, whatever else as we need it.
+	PoolMoRef  vimtypes.ManagedObjectReference
+	HostMoRef  *vimtypes.ManagedObjectReference
+	Datastores []DatastoreResult
 }
 
-func relocateSpecToRecommendation(relocateSpec *vimtypes.VirtualMachineRelocateSpec) *Recommendation {
+func relocateSpecToRecommendation(
+	ctx context.Context,
+	relocateSpec *vimtypes.VirtualMachineRelocateSpec) *Recommendation {
+
 	// Instance Storage requires the host.
 	if relocateSpec == nil || relocateSpec.Pool == nil || relocateSpec.Host == nil {
 		return nil
 	}
 
-	return &Recommendation{
+	r := Recommendation{
 		PoolMoRef: *relocateSpec.Pool,
 		HostMoRef: relocateSpec.Host,
 	}
+
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		if ds := relocateSpec.Datastore; ds != nil {
+			r.Datastores = append(r.Datastores, DatastoreResult{
+				MoRef: *ds,
+			})
+		}
+		for i := range relocateSpec.Disk {
+			d := relocateSpec.Disk[i]
+			r.Datastores = append(r.Datastores, DatastoreResult{
+				MoRef:   d.Datastore,
+				ForDisk: true,
+				DiskKey: d.DiskId,
+			})
+		}
+	}
+
+	return &r
 }
 
-func clusterPlacementActionToRecommendation(action vimtypes.ClusterClusterInitialPlacementAction) *Recommendation {
-	return &Recommendation{
+func clusterPlacementActionToRecommendation(
+	ctx context.Context,
+	finder *find.Finder,
+	action vimtypes.ClusterClusterInitialPlacementAction) (*Recommendation, error) {
+
+	r := Recommendation{
 		PoolMoRef: action.Pool,
 		HostMoRef: action.TargetHost,
 	}
+
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		if cs := action.ConfigSpec; cs != nil {
+			//
+			// Get the recommended datastore for the VM.
+			//
+			if cs.Files != nil {
+				if dsn := util.DatastoreNameFromStorageURI(cs.Files.VmPathName); dsn != "" {
+					ds, err := finder.Datastore(ctx, dsn)
+					if err != nil {
+						return nil, fmt.Errorf("failed to get datastore for %q: %w", dsn, err)
+					}
+					if ds != nil {
+						r.Datastores = append(r.Datastores, DatastoreResult{
+							Name:  dsn,
+							MoRef: ds.Reference(),
+						})
+					}
+				}
+			}
+
+			//
+			// Get the recommended datastores for each disk.
+			//
+			for i := range cs.DeviceChange {
+				dcs := cs.DeviceChange[i].GetVirtualDeviceConfigSpec()
+				if disk, ok := dcs.Device.(*vimtypes.VirtualDisk); ok {
+					if bbi, ok := disk.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo); ok {
+						if bi := bbi.GetVirtualDeviceFileBackingInfo(); bi.Datastore != nil {
+							r.Datastores = append(r.Datastores, DatastoreResult{
+								MoRef:   *bi.Datastore,
+								ForDisk: true,
+								DiskKey: disk.Key,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return &r, nil
 }
 
 func CheckPlacementRelocateSpec(spec *vimtypes.VirtualMachineRelocateSpec) error {
@@ -109,7 +179,7 @@ func CloneVMRelocateSpec(
 
 // PlaceVMForCreate determines the suitable placement candidates in the cluster.
 func PlaceVMForCreate(
-	ctx context.Context,
+	vmCtx pkgctx.VirtualMachineContext,
 	cluster *object.ClusterComputeResource,
 	configSpec vimtypes.VirtualMachineConfigSpec) ([]Recommendation, error) {
 
@@ -118,10 +188,14 @@ func PlaceVMForCreate(
 		ConfigSpec:    &configSpec,
 	}
 
-	resp, err := cluster.PlaceVm(ctx, placementSpec)
+	vmCtx.Logger.V(4).Info("PlaceVMForCreate request", "placementSpec", vimtypes.ToString(placementSpec))
+
+	resp, err := cluster.PlaceVm(vmCtx, placementSpec)
 	if err != nil {
 		return nil, err
 	}
+
+	vmCtx.Logger.V(6).Info("PlaceVMForCreate response", "resp", vimtypes.ToString(resp))
 
 	var recommendations []Recommendation
 
@@ -132,7 +206,7 @@ func PlaceVMForCreate(
 
 		for _, a := range r.Action {
 			if pa, ok := a.(*vimtypes.PlacementAction); ok {
-				if r := relocateSpecToRecommendation(pa.RelocateSpec); r != nil {
+				if r := relocateSpecToRecommendation(vmCtx, pa.RelocateSpec); r != nil {
 					recommendations = append(recommendations, *r)
 				}
 			}
@@ -146,9 +220,10 @@ func PlaceVMForCreate(
 func ClusterPlaceVMForCreate(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vim25.Client,
+	finder *find.Finder,
 	resourcePoolsMoRefs []vimtypes.ManagedObjectReference,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	needsHost bool) ([]Recommendation, error) {
+	needHostPlacement, needDatastorePlacement bool) ([]Recommendation, error) {
 
 	// Work around PlaceVmsXCluster bug that crashes vpxd when ConfigSpec.Files is nil.
 	configSpec.Files = new(vimtypes.VirtualMachineFileInfo)
@@ -160,17 +235,18 @@ func ClusterPlaceVMForCreate(
 				ConfigSpec: configSpec,
 			},
 		},
-		HostRecommRequired: &needsHost,
+		HostRecommRequired:      &needHostPlacement,
+		DatastoreRecommRequired: &needDatastorePlacement,
 	}
 
-	vmCtx.Logger.V(4).Info("PlaceVmsXCluster request", "placementSpec", placementSpec)
+	vmCtx.Logger.V(4).Info("PlaceVmsXCluster request", "placementSpec", vimtypes.ToString(placementSpec))
 
 	resp, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(vmCtx, placementSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	vmCtx.Logger.V(6).Info("PlaceVmsXCluster response", "resp", resp)
+	vmCtx.Logger.V(6).Info("PlaceVmsXCluster response", "resp", vimtypes.ToString(resp))
 
 	if len(resp.Faults) != 0 {
 		var faultMgs []string
@@ -194,7 +270,12 @@ func ClusterPlaceVMForCreate(
 
 		for _, a := range info.Recommendation.Action {
 			if ca, ok := a.(*vimtypes.ClusterClusterInitialPlacementAction); ok {
-				if r := clusterPlacementActionToRecommendation(*ca); r != nil {
+				r, err := clusterPlacementActionToRecommendation(vmCtx, finder, *ca)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"failed to translate placement action to recommendation: %w", err)
+				}
+				if r != nil {
 					recommendations = append(recommendations, *r)
 				}
 			}

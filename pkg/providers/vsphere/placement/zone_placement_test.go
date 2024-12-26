@@ -4,6 +4,8 @@
 package placement_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -14,10 +16,12 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -69,6 +73,7 @@ func vcSimPlacement() {
 
 	var (
 		initObjects []client.Object
+		parentCtx   context.Context
 		ctx         *builder.TestContextForVCSim
 		nsInfo      builder.WorkloadNamespaceInfo
 		testConfig  builder.VCSimTestConfig
@@ -80,6 +85,7 @@ func vcSimPlacement() {
 	)
 
 	BeforeEach(func() {
+		parentCtx = pkgcfg.NewContext()
 		testConfig = builder.VCSimTestConfig{}
 
 		vm = builder.DummyVirtualMachine()
@@ -88,13 +94,35 @@ func vcSimPlacement() {
 		// Other than the name ConfigSpec contents don't matter for vcsim.
 		configSpec = vimtypes.VirtualMachineConfigSpec{
 			Name: vm.Name,
+
+			// Add a disk to prompt a datastore assignment.
+			DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						CapacityInBytes: 1024 * 1024,
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key:        -42,
+							UnitNumber: ptr.To[int32](0),
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								ThinProvisioned: ptr.To(true),
+							},
+						},
+					},
+				},
+			},
 		}
 
 		constraints = placement.Constraints{}
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
+		ctx = suite.NewTestContextForVCSimWithParentContext(
+			parentCtx,
+			testConfig,
+			initObjects...)
+
 		nsInfo = ctx.CreateWorkloadNamespace()
 
 		vm.Namespace = nsInfo.Namespace
@@ -139,7 +167,7 @@ func vcSimPlacement() {
 				})
 
 				It("returns success with same zone", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).ToNot(BeNil())
 					Expect(result.ZonePlacement).To(BeTrue())
@@ -154,7 +182,7 @@ func vcSimPlacement() {
 
 				It("returns success even if assigned zone is being deleted", func() {
 					Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).To(BeNil())
 					Expect(result).NotTo(BeNil())
 				})
@@ -166,14 +194,14 @@ func vcSimPlacement() {
 				})
 
 				It("returns an error", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).To(MatchError("no zones in specified namespace"))
 					Expect(result).To(BeNil())
 				})
 			})
 
 			It("no zone assigned, returns success", func() {
-				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(result.ZonePlacement).To(BeTrue())
@@ -192,7 +220,7 @@ func vcSimPlacement() {
 				})
 
 				It("returns success", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.ZonePlacement).To(BeTrue())
@@ -211,7 +239,7 @@ func vcSimPlacement() {
 					zone.Finalizers = []string{"test"}
 					Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
 					Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).To(MatchError("no placement candidates available"))
 					Expect(result).To(BeNil())
 				})
@@ -228,7 +256,7 @@ func vcSimPlacement() {
 					}
 
 					constraints.ChildRPName = childRPName
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.ZonePlacement).To(BeTrue())
@@ -244,7 +272,7 @@ func vcSimPlacement() {
 				Context("Only allowed zone does not exist", func() {
 					It("returns error", func() {
 						constraints.Zones = sets.New("bogus-zone")
-						_, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+						_, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 						Expect(err).To(MatchError("no placement candidates available after applying zone constraints: bogus-zone"))
 					})
 				})
@@ -252,7 +280,7 @@ func vcSimPlacement() {
 				Context("Allowed zone exists", func() {
 					It("returns success", func() {
 						constraints.Zones = sets.New(ctx.ZoneNames[0])
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(result.ZoneName).To(Equal(ctx.ZoneNames[0]))
 					})
@@ -276,7 +304,7 @@ func vcSimPlacement() {
 					})
 
 					It("returns success with same host", func() {
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 						Expect(err).ToNot(HaveOccurred())
 
 						Expect(result.InstanceStoragePlacement).To(BeTrue())
@@ -286,7 +314,7 @@ func vcSimPlacement() {
 				})
 
 				It("returns success", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.ZonePlacement).To(BeTrue())
@@ -312,7 +340,7 @@ func vcSimPlacement() {
 						}
 
 						constraints.ChildRPName = childRPName
-						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+						result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 						Expect(err).ToNot(HaveOccurred())
 
 						Expect(result.ZonePlacement).To(BeTrue())
@@ -349,7 +377,7 @@ func vcSimPlacement() {
 				})
 
 				It("returns success with same zone", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result).ToNot(BeNil())
 					Expect(result.ZonePlacement).To(BeTrue())
@@ -369,14 +397,14 @@ func vcSimPlacement() {
 				})
 
 				It("returns an error", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).To(MatchError("no placement candidates available"))
 					Expect(result).To(BeNil())
 				})
 			})
 
 			It("returns success", func() {
-				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(result.ZonePlacement).To(BeTrue())
@@ -395,7 +423,7 @@ func vcSimPlacement() {
 				})
 
 				It("returns success", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.ZonePlacement).To(BeTrue())
@@ -420,7 +448,7 @@ func vcSimPlacement() {
 					}
 
 					constraints.ChildRPName = childRPName
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.ZonePlacement).To(BeTrue())
@@ -437,7 +465,7 @@ func vcSimPlacement() {
 			Context("Only allowed zone does not exist", func() {
 				It("returns error", func() {
 					constraints.Zones = sets.New("bogus-zone")
-					_, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					_, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).To(MatchError("no placement candidates available after applying zone constraints: bogus-zone"))
 				})
 			})
@@ -445,7 +473,7 @@ func vcSimPlacement() {
 			Context("Allowed zone exists", func() {
 				It("returns success", func() {
 					constraints.Zones = sets.New(ctx.ZoneNames[0])
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(result.ZoneName).To(Equal(ctx.ZoneNames[0]))
 				})
@@ -469,7 +497,7 @@ func vcSimPlacement() {
 				})
 
 				It("returns success with same host", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.InstanceStoragePlacement).To(BeTrue())
@@ -479,7 +507,7 @@ func vcSimPlacement() {
 			})
 
 			It("returns success", func() {
-				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(result.ZonePlacement).To(BeTrue())
@@ -505,7 +533,7 @@ func vcSimPlacement() {
 					}
 
 					constraints.ChildRPName = childRPName
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, constraints)
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.ZonePlacement).To(BeTrue())
@@ -519,6 +547,97 @@ func vcSimPlacement() {
 					Expect(childRP).ToNot(BeNil())
 					Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
 				})
+			})
+		})
+	})
+
+	Describe("When FSS_WCP_VMSERVICE_FAST_DEPLOY enabled", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+				config.Features.FastDeploy = true
+			})
+		})
+
+		It("returns success", func() {
+			result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(result.ZonePlacement).To(BeTrue())
+			Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+			Expect(result.PoolMoRef).ToNot(BeZero())
+			Expect(result.HostMoRef).To(BeNil())
+			Expect(result.Datastores).ToNot(BeEmpty())
+			Expect(result.Datastores[0].ForDisk).To(BeFalse())
+			Expect(result.Datastores[0].DiskKey).To(BeZero())
+			Expect(result.Datastores[0].Name).ToNot(BeEmpty())
+			Expect(result.Datastores[0].MoRef).ToNot(BeZero())
+			Expect(result.Datastores[0].URL).ToNot(BeZero())
+			Expect(result.Datastores[0].TopLevelDirectoryCreateSupported).To(BeTrue())
+			Expect(result.Datastores[1].ForDisk).To(BeTrue())
+			Expect(result.Datastores[1].DiskKey).ToNot(BeZero())
+			Expect(result.Datastores[1].Name).ToNot(BeEmpty())
+			Expect(result.Datastores[1].MoRef).ToNot(BeZero())
+			Expect(result.Datastores[1].URL).ToNot(BeZero())
+			Expect(result.Datastores[1].TopLevelDirectoryCreateSupported).To(BeTrue())
+		})
+
+		Context("Only one zone exists", func() {
+			BeforeEach(func() {
+				testConfig.NumFaultDomains = 1
+			})
+
+			It("returns success", func() {
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(result.ZonePlacement).To(BeTrue())
+				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+				Expect(result.PoolMoRef).ToNot(BeZero())
+				Expect(result.HostMoRef).ToNot(BeNil())
+				Expect(result.Datastores).ToNot(BeEmpty())
+				Expect(result.Datastores[0].ForDisk).To(BeFalse())
+				Expect(result.Datastores[0].DiskKey).To(BeZero())
+				Expect(result.Datastores[0].Name).ToNot(BeEmpty())
+				Expect(result.Datastores[0].MoRef).ToNot(BeZero())
+				Expect(result.Datastores[0].URL).ToNot(BeZero())
+				Expect(result.Datastores[0].TopLevelDirectoryCreateSupported).To(BeTrue())
+			})
+		})
+	})
+
+	// TODO(akutz): Delete when FSS_WCP_VMSERVICE_FAST_DEPLOY is enabled.
+	Describe("When FSS_WCP_VMSERVICE_FAST_DEPLOY disabled", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+				config.Features.FastDeploy = false
+			})
+		})
+
+		It("returns success", func() {
+			result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(result.ZonePlacement).To(BeTrue())
+			Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+			Expect(result.PoolMoRef).ToNot(BeZero())
+			Expect(result.HostMoRef).To(BeNil())
+			Expect(result.Datastores).To(BeEmpty())
+		})
+
+		Context("Only one zone exists", func() {
+			BeforeEach(func() {
+				testConfig.NumFaultDomains = 1
+			})
+
+			It("returns success", func() {
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(result.ZonePlacement).To(BeTrue())
+				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
+				Expect(result.PoolMoRef).ToNot(BeZero())
+				Expect(result.HostMoRef).To(BeNil())
+				Expect(result.Datastores).To(BeEmpty())
 			})
 		})
 	})

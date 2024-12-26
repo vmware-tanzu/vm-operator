@@ -1149,6 +1149,35 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							})
 						})
 					})
+
+					When("Existing status has crypto info for a PVC", func() {
+
+						newCryptoStatus := func() *vmopv1.VirtualMachineVolumeCryptoStatus {
+							return &vmopv1.VirtualMachineVolumeCryptoStatus{
+								ProviderID: "my-provider-id",
+								KeyID:      "my-key-id",
+							}
+						}
+
+						assertPVCHasCrypto := func() {
+							ExpectWithOffset(1, vm.Status.Volumes[3].Crypto).To(Equal(newCryptoStatus()))
+						}
+
+						BeforeEach(func() {
+							vm.Status.Volumes = append(vm.Status.Volumes,
+								vmopv1.VirtualMachineVolumeStatus{
+									Name:   vmVol1.Name,
+									Type:   vmopv1.VirtualMachineStorageDiskTypeManaged,
+									Crypto: newCryptoStatus(),
+								},
+							)
+						})
+						It("includes the PVC crypto in the result", func() {
+							assertBaselineVolStatus()
+							assertPVCHasCrypto()
+						})
+
+					})
 				})
 			})
 		})

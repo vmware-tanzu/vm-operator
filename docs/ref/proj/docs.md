@@ -60,9 +60,12 @@ docs
         - License: start/about/license.md
     - Concepts:
       - concepts/README.md
+      # - Components: concepts/components.md
+      # - API: concepts/api.md
       - Workloads:
         - concepts/workloads/README.md
         - VirtualMachine: concepts/workloads/vm.md
+        - VirtualMachine Controller: concepts/workloads/vm-controller.md
         - VirtualMachineClass: concepts/workloads/vm-class.md
         - WebConsoleRequest: concepts/workloads/vm-web-console.md
         - Guest Customization: concepts/workloads/guest.md
@@ -80,14 +83,24 @@ docs
         - tutorials/deploy-vm/README.md
         - With Cloud-Init: tutorials/deploy-vm/cloudinit.md
         - With vAppConfig: tutorials/deploy-vm/vappconfig.md
+        - With PVC: tutorials/deploy-vm/with-pvc.md
+        - With ISO: tutorials/deploy-vm/iso.md
+      - Deploy apps:
+        - tutorials/deploy-apps/README.md
+        - NFS server and client: tutorials/deploy-apps/nfs-server-and-client.md
       - Troubleshooting:
         - tutorials/troubleshooting/README.md
         - Get a Console Session: tutorials/troubleshooting/get-console-session.md
+        - VM Deployment: tutorials/troubleshooting/deploy-vm.md
+        - IP Assignment: tutorials/troubleshooting/ip-assignment.md
+        - VM Publish: tutorials/troubleshooting/publish-vm.md
     - Reference:
       - ref/README.md
       - API:
         - ref/api/README.md
         - v1alpha1: ref/api/v1alpha1.md
+        - v1alpha2: ref/api/v1alpha2.md
+        - v1alpha3: ref/api/v1alpha3.md
       - Configuration:
         - ref/config/README.md
         - Manager Pod: ref/config/manager.md

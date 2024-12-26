@@ -38,7 +38,7 @@ The name of a VM must be a valid [DNS subdomain](https://kubernetes.io/docs/conc
 
 ### VM Image
 
-The `VirtualMachineImage` is a namespace-scoped resource from which a VM's disk image(s) is/are derived. This is why the name of a `VirtualMachineImage` resource must be specified when creating a new VM. It is also possible to deploy a new VM with the cluster-scoped `ClusterVirtualMachineImage` resource. The following commands may be used to discover the available images:
+The `VirtualMachineImage` is a namespace-scoped resource from which a VM's disk image(s) is/are derived. This is why the name of a `VirtualMachineImage` resource must be specified when creating a new VM from OVF. It is also possible to deploy a new VM with the cluster-scoped `ClusterVirtualMachineImage` resource. The following commands may be used to discover the available images:
 
 === "Get images for a namespace"
 
@@ -103,6 +103,10 @@ It is possible to update parts of an existing `VirtualMachine` resource. Some fi
 | `spec.className` | The name of the `VirtualMachineClass` that supplies the VM's virtual hardware | ✓ | ✓ | _NA_ |
 | `spec.powerState` | The VM's desired power state | ✓ | ✓ | _NA_ |
 | `metadata.labels.topology.kubernetes.io/zone` | The desired availability zone in which to schedule the VM | x | x | ✓ |
+| `spec.cdrom.name` | The name of the CD-ROM device to mount ISO in the VM | x | ✓ | _NA_ |
+| `spec.cdrom.image` | The reference to an ISO type `VirtualMachineImage` or `ClusterVirtualMachineImage` to mount in the VM | x | ✓ | _NA_ |
+| `spec.cdrom.connected` | The desired connection state of the CD-ROM device | ✓ | ✓ | _NA_ |
+| `spec.cdrom.allowGuestControl` | Whether the guest OS is allowed to connect/disconnect the CD-ROM device | ✓ | ✓ | _NA_ |
 
 Some of a VM's hardware resources are derived from the policies defined by your infrastructure administrator, others may be influenced directly by a user.
 
@@ -777,3 +781,37 @@ rockylinux_64Guest          Rocky Linux (64-bit)
 windows2022srvNext_64Guest  Microsoft Windows Server 2025 (64-bit)
 ...
 ```
+
+## CD-ROM
+
+The `spec.cdrom` field may be used to mount one or more ISO images in a VM. Each entry in the `spec.cdrom` field must reference a unique `VirtualMachineImage` or `ClusterVirtualMachineImage` resource as backing. Multiple CD-ROM devices using the same backing image, regardless of image kind (namespace or cluster scope), are not allowed.
+
+### CD-ROM Name
+
+The `spec.cdrom[].name` field consists of at least two lowercase letters or digits of this CD-ROM device. It must be unique among all CD-ROM devices attached to the VM.
+
+### CD-ROM Image
+
+The `spec.cdrom[].image` field is the Kubernetes object reference to the ISO type `VirtualMachineImage` or `ClusterVirtualMachineImage` resource. The following commands may be used to discover the available ISO type images:
+
+=== "Get ISO images for a namespace"
+
+    ```shell
+    kubectl get -n <NAMESPACE> vmi -l image.vmoperator.vmware.com/type=ISO
+    ```
+
+=== "Get ISO images for a cluster"
+
+    ```shell
+    kubectl get cvmi -l image.vmoperator.vmware.com/type=ISO
+    ```
+
+### CD-ROM Connection State
+
+The `spec.cdrom[].connected` field controls the connection state of the CD-ROM device. When set to `true`, the device is added and connected to the VM, or updated to a connected state if already present but disconnected. When explicitly set to `false`, the device is added but remains disconnected from the VM, or updated to a disconnected state if already connected.
+
+### CD-ROM Guest Control
+
+The `spec.cdrom[].allowGuestControl` field controls the guest OS's ability to connect/disconnect the CD-ROM device. If set to `true` (default value), a web console connection may be used to connect/disconnect the CD-ROM device from within the guest OS.
+
+For more information on the ISO VM workflow, please refer to the [Deploy a VM with ISO](../../../tutorials/deploy-vm/iso/) tutorial.

@@ -814,4 +814,4 @@ The `spec.cdrom[].connected` field controls the connection state of the CD-ROM d
 
 The `spec.cdrom[].allowGuestControl` field controls the guest OS's ability to connect/disconnect the CD-ROM device. If set to `true` (default value), a web console connection may be used to connect/disconnect the CD-ROM device from within the guest OS.
 
-For more information on the ISO VM workflow, please refer to the [Deploy VM from ISO](../../../tutorials/deploy-vm/iso/) tutorial.
+For more information on the ISO VM workflow, please refer to the [Deploy a VM with ISO](../../../tutorials/deploy-vm/iso/) tutorial.

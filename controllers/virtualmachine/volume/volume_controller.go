@@ -14,7 +14,6 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -627,13 +626,12 @@ func (r *Reconciler) processAttachments(
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
 	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) error {
 
-	// Record the usage information from any existing status for managed
-	// volumes.
-	existingManagedVolUsage := map[string]*resource.Quantity{}
+	// Record the existing status information for managed volumes.
+	existingManagedVols := map[string]vmopv1.VirtualMachineVolumeStatus{}
 	for i := range ctx.VM.Status.Volumes {
 		vol := ctx.VM.Status.Volumes[i]
 		if vol.Type != vmopv1.VirtualMachineStorageDiskTypeClassic {
-			existingManagedVolUsage[vol.Name] = vol.Used
+			existingManagedVols[vol.Name] = vol
 		}
 	}
 
@@ -665,7 +663,8 @@ func (r *Reconciler) processAttachments(
 			// attachment and create a new one.
 			if volume.PersistentVolumeClaim.ClaimName == attachment.Spec.VolumeName {
 				volumeStatus := attachmentToVolumeStatus(volume.Name, attachment)
-				volumeStatus.Used = existingManagedVolUsage[volume.Name]
+				volumeStatus.Used = existingManagedVols[volume.Name].Used
+				volumeStatus.Crypto = existingManagedVols[volume.Name].Crypto
 				if err := updateVolumeStatusWithLimit(ctx, r.Client, *volume.PersistentVolumeClaim, &volumeStatus); err != nil {
 					ctx.Logger.Error(err, "failed to get volume status limit")
 				}

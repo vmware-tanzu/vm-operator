@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2020-2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,45 +22,69 @@ import (
 
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 func TestNewConditionsGroup(t *testing.T) {
-	g := NewWithT(t)
+	testCases := []struct {
+		name   string
+		setter Setter
+	}{
+		{
+			name:   "Kube object",
+			setter: &kubeObj{},
+		},
+		{
+			name:   "Non-kube object",
+			setter: &nonKubeObj{},
+		},
+	}
 
-	conditions := []*metav1.Condition{nil1, true1, true1, falseInfo1, falseWarning1, falseWarning1, falseError1, unknown1}
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 
-	got := getConditionGroups(conditionsWithSource(&vmopv1.VirtualMachine{}, conditions...))
+			got := getConditionGroups(conditionsWithSource(
+				tc.setter,
+				[]*metav1.Condition{
+					nil1,
+					true1,
+					true1,
+					falseInfo1,
+					falseWarning1,
+					falseWarning1,
+					falseError1,
+					unknown1,
+				}...))
 
-	g.Expect(got).ToNot(BeNil())
-	g.Expect(got).To(HaveLen(3))
+			g.Expect(got).ToNot(BeNil())
+			g.Expect(got).To(HaveLen(3))
 
-	// The top group should be false and it should have four conditions
-	g.Expect(got.TopGroup().status).To(Equal(metav1.ConditionFalse))
-	g.Expect(got.TopGroup().conditions).To(HaveLen(4))
+			// The top group should be false and it should have four conditions
+			g.Expect(got.TopGroup().status).To(Equal(metav1.ConditionFalse))
+			g.Expect(got.TopGroup().conditions).To(HaveLen(4))
 
-	// The true group should be true and it should have two conditions
-	g.Expect(got.TrueGroup().status).To(Equal(metav1.ConditionTrue))
-	g.Expect(got.TrueGroup().conditions).To(HaveLen(2))
+			// The true group should be true and it should have two conditions
+			g.Expect(got.TrueGroup().status).To(Equal(metav1.ConditionTrue))
+			g.Expect(got.TrueGroup().conditions).To(HaveLen(2))
 
-	// The error group should be false and it should have one condition
-	g.Expect(got.FalseGroup().status).To(Equal(metav1.ConditionFalse))
-	g.Expect(got.FalseGroup().conditions).To(HaveLen(4))
+			// The error group should be false and it should have one condition
+			g.Expect(got.FalseGroup().status).To(Equal(metav1.ConditionFalse))
+			g.Expect(got.FalseGroup().conditions).To(HaveLen(4))
 
-	// got[0] should be False and it should have four conditions
-	g.Expect(got[0].status).To(Equal(metav1.ConditionFalse))
-	g.Expect(got[0].conditions).To(HaveLen(4))
+			// got[0] should be False and it should have four conditions
+			g.Expect(got[0].status).To(Equal(metav1.ConditionFalse))
+			g.Expect(got[0].conditions).To(HaveLen(4))
 
-	// got[1] should be True and it should have two conditions
-	g.Expect(got[1].status).To(Equal(metav1.ConditionTrue))
-	g.Expect(got[1].conditions).To(HaveLen(2))
+			// got[1] should be True and it should have two conditions
+			g.Expect(got[1].status).To(Equal(metav1.ConditionTrue))
+			g.Expect(got[1].conditions).To(HaveLen(2))
 
-	// got[4] should be Unknown and it should have one condition
-	g.Expect(got[2].status).To(Equal(metav1.ConditionUnknown))
-	g.Expect(got[2].conditions).To(HaveLen(1))
-
-	// nil conditions are ignored
+			// got[4] should be Unknown and it should have one condition
+			g.Expect(got[2].status).To(Equal(metav1.ConditionUnknown))
+			g.Expect(got[2].conditions).To(HaveLen(1))
+		})
+	}
 }
 
 func TestMergeRespectPriority(t *testing.T) {
@@ -110,7 +134,7 @@ func TestMergeRespectPriority(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			got := merge(conditionsWithSource(&vmopv1.VirtualMachine{}, tt.conditions...), "foo", &mergeOptions{})
+			got := merge(conditionsWithSource(&kubeObj{}, tt.conditions...), "foo", &mergeOptions{})
 
 			if tt.want == nil {
 				g.Expect(got).To(BeNil())

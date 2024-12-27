@@ -106,7 +106,18 @@ func getConditionGroups(conditions []localizedCondition) conditionGroups {
 			if a.Type != b.Type {
 				return lexicographicLess(a.Condition, b.Condition)
 			}
-			return a.GetName() < b.GetName()
+
+			ta, aok := a.Getter.(metav1.Object)
+			tb, bok := b.Getter.(metav1.Object)
+
+			switch {
+			case aok && bok:
+				return ta.GetName() < tb.GetName()
+			case bok:
+				return true
+			default:
+				return false
+			}
 		})
 	}
 

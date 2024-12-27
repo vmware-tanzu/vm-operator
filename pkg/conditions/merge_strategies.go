@@ -19,6 +19,9 @@ package conditions
 import (
 	"fmt"
 	"strings"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // mergeOptions allows to set strategies for merging a set of conditions into a single condition,
@@ -110,7 +113,18 @@ func localizeReason(reason string, from Getter) string {
 	if strings.Contains(reason, "@") {
 		return reason
 	}
-	return fmt.Sprintf("%s @ %s/%s", reason, from.GetObjectKind().GroupVersionKind().Kind, from.GetName())
+
+	tf1, ok1 := from.(runtime.Object)
+	tf2, ok2 := from.(metav1.Object)
+
+	if !ok1 || !ok2 {
+		return reason
+	}
+
+	return fmt.Sprintf("%s @ %s/%s",
+		reason,
+		tf1.GetObjectKind().GroupVersionKind().Kind,
+		tf2.GetName())
 }
 
 // getMessage returns the message to be applied to the condition resulting by merging a set of condition groups.

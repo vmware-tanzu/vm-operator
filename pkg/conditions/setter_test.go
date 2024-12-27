@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2020-2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,8 +26,6 @@ import (
 	"github.com/onsi/gomega/format"
 	"github.com/onsi/gomega/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 )
 
 func TestHasSameState(t *testing.T) {
@@ -73,19 +71,19 @@ func TestLexicographicLess(t *testing.T) {
 	g.Expect(lexicographicLess(a, b)).To(BeFalse())
 
 	// Ready condition is treated as an exception and always goes first
-	a = TrueCondition(vmopv1.ReadyConditionType)
+	a = TrueCondition(ReadyConditionType)
 	b = TrueCondition("A")
 	g.Expect(lexicographicLess(a, b)).To(BeTrue())
 
 	a = TrueCondition("A")
-	b = TrueCondition(vmopv1.ReadyConditionType)
+	b = TrueCondition(ReadyConditionType)
 	g.Expect(lexicographicLess(a, b)).To(BeFalse())
 }
 
 func TestSet(t *testing.T) {
 	a := TrueCondition("a")
 	b := TrueCondition("b")
-	ready := TrueCondition(vmopv1.ReadyConditionType)
+	ready := TrueCondition(ReadyConditionType)
 
 	tests := []struct {
 		name      string
@@ -93,6 +91,12 @@ func TestSet(t *testing.T) {
 		condition *metav1.Condition
 		want      []metav1.Condition
 	}{
+		{
+			name:      "Set specifies nil condition",
+			to:        setterWithConditions(a),
+			condition: nil,
+			want:      conditionList(a),
+		},
 		{
 			name:      "Set adds a condition",
 			to:        setterWithConditions(),
@@ -192,19 +196,19 @@ func TestSetLastTransitionTime(t *testing.T) {
 func TestMarkMethods(t *testing.T) {
 	g := NewWithT(t)
 
-	vm := &vmopv1.VirtualMachine{}
+	var obj nonKubeObj
 
 	// test MarkTrue
-	MarkTrue(vm, "conditionFoo")
-	g.Expect(Get(vm, "conditionFoo")).To(haveSameStateOf(&metav1.Condition{
+	MarkTrue(&obj, "conditionFoo")
+	g.Expect(Get(obj, "conditionFoo")).To(haveSameStateOf(&metav1.Condition{
 		Type:   "conditionFoo",
 		Status: metav1.ConditionTrue,
 		Reason: "True",
 	}))
 
 	// test MarkFalse
-	MarkFalse(vm, "conditionBar", "reasonBar", "messageBar")
-	g.Expect(Get(vm, "conditionBar")).To(haveSameStateOf(&metav1.Condition{
+	MarkFalse(&obj, "conditionBar", "reasonBar", "messageBar")
+	g.Expect(Get(obj, "conditionBar")).To(haveSameStateOf(&metav1.Condition{
 		Type:    "conditionBar",
 		Status:  metav1.ConditionFalse,
 		Reason:  "reasonBar",
@@ -212,8 +216,8 @@ func TestMarkMethods(t *testing.T) {
 	}))
 
 	// test MarkUnknown
-	MarkUnknown(vm, "conditionBaz", "reasonBaz", "messageBaz")
-	g.Expect(Get(vm, "conditionBaz")).To(haveSameStateOf(&metav1.Condition{
+	MarkUnknown(&obj, "conditionBaz", "reasonBaz", "messageBaz")
+	g.Expect(Get(obj, "conditionBaz")).To(haveSameStateOf(&metav1.Condition{
 		Type:    "conditionBaz",
 		Status:  metav1.ConditionUnknown,
 		Reason:  "reasonBaz",
@@ -227,12 +231,12 @@ func TestSetSummary(t *testing.T) {
 
 	SetSummary(target)
 
-	g.Expect(Has(target, vmopv1.ReadyConditionType)).To(BeTrue())
+	g.Expect(Has(target, ReadyConditionType)).To(BeTrue())
 }
 
 func TestSetMirror(t *testing.T) {
 	g := NewWithT(t)
-	source := getterWithConditions(TrueCondition(vmopv1.ReadyConditionType))
+	source := getterWithConditions(TrueCondition(ReadyConditionType))
 	target := setterWithConditions()
 
 	SetMirror(target, "foo", source)
@@ -242,8 +246,8 @@ func TestSetMirror(t *testing.T) {
 
 func TestSetAggregate(t *testing.T) {
 	g := NewWithT(t)
-	source1 := getterWithConditions(TrueCondition(vmopv1.ReadyConditionType))
-	source2 := getterWithConditions(TrueCondition(vmopv1.ReadyConditionType))
+	source1 := getterWithConditions(TrueCondition(ReadyConditionType))
+	source2 := getterWithConditions(TrueCondition(ReadyConditionType))
 	target := setterWithConditions()
 
 	SetAggregate(target, "foo", []Getter{source1, source2})
@@ -252,9 +256,9 @@ func TestSetAggregate(t *testing.T) {
 }
 
 func setterWithConditions(conditions ...*metav1.Condition) Setter {
-	obj := &vmopv1.VirtualMachine{}
+	var obj nonKubeObj
 	obj.SetConditions(conditionList(conditions...))
-	return obj
+	return &obj
 }
 
 func haveSameConditionsOf(expected []metav1.Condition) types.GomegaMatcher {

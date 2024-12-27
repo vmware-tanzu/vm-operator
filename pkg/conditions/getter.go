@@ -18,101 +18,59 @@ package conditions
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-)
-
-const (
-	ReadyConditionType = "Ready"
 )
 
 // Getter interface defines methods that an object should implement in order to
 // use the conditions package for getting conditions.
 type Getter interface {
-	client.Object
-
 	// GetConditions returns the list of conditions for a cluster API object.
 	GetConditions() []metav1.Condition
 }
 
-// Get returns the condition with the given type, if the condition does not exists,
-// it returns nil.
+// Get returns the condition with the given type, otherwise nil is returned.
 func Get(from Getter, t string) *metav1.Condition {
-	for _, condition := range from.GetConditions() {
-		if condition.Type == t {
-			return &condition
-		}
-	}
-	return nil
+	return c4g(from).Get(t)
 }
 
 // Has returns true if a condition with the given type exists.
 func Has(from Getter, t string) bool {
-	return Get(from, t) != nil
+	return c4g(from).Has(t)
 }
 
-// IsTrueFromConditions returns true if the condition with the given type is True.
-// This is helpful to check the condition without passing a specific resource object.
-func IsTrueFromConditions(conditions []metav1.Condition, t string) bool {
-	for _, c := range conditions {
-		if c.Type == t {
-			return c.Status == metav1.ConditionTrue
-		}
-	}
-	return false
-}
-
-// IsTrue is true if the condition with the given type is True, otherwise it return false
-// if the condition is not True or if the condition does not exist (is nil).
+// IsTrue returns true if the condition with the given type exists and is
+// True, otherwise false is returned.
 func IsTrue(from Getter, t string) bool {
-	if c := Get(from, t); c != nil {
-		return c.Status == metav1.ConditionTrue
-	}
-	return false
+	return c4g(from).IsTrue(t)
 }
 
-// IsFalse is true if the condition with the given type is False, otherwise it return false
-// if the condition is not False or if the condition does not exist (is nil).
+// IsFalse returns true if the condition with the given type exists and is
+// False, otherwise false is returned.
 func IsFalse(from Getter, t string) bool {
-	if c := Get(from, t); c != nil {
-		return c.Status == metav1.ConditionFalse
-	}
-	return false
+	return c4g(from).IsFalse(t)
 }
 
-// IsUnknown is true if the condition with the given type is Unknown or if the condition
-// does not exist (is nil).
+// IsUnknown returns true if the condition with the given type exists and is
+// Unknown, otherwise false is returned.
 func IsUnknown(from Getter, t string) bool {
-	if c := Get(from, t); c != nil {
-		return c.Status == metav1.ConditionUnknown
-	}
-	return true
+	return c4g(from).IsUnknown(t)
 }
 
-// GetReason returns a nil safe string of Reason for the condition with the given type.
+// GetReason returns the condition's reason or an empty string if the condition
+// does not exist.
 func GetReason(from Getter, t string) string {
-	if c := Get(from, t); c != nil {
-		return c.Reason
-	}
-	return ""
+	return c4g(from).GetReason(t)
 }
 
-// GetMessage returns a nil safe string of Message.
+// GetMessage returns the condition's message or an empty string if the
+// condition does not exist.
 func GetMessage(from Getter, t string) string {
-	if c := Get(from, t); c != nil {
-		return c.Message
-	}
-	return ""
+	return c4g(from).GetMessage(t)
 }
 
-// GetLastTransitionTime returns the condition Severity or nil if the condition
-// does not exist (is nil).
+// GetLastTransitionTime returns the condition's last transition time or a nil
+// value if the condition does not exist.
 func GetLastTransitionTime(from Getter, t string) *metav1.Time {
-	if c := Get(from, t); c != nil {
-		return &c.LastTransitionTime
-	}
-	return nil
+	return c4g(from).GetLastTransitionTime(t)
 }
 
 // summary returns a Ready condition with the summary of all the conditions existing
@@ -130,7 +88,7 @@ func summary(from Getter, options ...MergeOption) *metav1.Condition {
 	conditionsInScope := make([]localizedCondition, 0, len(conditions))
 	for i := range conditions {
 		c := conditions[i]
-		if c.Type == vmopv1.ReadyConditionType {
+		if c.Type == ReadyConditionType {
 			continue
 		}
 
@@ -183,7 +141,7 @@ func summary(from Getter, options ...MergeOption) *metav1.Condition {
 		}
 	}
 
-	return merge(conditionsInScope, vmopv1.ReadyConditionType, mergeOpt)
+	return merge(conditionsInScope, ReadyConditionType, mergeOpt)
 }
 
 // mirrorOptions allows to set options for the mirror operation.
@@ -214,7 +172,7 @@ func mirror(from Getter, targetCondition string, options ...MirrorOptions) *meta
 		o(mirrorOpt)
 	}
 
-	condition := Get(from, vmopv1.ReadyConditionType)
+	condition := Get(from, ReadyConditionType)
 
 	if mirrorOpt.fallbackTo != nil && condition == nil {
 		switch *mirrorOpt.fallbackTo {
@@ -238,7 +196,7 @@ func mirror(from Getter, targetCondition string, options ...MirrorOptions) *meta
 func aggregate(from []Getter, targetCondition string, options ...MergeOption) *metav1.Condition {
 	conditionsInScope := make([]localizedCondition, 0, len(from))
 	for i := range from {
-		condition := Get(from[i], vmopv1.ReadyConditionType)
+		condition := Get(from[i], ReadyConditionType)
 
 		conditionsInScope = append(conditionsInScope, localizedCondition{
 			Condition: condition,

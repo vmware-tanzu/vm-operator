@@ -182,15 +182,13 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 			return nil, err
 		}
 
-		if newVM != nil {
-			// If the create actually occurred, fall-through to an update
-			// post-reconfigure.
-			return nil, vs.createdVirtualMachineFallthroughUpdate(
-				vmCtx,
-				newVM,
-				client,
-				createArgs)
-		}
+		// If the create actually occurred, fall-through to an update
+		// post-reconfigure.
+		return nil, vs.createdVirtualMachineFallthroughUpdate(
+			vmCtx,
+			newVM,
+			client,
+			createArgs)
 	}
 
 	vmNamespacedName := vm.NamespacedName()
@@ -216,6 +214,9 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 
 	createArgs, err := vs.getCreateArgs(vmCtx, client)
 	if err != nil {
+		// If getting the create args failed, the concurrent counter needs to be
+		// decremented before returning.
+		cleanupFn()
 		return nil, err
 	}
 

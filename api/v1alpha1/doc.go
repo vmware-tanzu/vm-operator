@@ -1,4 +1,5 @@
-// Copyright (c) 2020-2024 VMware, Inc. All Rights Reserved.
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 // Package v1alpha1 contains the VM Operator v1alpha1 APIs.

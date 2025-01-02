@@ -1,5 +1,5 @@
 VM Operator 
-Copyright 2021 VMware, Inc. 
+Copyright Broadcom, Inc.
 
 This product is licensed to you under the Apache 2.0 license (the "License").  You may not use this product except in compliance with the Apache 2.0 License.  
 

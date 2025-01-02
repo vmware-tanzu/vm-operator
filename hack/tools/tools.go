@@ -1,7 +1,8 @@
 //go:build vmop_tools
 // +build vmop_tools
 
-// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 // Package tools manages the version of tooling used to build this project.

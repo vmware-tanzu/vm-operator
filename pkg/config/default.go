@@ -26,7 +26,7 @@ func Default() Config {
 		Features: FeatureStates{
 			InstanceStorage:            true,
 			PodVMOnStretchedSupervisor: false,
-			TKGMultipleCL:              false,
+			TKGMultipleCL:              true,
 			UnifiedStorageQuota:        false,
 			WorkloadDomainIsolation:    false,
 		},

@@ -137,7 +137,7 @@ type FeatureStates struct {
 	InstanceStorage            bool // FSS_WCP_INSTANCE_STORAGE
 	K8sWorkloadMgmtAPI         bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR
-	TKGMultipleCL              bool // FSS_WCP_TKG_Multiple_CL
+	TKGMultipleCL              bool // to be fetched dynamically from capability
 	// TODO(akutz) This FSS is a placeholder until leadership can figure out the
 	//             plan for FSSs going forward.
 	UnifiedStorageQuota       bool // FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA

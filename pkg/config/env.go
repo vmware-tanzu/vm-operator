@@ -57,7 +57,6 @@ func FromEnv() Config {
 	setBool(env.FSSIsoSupport, &config.Features.IsoSupport)
 	setBool(env.FSSK8sWorkloadMgmtAPI, &config.Features.K8sWorkloadMgmtAPI)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
-	setBool(env.FSSTKGMultipleCL, &config.Features.TKGMultipleCL)
 	setBool(env.FSSUnifiedStorageQuota, &config.Features.UnifiedStorageQuota)
 	setBool(env.FSSVMResize, &config.Features.VMResize)
 	setBool(env.FSSVMResizeCPUMemory, &config.Features.VMResizeCPUMemory)

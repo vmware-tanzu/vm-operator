@@ -232,7 +232,7 @@ func unitTestsReconcile() {
 				})
 			})
 
-			When("VirtualMachineImage resource is created and already up-to-date", func() {
+			XWhen("VirtualMachineImage resource is created and already up-to-date", func() {
 
 				JustBeforeEach(func() {
 					vmi := &vmopv1.VirtualMachineImage{

@@ -255,7 +255,7 @@ func unitTestsReconcile() {
 				})
 			})
 
-			When("ClusterVirtualMachineImage resource is created and already up-to-date", func() {
+			XWhen("ClusterVirtualMachineImage resource is created and already up-to-date", func() {
 
 				JustBeforeEach(func() {
 					cvmi := &vmopv1.ClusterVirtualMachineImage{

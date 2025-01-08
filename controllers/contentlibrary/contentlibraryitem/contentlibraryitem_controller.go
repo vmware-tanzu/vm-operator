@@ -285,10 +285,6 @@ func (r *Reconciler) setUpVMIFromCLItem(ctx *pkgctx.ContentLibraryItemContext) e
 func (r *Reconciler) syncImageContent(ctx *pkgctx.ContentLibraryItemContext) error {
 	clItem := ctx.CLItem
 	vmi := ctx.VMI
-	latestVersion := clItem.Status.ContentVersion
-	if vmi.Status.ProviderContentVersion == latestVersion {
-		return nil
-	}
 
 	err := r.VMProvider.SyncVirtualMachineImage(ctx, clItem, vmi)
 	if err != nil {
@@ -297,7 +293,7 @@ func (r *Reconciler) syncImageContent(ctx *pkgctx.ContentLibraryItemContext) err
 			vmopv1.VirtualMachineImageNotSyncedReason,
 			"Failed to sync to the latest content version from provider")
 	} else {
-		vmi.Status.ProviderContentVersion = latestVersion
+		vmi.Status.ProviderContentVersion = clItem.Status.ContentVersion
 	}
 
 	// Sync the image's type, OS information and capabilities to the resource's

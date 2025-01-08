@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -100,6 +100,19 @@ func intgTestsReconcile() {
 
 			By("Create policy should be called", func() {
 				Eventually(called.Load).Should(BeTrue())
+			})
+
+			By("Reconcile when Zone is added", func() {
+				called.Store(false)
+
+				zone := &topologyv1.Zone{}
+				zone.Name = "my-new-zone"
+				zone.Namespace = ctx.Namespace
+				Expect(ctx.Client.Create(ctx, zone)).To(Succeed())
+
+				By("Reconcile again because of Zone create", func() {
+					Eventually(called.Load).Should(BeTrue())
+				})
 			})
 
 			By("Deleting the VirtualMachineSetResourcePolicy", func() {

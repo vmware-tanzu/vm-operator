@@ -13,9 +13,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -41,9 +44,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx.VMProvider,
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(controlledType).
-		Complete(r)
+	builder := ctrl.NewControllerManagedBy(mgr).
+		For(controlledType)
+
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+		builder.Watches(
+			&topologyv1.Zone{},
+			handler.EnqueueRequestsFromMapFunc(zoneToNamespaceVMSRP(mgr.GetClient())))
+	}
+
+	return builder.Complete(r)
 }
 
 func NewReconciler(
@@ -56,6 +66,27 @@ func NewReconciler(
 		Client:     client,
 		Logger:     logger,
 		VMProvider: vmProvider,
+	}
+}
+
+func zoneToNamespaceVMSRP(
+	c client.Client) func(context.Context, client.Object) []reconcile.Request {
+
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		zone := o.(*topologyv1.Zone)
+
+		list := vmopv1.VirtualMachineSetResourcePolicyList{}
+		if err := c.List(ctx, &list, client.InNamespace(zone.Namespace)); err != nil {
+			return nil
+		}
+
+		var reconcileRequests []reconcile.Request
+		for i := range list.Items {
+			reconcileRequests = append(reconcileRequests, reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(&list.Items[i]),
+			})
+		}
+		return reconcileRequests
 	}
 }
 

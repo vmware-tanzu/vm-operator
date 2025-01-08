@@ -264,6 +264,7 @@ func unitTestsReconcile() {
 						},
 						Status: vmopv1.VirtualMachineImageStatus{
 							ProviderContentVersion: cclItemCtx.CCLItem.Status.ContentVersion,
+							Disks:                  make([]vmopv1.VirtualMachineImageDiskInfo, 1),
 							Firmware:               "should-not-be-updated",
 						},
 					}

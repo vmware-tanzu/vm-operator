@@ -243,6 +243,7 @@ func unitTestsReconcile() {
 						Status: vmopv1.VirtualMachineImageStatus{
 							ProviderContentVersion: clItemCtx.CLItem.Status.ContentVersion,
 							Firmware:               "should-not-be-updated",
+							Disks:                  make([]vmopv1.VirtualMachineImageDiskInfo, 1),
 						},
 					}
 					Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())

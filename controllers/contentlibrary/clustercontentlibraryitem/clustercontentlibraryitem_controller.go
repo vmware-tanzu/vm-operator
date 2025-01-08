@@ -318,7 +318,7 @@ func (r *Reconciler) syncImageContent(ctx *pkgctx.ClusterContentLibraryItemConte
 	cclItem := ctx.CCLItem
 	cvmi := ctx.CVMI
 	latestVersion := cclItem.Status.ContentVersion
-	if cvmi.Status.ProviderContentVersion == latestVersion {
+	if cvmi.Status.ProviderContentVersion == latestVersion && len(cvmi.Status.Disks) != 0 {
 		return nil
 	}
 

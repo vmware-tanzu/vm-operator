@@ -50,7 +50,6 @@ const (
 	FSSIsoSupport
 	FSSK8sWorkloadMgmtAPI
 	FSSPodVMOnStretchedSupervisor
-	FSSTKGMultipleCL
 	FSSUnifiedStorageQuota
 	FSSVMResize
 	FSSVMResizeCPUMemory
@@ -159,8 +158,6 @@ func (n VarName) String() string {
 		return "FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API"
 	case FSSPodVMOnStretchedSupervisor:
 		return "FSS_PODVMONSTRETCHEDSUPERVISOR"
-	case FSSTKGMultipleCL:
-		return "FSS_WCP_TKG_Multiple_CL"
 	case FSSUnifiedStorageQuota:
 		return "FSS_STORAGE_QUOTA_M2"
 	case FSSVMResize:

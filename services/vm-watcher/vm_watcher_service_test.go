@@ -18,10 +18,13 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	zonectrl "github.com/vmware-tanzu/vm-operator/controllers/infra/zone"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -282,6 +285,20 @@ var _ = Describe(
 			})
 		})
 
+		When("the zones do not have the finalizer", func() {
+			Specify("the finalizer gets added", func() {
+				Eventually(func(g Gomega) {
+					zoneList := topologyv1.ZoneList{}
+					err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(zoneList.Items).ToNot(BeEmpty())
+					for _, zone := range zoneList.Items {
+						g.Expect(zone.Finalizers).To(ConsistOf(zonectrl.Finalizer))
+					}
+				})
+			})
+		})
+
 		When("there is a vm in the zone's folder", func() {
 
 			const (
@@ -345,6 +362,53 @@ var _ = Describe(
 							},
 						},
 					})))
+				})
+
+				When("a bogus Zone Folder MoID", func() {
+					BeforeEach(func() {
+						outerInitEnvFn := initEnvFn
+
+						initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+							outerInitEnvFn(ctx)
+
+							zone := &topologyv1.Zone{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "bogus",
+									Namespace: vcSimCtx.NSInfo.Namespace,
+								},
+								Spec: topologyv1.ZoneSpec{
+									ManagedVMs: topologyv1.VSphereEntityInfo{
+										FolderMoID: "group-4242424242",
+									},
+								},
+							}
+							Expect(ctx.Client.Create(ctx, zone)).To(Succeed())
+						}
+					})
+
+					Specify("a reconcile request should still be received", func() {
+						chanSource := cource.FromContext(ctx, "VirtualMachine")
+						var e event.GenericEvent
+						Eventually(chanSource).Should(Receive(&e, Equal(event.GenericEvent{
+							Object: &vmopv1.VirtualMachine{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: vcSimCtx.NSInfo.Namespace,
+									Name:      vmName,
+								},
+							},
+						})))
+
+						By("bogus zone should not have finalizer applied", func() {
+							zone := topologyv1.Zone{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "bogus",
+									Namespace: vcSimCtx.NSInfo.Namespace,
+								},
+							}
+							Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(&zone), &zone)).To(Succeed())
+							Expect(zone.Finalizers).To(BeEmpty())
+						})
+					})
 				})
 
 				When("the vm is reconfigured", func() {

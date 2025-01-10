@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -32,6 +33,10 @@ import (
 const (
 	fakeStr = "fake"
 )
+
+func idStr(i int) string {
+	return "id-" + strconv.Itoa(i)
+}
 
 var _ = Describe("Start", func() {
 	var (
@@ -173,7 +178,10 @@ var _ = Describe("Start", func() {
 				}
 				return watcher.LookupNamespacedNameResult{}
 			},
-			cluster1.Reference())
+			map[vimtypes.ManagedObjectReference][]string{
+				cluster1.Reference(): {idStr(0)},
+			},
+		)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(w).ToNot(BeNil())
 	})
@@ -273,6 +281,16 @@ var _ = Describe("Start", func() {
 
 	When("no vms have namespace/name information", func() {
 		Specify("no error or results", func() {
+			assertNoError()
+			assertNoResult()
+		})
+	})
+
+	When("removal of container that does not exist", func() {
+		Specify("no error or results", func() {
+			moRef := cluster1vm1.Reference()
+			moRef.Value = "bogus"
+			Expect(watcher.Remove(ctx, moRef, idStr(0))).To(Succeed())
 			assertNoError()
 			assertNoResult()
 		})
@@ -410,7 +428,7 @@ var _ = Describe("Start", func() {
 				assertNoResult()
 
 				// Remove the cluster from the scope of the watcher.
-				Expect(watcher.Remove(ctx, cluster1.Reference(), fakeStr)).To(Succeed())
+				Expect(watcher.Remove(ctx, cluster1.Reference(), idStr(0))).To(Succeed())
 
 				// Add a non-ignored ExtraConfig key.
 				t, err := cluster1vm1.Reconfigure(
@@ -436,14 +454,16 @@ var _ = Describe("Start", func() {
 
 				// Assert no more results are signaled.
 				assertNoResult()
+
+				// Duplicate remove should noop.
+				Expect(watcher.Remove(ctx, cluster1.Reference(), idStr(0))).To(Succeed())
 			})
 		})
 
 		When("the container has multiple adds", func() {
 			JustBeforeEach(func() {
-				Expect(watcher.Add(ctx, cluster1.Reference(), fakeStr+"1")).To(Succeed())
-				Expect(watcher.Add(ctx, cluster1.Reference(), fakeStr+"2")).To(Succeed())
-				Expect(watcher.Add(ctx, cluster1.Reference(), fakeStr+"3")).To(Succeed())
+				Expect(watcher.Add(ctx, cluster1.Reference(), idStr(1))).To(Succeed())
+				Expect(watcher.Add(ctx, cluster1.Reference(), idStr(2))).To(Succeed())
 			})
 			Specify("it should need an equal number of removes before it stops being watched", func() {
 				// Assert that a result is signaled due to the VM entering the
@@ -454,7 +474,7 @@ var _ = Describe("Start", func() {
 				assertNoResult()
 
 				// Remove the cluster from the scope of the watcher.
-				Expect(watcher.Remove(ctx, cluster1.Reference(), fakeStr+"1")).To(Succeed())
+				Expect(watcher.Remove(ctx, cluster1.Reference(), idStr(0))).To(Succeed())
 
 				// Add a non-ignored ExtraConfig key.
 				t, err := cluster1vm1.Reconfigure(
@@ -462,8 +482,8 @@ var _ = Describe("Start", func() {
 					vimtypes.VirtualMachineConfigSpec{
 						ExtraConfig: []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   "guestinfo.1",
-								Value: "1",
+								Key:   "guestinfo.0",
+								Value: "0",
 							},
 						},
 					},
@@ -482,15 +502,15 @@ var _ = Describe("Start", func() {
 				assertNoResult()
 
 				//
-				// Do this again.
+				// Do this again with next ID.
 				//
-				Expect(watcher.Remove(ctx, cluster1.Reference(), fakeStr+"2")).To(Succeed())
+				Expect(watcher.Remove(ctx, cluster1.Reference(), idStr(1))).To(Succeed())
 				t, err = cluster1vm1.Reconfigure(
 					ctx,
 					vimtypes.VirtualMachineConfigSpec{
 						ExtraConfig: []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   "guestinfo.2",
+								Key:   "guestinfo.1",
 								Value: "1",
 							},
 						},
@@ -503,16 +523,37 @@ var _ = Describe("Start", func() {
 				assertNoResult()
 
 				//
-				// Remove the container a third time, and it should finally be
-				// be removed from the watch.
+				// Do it again with the same ID. This should be a noop so we still expect events.
 				//
-				Expect(watcher.Remove(ctx, cluster1.Reference(), fakeStr+"3")).To(Succeed())
+				Expect(watcher.Remove(ctx, cluster1.Reference(), idStr(1))).To(Succeed())
 				t, err = cluster1vm1.Reconfigure(
 					ctx,
 					vimtypes.VirtualMachineConfigSpec{
 						ExtraConfig: []vimtypes.BaseOptionValue{
 							&vimtypes.OptionValue{
-								Key:   "guestinfo.3",
+								Key:   "guestinfo.1",
+								Value: "2",
+							},
+						},
+					},
+				)
+				ExpectWithOffset(1, err).ShouldNot(HaveOccurred())
+				ExpectWithOffset(1, t.WaitEx(ctx)).To(Succeed())
+				assertNoError()
+				assertResult(cluster1vm1, "my-namespace-1", "my-name-1")
+				assertNoResult()
+
+				//
+				// Remove the container with the final ID, and it should finally be
+				// removed from the watch.
+				//
+				Expect(watcher.Remove(ctx, cluster1.Reference(), idStr(2))).To(Succeed())
+				t, err = cluster1vm1.Reconfigure(
+					ctx,
+					vimtypes.VirtualMachineConfigSpec{
+						ExtraConfig: []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   "guestinfo.2",
 								Value: "1",
 							},
 						},
@@ -597,7 +638,7 @@ var _ = Describe("Start", func() {
 
 		When("the container is added to the watcher", func() {
 			JustBeforeEach(func() {
-				Expect(watcher.Add(ctx, cluster2.Reference(), fakeStr)).To(Succeed())
+				Expect(watcher.Add(ctx, cluster2.Reference(), idStr(0))).To(Succeed())
 			})
 			When("the lookup function returns verified=false", func() {
 				Specify("the result channel should receive a result", func() {

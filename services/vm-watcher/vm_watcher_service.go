@@ -6,15 +6,21 @@ package vmwatcher
 
 import (
 	"context"
+	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/property"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	zonectrl "github.com/vmware-tanzu/vm-operator/controllers/infra/zone"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -98,38 +104,103 @@ func (s Service) Start(ctx context.Context) error {
 					err,
 					"Unexpected error trying to start vm watcher service")
 			}
+
+			// TODO: We might want to sleep a bit here so we don't spin if like we
+			// cannot get a VC client.
 		}
 	}
 	return ctx.Err()
 }
 
-var emptyResult watcher.Result
+func (s Service) vmFolderMoRefWithIDs(
+	ctx context.Context,
+	vcClient *vsphereclient.Client) (map[vimtypes.ManagedObjectReference][]string, error) {
 
-func (s Service) vmFolderRefs(ctx context.Context) ([]vimtypes.ManagedObjectReference, error) {
 	// Get a list of all the folders that can contain VM Service VMs.
 	var (
-		zones topologyv1.ZoneList
-		frefs []vimtypes.ManagedObjectReference
-		moids = map[string]struct{}{}
+		zones                 topologyv1.ZoneList
+		objSet                []vimtypes.ObjectSpec
+		moids                 = map[string][]string{}
+		zonesWithoutFinalizer []topologyv1.Zone
 	)
+
 	if err := s.Client.List(ctx, &zones); err != nil {
 		return nil, err
 	}
+
 	for i := range zones.Items {
 		z := zones.Items[i]
+
 		if v := z.Spec.ManagedVMs.FolderMoID; v != "" {
 			if _, ok := moids[v]; !ok {
-				moids[v] = struct{}{}
-				frefs = append(frefs, vimtypes.ManagedObjectReference{
-					Type:  "Folder",
-					Value: v,
+				moids[v] = make([]string, 0, 1)
+
+				objSet = append(objSet, vimtypes.ObjectSpec{
+					Obj: vimtypes.ManagedObjectReference{
+						Type:  "Folder",
+						Value: v,
+					},
 				})
+			}
+			moids[v] = append(moids[v], fmt.Sprintf("%s/%s", z.Namespace, z.Name))
+
+			if !controllerutil.ContainsFinalizer(&z, zonectrl.Finalizer) {
+				zonesWithoutFinalizer = append(zonesWithoutFinalizer, z)
 			}
 		}
 	}
 
-	return frefs, nil
+	if len(objSet) == 0 {
+		return nil, nil
+	}
+
+	// Filter the folder MoIDs for ones that exist on VC. The watcher will fail to start if
+	// any of the initial MoIDs don't exist but need to watcher to start. For any stale Zones
+	// the infra Zone controller will keep retrying to add their folder to the watcher.
+	pc := property.DefaultCollector(vcClient.VimClient())
+	res, err := pc.RetrieveProperties(ctx, vimtypes.RetrieveProperties{
+		SpecSet: []vimtypes.PropertyFilterSpec{
+			{
+				PropSet: []vimtypes.PropertySpec{
+					{
+						Type: "Folder",
+					},
+				},
+				ObjectSet:                     objSet,
+				ReportMissingObjectsInResults: vimtypes.NewBool(true),
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get managed VMs folder properties: %w", err)
+	}
+
+	moRefWithIDs := make(map[vimtypes.ManagedObjectReference][]string, len(res.Returnval))
+	for _, o := range res.Returnval {
+		moRefWithIDs[o.Obj] = moids[o.Obj.Value]
+	}
+
+	// For Zones with a valid FolderMoID but without the finalizer, add it before starting the
+	// watcher so the infra Zone controller will remove it from the watcher.
+	for _, z := range zonesWithoutFinalizer {
+		moref := vimtypes.ManagedObjectReference{
+			Type:  "Folder",
+			Value: z.Spec.ManagedVMs.FolderMoID,
+		}
+
+		if _, ok := moRefWithIDs[moref]; ok {
+			zPatch := ctrlclient.MergeFromWithOptions(z.DeepCopy(), ctrlclient.MergeFromWithOptimisticLock{})
+			z.Finalizers = append(z.Finalizers, zonectrl.Finalizer)
+			if err := s.Client.Patch(ctx, &z, zPatch); err != nil {
+				return nil, fmt.Errorf("failed to add finalizer: %w", err)
+			}
+		}
+	}
+
+	return moRefWithIDs, nil
 }
+
+var emptyResult watcher.Result
 
 func (s Service) waitForChanges(ctx context.Context) error {
 	var (
@@ -143,11 +214,11 @@ func (s Service) waitForChanges(ctx context.Context) error {
 	}
 	logger.Info("Got vsphere client")
 
-	refs, err := s.vmFolderRefs(ctx)
+	moRefWithIDs, err := s.vmFolderMoRefWithIDs(ctx, vcClient)
 	if err != nil {
 		return err
 	}
-	logger.Info("Got vm service folders", "refs", refs)
+	logger.Info("Got vm service folders", "refs", slices.Collect(maps.Keys(moRefWithIDs)))
 
 	// Start the watcher.
 	w, err := watcher.Start(
@@ -156,7 +227,7 @@ func (s Service) waitForChanges(ctx context.Context) error {
 		nil,
 		nil,
 		s.lookupNamespacedName,
-		refs...)
+		moRefWithIDs)
 	if err != nil {
 		return err
 	}

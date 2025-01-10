@@ -33,7 +33,7 @@ func init() {
 
 var suite = builder.NewTestSuiteForControllerWithContext(
 	pkgcfg.UpdateContext(
-		pkgcfg.NewContext(),
+		pkgcfg.NewContextWithDefaultConfig(),
 		func(config *pkgcfg.Config) {
 			config.Features.BringYourOwnEncryptionKey = true
 		},

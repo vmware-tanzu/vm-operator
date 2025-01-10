@@ -19,7 +19,7 @@ import (
 var suite = builder.NewTestSuiteForControllerWithContext(
 	cource.WithContext(
 		pkgcfg.UpdateContext(
-			pkgcfg.NewContext(),
+			pkgcfg.NewContextWithDefaultConfig(),
 			func(config *pkgcfg.Config) {
 				config.Features.PodVMOnStretchedSupervisor = true
 			},

@@ -27,9 +27,9 @@ func init() {
 
 var suite = builder.NewTestSuiteForControllerWithContext(
 	pkgcfg.UpdateContext(
-		pkgcfg.NewContext(),
+		pkgcfg.NewContextWithDefaultConfig(),
 		func(config *pkgcfg.Config) {
-			config.Features.SVAsyncUpgrade = true
+			config.Features.SVAsyncUpgrade = false
 		},
 	),
 	capability.AddToManager,

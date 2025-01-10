@@ -67,13 +67,11 @@ var _ = Describe(
 						suite.Context,
 						func(config *pkgcfg.Config) {
 							config.Features.TKGMultipleCL = false
-							config.Features.WorkloadDomainIsolation = false
 						},
 					)
 
 					obj.Data = map[string]string{
 						capabilities.CapabilityKeyTKGMultipleContentLibraries: "true",
-						capabilities.CapabilityKeyWorkloadIsolation:           "true",
 					}
 				})
 				Specify("the pod was exited", func() {
@@ -84,7 +82,6 @@ var _ = Describe(
 				Specify("feature states should be updated", func() {
 					Eventually(func(g Gomega) {
 						g.Expect(pkgcfg.FromContext(suite.Context).Features.TKGMultipleCL).To(BeTrue())
-						g.Expect(pkgcfg.FromContext(suite.Context).Features.WorkloadDomainIsolation).To(BeTrue())
 					}, time.Second*5).Should(Succeed())
 				})
 			})
@@ -95,13 +92,11 @@ var _ = Describe(
 						suite.Context,
 						func(config *pkgcfg.Config) {
 							config.Features.TKGMultipleCL = true
-							config.Features.WorkloadDomainIsolation = true
 						},
 					)
 
 					obj.Data = map[string]string{
 						capabilities.CapabilityKeyTKGMultipleContentLibraries: "false",
-						capabilities.CapabilityKeyWorkloadIsolation:           "false",
 					}
 				})
 				Specify("the pod was exited", func() {
@@ -112,7 +107,6 @@ var _ = Describe(
 				Specify("feature states should be updated", func() {
 					Eventually(func(g Gomega) {
 						g.Expect(pkgcfg.FromContext(suite.Context).Features.TKGMultipleCL).To(BeFalse())
-						g.Expect(pkgcfg.FromContext(suite.Context).Features.WorkloadDomainIsolation).To(BeFalse())
 					}, time.Second*5).Should(Succeed())
 				})
 			})
@@ -124,20 +118,17 @@ var _ = Describe(
 					suite.Context,
 					func(config *pkgcfg.Config) {
 						config.Features.TKGMultipleCL = false
-						config.Features.WorkloadDomainIsolation = false
 					},
 				)
 
 				obj.Data = map[string]string{
 					capabilities.CapabilityKeyTKGMultipleContentLibraries: "true",
-					capabilities.CapabilityKeyWorkloadIsolation:           "true",
 				}
 			})
 
 			JustBeforeEach(func() {
 				Eventually(func(g Gomega) {
 					g.Expect(pkgcfg.FromContext(suite.Context).Features.TKGMultipleCL).To(BeTrue())
-					g.Expect(pkgcfg.FromContext(suite.Context).Features.WorkloadDomainIsolation).To(BeTrue())
 				}, time.Second*5).Should(Succeed())
 
 				obj.Data[capabilities.CapabilityKeyTKGMultipleContentLibraries] = "false"
@@ -153,7 +144,6 @@ var _ = Describe(
 			Specify("feature states should be updated", func() {
 				Eventually(func(g Gomega) {
 					g.Expect(pkgcfg.FromContext(suite.Context).Features.TKGMultipleCL).To(BeFalse())
-					g.Expect(pkgcfg.FromContext(suite.Context).Features.WorkloadDomainIsolation).To(BeTrue())
 				}, time.Second*5).Should(Succeed())
 			})
 		})
@@ -164,7 +154,6 @@ var _ = Describe(
 					suite.Context,
 					func(config *pkgcfg.Config) {
 						config.Features.TKGMultipleCL = false
-						config.Features.WorkloadDomainIsolation = false
 					},
 				)
 
@@ -177,7 +166,6 @@ var _ = Describe(
 				Consistently(func(g Gomega) {
 					g.Expect(atomic.LoadInt32(&numExits)).To(Equal(int32(0)))
 					g.Expect(pkgcfg.FromContext(suite.Context).Features.TKGMultipleCL).To(BeFalse())
-					g.Expect(pkgcfg.FromContext(suite.Context).Features.WorkloadDomainIsolation).To(BeFalse())
 				}, time.Second*3).Should(Succeed())
 			})
 		})

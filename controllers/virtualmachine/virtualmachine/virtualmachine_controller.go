@@ -334,8 +334,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}()
 
 	if !vm.DeletionTimestamp.IsZero() {
-		err = r.ReconcileDelete(vmCtx)
-		return ctrl.Result{}, err
+		return ctrl.Result{}, r.ReconcileDelete(vmCtx)
 	}
 
 	if err = r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
@@ -574,7 +573,7 @@ func getIsDefaultVMClassController(ctx context.Context) bool {
 // ignoredCreateErr is written this way in order to illustrate coverage more
 // accurately.
 func ignoredCreateErr(err error) bool {
-	if errors.Is(err, providers.ErrDuplicateCreate) {
+	if errors.Is(err, providers.ErrReconcileInProgress) {
 		return true
 	}
 	if errors.Is(err, providers.ErrTooManyCreates) {

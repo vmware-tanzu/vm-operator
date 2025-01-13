@@ -24,10 +24,10 @@ var (
 	// threads/goroutines have reached the allowed limit.
 	ErrTooManyCreates = errors.New("too many creates")
 
-	// ErrDuplicateCreate is returned from the CreateOrUpdateVirtualMachineAsync
-	// function if it is called for a VM while a create goroutine for that VM is
-	// already executing.
-	ErrDuplicateCreate = errors.New("duplicate create")
+	// ErrReconcileInProgress is returned from the
+	// CreateOrUpdateVirtualMachine and DeleteVirtualMachine functions when
+	// the VM is still being reconciled in a background thread.
+	ErrReconcileInProgress = errors.New("reconcile already in progress")
 )
 
 // VirtualMachineProviderInterface is a pluggable interface for VM Providers.

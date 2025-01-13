@@ -168,7 +168,7 @@ func intgTestsReconcile() {
 					intgFakeVMProvider,
 					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 						atomic.AddInt32(&createAttempts, 1)
-						return providers.ErrDuplicateCreate
+						return providers.ErrReconcileInProgress
 					},
 				)
 			})

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -1361,6 +1362,109 @@ func vmTests() {
 				// TODO: More assertions!
 			})
 
+			When("using async create", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+						config.AsyncCreateDisabled = false
+						config.AsyncSignalDisabled = false
+						config.Features.WorkloadDomainIsolation = true
+					})
+				})
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.MaxDeployThreadsOnProvider = 16
+					})
+				})
+
+				It("should succeed", func() {
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+				})
+
+				When("there is an error getting the pre-reqs", func() {
+					It("should not prevent a subsequent create attempt from going through", func() {
+						imgName := vm.Spec.Image.Name
+						vm.Spec.Image.Name = "does-not-exist"
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(
+							"clustervirtualmachineimages.vmoperator.vmware.com \"does-not-exist\" not found: " +
+								"clustervirtualmachineimages.vmoperator.vmware.com \"does-not-exist\" not found"))
+						vm.Spec.Image.Name = imgName
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+					})
+				})
+
+				// Please note this test uses FlakeAttempts(5) due to the
+				// validation of some predictable-over-time behavior.
+				When("there is a reconcile in progress", FlakeAttempts(5), func() {
+					When("there is a duplicate create", func() {
+						It("should return ErrReconcileInProgress", func() {
+							var (
+								errs   []error
+								errsMu sync.Mutex
+								done   sync.WaitGroup
+								start  = make(chan struct{})
+							)
+
+							// Set up five goroutines that race to
+							// create the VM first.
+							for i := 0; i < 5; i++ {
+								done.Add(1)
+								go func(copyOfVM *vmopv1.VirtualMachine) {
+									defer done.Done()
+									<-start
+									err := createOrUpdateVM(ctx, vmProvider, copyOfVM)
+									if err != nil {
+										errsMu.Lock()
+										errs = append(errs, err)
+										errsMu.Unlock()
+									} else {
+										vm = copyOfVM
+									}
+								}(vm.DeepCopy())
+							}
+
+							close(start)
+
+							done.Wait()
+
+							Expect(errs).To(HaveLen(4))
+
+							Expect(errs).Should(ConsistOf(
+								providers.ErrReconcileInProgress,
+								providers.ErrReconcileInProgress,
+								providers.ErrReconcileInProgress,
+								providers.ErrReconcileInProgress,
+							))
+
+							Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+						})
+					})
+
+					When("there is a delete during async create", func() {
+						It("should return ErrReconcileInProgress", func() {
+							chanCreateErrs, createErr := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+							deleteErr := vmProvider.DeleteVirtualMachine(ctx, vm)
+
+							Expect(createErr).ToNot(HaveOccurred())
+							Expect(errors.Is(deleteErr, providers.ErrReconcileInProgress))
+
+							var createErrs []error
+							for e := range chanCreateErrs {
+								if e != nil {
+									createErrs = append(createErrs, e)
+								}
+							}
+							Expect(createErrs).Should(BeEmpty())
+
+							Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+						})
+					})
+				})
+			})
+
 			It("TKG VM", func() {
 				if vm.Labels == nil {
 					vm.Labels = make(map[string]string)
@@ -1528,7 +1632,7 @@ func vmTests() {
 											config.MaxDeployThreadsOnProvider = 16
 										})
 									})
-									It("should return ErrDuplicateCreate", func() {
+									It("should return ErrReconcileInProgress", func() {
 										var (
 											errs   []error
 											errsMu sync.Mutex
@@ -1561,10 +1665,10 @@ func vmTests() {
 										Expect(errs).To(HaveLen(4))
 
 										Expect(errs).Should(ConsistOf(
-											providers.ErrDuplicateCreate,
-											providers.ErrDuplicateCreate,
-											providers.ErrDuplicateCreate,
-											providers.ErrDuplicateCreate,
+											providers.ErrReconcileInProgress,
+											providers.ErrReconcileInProgress,
+											providers.ErrReconcileInProgress,
+											providers.ErrReconcileInProgress,
 										))
 
 										Expect(vm.Status.Crypto).ToNot(BeNil())

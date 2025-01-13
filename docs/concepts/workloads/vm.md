@@ -227,8 +227,49 @@ spec:
 
 Users can rekey VMs and their [classic disks](#volume-type) by:
 
-* Switching to a different `EncryptionClass` by changing the value of `spec.crypto.encryptionClassName`.
 * Using the default key provider, if one exists, by removing `spec.crypto.encryptionClassName`.
+* Switching to a different `EncryptionClass` by changing the value of `spec.crypto.encryptionClassName`.
+
+!!! note "Rekeying with a different `EncryptionClass`"
+
+    Please note that picking a different `EncryptionClass` to rekey a VM requires the new `EncryptionClass` resource to either:
+
+    * Have a different provider ID than the one currently used by the VM
+    * Have a different key ID than the one currently used by the VM
+
+    For example, imagine the following, two `EncryptionClass` resources:
+
+
+    === "`EncryptionClass 1`"
+
+        ```yaml
+        apiVersion: encryption.vmware.com/v1alpha1
+        kind: EncryptionClass
+        metadata:
+          name: my-encryption-class-1
+          namespace: my-namespace-1
+        spec:
+          keyProvider: local
+        ```
+
+    === "EncryptionClass 2"
+
+        ```yaml
+        apiVersion: encryption.vmware.com/v1alpha1
+        kind: EncryptionClass
+        metadata:
+          name: my-encryption-class-2
+          namespace: my-namespace-1
+        spec:
+          keyProvider: local
+        ```
+
+    Switching a VM from `my-encryption-class-1` to `my-encryption-class-2` will have no effect since both `EncryptionClass` resources:
+
+    * Reference the same, underlying key provider
+    * Do not specify the key ID, thus rely on key generation
+
+    Even though the lack of an explicit key ID means one will be generated, the logic to rekey a VM depends on comparing the key ID from the `EncryptionClass` with the one currently used by the VM. If the one from the `EncryptionClass` is empty, i.e. use a generated key, then it does not cause a rekey to occur since the VM already has a key.
 
 Either change results in the VM and its [classic disks](#volume-type) being rekeyed using the new key provider.
 

@@ -40,7 +40,7 @@ func publishTests() {
 
 		vm = builder.DummyVirtualMachine()
 		vm.Status.UniqueID = vcVM.Reference().Value
-		cl = builder.DummyContentLibrary("dummy-cl", "dummy-ns", ctx.ContentLibraryID)
+		cl = builder.DummyContentLibrary("dummy-cl", "dummy-ns", ctx.LocalContentLibraryID)
 		vmPub = builder.DummyVirtualMachinePublishRequest("dummy-vmpub", "dummy-ns",
 			vcVM.Name(), "dummy-item-name", "dummy-cl")
 		vmPub.Status.SourceRef = &vmPub.Spec.Source

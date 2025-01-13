@@ -202,3 +202,37 @@ func isNonRDMDisk(dev vimtypes.BaseVirtualDevice) bool {
 
 	return false
 }
+
+// GetPreferredDiskFormat gets the preferred disk format. This function returns
+// 4k if available, native 512 if available, an empty value if no formats are
+// provided, else the first available format is returned.
+func GetPreferredDiskFormat[T string | vimtypes.DatastoreSectorFormat](
+	diskFormats ...T) vimtypes.DatastoreSectorFormat {
+
+	if len(diskFormats) == 0 {
+		return ""
+	}
+
+	var (
+		supports4k        bool
+		supportsNative512 bool
+	)
+
+	for i := range diskFormats {
+		switch diskFormats[i] {
+		case T(vimtypes.DatastoreSectorFormatNative_4k):
+			supports4k = true
+		case T(vimtypes.DatastoreSectorFormatNative_512):
+			supportsNative512 = true
+		}
+	}
+
+	if supports4k {
+		return vimtypes.DatastoreSectorFormatNative_4k
+	}
+	if supportsNative512 {
+		return vimtypes.DatastoreSectorFormatNative_512
+	}
+
+	return vimtypes.DatastoreSectorFormat(diskFormats[0])
+}

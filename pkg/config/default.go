@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 )
 
 const defaultPrefix = "vmoperator-"
@@ -40,8 +41,10 @@ func Default() Config {
 		MaxConcurrentReconciles:      1,
 		AsyncSignalDisabled:          false,
 		AsyncCreateDisabled:          false,
+		FastDeployMode:               pkgconst.FastDeployModeDirect,
 		CreateVMRequeueDelay:         10 * time.Second,
 		PoweredOnVMHasIPRequeueDelay: 10 * time.Second,
+		SyncImageRequeueDelay:        10 * time.Second,
 		NetworkProviderType:          NetworkProviderTypeNamed,
 		PodName:                      defaultPrefix + "controller-manager",
 		PodNamespace:                 defaultPrefix + "system",

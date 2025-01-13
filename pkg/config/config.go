@@ -68,6 +68,11 @@ type Config struct {
 	// Defaults to 10 seconds.
 	PoweredOnVMHasIPRequeueDelay time.Duration
 
+	// SyncImageRequeueDelay is the requeue delay that is used to requeue an
+	// image that wants to be synced but is not yet ready.
+	// Defaults to 10 seconds.
+	SyncImageRequeueDelay time.Duration
+
 	NetworkProviderType  NetworkProviderType
 	VSphereNetworking    bool
 	LoadBalancerProvider string
@@ -118,6 +123,23 @@ type Config struct {
 	//
 	// Defaults to false.
 	AsyncCreateDisabled bool
+
+	// FastDeployMode determines the default mode for Fast Deploy
+	// feature.
+	//
+	// Please note, this flag has no impact if the Fast Deploy feature is not
+	// enabled.
+	//
+	// The valid values are "direct" and "linked." If the FSS is enabled and:
+	//
+	//   - the value is "direct," then the VM is deployed using cached disks.
+	//   - the value is "linked," then the VM is deployed as a linked clone.
+	//   - the value is empty, then "direct" mode is used.
+	//   - the value is anything else, then fast deploy is not used to deploy
+	//     VMs.
+	//
+	// Defaults to "direct."
+	FastDeployMode string
 }
 
 // GetMaxDeployThreadsOnProvider returns MaxDeployThreadsOnProvider if it is >0
@@ -148,8 +170,7 @@ type FeatureStates struct {
 	VMIncrementalRestore      bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
 	BringYourOwnEncryptionKey bool // FSS_WCP_VMSERVICE_BYOK
 	SVAsyncUpgrade            bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
-	// TODO(akutz) This FSS is placeholder.
-	FastDeploy bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
+	FastDeploy                bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
 }
 
 type InstanceStorage struct {

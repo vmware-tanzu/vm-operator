@@ -243,11 +243,15 @@ func GetVirtualMachineImageSpecAndStatus(
 	}
 
 	vmiNotReadyMessage := "VirtualMachineImage is not ready"
+
+	// Mirror the image's ReadyConditionType into the VM's
+	// VirtualMachineConditionImageReady.
 	conditions.SetMirror(
 		vmCtx.VM,
 		vmopv1.VirtualMachineConditionImageReady,
 		obj.(conditions.Getter),
 		conditions.WithFallbackValue(false, "NotReady", vmiNotReadyMessage))
+
 	if conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady) {
 		return nil,
 			vmopv1.VirtualMachineImageSpec{},

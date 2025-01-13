@@ -6,13 +6,10 @@ package library
 
 import (
 	"context"
-	"crypto/sha1" //nolint:gosec // used for creating directory name
 	"fmt"
-	"io"
 	"path"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -50,6 +47,7 @@ func CacheStorageURIs(
 	client CacheStorageURIsClient,
 	dstDatacenter, srcDatacenter *object.Datacenter,
 	dstDir string,
+	dstDisksFormat vimtypes.DatastoreSectorFormat,
 	srcDiskURIs ...string) ([]string, error) {
 
 	if pkgutil.IsNil(ctx) {
@@ -76,6 +74,7 @@ func CacheStorageURIs(
 			client,
 			dstDir,
 			srcDiskURIs[i],
+			dstDisksFormat,
 			dstDatacenter,
 			srcDatacenter)
 		if err != nil {
@@ -91,6 +90,7 @@ func copyDisk(
 	ctx context.Context,
 	client CacheStorageURIsClient,
 	dstDir, srcFilePath string,
+	dstDisksFormat vimtypes.DatastoreSectorFormat,
 	dstDatacenter, srcDatacenter *object.Datacenter) (string, error) {
 
 	var (
@@ -112,7 +112,7 @@ func copyDisk(
 		return "", fmt.Errorf("failed to query disk uuid: %w", queryDiskErr)
 	}
 
-	// Create the VM folder.
+	// Ensure the directory where the disks will be cached exists.
 	if err := client.MakeDirectory(
 		ctx,
 		dstDir,
@@ -134,6 +134,7 @@ func copyDisk(
 				AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
 				DiskType:    string(vimtypes.VirtualDiskTypeThin),
 			},
+			SectorFormat: string(dstDisksFormat),
 		},
 		false)
 	if err != nil {
@@ -146,112 +147,9 @@ func copyDisk(
 	return dstFilePath, nil
 }
 
-const topLevelCacheDirName = ".contentlib-cache"
-
-// GetTopLevelCacheDirClient implements the client methods used by the
-// GetTopLevelCacheDir method.
-type GetTopLevelCacheDirClient interface {
-	CreateDirectory(
-		ctx context.Context,
-		datastore *object.Datastore,
-		displayName, policy string) (string, error)
-
-	ConvertNamespacePathToUuidPath(
-		ctx context.Context,
-		datacenter *object.Datacenter,
-		datastoreURL string) (string, error)
-}
-
-// GetTopLevelCacheDir returns the top-level cache directory at the root of the
-// datastore.
-// If the datastore uses vSAN, this function also ensures the top-level
-// directory exists.
-func GetTopLevelCacheDir(
-	ctx context.Context,
-	client GetTopLevelCacheDirClient,
-	dstDatacenter *object.Datacenter,
-	dstDatastore *object.Datastore,
-	dstDatastoreName, dstDatastoreURL string,
-	topLevelDirectoryCreateSupported bool) (string, error) {
-
-	if pkgutil.IsNil(ctx) {
-		panic("context is nil")
-	}
-	if pkgutil.IsNil(client) {
-		panic("client is nil")
-	}
-	if dstDatacenter == nil {
-		panic("dstDatacenter is nil")
-	}
-	if dstDatastore == nil {
-		panic("dstDatastore is nil")
-	}
-	if dstDatastoreName == "" {
-		panic("dstDatastoreName is empty")
-	}
-	if dstDatastoreURL == "" {
-		panic("dstDatastoreURL is empty")
-	}
-
-	logger := logr.FromContextOrDiscard(ctx).WithName("GetTopLevelCacheDir")
-
-	logger.V(4).Info(
-		"Args",
-		"dstDatastoreName", dstDatastoreName,
-		"dstDatastoreURL", dstDatastoreURL,
-		"topLevelDirectoryCreateSupported", topLevelDirectoryCreateSupported)
-
-	if topLevelDirectoryCreateSupported {
-		return fmt.Sprintf(
-			"[%s] %s", dstDatastoreName, topLevelCacheDirName), nil
-	}
-
-	// TODO(akutz) Figure out a way to test if the directory already exists
-	//             instead of trying to just create it again and using the
-	//             FileAlreadyExists error as signal.
-
-	dstDatastorePath, _ := strings.CutPrefix(dstDatastoreURL, "ds://")
-	topLevelCacheDirPath := path.Join(dstDatastorePath, topLevelCacheDirName)
-
-	logger.V(4).Info(
-		"CreateDirectory",
-		"dstDatastorePath", dstDatastorePath,
-		"topLevelCacheDirPath", topLevelCacheDirPath)
-
-	uuidTopLevelCacheDirPath, err := client.CreateDirectory(
-		ctx,
-		dstDatastore,
-		topLevelCacheDirPath,
-		"")
-	if err != nil {
-		if !fault.Is(err, &vimtypes.FileAlreadyExists{}) {
-			return "", fmt.Errorf("failed to create directory: %w", err)
-		}
-
-		logger.V(4).Info(
-			"ConvertNamespacePathToUuidPath",
-			"dstDatacenter", dstDatacenter.Reference().Value,
-			"topLevelCacheDirPath", topLevelCacheDirPath)
-
-		uuidTopLevelCacheDirPath, err = client.ConvertNamespacePathToUuidPath(
-			ctx,
-			dstDatacenter,
-			topLevelCacheDirPath)
-		if err != nil {
-			return "", fmt.Errorf(
-				"failed to convert namespace path=%q: %w",
-				topLevelCacheDirPath, err)
-		}
-	}
-
-	logger.V(4).Info(
-		"Got absolute top level cache dir path",
-		"uuidTopLevelCacheDirPath", uuidTopLevelCacheDirPath)
-
-	topLevelCacheDirName := path.Base(uuidTopLevelCacheDirPath)
-
-	return fmt.Sprintf("[%s] %s", dstDatastoreName, topLevelCacheDirName), nil
-}
+// TopLevelCacheDirName is the name of the top-level cache directory created on
+// each datastore.
+const TopLevelCacheDirName = ".contentlib-cache"
 
 // GetCacheDirForLibraryItem returns the cache directory for a library item
 // beneath a top-level cache directory.
@@ -267,6 +165,11 @@ func GetCacheDirForLibraryItem(
 	if contentVersion == "" {
 		panic("contentVersion is empty")
 	}
+
+	// Encode the contentVersion to ensure it is safe to use as part of the
+	// directory name.
+	contentVersion = pkgutil.SHA1Sum17(contentVersion)
+
 	return path.Join(topLevelCacheDir, itemUUID, contentVersion)
 }
 
@@ -279,7 +182,5 @@ func GetCachedFileNameForVMDK(vmdkFileName string) string {
 	if ext := path.Ext(vmdkFileName); ext != "" {
 		vmdkFileName, _ = strings.CutSuffix(vmdkFileName, ext)
 	}
-	h := sha1.New() //nolint:gosec // used for creating directory name
-	_, _ = io.WriteString(h, vmdkFileName)
-	return fmt.Sprintf("%x", h.Sum(nil))[0:17]
+	return pkgutil.SHA1Sum17(vmdkFileName)
 }

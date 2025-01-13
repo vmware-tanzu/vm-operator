@@ -210,6 +210,7 @@ rules:
   resources:
   - clustervirtualmachineimages
   - virtualmachineclasses
+  - virtualmachineimagecaches
   - virtualmachineimages
   - virtualmachinepublishrequests
   - virtualmachines
@@ -240,6 +241,7 @@ rules:
   - vmoperator.vmware.com
   resources:
   - virtualmachineclasses/status
+  - virtualmachineimagecaches/status
   - virtualmachinepublishrequests/status
   - virtualmachinereplicasets/status
   - virtualmachines/status

@@ -6,7 +6,6 @@ package vmlifecycle
 
 import (
 	"github.com/vmware/govmomi/find"
-	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -22,20 +21,22 @@ type CreateArgs struct {
 
 	ConfigSpec          vimtypes.VirtualMachineConfigSpec
 	StorageProvisioning string
+	DatacenterMoID      string
 	FolderMoID          string
 	ResourcePoolMoID    string
 	HostMoID            string
 	StorageProfileID    string
 	DatastoreMoID       string // gce2e only: used only if StorageProfileID is unset
 	Datastores          []DatastoreRef
+	DiskPaths           []string
 	ZoneName            string
 }
 
 type DatastoreRef struct {
-	Name                             string
-	MoRef                            vimtypes.ManagedObjectReference
-	URL                              string
-	TopLevelDirectoryCreateSupported bool
+	Name        string
+	MoRef       vimtypes.ManagedObjectReference
+	URL         string
+	DiskFormats []string
 
 	// ForDisk is false if the recommendation is for the VM's home directory and
 	// true if for a disk. DiskKey is only valid if ForDisk is true.
@@ -49,18 +50,10 @@ func CreateVirtualMachine(
 	restClient *rest.Client,
 	vimClient *vim25.Client,
 	finder *find.Finder,
-	datacenter *object.Datacenter,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
 	if createArgs.UseContentLibrary {
-		return deployFromContentLibrary(
-			vmCtx,
-			k8sClient,
-			restClient,
-			vimClient,
-			datacenter,
-			createArgs)
+		return deployFromContentLibrary(vmCtx, restClient, vimClient, createArgs)
 	}
-
 	return cloneVMFromInventory(vmCtx, finder, createArgs)
 }

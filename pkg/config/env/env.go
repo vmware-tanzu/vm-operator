@@ -18,6 +18,7 @@ const (
 	MaxCreateVMsOnProvider
 	CreateVMRequeueDelay
 	PoweredOnVMHasIPRequeueDelay
+	SyncImageRequeueDelay
 	PrivilegedUsers
 	NetworkProviderType
 	LoadBalancerProvider
@@ -27,6 +28,7 @@ const (
 	LogSensitiveData
 	AsyncSignalDisabled
 	AsyncCreateDisabled
+	FastDeployMode
 	InstanceStoragePVPlacementFailedTTL
 	InstanceStorageJitterMaxFactor
 	InstanceStorageSeedRequeueDuration
@@ -94,6 +96,8 @@ func (n VarName) String() string {
 		return "CREATE_VM_REQUEUE_DELAY"
 	case PoweredOnVMHasIPRequeueDelay:
 		return "POWERED_ON_VM_HAS_IP_REQUEUE_DELAY"
+	case SyncImageRequeueDelay:
+		return "SYNC_IMAGE_REQUEUE_DELAY"
 	case PrivilegedUsers:
 		return "PRIVILEGED_USERS"
 	case NetworkProviderType:
@@ -112,6 +116,8 @@ func (n VarName) String() string {
 		return "ASYNC_SIGNAL_DISABLED"
 	case AsyncCreateDisabled:
 		return "ASYNC_CREATE_DISABLED"
+	case FastDeployMode:
+		return "FAST_DEPLOY_MODE"
 	case InstanceStoragePVPlacementFailedTTL:
 		return "INSTANCE_STORAGE_PV_PLACEMENT_FAILED_TTL"
 	case InstanceStorageJitterMaxFactor:

@@ -13,20 +13,27 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
@@ -35,6 +42,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
@@ -146,34 +154,139 @@ func (vs *vSphereVMProvider) clearAndLogoutVcClient(ctx context.Context) {
 	}
 }
 
-// SyncVirtualMachineImage syncs the vmi object with the OVF Envelope retrieved from the cli object.
-func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx context.Context, cli, vmi ctrlclient.Object) error {
-	var itemID, contentVersion string
-	var itemType imgregv1a1.ContentLibraryItemType
+// SyncVirtualMachineImage syncs the vmi object with the OVF Envelope retrieved
+// from the content library item object.
+func (vs *vSphereVMProvider) SyncVirtualMachineImage(
+	ctx context.Context,
+	cli,
+	vmi ctrlclient.Object) error {
+
+	var (
+		itemID      string
+		itemVersion string
+		itemType    imgregv1a1.ContentLibraryItemType
+	)
 
 	switch cli := cli.(type) {
 	case *imgregv1a1.ContentLibraryItem:
 		itemID = string(cli.Spec.UUID)
-		contentVersion = cli.Status.ContentVersion
+		itemVersion = cli.Status.ContentVersion
 		itemType = cli.Status.Type
 	case *imgregv1a1.ClusterContentLibraryItem:
 		itemID = string(cli.Spec.UUID)
-		contentVersion = cli.Status.ContentVersion
+		itemVersion = cli.Status.ContentVersion
 		itemType = cli.Status.Type
 	default:
 		return fmt.Errorf("unexpected content library item K8s object type %T", cli)
 	}
 
-	logger := log.V(4).WithValues("vmiName", vmi.GetName(), "cliName", cli.GetName())
+	logger := log.V(4).WithValues(
+		"vmiName", vmi.GetName(),
+		"cliName", cli.GetName())
 
 	// Exit early if the library item type is not an OVF.
 	if itemType != imgregv1a1.ContentLibraryItemTypeOvf {
-		logger.Info("Skip syncing VMI content as the library item is not OVF",
-			"libraryItemType", itemType)
+		logger.Info(
+			"Skip syncing VMI content as the library item is not OVF",
+			"itemType", itemType)
 		return nil
 	}
 
-	ovfEnvelope, err := ovfcache.GetOVFEnvelope(ctx, itemID, contentVersion)
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		return vs.syncVirtualMachineImageFastDeploy(ctx, vmi, logger, itemID, itemVersion)
+	}
+	return vs.syncVirtualMachineImage(ctx, vmi, itemID, itemVersion)
+}
+
+func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeploy(
+	ctx context.Context,
+	vmi ctrlclient.Object,
+	logger logr.Logger,
+	itemID,
+	itemVersion string) error {
+
+	// Create or patch the VMICache object.
+	vmiCache := vmopv1.VirtualMachineImageCache{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+			Name:      util.VMIName(itemID),
+		},
+	}
+	if _, err := controllerutil.CreateOrPatch(
+		ctx,
+		vs.k8sClient,
+		&vmiCache,
+		func() error {
+			vmiCache.Spec.ProviderID = itemID
+			vmiCache.Spec.ProviderVersion = itemVersion
+			return nil
+		}); err != nil {
+		return fmt.Errorf(
+			"failed to createOrPatch image cache resource: %w", err)
+	}
+
+	// Check if the OVF data is ready.
+	c := pkgcnd.Get(vmiCache, vmopv1.VirtualMachineImageCacheConditionOVFReady)
+	switch {
+	case c != nil && c.Status == metav1.ConditionFalse:
+
+		return fmt.Errorf(
+			"failed to get ovf: %s: %w",
+			c.Message,
+			pkgerr.VMICacheNotReadyError{Name: vmiCache.Name})
+
+	case c == nil,
+		c.Status != metav1.ConditionTrue,
+		vmiCache.Status.OVF == nil,
+		vmiCache.Status.OVF.ProviderVersion != itemVersion:
+
+		logger.V(4).Info(
+			"Skip sync VMI",
+			"vmiCache.ovfCond", c,
+			"vmiCache.status.ovf", vmiCache.Status.OVF,
+			"expectedContentVersion", itemVersion)
+
+		return pkgerr.VMICacheNotReadyError{Name: vmiCache.Name}
+	}
+
+	// Get the OVF data.
+	var (
+		ovfConfigMap    corev1.ConfigMap
+		ovfConfigMapKey = ctrlclient.ObjectKey{
+			Namespace: vmiCache.Namespace,
+			Name:      vmiCache.Status.OVF.ConfigMapName,
+		}
+	)
+	if err := vs.k8sClient.Get(
+		ctx,
+		ovfConfigMapKey,
+		&ovfConfigMap); err != nil {
+
+		return fmt.Errorf(
+			"failed to get ovf configmap: %w, %w",
+			err,
+			pkgerr.VMICacheNotReadyError{Name: vmiCache.Name})
+	}
+
+	var ovfEnvelope ovf.Envelope
+	if err := yaml.Unmarshal(
+		[]byte(ovfConfigMap.Data["value"]), &ovfEnvelope); err != nil {
+
+		return fmt.Errorf(
+			"failed to unmarshal ovf yaml into envelope: %w", err)
+	}
+
+	contentlibrary.UpdateVmiWithOvfEnvelope(vmi, ovfEnvelope)
+	return nil
+}
+
+func (vs *vSphereVMProvider) syncVirtualMachineImage(
+	ctx context.Context,
+	vmi ctrlclient.Object,
+	itemID,
+	itemVersion string) error {
+
+	ovfEnvelope, err := ovfcache.GetOVFEnvelope(ctx, itemID, itemVersion)
 	if err != nil {
 		return fmt.Errorf("failed to get OVF envelope for library item %q: %w", itemID, err)
 	}

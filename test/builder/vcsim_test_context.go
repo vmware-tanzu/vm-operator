@@ -66,6 +66,7 @@ import (
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -157,6 +158,7 @@ type TestContextForVCSim struct {
 	withWorkloadIsolation bool
 
 	// When WithContentLibrary is true:
+	LocalContentLibraryID   string
 	ContentLibraryImageName string
 	ContentLibraryID        string
 	ContentLibraryItemID    string
@@ -620,8 +622,9 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 
 	libMgr := library.NewManager(c.RestClient)
 
-	libSpec := library.Library{
-		Name: "vmop-content-library",
+	// Create a local library.
+	localLibSpec := library.Library{
+		Name: "vmop-local",
 		Type: "LOCAL",
 		Storage: []library.StorageBacking{
 			{
@@ -629,35 +632,106 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 				Type:        "DATASTORE",
 			},
 		},
-		// Making it published to be able to verify SyncLibraryItem() API.
+		// Publish the library.
 		Publication: &library.Publication{
-			Published: vimtypes.NewBool(true),
+			Published: ptr.To(true),
 		},
 	}
-
-	clID, err := libMgr.CreateLibrary(c, libSpec)
+	localLibID, err := libMgr.CreateLibrary(c, localLibSpec)
 	Expect(err).ToNot(HaveOccurred())
-	Expect(clID).ToNot(BeEmpty())
-	c.ContentLibraryID = clID
+	Expect(localLibID).ToNot(BeEmpty())
+	localLib, err := libMgr.GetLibraryByID(c, localLibID)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(localLib).ToNot(BeNil())
 
-	// OVA
-	libraryItem := library.Item{
+	c.LocalContentLibraryID = localLibID
+
+	// Create an OVA in the local library.
+	localLibItemOVA := library.Item{
 		Name:      "test-image-ovf",
 		Type:      library.ItemTypeOVF,
-		LibraryID: clID,
+		LibraryID: localLibID,
 	}
-	c.ContentLibraryImageName = libraryItem.Name
-
-	itemID := CreateContentLibraryItem(
+	localLibItemOVAID := CreateContentLibraryItem(
 		c,
 		libMgr,
-		libraryItem,
+		localLibItemOVA,
 		path.Join(
 			testutil.GetRootDirOrDie(),
 			"test", "builder", "testdata",
-			"images", "ttylinux-pc_i486-16.1.ovf"),
+			"images", "ttylinux-pc_i486-16.1.ova"),
 	)
-	c.ContentLibraryItemID = itemID
+	Expect(localLibItemOVAID).ToNot(BeEmpty())
+
+	{
+		li, err := libMgr.GetLibraryItem(c, localLibItemOVAID)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(li.Cached).To(BeTrue())
+		Expect(li.ContentVersion).ToNot(BeEmpty())
+	}
+
+	// Create an ISO in the local library.
+	localLibItemISO := library.Item{
+		Name:      "test-image-iso",
+		Type:      library.ItemTypeISO,
+		LibraryID: localLibID,
+	}
+	localLibItemISOID := CreateContentLibraryItem(
+		c,
+		libMgr,
+		localLibItemISO,
+		path.Join(
+			testutil.GetRootDirOrDie(),
+			"test", "builder", "testdata",
+			"images", "ttylinux-pc_i486-16.1.iso"),
+	)
+	Expect(localLibItemISOID).ToNot(BeEmpty())
+
+	// Create a subscribed library.
+	subLibSpec := library.Library{
+		Name: "vmop-subscribed",
+		Type: "SUBSCRIBED",
+		Storage: []library.StorageBacking{
+			{
+				DatastoreID: c.Datastore.Reference().Value,
+				Type:        "DATASTORE",
+			},
+		},
+		Subscription: &library.Subscription{
+			SubscriptionURL: localLib.Publication.PublishURL,
+			OnDemand:        ptr.To(true),
+		},
+	}
+	subLibID, err := libMgr.CreateLibrary(c, subLibSpec)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(subLibID).ToNot(BeEmpty())
+
+	// Get the library item IDs for the OVA & ISO from the subscribed library.
+	var (
+		subLibItemOVAID string
+		subLibItemISOID string
+	)
+	subLibItems, err := libMgr.GetLibraryItems(c, subLibID)
+	Expect(err).ToNot(HaveOccurred())
+	for i := range subLibItems {
+		sli := subLibItems[i]
+		switch sli.Name {
+		case localLibItemOVA.Name:
+			subLibItemOVAID = sli.ID
+		case localLibItemISO.Name:
+			subLibItemISOID = sli.ID
+		}
+	}
+	Expect(subLibItemOVAID).ToNot(BeEmpty())
+	Expect(subLibItemISOID).ToNot(BeEmpty())
+
+	c.ContentLibraryID = subLibID
+
+	c.ContentLibraryImageName = localLibItemOVA.Name
+	c.ContentLibraryItemID = subLibItemOVAID
+
+	c.ContentLibraryIsoImageName = localLibItemISO.Name
+	c.ContentLibraryIsoItemID = subLibItemISOID
 
 	// The image isn't quite as prod but sufficient for what we need here ATM.
 	clusterVMImage := DummyClusterVirtualMachineImage(c.ContentLibraryImageName)
@@ -665,28 +739,9 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 		Kind: "ClusterContentLibraryItem",
 	}
 	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
-	clusterVMImage.Status.ProviderItemID = itemID
+	clusterVMImage.Status.ProviderItemID = subLibItemOVAID
 	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
-
-	// ISO
-	libraryItem = library.Item{
-		Name:      "test-image-iso",
-		Type:      library.ItemTypeISO,
-		LibraryID: clID,
-	}
-	c.ContentLibraryIsoImageName = libraryItem.Name
-
-	itemID = CreateContentLibraryItem(
-		c,
-		libMgr,
-		libraryItem,
-		path.Join(
-			testutil.GetRootDirOrDie(),
-			"test", "builder", "testdata",
-			"images", "ttylinux-pc_i486-16.1.iso"),
-	)
-	c.ContentLibraryIsoItemID = itemID
 
 	// The image isn't quite as prod but sufficient for what we need here ATM.
 	clusterVMImage = DummyClusterVirtualMachineImage(c.ContentLibraryIsoImageName)
@@ -694,7 +749,7 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 		Kind: "ClusterContentLibraryItem",
 	}
 	Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
-	clusterVMImage.Status.ProviderItemID = itemID
+	clusterVMImage.Status.ProviderItemID = subLibItemISOID
 	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 }

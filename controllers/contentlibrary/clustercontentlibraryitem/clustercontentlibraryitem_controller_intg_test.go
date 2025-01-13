@@ -184,7 +184,7 @@ func intgTestsReconcile() {
 
 			image := &vmopv1.ClusterVirtualMachineImage{}
 			Expect(ctx.Client.Get(ctx, cvmiKey, image)).To(Succeed())
-			assertCVMImageFromCCLItem(image, cclItem)
+			assertVMImageFromCLItem(image, cclItem)
 
 			By("ClusterContentLibraryItem has new content version", func() {
 				Expect(ctx.Client.Get(ctx, cclItemKey, cclItem)).To(Succeed())
@@ -199,8 +199,30 @@ func intgTestsReconcile() {
 				}).Should(Succeed())
 
 				cclItem.APIVersion, cclItem.Kind = gvk.ToAPIVersionAndKind()
-				assertCVMImageFromCCLItem(image, cclItem)
+				assertVMImageFromCLItem(image, cclItem)
 			})
 		})
+	})
+}
+
+func assertVMImageFromCLItem(
+	vmi *vmopv1.ClusterVirtualMachineImage,
+	clItem *imgregv1a1.ClusterContentLibraryItem) {
+
+	Expect(metav1.IsControlledBy(vmi, clItem)).To(BeTrue())
+
+	By("Expected VMImage Spec", func() {
+		Expect(vmi.Spec.ProviderRef.Name).To(Equal(clItem.Name))
+		Expect(vmi.Spec.ProviderRef.APIVersion).To(Equal(clItem.APIVersion))
+		Expect(vmi.Spec.ProviderRef.Kind).To(Equal(clItem.Kind))
+	})
+
+	By("Expected VMImage Status", func() {
+		Expect(vmi.Status.Name).To(Equal(clItem.Status.Name))
+		Expect(vmi.Status.ProviderItemID).To(BeEquivalentTo(clItem.Spec.UUID))
+		Expect(vmi.Status.ProviderContentVersion).To(Equal(clItem.Status.ContentVersion))
+		Expect(vmi.Status.Type).To(BeEquivalentTo(clItem.Status.Type))
+
+		Expect(conditions.IsTrue(vmi, vmopv1.ReadyConditionType)).To(BeTrue())
 	})
 }

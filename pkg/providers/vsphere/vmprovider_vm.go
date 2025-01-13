@@ -82,9 +82,9 @@ var (
 	createCountLock       sync.Mutex
 	concurrentCreateCount int
 
-	// currentlyCreating tracks the VMs currently being created in a
+	// currentlyReconciling tracks the VMs currently being created in a
 	// non-blocking goroutine.
-	currentlyCreating sync.Map
+	currentlyReconciling sync.Map
 
 	// SkipVMImageCLProviderCheck skips the checks that a VM Image has a Content Library item provider
 	// since a VirtualMachineImage created for a VM template won't have either. This has been broken for
@@ -111,6 +111,14 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	async bool) (chan error, error) {
+
+	vmNamespacedName := vm.NamespacedName()
+
+	if _, ok := currentlyReconciling.Load(vmNamespacedName); ok {
+		// Do not process the VM again if it is already being reconciled in a
+		// goroutine.
+		return nil, providers.ErrReconcileInProgress
+	}
 
 	vmCtx := pkgctx.VirtualMachineContext{
 		Context: context.WithValue(
@@ -192,16 +200,14 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 			createArgs)
 	}
 
-	vmNamespacedName := vm.NamespacedName()
-
-	if _, ok := currentlyCreating.LoadOrStore(vmNamespacedName, struct{}{}); ok {
+	if _, ok := currentlyReconciling.LoadOrStore(vmNamespacedName, struct{}{}); ok {
 		// If the VM is already being created in a goroutine, then there is no
 		// need to create it again.
 		//
 		// However, we need to make sure we decrement the number of concurrent
 		// creates before returning.
 		cleanupFn()
-		return nil, providers.ErrDuplicateCreate
+		return nil, providers.ErrReconcileInProgress
 	}
 
 	vmCtx.Logger.V(4).Info("Doing a non-blocking create")
@@ -209,7 +215,7 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	// Update the cleanup function to include indicating a concurrent create is
 	// no longer occurring.
 	cleanupFn = func() {
-		currentlyCreating.Delete(vmNamespacedName)
+		currentlyReconciling.Delete(vmNamespacedName)
 		decrementConcurrentCreatesFn()
 	}
 
@@ -245,9 +251,17 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) error {
 
+	vmNamespacedName := vm.NamespacedName()
+
+	if _, ok := currentlyReconciling.Load(vmNamespacedName); ok {
+		// If the VM is already being reconciled in a goroutine then it cannot
+		// be deleted yet.
+		return providers.ErrReconcileInProgress
+	}
+
 	vmCtx := pkgctx.VirtualMachineContext{
 		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteVM")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		Logger:  log.WithValues("vmName", vmNamespacedName),
 		VM:      vm,
 	}
 

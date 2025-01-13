@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -331,15 +331,13 @@ func doAndWaitOnHardPowerOp(
 			"failed to invoke hard power op for %s %w", desiredPowerState, err)
 	}
 	if ti, err := t.WaitForResult(ctx); err != nil {
-		if err, ok := err.(task.Error); ok {
-			// Ignore error if desired power state already set.
-			if ips, ok := err.Fault().(*vimtypes.InvalidPowerState); ok && ips.ExistingState == ips.RequestedState {
-				log.Info(
-					"Power state already set",
-					"desiredPowerState",
-					desiredPowerState)
-				return PowerOpResultNone, nil
-			}
+		var ips *vimtypes.InvalidPowerState
+		if _, ok := fault.As(err, &ips); ok && ips.ExistingState == ips.RequestedState {
+			log.Info(
+				"Power state already set",
+				"desiredPowerState",
+				desiredPowerState)
+			return PowerOpResultNone, nil
 		}
 		if ti != nil {
 			log.Error(err, "Change power state task failed", "taskInfo", ti)

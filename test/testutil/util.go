@@ -94,7 +94,8 @@ func ContainsError(err error, message string) bool {
 		if err.Error() == message {
 			return true
 		}
-		switch tErr := err.(type) {
+
+		switch tErr := err.(type) { //nolint:errorlint
 		case unwrappableError:
 			err = tErr.Unwrap()
 		case unwrappableErrorSlice:
@@ -103,6 +104,8 @@ func ContainsError(err error, message string) bool {
 					return true
 				}
 			}
+		default:
+			return false
 		}
 	}
 }

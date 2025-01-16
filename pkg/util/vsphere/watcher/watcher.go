@@ -118,10 +118,12 @@ type Watcher struct {
 	lv *view.ListView
 	cv map[moRef]*view.ContainerView
 
-	// cvr is used to count the number of times a container has been added to
-	// the list view. If the Remove function is called on a container with a ref
-	// count of one, then the container will be removed from the list view and
+	// cvr is used to keep track of what opaque IDs are using the list view of
+	// each container. If the Remove function is called on a container with the
+	// last ID, then the container will be removed from the list view and
 	// destroyed.
+	// cvr will have a container moref only if cv does, so cv should be checked
+	// first.
 	cvr map[moRef]map[string]struct{}
 
 	ignoredExtraConfigKeys map[string]struct{}
@@ -158,7 +160,7 @@ func newWatcher(
 	watchedPropertyPaths []string,
 	additionalIgnoredExtraConfigKeys []string,
 	lookupNamespacedName lookupNamespacedNameFn,
-	containerRefs ...moRef) (*Watcher, error) {
+	containerRefsWithIDs map[moRef][]string) (*Watcher, error) {
 
 	if watchedPropertyPaths == nil {
 		watchedPropertyPaths = DefaultWatchedPropertyPaths()
@@ -172,7 +174,7 @@ func newWatcher(
 
 	// For each container reference, create a container view and add it to
 	// the list view's initial list of members.
-	cvs, cvr, err := toContainerViewMap(ctx, vm, containerRefs...)
+	cvs, cvr, err := toContainerViewMap(ctx, vm, containerRefsWithIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -227,15 +229,15 @@ func (w *Watcher) close() {
 
 // Start begins watching a vSphere server for updates to VM Service managed VMs.
 // If watchedPropertyPaths is nil, DefaultWatchedPropertyPaths will be used.
-// The containerRefs parameter may be used to start the watcher with an initial
-// list of entities to watch.
+// The containerRefsWithIDs parameter may be used to start the watcher with an
+// initial list of entities to watch.
 func Start(
 	ctx context.Context,
 	client *vim25.Client,
 	watchedPropertyPaths []string,
 	additionalIgnoredExtraConfigKeys []string,
 	lookupNamespacedName lookupNamespacedNameFn,
-	containerRefs ...moRef) (*Watcher, error) {
+	containerRefsWithIDs map[moRef][]string) (*Watcher, error) {
 
 	logger := logr.FromContextOrDiscard(ctx).WithName("vSphereWatcher")
 
@@ -247,7 +249,7 @@ func Start(
 		watchedPropertyPaths,
 		additionalIgnoredExtraConfigKeys,
 		lookupNamespacedName,
-		containerRefs...)
+		containerRefsWithIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -512,9 +514,9 @@ func (w *Watcher) remove(_ context.Context, ref moRef, id string) error {
 		return nil
 	}
 
-	// Only remove the container from the list view if it has a ref count of
-	// one.
-	if len(w.cvr[ref]) > 1 {
+	// Only remove the container from the list view if this ref is the
+	// last user, and make sure that this ID is actually in use.
+	if _, ok := w.cvr[ref][id]; !ok || len(w.cvr[ref]) > 1 {
 		delete(w.cvr[ref], id)
 		return nil
 	}
@@ -529,7 +531,7 @@ func (w *Watcher) remove(_ context.Context, ref moRef, id string) error {
 	}
 
 	delete(w.cv, ref)
-	delete(w.cvr[ref], id)
+	delete(w.cvr, ref)
 
 	return nil
 }
@@ -537,34 +539,35 @@ func (w *Watcher) remove(_ context.Context, ref moRef, id string) error {
 func toContainerViewMap(
 	ctx context.Context,
 	vm *view.Manager,
-	containerRefs ...moRef) (map[moRef]*view.ContainerView, map[moRef]map[string]struct{}, error) {
+	containerRefsWithIDs map[moRef][]string) (map[moRef]*view.ContainerView, map[moRef]map[string]struct{}, error) {
 
 	var (
 		cvMap     = map[moRef]*view.ContainerView{}
 		cvRefsMap = map[moRef]map[string]struct{}{}
 	)
 
-	if len(containerRefs) == 0 {
+	if len(containerRefsWithIDs) == 0 {
 		return cvMap, cvRefsMap, nil
 	}
 
 	var resultErr error
-	for i := range containerRefs {
-		if _, ok := cvMap[containerRefs[i]]; ok {
-			// Ignore duplicates.
-			continue
-		}
+	for moref, ids := range containerRefsWithIDs {
 		cv, err := vm.CreateContainerView(
 			ctx,
-			containerRefs[i],
+			moref,
 			[]string{virtualMachineType},
 			true)
 		if err != nil {
 			resultErr = err
 			break
 		}
-		cvMap[containerRefs[i]] = cv
-		cvRefsMap[containerRefs[i]] = map[string]struct{}{}
+		cvMap[moref] = cv
+
+		idSet := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			idSet[id] = struct{}{}
+		}
+		cvRefsMap[moref] = idSet
 	}
 
 	if resultErr != nil {

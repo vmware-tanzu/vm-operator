@@ -123,23 +123,26 @@ func (r *Reconciler) ReconcileDelete(
 	ctx context.Context,
 	obj *topologyv1.Zone) (ctrl.Result, error) {
 
-	if controllerutil.ContainsFinalizer(obj, Finalizer) {
-		if val := obj.Spec.ManagedVMs.FolderMoID; val != "" {
-			if err := watcher.Remove(
-				ctx,
-				vimtypes.ManagedObjectReference{
-					Type:  "Folder",
-					Value: val,
-				},
-				fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
+	if val := obj.Spec.ManagedVMs.FolderMoID; val != "" {
+		if err := watcher.Remove(
+			ctx,
+			vimtypes.ManagedObjectReference{
+				Type:  "Folder",
+				Value: val,
+			},
+			fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
 
-				if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
-					return ctrl.Result{}, err
-				}
+			if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
+				// We don't ignore watcher.ErrNoWatcher here to interlock with the vm watcher
+				// service that is in the process of restarting the watcher. This does mean
+				// that if watcher cannot start like because of invalid VC creds the finalizer
+				// won't be removed.
+				return ctrl.Result{}, err
 			}
 		}
-		controllerutil.RemoveFinalizer(obj, Finalizer)
 	}
+	controllerutil.RemoveFinalizer(obj, Finalizer)
+
 	return ctrl.Result{}, nil
 }
 
@@ -147,24 +150,25 @@ func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
 	obj *topologyv1.Zone) (ctrl.Result, error) {
 
-	if !controllerutil.ContainsFinalizer(obj, Finalizer) {
-		// The finalizer is not added until we are able to successfully
-		// add a watch to the zone's VM Service folder.
-		if val := obj.Spec.ManagedVMs.FolderMoID; val != "" {
-			if err := watcher.Add(
-				ctx,
-				vimtypes.ManagedObjectReference{
-					Type:  "Folder",
-					Value: val,
-				},
-				fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
+	if controllerutil.AddFinalizer(obj, Finalizer) {
+		// Ensure the finalizer is present before watching this zone.
+		return ctrl.Result{}, nil
+	}
 
-				if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
-					return ctrl.Result{}, err
-				}
+	if val := obj.Spec.ManagedVMs.FolderMoID; val != "" {
+		if err := watcher.Add(
+			ctx,
+			vimtypes.ManagedObjectReference{
+				Type:  "Folder",
+				Value: val,
+			},
+			fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
+
+			if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
+				return ctrl.Result{}, err
 			}
-			controllerutil.AddFinalizer(obj, Finalizer)
 		}
 	}
+
 	return ctrl.Result{}, nil
 }

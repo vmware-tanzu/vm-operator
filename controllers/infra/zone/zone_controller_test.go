@@ -122,8 +122,7 @@ var _ = Describe(
 			When("no vms exist in the zone's vm service folder", func() {
 
 				const (
-					vmName     = "my-vm-1"
-					fakeString = "fake"
+					vmName = "my-vm-1"
 				)
 
 				var (
@@ -212,7 +211,6 @@ var _ = Describe(
 							for i := range list.Items {
 								z := &list.Items[i]
 								if z.Spec.ManagedVMs.FolderMoID == nsInfo.Folder.Reference().Value {
-									Expect(z).ToNot(BeNil())
 									Expect(vcSimCtx.Client.Delete(ctx, z)).To(Succeed())
 									Eventually(func(g Gomega) {
 										key := ctrlclient.ObjectKeyFromObject(z)
@@ -267,7 +265,6 @@ var _ = Describe(
 							for i := range list.Items {
 								z := &list.Items[i]
 								if z.Spec.ManagedVMs.FolderMoID == nsInfo.Folder.Reference().Value {
-									Expect(z).ToNot(BeNil())
 									Expect(vcSimCtx.Client.Delete(ctx, z)).To(Succeed())
 									Eventually(func(g Gomega) {
 										key := ctrlclient.ObjectKeyFromObject(z)

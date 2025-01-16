@@ -194,7 +194,9 @@ func classToVMMapperFn(
 			}
 		}
 
-		logger.Info("Returning VM reconcile requests due to VirtualMachineClass watch", "requests", reconcileRequests)
+		if len(reconcileRequests) > 0 {
+			logger.V(4).Info("Returning VM reconcile requests due to VirtualMachineClass watch", "requests", reconcileRequests)
+		}
 		return reconcileRequests
 	}
 }

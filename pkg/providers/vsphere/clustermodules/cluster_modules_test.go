@@ -10,8 +10,7 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -24,8 +23,8 @@ func cmTests() {
 			cmProvider clustermodules.Provider
 
 			moduleGroup  string
-			moduleSpec   *vmopv1a1.ClusterModuleSpec
-			moduleStatus *vmopv1a1.ClusterModuleStatus
+			moduleSpec   *vmopv1.VSphereClusterModuleStatus
+			moduleStatus *vmopv1.VSphereClusterModuleStatus
 			clusterRef   vimtypes.ManagedObjectReference
 			vmRef        vimtypes.ManagedObjectReference
 		)
@@ -37,7 +36,7 @@ func cmTests() {
 			clusterRef = ctx.GetFirstClusterFromFirstZone().Reference()
 
 			moduleGroup = "controller-group"
-			moduleSpec = &vmopv1a1.ClusterModuleSpec{
+			moduleSpec = &vmopv1.VSphereClusterModuleStatus{
 				GroupName: moduleGroup,
 			}
 
@@ -45,7 +44,7 @@ func cmTests() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(moduleID).ToNot(BeEmpty())
 
-			moduleStatus = &vmopv1a1.ClusterModuleStatus{
+			moduleStatus = &vmopv1.VSphereClusterModuleStatus{
 				GroupName:  moduleSpec.GroupName,
 				ModuleUuid: moduleID,
 			}

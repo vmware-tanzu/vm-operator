@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/vmware/govmomi"
 	vimcrypto "github.com/vmware/govmomi/crypto"
@@ -43,6 +44,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	// Blank import to make govmomi client aware of these bindings.
 	_ "github.com/vmware/govmomi/vapi/cluster/simulator"
@@ -284,6 +286,7 @@ func (s *TestSuite) NewTestContextForVCSim(
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
 	ctx := pkgcfg.NewContext()
+	ctx = logr.NewContext(ctx, logf.Log)
 	ctx = ctxop.WithContext(ctx)
 	ctx = ovfcache.WithContext(ctx)
 	return NewTestContextForVCSim(ctx, config, initObjects...)

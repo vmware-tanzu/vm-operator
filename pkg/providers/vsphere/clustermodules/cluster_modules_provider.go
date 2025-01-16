@@ -7,6 +7,7 @@ package clustermodules
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vapi/rest"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -35,31 +36,34 @@ func NewProvider(restClient *rest.Client) Provider {
 }
 
 func (cm *provider) CreateModule(ctx context.Context, clusterRef vimtypes.ManagedObjectReference) (string, error) {
-	log.Info("Creating cluster module", "cluster", clusterRef)
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.Info("Creating cluster module", "cluster", clusterRef)
 
 	moduleID, err := cm.manager.CreateModule(ctx, clusterRef)
 	if err != nil {
 		return "", err
 	}
 
-	log.Info("Created cluster module", "moduleID", moduleID)
+	logger.Info("Created cluster module", "moduleID", moduleID)
 	return moduleID, nil
 }
 
 func (cm *provider) DeleteModule(ctx context.Context, moduleID string) error {
-	log.Info("Deleting cluster module", "moduleID", moduleID)
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.Info("Deleting cluster module", "moduleID", moduleID)
 
 	err := cm.manager.DeleteModule(ctx, moduleID)
 	if err != nil && !util.IsNotFoundError(err) {
 		return err
 	}
 
-	log.Info("Deleted cluster module", "moduleID", moduleID)
+	logger.Info("Deleted cluster module", "moduleID", moduleID)
 	return nil
 }
 
 func (cm *provider) DoesModuleExist(ctx context.Context, moduleID string, clusterRef vimtypes.ManagedObjectReference) (bool, error) {
-	log.V(4).Info("Checking if cluster module exists", "moduleID", moduleID, "clusterRef", clusterRef)
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.V(4).Info("Checking if cluster module exists", "moduleID", moduleID, "clusterRef", clusterRef)
 
 	if moduleID == "" {
 		return false, nil
@@ -77,7 +81,7 @@ func (cm *provider) DoesModuleExist(ctx context.Context, moduleID string, cluste
 		}
 	}
 
-	log.V(4).Info("Cluster module doesn't exist", "moduleID", moduleID, "clusterRef", clusterRef)
+	logger.V(4).Info("Cluster module doesn't exist", "moduleID", moduleID, "clusterRef", clusterRef)
 	return false, nil
 }
 
@@ -103,7 +107,7 @@ func (cm *provider) AddMoRefToModule(ctx context.Context, moduleID string, moRef
 	}
 
 	if !isMember {
-		log.Info("Adding moRef to cluster module", "moduleID", moduleID, "moRef", moRef)
+		logr.FromContextOrDiscard(ctx).Info("Adding moRef to cluster module", "moduleID", moduleID, "moRef", moRef)
 		// TODO: Should we just skip the IsMoRefModuleMember() and always call this since we're already
 		// ignoring the first return value?
 		_, err := cm.manager.AddModuleMembers(ctx, moduleID, moRef.Reference())
@@ -116,13 +120,14 @@ func (cm *provider) AddMoRefToModule(ctx context.Context, moduleID string, moRef
 }
 
 func (cm *provider) RemoveMoRefFromModule(ctx context.Context, moduleID string, moRef vimtypes.ManagedObjectReference) error {
-	log.Info("Removing moRef from cluster module", "moduleID", moduleID, "moRef", moRef)
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.Info("Removing moRef from cluster module", "moduleID", moduleID, "moRef", moRef)
 
 	_, err := cm.manager.RemoveModuleMembers(ctx, moduleID, moRef)
 	if err != nil {
 		return err
 	}
 
-	log.Info("Removed moRef from cluster module", "moduleID", moduleID, "moRef", moRef)
+	logger.Info("Removed moRef from cluster module", "moduleID", moduleID, "moRef", moRef)
 	return nil
 }

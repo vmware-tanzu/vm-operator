@@ -322,10 +322,8 @@ func initManager() {
 		if err := controllers.AddToManager(ctx, mgr); err != nil {
 			return err
 		}
-		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-			if err := services.AddToManager(ctx, mgr); err != nil {
-				return err
-			}
+		if err := services.AddToManager(ctx, mgr); err != nil {
+			return err
 		}
 		return webhooks.AddToManager(ctx, mgr)
 	}

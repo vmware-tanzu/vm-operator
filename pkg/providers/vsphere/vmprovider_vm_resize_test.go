@@ -38,9 +38,8 @@ func vmResizeTests() {
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary:    true,
-			WithNetworkEnv:        builder.NetworkEnvNamed,
-			WithWorkloadIsolation: true,
+			WithContentLibrary: true,
+			WithNetworkEnv:     builder.NetworkEnvNamed,
 		}
 	})
 

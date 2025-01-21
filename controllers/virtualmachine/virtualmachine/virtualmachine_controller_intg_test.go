@@ -35,6 +35,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	vmwatcher "github.com/vmware-tanzu/vm-operator/services/vm-watcher"
@@ -65,6 +66,10 @@ func intgTestsReconcile() {
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.AsyncCreateDisabled = true
+			config.AsyncSignalDisabled = true
+		})
 
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -259,6 +264,123 @@ func intgTestsReconcile() {
 			})
 		})
 
+		When("VM is a vSphere Kubernetes node", func() {
+
+			var (
+				oldCapVal bool
+				newCapVal bool
+			)
+
+			BeforeEach(func() {
+				if vm.Labels == nil {
+					vm.Labels = map[string]string{}
+				}
+				vm.Labels[vmopv1util.KubernetesNodeLabelKey] = ""
+			})
+
+			AfterEach(func() {
+				pkgcfg.SetContext(suite.Context, func(config *pkgcfg.Config) {
+					config.Features.WorkloadDomainIsolation = oldCapVal
+				})
+			})
+
+			JustBeforeEach(func() {
+				oldCapVal = pkgcfg.FromContext(suite.Context).Features.WorkloadDomainIsolation
+				pkgcfg.SetContext(suite.Context, func(config *pkgcfg.Config) {
+					config.Features.WorkloadDomainIsolation = newCapVal
+				})
+			})
+
+			When("WorkloadDomainIsolation capability is disabled", func() {
+
+				BeforeEach(func() {
+					newCapVal = false
+				})
+
+				It("Reconciles after VirtualMachine creation", func() {
+					vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+					By("VirtualMachine should have finalizer added", func() {
+						waitForVirtualMachineFinalizer(ctx, vmKey)
+					})
+
+					By("Set VM status", func() {
+						providerfake.SetCreateOrUpdateFunction(
+							ctx,
+							intgFakeVMProvider,
+							func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+								vm.Status.InstanceUUID = dummyInstanceUUID
+								vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+								conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+								vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+									PrimaryIP4: dummyIPAddress,
+								}
+								return nil
+							},
+						)
+					})
+
+					By("VirtualMachine should be created", func() {
+						// This depends on CreateVMRequeueDelay to timely reflect the update.
+						Eventually(func(g Gomega) {
+							vm := getVirtualMachine(ctx, vmKey)
+							g.Expect(vm).ToNot(BeNil())
+							g.Expect(vm.Status.InstanceUUID).To(Equal(dummyInstanceUUID))
+							g.Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+							g.Expect(vm.Status.Network).ToNot(BeNil())
+							g.Expect(vm.Status.Network.PrimaryIP4).To(Equal(dummyIPAddress))
+						}, "5s").Should(Succeed(), "waiting for VM to be created")
+					})
+				})
+			})
+
+			When("WorkloadDomainIsolation capability is enabled", func() {
+
+				BeforeEach(func() {
+					newCapVal = false
+				})
+
+				It("Reconciles after VirtualMachine creation", func() {
+					vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+					By("VirtualMachine should have finalizer added", func() {
+						waitForVirtualMachineFinalizer(ctx, vmKey)
+					})
+
+					By("Set VM status", func() {
+						providerfake.SetCreateOrUpdateFunction(
+							ctx,
+							intgFakeVMProvider,
+							func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+								vm.Status.InstanceUUID = dummyInstanceUUID
+								vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+								conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+								vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{
+									PrimaryIP4: dummyIPAddress,
+								}
+								return nil
+							},
+						)
+					})
+
+					By("VirtualMachine should be created", func() {
+						// This depends on CreateVMRequeueDelay to timely reflect the update.
+						Eventually(func(g Gomega) {
+							vm := getVirtualMachine(ctx, vmKey)
+							g.Expect(vm).ToNot(BeNil())
+							g.Expect(vm.Status.InstanceUUID).To(Equal(dummyInstanceUUID))
+							g.Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+							g.Expect(vm.Status.Network).ToNot(BeNil())
+							g.Expect(vm.Status.Network.PrimaryIP4).To(Equal(dummyIPAddress))
+						}, "5s").Should(Succeed(), "waiting for VM to be created")
+					})
+				})
+			})
+
+		})
+
 		When("VM schema needs upgrade", func() {
 			instanceUUID := uuid.NewString()
 			biosUUID := uuid.NewString()
@@ -449,7 +571,6 @@ var _ = Describe(
 				func(config *pkgcfg.Config) {
 					config.AsyncSignalDisabled = false
 					config.AsyncCreateDisabled = false
-					config.Features.WorkloadDomainIsolation = true
 				},
 			)
 			ctx = cource.WithContext(ctx)
@@ -471,9 +592,7 @@ var _ = Describe(
 
 			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
 				ctx,
-				builder.VCSimTestConfig{
-					WithWorkloadIsolation: pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation,
-				},
+				builder.VCSimTestConfig{},
 				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 					if err := vmwatcher.AddToManager(ctx, mgr); err != nil {
 						return err

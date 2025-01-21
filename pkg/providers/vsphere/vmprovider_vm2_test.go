@@ -60,8 +60,7 @@ func vmE2ETests() {
 		network.RetryTimeout = 1 * time.Millisecond
 
 		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary:    true,
-			WithWorkloadIsolation: true,
+			WithContentLibrary: true,
 		}
 
 		vm = builder.DummyBasicVirtualMachine("test-vm", "")

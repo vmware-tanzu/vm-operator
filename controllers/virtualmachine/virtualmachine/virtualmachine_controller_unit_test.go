@@ -77,7 +77,6 @@ func unitTestsReconcile() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.MaxDeployThreadsOnProvider = 16
-			config.Features.WorkloadDomainIsolation = false
 		})
 
 		fakeProbeManagerIf := proberfake.NewFakeProberManager()
@@ -86,6 +85,8 @@ func unitTestsReconcile() {
 			pkgcfg.UpdateContext(
 				ctx,
 				func(config *pkgcfg.Config) {
+					config.AsyncCreateDisabled = true
+					config.AsyncSignalDisabled = true
 					config.Features.PodVMOnStretchedSupervisor = true
 				},
 			),
@@ -221,7 +222,6 @@ func unitTestsReconcile() {
 		When("non-blocking create", func() {
 			JustBeforeEach(func() {
 				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
-					config.Features.WorkloadDomainIsolation = true
 					config.AsyncSignalDisabled = false
 					config.AsyncCreateDisabled = false
 				})

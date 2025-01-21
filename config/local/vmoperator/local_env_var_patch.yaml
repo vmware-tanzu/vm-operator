@@ -27,8 +27,6 @@ spec:
           value: "false"
         - name: FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
           value: "false"
-        - name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
-          value: "false"
         - name: FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
           value: "false"
         - name: FSS_STORAGE_QUOTA_M2
@@ -62,5 +60,7 @@ spec:
         - name: FSS_WCP_WINDOWS_SYSPREP
           value: "true"
         - name: FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
+          value: "true"
+        - name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
           value: "true"
 

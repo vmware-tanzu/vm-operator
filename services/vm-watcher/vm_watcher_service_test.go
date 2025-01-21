@@ -69,12 +69,6 @@ var _ = Describe(
 
 		JustBeforeEach(func() {
 			ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
-			ctx = pkgcfg.UpdateContext(
-				ctx,
-				func(config *pkgcfg.Config) {
-					config.Features.WorkloadDomainIsolation = true
-				},
-			)
 			ctx = cource.WithContext(ctx)
 			ctx = watcher.WithContext(ctx)
 
@@ -91,9 +85,7 @@ var _ = Describe(
 
 			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
 				ctx,
-				builder.VCSimTestConfig{
-					WithWorkloadIsolation: pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation,
-				},
+				builder.VCSimTestConfig{},
 				vmwatcher.AddToManager,
 				func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 					ctx.VMProvider = provider

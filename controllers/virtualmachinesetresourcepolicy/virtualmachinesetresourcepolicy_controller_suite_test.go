@@ -21,12 +21,7 @@ import (
 var intgFakeVMProvider = providerfake.NewVMProvider()
 
 var suite = builder.NewTestSuiteForControllerWithContext(
-	pkgcfg.UpdateContext(
-		pkgcfg.NewContextWithDefaultConfig(),
-		func(config *pkgcfg.Config) {
-			config.Features.WorkloadDomainIsolation = true
-		},
-	),
+	pkgcfg.NewContextWithDefaultConfig(),
 	virtualmachinesetresourcepolicy.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = intgFakeVMProvider

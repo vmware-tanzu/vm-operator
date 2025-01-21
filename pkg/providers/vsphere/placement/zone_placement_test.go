@@ -141,13 +141,7 @@ func vcSimPlacement() {
 		initObjects = nil
 	})
 
-	Describe("When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION enabled", func() {
-		BeforeEach(func() {
-			testConfig = builder.VCSimTestConfig{
-				WithWorkloadIsolation: true,
-			}
-		})
-
+	Describe("When WorkloadDomainIsolation capability enabled", func() {
 		Context("Zone placement", func() {
 
 			Context("zone already assigned", func() {
@@ -360,11 +354,10 @@ func vcSimPlacement() {
 		})
 	})
 
-	// TODO: Delete tests when FSS_WCP_WORKLOAD_DOMAIN_ISOLATION enabled.
-	Describe("When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION disabled", func() {
+	Describe("When WorkloadDomainIsolation capability disabled", func() {
 		BeforeEach(func() {
 			testConfig = builder.VCSimTestConfig{
-				WithWorkloadIsolation: false,
+				WithoutWorkloadDomainIsolation: true,
 			}
 		})
 

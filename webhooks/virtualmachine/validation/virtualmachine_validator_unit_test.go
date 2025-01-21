@@ -303,20 +303,32 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("when Workload Domain Isolation FSS disabled, should allow when VM specifies valid availability zone, there are availability zones but no zones",
+			Entry("when WorkloadDomainIsolation capability disabled and VKS node, should allow when VM specifies valid availability zone, there are availability zones but no zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.Features.WorkloadDomainIsolation = false
 						})
 						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[vmopv1util.KubernetesNodeLabelKey] = ""
 						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
 					expectAllowed: true,
 				},
 			),
-			Entry("when Workload Domain Isolation FSS enabled, should deny when VM specifies valid availability zone, there are availability zones but no zones",
+			Entry("when WorkloadDomainIsolation capability enabled and VKS node, should deny when VM specifies valid availability zone, there are availability zones but no zones",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[vmopv1util.KubernetesNodeLabelKey] = ""
+						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
+					},
+					expectAllowed: false,
+				},
+			),
+			Entry("when WorkloadDomainIsolation capability enabled, should deny when VM specifies valid availability zone, there are availability zones but no zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
@@ -326,7 +338,7 @@ func unitTestsValidateCreate() {
 					expectAllowed: false,
 				},
 			),
-			Entry("when Workload Domain Isolation FSS enabled, should deny when VM created by SSO user that specifies a zone being deleted",
+			Entry("when WorkloadDomainIsolation capability enabled, should deny when VM created by SSO user that specifies a zone being deleted",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -343,7 +355,7 @@ func unitTestsValidateCreate() {
 					expectAllowed: false,
 				},
 			),
-			Entry("when Workload Domain Isolation FSS enabled, should allow when VM created by admin that specifies a zone being deleted",
+			Entry("when WorkloadDomainIsolation capability enabled, should allow when VM created by admin that specifies a zone being deleted",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -361,7 +373,7 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("when Workload Domain Isolation FSS enabled, should allow when VM created by CAPV that specifies a zone being deleted",
+			Entry("when WorkloadDomainIsolation capability enabled, should allow when VM created by CAPV that specifies a zone being deleted",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {

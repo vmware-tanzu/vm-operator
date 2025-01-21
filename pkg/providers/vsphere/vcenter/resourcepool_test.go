@@ -30,10 +30,7 @@ func getResourcePoolTests() {
 	)
 
 	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{
-			WithWorkloadIsolation: true,
-		}
-
+		testConfig = builder.VCSimTestConfig{}
 		ctx = suite.NewTestContextForVCSim(testConfig)
 		nsInfo = ctx.CreateWorkloadNamespace()
 		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
@@ -114,10 +111,7 @@ func createDeleteExistResourcePoolChild() {
 	)
 
 	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{
-			WithWorkloadIsolation: true,
-		}
-
+		testConfig = builder.VCSimTestConfig{}
 		ctx = suite.NewTestContextForVCSim(testConfig)
 		nsInfo = ctx.CreateWorkloadNamespace()
 		nsRP = ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")

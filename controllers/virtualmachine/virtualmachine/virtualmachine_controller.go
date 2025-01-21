@@ -128,12 +128,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			))
 	}
 
-	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-		if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
-			builder = builder.WatchesRawSource(source.Channel(
-				cource.FromContextWithBuffer(ctx, "VirtualMachine", 100),
-				&handler.EnqueueRequestForObject{}))
-		}
+	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+		builder = builder.WatchesRawSource(source.Channel(
+			cource.FromContextWithBuffer(ctx, "VirtualMachine", 100),
+			&handler.EnqueueRequestForObject{}))
 	}
 
 	return builder.Complete(r)
@@ -273,10 +271,7 @@ type Reconciler struct {
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
-
-	if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota || pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-		ctx = cource.JoinContext(ctx, r.Context)
-	}
+	ctx = cource.JoinContext(ctx, r.Context)
 
 	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
 		ctx = vmconfig.WithContext(ctx)
@@ -307,6 +302,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 				logger.Info("Disabled fast-deploy for this VM")
 			}
 		}
+	}
+
+	// Update the type of placement logic based on whether or not the VM is a
+	// Kubernetes node and the WorkloadDomainIsolation capability.
+	ctx = vmopv1util.GetContextWithWorkloadDomainIsolation(ctx, *vm)
+	if !pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+		logger.Info("Disabled WorkloadDomainIsolation capability for this VM")
 	}
 
 	vmCtx := &pkgctx.VirtualMachineContext{
@@ -375,9 +377,7 @@ func requeueDelay(
 	}
 
 	// Do not requeue for the IP address if async signal is enabled.
-	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation &&
-		!pkgcfg.FromContext(ctx).AsyncSignalDisabled {
-
+	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
 		return 0
 	}
 
@@ -487,8 +487,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		chanErr <-chan error
 	)
 
-	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation &&
-		!pkgcfg.FromContext(ctx).AsyncSignalDisabled &&
+	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled &&
 		!pkgcfg.FromContext(ctx).AsyncCreateDisabled {
 		//
 		// Non-blocking create
@@ -543,8 +542,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		r.Recorder.EmitEvent(ctx.VM, "ReconcileNormal", err, true)
 	}
 
-	if !pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation ||
-		pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+	if pkgcfg.FromContext(ctx).AsyncSignalDisabled {
 
 		// Add the VM to the probe manager. This is idempotent.
 		r.Prober.AddToProberManager(ctx.VM)

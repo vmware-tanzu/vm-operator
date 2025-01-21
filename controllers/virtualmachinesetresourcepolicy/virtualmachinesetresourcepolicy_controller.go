@@ -47,11 +47,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType)
 
-	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-		builder.Watches(
-			&topologyv1.Zone{},
-			handler.EnqueueRequestsFromMapFunc(zoneToNamespaceVMSRP(mgr.GetClient())))
-	}
+	builder.Watches(
+		&topologyv1.Zone{},
+		handler.EnqueueRequestsFromMapFunc(zoneToNamespaceVMSRP(mgr.GetClient())))
 
 	return builder.Complete(r)
 }

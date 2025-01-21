@@ -46,12 +46,10 @@ func createOrUpdateVM(
 	provider providers.VirtualMachineProviderInterface,
 	vm *vmopv1.VirtualMachine) error {
 
-	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-		if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
-			if !pkgcfg.FromContext(ctx).AsyncCreateDisabled {
-				By("non-blocking createOrUpdateVM")
-				return createOrUpdateVMAsync(ctx, provider, vm)
-			}
+	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+		if !pkgcfg.FromContext(ctx).AsyncCreateDisabled {
+			By("non-blocking createOrUpdateVM")
+			return createOrUpdateVMAsync(ctx, provider, vm)
 		}
 	}
 

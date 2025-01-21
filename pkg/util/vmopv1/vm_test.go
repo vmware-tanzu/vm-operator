@@ -25,6 +25,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
@@ -909,3 +910,73 @@ var _ = Describe("EncryptionClassToVirtualMachineMapper", func() {
 		})
 	})
 })
+
+var _ = DescribeTable("IsKubernetesNode",
+	func(
+		vm vmopv1.VirtualMachine,
+		expected bool,
+	) {
+		Ω(vmopv1util.IsKubernetesNode(vm)).Should(Equal(expected))
+	},
+	Entry(
+		"does not have label",
+		vmopv1.VirtualMachine{},
+		false,
+	),
+	Entry(
+		"has label",
+		vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					vmopv1util.KubernetesNodeLabelKey: "",
+				},
+			},
+		},
+		true,
+	),
+)
+
+var _ = DescribeTable("GetContextWithWorkloadDomainIsolation",
+	func(
+		ctx context.Context,
+		vm vmopv1.VirtualMachine,
+		expected bool,
+	) {
+		c := vmopv1util.GetContextWithWorkloadDomainIsolation(ctx, vm)
+		Ω(pkgcfg.FromContext(c).Features.WorkloadDomainIsolation).Should(Equal(expected))
+	},
+	Entry(
+		"is not kubernetes node",
+		pkgcfg.NewContext(),
+		vmopv1.VirtualMachine{},
+		true,
+	),
+	Entry(
+		"is kubernetes node with capability disabled",
+		pkgcfg.NewContext(),
+		vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					vmopv1util.KubernetesNodeLabelKey: "",
+				},
+			},
+		},
+		false,
+	),
+	Entry(
+		"is kubernetes node with capability enabled",
+		pkgcfg.WithConfig(pkgcfg.Config{
+			Features: pkgcfg.FeatureStates{
+				WorkloadDomainIsolation: true,
+			},
+		}),
+		vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					vmopv1util.KubernetesNodeLabelKey: "",
+				},
+			},
+		},
+		true,
+	),
+)

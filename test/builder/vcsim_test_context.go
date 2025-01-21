@@ -107,8 +107,8 @@ type VCSimTestConfig struct {
 	// always required; the Datastore is only needed for gce2e.
 	WithoutStorageClass bool
 
-	// WithWorkloadIsolation enables FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
-	WithWorkloadIsolation bool
+	// WithoutWorkloadDomainIsolation disables the WorkloadDomainIsolation capability.
+	WithoutWorkloadDomainIsolation bool
 
 	// WithJSONExtraConfig enables additional ExtraConfig that is included when
 	// creating a VM.
@@ -153,8 +153,8 @@ type TestContextForVCSim struct {
 	ClustersPerZone int
 	ZoneNames       []string
 
-	// withWorkloadIsolation stores VCSimTestConfig WithWorkloadIsolation value.
-	withWorkloadIsolation bool
+	// When WithoutWorkloadDomainIsolation is false:
+	workloadDomainIsolation bool
 
 	// When WithContentLibrary is true:
 	ContentLibraryImageName string
@@ -317,8 +317,7 @@ func newTestContextForVCSim(
 	}
 
 	ctx.ClustersPerZone = clustersPerZone
-	// TODO: this can be removed once FSS_WCP_WORKLOAD_DOMAIN_ISOLATION enabled.
-	ctx.withWorkloadIsolation = config.WithWorkloadIsolation
+	ctx.workloadDomainIsolation = !config.WithoutWorkloadDomainIsolation
 
 	return ctx
 }
@@ -388,8 +387,10 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		for _, rp := range nsRPs {
 			nsInfo.PoolMoIDs = append(nsInfo.PoolMoIDs, rp.Reference().Value)
 		}
-		// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is disabled, AvailabilityZone stores namespace info.
-		if !c.withWorkloadIsolation {
+
+		// When the WorkloadDomainIsolation capability is disabled,
+		// AvailabilityZone stores namespace info.
+		if !c.workloadDomainIsolation {
 			az := &topologyv1.AvailabilityZone{}
 			Expect(c.Client.Get(c, ctrlclient.ObjectKey{Name: azName}, az)).To(Succeed())
 			if az.Spec.Namespaces == nil {
@@ -398,7 +399,8 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 			az.Spec.Namespaces[ns.Name] = nsInfo
 			Expect(c.Client.Update(c, az)).To(Succeed())
 		} else {
-			// When FSS_WCP_WORKLOAD_DOMAIN_ISOLATION is enabled, Namespaced Zone stores namespace info.
+			// When the WorkloadDomainIsolation capability is enabled,
+			// Namespaced Zone stores namespace info.
 			zone := &topologyv1.Zone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      azName,
@@ -510,7 +512,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.Features.InstanceStorage = config.WithInstanceStorage
 		cc.Features.VMResize = config.WithVMResize
 		cc.Features.VMResizeCPUMemory = config.WithVMResizeCPUMemory
-		cc.Features.WorkloadDomainIsolation = config.WithWorkloadIsolation
+		cc.Features.WorkloadDomainIsolation = !config.WithoutWorkloadDomainIsolation
 		cc.Features.IsoSupport = config.WithISOSupport
 		cc.Features.VMIncrementalRestore = config.WithVMIncrementalRestore
 	})

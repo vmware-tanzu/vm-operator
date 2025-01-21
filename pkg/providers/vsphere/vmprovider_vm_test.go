@@ -83,8 +83,7 @@ func vmTests() {
 			config.AsyncSignalDisabled = true
 		})
 		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary:    true,
-			WithWorkloadIsolation: true,
+			WithContentLibrary: true,
 		}
 	})
 
@@ -1367,7 +1366,6 @@ func vmTests() {
 					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 						config.AsyncCreateDisabled = false
 						config.AsyncSignalDisabled = false
-						config.Features.WorkloadDomainIsolation = true
 					})
 				})
 				JustBeforeEach(func() {
@@ -1588,7 +1586,6 @@ func vmTests() {
 									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 										config.AsyncCreateDisabled = true
 										config.AsyncSignalDisabled = false
-										config.Features.WorkloadDomainIsolation = true
 									})
 								})
 								It("should succeed", func() {
@@ -1609,7 +1606,6 @@ func vmTests() {
 									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 										config.AsyncCreateDisabled = false
 										config.AsyncSignalDisabled = false
-										config.Features.WorkloadDomainIsolation = true
 									})
 								})
 								It("should succeed", func() {

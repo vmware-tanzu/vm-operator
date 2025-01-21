@@ -22,6 +22,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
@@ -347,4 +348,43 @@ func EncryptionClassToVirtualMachineMapper(
 
 		return requests
 	}
+}
+
+// KubernetesNodeLabelKey is the name of the label key used to identify a
+// Kubernetes cluster node.
+const KubernetesNodeLabelKey = "cluster.x-k8s.io/cluster-name"
+
+// IsKubernetesNode returns true if the provided VM has the label
+// cluster.x-k8s.io/cluster-name.
+func IsKubernetesNode(vm vmopv1.VirtualMachine) bool {
+	_, ok := vm.Labels[KubernetesNodeLabelKey]
+	return ok
+}
+
+// GetContextWithWorkloadDomainIsolation gets a new context with the
+// WorkloadDomainIsolation capability set to a value based on the provided VM.
+func GetContextWithWorkloadDomainIsolation(
+	ctx context.Context,
+	vm vmopv1.VirtualMachine) context.Context {
+
+	// Create a copy of the config so the WorkloadDomainIsolation capability
+	// may be altered for just this VM.
+	cfg := pkgcfg.FromContext(ctx)
+
+	// By default the WorkloadDomainIsolation capability is enabled for all
+	// VMs.
+	cfg.Features.WorkloadDomainIsolation = true
+
+	// If the VM is a Kubernetes node, the WorkloadDomainIsolation
+	// capability is determined by inspecting the value of the cluster's
+	// capability, which may be disabled based on the version of the vSphere
+	// Kubernetes Service (VKS).
+	if IsKubernetesNode(vm) {
+		cfg.Features.WorkloadDomainIsolation = pkgcfg.FromContext(ctx).
+			Features.WorkloadDomainIsolation
+	}
+
+	// Layer the updated Config into the context so all logic beneath this
+	// line in the call stack will use the updated value.
+	return pkgcfg.WithContext(ctx, cfg)
 }

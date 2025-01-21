@@ -52,15 +52,13 @@ func resourcePolicyTests() {
 
 		BeforeEach(func() {
 			testConfig = builder.VCSimTestConfig{
-				NumFaultDomains:       3,
-				WithWorkloadIsolation: true,
+				NumFaultDomains: 3,
 			}
 		})
 
 		JustBeforeEach(func() {
 			ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
 			vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-
 			nsInfo = ctx.CreateWorkloadNamespace()
 		})
 

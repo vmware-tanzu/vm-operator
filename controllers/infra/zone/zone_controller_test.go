@@ -73,9 +73,7 @@ var _ = Describe(
 
 			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
 				ctx,
-				builder.VCSimTestConfig{
-					WithWorkloadIsolation: pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation,
-				},
+				builder.VCSimTestConfig{},
 				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 					if err := vmwatcher.AddToManager(ctx, mgr); err != nil {
 						return err

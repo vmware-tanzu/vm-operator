@@ -419,21 +419,19 @@ func SetCreateOrUpdateFunction(
 	provider.Lock()
 	defer provider.Unlock()
 
-	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-		if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
 
-			provider.CreateOrUpdateVirtualMachineAsyncFn = func(
-				ctx context.Context,
-				vm *vmopv1.VirtualMachine) (<-chan error, error) {
+		provider.CreateOrUpdateVirtualMachineAsyncFn = func(
+			ctx context.Context,
+			vm *vmopv1.VirtualMachine) (<-chan error, error) {
 
-				chanErr := make(chan error)
-				close(chanErr)
+			chanErr := make(chan error)
+			close(chanErr)
 
-				return chanErr, fn(ctx, vm)
-			}
-
-			return
+			return chanErr, fn(ctx, vm)
 		}
+
+		return
 
 	}
 

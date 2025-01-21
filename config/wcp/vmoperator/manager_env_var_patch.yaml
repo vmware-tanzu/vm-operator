@@ -79,12 +79,6 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
-    value: "<FSS_WCP_WORKLOAD_DOMAIN_ISOLATION_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
     name: FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
     value: "<FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE_VALUE>"
 
@@ -166,4 +160,10 @@
   path: /spec/template/spec/containers/0/env/-
   value:
     name: FSS_WCP_WINDOWS_SYSPREP
+    value: "true"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
     value: "true"

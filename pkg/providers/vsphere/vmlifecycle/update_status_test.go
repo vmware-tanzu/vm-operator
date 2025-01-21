@@ -1086,7 +1086,6 @@ var _ = Describe("UpdateStatus", func() {
 				record.New(&apirecord.FakeRecorder{Events: chanRecord}))
 
 			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
-				config.Features.WorkloadDomainIsolation = true
 				config.AsyncSignalDisabled = false
 			})
 		})

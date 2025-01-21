@@ -40,6 +40,7 @@ func Default() Config {
 		MaxConcurrentReconciles:      1,
 		AsyncSignalDisabled:          false,
 		AsyncCreateDisabled:          false,
+		MemStatsPeriod:               10 * time.Minute,
 		CreateVMRequeueDelay:         10 * time.Second,
 		PoweredOnVMHasIPRequeueDelay: 10 * time.Second,
 		NetworkProviderType:          NetworkProviderTypeNamed,

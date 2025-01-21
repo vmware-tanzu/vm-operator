@@ -36,6 +36,7 @@ const (
 	RateLimitBurst
 	SyncPeriod
 	MaxConcurrentReconciles
+	MemStatsPeriod
 	LeaderElectionID
 	PodName
 	PodNamespace
@@ -130,6 +131,8 @@ func (n VarName) String() string {
 		return "SYNC_PERIOD"
 	case MaxConcurrentReconciles:
 		return "MAX_CONCURRENT_RECONCILES"
+	case MemStatsPeriod:
+		return "MEM_STATS_PERIOD"
 	case LeaderElectionID:
 		return "LEADER_ELECTION_ID"
 	case PodName:

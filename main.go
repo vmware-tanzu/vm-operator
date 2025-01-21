@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	ctrlsig "sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
@@ -35,6 +36,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
+	"github.com/vmware-tanzu/vm-operator/pkg/mem"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
@@ -76,6 +78,8 @@ func main() {
 
 	initLogging()
 
+	initMemStats()
+
 	initFeatures()
 
 	initRateLimiting()
@@ -115,6 +119,13 @@ func initFeatures() {
 
 	setupLog.Info("Initial features from capabilities",
 		"features", pkgcfg.FromContext(ctx).Features)
+}
+
+func initMemStats() {
+	mem.Start(
+		ctrl.Log,
+		defaultConfig.MemStatsPeriod,
+		metrics.Registry.MustRegister)
 }
 
 func initContext() {

@@ -85,8 +85,8 @@ func unitTestsReconcile() {
 			pkgcfg.UpdateContext(
 				ctx,
 				func(config *pkgcfg.Config) {
-					config.AsyncCreateDisabled = true
-					config.AsyncSignalDisabled = true
+					config.AsyncCreateEnabled = false
+					config.AsyncSignalEnabled = false
 					config.Features.PodVMOnStretchedSupervisor = true
 				},
 			),
@@ -188,7 +188,7 @@ func unitTestsReconcile() {
 		When("blocking create", func() {
 			JustBeforeEach(func() {
 				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
-					config.AsyncCreateDisabled = true
+					config.AsyncCreateEnabled = false
 				})
 			})
 			It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation", func() {
@@ -222,8 +222,8 @@ func unitTestsReconcile() {
 		When("non-blocking create", func() {
 			JustBeforeEach(func() {
 				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
-					config.AsyncSignalDisabled = false
-					config.AsyncCreateDisabled = false
+					config.AsyncCreateEnabled = true
+					config.AsyncSignalEnabled = true
 				})
 			})
 			It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation", func() {

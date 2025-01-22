@@ -79,8 +79,8 @@ func vmTests() {
 		parentCtx = ctxop.WithContext(pkgcfg.NewContext())
 		parentCtx = ovfcache.WithContext(parentCtx)
 		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-			config.AsyncCreateDisabled = true
-			config.AsyncSignalDisabled = true
+			config.AsyncCreateEnabled = false
+			config.AsyncSignalEnabled = false
 		})
 		testConfig = builder.VCSimTestConfig{
 			WithContentLibrary: true,
@@ -1364,8 +1364,8 @@ func vmTests() {
 			When("using async create", func() {
 				BeforeEach(func() {
 					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-						config.AsyncCreateDisabled = false
-						config.AsyncSignalDisabled = false
+						config.AsyncCreateEnabled = true
+						config.AsyncSignalEnabled = true
 					})
 				})
 				JustBeforeEach(func() {
@@ -1584,8 +1584,8 @@ func vmTests() {
 							When("using sync create", func() {
 								BeforeEach(func() {
 									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-										config.AsyncCreateDisabled = true
-										config.AsyncSignalDisabled = false
+										config.AsyncCreateEnabled = false
+										config.AsyncSignalEnabled = true
 									})
 								})
 								It("should succeed", func() {
@@ -1604,8 +1604,8 @@ func vmTests() {
 							When("using async create", func() {
 								BeforeEach(func() {
 									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-										config.AsyncCreateDisabled = false
-										config.AsyncSignalDisabled = false
+										config.AsyncCreateEnabled = true
+										config.AsyncSignalEnabled = true
 									})
 								})
 								It("should succeed", func() {

@@ -9,8 +9,10 @@ spec:
       containers:
       - name: manager
         env:
-        - name: ASYNC_SIGNAL_DISABLED
-          value: "false"
+        - name: ASYNC_SIGNAL_ENABLED
+          value: "true"
+        - name: ASYNC_CREATE_ENABLED
+          value: "true"
         - name: MEM_STATS_PERIOD
           value: "10m"
         - name: VSPHERE_NETWORKING

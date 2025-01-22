@@ -128,7 +128,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			))
 	}
 
-	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+	if pkgcfg.FromContext(ctx).AsyncSignalEnabled {
 		builder = builder.WatchesRawSource(source.Channel(
 			cource.FromContextWithBuffer(ctx, "VirtualMachine", 100),
 			&handler.EnqueueRequestForObject{}))
@@ -377,7 +377,7 @@ func requeueDelay(
 	}
 
 	// Do not requeue for the IP address if async signal is enabled.
-	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+	if pkgcfg.FromContext(ctx).AsyncSignalEnabled {
 		return 0
 	}
 
@@ -487,8 +487,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		chanErr <-chan error
 	)
 
-	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled &&
-		!pkgcfg.FromContext(ctx).AsyncCreateDisabled {
+	if pkgcfg.FromContext(ctx).AsyncSignalEnabled &&
+		pkgcfg.FromContext(ctx).AsyncCreateEnabled {
 		//
 		// Non-blocking create
 		//
@@ -542,7 +542,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		r.Recorder.EmitEvent(ctx.VM, "ReconcileNormal", err, true)
 	}
 
-	if pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+	if !pkgcfg.FromContext(ctx).AsyncSignalEnabled {
 
 		// Add the VM to the probe manager. This is idempotent.
 		r.Prober.AddToProberManager(ctx.VM)

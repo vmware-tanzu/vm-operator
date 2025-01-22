@@ -70,7 +70,7 @@ func vmE2ETests() {
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.AsyncSignalDisabled = true
+			config.AsyncSignalEnabled = false
 			config.MaxDeployThreadsOnProvider = 1
 		})
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)

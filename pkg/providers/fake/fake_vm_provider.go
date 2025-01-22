@@ -419,7 +419,7 @@ func SetCreateOrUpdateFunction(
 	provider.Lock()
 	defer provider.Unlock()
 
-	if !pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+	if pkgcfg.FromContext(ctx).AsyncSignalEnabled {
 
 		provider.CreateOrUpdateVirtualMachineAsyncFn = func(
 			ctx context.Context,

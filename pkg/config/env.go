@@ -28,8 +28,8 @@ func FromEnv() Config {
 	setBool(env.VSphereNetworking, &config.VSphereNetworking)
 	setStringSlice(env.PrivilegedUsers, &config.PrivilegedUsers)
 	setBool(env.LogSensitiveData, &config.LogSensitiveData)
-	setBool(env.AsyncSignalDisabled, &config.AsyncSignalDisabled)
-	setBool(env.AsyncCreateDisabled, &config.AsyncCreateDisabled)
+	setBool(env.AsyncSignalEnabled, &config.AsyncSignalEnabled)
+	setBool(env.AsyncCreateEnabled, &config.AsyncCreateEnabled)
 	setDuration(env.MemStatsPeriod, &config.MemStatsPeriod)
 
 	setDuration(env.InstanceStoragePVPlacementFailedTTL, &config.InstanceStorage.PVPlacementFailedTTL)

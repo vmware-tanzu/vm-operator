@@ -104,6 +104,8 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_FAST_DEPLOY", "true")).To(Succeed())
 					Expect(os.Setenv("CREATE_VM_REQUEUE_DELAY", "125h")).To(Succeed())
 					Expect(os.Setenv("POWERED_ON_VM_HAS_IP_REQUEUE_DELAY", "126h")).To(Succeed())
+					Expect(os.Setenv("MEM_STATS_PERIOD", "127h")).To(Succeed())
+
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
@@ -155,6 +157,7 @@ var _ = Describe(
 						},
 						CreateVMRequeueDelay:         125 * time.Hour,
 						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,
+						MemStatsPeriod:               127 * time.Hour,
 					}))
 				})
 			})

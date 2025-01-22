@@ -49,6 +49,12 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
+    name: MEM_STATS_PERIOD
+    value: "10m"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
     name: FSS_PODVMONSTRETCHEDSUPERVISOR
     value: "<FSS_PODVMONSTRETCHEDSUPERVISOR>"
 

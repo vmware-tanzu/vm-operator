@@ -118,6 +118,12 @@ type Config struct {
 	//
 	// Defaults to false.
 	AsyncCreateDisabled bool
+
+	// MemStatsPeriod describes the interval at which memory statistics are
+	// emitted to the log file.
+	//
+	// Defaults to 10m.
+	MemStatsPeriod time.Duration
 }
 
 // GetMaxDeployThreadsOnProvider returns MaxDeployThreadsOnProvider if it is >0

@@ -99,7 +99,7 @@ func UpdateStatus(
 	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest)
 	updateStorageStatus(vmCtx.VM, vmCtx.MoVM)
 
-	if !pkgcfg.FromContext(vmCtx).AsyncSignalDisabled {
+	if pkgcfg.FromContext(vmCtx).AsyncSignalEnabled {
 		updateProbeStatus(vmCtx, vm, vmCtx.MoVM)
 	}
 

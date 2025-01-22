@@ -31,8 +31,8 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 				config.SyncPeriod = 60 * time.Minute
 				config.CreateVMRequeueDelay = 1 * time.Second
 				config.PoweredOnVMHasIPRequeueDelay = 1 * time.Second
-				config.AsyncSignalDisabled = true
-				config.AsyncCreateDisabled = true
+				config.AsyncSignalEnabled = false
+				config.AsyncCreateEnabled = false
 			}))),
 	virtualmachine.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {

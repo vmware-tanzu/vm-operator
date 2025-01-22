@@ -79,7 +79,7 @@ var (
 // Add starts watching a container to which VirtualMachine resources may belong,
 // such as a Folder, Cluster, ResourcePool, etc.
 func Add(ctx context.Context, ref moRef, id string) (err error) {
-	if pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+	if !pkgcfg.FromContext(ctx).AsyncSignalEnabled {
 		return ErrAsyncSignalDisabled
 	}
 	ctxgen.ExecWithContext(
@@ -98,7 +98,7 @@ func Add(ctx context.Context, ref moRef, id string) (err error) {
 // Remove stops watching a container to which VirtualMachine resources may
 // belong, such as a Folder, Cluster, ResourcePool, etc.
 func Remove(ctx context.Context, ref moRef, id string) (err error) {
-	if pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+	if !pkgcfg.FromContext(ctx).AsyncSignalEnabled {
 		return ErrAsyncSignalDisabled
 	}
 	ctxgen.ExecWithContext(

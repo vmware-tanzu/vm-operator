@@ -67,8 +67,8 @@ func intgTestsReconcile() {
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.AsyncCreateDisabled = true
-			config.AsyncSignalDisabled = true
+			config.AsyncCreateEnabled = false
+			config.AsyncSignalEnabled = false
 		})
 
 		vm = &vmopv1.VirtualMachine{
@@ -569,8 +569,8 @@ var _ = Describe(
 			ctx = pkgcfg.UpdateContext(
 				ctx,
 				func(config *pkgcfg.Config) {
-					config.AsyncSignalDisabled = false
-					config.AsyncCreateDisabled = false
+					config.AsyncCreateEnabled = true
+					config.AsyncSignalEnabled = true
 				},
 			)
 			ctx = cource.WithContext(ctx)

@@ -43,8 +43,14 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: ASYNC_SIGNAL_DISABLED
-    value: "false"
+    name: ASYNC_SIGNAL_ENABLED
+    value: "true"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: ASYNC_CREATE_ENABLED
+    value: "true"
 
 - op: add
   path: /spec/template/spec/containers/0/env/-

@@ -77,8 +77,8 @@ var _ = Describe(
 					Expect(os.Setenv("RATE_LIMIT_BURST", "112")).To(Succeed())
 					Expect(os.Setenv("SYNC_PERIOD", "113h")).To(Succeed())
 					Expect(os.Setenv("MAX_CONCURRENT_RECONCILES", "114")).To(Succeed())
-					Expect(os.Setenv("ASYNC_SIGNAL_DISABLED", "true")).To(Succeed())
-					Expect(os.Setenv("ASYNC_CREATE_DISABLED", "true")).To(Succeed())
+					Expect(os.Setenv("ASYNC_SIGNAL_ENABLED", "false")).To(Succeed())
+					Expect(os.Setenv("ASYNC_CREATE_ENABLED", "false")).To(Succeed())
 					Expect(os.Setenv("LEADER_ELECTION_ID", "115")).To(Succeed())
 					Expect(os.Setenv("POD_NAME", "116")).To(Succeed())
 					Expect(os.Setenv("POD_NAMESPACE", "117")).To(Succeed())
@@ -128,8 +128,8 @@ var _ = Describe(
 						RateLimitBurst:               112,
 						SyncPeriod:                   113 * time.Hour,
 						MaxConcurrentReconciles:      114,
-						AsyncSignalDisabled:          true,
-						AsyncCreateDisabled:          true,
+						AsyncSignalEnabled:           false,
+						AsyncCreateEnabled:           false,
 						LeaderElectionID:             "115",
 						PodName:                      "116",
 						PodNamespace:                 "117",

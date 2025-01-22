@@ -692,6 +692,7 @@ func backupTests() {
 								FileName:    vcSimDiskFileName,
 								PVCName:     dummyPVC.Name,
 								AccessModes: backupapi.ToPersistentVolumeAccessModes(dummyPVC.Spec.AccessModes),
+								UUID:        vcSimDiskUUID,
 							},
 						}
 						diskDataJSON, err := json.Marshal(diskData)
@@ -1011,6 +1012,7 @@ func backupTests() {
 							diskData := []backupapi.ClassicDiskData{
 								{
 									FileName: vcSimDiskFileName,
+									UUID:     vcSimDiskUUID,
 								},
 							}
 							diskDataJSON, err := json.Marshal(diskData)

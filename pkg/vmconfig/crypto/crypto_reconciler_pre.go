@@ -18,6 +18,7 @@ import (
 
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto/internal"
@@ -43,6 +44,7 @@ type reconcileArgs struct {
 	curKey                cryptoKey
 	newKey                cryptoKey
 	isEncStorClass        bool
+	profileID             string
 	hasVTPM               bool
 	addVTPM               bool
 	remVTPM               bool
@@ -130,7 +132,7 @@ func (r reconciler) Reconcile(
 	args.curKey = getCurCryptoKey(moVM)
 
 	// Check whether or not the StorageClass supports encryption.
-	args.isEncStorClass, _, err = kubeutil.IsEncryptedStorageClass(
+	args.isEncStorClass, args.profileID, err = kubeutil.IsEncryptedStorageClass(
 		ctx,
 		k8sClient,
 		vm.Spec.StorageClass)
@@ -511,7 +513,7 @@ func doUpdateEncrypted(
 	args reconcileArgs) (string, Reason, []string, error) {
 
 	op := "updating encrypted"
-	r, m, err := validateUpdateEncrypted(ctx, args)
+	r, m, err := onUpdateEncrypted(ctx, args)
 	return op, r, m, err
 }
 
@@ -687,6 +689,100 @@ func updateDiskBackingForRecrypt(
 
 	// Set the device change's crypto spec to be the same as the VM's.
 	devSpec.Backing.Crypto = args.configSpec.Crypto
+
+	return true
+}
+
+func onUpdateEncrypted(
+	ctx context.Context,
+	args reconcileArgs) (Reason, []string, error) {
+
+	logger := logr.FromContextOrDiscard(ctx)
+
+	reason, msgs, err := validateUpdateEncrypted(ctx, args)
+	if reason > 0 || len(msgs) > 0 || err != nil {
+		return reason, msgs, err
+	}
+
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		var encryptedDisks []string
+		if args.isEncStorClass {
+			encryptedDisks = onEncryptDisks(args)
+		}
+		if len(encryptedDisks) > 0 {
+			logger.Info(
+				"Update encrypted VM",
+				"currentKeyID", args.curKey.id,
+				"currentProviderID", args.curKey.provider,
+				"encryptedDisks", encryptedDisks)
+		}
+	}
+
+	return 0, nil, nil
+}
+
+func onEncryptDisks(args reconcileArgs) []string {
+	var fileNames []string
+	for _, baseDev := range args.moVM.Config.Hardware.Device {
+		if disk, ok := baseDev.(*vimtypes.VirtualDisk); ok {
+			if disk.VDiskId == nil { // Skip FCDs
+
+				switch tBack := disk.Backing.(type) {
+				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+					if tBack.Parent == nil && tBack.KeyId == nil {
+						if updateDiskBackingForEncrypt(args, disk) {
+							fileNames = append(fileNames, tBack.FileName)
+						}
+					}
+				case *vimtypes.VirtualDiskSeSparseBackingInfo:
+					if tBack.Parent == nil && tBack.KeyId == nil {
+						if updateDiskBackingForEncrypt(args, disk) {
+							fileNames = append(fileNames, tBack.FileName)
+						}
+					}
+				case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+					if tBack.Parent == nil && tBack.KeyId == nil {
+						if updateDiskBackingForEncrypt(args, disk) {
+							fileNames = append(fileNames, tBack.FileName)
+						}
+					}
+				}
+			}
+		}
+	}
+	return fileNames
+}
+
+func updateDiskBackingForEncrypt(
+	args reconcileArgs,
+	disk *vimtypes.VirtualDisk) bool {
+
+	devSpec := getOrCreateDeviceChangeForDisk(args, disk)
+	if devSpec == nil {
+		return false
+	}
+
+	if devSpec.Backing == nil {
+		devSpec.Backing = &vimtypes.VirtualDeviceConfigSpecBackingSpec{}
+	}
+
+	// Update the device change's profile to use the encryption storage profile.
+	devSpec.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
+		&vimtypes.VirtualMachineDefinedProfileSpec{
+			ProfileId: args.profileID,
+		},
+	}
+
+	// Set the device change's crypto spec to be the same as the one the VM is
+	// currently using.
+	devSpec.Backing.Crypto = &vimtypes.CryptoSpecEncrypt{
+		CryptoKeyId: vimtypes.CryptoKeyId{
+			KeyId: args.curKey.id,
+			ProviderId: &vimtypes.KeyProviderId{
+				Id: args.curKey.provider,
+			},
+		},
+	}
 
 	return true
 }

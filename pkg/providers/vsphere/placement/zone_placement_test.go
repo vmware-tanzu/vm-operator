@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/simulator"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -123,6 +124,18 @@ func vcSimPlacement() {
 			parentCtx,
 			testConfig,
 			initObjects...)
+
+		for _, dsEnt := range simulator.Map.All("Datastore") {
+			simulator.Map.WithLock(
+				simulator.SpoofContext(),
+				dsEnt.Reference(),
+				func() {
+					ds := simulator.Map.Get(dsEnt.Reference()).(*simulator.Datastore)
+					ds.Info.GetDatastoreInfo().SupportedVDiskFormats = []string{
+						"native_512", "native_4k",
+					}
+				})
+		}
 
 		nsInfo = ctx.CreateWorkloadNamespace()
 
@@ -566,13 +579,13 @@ func vcSimPlacement() {
 			Expect(result.Datastores[0].Name).ToNot(BeEmpty())
 			Expect(result.Datastores[0].MoRef).ToNot(BeZero())
 			Expect(result.Datastores[0].URL).ToNot(BeZero())
-			Expect(result.Datastores[0].TopLevelDirectoryCreateSupported).To(BeTrue())
+			Expect(result.Datastores[0].DiskFormats).ToNot(BeEmpty())
 			Expect(result.Datastores[1].ForDisk).To(BeTrue())
 			Expect(result.Datastores[1].DiskKey).ToNot(BeZero())
 			Expect(result.Datastores[1].Name).ToNot(BeEmpty())
 			Expect(result.Datastores[1].MoRef).ToNot(BeZero())
 			Expect(result.Datastores[1].URL).ToNot(BeZero())
-			Expect(result.Datastores[1].TopLevelDirectoryCreateSupported).To(BeTrue())
+			Expect(result.Datastores[1].DiskFormats).ToNot(BeEmpty())
 		})
 
 		Context("Only one zone exists", func() {
@@ -594,7 +607,7 @@ func vcSimPlacement() {
 				Expect(result.Datastores[0].Name).ToNot(BeEmpty())
 				Expect(result.Datastores[0].MoRef).ToNot(BeZero())
 				Expect(result.Datastores[0].URL).ToNot(BeZero())
-				Expect(result.Datastores[0].TopLevelDirectoryCreateSupported).To(BeTrue())
+				Expect(result.Datastores[0].DiskFormats).ToNot(BeEmpty())
 			})
 		})
 	})

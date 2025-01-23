@@ -252,6 +252,14 @@ type VirtualMachineImageStatus struct {
 	Type string `json:"type,omitempty"`
 }
 
+func (i VirtualMachineImageStatus) GetConditions() []metav1.Condition {
+	return i.Conditions
+}
+
+func (i *VirtualMachineImageStatus) SetConditions(conditions []metav1.Condition) {
+	i.Conditions = conditions
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmi;vmimage
 // +kubebuilder:storageversion
@@ -273,7 +281,7 @@ type VirtualMachineImage struct {
 	Status VirtualMachineImageStatus `json:"status,omitempty"`
 }
 
-func (i *VirtualMachineImage) GetConditions() []metav1.Condition {
+func (i VirtualMachineImage) GetConditions() []metav1.Condition {
 	return i.Status.Conditions
 }
 
@@ -311,7 +319,7 @@ type ClusterVirtualMachineImage struct {
 	Status VirtualMachineImageStatus `json:"status,omitempty"`
 }
 
-func (i *ClusterVirtualMachineImage) GetConditions() []metav1.Condition {
+func (i ClusterVirtualMachineImage) GetConditions() []metav1.Condition {
 	return i.Status.Conditions
 }
 

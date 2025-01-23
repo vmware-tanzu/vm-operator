@@ -14,6 +14,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/exp/maps"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -53,10 +54,10 @@ type Result struct {
 }
 
 type DatastoreResult struct {
-	Name                             string
-	MoRef                            vimtypes.ManagedObjectReference
-	URL                              string
-	TopLevelDirectoryCreateSupported bool
+	Name        string
+	MoRef       vimtypes.ManagedObjectReference
+	URL         string
+	DiskFormats []string
 
 	// ForDisk is false if the recommendation is for the VM's home directory and
 	// true if for a disk. DiskKey is only valid if ForDisk is true.
@@ -446,7 +447,7 @@ func Placement(
 
 	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
 		// Get the name and type of the datastores.
-		if err := getDatastoreNameAndType(vmCtx, vcClient, &rec); err != nil {
+		if err := getDatastoreProperties(vmCtx, vcClient, &rec); err != nil {
 			return nil, err
 		}
 	}
@@ -465,83 +466,44 @@ func Placement(
 	return &result, nil
 }
 
-func getDatastoreNameAndType(
+func getDatastoreProperties(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vim25.Client,
 	rec *Recommendation) error {
 
-	var objSet []vimtypes.ObjectSpec
-	for i := range rec.Datastores {
-		d := rec.Datastores[i]
-		if d.Name == "" {
-			objSet = append(objSet, vimtypes.ObjectSpec{
-				Obj: d.MoRef,
-			})
-		}
-	}
-
-	if len(objSet) == 0 {
+	if len(rec.Datastores) == 0 {
 		return nil
 	}
 
-	pc := property.DefaultCollector(vcClient)
-	res, err := pc.RetrieveProperties(vmCtx, vimtypes.RetrieveProperties{
-		SpecSet: []vimtypes.PropertyFilterSpec{
-			{
-				PropSet: []vimtypes.PropertySpec{
-					{
-						Type: "Datastore",
-						PathSet: []string{
-							"capability.topLevelDirectoryCreateSupported",
-							"info.url",
-							"name",
-						},
-					},
-				},
-				ObjectSet: objSet,
-			},
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get datastore names: %w", err)
+	dsRefs := make([]vimtypes.ManagedObjectReference, len(rec.Datastores))
+	for i := range rec.Datastores {
+		dsRefs[i] = rec.Datastores[i].MoRef
 	}
 
-	for i := range res.Returnval {
-		r := res.Returnval[i]
+	var moDSs []mo.Datastore
+	pc := property.DefaultCollector(vcClient)
+	if err := pc.Retrieve(
+		vmCtx,
+		dsRefs,
+		[]string{
+			"info.supportedVDiskFormats",
+			"info.url",
+			"name",
+		},
+		&moDSs); err != nil {
+
+		return fmt.Errorf("failed to get datastore properties: %w", err)
+	}
+
+	for i := range moDSs {
+		moDS := moDSs[i]
 		for j := range rec.Datastores {
-			if r.Obj == rec.Datastores[j].MoRef {
-				for k := range r.PropSet {
-					p := r.PropSet[k]
-					switch p.Name {
-					case "capability.topLevelDirectoryCreateSupported":
-						switch tVal := p.Val.(type) {
-						case bool:
-							rec.Datastores[j].TopLevelDirectoryCreateSupported = tVal
-						default:
-							return fmt.Errorf(
-								"datastore %[1]s is not bool: %[2]T, %+[2]v",
-								p.Name, p.Val)
-						}
-					case "info.url":
-						switch tVal := p.Val.(type) {
-						case string:
-							rec.Datastores[j].URL = tVal
-						default:
-							return fmt.Errorf(
-								"datastore %[1]s is not string: %[2]T, %+[2]v",
-								p.Name, p.Val)
-						}
-					case "name":
-						switch tVal := p.Val.(type) {
-						case string:
-							rec.Datastores[j].Name = tVal
-						default:
-							return fmt.Errorf(
-								"datastore %[1]s is not string: %[2]T, %+[2]v",
-								p.Name, p.Val)
-						}
-					}
-				}
+			ds := &rec.Datastores[j]
+			if moDS.Reference() == rec.Datastores[j].MoRef {
+				ds.Name = moDS.Name
+				dsInfo := moDS.Info.GetDatastoreInfo()
+				ds.DiskFormats = dsInfo.SupportedVDiskFormats
+				ds.URL = dsInfo.Url
 			}
 		}
 	}

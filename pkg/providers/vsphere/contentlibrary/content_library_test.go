@@ -119,13 +119,13 @@ func clTests() {
 				libItem := library.Item{
 					Name:      libItemName,
 					Type:      "ovf",
-					LibraryID: ctx.ContentLibraryID,
+					LibraryID: ctx.LocalContentLibraryID,
 				}
 
 				err = clProvider.CreateLibraryItem(ctx, libItem, ovfPath)
 				Expect(err).NotTo(HaveOccurred())
 
-				libItem2, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, libItemName, true)
+				libItem2, err := clProvider.GetLibraryItem(ctx, ctx.LocalContentLibraryID, libItemName, true)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(libItem2).ToNot(BeNil())
 				Expect(libItem2.Name).To(Equal(libItem.Name))

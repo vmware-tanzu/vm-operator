@@ -297,3 +297,76 @@ var _ = Describe("SelectDevicesByTypes", func() {
 		})
 	})
 })
+
+var _ = Describe("GetPreferredDiskFormat", func() {
+
+	DescribeTable("[]string",
+		func(in []string, exp vimtypes.DatastoreSectorFormat) {
+			Expect(util.GetPreferredDiskFormat(in...)).To(Equal(exp))
+		},
+		Entry(
+			"no available formats",
+			[]string{},
+			vimtypes.DatastoreSectorFormat(""),
+		),
+		Entry(
+			"4kn is available",
+			[]string{
+				string(vimtypes.DatastoreSectorFormatEmulated_512),
+				string(vimtypes.DatastoreSectorFormatNative_512),
+				string(vimtypes.DatastoreSectorFormatNative_4k),
+			},
+			vimtypes.DatastoreSectorFormatNative_4k,
+		),
+		Entry(
+			"native 512 is available",
+			[]string{
+				string(vimtypes.DatastoreSectorFormatEmulated_512),
+				string(vimtypes.DatastoreSectorFormatNative_512),
+			},
+			vimtypes.DatastoreSectorFormatNative_512,
+		),
+		Entry(
+			"neither 4kn nor 512 are available",
+			[]string{
+				string(vimtypes.DatastoreSectorFormatEmulated_512),
+			},
+			vimtypes.DatastoreSectorFormatEmulated_512,
+		),
+	)
+
+	DescribeTable("[]vimtypes.DatastoreSectorFormat",
+		func(in []vimtypes.DatastoreSectorFormat, exp vimtypes.DatastoreSectorFormat) {
+			Expect(util.GetPreferredDiskFormat(in...)).To(Equal(exp))
+		},
+		Entry(
+			"no available formats",
+			[]vimtypes.DatastoreSectorFormat{},
+			vimtypes.DatastoreSectorFormat(""),
+		),
+		Entry(
+			"4kn is available",
+			[]vimtypes.DatastoreSectorFormat{
+				vimtypes.DatastoreSectorFormatEmulated_512,
+				vimtypes.DatastoreSectorFormatNative_512,
+				vimtypes.DatastoreSectorFormatNative_4k,
+			},
+			vimtypes.DatastoreSectorFormatNative_4k,
+		),
+		Entry(
+			"native 512 is available",
+			[]vimtypes.DatastoreSectorFormat{
+				vimtypes.DatastoreSectorFormatEmulated_512,
+				vimtypes.DatastoreSectorFormatNative_512,
+			},
+			vimtypes.DatastoreSectorFormatNative_512,
+		),
+		Entry(
+			"neither 4kn nor 512 are available",
+			[]vimtypes.DatastoreSectorFormat{
+				vimtypes.DatastoreSectorFormatEmulated_512,
+			},
+			vimtypes.DatastoreSectorFormatEmulated_512,
+		),
+	)
+})

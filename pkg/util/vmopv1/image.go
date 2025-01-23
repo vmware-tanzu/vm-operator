@@ -11,11 +11,18 @@ import (
 	"path"
 	"strings"
 
+	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -132,10 +139,10 @@ func GetImage(
 }
 
 func IsImageReady(img vmopv1.VirtualMachineImage) error {
-	if !conditions.IsTrue(&img, vmopv1.ReadyConditionType) {
+	if !pkgcnd.IsTrue(&img, vmopv1.ReadyConditionType) {
 		return fmt.Errorf(
 			"image condition is not ready: %v",
-			conditions.Get(&img, vmopv1.ReadyConditionType))
+			pkgcnd.Get(&img, vmopv1.ReadyConditionType))
 	}
 	if img.Spec.ProviderRef == nil || img.Spec.ProviderRef.Name == "" {
 		return errors.New("image provider ref is empty")
@@ -230,4 +237,109 @@ func GetStorageURIsForLibraryItemDisks(
 			item.Status)
 	}
 	return storageURIs, nil
+}
+
+// VirtualMachineImageCacheToItemMapper returns a mapper function used to
+// enqueue reconcile requests for resources in response to an event on
+// a VirtualMachineImageCache resource.
+func VirtualMachineImageCacheToItemMapper(
+	ctx context.Context,
+	logger logr.Logger,
+	k8sClient ctrlclient.Client,
+	groupVersion schema.GroupVersion,
+	kind string) handler.MapFunc {
+
+	if ctx == nil {
+		panic("context is nil")
+	}
+	if k8sClient == nil {
+		panic("k8sClient is nil")
+	}
+	if groupVersion.Empty() {
+		panic("groupVersion is empty")
+	}
+	if kind == "" {
+		panic("kind is empty")
+	}
+
+	gvkString := groupVersion.WithKind(kind).String()
+	listGVK := groupVersion.WithKind(kind + "List")
+
+	// For a given VirtualMachineImageCache, return reconcile requests for
+	// resources that have the label pkgconst.VMICacheLabelKey with a value set
+	// to the name of a VMI cache resource.
+	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
+		if ctx == nil {
+			panic("context is nil")
+		}
+		if o == nil {
+			panic("object is nil")
+		}
+		obj, ok := o.(*vmopv1.VirtualMachineImageCache)
+		if !ok {
+			panic(fmt.Sprintf("object is %T", o))
+		}
+
+		// Do not reconcile anything if the referred object is being deleted.
+		if !obj.DeletionTimestamp.IsZero() {
+			return nil
+		}
+
+		// Do not reconcile anything unless the OVF for this VMI Cache resource
+		// is ready.
+		if !pkgcnd.IsTrue(obj, vmopv1.VirtualMachineImageCacheConditionOVFReady) {
+			return nil
+		}
+
+		logger := logger.WithValues(
+			"name", o.GetName(),
+			"namespace", o.GetNamespace())
+		logger.V(4).Info(
+			"Reconciling all resources referencing an VirtualMachineImageCache",
+			"resourceGVK", gvkString)
+
+		list := unstructured.UnstructuredList{
+			Object: map[string]interface{}{},
+		}
+		list.SetGroupVersionKind(listGVK)
+
+		// Find all the referrers.
+		if err := k8sClient.List(
+			ctx,
+			&list,
+			ctrlclient.MatchingLabels(map[string]string{
+				pkgconst.VMICacheLabelKey: obj.Name,
+			})); err != nil {
+
+			if !apierrors.IsNotFound(err) {
+				logger.Error(
+					err,
+					"Failed to list resources due to VirtualMachineImageCache watch",
+					"resourceGVK", gvkString)
+			}
+			return nil
+		}
+
+		// Populate reconcile requests for referrers.
+		var requests []reconcile.Request
+		for i := range list.Items {
+			requests = append(
+				requests,
+				reconcile.Request{
+					NamespacedName: ctrlclient.ObjectKey{
+						Namespace: list.Items[i].GetNamespace(),
+						Name:      list.Items[i].GetName(),
+					},
+				})
+		}
+
+		if len(requests) > 0 {
+			logger.V(4).Info(
+				"Reconciling resources due to VirtualMachineImageCache watch",
+				"resourceGVK", gvkString,
+				"requests", requests)
+		}
+
+		return requests
+	}
 }

@@ -86,6 +86,9 @@ func DummyContentLibraryItem(name, namespace string) *imgregv1a1.ContentLibraryI
 		},
 	}
 
+	clItem.SetName(clItem.Name)
+	clItem.SetNamespace(clItem.Namespace)
+
 	return clItem
 }
 

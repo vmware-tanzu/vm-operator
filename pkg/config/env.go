@@ -23,6 +23,7 @@ func FromEnv() Config {
 	setInt(env.MaxCreateVMsOnProvider, &config.MaxCreateVMsOnProvider)
 	setDuration(env.CreateVMRequeueDelay, &config.CreateVMRequeueDelay)
 	setDuration(env.PoweredOnVMHasIPRequeueDelay, &config.PoweredOnVMHasIPRequeueDelay)
+	setDuration(env.SyncImageRequeueDelay, &config.SyncImageRequeueDelay)
 	setNetworkProviderType(env.NetworkProviderType, &config.NetworkProviderType)
 	setString(env.LoadBalancerProvider, &config.LoadBalancerProvider)
 	setBool(env.VSphereNetworking, &config.VSphereNetworking)
@@ -31,6 +32,7 @@ func FromEnv() Config {
 	setBool(env.AsyncSignalEnabled, &config.AsyncSignalEnabled)
 	setBool(env.AsyncCreateEnabled, &config.AsyncCreateEnabled)
 	setDuration(env.MemStatsPeriod, &config.MemStatsPeriod)
+	setString(env.FastDeployMode, &config.FastDeployMode)
 
 	setDuration(env.InstanceStoragePVPlacementFailedTTL, &config.InstanceStorage.PVPlacementFailedTTL)
 	setFloat64(env.InstanceStorageJitterMaxFactor, &config.InstanceStorage.JitterMaxFactor)

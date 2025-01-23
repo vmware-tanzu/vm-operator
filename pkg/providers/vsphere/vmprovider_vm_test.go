@@ -22,11 +22,13 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vimcrypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/cluster"
+	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -38,6 +40,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -45,6 +48,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -78,6 +82,7 @@ func vmTests() {
 	BeforeEach(func() {
 		parentCtx = ctxop.WithContext(pkgcfg.NewContext())
 		parentCtx = ovfcache.WithContext(parentCtx)
+		parentCtx = cource.WithContext(parentCtx)
 		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 			config.AsyncCreateEnabled = false
 			config.AsyncSignalEnabled = false
@@ -1359,6 +1364,140 @@ func vmTests() {
 				})
 
 				// TODO: More assertions!
+			})
+
+			// TODO(akutz) Promote this block when the FSS WCP_VMService_FastDeploy is
+			//             removed.
+			When("FSS WCP_VMService_FastDeploy is enabled", func() {
+
+				var (
+					vmic vmopv1.VirtualMachineImageCache
+				)
+
+				BeforeEach(func() {
+					testConfig.WithContentLibrary = true
+					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+						config.Features.FastDeploy = true
+					})
+				})
+
+				JustBeforeEach(func() {
+					vmicName := pkgutil.VMIName(ctx.ContentLibraryItemID)
+					vmic = vmopv1.VirtualMachineImageCache{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+							Name:      vmicName,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, &vmic)).To(Succeed())
+
+					vmicm := corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: vmic.Namespace,
+							Name:      vmic.Name,
+						},
+						Data: map[string]string{
+							"value": ovfEnvelopeYAML,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, &vmicm)).To(Succeed())
+				})
+
+				assertVMICNotReady := func(err error, msg, name, dcID, dsID string) {
+					var e pkgerr.VMICacheNotReadyError
+					ExpectWithOffset(1, errors.As(err, &e)).To(BeTrue())
+					ExpectWithOffset(1, e.Message).To(Equal(msg))
+					ExpectWithOffset(1, e.Name).To(Equal(name))
+					ExpectWithOffset(1, e.DatacenterID).To(Equal(dcID))
+					ExpectWithOffset(1, e.DatastoreID).To(Equal(dsID))
+				}
+
+				When("ovf is not ready", func() {
+					It("should fail", func() {
+						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						assertVMICNotReady(
+							err,
+							"cached ovf not ready",
+							vmic.Name,
+							"",
+							"")
+					})
+				})
+
+				When("ovf is ready", func() {
+					JustBeforeEach(func() {
+						vmic.Status = vmopv1.VirtualMachineImageCacheStatus{
+							OVF: &vmopv1.VirtualMachineImageCacheOVFStatus{
+								ConfigMapName:   vmic.Name,
+								ProviderVersion: ctx.ContentLibraryItemVersion,
+							},
+							Conditions: []metav1.Condition{
+								{
+									Type:   vmopv1.VirtualMachineImageCacheConditionOVFReady,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+					})
+
+					When("disks are not ready", func() {
+
+						It("should fail", func() {
+							_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+							assertVMICNotReady(
+								err,
+								"cached disks not ready",
+								vmic.Name,
+								ctx.Datacenter.Reference().Value,
+								ctx.Datastore.Reference().Value)
+						})
+					})
+
+					When("disks are ready", func() {
+
+						BeforeEach(func() {
+							// Ensure the VM has a UID so the VM path is stable.
+							vm.UID = types.UID("123")
+						})
+
+						JustBeforeEach(func() {
+							conditions.MarkTrue(
+								&vmic,
+								vmopv1.VirtualMachineImageCacheConditionDisksReady)
+							vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
+								{
+									DatacenterID: ctx.Datacenter.Reference().Value,
+									DatastoreID:  ctx.Datastore.Reference().Value,
+									Disks: []vmopv1.VirtualMachineImageCacheDiskStatus{
+										{
+											ID:   ctx.ContentLibraryItemDiskPath,
+											Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+										},
+									},
+									Conditions: []metav1.Condition{
+										{
+											Type:   vmopv1.ReadyConditionType,
+											Status: metav1.ConditionTrue,
+										},
+									},
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+							libMgr := library.NewManager(ctx.RestClient)
+							Expect(libMgr.SyncLibraryItem(ctx,
+								&library.Item{ID: ctx.ContentLibraryItemID},
+								true)).To(Succeed())
+						})
+
+						It("should succeed", func() {
+							_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+							Expect(err).ToNot(HaveOccurred())
+						})
+					})
+				})
+
 			})
 
 			When("using async create", func() {

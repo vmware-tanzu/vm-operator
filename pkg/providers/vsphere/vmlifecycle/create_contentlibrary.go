@@ -14,7 +14,6 @@ import (
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -117,10 +116,8 @@ func deployVMTX(
 
 func deployFromContentLibrary(
 	vmCtx pkgctx.VirtualMachineContext,
-	k8sClient ctrlclient.Client,
 	restClient *rest.Client,
 	vimClient *vim25.Client,
-	datacenter *object.Datacenter,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
 
 	// This call is needed to get the item type. We could avoid going to CL here, and
@@ -134,14 +131,7 @@ func deployFromContentLibrary(
 	switch item.Type {
 	case library.ItemTypeOVF:
 		if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
-			return linkedCloneOVF(
-				vmCtx,
-				k8sClient,
-				vimClient,
-				restClient,
-				datacenter,
-				item,
-				createArgs)
+			return fastDeploy(vmCtx, vimClient, createArgs)
 		}
 		return deployOVF(vmCtx, restClient, item, createArgs)
 	case library.ItemTypeVMTX:

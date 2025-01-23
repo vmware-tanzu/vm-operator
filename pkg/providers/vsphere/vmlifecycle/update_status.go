@@ -742,8 +742,8 @@ func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *vimtypes.GuestInfo)
 // updateStorageStatus updates the status for all storage-related fields.
 func updateStorageStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 	updateChangeBlockTracking(vm, moVM)
-	updateStorageUsage(vm, moVM)
 	updateVolumeStatus(vm, moVM)
+	updateStorageUsage(vm, moVM)
 }
 
 func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
@@ -755,21 +755,64 @@ func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine
 }
 
 func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
-	if moVM.Summary.Storage == nil {
+
+	var (
+		other int64
+		disks int64
+	)
+	// Get the storage consumed by non-disks.
+	if moVM.LayoutEx != nil {
+		for i := range moVM.LayoutEx.File {
+			f := moVM.LayoutEx.File[i]
+			switch vimtypes.VirtualMachineFileLayoutExFileType(f.Type) {
+			case vimtypes.VirtualMachineFileLayoutExFileTypeDiskDescriptor,
+				vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent,
+				vimtypes.VirtualMachineFileLayoutExFileTypeDigestDescriptor,
+				vimtypes.VirtualMachineFileLayoutExFileTypeDigestExtent:
+
+				// Skip disks
+
+			default:
+				other += f.UniqueSize
+			}
+		}
+	}
+
+	// Get the storage consumed by disks.
+	for i := range vm.Status.Volumes {
+		v := vm.Status.Volumes[i]
+		if v.Type == vmopv1.VirtualMachineStorageDiskTypeClassic {
+			if v.Used != nil {
+				i, _ := v.Used.AsInt64()
+				disks += i
+			}
+		}
+	}
+
+	if disks == 0 && other == 0 {
 		return
 	}
+
 	if vm.Status.Storage == nil {
 		vm.Status.Storage = &vmopv1.VirtualMachineStorageStatus{}
 	}
+	if vm.Status.Storage.Usage == nil {
+		vm.Status.Storage.Usage = &vmopv1.VirtualMachineStorageStatusUsage{}
+	}
 
-	vm.Status.Storage.Committed = BytesToResourceGiB(
-		moVM.Summary.Storage.Committed)
+	vm.Status.Storage.Usage.Disks = nil
+	vm.Status.Storage.Usage.Other = nil
+	vm.Status.Storage.Usage.Total = nil
 
-	vm.Status.Storage.Uncommitted = BytesToResourceGiB(
-		moVM.Summary.Storage.Uncommitted)
+	if disks > 0 {
+		vm.Status.Storage.Usage.Disks = BytesToResourceGiB(disks)
+	}
 
-	vm.Status.Storage.Unshared = BytesToResourceGiB(
-		moVM.Summary.Storage.Unshared)
+	if other > 0 {
+		vm.Status.Storage.Usage.Other = BytesToResourceGiB(other)
+	}
+
+	vm.Status.Storage.Usage.Total = BytesToResourceGiB(disks + other)
 }
 
 func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {

@@ -182,20 +182,9 @@ func reportUsed(
 	vm vmopv1.VirtualMachine,
 	total *resource.Quantity) {
 
-	// The VM is created, and therefore the VM's actual usage should be
-	// reported as its Used value.
-	if vm.Status.Storage.Unshared != nil {
-		total.Add(*vm.Status.Storage.Unshared)
-	}
-
-	// Subtract the PVC usage/limit from the total used value as PVCs
-	// are counted separately.
-	for j := range vm.Status.Volumes {
-		v := vm.Status.Volumes[j]
-		if v.Type == vmopv1.VirtualMachineStorageDiskTypeManaged {
-			if v.Used != nil {
-				total.Sub(*v.Used)
-			}
+	if s := vm.Status.Storage; s != nil {
+		if u := s.Usage; u != nil {
+			total.Add(*u.Total)
 		}
 	}
 }

@@ -135,22 +135,8 @@ func intgTestsReconcile() {
 							},
 						},
 						Storage: &vmopv1.VirtualMachineStorageStatus{
-							Committed:   ptr.To(resource.MustParse("10Gi")),
-							Uncommitted: ptr.To(resource.MustParse("20Gi")),
-							Unshared:    ptr.To(resource.MustParse("5Gi")),
-						},
-						Volumes: []vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:  "vm-1",
-								Type:  vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Limit: ptr.To(resource.MustParse("10Gi")),
-								Used:  ptr.To(resource.MustParse("5Gi")),
-							},
-							{
-								Name:  "vol-1",
-								Type:  vmopv1.VirtualMachineStorageDiskTypeManaged,
-								Limit: ptr.To(resource.MustParse("10Gi")),
-								Used:  ptr.To(resource.MustParse("5Gi")),
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: ptr.To(resource.MustParse("20Gi")),
 							},
 						},
 					},
@@ -175,9 +161,9 @@ func intgTestsReconcile() {
 							},
 						},
 						Storage: &vmopv1.VirtualMachineStorageStatus{
-							Committed:   ptr.To(resource.MustParse("5Gi")),
-							Uncommitted: ptr.To(resource.MustParse("10Gi")),
-							Unshared:    ptr.To(resource.MustParse("2Gi")),
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: ptr.To(resource.MustParse("50Gi")),
+							},
 						},
 					},
 				},
@@ -217,7 +203,7 @@ func intgTestsReconcile() {
 				g.Expect(obj.Status.ResourceTypeLevelQuotaUsage.Reserved).ToNot(BeNil())
 				g.Expect(obj.Status.ResourceTypeLevelQuotaUsage.Reserved.Value()).To(Equal(int64(0)))
 				g.Expect(obj.Status.ResourceTypeLevelQuotaUsage.Used).ToNot(BeNil())
-				g.Expect(obj.Status.ResourceTypeLevelQuotaUsage.Used).To(Equal(ptr.To(resource.MustParse("2Gi"))))
+				g.Expect(obj.Status.ResourceTypeLevelQuotaUsage.Used).To(Equal(ptr.To(resource.MustParse("70Gi"))))
 			}, time.Second*5).Should(Succeed())
 		})
 	})

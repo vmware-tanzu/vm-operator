@@ -5422,32 +5422,39 @@ spec:
                 description: Storage describes the observed state of the VirtualMachine's
                   storage.
                 properties:
-                  committed:
-                    anyOf:
-                    - type: integer
-                    - type: string
-                    description: Committed is the total storage space committed to
-                      this VirtualMachine.
-                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                    x-kubernetes-int-or-string: true
-                  uncommitted:
-                    anyOf:
-                    - type: integer
-                    - type: string
-                    description: |-
-                      Uncommitted is the total storage space potentially used by this
-                      VirtualMachine.
-                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                    x-kubernetes-int-or-string: true
-                  unshared:
-                    anyOf:
-                    - type: integer
-                    - type: string
-                    description: |-
-                      Unshared is the total storage space occupied by this VirtualMachine that
-                      is not shared with any other VirtualMachine.
-                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                    x-kubernetes-int-or-string: true
+                  usage:
+                    description: Usage describes the observed amount of storage used
+                      by a VirtualMachine.
+                    properties:
+                      disks:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          Disks describes the total storage space used by a VirtualMachine's
+                          non-PVC disks.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      other:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          Other describes the total storage space used by the VirtualMachine's
+                          non disk files, ex. the configuration file, swap space, logs, snapshots,
+                          etc.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      total:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          Total describes the total storage space used by a VirtualMachine that
+                          counts against the Namespace's storage quota.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    type: object
                 type: object
               uniqueID:
                 description: |-

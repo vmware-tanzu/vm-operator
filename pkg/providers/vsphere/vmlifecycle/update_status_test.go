@@ -519,9 +519,10 @@ var _ = Describe("UpdateStatus", func() {
 		})
 
 		Context("status.storage", func() {
-			When("moVM.summary.storage is nil", func() {
+			When("status.volumes and moVM.layoutEx are nil", func() {
 				BeforeEach(func() {
-					vmCtx.MoVM.Summary.Storage = nil
+					vmCtx.MoVM.LayoutEx = nil
+					vmCtx.VM.Status.Volumes = nil
 				})
 				When("status.storage is nil", func() {
 					BeforeEach(func() {
@@ -540,12 +541,78 @@ var _ = Describe("UpdateStatus", func() {
 					})
 				})
 			})
-			When("moVM.summary.storage is not nil", func() {
+			When("status.volumes is not nil but moVM.layoutEx is", func() {
 				BeforeEach(func() {
-					vmCtx.MoVM.Summary.Storage = &vimtypes.VirtualMachineStorageSummary{
-						Committed:   10 * oneGiBInBytes,
-						Uncommitted: 20 * oneGiBInBytes,
-						Unshared:    5 * oneGiBInBytes,
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Used: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+						},
+						{
+							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Used: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
+						},
+					}
+					vmCtx.MoVM.LayoutEx = nil
+				})
+				When("status.storage is nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Status.Storage = nil
+					})
+					Specify("status.storage to be initialized", func() {
+						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+								Disks: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+								Other: nil,
+							},
+						}))
+					})
+				})
+				When("status.storage is not nil", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: vmlifecycle.BytesToResourceGiB(1024 + (20 * oneGiBInBytes)),
+								Disks: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
+								Other: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							},
+						}
+					})
+					Specify("status.storage to be updated", func() {
+						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+								Disks: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+								Other: nil,
+							},
+						}))
+					})
+				})
+			})
+			When("status.volumes and moVM.layoutEx are not nil", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Used: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+						},
+						{
+							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Used: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
+						},
+					}
+					vmCtx.MoVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
+						File: []vimtypes.VirtualMachineFileLayoutExFileInfo{
+							{
+								Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotData),
+								UniqueSize: 1 * oneGiBInBytes,
+							},
+							{
+								Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent),
+								UniqueSize: 10 * oneGiBInBytes,
+							},
+						},
 					}
 				})
 				When("status.storage is nil", func() {
@@ -554,25 +621,31 @@ var _ = Describe("UpdateStatus", func() {
 					})
 					Specify("status.storage to be initialized", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Committed:   vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-							Uncommitted: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
-							Unshared:    vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: vmlifecycle.BytesToResourceGiB(11 * oneGiBInBytes),
+								Disks: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+								Other: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							},
 						}))
 					})
 				})
 				When("status.storage is not nil", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
-							Committed:   vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
-							Uncommitted: vmlifecycle.BytesToResourceGiB(6 * oneGiBInBytes),
-							Unshared:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: vmlifecycle.BytesToResourceGiB(1024 + (5 * oneGiBInBytes)),
+								Disks: vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
+								Other: vmlifecycle.BytesToResourceGiB(1024),
+							},
 						}
 					})
 					Specify("status.storage to be updated", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Committed:   vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-							Uncommitted: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
-							Unshared:    vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: vmlifecycle.BytesToResourceGiB(11 * oneGiBInBytes),
+								Disks: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+								Other: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							},
 						}))
 					})
 				})

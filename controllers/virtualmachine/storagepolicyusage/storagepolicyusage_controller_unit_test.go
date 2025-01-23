@@ -296,22 +296,8 @@ func unitTestsReconcile() {
 							},
 						},
 						Storage: &vmopv1.VirtualMachineStorageStatus{
-							Committed:   ptr.To(resource.MustParse("10Gi")),
-							Uncommitted: ptr.To(resource.MustParse("20Gi")),
-							Unshared:    ptr.To(resource.MustParse("5Gi")),
-						},
-						Volumes: []vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:  "vm-1",
-								Type:  vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Limit: ptr.To(resource.MustParse("20Gi")),
-								Used:  ptr.To(resource.MustParse("10Gi")),
-							},
-							{
-								Name:  "vol-1",
-								Type:  vmopv1.VirtualMachineStorageDiskTypeManaged,
-								Limit: ptr.To(resource.MustParse("10Gi")),
-								Used:  ptr.To(resource.MustParse("2Gi")),
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: ptr.To(resource.MustParse("10Gi")),
 							},
 						},
 					},
@@ -336,22 +322,8 @@ func unitTestsReconcile() {
 							},
 						},
 						Storage: &vmopv1.VirtualMachineStorageStatus{
-							Committed:   ptr.To(resource.MustParse("5Gi")),
-							Uncommitted: ptr.To(resource.MustParse("10Gi")),
-							Unshared:    ptr.To(resource.MustParse("2Gi")),
-						},
-						Volumes: []vmopv1.VirtualMachineVolumeStatus{
-							{
-								Name:  "vm-2",
-								Type:  vmopv1.VirtualMachineStorageDiskTypeClassic,
-								Limit: ptr.To(resource.MustParse("10Gi")),
-								Used:  ptr.To(resource.MustParse("1Gi")),
-							},
-							{
-								Name:  "vol-2",
-								Type:  vmopv1.VirtualMachineStorageDiskTypeManaged,
-								Limit: ptr.To(resource.MustParse("10Gi")),
-								Used:  ptr.To(resource.MustParse("0.5Gi")),
+							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
+								Total: ptr.To(resource.MustParse("10Gi")),
 							},
 						},
 					},
@@ -416,7 +388,7 @@ func unitTestsReconcile() {
 					vm1.Finalizers = []string{"fake.com/finalizer"}
 				})
 				Specify("the reported information should only include non-deleted VMs", func() {
-					assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("1.5Gi"))
+					assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("10Gi"))
 				})
 			})
 			Context("that do not have a true created condition", func() {
@@ -432,12 +404,12 @@ func unitTestsReconcile() {
 							vm1.Status.Conditions = nil
 						})
 						Specify("the reported information should include VMs with a true created condition", func() {
-							assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("1.5Gi"))
+							assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("10Gi"))
 						})
 					})
 					Context("that have a false created condition", func() {
 						Specify("the reported information should include VMs with a true created condition", func() {
-							assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("1.5Gi"))
+							assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("10Gi"))
 						})
 					})
 				})
@@ -465,7 +437,7 @@ func unitTestsReconcile() {
 							)
 						})
 						Specify("the reported reserved data should include VMs that do not have true created condition and used data should include VMs with a true created condition", func() {
-							assertReportedTotals(spu, err, nil, resource.MustParse("70Gi"), resource.MustParse("1.5Gi"))
+							assertReportedTotals(spu, err, nil, resource.MustParse("70Gi"), resource.MustParse("10Gi"))
 						})
 						When("there is an error getting the VirtualMachineImage", func() {
 							Context("the error is NotFound", func() {
@@ -487,7 +459,7 @@ func unitTestsReconcile() {
 									}
 								})
 								Specify("the NotFound error should be ignored", func() {
-									assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("1.5Gi"))
+									assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("10Gi"))
 								})
 							})
 							Context("the error is not NotFound", func() {
@@ -535,7 +507,7 @@ func unitTestsReconcile() {
 							)
 						})
 						Specify("the reported reserved data should include VMs that do not have true created condition and used data should include VMs with a true created condition", func() {
-							assertReportedTotals(spu, err, nil, resource.MustParse("70Gi"), resource.MustParse("1.5Gi"))
+							assertReportedTotals(spu, err, nil, resource.MustParse("70Gi"), resource.MustParse("10Gi"))
 						})
 					})
 				})
@@ -550,7 +522,7 @@ func unitTestsReconcile() {
 							vm2.Spec.Image = nil
 						})
 						Specify("the reported information should include VMs with a storage status", func() {
-							assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("3Gi"))
+							assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("10Gi"))
 						})
 					})
 					Context("that do have an image ref", func() {
@@ -577,7 +549,7 @@ func unitTestsReconcile() {
 								)
 							})
 							Specify("the reported reserved data should include VMs that do not have true created condition and used data should include VMs with a true created condition", func() {
-								assertReportedTotals(spu, err, nil, resource.MustParse("50Gi"), resource.MustParse("3Gi"))
+								assertReportedTotals(spu, err, nil, resource.MustParse("50Gi"), resource.MustParse("10Gi"))
 							})
 						})
 						Context("that reference a ClusterVirtualMachineImage", func() {
@@ -603,7 +575,7 @@ func unitTestsReconcile() {
 								)
 							})
 							Specify("the reported reserved data should include VMs that do not have true created condition and used data should include VMs with a true created condition", func() {
-								assertReportedTotals(spu, err, nil, resource.MustParse("50Gi"), resource.MustParse("3Gi"))
+								assertReportedTotals(spu, err, nil, resource.MustParse("50Gi"), resource.MustParse("10Gi"))
 							})
 							When("there is an error getting the ClusterVirtualMachineImage", func() {
 								Context("the error is NotFound", func() {
@@ -625,7 +597,7 @@ func unitTestsReconcile() {
 										}
 									})
 									Specify("the NotFound error should be ignored", func() {
-										assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("3Gi"))
+										assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("10Gi"))
 									})
 								})
 								Context("the error is not NotFound", func() {
@@ -649,22 +621,6 @@ func unitTestsReconcile() {
 									})
 								})
 							})
-						})
-					})
-				})
-				Context("that have a storage status", func() {
-					Context("with no PVCs", func() {
-						BeforeEach(func() {
-							vm1.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{vm1.Status.Volumes[0]}
-							vm2.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{vm2.Status.Volumes[0]}
-						})
-						Specify("the reported information should reflect the VM data only", func() {
-							assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("7Gi"))
-						})
-					})
-					Context("with PVCs", func() {
-						Specify("the reported information should reflect the VM data only", func() {
-							assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("4.5Gi"))
 						})
 					})
 				})

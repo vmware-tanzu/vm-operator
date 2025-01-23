@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -31,8 +30,10 @@ import (
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
@@ -132,6 +133,21 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		builder = builder.WatchesRawSource(source.Channel(
 			cource.FromContextWithBuffer(ctx, "VirtualMachine", 100),
 			&handler.EnqueueRequestForObject{}))
+	}
+
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		builder = builder.Watches(
+			&vmopv1.VirtualMachineImageCache{},
+			handler.EnqueueRequestsFromMapFunc(
+				vmopv1util.VirtualMachineImageCacheToItemMapper(
+					ctx,
+					r.Logger.WithName("VirtualMachineImageCacheToItemMapper"),
+					r.Client,
+					vmopv1.GroupVersion,
+					controlledTypeName,
+				),
+			),
+		)
 	}
 
 	return builder.Complete(r)
@@ -269,6 +285,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=encryption.vmware.com,resources=encryptionclasses,verbs=get;list;watch
 
+// Reconcile the object.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 	ctx = cource.JoinContext(ctx, r.Context)
@@ -290,17 +307,27 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	logger := ctrl.Log.WithName("VirtualMachine").WithValues("name", vm.NamespacedName())
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
-		// Allow the use of an annotation to control whether fast-deploy is used
-		// per-VM to deploy the VM.
-		if val := vm.Annotations["vmoperator.vmware.com/fast-deploy"]; val != "" {
-			if ok, _ := strconv.ParseBool(val); !ok {
-				// Create a copy of the config so the feature-state for
-				// FastDeploy can also be influenced by a VM annotation.
-				cfg := pkgcfg.FromContext(ctx)
-				cfg.Features.FastDeploy = false
-				ctx = pkgcfg.WithContext(ctx, cfg)
-				logger.Info("Disabled fast-deploy for this VM")
-			}
+
+		// Check to see if the VM's annotations specify a fast-deploy mode.
+		mode := vm.Annotations[pkgconst.FastDeployAnnotationKey]
+
+		if mode == "" {
+			// If the VM's annotation does not specify a fast-deploy mode then
+			// get the mode from the global config.
+			mode = pkgcfg.FromContext(ctx).FastDeployMode
+		}
+
+		switch strings.ToLower(mode) {
+		case pkgconst.FastDeployModeDirect, pkgconst.FastDeployModeLinked:
+			logger.V(4).Info("Using fast-deploy for this VM", "mode", mode)
+			// No-op
+		default:
+			// Create a copy of the config where the Fast Deploy feature is
+			// disabled for this call-stack.
+			cfg := pkgcfg.FromContext(ctx)
+			cfg.Features.FastDeploy = false
+			ctx = pkgcfg.WithContext(ctx, cfg)
+			logger.Info("Disabled fast-deploy for this VM")
 		}
 	}
 
@@ -338,10 +365,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}()
 
 	if !vm.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.ReconcileDelete(vmCtx)
+		return pkgerr.ResultFromError(r.ReconcileDelete(vmCtx))
 	}
 
-	if err = r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
+	if err := r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
+		if result, err := pkgerr.ResultFromError(err); err == nil {
+			return result, nil
+		}
 		vmCtx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		return ctrl.Result{}, err
 	}
@@ -365,6 +395,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 func requeueDelay(
 	ctx *pkgctx.VirtualMachineContext,
 	err error) time.Duration {
+
+	// Do not requeue if the VMI cache object is not ready. Instead allow the
+	// watcher to trigger the reconcile when the cache object is updated.
+	if ctx.VM.Labels[pkgconst.VMICacheLabelKey] != "" {
+		return 0
+	}
 
 	// If there were too many concurrent create operations or if the VM is in
 	// Creating phase, the reconciler has run out of threads or goroutines to
@@ -482,6 +518,13 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	// Upgrade schema fields where needed
 	upgradeSchema(ctx)
 
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		// Do not proceed unless the VMI cache this VM needs is ready.
+		if !r.isVMICacheReady(ctx) {
+			return nil
+		}
+	}
+
 	var (
 		err     error
 		chanErr <-chan error
@@ -507,14 +550,15 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 			//
 			// Blocking create
 			//
-			r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
+			err = r.handleBlockingCreateErr(ctx, err)
 		} else {
 			//
 			// Non-blocking create
 			//
 			if err != nil {
-				// Failed before goroutine.
-				r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
+				// Failed before goroutine, such as when getting the pre-reqs
+				// to do a create, i.e. createArgs.
+				err = r.handleBlockingCreateErr(ctx, err)
 			} else {
 				// Emit event once goroutine is complete.
 				go func(obj client.Object) {
@@ -556,11 +600,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		r.Prober.RemoveFromProberManager(ctx.VM)
 	}
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func getIsDefaultVMClassController(ctx context.Context) bool {
@@ -580,4 +620,96 @@ func ignoredCreateErr(err error) bool {
 		return true
 	}
 	return false
+}
+
+func (r *Reconciler) handleBlockingCreateErr(
+	ctx *pkgctx.VirtualMachineContext, err error) error {
+
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		if pkgerr.WatchVMICacheIfNotReady(err, ctx.VM) {
+			// If the cache is not yet ready then do not return an error,
+			// but simultaneously, do not reflect a successful create. The
+			// VM will be requeued once the cache object is ready.
+			return nil
+		}
+	}
+
+	r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
+	return err
+}
+
+func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
+	vmicName := ctx.VM.Labels[pkgconst.VMICacheLabelKey]
+	if vmicName == "" {
+		// The object is not waiting on a VMI cache object and can proceed.
+		return true
+	}
+
+	var (
+		vmic    vmopv1.VirtualMachineImageCache
+		vmicKey = client.ObjectKey{
+			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+			Name:      vmicName,
+		}
+	)
+
+	if err := r.Client.Get(ctx, vmicKey, &vmic); err != nil {
+		ctx.Logger.Error(
+			err,
+			"Skipping due to failure getting vmicache object")
+		return false
+	}
+
+	// Assert the OVF is ready.
+	if !conditions.IsTrue(
+		vmic,
+		vmopv1.VirtualMachineImageCacheConditionOVFReady) {
+
+		ctx.Logger.V(4).Info(
+			"Skipping due to missing true condition",
+			"conditionType", vmopv1.VirtualMachineImageCacheConditionOVFReady)
+		return false
+	}
+
+	// Check and see if the VM is waiting on the disks yet.
+	location := ctx.VM.Annotations[pkgconst.VMICacheLocationAnnotationKey]
+	if location == "" {
+		// Remove the label the VM that indicate it is waiting on the VMI cache
+		// resource to be ready with the OVF.
+		delete(ctx.VM.Labels, pkgconst.VMICacheLabelKey)
+
+		return true
+	}
+
+	// Find the matching location status.
+	var locStatus *vmopv1.VirtualMachineImageCacheLocationStatus
+	if locParts := strings.Split(location, ","); len(locParts) == 2 {
+		dcID, dsID := locParts[0], locParts[1]
+		for i := range vmic.Status.Locations {
+			l := vmic.Status.Locations[i]
+			if l.DatacenterID == dcID && l.DatastoreID == dsID {
+				locStatus = &l
+				break
+			}
+		}
+	}
+
+	// Assert the cached disks are ready.
+	if locStatus == nil || !conditions.IsTrue(
+		locStatus,
+		vmopv1.ReadyConditionType) {
+
+		ctx.Logger.V(4).Info(
+			"Skipping due to missing true condition",
+			"conditionType", vmopv1.VirtualMachineImageCacheConditionDisksReady,
+			"locationStatus", locStatus)
+		return false
+	}
+
+	// Remove the label and annotations from the VM that indicate it is waiting
+	// on a VMI cache resource to be ready with the cached disks.
+	delete(ctx.VM.Labels, pkgconst.VMICacheLabelKey)
+	delete(ctx.VM.Annotations, pkgconst.VMICacheLocationAnnotationKey)
+
+	return true
 }

@@ -13,6 +13,7 @@ import (
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/env"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 )
 
 var _ = Describe(
@@ -79,6 +80,7 @@ var _ = Describe(
 					Expect(os.Setenv("MAX_CONCURRENT_RECONCILES", "114")).To(Succeed())
 					Expect(os.Setenv("ASYNC_SIGNAL_ENABLED", "false")).To(Succeed())
 					Expect(os.Setenv("ASYNC_CREATE_ENABLED", "false")).To(Succeed())
+					Expect(os.Setenv("FAST_DEPLOY_MODE", pkgconst.FastDeployModeLinked)).To(Succeed())
 					Expect(os.Setenv("LEADER_ELECTION_ID", "115")).To(Succeed())
 					Expect(os.Setenv("POD_NAME", "116")).To(Succeed())
 					Expect(os.Setenv("POD_NAMESPACE", "117")).To(Succeed())
@@ -105,7 +107,7 @@ var _ = Describe(
 					Expect(os.Setenv("CREATE_VM_REQUEUE_DELAY", "125h")).To(Succeed())
 					Expect(os.Setenv("POWERED_ON_VM_HAS_IP_REQUEUE_DELAY", "126h")).To(Succeed())
 					Expect(os.Setenv("MEM_STATS_PERIOD", "127h")).To(Succeed())
-
+					Expect(os.Setenv("SYNC_IMAGE_REQUEUE_DELAY", "128h")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
@@ -130,6 +132,7 @@ var _ = Describe(
 						MaxConcurrentReconciles:      114,
 						AsyncSignalEnabled:           false,
 						AsyncCreateEnabled:           false,
+						FastDeployMode:               pkgconst.FastDeployModeLinked,
 						LeaderElectionID:             "115",
 						PodName:                      "116",
 						PodNamespace:                 "117",
@@ -158,6 +161,7 @@ var _ = Describe(
 						CreateVMRequeueDelay:         125 * time.Hour,
 						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,
 						MemStatsPeriod:               127 * time.Hour,
+						SyncImageRequeueDelay:        128 * time.Hour,
 					}))
 				})
 			})

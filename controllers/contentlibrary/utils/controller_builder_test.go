@@ -1,0 +1,569 @@
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
+package utils_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
+
+	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
+	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
+)
+
+var _ = Describe("AddToManager",
+	Label(
+		testlabels.Controller,
+		testlabels.EnvTest,
+		testlabels.V1Alpha3,
+	),
+	func() {
+		var (
+			parentCtx context.Context
+			vcSimCtx  *builder.IntegrationTestContextForVCSim
+		)
+
+		BeforeEach(func() {
+			parentCtx = pkgcfg.NewContext()
+		})
+
+		JustBeforeEach(func() {
+			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
+				parentCtx,
+				builder.VCSimTestConfig{},
+				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+					return utils.AddToManager(ctx, mgr, &imgregv1a1.ContentLibraryItem{})
+				},
+				func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
+					return nil
+				},
+				nil)
+		})
+
+		It("should not return an error", func() {
+			Expect(vcSimCtx).ToNot(BeNil())
+			vcSimCtx.BeforeEach()
+		})
+
+		When("FSS FastDeploy is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.UpdateContext(parentCtx, func(config *pkgcfg.Config) {
+					config.Features.FastDeploy = true
+				})
+			})
+			It("should not return an error", func() {
+				Expect(vcSimCtx).ToNot(BeNil())
+				vcSimCtx.BeforeEach()
+			})
+		})
+	})
+
+var _ = Describe("Reconcile",
+	Label(
+		testlabels.Controller,
+		testlabels.V1Alpha3,
+	),
+	func() {
+		const firmwareValue = "my-firmware"
+
+		var (
+			ctx *builder.UnitTestContextForController
+
+			reconciler     *utils.Reconciler
+			fakeVMProvider *providerfake.VMProvider
+
+			cliObj    client.Object
+			cliSpec   *imgregv1a1.ContentLibraryItemSpec
+			cliStatus *imgregv1a1.ContentLibraryItemStatus
+			req       ctrl.Request
+
+			vmiName  string
+			vmicName string
+
+			finalizer string
+		)
+
+		BeforeEach(func() {
+			ctx = builder.NewUnitTestContextForController(nil)
+			fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
+		})
+
+		JustBeforeEach(func() {
+			var err error
+			vmiName, err = utils.GetImageFieldNameFromItem(cliObj.GetName())
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(ctx.Client.Create(ctx, cliObj)).To(Succeed())
+			cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+		})
+
+		AfterEach(func() {
+			ctx.AfterEach()
+			ctx = nil
+			cliObj = nil
+			reconciler = nil
+			fakeVMProvider.Reset()
+		})
+
+		Context("Namespace-scoped", func() {
+
+			BeforeEach(func() {
+				reconciler = utils.NewReconciler(
+					ctx,
+					ctx.Client,
+					ctx.Logger,
+					ctx.Recorder,
+					ctx.VMProvider,
+					"ContentLibraryItem",
+				)
+
+				fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmiObj client.Object) error {
+					vmi := vmiObj.(*vmopv1.VirtualMachineImage)
+
+					// Use Firmware field to verify the provider function is called.
+					vmi.Status.Firmware = firmwareValue
+					return nil
+				}
+
+				o := utils.DummyContentLibraryItem(
+					utils.ItemFieldNamePrefix+"-dummy", "dummy-ns")
+				cliObj, cliSpec, cliStatus = o, &o.Spec, &o.Status
+				finalizer, _ = utils.GetAppropriateFinalizers(cliObj)
+				vmicName = pkgutil.VMIName(string(cliSpec.UUID))
+
+				// Add the finalizer so Reconcile does not return early.
+				cliObj.SetFinalizers([]string{finalizer})
+
+				req = ctrl.Request{}
+				req.Namespace = cliObj.GetNamespace()
+				req.Name = cliObj.GetName()
+			})
+
+			Context("ReconcileNormal", func() {
+
+				When("Library item resource doesn't have the VMOP finalizer", func() {
+					BeforeEach(func() {
+						cliObj.SetFinalizers(nil)
+					})
+
+					It("should add the finalizer", func() {
+						_, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						cliObj, _, _ = getCLI(ctx, req.Namespace, req.Name)
+
+						Expect(cliObj.GetFinalizers()).To(ContainElement(finalizer))
+					})
+				})
+
+				When("Library item resource is Not Ready", func() {
+					BeforeEach(func() {
+						cliStatus.Conditions = []imgregv1a1.Condition{
+							{
+								Type:   imgregv1a1.ReadyCondition,
+								Status: corev1.ConditionFalse,
+							},
+						}
+					})
+
+					It("should mark image resource condition as provider not ready", func() {
+						_, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+
+						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+						condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+						Expect(condition).ToNot(BeNil())
+						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+						Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderNotReadyReason))
+					})
+				})
+
+				When("Library item resource is not security compliant", func() {
+
+					BeforeEach(func() {
+						cliStatus.SecurityCompliance = ptr.To(false)
+					})
+
+					It("should mark image resource condition as provider security not compliant", func() {
+						_, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+
+						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+						condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+						Expect(condition).ToNot(BeNil())
+						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+						Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason))
+					})
+				})
+
+				When("SyncVirtualMachineImage returns an error", func() {
+
+					BeforeEach(func() {
+						fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, _ client.Object) error {
+							return fmt.Errorf("sync-error")
+						}
+					})
+
+					It("should mark image resource condition synced failed", func() {
+						_, err := reconciler.Reconcile(ctx, req)
+						Expect(err).To(MatchError("sync-error"))
+
+						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+						condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+						Expect(condition).ToNot(BeNil())
+						Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+						Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageNotSyncedReason))
+					})
+
+					When("error is ErrVMICacheNotReady", func() {
+						JustBeforeEach(func() {
+							fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, _ client.Object) error {
+								return fmt.Errorf("failed with %w",
+									pkgerr.VMICacheNotReadyError{Name: vmicName})
+							}
+						})
+						It("should place a label on the library item resource", func() {
+							_, err := reconciler.Reconcile(ctx, req)
+
+							var e pkgerr.VMICacheNotReadyError
+							ExpectWithOffset(1, errors.As(err, &e)).To(BeTrue())
+							ExpectWithOffset(1, e.Name).To(Equal(vmicName))
+
+							cliObj, _, _ = getCLI(ctx, req.Namespace, req.Name)
+							ExpectWithOffset(1, cliObj.GetLabels()).To(HaveKeyWithValue(
+								pkgconst.VMICacheLabelKey, vmicName))
+
+							_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+							condition := pkgcnd.Get(vmiStatus, vmopv1.ReadyConditionType)
+							Expect(condition).To(BeNil())
+						})
+					})
+				})
+
+				When("Library item resource is ready and security complaint", func() {
+
+					JustBeforeEach(func() {
+						// The dummy library item should meet these requirements.
+						var readyCond *imgregv1a1.Condition
+						for _, c := range cliStatus.Conditions {
+							if c.Type == imgregv1a1.ReadyCondition {
+								c := c
+								readyCond = &c
+								break
+							}
+						}
+						Expect(readyCond).ToNot(BeNil())
+						Expect(readyCond.Status).To(Equal(corev1.ConditionTrue))
+
+						Expect(cliStatus.SecurityCompliance).To(Equal(ptr.To(true)))
+					})
+
+					When("Image resource has not been created yet", func() {
+
+						It("should create a new image resource syncing up with the library item resource", func() {
+							_, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+
+							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
+						})
+					})
+
+					When("Image resource is exists but not up-to-date", func() {
+
+						JustBeforeEach(func() {
+							newVMI(
+								ctx,
+								req.Namespace,
+								vmiName,
+								vmopv1.VirtualMachineImageStatus{
+									ProviderContentVersion: "stale",
+									Firmware:               "should-be-updated",
+								})
+						})
+
+						It("should update the existing image resource with the library item resource", func() {
+							cliStatus.ContentVersion += "-updated"
+							_, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+
+							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
+						})
+					})
+
+					When("Image resource is created and already up-to-date", func() {
+
+						JustBeforeEach(func() {
+							newVMI(
+								ctx,
+								req.Namespace,
+								vmiName,
+								vmopv1.VirtualMachineImageStatus{
+									ProviderContentVersion: cliStatus.ContentVersion,
+									Firmware:               "should-be-updated",
+								})
+						})
+
+						It("should still update the image resource status from the library item resource", func() {
+							_, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+
+							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
+						})
+					})
+				})
+			})
+
+			Context("ReconcileDelete", func() {
+				It("should remove the finalizer from the library item resource", func() {
+					Expect(cliObj.GetFinalizers()).To(ContainElement(finalizer))
+					cliObj.SetDeletionTimestamp(ptr.To(metav1.Now()))
+					Expect(reconciler.ReconcileDelete(ctx, logr.Discard(), cliObj, vmiName)).To(Succeed())
+					Expect(cliObj.GetFinalizers()).ToNot(ContainElement(finalizer))
+				})
+			})
+
+		})
+
+		Context("Cluster-scoped", func() {
+
+			BeforeEach(func() {
+				reconciler = utils.NewReconciler(
+					ctx,
+					ctx.Client,
+					ctx.Logger,
+					ctx.Recorder,
+					ctx.VMProvider,
+					"ClusterContentLibraryItem",
+				)
+
+				fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmiObj client.Object) error {
+					vmi := vmiObj.(*vmopv1.ClusterVirtualMachineImage)
+
+					// Use Firmware field to verify the provider function is called.
+					vmi.Status.Firmware = firmwareValue
+					return nil
+				}
+
+				o := utils.DummyClusterContentLibraryItem(
+					utils.ItemFieldNamePrefix + "-dummy")
+				cliObj, cliSpec, cliStatus = o, &o.Spec, &o.Status
+				finalizer, _ = utils.GetAppropriateFinalizers(cliObj)
+
+				// Add the finalizer so Reconcile does not return early.
+				cliObj.SetFinalizers([]string{finalizer})
+
+				req = ctrl.Request{}
+				req.Namespace = cliObj.GetNamespace()
+				req.Name = cliObj.GetName()
+			})
+
+			Context("ReconcileNormal", func() {
+				When("Library item resource is ready and security complaint", func() {
+					JustBeforeEach(func() {
+						// The dummy library item should meet these requirements.
+						var readyCond *imgregv1a1.Condition
+						for _, c := range cliStatus.Conditions {
+							if c.Type == imgregv1a1.ReadyCondition {
+								c := c
+								readyCond = &c
+								break
+							}
+						}
+						Expect(readyCond).ToNot(BeNil())
+						Expect(readyCond.Status).To(Equal(corev1.ConditionTrue))
+						Expect(cliStatus.SecurityCompliance).To(Equal(ptr.To(true)))
+					})
+
+					When("Image resource has not been created yet", func() {
+
+						It("should create a new image resource syncing up with the library item resource", func() {
+							_, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+
+							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
+						})
+					})
+
+					When("Image resource is exists but not up-to-date", func() {
+						JustBeforeEach(func() {
+							newVMI(
+								ctx,
+								req.Namespace,
+								vmiName,
+								vmopv1.VirtualMachineImageStatus{
+									ProviderContentVersion: "stale",
+									Firmware:               "should-be-updated",
+								})
+						})
+						It("should update the existing image resource with the library item resource", func() {
+							cliStatus.ContentVersion += "-updated"
+							_, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+
+							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
+						})
+					})
+				})
+			})
+
+			Context("ReconcileDelete", func() {
+				It("should remove the finalizer from the library item resource", func() {
+					Expect(cliObj.GetFinalizers()).To(ContainElement(finalizer))
+					cliObj.SetDeletionTimestamp(ptr.To(metav1.Now()))
+					Expect(reconciler.ReconcileDelete(ctx, logr.Discard(), cliObj, vmiName)).To(Succeed())
+					Expect(cliObj.GetFinalizers()).ToNot(ContainElement(finalizer))
+				})
+			})
+		})
+
+	})
+
+func getCLI(
+	ctx *builder.UnitTestContextForController,
+	namespace, name string) (client.Object, *imgregv1a1.ContentLibraryItemSpec, *imgregv1a1.ContentLibraryItemStatus) {
+
+	var (
+		obj    client.Object
+		spec   *imgregv1a1.ContentLibraryItemSpec
+		status *imgregv1a1.ContentLibraryItemStatus
+		key    = client.ObjectKey{
+			Namespace: namespace,
+			Name:      name,
+		}
+	)
+
+	if namespace != "" {
+		var o imgregv1a1.ContentLibraryItem
+		ExpectWithOffset(1, ctx.Client.Get(ctx, key, &o)).To(Succeed())
+		obj, spec, status = &o, &o.Spec, &o.Status
+	} else {
+		var o imgregv1a1.ClusterContentLibraryItem
+		ExpectWithOffset(1, ctx.Client.Get(ctx, key, &o)).To(Succeed())
+		obj, spec, status = &o, &o.Spec, &o.Status
+	}
+
+	return obj, spec, status
+}
+
+func getVMI(
+	ctx *builder.UnitTestContextForController,
+	namespace, name string) (client.Object, *vmopv1.VirtualMachineImageSpec, *vmopv1.VirtualMachineImageStatus) {
+
+	var (
+		obj    client.Object
+		spec   *vmopv1.VirtualMachineImageSpec
+		status *vmopv1.VirtualMachineImageStatus
+		key    = client.ObjectKey{
+			Namespace: namespace,
+			Name:      name,
+		}
+	)
+
+	if namespace != "" {
+		var o vmopv1.VirtualMachineImage
+		ExpectWithOffset(1, ctx.Client.Get(ctx, key, &o)).To(Succeed())
+		obj, spec, status = &o, &o.Spec, &o.Status
+	} else {
+		var o vmopv1.ClusterVirtualMachineImage
+		ExpectWithOffset(1, ctx.Client.Get(ctx, key, &o)).To(Succeed())
+		obj, spec, status = &o, &o.Spec, &o.Status
+	}
+
+	return obj, spec, status
+}
+
+func newVMI(
+	ctx *builder.UnitTestContextForController,
+	namespace, name string,
+	status vmopv1.VirtualMachineImageStatus) {
+
+	spec := vmopv1.VirtualMachineImageSpec{
+		ProviderRef: &common.LocalObjectRef{
+			Name: "bogus",
+		},
+	}
+
+	if namespace != "" {
+		o := vmopv1.VirtualMachineImage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+			Spec:   spec,
+			Status: status,
+		}
+		ExpectWithOffset(1, ctx.Client.Create(ctx, &o)).To(Succeed())
+	}
+
+	o := vmopv1.ClusterVirtualMachineImage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec:   spec,
+		Status: status,
+	}
+	ExpectWithOffset(1, ctx.Client.Create(ctx, &o)).To(Succeed())
+}
+
+func assertVMImageFromCLItem(
+	cliObj client.Object,
+	cliSpec imgregv1a1.ContentLibraryItemSpec,
+	cliStatus imgregv1a1.ContentLibraryItemStatus,
+	vmiObj client.Object,
+	vmiSpec vmopv1.VirtualMachineImageSpec,
+	vmiStatus vmopv1.VirtualMachineImageStatus) {
+
+	Expect(metav1.IsControlledBy(vmiObj, cliObj)).To(BeTrue())
+
+	By("Expected VMImage Spec", func() {
+		Expect(vmiSpec.ProviderRef.Name).To(Equal(cliObj.GetName()))
+		cliGVK := cliObj.GetObjectKind().GroupVersionKind()
+		Expect(vmiSpec.ProviderRef.APIVersion).To(Equal(cliGVK.GroupVersion().String()))
+		Expect(vmiSpec.ProviderRef.Kind).To(Equal(cliGVK.Kind))
+	})
+
+	By("Expected VMImage Status", func() {
+		Expect(vmiStatus.Name).To(Equal(cliStatus.Name))
+		Expect(vmiStatus.ProviderItemID).To(BeEquivalentTo(cliSpec.UUID))
+		Expect(vmiStatus.ProviderContentVersion).To(Equal(cliStatus.ContentVersion))
+		Expect(vmiStatus.Type).To(BeEquivalentTo(cliStatus.Type))
+		Expect(pkgcnd.IsTrue(vmiStatus, vmopv1.ReadyConditionType)).To(BeTrue())
+	})
+}

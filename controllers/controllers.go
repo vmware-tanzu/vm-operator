@@ -15,6 +15,7 @@ import (
 	spq "github.com/vmware-tanzu/vm-operator/controllers/storagepolicyquota"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimagecache"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinereplicaset"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
@@ -65,6 +66,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
 		if err := storageclass.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize StorageClass controller: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		if err := virtualmachineimagecache.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VMI controllers: %w", err)
 		}
 	}
 

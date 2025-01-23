@@ -25,7 +25,6 @@ var suite = builder.NewTestSuite()
 
 func vcSimTests() {
 	Describe("CPUFreq", cpuFreqTests)
-	Describe("SyncVirtualMachineImage", syncVirtualMachineImageTests)
 	Describe("ResourcePolicyTests", resourcePolicyTests)
 	Describe("VirtualMachine", vmTests)
 	Describe("VirtualMachineE2E", vmE2ETests)

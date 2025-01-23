@@ -17,8 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vapi/library/finder"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
 
@@ -35,6 +37,9 @@ type Provider interface {
 	UpdateLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
 	RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item) (*ovf.Envelope, error)
 	RetrieveOvfEnvelopeByLibraryItemID(ctx context.Context, itemID string) (*ovf.Envelope, error)
+	SyncLibraryItem(ctx context.Context, item *library.Item, force bool) error
+	ListLibraryItemStorage(ctx context.Context, itemID string) ([]library.Storage, error)
+	ResolveLibraryItemStorage(ctx context.Context, datacenter *object.Datacenter, storage []library.Storage) error
 
 	// TODO: Testing only. Remove these from this file.
 	CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error
@@ -245,6 +250,16 @@ func (cs *provider) UpdateLibraryItem(ctx context.Context, itemID, newName strin
 	return cs.libMgr.UpdateLibraryItem(ctx, item)
 }
 
+// SyncLibraryItem issues a sync call against a subscribed library item,
+// fetching its latest OVF and disks.
+func (cs *provider) SyncLibraryItem(
+	ctx context.Context,
+	item *library.Item,
+	force bool) error {
+
+	return cs.libMgr.SyncLibraryItem(ctx, item, force)
+}
+
 // Only used in testing.
 func (cs *provider) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
 	log.Info("Creating Library Item", "item", libraryItem, "path", path)
@@ -379,4 +394,30 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 	}
 
 	return url.Parse(fileURL)
+}
+
+func (cs *provider) ListLibraryItemStorage(
+	ctx context.Context,
+	itemID string) ([]library.Storage, error) {
+
+	return cs.libMgr.ListLibraryItemStorage(ctx, itemID)
+}
+
+func (cs *provider) ResolveLibraryItemStorage(
+	ctx context.Context,
+	datacenter *object.Datacenter,
+	storage []library.Storage) error {
+
+	if err := finder.NewPathFinder(
+		cs.libMgr,
+		datacenter.Client()).ResolveLibraryItemStorage(
+		ctx,
+		datacenter,
+		nil,
+		storage); err != nil {
+
+		return fmt.Errorf("failed to resolve library item storage URIs: %w", err)
+	}
+
+	return nil
 }

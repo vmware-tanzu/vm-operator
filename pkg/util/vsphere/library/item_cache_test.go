@@ -6,7 +6,6 @@ package library_test
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -108,7 +107,8 @@ var _ = Describe("CacheStorageURIs", func() {
 					client,
 					dstDatacenter,
 					srcDatacenter,
-					dstDir)
+					dstDir,
+					vimtypes.DatastoreSectorFormatNative_512)
 			}
 
 			Expect(f).To(PanicWith(expPanic))
@@ -184,7 +184,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			srcDiskURIs   []string
 
 			err error
-			out []string
+			out []clsutil.CachedDisk
 		)
 
 		BeforeEach(func() {
@@ -209,6 +209,7 @@ var _ = Describe("CacheStorageURIs", func() {
 				dstDatacenter,
 				srcDatacenter,
 				dstDir,
+				vimtypes.DatastoreSectorFormatNative_512,
 				srcDiskURIs...)
 		})
 
@@ -219,10 +220,13 @@ var _ = Describe("CacheStorageURIs", func() {
 				Expect(client.copyCalls).To(BeZero())
 				Expect(client.waitCalls).To(BeZero())
 				Expect(err).ToNot(HaveOccurred())
-				Expect(out).To(Equal([]string{
-					dstDir + "/" + "e66e8b0765f8ff917.vmdk",
-					dstDir + "/" + "b020a5eae7f68a91d.vmdk",
-				}))
+				Expect(out).To(Equal([]clsutil.CachedDisk{
+					{
+						Path: dstDir + "/" + "e66e8b0765f8ff917.vmdk",
+					},
+					{
+						Path: dstDir + "/" + "b020a5eae7f68a91d.vmdk",
+					}}))
 			})
 		})
 
@@ -304,259 +308,14 @@ var _ = Describe("CacheStorageURIs", func() {
 								Expect(client.copyCalls).To(Equal(int32(2)))
 								Expect(client.waitCalls).To(Equal(int32(2)))
 								Expect(err).ToNot(HaveOccurred())
-								Expect(out).To(Equal([]string{
-									dstDir + "/" + "e66e8b0765f8ff917.vmdk",
-									dstDir + "/" + "b020a5eae7f68a91d.vmdk",
-								}))
+								Expect(out).To(Equal([]clsutil.CachedDisk{
+									{
+										Path: dstDir + "/" + "e66e8b0765f8ff917.vmdk",
+									},
+									{
+										Path: dstDir + "/" + "b020a5eae7f68a91d.vmdk",
+									}}))
 							})
-						})
-					})
-				})
-			})
-
-		})
-	})
-})
-
-type fakeGetTopLevelCacheDirClient struct {
-	createErr    error
-	createResult string
-	createCalls  int32
-
-	convertErr    error
-	convertResult string
-	convertCalls  int32
-}
-
-func (m *fakeGetTopLevelCacheDirClient) CreateDirectory(
-	ctx context.Context,
-	datastore *object.Datastore,
-	displayName, policy string) (string, error) {
-
-	_ = atomic.AddInt32(&m.createCalls, 1)
-	return m.createResult, m.createErr
-}
-
-func (m *fakeGetTopLevelCacheDirClient) ConvertNamespacePathToUuidPath( //nolint:revive,stylecheck
-	ctx context.Context,
-	datacenter *object.Datacenter,
-	datastoreURL string) (string, error) {
-
-	_ = atomic.AddInt32(&m.convertCalls, 1)
-	return m.convertResult, m.convertErr
-}
-
-var _ = Describe("GetTopLevelCacheDir", func() {
-
-	var _ = DescribeTable("it should panic",
-		func(
-			ctx context.Context,
-			client clsutil.GetTopLevelCacheDirClient,
-			dstDatacenter *object.Datacenter,
-			dstDatastore *object.Datastore,
-			dstDatastoreName,
-			dstDatastoreURL string,
-			topLevelDirectoryCreateSupported bool,
-			expPanic string) {
-
-			if ctx == nilContext {
-				ctx = nil
-			}
-
-			f := func() {
-				_, _ = clsutil.GetTopLevelCacheDir(
-					ctx,
-					client,
-					dstDatacenter,
-					dstDatastore,
-					dstDatastoreName,
-					dstDatastoreURL,
-					topLevelDirectoryCreateSupported)
-			}
-
-			Expect(f).To(PanicWith(expPanic))
-		},
-
-		Entry(
-			"nil ctx",
-			nilContext,
-			&fakeGetTopLevelCacheDirClient{},
-			&object.Datacenter{},
-			&object.Datastore{},
-			"my-datastore",
-			"ds://my-datastore",
-			false,
-			"context is nil",
-		),
-		Entry(
-			"nil client",
-			context.Background(),
-			nil,
-			&object.Datacenter{},
-			&object.Datastore{},
-			"my-datastore",
-			"ds://my-datastore",
-			false,
-			"client is nil",
-		),
-		Entry(
-			"nil dstDatacenter",
-			context.Background(),
-			&fakeGetTopLevelCacheDirClient{},
-			nil,
-			&object.Datastore{},
-			"my-datastore",
-			"ds://my-datastore",
-			false,
-			"dstDatacenter is nil",
-		),
-		Entry(
-			"nil dstDatastore",
-			context.Background(),
-			&fakeGetTopLevelCacheDirClient{},
-			&object.Datacenter{},
-			nil,
-			"my-datastore",
-			"ds://my-datastore",
-			false,
-			"dstDatastore is nil",
-		),
-		Entry(
-			"empty dstDatastoreName",
-			context.Background(),
-			&fakeGetTopLevelCacheDirClient{},
-			&object.Datacenter{},
-			&object.Datastore{},
-			"",
-			"ds://my-datastore",
-			false,
-			"dstDatastoreName is empty",
-		),
-		Entry(
-			"empty dstDatastoreURL",
-			context.Background(),
-			&fakeGetTopLevelCacheDirClient{},
-			&object.Datacenter{},
-			&object.Datastore{},
-			"my-datastore",
-			"",
-			false,
-			"dstDatastoreURL is empty",
-		),
-	)
-
-	var _ = When("it should not panic", func() {
-
-		var (
-			ctx                              context.Context
-			client                           *fakeGetTopLevelCacheDirClient
-			dstDatacenter                    *object.Datacenter
-			dstDatastore                     *object.Datastore
-			dstDatastoreName                 string
-			dstDatastoreURL                  string
-			topLevelDirectoryCreateSupported bool
-
-			err error
-			out string
-		)
-
-		BeforeEach(func() {
-			ctx = context.Background()
-			client = &fakeGetTopLevelCacheDirClient{}
-			dstDatacenter = object.NewDatacenter(
-				nil, vimtypes.ManagedObjectReference{
-					Type:  "Datacenter",
-					Value: "datacenter-1",
-				})
-			dstDatastore = object.NewDatastore(
-				nil, vimtypes.ManagedObjectReference{
-					Type:  "Datastore",
-					Value: "datastore-1",
-				})
-			dstDatastoreName = "my-datastore"
-			dstDatastoreURL = "ds://my-datastore"
-			topLevelDirectoryCreateSupported = true
-		})
-
-		JustBeforeEach(func() {
-			out, err = clsutil.GetTopLevelCacheDir(
-				ctx,
-				client,
-				dstDatacenter,
-				dstDatastore,
-				dstDatastoreName,
-				dstDatastoreURL,
-				topLevelDirectoryCreateSupported)
-		})
-
-		When("datastore supports top-level directories", func() {
-			It("should return the expected path", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(out).To(Equal("[my-datastore] .contentlib-cache"))
-			})
-		})
-
-		When("datastore does not support top-level directories", func() {
-			BeforeEach(func() {
-				topLevelDirectoryCreateSupported = false
-				client.createResult = "ds://vmfs/volumes/123/abc"
-			})
-			It("should return the expected path", func() {
-				Expect(client.createCalls).To(Equal(int32(1)))
-				Expect(client.convertCalls).To(BeZero())
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(out).To(Equal("[my-datastore] abc"))
-			})
-
-			When("create directory returns an error", func() {
-				When("error is not FileAlreadyExists", func() {
-					BeforeEach(func() {
-						client.createErr = fmt.Errorf(
-							"nested %w",
-							soap.WrapVimFault(&vimtypes.RuntimeFault{}))
-					})
-
-					It("should return the error", func() {
-						Expect(client.createCalls).To(Equal(int32(1)))
-						Expect(client.convertCalls).To(BeZero())
-
-						Expect(err).To(HaveOccurred())
-						Expect(err).To(MatchError(soap.WrapVimFault(
-							&vimtypes.RuntimeFault{})))
-					})
-				})
-				When("error is FileAlreadyExists", func() {
-					BeforeEach(func() {
-						client.createErr = fmt.Errorf(
-							"nested %w",
-							soap.WrapVimFault(&vimtypes.FileAlreadyExists{}))
-
-						client.convertResult = "abc"
-					})
-
-					It("should return the expected path", func() {
-						Expect(client.createCalls).To(Equal(int32(1)))
-						Expect(client.convertCalls).To(Equal(int32(1)))
-
-						Expect(err).ToNot(HaveOccurred())
-						Expect(out).To(Equal("[my-datastore] abc"))
-					})
-
-					When("convert path returns an error", func() {
-						BeforeEach(func() {
-							client.convertErr = fmt.Errorf(
-								"nested %w",
-								soap.WrapVimFault(&vimtypes.RuntimeFault{}))
-						})
-
-						It("should return the error", func() {
-							Expect(client.createCalls).To(Equal(int32(1)))
-							Expect(client.convertCalls).To(Equal(int32(1)))
-
-							Expect(err).To(HaveOccurred())
-							Expect(err).To(MatchError(soap.WrapVimFault(
-								&vimtypes.RuntimeFault{})))
 						})
 					})
 				})
@@ -603,13 +362,13 @@ var _ = DescribeTable("GetCacheDirForLibraryItem",
 	Entry(
 		"absolute topLevelCacheDir",
 		"/a", "b", "c",
-		"/a/b/c",
+		"/a/b/84a516841ba77a5b4",
 		"",
 	),
 	Entry(
 		"relative topLevelCacheDir",
 		"a", "b", "c",
-		"a/b/c",
+		"a/b/84a516841ba77a5b4",
 		"",
 	),
 )

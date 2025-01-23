@@ -82,6 +82,8 @@ linters-settings:
         pkg: github.com/vmware-tanzu/vm-operator/pkg/config
       - alias: pkgctx
         pkg: github.com/vmware-tanzu/vm-operator/pkg/context
+      - alias: pkgerr
+        pkg: github.com/vmware-tanzu/vm-operator/pkg/pkgerr
       - alias: ctxop
         pkg: github.com/vmware-tanzu/vm-operator/pkg/context/operation
       - alias: pkgmgr
@@ -90,6 +92,8 @@ linters-settings:
         pkg: github.com/vmware-tanzu/vm-operator/pkg/util
       - alias: proberctx
         pkg: github.com/vmware-tanzu/vm-operator/pkg/prober/context
+      - alias: clsutil
+        pkg: github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/library
 
   depguard:
     rules:

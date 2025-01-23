@@ -30,7 +30,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 	})
 
 func TestClusterContentLibraryItem(t *testing.T) {
-	suite.Register(t, "ClusterContentLibraryItem controller suite", intgTests, unitTests)
+	suite.Register(t, "ClusterContentLibraryItem controller suite", intgTests, nil)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

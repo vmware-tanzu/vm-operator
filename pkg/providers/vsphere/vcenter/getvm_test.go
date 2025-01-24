@@ -56,10 +56,22 @@ func getVM() {
 		})
 
 		It("returns success", func() {
-			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter, ctx.Finder)
+			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(vm).ToNot(BeNil())
 			Expect(vm.Reference().Value).To(Equal(vmCtx.VM.Status.UniqueID))
+		})
+
+		Context("VC client is logged out", func() {
+			BeforeEach(func() {
+				Expect(ctx.VCClient.Logout(ctx)).To(Succeed())
+			})
+
+			It("returns error", func() {
+				vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+				Expect(err).To(HaveOccurred())
+				Expect(vm).To(BeNil())
+			})
 		})
 	})
 
@@ -74,9 +86,64 @@ func getVM() {
 		})
 
 		It("returns success", func() {
-			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter, ctx.Finder)
+			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(vm).ToNot(BeNil())
+		})
+
+		Context("VC client is logged out", func() {
+			BeforeEach(func() {
+				Expect(ctx.VCClient.Logout(ctx)).To(Succeed())
+			})
+
+			It("returns error", func() {
+				vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+				Expect(err).To(HaveOccurred())
+				Expect(vm).To(BeNil())
+			})
+		})
+	})
+
+	Context("Gets VM by BiosUUID", func() {
+		BeforeEach(func() {
+			vm, err := ctx.Finder.VirtualMachine(ctx, vcVMName)
+			Expect(err).ToNot(HaveOccurred())
+
+			var o mo.VirtualMachine
+			Expect(vm.Properties(ctx, vm.Reference(), nil, &o)).To(Succeed())
+			vmCtx.VM.Spec.BiosUUID = o.Config.Uuid
+		})
+
+		It("returns success", func() {
+			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vm).ToNot(BeNil())
+		})
+
+		Context("VC client is logged out", func() {
+			BeforeEach(func() {
+				Expect(ctx.VCClient.Logout(ctx)).To(Succeed())
+			})
+
+			It("returns error", func() {
+				vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+				Expect(err).To(HaveOccurred())
+				Expect(vm).To(BeNil())
+			})
+		})
+	})
+
+	Context("VM does not exist", func() {
+		BeforeEach(func() {
+			vmCtx.VM.UID = "bogus-uid"
+			vmCtx.VM.Spec.BiosUUID = "bogus-bios-uuid"
+			vmCtx.VM.Status.UniqueID = "bogus-moid"
+		})
+
+		It("returns success with nil vm", func() {
+			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vm).To(BeNil())
 		})
 	})
 }

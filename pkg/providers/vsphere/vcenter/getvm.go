@@ -5,27 +5,37 @@
 package vcenter
 
 import (
+	"errors"
 	"fmt"
 
-	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
+type getVMNotFoundError struct{}
+
+func (n getVMNotFoundError) Error() string {
+	return "vm not found"
+}
+
 // GetVirtualMachine gets the VM from VC, either by the Instance UUID, BIOS UUID, or MoID.
 func GetVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vimClient *vim25.Client,
-	datacenter *object.Datacenter,
-	finder *find.Finder) (*object.VirtualMachine, error) {
+	datacenter *object.Datacenter) (*object.VirtualMachine, error) {
 
 	// Find by Instance UUID.
 	if id := vmCtx.VM.UID; id != "" {
 		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, string(id), true); err == nil {
 			return vm, nil
+		} else if !errors.Is(err, getVMNotFoundError{}) {
+			return nil, err
 		}
 	}
 
@@ -33,13 +43,17 @@ func GetVirtualMachine(
 	if id := vmCtx.VM.Spec.BiosUUID; id != "" {
 		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, id, false); err == nil {
 			return vm, nil
+		} else if !errors.Is(err, getVMNotFoundError{}) {
+			return nil, err
 		}
 	}
 
 	// Find by MoRef.
 	if id := vmCtx.VM.Status.UniqueID; id != "" {
-		if vm, err := findVMByMoID(vmCtx, finder, id); err == nil {
+		if vm, err := findVMByMoID(vmCtx, vimClient, id); err == nil {
 			return vm, nil
+		} else if !errors.Is(err, getVMNotFoundError{}) {
+			return nil, err
 		}
 	}
 
@@ -48,21 +62,25 @@ func GetVirtualMachine(
 
 func findVMByMoID(
 	vmCtx pkgctx.VirtualMachineContext,
-	finder *find.Finder,
+	vimClient *vim25.Client,
 	moID string) (*object.VirtualMachine, error) {
 
-	ref, err := finder.ObjectReference(vmCtx, vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
-	if err != nil {
-		return nil, err
+	moRef := vimtypes.ManagedObjectReference{
+		Type:  "VirtualMachine",
+		Value: moID,
 	}
 
-	vm, ok := ref.(*object.VirtualMachine)
-	if !ok {
-		return nil, fmt.Errorf("found VM reference was not a VM but a %T", ref)
+	vm := mo.VirtualMachine{}
+	if err := property.DefaultCollector(vimClient).RetrieveOne(vmCtx, moRef, []string{"name"}, &vm); err != nil {
+		var f *vimtypes.ManagedObjectNotFound
+		if _, ok := fault.As(err, &f); ok {
+			return nil, getVMNotFoundError{}
+		}
+		return nil, fmt.Errorf("error retreiving VM via MoID: %w", err)
 	}
 
-	vmCtx.Logger.V(4).Info("Found VM via MoID", "path", vm.InventoryPath, "moID", moID)
-	return vm, nil
+	vmCtx.Logger.V(4).Info("Found VM via MoID", "moID", moID)
+	return object.NewVirtualMachine(vimClient, moRef), nil
 }
 
 func findVMByUUID(
@@ -74,9 +92,9 @@ func findVMByUUID(
 
 	ref, err := object.NewSearchIndex(vimClient).FindByUuid(vmCtx, datacenter, uuid, true, &isInstanceUUID)
 	if err != nil {
-		return nil, fmt.Errorf("error finding object by UUID %q: %w", uuid, err)
+		return nil, fmt.Errorf("error finding VM by UUID %q: %w", uuid, err)
 	} else if ref == nil {
-		return nil, fmt.Errorf("no VM found for UUID %q (instanceUUID: %v)", uuid, isInstanceUUID)
+		return nil, getVMNotFoundError{}
 	}
 
 	vm, ok := ref.(*object.VirtualMachine)

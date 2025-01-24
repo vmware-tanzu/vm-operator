@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/vmware/govmomi/pbm"
-	pbmTypes "github.com/vmware/govmomi/pbm/types"
+	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -19,21 +19,21 @@ import (
 // policy is for vSAN. The proportionalCapacity is percentage of the logical size of the storage
 // object that will be reserved upon provisioning. Returns -1 if not specified.
 // The UI presents options for "thin" (0%), 25%, 50%, 75% and "thick" (100%).
-func getProfileProportionalCapacity(profile pbmTypes.BasePbmProfile) int32 {
-	capProfile, ok := profile.(*pbmTypes.PbmCapabilityProfile)
+func getProfileProportionalCapacity(profile pbmtypes.BasePbmProfile) int32 {
+	capProfile, ok := profile.(*pbmtypes.PbmCapabilityProfile)
 	if !ok {
 		return -1
 	}
 
-	if capProfile.ResourceType.ResourceType != string(pbmTypes.PbmProfileResourceTypeEnumSTORAGE) {
+	if capProfile.ResourceType.ResourceType != string(pbmtypes.PbmProfileResourceTypeEnumSTORAGE) {
 		return -1
 	}
 
-	if capProfile.ProfileCategory != string(pbmTypes.PbmProfileCategoryEnumREQUIREMENT) {
+	if capProfile.ProfileCategory != string(pbmtypes.PbmProfileCategoryEnumREQUIREMENT) {
 		return -1
 	}
 
-	sub, ok := capProfile.Constraints.(*pbmTypes.PbmCapabilitySubProfileConstraints)
+	sub, ok := capProfile.Constraints.(*pbmtypes.PbmCapabilitySubProfileConstraints)
 	if !ok {
 		return -1
 	}
@@ -72,7 +72,7 @@ func GetDiskProvisioningForProfile(
 		return "", err
 	}
 
-	profiles, err := c.RetrieveContent(vmCtx, []pbmTypes.PbmProfileId{{UniqueId: storageProfileID}})
+	profiles, err := c.RetrieveContent(vmCtx, []pbmtypes.PbmProfileId{{UniqueId: storageProfileID}})
 	if err != nil {
 		return "", fmt.Errorf("failed to get storage profiles for ID: %s: %w", storageProfileID, err)
 	}

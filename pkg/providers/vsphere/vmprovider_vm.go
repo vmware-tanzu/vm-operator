@@ -18,7 +18,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/pbm"
-	"github.com/vmware/govmomi/pbm/types"
+	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -492,9 +492,9 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 		return err
 	}
 
-	req := []types.BasePbmPlacementRequirement{
-		&types.PbmPlacementCapabilityProfileRequirement{
-			ProfileId: types.PbmProfileId{UniqueId: createArgs.StorageProfileID},
+	req := []pbmtypes.BasePbmPlacementRequirement{
+		&pbmtypes.PbmPlacementCapabilityProfileRequirement{
+			ProfileId: pbmtypes.PbmProfileId{UniqueId: createArgs.StorageProfileID},
 		},
 	}
 

@@ -40,6 +40,8 @@ linters-settings:
         pkg: github.com/vmware/govmomi/vim25
       - alias: mo
         pkg: github.com/vmware/govmomi/vim25/mo
+      - alias: pbmtypes
+        pkg: github.com/vmware/govmomi/pbm/types
       - alias: vimtypes
         pkg: github.com/vmware/govmomi/vim25/types
 

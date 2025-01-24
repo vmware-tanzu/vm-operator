@@ -30,6 +30,7 @@ import (
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -140,7 +141,10 @@ var _ = Describe("Reconcile",
 					"ContentLibraryItem",
 				)
 
-				fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmiObj client.Object) error {
+				fakeVMProvider.SyncVirtualMachineImageFn = func(ctx context.Context, _, vmiObj client.Object) error {
+					// Verify ovfcache is in context and does not panic.
+					_, _ = ovfcache.GetOVFEnvelope(ctx, "", "")
+
 					vmi := vmiObj.(*vmopv1.VirtualMachineImage)
 
 					// Use Firmware field to verify the provider function is called.
@@ -170,7 +174,7 @@ var _ = Describe("Reconcile",
 					})
 
 					It("should add the finalizer", func() {
-						_, err := reconciler.Reconcile(ctx, req)
+						_, err := reconciler.Reconcile(context.Background(), req)
 						Expect(err).ToNot(HaveOccurred())
 						cliObj, _, _ = getCLI(ctx, req.Namespace, req.Name)
 
@@ -189,7 +193,7 @@ var _ = Describe("Reconcile",
 					})
 
 					It("should mark image resource condition as provider not ready", func() {
-						_, err := reconciler.Reconcile(ctx, req)
+						_, err := reconciler.Reconcile(context.Background(), req)
 						Expect(err).ToNot(HaveOccurred())
 
 						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
@@ -207,7 +211,7 @@ var _ = Describe("Reconcile",
 					})
 
 					It("should mark image resource condition as provider security not compliant", func() {
-						_, err := reconciler.Reconcile(ctx, req)
+						_, err := reconciler.Reconcile(context.Background(), req)
 						Expect(err).ToNot(HaveOccurred())
 
 						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
@@ -221,13 +225,16 @@ var _ = Describe("Reconcile",
 				When("SyncVirtualMachineImage returns an error", func() {
 
 					BeforeEach(func() {
-						fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, _ client.Object) error {
+						fakeVMProvider.SyncVirtualMachineImageFn = func(ctx context.Context, _, _ client.Object) error {
+							// Verify ovfcache is in context and does not panic.
+							_, _ = ovfcache.GetOVFEnvelope(ctx, "", "")
+
 							return fmt.Errorf("sync-error")
 						}
 					})
 
 					It("should mark image resource condition synced failed", func() {
-						_, err := reconciler.Reconcile(ctx, req)
+						_, err := reconciler.Reconcile(context.Background(), req)
 						Expect(err).To(MatchError("sync-error"))
 
 						_, _, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
@@ -239,13 +246,16 @@ var _ = Describe("Reconcile",
 
 					When("error is ErrVMICacheNotReady", func() {
 						JustBeforeEach(func() {
-							fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, _ client.Object) error {
+							fakeVMProvider.SyncVirtualMachineImageFn = func(ctx context.Context, _, _ client.Object) error {
+								// Verify ovfcache is in context and does not panic.
+								_, _ = ovfcache.GetOVFEnvelope(ctx, "", "")
+
 								return fmt.Errorf("failed with %w",
 									pkgerr.VMICacheNotReadyError{Name: vmicName})
 							}
 						})
 						It("should place a label on the library item resource", func() {
-							_, err := reconciler.Reconcile(ctx, req)
+							_, err := reconciler.Reconcile(context.Background(), req)
 
 							var e pkgerr.VMICacheNotReadyError
 							ExpectWithOffset(1, errors.As(err, &e)).To(BeTrue())
@@ -283,7 +293,7 @@ var _ = Describe("Reconcile",
 					When("Image resource has not been created yet", func() {
 
 						It("should create a new image resource syncing up with the library item resource", func() {
-							_, err := reconciler.Reconcile(ctx, req)
+							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
 							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
 
@@ -308,7 +318,7 @@ var _ = Describe("Reconcile",
 
 						It("should update the existing image resource with the library item resource", func() {
 							cliStatus.ContentVersion += "-updated"
-							_, err := reconciler.Reconcile(ctx, req)
+							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
 							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
 
@@ -332,7 +342,7 @@ var _ = Describe("Reconcile",
 						})
 
 						It("should still update the image resource status from the library item resource", func() {
-							_, err := reconciler.Reconcile(ctx, req)
+							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
 							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
 
@@ -367,7 +377,10 @@ var _ = Describe("Reconcile",
 					"ClusterContentLibraryItem",
 				)
 
-				fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmiObj client.Object) error {
+				fakeVMProvider.SyncVirtualMachineImageFn = func(ctx context.Context, _, vmiObj client.Object) error {
+					// Verify ovfcache is in context and does not panic.
+					_, _ = ovfcache.GetOVFEnvelope(ctx, "", "")
+
 					vmi := vmiObj.(*vmopv1.ClusterVirtualMachineImage)
 
 					// Use Firmware field to verify the provider function is called.
@@ -408,7 +421,7 @@ var _ = Describe("Reconcile",
 					When("Image resource has not been created yet", func() {
 
 						It("should create a new image resource syncing up with the library item resource", func() {
-							_, err := reconciler.Reconcile(ctx, req)
+							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
 							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
 
@@ -431,7 +444,7 @@ var _ = Describe("Reconcile",
 						})
 						It("should update the existing image resource with the library item resource", func() {
 							cliStatus.ContentVersion += "-updated"
-							_, err := reconciler.Reconcile(ctx, req)
+							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
 							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
 

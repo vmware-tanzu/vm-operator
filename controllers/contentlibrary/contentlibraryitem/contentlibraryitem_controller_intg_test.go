@@ -21,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -76,7 +77,10 @@ func intgTestsReconcile() {
 		ctx = suite.NewIntegrationTestContext()
 
 		intgFakeVMProvider.Lock()
-		intgFakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmiObj client.Object) error {
+		intgFakeVMProvider.SyncVirtualMachineImageFn = func(ctx context.Context, _, vmiObj client.Object) error {
+			// Verify ovfcache is in context and does not panic.
+			_, _ = ovfcache.GetOVFEnvelope(ctx, "", "")
+
 			vmi := vmiObj.(*vmopv1.VirtualMachineImage)
 			// Use Firmware field to verify the provider function is called.
 			vmi.Status.Firmware = firmwareValue

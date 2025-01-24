@@ -33,6 +33,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	imgutil "github.com/vmware-tanzu/vm-operator/pkg/util/image"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -123,6 +124,7 @@ func (r *Reconciler) Reconcile(
 	req ctrl.Request) (_ ctrl.Result, reterr error) {
 
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+	ctx = ovfcache.JoinContext(ctx, r.Context)
 
 	logger := ctrl.Log.WithName(r.Kind).WithValues("name", req.String())
 

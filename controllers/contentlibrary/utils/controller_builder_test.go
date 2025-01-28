@@ -204,6 +204,87 @@ var _ = Describe("Reconcile",
 					})
 				})
 
+				When("Library item has TKG labels", func() {
+					var cliLabels map[string]string
+
+					BeforeEach(func() {
+						cliLabels = cliObj.GetLabels()
+						if cliLabels == nil {
+							cliLabels = map[string]string{}
+						}
+					})
+
+					When("Multiple Content Library feature is disabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.TKGMultipleCL = false
+							})
+
+							cliLabels[utils.TKGServiceTypeLabelKeyPrefix+"1"] = ""
+							cliLabels[utils.TKGServiceTypeLabelKeyPrefix+"2"] = ""
+							cliLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"1"] = ""
+							cliLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"2"] = ""
+
+							cliObj.SetLabels(cliLabels)
+						})
+
+						It("should not copy the feature or non-feature labels to the vmi", func() {
+							_, err := reconciler.Reconcile(context.Background(), req)
+							Expect(err).ToNot(HaveOccurred())
+
+							vmiObj, _, _ := getVMI(ctx, req.Namespace, vmiName)
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "1"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "2"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "1"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "2"))
+						})
+					})
+					When("Multiple Content Library feature is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.TKGMultipleCL = true
+							})
+
+							cliLabels[utils.TKGServiceTypeLabelKeyPrefix+"1"] = ""
+							cliLabels[utils.TKGServiceTypeLabelKeyPrefix+"2"] = ""
+							cliLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"1"] = ""
+							cliLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"2"] = ""
+
+							cliObj.SetLabels(cliLabels)
+						})
+
+						JustBeforeEach(func() {
+							vmiObj := newVMI(
+								ctx,
+								req.Namespace,
+								vmiName,
+								vmopv1.VirtualMachineImageStatus{
+									ProviderContentVersion: "stale",
+									Firmware:               "should-be-updated",
+								})
+							vmiLabels := vmiObj.GetLabels()
+							if vmiLabels == nil {
+								vmiLabels = map[string]string{}
+							}
+							vmiLabels[utils.TKGServiceTypeLabelKeyPrefix+"3"] = ""
+							vmiLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"3"] = ""
+							vmiObj.SetLabels(vmiLabels)
+							Expect(ctx.Client.Update(ctx, vmiObj)).To(Succeed())
+						})
+
+						It("should not copy the feature or non-feature labels to the vmi", func() {
+							_, err := reconciler.Reconcile(context.Background(), req)
+							Expect(err).ToNot(HaveOccurred())
+
+							vmiObj, _, _ := getVMI(ctx, req.Namespace, vmiName)
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "1"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "2"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "1"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "2"))
+						})
+					})
+				})
+
 				When("Library item resource is not security compliant", func() {
 
 					BeforeEach(func() {
@@ -402,6 +483,111 @@ var _ = Describe("Reconcile",
 			})
 
 			Context("ReconcileNormal", func() {
+
+				When("Library item has TKG labels", func() {
+					var cliLabels map[string]string
+
+					BeforeEach(func() {
+						cliLabels = cliObj.GetLabels()
+						if cliLabels == nil {
+							cliLabels = map[string]string{}
+						}
+					})
+
+					When("Multiple Content Library feature is disabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.TKGMultipleCL = false
+							})
+
+							cliLabels[utils.TKGServiceTypeLabelKeyPrefix+"1"] = ""
+							cliLabels[utils.TKGServiceTypeLabelKeyPrefix+"2"] = ""
+							cliLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"1"] = ""
+							cliLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"2"] = ""
+
+							cliObj.SetLabels(cliLabels)
+						})
+
+						JustBeforeEach(func() {
+							vmiObj := newVMI(
+								ctx,
+								req.Namespace,
+								vmiName,
+								vmopv1.VirtualMachineImageStatus{
+									ProviderContentVersion: "stale",
+									Firmware:               "should-be-updated",
+								})
+							vmiLabels := vmiObj.GetLabels()
+							if vmiLabels == nil {
+								vmiLabels = map[string]string{}
+							}
+							vmiLabels[utils.TKGServiceTypeLabelKeyPrefix+"3"] = ""
+							vmiLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"3"] = ""
+							vmiObj.SetLabels(vmiLabels)
+							Expect(ctx.Client.Update(ctx, vmiObj)).To(Succeed())
+						})
+
+						It("should copy the non-feature labels to the vmi", func() {
+							_, err := reconciler.Reconcile(context.Background(), req)
+							Expect(err).ToNot(HaveOccurred())
+
+							vmiObj, _, _ := getVMI(ctx, req.Namespace, vmiName)
+							Expect(vmiObj.GetLabels()).To(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "1"))
+							Expect(vmiObj.GetLabels()).To(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "2"))
+							Expect(vmiObj.GetLabels()).To(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "3"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "1"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "2"))
+							Expect(vmiObj.GetLabels()).To(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "3"))
+						})
+					})
+					When("Multiple Content Library feature is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.TKGMultipleCL = true
+							})
+
+							cliLabels[utils.TKGServiceTypeLabelKeyPrefix+"1"] = ""
+							cliLabels[utils.TKGServiceTypeLabelKeyPrefix+"2"] = ""
+							cliLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"1"] = ""
+							cliLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"2"] = ""
+
+							cliObj.SetLabels(cliLabels)
+						})
+
+						JustBeforeEach(func() {
+							vmiObj := newVMI(
+								ctx,
+								req.Namespace,
+								vmiName,
+								vmopv1.VirtualMachineImageStatus{
+									ProviderContentVersion: "stale",
+									Firmware:               "should-be-updated",
+								})
+							vmiLabels := vmiObj.GetLabels()
+							if vmiLabels == nil {
+								vmiLabels = map[string]string{}
+							}
+							vmiLabels[utils.TKGServiceTypeLabelKeyPrefix+"3"] = ""
+							vmiLabels[utils.MultipleCLServiceTypeLabelKeyPrefix+"3"] = ""
+							vmiObj.SetLabels(vmiLabels)
+							Expect(ctx.Client.Update(ctx, vmiObj)).To(Succeed())
+						})
+
+						It("should copy the feature labels to the vmi", func() {
+							_, err := reconciler.Reconcile(context.Background(), req)
+							Expect(err).ToNot(HaveOccurred())
+
+							vmiObj, _, _ := getVMI(ctx, req.Namespace, vmiName)
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "1"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "2"))
+							Expect(vmiObj.GetLabels()).To(HaveKey(utils.TKGServiceTypeLabelKeyPrefix + "3"))
+							Expect(vmiObj.GetLabels()).To(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "1"))
+							Expect(vmiObj.GetLabels()).To(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "2"))
+							Expect(vmiObj.GetLabels()).ToNot(HaveKey(utils.MultipleCLServiceTypeLabelKeyPrefix + "3"))
+						})
+					})
+				})
+
 				When("Library item resource is ready and security complaint", func() {
 					JustBeforeEach(func() {
 						// The dummy library item should meet these requirements.
@@ -525,7 +711,7 @@ func getVMI(
 func newVMI(
 	ctx *builder.UnitTestContextForController,
 	namespace, name string,
-	status vmopv1.VirtualMachineImageStatus) {
+	status vmopv1.VirtualMachineImageStatus) client.Object {
 
 	spec := vmopv1.VirtualMachineImageSpec{
 		ProviderRef: &common.LocalObjectRef{
@@ -543,6 +729,7 @@ func newVMI(
 			Status: status,
 		}
 		ExpectWithOffset(1, ctx.Client.Create(ctx, &o)).To(Succeed())
+		return &o
 	}
 
 	o := vmopv1.ClusterVirtualMachineImage{
@@ -553,6 +740,7 @@ func newVMI(
 		Status: status,
 	}
 	ExpectWithOffset(1, ctx.Client.Create(ctx, &o)).To(Succeed())
+	return &o
 }
 
 func assertVMImageFromCLItem(

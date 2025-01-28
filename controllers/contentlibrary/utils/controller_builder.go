@@ -280,6 +280,7 @@ func (r *Reconciler) ReconcileNormal(
 			}()
 
 			if err := r.setUpVMIFromCLItem(
+				ctx,
 				cliObj,
 				*cliSpec,
 				*cliStatus,
@@ -384,6 +385,7 @@ func (r *Reconciler) ReconcileNormal(
 // setUpVMIFromCLItem sets up the VirtualMachineImage fields that
 // are retrievable from the given ContentLibraryItem resource.
 func (r *Reconciler) setUpVMIFromCLItem(
+	ctx context.Context,
 	cliObj client.Object,
 	cliSpec imgregv1a1.ContentLibraryItemSpec,
 	cliStatus imgregv1a1.ContentLibraryItemStatus,
@@ -405,6 +407,41 @@ func (r *Reconciler) setUpVMIFromCLItem(
 		APIVersion: cliGVK.GroupVersion().String(),
 		Kind:       cliGVK.Kind,
 		Name:       cliObj.GetName(),
+	}
+
+	if cliObj.GetNamespace() == "" {
+		var (
+			cliLabels      = cliObj.GetLabels()
+			vmiLabels      = vmiObj.GetLabels()
+			labelKeyPrefix = TKGServiceTypeLabelKeyPrefix
+		)
+
+		if pkgcfg.FromContext(ctx).Features.TKGMultipleCL {
+			labelKeyPrefix = MultipleCLServiceTypeLabelKeyPrefix
+
+			// Remove any labels on the VMI object that have a matching
+			// prefix do not also exist on the CLI resource.
+			for k := range vmiLabels {
+				if strings.HasPrefix(k, labelKeyPrefix) {
+					if _, ok := cliLabels[k]; !ok {
+						delete(vmiLabels, k)
+					}
+				}
+			}
+		}
+
+		// Copy the labels from the CLI object that match the given prefix
+		// to the VMI resource.
+		for k := range cliLabels {
+			if strings.HasPrefix(k, labelKeyPrefix) {
+				if vmiLabels == nil {
+					vmiLabels = map[string]string{}
+				}
+				vmiLabels[k] = ""
+			}
+		}
+
+		vmiObj.SetLabels(vmiLabels)
 	}
 
 	vmiStatus.Name = cliStatus.Name

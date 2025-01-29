@@ -424,10 +424,12 @@ func getDesiredDiskDataForBackup(opts BackupVirtualMachineOptions) (string, stri
 						FileName:    b.FileName,
 						PVCName:     pvc.Name,
 						AccessModes: backupapi.ToPersistentVolumeAccessModes(pvc.Spec.AccessModes),
+						UUID:        b.Uuid,
 					})
 				} else if _, ok := opts.ClassicDiskUUIDs[b.Uuid]; ok {
 					classicDiskData = append(classicDiskData, backupapi.ClassicDiskData{
 						FileName: b.FileName,
+						UUID:     b.Uuid,
 					})
 				}
 			}

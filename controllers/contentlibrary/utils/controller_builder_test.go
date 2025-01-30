@@ -433,6 +433,40 @@ var _ = Describe("Reconcile",
 						})
 					})
 				})
+
+				When("Image resource is created and already up-to-date and Status.Disk is not empty", func() {
+
+					JustBeforeEach(func() {
+						newVMI(
+							ctx,
+							req.Namespace,
+							vmiName,
+							vmopv1.VirtualMachineImageStatus{
+								ProviderContentVersion: cliStatus.ContentVersion,
+								Disks:                  make([]vmopv1.VirtualMachineImageDiskInfo, 1),
+								Firmware:               "should-not-be-updated",
+							})
+					})
+
+					BeforeEach(func() {
+						fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmiObj client.Object) error {
+							// This should not be called since the content versions match and disks isn't empty.
+							vmi := vmiObj.(*vmopv1.VirtualMachineImage)
+							vmi.Status.Firmware = firmwareValue
+							return fmt.Errorf("sync-error")
+						}
+					})
+
+					It("should skip updating the ClusterVirtualMachineImage with library item", func() {
+						_, err := reconciler.Reconcile(context.Background(), req)
+						Expect(err).ToNot(HaveOccurred())
+						cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+
+						vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
+						assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+						Expect(vmiStatus.Firmware).To(Equal("should-not-be-updated"))
+					})
+				})
 			})
 
 			Context("ReconcileDelete", func() {

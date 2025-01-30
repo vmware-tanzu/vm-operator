@@ -11,7 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/vim25/mo"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
 // VirtualMachineContext is the context used for VirtualMachineControllers.

@@ -10,8 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	cloudinitschema "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/schema"
 )
 

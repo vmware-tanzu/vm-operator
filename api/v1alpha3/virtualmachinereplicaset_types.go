@@ -141,7 +141,6 @@ func (rs *VirtualMachineReplicaSet) SetConditions(conditions []metav1.Condition)
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmrs;vmreplicaset
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
 // +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".status.replicas",description="Total number of non-terminated virtual machines targeted by this VirtualMachineReplicaSet"

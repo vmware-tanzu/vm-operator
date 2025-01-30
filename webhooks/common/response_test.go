@@ -25,7 +25,7 @@ var _ = Describe(
 	"Validation Response",
 	Label(
 		testlabels.EnvTest,
-		testlabels.V1Alpha3,
+		testlabels.API,
 		testlabels.Webhook,
 	),
 	func() {

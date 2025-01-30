@@ -12,8 +12,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 )
 

@@ -9,7 +9,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
 // IsInstanceStoragePresent checks if VM Spec has instance volumes added to its Volumes list.

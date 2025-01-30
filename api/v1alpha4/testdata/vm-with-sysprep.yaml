@@ -1,0 +1,40 @@
+apiVersion: vmoperator.vmware.com/v1alpha2
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className: medium
+  imageName: windows-11
+  network:
+    domainName: my.domain.local
+    nameservers:
+    - 1.1.1.1
+    - 8.8.8.8
+    searchDomains:
+    - my.domain.local
+    - my-other.domain.local
+  bootstrap:
+    sysprep:
+      sysprep:
+        guiRunOnce:
+          commands:
+          - "dir C:"
+          - "echo Hello"
+        guiUnattended:
+          autoLogon: true
+          password:
+            name: my-vm-bootstrap-secret
+            key: password
+          timeZone: <SomeMicrosoftTimeIndexValue>
+        identification:
+          domainAdmin: global-admin
+          domainAdminPassword:
+            name: my-vm-bootstrap-secret
+            key: domainAdminPassword
+        userData:
+          fullName: Andrew Kutz
+          orgName: VMware
+          productID:
+            name: my-vm-bootstrap-secret
+            key: windowsProductKey

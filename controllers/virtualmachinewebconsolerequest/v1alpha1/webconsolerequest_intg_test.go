@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	proxyaddr "github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"

@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -22,7 +22,7 @@ func intgTests() {
 		Label(
 			testlabels.Create,
 			testlabels.EnvTest,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -33,7 +33,7 @@ func intgTests() {
 		Label(
 			testlabels.Update,
 			testlabels.EnvTest,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -44,7 +44,7 @@ func intgTests() {
 		Label(
 			testlabels.Delete,
 			testlabels.EnvTest,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),

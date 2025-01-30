@@ -106,10 +106,10 @@ The above command searches for any use of constant from the `pkg/constants/testl
 
 ```shell
 ./controllers/volume/v1alpha2/volume_controller_unit_test.go:50:testlabels.Controller
-./controllers/volume/v1alpha2/volume_controller_unit_test.go:51:testlabels.V1Alpha3
+./controllers/volume/v1alpha2/volume_controller_unit_test.go:51:testlabels.V1Alpha4
 ./controllers/volume/v1alpha2/volume_controller_intg_test.go:37:testlabels.Controller
 ./controllers/volume/v1alpha2/volume_controller_intg_test.go:38:testlabels.EnvTest
-./controllers/volume/v1alpha2/volume_controller_intg_test.go:39:testlabels.V1Alpha3
+./controllers/volume/v1alpha2/volume_controller_intg_test.go:39:testlabels.V1Alpha4
 ./pkg/util/vsphere/vm/suite_test.go:16:testlabels.VCSim
 ./pkg/util/vsphere/vm/suite_test.go:17:testlabels.VCSim
 ./pkg/util/vsphere/client/client_test.go:34:testlabels.VCSim

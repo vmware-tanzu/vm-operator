@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -129,6 +129,22 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Entry("second_macAddr", "{{ (index .V1alpha3.Net.Devices 1).MacAddress }}", macAddr2),
 			Entry("name", "{{ .V1alpha3.VM.Name }}", "dummy-vm"),
 		)
+
+		DescribeTable("v1alpha4 template functions",
+			func(str, expected string) {
+				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
+				out := fn("", str)
+				Expect(out).To(Equal(expected))
+			},
+			Entry("first_cidrIp", "{{ (index (index .V1alpha4.Net.Devices 0).IPAddresses 0) }}", ip1Cidr),
+			Entry("second_cidrIp", "{{ (index (index .V1alpha4.Net.Devices 1).IPAddresses 0) }}", ip2Cidr),
+			Entry("first_gateway", "{{ (index .V1alpha4.Net.Devices 0).Gateway4 }}", gateway1),
+			Entry("second_gateway", "{{ (index .V1alpha4.Net.Devices 1).Gateway4 }}", gateway2),
+			Entry("nameserver", "{{ (index .V1alpha4.Net.Nameservers 0) }}", nameserver1),
+			Entry("first_macAddr", "{{ (index .V1alpha4.Net.Devices 0).MacAddress }}", macAddr1),
+			Entry("second_macAddr", "{{ (index .V1alpha4.Net.Devices 1).MacAddress }}", macAddr2),
+			Entry("name", "{{ .V1alpha4.VM.Name }}", "dummy-vm"),
+		)
 	})
 
 	Context("Function names", func() {
@@ -197,6 +213,29 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Entry("formatted_nameserver1", "{{ "+constants.V1alpha3FormatNameservers+" 1 \"-\"}}", nameserver1),
 			Entry("formatted_nameserver2", "{{ "+constants.V1alpha3FormatNameservers+" -1 \"-\"}}", nameserver1+"-"+nameserver2),
 		)
+
+		DescribeTable("v1alpha4 constant names",
+			func(str, expected string) {
+				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
+				out := fn("", str)
+				Expect(out).To(Equal(expected))
+			},
+			Entry("cidr_ip1", "{{ "+constants.V1alpha4FirstIP+" }}", ip1Cidr),
+			Entry("cidr_ip2", "{{ "+constants.V1alpha4FirstIPFromNIC+" 1 }}", ip2Cidr),
+			Entry("cidr_ip3", "{{ ("+constants.V1alpha4IP+" \"192.168.1.37\") }}", ip1Cidr),
+			Entry("cidr_ip4", "{{ ("+constants.V1alpha4FormatIP+" \"192.168.1.37\" \"/24\") }}", ip1Cidr),
+			Entry("cidr_ip5", "{{ ("+constants.V1alpha4FormatIP+" \"192.168.1.37\" \"255.255.255.0\") }}", ip1Cidr),
+			Entry("cidr_ip6", "{{ ("+constants.V1alpha4FormatIP+" \"192.168.1.37/28\" \"255.255.255.0\") }}", ip1Cidr),
+			Entry("cidr_ip7", "{{ ("+constants.V1alpha4FormatIP+" \"192.168.1.37/28\" \"/24\") }}", ip1Cidr),
+			Entry("ip1", "{{ "+constants.V1alpha4FormatIP+" "+constants.V1alpha1FirstIP+" \"\" }}", ip1),
+			Entry("ip2", "{{ "+constants.V1alpha4FormatIP+" \"192.168.1.37/28\" \"\" }}", ip1),
+			Entry("ips_1", "{{ "+constants.V1alpha4IPsFromNIC+" 0 }}", fmt.Sprint([]string{ip1Cidr})),
+			Entry("subnetmask", "{{ "+constants.V1alpha4SubnetMask+" \"192.168.1.37/26\" }}", "255.255.255.192"),
+			Entry("firstNicMacAddr", "{{ "+constants.V1alpha4FirstNicMacAddr+" }}", macAddr1),
+			Entry("formatted_nameserver1", "{{ "+constants.V1alpha4FormatNameservers+" 1 \"-\"}}", nameserver1),
+			Entry("formatted_nameserver2", "{{ "+constants.V1alpha4FormatNameservers+" -1 \"-\"}}", nameserver1+"-"+nameserver2),
+		)
+
 	})
 
 	Context("Invalid template names", func() {

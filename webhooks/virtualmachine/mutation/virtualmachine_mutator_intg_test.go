@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -34,7 +34,7 @@ func intgTests() {
 			testlabels.Update,
 			testlabels.Delete,
 			testlabels.EnvTest,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Mutation,
 			testlabels.Webhook,
 		),

@@ -462,6 +462,12 @@ func (r *Reconciler) syncImageContent(
 	vmiStatus *vmopv1.VirtualMachineImageStatus) error {
 
 	latestVersion := cliStatus.ContentVersion
+	if vmiStatus.ProviderContentVersion == latestVersion {
+		// Hack: populate Disks fields during version upgrade.
+		if len(vmiStatus.Disks) != 0 {
+			return nil
+		}
+	}
 
 	err := r.VMProvider.SyncVirtualMachineImage(ctx, cliObj, vmiObj)
 	if err != nil {

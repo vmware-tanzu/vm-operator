@@ -177,6 +177,16 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 		Expect(image.Status.Disks[1].Capacity.String()).To(Equal("10Gi"))
 	})
 
+	It("Repeated UpdateVmiWithOvfEnvelope should not duplicated items", func() {
+		Expect(image.Status.Disks).ToNot(BeEmpty())
+		Expect(image.Status.OVFProperties).ToNot(BeEmpty())
+		Expect(image.Status.VMwareSystemProperties).ToNot(BeEmpty())
+
+		savedImage := image.DeepCopy()
+		contentlibrary.UpdateVmiWithOvfEnvelope(image, ovfEnvelope)
+		Expect(image).To(Equal(savedImage))
+	})
+
 	Context("Image is V1Alpha1Compatible", func() {
 		BeforeEach(func() {
 			ovfEnvelope.VirtualSystem.VirtualHardware[0].ExtraConfig = append(ovfEnvelope.VirtualSystem.VirtualHardware[0].ExtraConfig,

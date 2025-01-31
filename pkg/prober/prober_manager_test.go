@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"

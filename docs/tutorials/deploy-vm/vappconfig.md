@@ -7,7 +7,7 @@ The vAppConfig bootstrap method is useful for legacy VM images that rely on besp
 The following example showcases a `VirtualMachine` resource that specifies one or more vApp properties used to bootstrap a guest:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha3
+apiVersion: vmoperator.vmware.com/v1alpha4
 kind: VirtualMachine
 metadata:
   name:      my-vm

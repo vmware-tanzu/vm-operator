@@ -55,7 +55,6 @@ type VirtualMachineWebConsoleRequestStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // VirtualMachineWebConsoleRequest allows the creation of a one-time, web

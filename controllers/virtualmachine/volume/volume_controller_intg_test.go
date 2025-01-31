@@ -20,7 +20,7 @@ import (
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volume"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -37,7 +37,7 @@ func intgTests() {
 		Label(
 			testlabels.Controller,
 			testlabels.EnvTest,
-			testlabels.V1Alpha3,
+			testlabels.API,
 		),
 		intgTestsReconcile,
 	)

@@ -14,7 +14,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
 const UUIDLabelKey = "vmoperator.vmware.com/webconsolerequest-uuid"

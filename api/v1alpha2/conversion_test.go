@@ -18,8 +18,8 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
 )
 
 var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {

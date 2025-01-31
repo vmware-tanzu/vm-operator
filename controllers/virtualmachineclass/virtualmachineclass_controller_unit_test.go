@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -27,7 +27,7 @@ func unitTests() {
 		"Reconcile",
 		Label(
 			testlabels.Controller,
-			testlabels.V1Alpha3,
+			testlabels.API,
 		),
 		unitTestsReconcile,
 	)

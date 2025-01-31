@@ -19,8 +19,8 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -39,7 +39,7 @@ var _ = Describe("AddToManager",
 	Label(
 		testlabels.Controller,
 		testlabels.EnvTest,
-		testlabels.V1Alpha3,
+		testlabels.API,
 	),
 	func() {
 		var (
@@ -85,7 +85,7 @@ var _ = Describe("AddToManager",
 var _ = Describe("Reconcile",
 	Label(
 		testlabels.Controller,
-		testlabels.V1Alpha3,
+		testlabels.API,
 	),
 	func() {
 		const firmwareValue = "my-firmware"

@@ -89,7 +89,7 @@ func intgTestsPatch() {
 				By("Modifying the OwnerReferences")
 				refs := []metav1.OwnerReference{
 					{
-						APIVersion: "cluster.x-k8s.io/v1alpha3",
+						APIVersion: "cluster.x-k8s.io/v1",
 						Kind:       "Cluster",
 						Name:       "test",
 						UID:        types.UID("fake-uid"),

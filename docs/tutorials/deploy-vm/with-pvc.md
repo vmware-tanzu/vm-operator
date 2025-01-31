@@ -43,7 +43,7 @@ spec:
 The next step is to deploy a VM with the PVC attached as a disk:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha3
+apiVersion: vmoperator.vmware.com/v1alpha4
 kind: VirtualMachine
 metadata:
   name: my-vm-1
@@ -144,7 +144,7 @@ kubectl -n my-namespace delete vm my-vm-1
 The file written to `/mnt/my-data-dir-1/hello` in the first VM should still be available on the disk managed by the PVC `my-disk`. To verify that, deploy a second VM and attach the PVC to it:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha3
+apiVersion: vmoperator.vmware.com/v1alpha4
 kind: VirtualMachine
 metadata:
   name: my-vm-2

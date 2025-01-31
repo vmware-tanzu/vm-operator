@@ -26,7 +26,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimagecache"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimagecache/internal"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -46,7 +46,7 @@ var _ = Describe(
 	Label(
 		testlabels.Controller,
 		testlabels.EnvTest,
-		testlabels.V1Alpha3,
+		testlabels.API,
 	),
 	func() {
 

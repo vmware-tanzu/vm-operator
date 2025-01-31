@@ -15,7 +15,7 @@ import (
 )
 
 func unitTests() {
-	Describe("WCP Config", Label(testlabels.V1Alpha3), unitTestsWcpConfig)
+	Describe("WCP Config", Label(testlabels.API), unitTestsWcpConfig)
 }
 
 func unitTestsWcpConfig() {

@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
@@ -67,12 +67,12 @@ func intgTestsReconcile() {
 							Service: &admissionv1.ServiceReference{
 								Name:      "vmware-system-vmop-webhook-service",
 								Namespace: "vmware-system-vmop",
-								Path:      ptr.To("/default-validate-vmoperator-vmware-com-v1alpha3-virtualmachine"),
+								Path:      ptr.To("/default-validate-vmoperator-vmware-com-v1alpha4-virtualmachine"),
 							},
 							CABundle: []byte("fake-ca-bundle"),
 						},
 						FailurePolicy: ptr.To(admissionv1.Fail),
-						Name:          "default.validating.virtualmachine.v1alpha3.vmoperator.vmware.com",
+						Name:          "default.validating.virtualmachine.v1alpha4.vmoperator.vmware.com",
 						SideEffects:   ptr.To(admissionv1.SideEffectClassNone),
 					},
 				},

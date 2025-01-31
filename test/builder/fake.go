@@ -25,9 +25,9 @@ import (
 	cnsapis "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
+	vmopapi "github.com/vmware-tanzu/vm-operator/api"
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
@@ -87,9 +87,7 @@ func NewFakeRecorder() (record.Recorder, chan string) {
 func NewScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = vmopv1a1.AddToScheme(scheme)
-	_ = vmopv1a2.AddToScheme(scheme)
-	_ = vmopv1.AddToScheme(scheme)
+	_ = vmopapi.AddToScheme(scheme)
 	_ = capv1.AddToScheme(scheme)
 	_ = byokv1.AddToScheme(scheme)
 	_ = appv1a1.AddToScheme(scheme)

@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	proxyaddr "github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
@@ -29,7 +29,7 @@ func intgTests() {
 		Label(
 			testlabels.Controller,
 			testlabels.EnvTest,
-			testlabels.V1Alpha3,
+			testlabels.API,
 		),
 		intgTestsReconcile,
 	)

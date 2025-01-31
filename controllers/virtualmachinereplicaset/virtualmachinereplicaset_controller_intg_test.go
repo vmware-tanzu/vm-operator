@@ -17,8 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -34,7 +34,7 @@ func intgTests() {
 		Label(
 			testlabels.Controller,
 			testlabels.EnvTest,
-			testlabels.V1Alpha3,
+			testlabels.API,
 		),
 		intgTestsReconcile,
 	)

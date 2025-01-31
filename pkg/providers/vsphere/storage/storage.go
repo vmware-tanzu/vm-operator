@@ -11,7 +11,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )

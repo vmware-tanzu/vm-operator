@@ -17,8 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apirecord "k8s.io/client-go/tools/record"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"

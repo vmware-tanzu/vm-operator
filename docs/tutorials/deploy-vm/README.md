@@ -5,7 +5,7 @@ This page reviews the different components, workflows, and decisions related to 
 ## The VirtualMachine API
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha3 # (1)
+apiVersion: vmoperator.vmware.com/v1alpha4 # (1)
 kind: VirtualMachine # (2)
 metadata:
   name:      my-vm # (3)

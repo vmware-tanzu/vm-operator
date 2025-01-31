@@ -2,7 +2,7 @@
 // The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha3
+package v1alpha4
 
 import (
 	"unsafe"
@@ -10,7 +10,7 @@ import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 
 	vmopv1a2sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
-	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep"
+	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
 )
 
 // Please see https://github.com/kubernetes/code-generator/issues/172 for why

@@ -16,12 +16,12 @@ webhooks:
       namespace: kube-system
       path: /validate-storage-quota
   failurePolicy: Fail
-  name: quota-create.validating.virtualmachine.v1alpha3.vmoperator.vmware.com
+  name: quota-create.validating.virtualmachine.v1alpha4.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha3
+    - v1alpha4
     operations:
     - CREATE
     resources:
@@ -39,12 +39,12 @@ webhooks:
       namespace: kube-system
       path: /validate-storage-quota
   failurePolicy: Fail
-  name: quota-update.validating.virtualmachine.v1alpha3.vmoperator.vmware.com
+  name: quota-update.validating.virtualmachine.v1alpha4.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha3
+    - v1alpha4
     operations:
     - UPDATE
     resources:

@@ -77,6 +77,23 @@ VirtualMachineImage is the schema for the virtualmachineimages API.
 | `spec` _[VirtualMachineImageSpec](#virtualmachineimagespec)_ |  |
 | `status` _[VirtualMachineImageStatus](#virtualmachineimagestatus)_ |  |
 
+### VirtualMachineImageCache
+
+
+
+VirtualMachineImageCache is the schema for the
+virtualmachineimagecaches API.
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha3`
+| `kind` _string_ | `VirtualMachineImageCache`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineImageCacheSpec](#virtualmachineimagecachespec)_ |  |
+| `status` _[VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)_ |  |
+
 ### VirtualMachinePublishRequest
 
 
@@ -907,6 +924,119 @@ _Appears in:_
 - [VirtualMachineCryptoStatus](#virtualmachinecryptostatus)
 
 
+
+### VirtualMachineImageCacheDiskStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineImageCacheLocationStatus](#virtualmachineimagecachelocationstatus)
+
+| Field | Description |
+| --- | --- |
+| `id` _string_ | ID describes the value used to locate the disk.
+The value of this field depends on the type of disk.
+For Type=Classic, the ID value describes a datastore path, ex.
+"[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk".
+For Type=Managed, the ID value describes a First Class Disk (FCD). |
+| `type` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | Type describes the type of disk. |
+
+### VirtualMachineImageCacheLocationSpec
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineImageCacheSpec](#virtualmachineimagecachespec)
+
+| Field | Description |
+| --- | --- |
+| `datacenterID` _string_ | DatacenterID describes the ID of the datacenter to which the image should
+be cached. |
+| `datastoreID` _string_ | DatastoreID describes the ID of the datastore to which the image should
+be cached. |
+
+### VirtualMachineImageCacheLocationStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)
+
+| Field | Description |
+| --- | --- |
+| `datacenterID` _string_ | DatacenterID describes the ID of the datacenter to which the image should
+be cached. |
+| `datastoreID` _string_ | DatastoreID describes the ID of the datastore to which the image should
+be cached. |
+| `disks` _[VirtualMachineImageCacheDiskStatus](#virtualmachineimagecachediskstatus) array_ | Disks describes the image's disks cached on this datastore. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cache location.
+
+Generally this should just include the ReadyType condition. |
+
+### VirtualMachineImageCacheOVFStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)
+
+| Field | Description |
+| --- | --- |
+| `configMapName` _string_ | ConfigMapName describes the name of the ConfigMap resource that contains
+the image's OVF envelope encoded as YAML. The data is located in the
+ConfigMap key "value". |
+| `providerVersion` _string_ | ProviderVersion describes the observed provider version at which the OVF
+is cached.
+The provider is Content Library, the version is the content version. |
+
+### VirtualMachineImageCacheSpec
+
+
+
+VirtualMachineImageCacheSpec defines the desired state of
+VirtualMachineImageCache.
+
+_Appears in:_
+- [VirtualMachineImageCache](#virtualmachineimagecache)
+
+| Field | Description |
+| --- | --- |
+| `providerID` _string_ | ProviderID describes the ID of the provider item to which the image
+corresponds.
+If the provider is Content Library, the ID refers to a Content Library
+item. |
+| `providerVersion` _string_ | ProviderVersion describes the version of the provider item to which the
+image corresponds.
+The provider is Content Library, the version is the content version. |
+| `locations` _[VirtualMachineImageCacheLocationSpec](#virtualmachineimagecachelocationspec) array_ | Locations describes the locations where the image should be cached. |
+
+### VirtualMachineImageCacheStatus
+
+
+
+VirtualMachineImageCacheStatus defines the observed state of
+VirtualMachineImageCache.
+
+_Appears in:_
+- [VirtualMachineImageCache](#virtualmachineimagecache)
+
+| Field | Description |
+| --- | --- |
+| `locations` _[VirtualMachineImageCacheLocationStatus](#virtualmachineimagecachelocationstatus) array_ | Locations describe the observed locations where the image is cached. |
+| `ovf` _[VirtualMachineImageCacheOVFStatus](#virtualmachineimagecacheovfstatus)_ | OVF describes the observed status of the cached OVF content. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cached image.
+
+Generally this should just include the ReadyType condition, which will
+only be True if all of the cached locations also have True ReadyType
+condition. |
 
 ### VirtualMachineImageDiskInfo
 
@@ -2372,11 +2502,26 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `committed` _[Quantity](#quantity)_ | Committed is the total storage space committed to this VirtualMachine. |
-| `uncommitted` _[Quantity](#quantity)_ | Uncommitted is the total storage space potentially used by this
-VirtualMachine. |
-| `unshared` _[Quantity](#quantity)_ | Unshared is the total storage space occupied by this VirtualMachine that
-is not shared with any other VirtualMachine. |
+| `usage` _[VirtualMachineStorageStatusUsage](#virtualmachinestoragestatususage)_ | Usage describes the observed amount of storage used by a VirtualMachine. |
+
+### VirtualMachineStorageStatusUsage
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineStorageStatus](#virtualmachinestoragestatus)
+
+| Field | Description |
+| --- | --- |
+| `total` _[Quantity](#quantity)_ | Total describes the total storage space used by a VirtualMachine that
+counts against the Namespace's storage quota. |
+| `disks` _[Quantity](#quantity)_ | Disks describes the total storage space used by a VirtualMachine's
+non-PVC disks. |
+| `other` _[Quantity](#quantity)_ | Other describes the total storage space used by the VirtualMachine's
+non disk files, ex. the configuration file, swap space, logs, snapshots,
+etc. |
 
 
 ### VirtualMachineTemplateSpec
@@ -2493,6 +2638,7 @@ _Underlying type:_ `string`
 VirtualMachineVolumeType describes the type of a VirtualMachine volume.
 
 _Appears in:_
+- [VirtualMachineImageCacheDiskStatus](#virtualmachineimagecachediskstatus)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 

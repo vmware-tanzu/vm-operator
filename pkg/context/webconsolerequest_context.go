@@ -11,7 +11,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
 // WebConsoleRequestContext is the context used for WebConsoleRequestControllers.

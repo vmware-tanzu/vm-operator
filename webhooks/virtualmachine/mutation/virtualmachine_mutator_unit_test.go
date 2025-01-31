@@ -19,8 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -38,7 +38,7 @@ func uniTests() {
 			testlabels.Create,
 			testlabels.Update,
 			testlabels.Delete,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Mutation,
 			testlabels.Webhook,
 		),

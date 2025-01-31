@@ -14,7 +14,7 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -25,7 +25,7 @@ func unitTests() {
 		"Create",
 		Label(
 			testlabels.Create,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -35,7 +35,7 @@ func unitTests() {
 		"Update",
 		Label(
 			testlabels.Update,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -45,7 +45,7 @@ func unitTests() {
 		"Delete",
 		Label(
 			testlabels.Delete,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -183,7 +183,7 @@ func unitTestsValidateCreate() {
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should deny invalid source API version", createArgs{invalidSourceAPIVersion: true}, false,
 			field.NotSupported(sourcePath.Child("apiVersion"), invalidAPIVersion,
-				[]string{"vmoperator.vmware.com/v1alpha1", "vmoperator.vmware.com/v1alpha2", "vmoperator.vmware.com/v1alpha3", ""}).Error(), nil),
+				[]string{"vmoperator.vmware.com/v1alpha1", "vmoperator.vmware.com/v1alpha2", "vmoperator.vmware.com/v1alpha3", "vmoperator.vmware.com/v1alpha4", ""}).Error(), nil),
 		Entry("should deny invalid source kind", createArgs{invalidSourceKind: true}, false,
 			field.NotSupported(sourcePath.Child("kind"), "Machine",
 				[]string{"VirtualMachine", ""}).Error(), nil),

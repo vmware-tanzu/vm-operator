@@ -22,7 +22,8 @@ import (
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -32,7 +33,7 @@ const (
 	webHookName = "default"
 )
 
-// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha3-virtualmachinepublishrequest,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinepublishrequests,versions=v1alpha3,name=default.validating.virtualmachinepublishrequest.v1alpha3.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
+// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha4-virtualmachinepublishrequest,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinepublishrequests,versions=v1alpha4,name=default.validating.virtualmachinepublishrequest.v1alpha4.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinepublishrequests,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinepublishrequests/status,verbs=get
 // +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=contentlibraries,verbs=get;list;
@@ -117,12 +118,18 @@ func (v validator) validateSource(ctx *pkgctx.WebhookRequestContext, vmpub *vmop
 
 	sourcePath := field.NewPath("spec").Child("source")
 	if apiVersion := vmpub.Spec.Source.APIVersion; apiVersion != "" {
-		v1a1GV, v1a2GV, vmopv1 := vmopv1a1.GroupVersion.String(), vmopv1a2.GroupVersion.String(), vmopv1.GroupVersion.String()
+		var (
+			v1a1GV = vmopv1a1.GroupVersion.String()
+			v1a2GV = vmopv1a2.GroupVersion.String()
+			v1a3GV = vmopv1a3.GroupVersion.String()
+			vmopv1 = vmopv1.GroupVersion.String()
+		)
+
 		switch apiVersion {
-		case v1a1GV, v1a2GV, vmopv1:
+		case v1a1GV, v1a2GV, v1a3GV, vmopv1:
 		default:
 			allErrs = append(allErrs, field.NotSupported(sourcePath.Child("apiVersion"),
-				apiVersion, []string{v1a1GV, v1a2GV, vmopv1, ""}))
+				apiVersion, []string{v1a1GV, v1a2GV, v1a3GV, vmopv1, ""}))
 		}
 	}
 

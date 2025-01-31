@@ -14,7 +14,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"

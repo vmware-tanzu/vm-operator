@@ -19,7 +19,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/webconsolevalidation"
 )
@@ -68,7 +68,7 @@ func main() {
 
 	scheme := runtime.NewScheme()
 	if err := vmopv1.AddToScheme(scheme); err != nil {
-		logger.Error(err, "Failed to add vm-operator v1alpha3 scheme")
+		logger.Error(err, "Failed to add vm-operator stable scheme")
 		os.Exit(1)
 	}
 	// NOTE: In v1a1 this CRD has a different name - WebConsoleRequest - so this

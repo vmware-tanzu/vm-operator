@@ -48,6 +48,9 @@ linters-settings:
       - alias: backupapi
         pkg: github.com/vmware-tanzu/vm-operator/pkg/backup/api
 
+      - alias: vmopapi
+        pkg: github.com/vmware-tanzu/vm-operator/api
+
       - alias: vmopv1a1
         pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha1
 
@@ -60,14 +63,24 @@ linters-settings:
       - alias: vmopv1a2sysprep
         pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep
 
-      - alias: vmopv1
+      - alias: vmopv1a3
         pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3
-      - alias: vmopv1cloudinit
+      - alias: vmopv1a3cloudinit
         pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit
-      - alias: vmopv1common
+      - alias: vmopv1a3common
         pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/common
-      - alias: vmopv1sysprep
+      - alias: vmopv1a3sysprep
         pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep
+
+      - alias: vmopv1
+        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4
+      - alias: vmopv1cloudinit
+        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit
+      - alias: vmopv1common
+        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/common
+      - alias: vmopv1sysprep
+        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep
+
       - alias: vmopv1util
         pkg: github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1
 

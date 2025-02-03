@@ -37,6 +37,7 @@ var _ = Describe(
 		)
 
 		BeforeEach(func() {
+			atomic.StoreInt32(&numExits, 0)
 			ctx = suite.NewIntegrationTestContext()
 			status = capv1.CapabilitiesStatus{}
 			obj = &capv1.Capabilities{
@@ -53,7 +54,6 @@ var _ = Describe(
 		})
 
 		AfterEach(func() {
-			atomic.StoreInt32(&numExits, 0)
 			Expect(ctx.Client.Delete(ctx, obj)).To(Succeed())
 			Eventually(apierrors.IsNotFound(
 				ctx.Client.Get(ctx, capabilities.ConfigMapKey, obj),

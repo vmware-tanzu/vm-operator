@@ -13,7 +13,6 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
@@ -25,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/google/uuid"
 	vimcrypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
@@ -81,7 +81,8 @@ func vmTests() {
 	)
 
 	BeforeEach(func() {
-		parentCtx = ctxop.WithContext(pkgcfg.NewContext())
+		parentCtx = pkgcfg.NewContextWithDefaultConfig()
+		parentCtx = ctxop.WithContext(parentCtx)
 		parentCtx = ovfcache.WithContext(parentCtx)
 		parentCtx = cource.WithContext(parentCtx)
 		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {

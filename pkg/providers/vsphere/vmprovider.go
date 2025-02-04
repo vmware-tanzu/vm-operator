@@ -39,6 +39,7 @@ import (
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
+	vccreds "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -133,25 +134,50 @@ func (vs *vSphereVMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort st
 		return err
 	}
 
-	// Our controller-runtime client does not cache ConfigMaps & Secrets, so the next time
-	// getVcClient() is called, it will fetch newly updated CM.
-	vs.clearAndLogoutVcClient(ctx)
+	oldVcClient := func() *vcclient.Client {
+		vs.vcClientLock.Lock()
+		defer vs.vcClientLock.Unlock()
+
+		if vcClient := vs.vcClient; vcClient != nil {
+			// Clear and logout existing clean so new client will be created next call to getVcClient().
+			vs.vcClient = nil
+			return vcClient
+		}
+
+		return nil
+	}()
+
+	if oldVcClient != nil {
+		oldVcClient.Logout(ctx)
+	}
+
 	return nil
 }
 
-func (vs *vSphereVMProvider) ResetVcClient(ctx context.Context) {
-	vs.clearAndLogoutVcClient(ctx)
-}
-
-func (vs *vSphereVMProvider) clearAndLogoutVcClient(ctx context.Context) {
-	vs.vcClientLock.Lock()
-	vcClient := vs.vcClient
-	vs.vcClient = nil
-	vs.vcClientLock.Unlock()
-
-	if vcClient != nil {
-		vcClient.Logout(ctx)
+func (vs *vSphereVMProvider) UpdateVcCreds(ctx context.Context, data map[string][]byte) error {
+	newVcCreds, err := vccreds.ExtractVCCredentials(data)
+	if err != nil {
+		return err
 	}
+
+	oldVcClient := func() *vcclient.Client {
+		vs.vcClientLock.Lock()
+		defer vs.vcClientLock.Unlock()
+
+		if vcClient := vs.vcClient; vcClient != nil && vcClient.Config().VcCreds != newVcCreds {
+			// Clear and logout existing clean so new client will be created next call to getVcClient().
+			vs.vcClient = nil
+			return vcClient
+		}
+
+		return nil
+	}()
+
+	if oldVcClient != nil {
+		oldVcClient.Logout(ctx)
+	}
+
+	return nil
 }
 
 // SyncVirtualMachineImage syncs the vmi object with the OVF Envelope retrieved

@@ -47,7 +47,7 @@ type VirtualMachineProviderInterface interface {
 
 	// "Infra" related
 	UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error
-	ResetVcClient(ctx context.Context)
+	UpdateVcCreds(ctx context.Context, data map[string][]byte) error
 	ComputeCPUMinFrequency(ctx context.Context) error
 
 	GetItemFromLibraryByName(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)

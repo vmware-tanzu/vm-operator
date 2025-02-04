@@ -292,7 +292,7 @@ func (s *TestSuite) NewTestContextForVCSim(
 	config VCSimTestConfig,
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
 
-	ctx := pkgcfg.NewContext()
+	ctx := pkgcfg.NewContextWithDefaultConfig()
 	ctx = logr.NewContext(ctx, logf.Log)
 	ctx = ctxop.WithContext(ctx)
 	ctx = ovfcache.WithContext(ctx)
@@ -303,8 +303,14 @@ func (s *TestSuite) NewTestContextForVCSimWithParentContext(
 	ctx context.Context,
 	config VCSimTestConfig,
 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
+
+	if _, err := logr.FromContext(ctx); err != nil {
+		ctx = logr.NewContext(ctx, logf.Log)
+	}
+
 	return NewTestContextForVCSim(ctx, config, initObjects...)
 }
+
 func newTestContextForVCSim(
 	parentCtx context.Context,
 	config VCSimTestConfig,
@@ -887,7 +893,7 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 	password, _ := simulator.DefaultLogin.Password()
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "vmop-vcsim-dummy-creds",
+			Name:      pkgcfg.FromContext(c).VCCredsSecretName,
 			Namespace: c.PodNamespace,
 		},
 		Data: map[string][]byte{
@@ -895,7 +901,8 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 			"password": []byte(password),
 		},
 	}
-
+	Expect(secret.Name).ToNot(BeEmpty(),
+		"context must have pkgcfg VCCredsSecretName set - try NewContextWithDefaultConfig() instead")
 	Expect(c.Client.Create(c, secret)).To(Succeed())
 
 	data := map[string]string{}

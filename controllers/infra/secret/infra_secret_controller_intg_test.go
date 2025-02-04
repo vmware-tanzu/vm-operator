@@ -15,7 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/infra/secret"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -57,15 +57,16 @@ func intgTestsReconcile() {
 			obj = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: ctx.PodNamespace,
-					Name:      secret.VcCredsSecretName,
+					Name:      pkgcfg.FromContext(suite.Context).VCCredsSecretName,
 				},
 			}
 		})
 
 		JustBeforeEach(func() {
 			provider.Lock()
-			provider.ResetVcClientFn = func(_ context.Context) {
+			provider.UpdateVcCredsFn = func(_ context.Context, _ map[string][]byte) error {
 				atomic.AddInt32(&called, 1)
+				return nil
 			}
 			provider.Unlock()
 			Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
@@ -121,7 +122,7 @@ func intgTestsReconcile() {
 				})
 				It("should not be reconciled", func() {
 					Consistently(func() int32 {
-						// NOTE: ResetVcClient() won't be called during the reconcile because the
+						// NOTE: UpdateVcCreds() won't be called during the reconcile because the
 						// obj namespace won't match the pod's namespace. It is bad news if you see
 						// "Reconciling unexpected object" in the logs.
 						return atomic.LoadInt32(&called)

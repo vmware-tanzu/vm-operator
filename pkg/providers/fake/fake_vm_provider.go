@@ -40,20 +40,16 @@ type funcs struct {
 	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error)
 
-	// ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error)
-	// GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider, itemID string,
-	//	currentCLImages map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error)
-
 	GetItemFromLibraryByNameFn func(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	UpdateContentLibraryItemFn func(ctx context.Context, itemID, newName string, newDescription *string) error
 	SyncVirtualMachineImageFn  func(ctx context.Context, cli, vmi client.Object) error
 
-	UpdateVcPNIDFn  func(ctx context.Context, vcPNID, vcPort string) error
-	ResetVcClientFn func(ctx context.Context)
+	UpdateVcPNIDFn           func(ctx context.Context, vcPNID, vcPort string) error
+	UpdateVcCredsFn          func(ctx context.Context, data map[string][]byte) error
+	ComputeCPUMinFrequencyFn func(ctx context.Context) error
 
 	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *vmopv1.VirtualMachineSetResourcePolicy) error
 	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *vmopv1.VirtualMachineSetResourcePolicy) error
-	ComputeCPUMinFrequencyFn                        func(ctx context.Context) error
 
 	GetTasksByActIDFn func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error)
 
@@ -83,6 +79,8 @@ func (s *VMProvider) Reset() {
 }
 
 func (s *VMProvider) CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.CreateOrUpdateVirtualMachineFn != nil {
@@ -93,6 +91,8 @@ func (s *VMProvider) CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv
 }
 
 func (s *VMProvider) CreateOrUpdateVirtualMachineAsync(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error) {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.CreateOrUpdateVirtualMachineAsyncFn != nil {
@@ -103,6 +103,8 @@ func (s *VMProvider) CreateOrUpdateVirtualMachineAsync(ctx context.Context, vm *
 }
 
 func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.DeleteVirtualMachineFn != nil {
@@ -112,22 +114,27 @@ func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *vmopv1.Virtua
 	return nil
 }
 
-func (s *VMProvider) PublishVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine,
-	vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
+func (s *VMProvider) PublishVirtualMachine(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	vmPub *vmopv1.VirtualMachinePublishRequest,
+	cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
+
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	s.isPublishVMCalled = true
-
 	if s.PublishVirtualMachineFn != nil {
 		return s.PublishVirtualMachineFn(ctx, vm, vmPub, cl, actID)
 	}
-
 	s.AddToVMPublishMap(actID, vimtypes.TaskInfoStateSuccess)
 	return "dummy-id", nil
 }
 
 func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachineGuestHeartbeatFn != nil {
@@ -141,6 +148,8 @@ func (s *VMProvider) GetVirtualMachineProperties(
 	vm *vmopv1.VirtualMachine,
 	propertyPaths []string) (map[string]any, error) {
 
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachinePropertiesFn != nil {
@@ -150,6 +159,8 @@ func (s *VMProvider) GetVirtualMachineProperties(
 }
 
 func (s *VMProvider) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachineWebMKSTicketFn != nil {
@@ -159,6 +170,8 @@ func (s *VMProvider) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *vmop
 }
 
 func (s *VMProvider) GetVirtualMachineHardwareVersion(ctx context.Context, vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error) {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachineHardwareVersionFn != nil {
@@ -168,9 +181,10 @@ func (s *VMProvider) GetVirtualMachineHardwareVersion(ctx context.Context, vm *v
 }
 
 func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	if s.CreateOrUpdateVirtualMachineSetResourcePolicyFn != nil {
 		return s.CreateOrUpdateVirtualMachineSetResourcePolicyFn(ctx, resourcePolicy)
 	}
@@ -178,9 +192,10 @@ func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.C
 }
 
 func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	if s.DeleteVirtualMachineSetResourcePolicyFn != nil {
 		return s.DeleteVirtualMachineSetResourcePolicyFn(ctx, resourcePolicy)
 	}
@@ -188,6 +203,8 @@ func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, 
 }
 
 func (s *VMProvider) ComputeCPUMinFrequency(ctx context.Context) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.ComputeCPUMinFrequencyFn != nil {
@@ -198,6 +215,8 @@ func (s *VMProvider) ComputeCPUMinFrequency(ctx context.Context) error {
 }
 
 func (s *VMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
 	if s.UpdateVcPNIDFn != nil {
@@ -206,46 +225,22 @@ func (s *VMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) er
 	return nil
 }
 
-func (s *VMProvider) ResetVcClient(ctx context.Context) {
+func (s *VMProvider) UpdateVcCreds(ctx context.Context, data map[string][]byte) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
-	if s.ResetVcClientFn != nil {
-		s.ResetVcClientFn(ctx)
+	if s.UpdateVcCredsFn != nil {
+		return s.UpdateVcCredsFn(ctx, data)
 	}
+	return nil
 }
-
-/*
-func (s *VMProvider) ListItemsFromContentLibrary(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error) {
-	s.Lock()
-	defer s.Unlock()
-
-	if s.ListItemsFromContentLibraryFn != nil {
-		return s.ListItemsFromContentLibraryFn(ctx, contentLibrary)
-	}
-
-	// No-op for now.
-	return []string{}, nil
-}
-
-func (s *VMProvider) GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider, itemID string,
-	currentCLImages map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
-	s.Lock()
-	defer s.Unlock()
-
-	if s.GetVirtualMachineImageFromContentLibraryFn != nil {
-		return s.GetVirtualMachineImageFromContentLibraryFn(ctx, contentLibrary, itemID, currentCLImages)
-	}
-
-	// No-op for now.
-	return nil, nil
-}
-*/
 
 func (s *VMProvider) SyncVirtualMachineImage(ctx context.Context, cli, vmi client.Object) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	if s.SyncVirtualMachineImageFn != nil {
 		return s.SyncVirtualMachineImageFn(ctx, cli, vmi)
 	}
@@ -255,9 +250,11 @@ func (s *VMProvider) SyncVirtualMachineImage(ctx context.Context, cli, vmi clien
 
 func (s *VMProvider) GetItemFromLibraryByName(ctx context.Context,
 	contentLibrary, itemName string) (*library.Item, error) {
+
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	if s.GetItemFromLibraryByNameFn != nil {
 		return s.GetItemFromLibraryByNameFn(ctx, contentLibrary, itemName)
 	}
@@ -266,9 +263,10 @@ func (s *VMProvider) GetItemFromLibraryByName(ctx context.Context,
 }
 
 func (s *VMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	if s.UpdateContentLibraryItemFn != nil {
 		return s.UpdateContentLibraryItemFn(ctx, itemID, newName, newDescription)
 	}
@@ -276,9 +274,10 @@ func (s *VMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newNa
 }
 
 func (s *VMProvider) GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	if s.GetTasksByActIDFn != nil {
 		return s.GetTasksByActIDFn(ctx, actID)
 	}
@@ -340,9 +339,10 @@ func (s *VMProvider) DoesProfileSupportEncryption(
 	ctx context.Context,
 	profileID string) (bool, error) {
 
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	if fn := s.DoesProfileSupportEncryptionFn; fn != nil {
 		return fn(ctx, profileID)
 	}
@@ -350,9 +350,10 @@ func (s *VMProvider) DoesProfileSupportEncryption(
 }
 
 func (s *VMProvider) VSphereClient(ctx context.Context) (*vsclient.Client, error) {
+	_ = pkgcfg.FromContext(ctx)
+
 	s.Lock()
 	defer s.Unlock()
-
 	if fn := s.VSphereClientFn; fn != nil {
 		return fn(ctx)
 	}

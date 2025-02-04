@@ -27,7 +27,7 @@ var log = logf.Log.WithName("vsphere").WithName("config")
 type VSphereVMProviderConfig struct {
 	VcPNID                      string
 	VcPort                      string
-	VcCreds                     *credentials.VSphereVMProviderCredentials
+	VcCreds                     credentials.VSphereVMProviderCredentials
 	Datacenter                  string
 	StorageClassRequired        bool // Always true in WCP env.
 	UseInventoryAsContentSource bool // Always false in WCP env.
@@ -50,7 +50,6 @@ const (
 	// Keys in provider ConfigMap.
 	vcPNIDKey                = "VcPNID"
 	vcPortKey                = "VcPort"
-	vcCredsSecretNameKey     = "VcCredsSecretName" //nolint:gosec
 	datacenterKey            = "Datacenter"
 	resourcePoolKey          = "ResourcePool"
 	folderKey                = "Folder"
@@ -69,7 +68,7 @@ const (
 // ConfigMapToProviderConfig converts the VM provider ConfigMap to a VSphereVMProviderConfig.
 func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about stuttering.
 	configMap *corev1.ConfigMap,
-	vcCreds *credentials.VSphereVMProviderCredentials) (*VSphereVMProviderConfig, error) {
+	vcCreds credentials.VSphereVMProviderCredentials) (*VSphereVMProviderConfig, error) {
 
 	vcPNID, ok := configMap.Data[vcPNIDKey]
 	if !ok {
@@ -134,18 +133,6 @@ func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about st
 	return ret, nil
 }
 
-func configMapToProviderCredentials(
-	client ctrlclient.Client,
-	configMap *corev1.ConfigMap) (*credentials.VSphereVMProviderCredentials, error) {
-
-	secretName := configMap.Data[vcCredsSecretNameKey]
-	if secretName == "" {
-		return nil, fmt.Errorf("%s creds secret not set in vmop system namespace", vcCredsSecretNameKey)
-	}
-
-	return credentials.GetProviderCredentials(client, configMap.Namespace, secretName)
-}
-
 func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlclient.Client) ([]string, []string, error) {
 	vmopNamespace := pkgcfg.FromContext(ctx).PodNamespace
 
@@ -202,7 +189,11 @@ func GetProviderConfig(
 		return nil, err
 	}
 
-	vcCreds, err := configMapToProviderCredentials(client, configMap)
+	vcCreds, err := credentials.GetProviderCredentials(
+		ctx,
+		client,
+		configMap.Namespace,
+		pkgcfg.FromContext(ctx).VCCredsSecretName)
 	if err != nil {
 		return nil, err
 	}
@@ -215,38 +206,30 @@ func GetProviderConfig(
 	return providerConfig, nil
 }
 
-func setConfigMapData(configMap *corev1.ConfigMap, config *VSphereVMProviderConfig, vcCredsSecretName string) {
-	if configMap.Data == nil {
-		configMap.Data = map[string]string{}
-	}
-
-	configMap.Data[vcPNIDKey] = config.VcPNID
-	configMap.Data[vcPortKey] = config.VcPort
-	configMap.Data[vcCredsSecretNameKey] = vcCredsSecretName
-	configMap.Data[datacenterKey] = config.Datacenter
-	configMap.Data[resourcePoolKey] = config.ResourcePool
-	configMap.Data[folderKey] = config.Folder
-	configMap.Data[datastoreKey] = config.Datastore
-	configMap.Data[scRequiredKey] = strconv.FormatBool(config.StorageClassRequired)
-	configMap.Data[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
-	configMap.Data[caFilePathKey] = config.CAFilePath
-	configMap.Data[insecureSkipTLSVerifyKey] = strconv.FormatBool(config.InsecureSkipTLSVerify)
-}
-
 // ProviderConfigToConfigMap returns the ConfigMap for the config.
 // Used only in testing.
 func ProviderConfigToConfigMap(
 	namespace string,
-	config *VSphereVMProviderConfig,
-	vcCredsSecretName string) *corev1.ConfigMap {
+	config *VSphereVMProviderConfig) *corev1.ConfigMap {
 
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ProviderConfigMapName,
 			Namespace: namespace,
 		},
+		Data: map[string]string{
+			vcPNIDKey:                config.VcPNID,
+			vcPortKey:                config.VcPort,
+			datacenterKey:            config.Datacenter,
+			resourcePoolKey:          config.ResourcePool,
+			folderKey:                config.Folder,
+			datastoreKey:             config.Datastore,
+			scRequiredKey:            strconv.FormatBool(config.StorageClassRequired),
+			useInventoryKey:          strconv.FormatBool(config.UseInventoryAsContentSource),
+			caFilePathKey:            config.CAFilePath,
+			insecureSkipTLSVerifyKey: strconv.FormatBool(config.InsecureSkipTLSVerify),
+		},
 	}
-	setConfigMapData(configMap, config, vcCredsSecretName)
 
 	return configMap
 }

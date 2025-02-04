@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -130,10 +129,7 @@ func (r *Reconciler) reconcileWcpClusterConfig(ctx context.Context, req ctrl.Req
 
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-		return nil
+		return client.IgnoreNotFound(err)
 	}
 
 	clusterConfig, err := ParseWcpClusterConfig(cm.Data)

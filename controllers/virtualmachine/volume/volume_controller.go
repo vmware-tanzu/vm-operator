@@ -218,10 +218,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 
 	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, request.NamespacedName, vm); err != nil {
-		if apierrors.IsNotFound(err) {
-			return reconcile.Result{}, nil
-		}
-		return reconcile.Result{}, err
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	volCtx := &pkgctx.VolumeContext{

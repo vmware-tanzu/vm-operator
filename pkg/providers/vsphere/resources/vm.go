@@ -98,7 +98,7 @@ func (vm *VirtualMachine) Reconfigure(
 		return taskInfo, fmt.Errorf("reconfigure VM task failed: %w", err)
 	}
 
-	return nil, nil
+	return taskInfo, nil
 }
 
 func (vm *VirtualMachine) GetProperties(ctx context.Context, properties []string) (*mo.VirtualMachine, error) {

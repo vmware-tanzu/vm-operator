@@ -65,6 +65,8 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 
 	if ovfEnvelope.Disk != nil && len(ovfEnvelope.Disk.Disks) > 0 {
 		populateImageStatusFromOVFDiskSection(status, ovfEnvelope.Disk)
+	} else {
+		status.Disks = nil
 	}
 }
 
@@ -107,6 +109,7 @@ func initImageStatusFromOVFVirtualSystem(
 		}
 	}
 
+	imageStatus.OVFProperties = nil
 	for _, product := range ovfVirtualSystem.Product {
 		for _, prop := range product.Property {
 			// Only show user configurable properties
@@ -121,6 +124,7 @@ func initImageStatusFromOVFVirtualSystem(
 		}
 	}
 
+	imageStatus.VMwareSystemProperties = nil
 	ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfVirtualSystem)
 	if len(ovfSystemProps) > 0 {
 		for k, v := range ovfSystemProps {

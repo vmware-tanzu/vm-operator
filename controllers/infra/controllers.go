@@ -38,10 +38,8 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			return fmt.Errorf("failed to initialize validatingwebhookconfiguration webhook controller: %w", err)
 		}
 	}
-	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
-		if err := zone.AddToManager(ctx, mgr); err != nil {
-			return fmt.Errorf("failed to initialize infra zone controller: %w", err)
-		}
+	if err := zone.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to initialize infra zone controller: %w", err)
 	}
 
 	return nil

@@ -1,7 +1,12 @@
 name: ci
 
 env:
-  GO_VERSION: 1.23
+  # This value is usually commented out, allowing the go-version-file
+  # directive to pull the Go version from the go.mod file. However,
+  # sometimes we need to explicitly override the Go version, ex. CVEs,
+  # when it is not possible to update the go.mod version yet, ex. the
+  # internal builds do not yet support that version of Go.
+  GO_VERSION: 1.23.6
 
 on:
   pull_request:
@@ -59,6 +64,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Run go mod tidy
@@ -85,6 +91,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Verify codegen
@@ -101,6 +108,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Create kind cluster
@@ -125,6 +133,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Setup the cache for golangci-lint
@@ -148,6 +157,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Setup the cache for govulncheck
@@ -170,6 +180,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Build Image
@@ -186,6 +197,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Test

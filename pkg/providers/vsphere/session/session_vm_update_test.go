@@ -483,42 +483,6 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 	})
 
-	Context("Firmware", func() {
-		var vm *vmopv1.VirtualMachine
-
-		BeforeEach(func() {
-			vm = &vmopv1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: make(map[string]string),
-				},
-			}
-			config.Firmware = "bios"
-		})
-
-		It("No firmware annotation", func() {
-			session.UpdateConfigSpecFirmware(config, configSpec, vm)
-			Expect(configSpec.Firmware).To(BeEmpty())
-		})
-
-		It("Set firmware annotation equal to current vm firmware", func() {
-			vm.Annotations[constants.FirmwareOverrideAnnotation] = config.Firmware
-			session.UpdateConfigSpecFirmware(config, configSpec, vm)
-			Expect(configSpec.Firmware).To(BeEmpty())
-		})
-
-		It("Set firmware annotation differing to current vm firmware", func() {
-			vm.Annotations[constants.FirmwareOverrideAnnotation] = "efi"
-			session.UpdateConfigSpecFirmware(config, configSpec, vm)
-			Expect(configSpec.Firmware).To(Equal("efi"))
-		})
-
-		It("Set firmware annotation to an invalid value", func() {
-			vm.Annotations[constants.FirmwareOverrideAnnotation] = "invalidfirmware"
-			session.UpdateConfigSpecFirmware(config, configSpec, vm)
-			Expect(configSpec.Firmware).To(BeEmpty())
-		})
-	})
-
 	Context("Ethernet Card Changes", func() {
 		var expectedList object.VirtualDeviceList
 		var currentList object.VirtualDeviceList

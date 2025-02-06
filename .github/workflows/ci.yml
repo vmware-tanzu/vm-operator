@@ -1,5 +1,13 @@
 name: ci
 
+env:
+  # This value is usually commented out, allowing the go-version-file
+  # directive to pull the Go version from the go.mod file. However,
+  # sometimes we need to explicitly override the Go version, ex. CVEs,
+  # when it is not possible to update the go.mod version yet, ex. the
+  # internal builds do not yet support that version of Go.
+  GO_VERSION: 1.23.6
+
 on:
   pull_request:
     branches:
@@ -55,7 +63,8 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: go.mod
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Run go mod tidy
@@ -81,7 +90,8 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: go.mod
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Verify codegen
@@ -97,7 +107,8 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: go.mod
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Create kind cluster
@@ -121,7 +132,8 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: go.mod
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Setup the cache for golangci-lint
@@ -144,7 +156,8 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: go.mod
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Setup the cache for govulncheck
@@ -166,7 +179,8 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: go.mod
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Build Image
@@ -182,7 +196,8 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: go.mod
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Test

@@ -11,7 +11,6 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -222,18 +221,40 @@ func zipVirtualDevicesOfType[T vimtypes.BaseVirtualDevice](
 	return deviceChanges
 }
 
+func deviceEdited[T any](dev *T) bool {
+	var e T
+	return !reflect.DeepEqual(dev, &e)
+}
+
+func MatchVirtualDevice(expectedDev, curDev, editDev vimtypes.BaseVirtualDevice) {
+
+	// TODO - Note that for now we'll just handle the backings in the per device matching func.
+	_ = expectedDev
+	_ = curDev
+	_ = editDev
+}
+
+func MatchVirtualController(expectedDev, curDev, editDev vimtypes.BaseVirtualController) {
+
+	// TODO
+	MatchVirtualDevice(
+		expectedDev.GetVirtualController().GetVirtualDevice(),
+		curDev.GetVirtualController().GetVirtualDevice(),
+		editDev.GetVirtualController().GetVirtualDevice())
+}
+
 func MatchVirtualUSBController(
 	expectedDev, curDev *vimtypes.VirtualUSBController) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of one device. Uses DeviceKey 7000.
-
 	editDev := &vimtypes.VirtualUSBController{}
 
-	// TODO: Handle VirtualController
+	MatchVirtualController(expectedDev, curDev, editDev)
+
 	cmpPtr(curDev.AutoConnectDevices, expectedDev.AutoConnectDevices, &editDev.AutoConnectDevices) // TODO: Always false?
 	cmpPtr(curDev.EhciEnabled, expectedDev.EhciEnabled, &editDev.EhciEnabled)
 
-	if !reflect.DeepEqual(editDev, &vimtypes.VirtualUSBController{}) {
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
 		return editDev
 	}
@@ -245,13 +266,13 @@ func MatchVirtualUSBXHCIController(
 	expectedDev, curDev *vimtypes.VirtualUSBXHCIController) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of one device. Uses DeviceKey 14000.
-
 	editDev := &vimtypes.VirtualUSBXHCIController{}
 
-	// TODO: Handle VirtualController
+	MatchVirtualController(expectedDev, curDev, editDev)
+
 	cmpPtr(curDev.AutoConnectDevices, expectedDev.AutoConnectDevices, &editDev.AutoConnectDevices) // TODO: Always false?
 
-	if !reflect.DeepEqual(editDev, &vimtypes.VirtualUSBXHCIController{}) {
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
 		return editDev
 	}
@@ -263,22 +284,20 @@ func MatchVirtualMachineVMCIDevice(
 	expectedDev, curDev *vimtypes.VirtualMachineVMCIDevice) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of one device. Uses DeviceKey 12000. Default device.
-
-	edit := false
 	editDev := &vimtypes.VirtualMachineVMCIDevice{}
 
-	// Ignore dev.Id
-	cmpPtrEdit(curDev.AllowUnrestrictedCommunication, expectedDev.AllowUnrestrictedCommunication, &editDev.AllowUnrestrictedCommunication, &edit)
-	cmpPtrEdit(curDev.FilterEnable, expectedDev.FilterEnable, &editDev.FilterEnable, &edit)
+	MatchVirtualDevice(expectedDev, curDev, editDev)
 
+	// Ignore dev.Id
+	cmpPtr(curDev.AllowUnrestrictedCommunication, expectedDev.AllowUnrestrictedCommunication, &editDev.AllowUnrestrictedCommunication)
+	cmpPtr(curDev.FilterEnable, expectedDev.FilterEnable, &editDev.FilterEnable)
 	if expectedDev.FilterInfo != nil {
 		if curDev.FilterInfo == nil || !slices.Equal(curDev.FilterInfo.Filters, expectedDev.FilterInfo.Filters) {
 			editDev.FilterInfo = expectedDev.FilterInfo
-			edit = true
 		}
 	}
 
-	if edit {
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
 		return editDev
 	}
@@ -290,10 +309,10 @@ func MatchVirtualMachineVideoCard(
 	expectedDev, curDev *vimtypes.VirtualMachineVideoCard) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of one device. Uses DeviceKey 500. Default device.
-
 	editDev := &vimtypes.VirtualMachineVideoCard{}
 
-	// TODO: Handle VirtualController
+	MatchVirtualDevice(expectedDev, curDev, editDev)
+
 	cmp(curDev.VideoRamSizeInKB, expectedDev.VideoRamSizeInKB, &editDev.VideoRamSizeInKB)
 	cmp(curDev.NumDisplays, expectedDev.NumDisplays, &editDev.NumDisplays)
 	cmpPtr(curDev.UseAutoDetect, expectedDev.UseAutoDetect, &editDev.UseAutoDetect)
@@ -301,7 +320,7 @@ func MatchVirtualMachineVideoCard(
 	cmp(curDev.Use3dRenderer, expectedDev.Use3dRenderer, &editDev.Use3dRenderer)
 	cmp(curDev.GraphicsMemorySizeInKB, expectedDev.GraphicsMemorySizeInKB, &editDev.GraphicsMemorySizeInKB)
 
-	if !reflect.DeepEqual(editDev, &vimtypes.VirtualMachineVideoCard{}) {
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
 		return editDev
 	}
@@ -313,32 +332,25 @@ func MatchVirtualParallelPort(
 	expectedDev, curDev *vimtypes.VirtualParallelPort) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of four devices. Uses DeviceKeys 10000-10003.
+	editDev := &vimtypes.VirtualParallelPort{}
 
+	MatchVirtualDevice(expectedDev, curDev, editDev)
 	// No fields: just a VirtualDevice.
-	var match bool
 
-	expectedBacking, curBacking := expectedDev.Backing, curDev.Backing
-	switch {
-	case expectedBacking != nil && curBacking != nil:
-		switch eb := expectedBacking.(type) {
-		case *vimtypes.VirtualParallelPortDeviceBackingInfo:
-			match = MatchVirtualParallelPortDeviceBackingInfo(eb, curBacking)
-		case *vimtypes.VirtualParallelPortFileBackingInfo:
-			match = MatchVirtualParallelPortFileBackingInfo(eb, curBacking)
-		default:
-			match = false
-		}
-	case expectedBacking == nil && curBacking == nil:
-		// NOTE: this device is expected to have a backing.
-		match = true
-	default:
-		match = false
-	}
+	cmpBacking(expectedDev, curDev, editDev,
+		func(exp, cur vimtypes.BaseVirtualDeviceBackingInfo) bool {
+			switch eb := exp.(type) {
+			case *vimtypes.VirtualParallelPortDeviceBackingInfo:
+				return MatchVirtualParallelPortDeviceBackingInfo(eb, cur)
+			case *vimtypes.VirtualParallelPortFileBackingInfo:
+				return MatchVirtualParallelPortFileBackingInfo(eb, cur)
+			default:
+				return false
+			}
+		})
 
-	if !match {
-		editDev := &vimtypes.VirtualParallelPort{}
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
-		editDev.Backing = expectedBacking
 		return editDev
 	}
 
@@ -349,30 +361,23 @@ func MatchVirtualPointingDevice(
 	expectedDev, curDev *vimtypes.VirtualPointingDevice) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of one device. Uses DeviceKey 700. Default device.
+	editDev := &vimtypes.VirtualPointingDevice{}
 
+	MatchVirtualDevice(expectedDev, curDev, editDev)
 	// No fields: just a VirtualDevice.
-	var match bool
 
-	expectedBacking, curBacking := expectedDev.Backing, curDev.Backing
-	switch {
-	case expectedBacking != nil && curBacking != nil:
-		switch eb := expectedBacking.(type) {
-		case *vimtypes.VirtualPointingDeviceDeviceBackingInfo:
-			match = MatchVirtualPointingDeviceDeviceBackingInfo(eb, curBacking)
-		default:
-			match = false
-		}
-	case expectedBacking == nil && curBacking == nil:
-		// NOTE: this device is expected to have a backing.
-		match = true
-	default:
-		match = false
-	}
+	cmpBacking(expectedDev, curDev, editDev,
+		func(exp, cur vimtypes.BaseVirtualDeviceBackingInfo) bool {
+			switch eb := exp.(type) {
+			case *vimtypes.VirtualPointingDeviceDeviceBackingInfo:
+				return MatchVirtualPointingDeviceDeviceBackingInfo(eb, cur)
+			default:
+				return false
+			}
+		})
 
-	if !match {
-		editDev := &vimtypes.VirtualPointingDevice{}
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
-		editDev.Backing = expectedBacking
 		return editDev
 	}
 
@@ -383,30 +388,23 @@ func MatchVirtualPrecisionClock(
 	expectedDev, curDev *vimtypes.VirtualPrecisionClock) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of one device. Uses DeviceKey 19000.
+	editDev := &vimtypes.VirtualPrecisionClock{}
 
+	MatchVirtualDevice(expectedDev, curDev, editDev)
 	// No fields: just a VirtualDevice.
-	var match bool
 
-	expectedBacking, curBacking := expectedDev.Backing, curDev.Backing
-	switch {
-	case expectedBacking != nil && curBacking != nil:
-		switch eb := expectedBacking.(type) {
-		case *vimtypes.VirtualPrecisionClockSystemClockBackingInfo:
-			match = MatchVirtualPrecisionClockSystemClockBackingInfo(eb, curBacking)
-		default:
-			match = false
-		}
-	case expectedBacking == nil && curBacking == nil:
-		// NOTE: this device is expected to have a backing.
-		match = true
-	default:
-		match = false
-	}
+	cmpBacking(expectedDev, curDev, editDev,
+		func(exp, cur vimtypes.BaseVirtualDeviceBackingInfo) bool {
+			switch eb := exp.(type) {
+			case *vimtypes.VirtualPrecisionClockSystemClockBackingInfo:
+				return MatchVirtualPrecisionClockSystemClockBackingInfo(eb, cur)
+			default:
+				return false
+			}
+		})
 
-	if !match {
-		editDev := &vimtypes.VirtualPrecisionClock{}
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
-		editDev.Backing = expectedBacking
 		return editDev
 	}
 
@@ -417,71 +415,62 @@ func MatchVirtualSCSIPassthrough(
 	expectedDev, curDev *vimtypes.VirtualSCSIPassthrough) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Uses DeviceKeys 2000-2063, 131072-132095.
+	editDev := &vimtypes.VirtualSCSIPassthrough{}
 
+	MatchVirtualDevice(expectedDev, curDev, editDev)
 	// No fields: just a VirtualDevice.
-	var match bool
 
-	expectedBacking, curBacking := expectedDev.Backing, curDev.Backing
-	switch {
-	case expectedBacking != nil && curBacking != nil:
-		switch eb := expectedBacking.(type) {
-		case *vimtypes.VirtualSCSIPassthroughDeviceBackingInfo:
-			match = MatchVirtualSCSIPassthroughDeviceBackingInfo(eb, curBacking)
-		default:
-			match = false
-		}
-	case expectedBacking == nil && curBacking == nil:
-		// NOTE: this device is expected to have a backing.
-		match = true
-	default:
-		match = false
-	}
+	cmpBacking(expectedDev, curDev, editDev,
+		func(exp, cur vimtypes.BaseVirtualDeviceBackingInfo) bool {
+			switch eb := exp.(type) {
+			case *vimtypes.VirtualSCSIPassthroughDeviceBackingInfo:
+				return MatchVirtualSCSIPassthroughDeviceBackingInfo(eb, cur)
+			default:
+				return false
+			}
+		})
 
-	if !match {
-		editDev := &vimtypes.VirtualSCSIPassthrough{}
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
-		editDev.Backing = expectedBacking
 		return editDev
 	}
 
 	return nil
 }
 
-func doBaseVirtualSoundCardMatch(
-	expectedDev, curDev vimtypes.BaseVirtualSoundCard) bool {
+func matchBaseVirtualSoundCard(
+	expectedDev, curDev, editDev vimtypes.BaseVirtualSoundCard) {
 
 	// NOTE: Max of one device. Uses DeviceKey 5000.
 
+	MatchVirtualDevice(
+		expectedDev.GetVirtualSoundCard().GetVirtualDevice(),
+		curDev.GetVirtualSoundCard().GetVirtualDevice(),
+		editDev.GetVirtualSoundCard().GetVirtualDevice())
 	// No fields: just a VirtualDevice.
-	var match bool
 
-	expectedBacking, curBacking := expectedDev.GetVirtualSoundCard().Backing, curDev.GetVirtualSoundCard().Backing
-	switch {
-	case expectedBacking != nil && curBacking != nil:
-		switch eb := expectedBacking.(type) {
-		case *vimtypes.VirtualSoundCardDeviceBackingInfo:
-			match = MatchVirtualSoundCardDeviceBackingInfo(eb, curBacking)
-		default:
-			match = false
-		}
-	case expectedBacking == nil && curBacking == nil:
-		// NOTE: this device is expected to have a backing.
-		match = true
-	default:
-		match = false
-	}
-
-	return match
+	cmpBacking(
+		expectedDev.GetVirtualSoundCard().GetVirtualDevice(),
+		curDev.GetVirtualSoundCard().GetVirtualDevice(),
+		editDev.GetVirtualSoundCard().GetVirtualDevice(),
+		func(exp, cur vimtypes.BaseVirtualDeviceBackingInfo) bool {
+			switch eb := exp.(type) {
+			case *vimtypes.VirtualSoundCardDeviceBackingInfo:
+				return MatchVirtualSoundCardDeviceBackingInfo(eb, cur)
+			default:
+				return false
+			}
+		})
 }
 
 func MatchVirtualEnsoniq1371(
 	expectedDev, curDev *vimtypes.VirtualEnsoniq1371) vimtypes.BaseVirtualDevice {
 
-	match := doBaseVirtualSoundCardMatch(expectedDev, curDev)
-	if !match {
-		editDev := &vimtypes.VirtualEnsoniq1371{}
+	editDev := &vimtypes.VirtualEnsoniq1371{}
+	matchBaseVirtualSoundCard(expectedDev, curDev, editDev)
+
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
-		editDev.Backing = expectedDev.Backing
 		return editDev
 	}
 
@@ -491,11 +480,11 @@ func MatchVirtualEnsoniq1371(
 func MatchVirtualHdAudioCard(
 	expectedDev, curDev *vimtypes.VirtualHdAudioCard) vimtypes.BaseVirtualDevice {
 
-	match := doBaseVirtualSoundCardMatch(expectedDev, curDev)
-	if !match {
-		editDev := &vimtypes.VirtualHdAudioCard{}
+	editDev := &vimtypes.VirtualHdAudioCard{}
+	matchBaseVirtualSoundCard(expectedDev, curDev, editDev)
+
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
-		editDev.Backing = expectedDev.Backing
 		return editDev
 	}
 
@@ -505,11 +494,11 @@ func MatchVirtualHdAudioCard(
 func MatchVirtualSoundBlaster16(
 	expectedDev, curDev *vimtypes.VirtualSoundBlaster16) vimtypes.BaseVirtualDevice {
 
-	match := doBaseVirtualSoundCardMatch(expectedDev, curDev)
-	if !match {
-		editDev := &vimtypes.VirtualSoundBlaster16{}
+	editDev := &vimtypes.VirtualSoundBlaster16{}
+	matchBaseVirtualSoundCard(expectedDev, curDev, editDev)
+
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
-		editDev.Backing = expectedDev.Backing
 		return editDev
 	}
 
@@ -520,38 +509,31 @@ func MatchVirtualSerialPort(
 	expectedDev, curDev *vimtypes.VirtualSerialPort) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of 32 devices. Uses DeviceKeys 9000-9031.
+	editDev := &vimtypes.VirtualSerialPort{}
 
+	MatchVirtualDevice(expectedDev, curDev, editDev)
 	// No fields: just a VirtualDevice.
-	var match bool
 
-	expectedBacking, curBacking := expectedDev.Backing, curDev.Backing
-	switch {
-	case expectedBacking != nil && curBacking != nil:
-		switch eb := expectedBacking.(type) {
-		case *vimtypes.VirtualSerialPortDeviceBackingInfo:
-			match = MatchVirtualSerialPortDeviceBackingInfo(eb, curBacking)
-		case *vimtypes.VirtualSerialPortFileBackingInfo:
-			match = MatchVirtualSerialPortFileBackingInfo(eb, curBacking)
-		case *vimtypes.VirtualSerialPortPipeBackingInfo:
-			match = MatchVirtualSerialPortPipeBackingInfo(eb, curBacking)
-		case *vimtypes.VirtualSerialPortThinPrintBackingInfo:
-			match = MatchVirtualSerialPortThinPrintBackingInfo(eb, curBacking)
-		case *vimtypes.VirtualSerialPortURIBackingInfo:
-			match = MatchVirtualSerialPortURIBackingInfo(eb, curBacking)
-		default:
-			match = false
-		}
-	case expectedBacking == nil && curBacking == nil:
-		// NOTE: this device is expected to have a backing.
-		match = true
-	default:
-		match = false
-	}
+	cmpBacking(expectedDev, curDev, editDev,
+		func(exp, cur vimtypes.BaseVirtualDeviceBackingInfo) bool {
+			switch eb := exp.(type) {
+			case *vimtypes.VirtualSerialPortDeviceBackingInfo:
+				return MatchVirtualSerialPortDeviceBackingInfo(eb, cur)
+			case *vimtypes.VirtualSerialPortFileBackingInfo:
+				return MatchVirtualSerialPortFileBackingInfo(eb, cur)
+			case *vimtypes.VirtualSerialPortPipeBackingInfo:
+				return MatchVirtualSerialPortPipeBackingInfo(eb, cur)
+			case *vimtypes.VirtualSerialPortThinPrintBackingInfo:
+				return MatchVirtualSerialPortThinPrintBackingInfo(eb, cur)
+			case *vimtypes.VirtualSerialPortURIBackingInfo:
+				return MatchVirtualSerialPortURIBackingInfo(eb, cur)
+			default:
+				return false
+			}
+		})
 
-	if !match {
-		editDev := &vimtypes.VirtualSerialPort{}
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
-		editDev.Backing = expectedBacking
 		return editDev
 	}
 
@@ -562,26 +544,24 @@ func MatchVirtualTPM(
 	expectedDev, curDev *vimtypes.VirtualTPM) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of one device. Uses DeviceKey 11000.
-
-	edit := false
 	editDev := &vimtypes.VirtualTPM{}
 
-	// TODO: Handle VirtualDevice.
+	MatchVirtualDevice(expectedDev, curDev, editDev)
 
 	byteSliceEq := func(x, y []byte) bool { return slices.Equal(x, y) } //nolint:gocritic
 
 	if !slices.EqualFunc(expectedDev.EndorsementKeyCertificateSigningRequest,
-		curDev.EndorsementKeyCertificateSigningRequest, byteSliceEq) {
+		curDev.EndorsementKeyCertificateSigningRequest,
+		byteSliceEq) {
 		editDev.EndorsementKeyCertificateSigningRequest = expectedDev.EndorsementKeyCertificateSigningRequest
-		edit = true
 	}
-
-	if !slices.EqualFunc(expectedDev.EndorsementKeyCertificate, curDev.EndorsementKeyCertificate, byteSliceEq) {
+	if !slices.EqualFunc(expectedDev.EndorsementKeyCertificate,
+		curDev.EndorsementKeyCertificate,
+		byteSliceEq) {
 		editDev.EndorsementKeyCertificate = expectedDev.EndorsementKeyCertificate
-		edit = true
 	}
 
-	if edit {
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
 		return editDev
 	}
@@ -593,14 +573,14 @@ func MatchVirtualWDT(
 	expectedDev, curDev *vimtypes.VirtualWDT) vimtypes.BaseVirtualDevice {
 
 	// NOTE: Max of one device. Uses DeviceKey 18000.
-
-	edit := false
 	editDev := &vimtypes.VirtualWDT{}
 
-	cmpEdit(curDev.RunOnBoot, expectedDev.RunOnBoot, &editDev.RunOnBoot, &edit)
+	MatchVirtualDevice(expectedDev, curDev, editDev)
+
+	cmp(curDev.RunOnBoot, expectedDev.RunOnBoot, &editDev.RunOnBoot)
 	// Ignore dev.Running field. Or set editDev.Running = curDev.Running? Funky API.
 
-	if edit {
+	if deviceEdited(editDev) {
 		editDev.Key = curDev.Key
 		return editDev
 	}
@@ -608,14 +588,34 @@ func MatchVirtualWDT(
 	return nil
 }
 
-func cmpEdit[T comparable](a, b T, c *T, edit *bool) {
+func cmpBacking(
+	expectedDev, curDev, editDev vimtypes.BaseVirtualDevice,
+	cmpFn func(e, b vimtypes.BaseVirtualDeviceBackingInfo) bool) {
+
+	expectedBacking, curBacking := expectedDev.GetVirtualDevice().Backing, curDev.GetVirtualDevice().Backing
+
+	var backingMatch bool
+	if expectedBacking != nil && curBacking != nil {
+		backingMatch = cmpFn(expectedBacking, curBacking)
+	} else {
+		// If an expected backing isn't specified, we just leave the current
+		// backing - if any - alone.
+		backingMatch = expectedBacking == nil
+	}
+
+	if !backingMatch {
+		editDev.GetVirtualDevice().Backing = expectedBacking
+	}
+}
+
+func CmpEdit[T comparable](a, b T, c *T, edit *bool) {
 	if a != b {
 		*c = b
 		*edit = true
 	}
 }
 
-func cmpPtrEdit[T comparable](a *T, b *T, c **T, edit *bool) {
+func CmpPtrEdit[T comparable](a *T, b *T, c **T, edit *bool) {
 	if a == nil && b == nil {
 		return
 	}
@@ -635,74 +635,4 @@ func cmpPtrEdit[T comparable](a *T, b *T, c **T, edit *bool) {
 		*c = b
 		*edit = true
 	}
-}
-
-func comparePCIDevices(
-	desiredPCIDevices, currentDevices []vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
-
-	currentPassthruPCIDevices := pkgutil.SelectVirtualPCIPassthrough(currentDevices)
-
-	pciPassthruFromConfigSpec := pkgutil.SelectVirtualPCIPassthrough(desiredPCIDevices)
-	expectedPCIDevices := virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
-
-	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
-	for _, expectedDev := range expectedPCIDevices {
-		expectedPci := expectedDev.(*vimtypes.VirtualPCIPassthrough)
-		expectedBacking := expectedPci.Backing
-		expectedBackingType := reflect.TypeOf(expectedBacking)
-
-		var matchingIdx = -1
-		for idx, curDev := range currentPassthruPCIDevices {
-			curBacking := curDev.GetVirtualDevice().Backing
-			if curBacking == nil || reflect.TypeOf(curBacking) != expectedBackingType {
-				continue
-			}
-
-			var backingMatch bool
-			switch a := curBacking.(type) {
-			case *vimtypes.VirtualPCIPassthroughVmiopBackingInfo:
-				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
-				backingMatch = a.Vgpu == b.Vgpu
-
-			case *vimtypes.VirtualPCIPassthroughDynamicBackingInfo:
-				currAllowedDevs := a.AllowedDevice
-				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
-				if a.CustomLabel == b.CustomLabel && len(b.AllowedDevice) > 0 {
-					// b.AllowedDevice has only one element because CreatePCIDevices() adds only one device based
-					// on the devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
-					expectedAllowedDev := b.AllowedDevice[0]
-					for i := 0; i < len(currAllowedDevs) && !backingMatch; i++ {
-						backingMatch = expectedAllowedDev.DeviceId == currAllowedDevs[i].DeviceId &&
-							expectedAllowedDev.VendorId == currAllowedDevs[i].VendorId
-					}
-				}
-			}
-
-			if backingMatch {
-				matchingIdx = idx
-				break
-			}
-		}
-
-		if matchingIdx == -1 {
-			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-				Device:    expectedPci,
-			})
-		} else {
-			// There could be multiple vGPUs with same BackingInfo. Remove current device if matching found.
-			currentPassthruPCIDevices = append(currentPassthruPCIDevices[:matchingIdx], currentPassthruPCIDevices[matchingIdx+1:]...)
-		}
-	}
-	// Remove any unmatched existing devices.
-	removeDeviceChanges := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(currentPassthruPCIDevices))
-	for _, dev := range currentPassthruPCIDevices {
-		removeDeviceChanges = append(removeDeviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
-			Device:    dev,
-		})
-	}
-
-	// Process any removes first.
-	return append(removeDeviceChanges, deviceChanges...)
 }

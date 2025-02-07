@@ -37,6 +37,10 @@ type PVCDiskData struct {
 	PVCName string
 	// AccessMode is the access modes of the PVC backed by the virtual disk.
 	AccessModes []string
+
+	// UUID is the UUID of the virtual disk device backing. This
+	// is only used in fail-over workflows.
+	UUID string
 }
 
 // ClassicDiskData contains the backup data of a classic (static) disk attached
@@ -44,6 +48,10 @@ type PVCDiskData struct {
 type ClassicDiskData struct {
 	// Filename is the datastore path to the virtual disk.
 	FileName string
+
+	// UUID is the UUID of the virtual disk device backing. This
+	// is only used in fail-over workflows.
+	UUID string
 }
 
 const (

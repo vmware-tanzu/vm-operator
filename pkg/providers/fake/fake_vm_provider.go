@@ -52,7 +52,6 @@ type funcs struct {
 	ResetVcClientFn func(ctx context.Context)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *vmopv1.VirtualMachineSetResourcePolicy) error
-	IsVirtualMachineSetResourcePolicyReadyFn        func(ctx context.Context, azName string, rp *vmopv1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *vmopv1.VirtualMachineSetResourcePolicy) error
 	ComputeCPUMinFrequencyFn                        func(ctx context.Context) error
 
@@ -65,9 +64,8 @@ type funcs struct {
 type VMProvider struct {
 	sync.Mutex
 	funcs
-	vmMap             map[client.ObjectKey]*vmopv1.VirtualMachine
-	resourcePolicyMap map[client.ObjectKey]*vmopv1.VirtualMachineSetResourcePolicy
-	vmPubMap          map[string]vimtypes.TaskInfoState
+	vmMap    map[client.ObjectKey]*vmopv1.VirtualMachine
+	vmPubMap map[string]vimtypes.TaskInfoState
 
 	isPublishVMCalled bool
 }
@@ -80,7 +78,6 @@ func (s *VMProvider) Reset() {
 
 	s.funcs = funcs{}
 	s.vmMap = make(map[client.ObjectKey]*vmopv1.VirtualMachine)
-	s.resourcePolicyMap = make(map[client.ObjectKey]*vmopv1.VirtualMachineSetResourcePolicy)
 	s.vmPubMap = make(map[string]vimtypes.TaskInfoState)
 	s.isPublishVMCalled = false
 }
@@ -177,25 +174,7 @@ func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.C
 	if s.CreateOrUpdateVirtualMachineSetResourcePolicyFn != nil {
 		return s.CreateOrUpdateVirtualMachineSetResourcePolicyFn(ctx, resourcePolicy)
 	}
-	s.addToResourcePolicyMap(resourcePolicy)
-
 	return nil
-}
-
-func (s *VMProvider) IsVirtualMachineSetResourcePolicyReady(ctx context.Context, azName string, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (bool, error) {
-	s.Lock()
-	defer s.Unlock()
-
-	if s.IsVirtualMachineSetResourcePolicyReadyFn != nil {
-		return s.IsVirtualMachineSetResourcePolicyReadyFn(ctx, azName, resourcePolicy)
-	}
-	objectKey := client.ObjectKey{
-		Namespace: resourcePolicy.Namespace,
-		Name:      resourcePolicy.Name,
-	}
-	_, found := s.resourcePolicyMap[objectKey]
-
-	return found, nil
 }
 
 func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
@@ -205,8 +184,6 @@ func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, 
 	if s.DeleteVirtualMachineSetResourcePolicyFn != nil {
 		return s.DeleteVirtualMachineSetResourcePolicyFn(ctx, resourcePolicy)
 	}
-	s.deleteFromResourcePolicyMap(resourcePolicy)
-
 	return nil
 }
 
@@ -336,23 +313,6 @@ func (s *VMProvider) deleteFromVMMap(vm *vmopv1.VirtualMachine) {
 	delete(s.vmMap, objectKey)
 }
 
-func (s *VMProvider) addToResourcePolicyMap(rp *vmopv1.VirtualMachineSetResourcePolicy) {
-	objectKey := client.ObjectKey{
-		Namespace: rp.Namespace,
-		Name:      rp.Name,
-	}
-
-	s.resourcePolicyMap[objectKey] = rp
-}
-
-func (s *VMProvider) deleteFromResourcePolicyMap(rp *vmopv1.VirtualMachineSetResourcePolicy) {
-	objectKey := client.ObjectKey{
-		Namespace: rp.Namespace,
-		Name:      rp.Name,
-	}
-	delete(s.resourcePolicyMap, objectKey)
-}
-
 func (s *VMProvider) AddToVMPublishMap(actID string, result vimtypes.TaskInfoState) {
 	s.vmPubMap[actID] = result
 }
@@ -401,9 +361,8 @@ func (s *VMProvider) VSphereClient(ctx context.Context) (*vsclient.Client, error
 
 func NewVMProvider() *VMProvider {
 	provider := VMProvider{
-		vmMap:             map[client.ObjectKey]*vmopv1.VirtualMachine{},
-		resourcePolicyMap: map[client.ObjectKey]*vmopv1.VirtualMachineSetResourcePolicy{},
-		vmPubMap:          map[string]vimtypes.TaskInfoState{},
+		vmMap:    map[client.ObjectKey]*vmopv1.VirtualMachine{},
+		vmPubMap: map[string]vimtypes.TaskInfoState{},
 	}
 	return &provider
 }

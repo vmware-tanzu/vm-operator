@@ -17,58 +17,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 )
 
-// IsVirtualMachineSetResourcePolicyReady checks if the VirtualMachineSetResourcePolicy for the AZ is ready.
-func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
-	ctx context.Context,
-	azName string,
-	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (bool, error) {
-
-	client, err := vs.getVcClient(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	folderMoID, rpMoID, err := topology.GetNamespaceFolderAndRPMoID(ctx, vs.k8sClient, azName, resourcePolicy.Namespace)
-	if err != nil {
-		return false, err
-	}
-
-	folderExists := true
-	if folderName := resourcePolicy.Spec.Folder; folderName != "" {
-		folderExists, err = vcenter.DoesChildFolderExist(ctx, client.VimClient(), folderMoID, folderName)
-		if err != nil {
-			return false, err
-		}
-	}
-
-	rpExists := true
-	if rpName := resourcePolicy.Spec.ResourcePool.Name; rpName != "" {
-		rpExists, err = vcenter.DoesChildResourcePoolExist(ctx, client.VimClient(), rpMoID, rpName)
-		if err != nil {
-			return false, err
-		}
-	}
-
-	clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, client.VimClient(), rpMoID)
-	if err != nil {
-		return false, err
-	}
-
-	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
-	modulesExist, err := vs.doClusterModulesExist(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
-	if err != nil {
-		return false, err
-	}
-
-	if !rpExists || !folderExists || !modulesExist {
-		log.V(4).Info("Resource policy is not ready", "resourcePolicy", resourcePolicy.Name,
-			"namespace", resourcePolicy.Name, "az", azName, "resourcePool", rpExists, "folder", folderExists, "modules", modulesExist)
-		return false, nil
-	}
-
-	return true, nil
-}
-
 // CreateOrUpdateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
 func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 	ctx context.Context,

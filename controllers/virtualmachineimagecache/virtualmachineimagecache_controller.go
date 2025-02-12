@@ -6,7 +6,6 @@ package virtualmachineimagecache
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path"
 	"reflect"
@@ -156,15 +155,15 @@ func (r *reconciler) ReconcileNormal(
 
 	// Verify the item's ID.
 	if obj.Spec.ProviderID == "" {
-		return errors.New("spec.providerID is empty")
+		return pkgerr.NoRequeueError{Message: "spec.providerID is empty"}
 	}
 
 	// Verify the item's version.
 	if obj.Spec.ProviderVersion == "" {
-		return errors.New("spec.providerVersion is empty")
+		return pkgerr.NoRequeueError{Message: "spec.providerVersion is empty"}
 	}
 
-	logger := r.Logger.WithValues(
+	logger := logr.FromContextOrDiscard(ctx).WithValues(
 		"providerID", obj.Spec.ProviderID,
 		"providerVersion", obj.Spec.ProviderVersion)
 	ctx = logr.NewContext(ctx, logger)

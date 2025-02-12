@@ -36,6 +36,30 @@ var _ = Describe("RequeueError", func() {
 			"requeue after 1s",
 		),
 	)
+})
+
+var _ = Describe("NoRequeueError", func() {
+
+	DescribeTable("Error",
+		func(e error, expErr string) {
+			Expect(e).To(MatchError(expErr))
+		},
+
+		Entry(
+			"no message",
+			pkgerr.NoRequeueError{},
+			"no requeue",
+		),
+
+		Entry(
+			"with message",
+			pkgerr.NoRequeueError{Message: "hi"},
+			"hi",
+		),
+	)
+})
+
+var _ = Describe("ResultFromError", func() {
 
 	DescribeTable("ResultFromError",
 		func(e error, expResult ctrl.Result, expErr string) {
@@ -49,7 +73,14 @@ var _ = Describe("RequeueError", func() {
 		},
 
 		Entry(
-			"err is not RequeueError",
+			"err is nil",
+			nil,
+			ctrl.Result{},
+			"",
+		),
+
+		Entry(
+			"err is not a (No)RequeueError",
 			errors.New("hi"),
 			ctrl.Result{},
 			"hi",
@@ -60,6 +91,13 @@ var _ = Describe("RequeueError", func() {
 			pkgerr.RequeueError{},
 			ctrl.Result{Requeue: true},
 			"",
+		),
+
+		Entry(
+			"err is NoRequeueError",
+			pkgerr.NoRequeueError{Message: "hi"},
+			ctrl.Result{},
+			"terminal error: hi",
 		),
 
 		Entry(
@@ -79,6 +117,35 @@ var _ = Describe("RequeueError", func() {
 				),
 			),
 			ctrl.Result{RequeueAfter: time.Minute * 1},
+			"",
+		),
+
+		Entry(
+			"err is wrapped NoRequeueError",
+			fmt.Errorf("hi: %w", pkgerr.NoRequeueError{Message: "hi"}),
+			ctrl.Result{},
+			"terminal error: hi: hi",
+		),
+
+		Entry(
+			"err is NoRequeueError wrapped with multiple errors",
+			fmt.Errorf(
+				"hi: %w",
+				fmt.Errorf("there: %w, %w",
+					errors.New("hello"),
+					pkgerr.NoRequeueError{Message: "hi"},
+				),
+			),
+			ctrl.Result{},
+			"terminal error: hi: there: hello, hi",
+		),
+
+		Entry(
+			"err is wrapped NoRequeueError and RequeueError",
+			fmt.Errorf("%w, %w",
+				pkgerr.NoRequeueError{Message: "hi"},
+				pkgerr.RequeueError{After: time.Second * 1}),
+			ctrl.Result{RequeueAfter: time.Second * 1},
 			"",
 		),
 	)

@@ -373,7 +373,7 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 
 		if info.Status == "ERROR" {
 			// Log message used by VMC LINT. Refer to before making changes
-			return false, fmt.Errorf("error occurred preparing file for download %v", info.ErrorMessage)
+			return false, fmt.Errorf("error occurred preparing file for download %w", info.ErrorMessage)
 		}
 
 		if info.Status != "PREPARED" {

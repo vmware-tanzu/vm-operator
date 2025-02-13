@@ -308,7 +308,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineReplicaSetContext
 		client.MatchingLabels(selectorMap),
 	); err != nil {
 		return ctrl.Result{},
-			fmt.Errorf("failed to list virtual machines matched by the VirtualMachineReplicaSet. selector: %q, err: %v",
+			fmt.Errorf("failed to list virtual machines matched by the VirtualMachineReplicaSet. selector: %q, err: %w",
 				selectorMap, err)
 	}
 

@@ -5,16 +5,15 @@
 package vm_test
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -74,36 +73,24 @@ func hardwareVersionTests() {
 		}
 
 		assertInvalidPowerStateFaultPoweredOn := func(err error) {
-			ExpectWithOffset(1, err).To(HaveOccurred())
-			err = errors.Unwrap(err)
-			ExpectWithOffset(1, err).To(HaveOccurred())
-			ExpectWithOffset(1, err).To(BeAssignableToTypeOf(task.Error{}))
-			ExpectWithOffset(1, err.(task.Error).Fault()).ToNot(BeNil())
-			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimtypes.InvalidPowerStateFault{}))
-			fault := err.(task.Error).Fault().(*vimtypes.InvalidPowerStateFault)
-			ExpectWithOffset(1, fault.ExistingState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-			ExpectWithOffset(1, fault.RequestedState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+			var psFault *vimtypes.InvalidPowerStateFault
+			_, ok := fault.As(err, &psFault)
+			ExpectWithOffset(1, ok).To(BeTrue())
+			ExpectWithOffset(1, psFault.ExistingState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+			ExpectWithOffset(1, psFault.RequestedState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 		}
 
 		assertInvalidPowerStateFaultSuspended := func(err error) {
-			ExpectWithOffset(1, err).To(HaveOccurred())
-			err = errors.Unwrap(err)
-			ExpectWithOffset(1, err).To(HaveOccurred())
-			ExpectWithOffset(1, err).To(BeAssignableToTypeOf(task.Error{}))
-			ExpectWithOffset(1, err.(task.Error).Fault()).ToNot(BeNil())
-			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimtypes.InvalidPowerStateFault{}))
-			fault := err.(task.Error).Fault().(*vimtypes.InvalidPowerStateFault)
-			ExpectWithOffset(1, fault.ExistingState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
-			ExpectWithOffset(1, fault.RequestedState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+			var psFault *vimtypes.InvalidPowerStateFault
+			_, ok := fault.As(err, &psFault)
+			ExpectWithOffset(1, ok).To(BeTrue())
+			ExpectWithOffset(1, psFault.ExistingState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
+			ExpectWithOffset(1, psFault.RequestedState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 		}
 
 		assertAlreadyUpgradedFault := func(err error) {
-			ExpectWithOffset(1, err).To(HaveOccurred())
-			err = errors.Unwrap(err)
-			ExpectWithOffset(1, err).To(HaveOccurred())
-			ExpectWithOffset(1, err).To(BeAssignableToTypeOf(task.Error{}))
-			ExpectWithOffset(1, err.(task.Error).Fault()).ToNot(BeNil())
-			ExpectWithOffset(1, err.(task.Error).Fault()).To(BeAssignableToTypeOf(&vimtypes.AlreadyUpgradedFault{}))
+			ok := fault.Is(err, &vimtypes.AlreadyUpgradedFault{})
+			Expect(ok).To(BeTrue())
 		}
 
 		assertFailedToRetrievePropsNotFound := func(err error) {

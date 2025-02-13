@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/task"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -273,7 +273,7 @@ func doCustomize(
 	if err := resources.NewVMFromObject(vcVM).Customize(vmCtx, *customSpec); err != nil {
 		// isCustomizationPendingExtraConfig() above is supposed to prevent this error, but
 		// handle it explicitly here just in case so VM reconciliation can proceed.
-		if !isCustomizationPendingError(err) {
+		if !fault.Is(err, &vimtypes.CustomizationPending{}) {
 			return err
 		}
 	}
@@ -287,15 +287,6 @@ func IsCustomizationPendingExtraConfig(extraConfig []vimtypes.BaseOptionValue) b
 			if optValue.Key == constants.GOSCPendingExtraConfigKey {
 				return optValue.Value.(string) != ""
 			}
-		}
-	}
-	return false
-}
-
-func isCustomizationPendingError(err error) bool {
-	if te, ok := err.(task.Error); ok {
-		if _, ok := te.Fault().(*vimtypes.CustomizationPending); ok {
-			return true
 		}
 	}
 	return false

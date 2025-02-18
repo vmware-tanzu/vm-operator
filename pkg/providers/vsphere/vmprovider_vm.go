@@ -751,6 +751,24 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			return err
 		}
 
+		// Only reconcile connected VMs or if the connection state is empty.
+		if cs := vmCtx.MoVM.Summary.Runtime.ConnectionState; cs != "" && cs !=
+			vimtypes.VirtualMachineConnectionStateConnected {
+
+			// Return a NoRequeueError so the VM is not requeued for
+			// reconciliation.
+			//
+			// The watcher service ensures that VMs will be reconciled
+			// immediately upon their summary.runtime.connectionState value
+			// changing.
+			//
+			// TODO(akutz) Determine if we should surface some type of condition
+			//             that indicates this state.
+			return pkgerr.NoRequeueError{
+				Message: fmt.Sprintf("unsupported VM connection state: %s", cs),
+			}
+		}
+
 		if vmCtx.MoVM.ResourcePool == nil {
 			// Same error as govmomi VirtualMachine::ResourcePool().
 			return fmt.Errorf("VM doesn't have a resourcePool")

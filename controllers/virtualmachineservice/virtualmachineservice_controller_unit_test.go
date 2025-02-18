@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
@@ -32,7 +32,7 @@ func unitTests() {
 		"Reconcile",
 		Label(
 			testlabels.Controller,
-			testlabels.V1Alpha3,
+			testlabels.API,
 		),
 		unitTestsReconcile,
 	)
@@ -41,7 +41,7 @@ func unitTests() {
 		Label(
 			testlabels.Controller,
 			testlabels.NSXT,
-			testlabels.V1Alpha3,
+			testlabels.API,
 		),
 		nsxtLBProviderTestsReconcile,
 	)

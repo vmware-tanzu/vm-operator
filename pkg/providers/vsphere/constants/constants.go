@@ -155,4 +155,20 @@ const (
 	V1alpha3SubnetMask = "V1alpha3_SubnetMask"
 	// V1alpha3FormatNameservers is an alias for versioned templating function V1alpha3_FormatNameservers.
 	V1alpha3FormatNameservers = "V1alpha3_FormatNameservers"
+	// V1alpha4FirstIP is an alias for versioned templating function V1alpha4_FirstIP.
+	V1alpha4FirstIP = "V1alpha4_FirstIP"
+	// V1alpha4FirstNicMacAddr is an alias for versioned templating function V1alpha4_FirstNicMacAddr.
+	V1alpha4FirstNicMacAddr = "V1alpha4_FirstNicMacAddr"
+	// V1alpha4FirstIPFromNIC is an alias for versioned templating function V1alpha4_FirstIPFromNIC.
+	V1alpha4FirstIPFromNIC = "V1alpha4_FirstIPFromNIC"
+	// V1alpha4IPsFromNIC is an alias for versioned templating function V1alpha4_IPsFromNIC.
+	V1alpha4IPsFromNIC = "V1alpha4_IPsFromNIC"
+	// V1alpha4FormatIP is an alias for versioned templating function V1alpha4_FormatIP.
+	V1alpha4FormatIP = "V1alpha4_FormatIP"
+	// V1alpha4IP is an alias for versioned templating function V1alpha4_IP.
+	V1alpha4IP = "V1alpha4_IP"
+	// V1alpha4SubnetMask is an alias for versioned templating function  V1alpha4_SubnetMask.
+	V1alpha4SubnetMask = "V1alpha4_SubnetMask"
+	// V1alpha4FormatNameservers is an alias for versioned templating function V1alpha4_FormatNameservers.
+	V1alpha4FormatNameservers = "V1alpha4_FormatNameservers"
 )

@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -22,7 +22,7 @@ func uniTests() {
 			testlabels.Create,
 			testlabels.Update,
 			testlabels.Delete,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Mutation,
 			testlabels.Webhook,
 		),

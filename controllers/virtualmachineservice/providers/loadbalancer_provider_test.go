@@ -13,7 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 )
@@ -24,7 +24,7 @@ const (
 
 var _ = Describe(
 	"Loadbalancer Provider",
-	Label(testlabels.Controller, testlabels.V1Alpha3),
+	Label(testlabels.Controller, testlabels.API),
 	func() {
 		var (
 			ctx        context.Context

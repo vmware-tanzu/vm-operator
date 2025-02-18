@@ -29,7 +29,7 @@ var _ = Describe(
 	Label(
 		testlabels.Controller,
 		testlabels.EnvTest,
-		testlabels.V1Alpha3,
+		testlabels.API,
 	),
 	Ordered,
 	func() {

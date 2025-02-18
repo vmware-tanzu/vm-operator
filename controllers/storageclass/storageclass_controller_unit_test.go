@@ -30,7 +30,7 @@ func unitTests() {
 		"Reconcile",
 		Label(
 			testlabels.Controller,
-			testlabels.V1Alpha3,
+			testlabels.API,
 		),
 		unitTestsReconcile,
 	)

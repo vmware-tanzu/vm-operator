@@ -23,7 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto/internal"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
 type ptrCfgSpec = *vimtypes.VirtualMachineConfigSpec

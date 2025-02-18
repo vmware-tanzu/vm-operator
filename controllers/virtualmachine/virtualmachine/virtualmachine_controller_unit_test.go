@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -35,7 +35,7 @@ func unitTests() {
 		"Reconcile",
 		Label(
 			testlabels.Controller,
-			testlabels.V1Alpha3,
+			testlabels.API,
 		),
 		unitTestsReconcile,
 	)

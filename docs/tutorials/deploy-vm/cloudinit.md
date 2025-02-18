@@ -10,7 +10,7 @@ The example below illustrates a `VirtualMachine` resource that specifies a Cloud
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha3
+    apiVersion: vmoperator.vmware.com/v1alpha4
     kind: VirtualMachine
     metadata:
       name:      my-vm

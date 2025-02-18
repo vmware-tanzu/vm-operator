@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/bitmask"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	ctxgen "github.com/vmware-tanzu/vm-operator/pkg/context/generic"

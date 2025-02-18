@@ -30,7 +30,7 @@ func unitTests() {
 		"Create",
 		Label(
 			testlabels.Create,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -40,7 +40,7 @@ func unitTests() {
 		"Update",
 		Label(
 			testlabels.Update,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
@@ -50,7 +50,7 @@ func unitTests() {
 		"Delete",
 		Label(
 			testlabels.Delete,
-			testlabels.V1Alpha3,
+			testlabels.API,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),

@@ -36,7 +36,7 @@ The `VirtualMachine` API directly supports specifying a Cloud-Init [cloud config
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha3
+    apiVersion: vmoperator.vmware.com/v1alpha4
     kind: VirtualMachine
     metadata:
       name:      my-vm
@@ -183,7 +183,7 @@ When more advanced configurations are required, a raw cloud config may be used v
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha3
+    apiVersion: vmoperator.vmware.com/v1alpha4
     kind: VirtualMachine
     metadata:
       name:      my-vm
@@ -239,7 +239,7 @@ When more advanced configurations are required, a raw cloud config may be used v
 If using Linux and Cloud-Init is not an option, try the LinuxPrep bootstrap provider, which uses VMware tools to bootstrap a Linux guest operating system. It has minimal configuration options, but it supports a wide-range of Linux distributions. The following YAML may be used to bootstrap a guest using LinuxPrep:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha3
+apiVersion: vmoperator.vmware.com/v1alpha4
 kind: VirtualMachine
 metadata:
   name:      my-vm
@@ -271,7 +271,7 @@ It is possible to specify the sysprep configuration inline with the `VirtualMach
 The following YAML may be used to bootstrap a Windows image that uses the volume license SKU and does not require a product ID:
 
 ``` yaml
-apiVersion: vmoperator.vmware.com/v1alpha3
+apiVersion: vmoperator.vmware.com/v1alpha4
 kind: VirtualMachine
 metadata:
   name:      my-vm
@@ -292,7 +292,7 @@ The following may be used to bootstrap a Windows image that requires a product I
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha3
+    apiVersion: vmoperator.vmware.com/v1alpha4
     kind: VirtualMachine
     metadata:
       name:      my-vm
@@ -339,7 +339,7 @@ The following YAML may be used to bootstrap a Windows image with minimal informa
 === "VirtualMachine"
 
     ``` yaml
-    apiVersion: vmoperator.vmware.com/v1alpha3
+    apiVersion: vmoperator.vmware.com/v1alpha4
     kind: VirtualMachine
     metadata:
       name:      my-vm
@@ -528,7 +528,7 @@ The vAppConfig bootstrap method is useful for legacy, VM images that rely on bes
 To illustrate, the following YAML can be utilized to deploy a VirtualMachine and bootstrap OVF properties that define the network information:
 
 ``` yaml
-apiVersion: vmoperator.vmware.com/v1alpha3
+apiVersion: vmoperator.vmware.com/v1alpha4
 kind: VirtualMachine
 metadata:
   name:      my-vm
@@ -542,16 +542,16 @@ spec:
       properties:
       - key: nameservers
         value:
-          value: "{{ (index .V1alpha3.Net.Nameservers 0) }}"
+          value: "{{ (index .V1alpha4.Net.Nameservers 0) }}"
       - key: management_ip
         value:
-          value: "{{ (index (index .V1alpha3.Net.Devices 0).IPAddresses 0) }}"
+          value: "{{ (index (index .V1alpha4.Net.Devices 0).IPAddresses 0) }}"
       - key: hostname
         value:
-          value: "{{ .V1alpha3.VM.Name }}"
+          value: "{{ .V1alpha4.VM.Name }}"
       - key: management_gateway
         value:
-          value: "{{ (index .V1alpha3.Net.Devices 0).Gateway4 }}"
+          value: "{{ (index .V1alpha4.Net.Devices 0).Gateway4 }}"
 ```
 
 ### Templating
@@ -568,18 +568,18 @@ The following table lists the functions VM Operator defines and passes into the 
 
 !!! note "`V1alpha1` and `V1alpha2` Prefixed Template Functions"
 
-    Please note the template functions beginning with `V1alpha1` and `V1alpha2` are still supported, but users are encouraged to switch to the `V1alpha3` variants.
+    Please note the template functions beginning with `V1alpha1` and `V1alpha2` are still supported, but users are encouraged to switch to the `V1alpha4` variants.
 
 | Query name | Signature | Description |
 | -------- | -------- | -------- |
-| V1alpha3_FirstIP | `func () string` | Get the first, non-loopback IP address (formatted with network length) from the first NIC. |
-| V1alpha3_FirstIPFromNIC | `func (index int) string` | Get the first, non-loopback IP address (formatted with network length) from the n'th NIC. If the specified index is out-of-bounds, the template string is not parsed. |
-| V1alpha3_FormatIP | `func (IP string, netmask string) string` | This function may be used to format an IP address with or without a network prefix length. If the provided netmask is empty, then the IP address returned does not include a network length. If the provided netmask is non-empty, then it must be either a length, ex. `/24`, or decimal notation, ex. `255.255.255.0`. |
-| V1alpha3_FirstNicMacAddr | `func() (string, error)` | Get the MAC address from the first NIC. |
-| V1alpha3_FormatNameservers| `func (count int, delimiter string) string` | Format the first occurred count of nameservers with the provided delimiter. Specify a negative number to include all nameservers. |
-| V1alpha3_IP | `func(IP string) string` | Format an IP address with the default netmask CIDR. If the specified IP is invalid, the template string is not parsed. |
-| V1alpha3_IPsFromNIC | `func (index int) []string` | List all IPs, formatted with the network length, from the n'th NIC. If the specified index is out-of-bounds, the template string is not parsed. |
-| V1alpha3_SubnetMask | `func(cidr string) (string, error)` | Get a subnet mask from an IP address formatted with a network length. |
+| V1alpha4_FirstIP | `func () string` | Get the first, non-loopback IP address (formatted with network length) from the first NIC. |
+| V1alpha4_FirstIPFromNIC | `func (index int) string` | Get the first, non-loopback IP address (formatted with network length) from the n'th NIC. If the specified index is out-of-bounds, the template string is not parsed. |
+| V1alpha4_FormatIP | `func (IP string, netmask string) string` | This function may be used to format an IP address with or without a network prefix length. If the provided netmask is empty, then the IP address returned does not include a network length. If the provided netmask is non-empty, then it must be either a length, ex. `/24`, or decimal notation, ex. `255.255.255.0`. |
+| V1alpha4_FirstNicMacAddr | `func() (string, error)` | Get the MAC address from the first NIC. |
+| V1alpha4_FormatNameservers| `func (count int, delimiter string) string` | Format the first occurred count of nameservers with the provided delimiter. Specify a negative number to include all nameservers. |
+| V1alpha4_IP | `func(IP string) string` | Format an IP address with the default netmask CIDR. If the specified IP is invalid, the template string is not parsed. |
+| V1alpha4_IPsFromNIC | `func (index int) []string` | List all IPs, formatted with the network length, from the n'th NIC. If the specified index is out-of-bounds, the template string is not parsed. |
+| V1alpha4_SubnetMask | `func(cidr string) (string, error)` | Get a subnet mask from an IP address formatted with a network length. |
 
 ## Deprecated
 

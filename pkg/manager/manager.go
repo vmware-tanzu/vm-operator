@@ -33,9 +33,7 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopapi "github.com/vmware-tanzu/vm-operator/api"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -66,9 +64,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 	_ = capv1.AddToScheme(opts.Scheme)
 	_ = appv1a1.AddToScheme(opts.Scheme)
 
-	_ = vmopv1a1.AddToScheme(opts.Scheme)
-	_ = vmopv1a2.AddToScheme(opts.Scheme)
-	_ = vmopv1.AddToScheme(opts.Scheme)
+	_ = vmopapi.AddToScheme(opts.Scheme)
 
 	if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
 		_ = vpcv1alpha1.AddToScheme(opts.Scheme)

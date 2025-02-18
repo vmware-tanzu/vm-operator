@@ -117,7 +117,18 @@ func (r *Reconciler) ReconcileNormal(
 	if err := r.Client.List(
 		ctx,
 		&list,
-		client.InNamespace(namespace)); err != nil {
+		client.InNamespace(namespace),
+		//
+		// !!! WARNING !!!
+		//
+		// The use of the UnsafeDisableDeepCopy option improves
+		// performance by skipping a CPU-intensive operation.
+		// However, it also means any writes to the returned
+		// objects will directly impact the cache. Therefore,
+		// please be aware of this when doing anything with the
+		// object(s) that are the result of this operation.
+		//
+		client.UnsafeDisableDeepCopy); err != nil {
 
 		return fmt.Errorf(
 			"failed to list VMs in namespace %s: %w", namespace, err)

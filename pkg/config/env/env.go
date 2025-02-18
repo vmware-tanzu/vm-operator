@@ -40,6 +40,8 @@ const (
 	MaxConcurrentReconciles
 	MemStatsPeriod
 	LeaderElectionID
+	SIGUSR2RestartEnabled
+	DeploymentName
 	PodName
 	PodNamespace
 	PodServiceAccountName
@@ -141,6 +143,10 @@ func (n VarName) String() string {
 		return "MEM_STATS_PERIOD"
 	case LeaderElectionID:
 		return "LEADER_ELECTION_ID"
+	case SIGUSR2RestartEnabled:
+		return "SIGUSR2_RESTART_ENABLED"
+	case DeploymentName:
+		return "DEPLOYMENT_NAME"
 	case PodName:
 		return "POD_NAME"
 	case PodNamespace:

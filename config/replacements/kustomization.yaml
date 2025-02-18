@@ -330,3 +330,18 @@ replacements:
       version: v1
       kind: CustomResourceDefinition
       name: virtualmachinesetresourcepolicies.vmoperator.vmware.com
+
+# DEPLOYMENT_NAME
+- source:
+    fieldPath: metadata.name
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: system
+    name: controller-manager
+  targets:
+  - select:
+      kind: Deployment
+      name: controller-manager
+    fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=DEPLOYMENT_NAME].value

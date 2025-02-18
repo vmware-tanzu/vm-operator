@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -53,6 +54,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 	// Ensure the default options are set.
 	opts.defaults()
 
+	_ = appsv1.AddToScheme(opts.Scheme)
 	_ = clientgoscheme.AddToScheme(opts.Scheme)
 	_ = ncpv1alpha1.AddToScheme(opts.Scheme)
 	_ = cnsv1alpha1.AddToScheme(opts.Scheme)
@@ -82,14 +84,23 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		},
 		Client: client.Options{
 			Cache: &client.CacheOptions{
-				// An informer is created for each watched resource. Due to the
-				// number of ConfigMap and Secret resources that may exist,
-				// watching each one can result in VM Operator being terminated
-				// due to an out-of-memory error, i.e. OOMKill. To avoid this
-				// outcome, ConfigMap and Secret resources are not cached.
 				DisableFor: []client.Object{
+					// An informer is created for each watched resource. Due to the
+					// number of ConfigMap and Secret resources that may exist,
+					// watching each one can result in VM Operator being terminated
+					// due to an out-of-memory error, i.e. OOMKill. To avoid this
+					// outcome, ConfigMap and Secret resources are not cached.
 					&corev1.ConfigMap{},
 					&corev1.Secret{},
+
+					// The pkg/exit.Restart function gets a Deployment resource
+					// in order to patch it to restart the pods in the
+					// deployment when capabilities have changed.
+					// Capabilities do not change often enough to warrant
+					// caching the Deployment resource, and thus there is no
+					// reason to cache Deployment resources as nothing else in
+					// VM Operator gets them.
+					&appsv1.Deployment{},
 				},
 			},
 		},

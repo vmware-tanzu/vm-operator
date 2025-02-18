@@ -248,12 +248,16 @@ var _ = Describe("UpdateCapabilities", func() {
 
 var _ = Describe("UpdateCapabilitiesFeatures", func() {
 	var (
-		ctx context.Context
+		ctx  context.Context
+		ok   bool
+		diff string
 	)
 
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContext()
 		ctx = logr.NewContext(ctx, logf.Log)
+
+		ok, diff = false, ""
 	})
 
 	When("obj is map[string]string", func() {
@@ -264,7 +268,7 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 			obj = map[string]string{}
 		})
 		JustBeforeEach(func() {
-			capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+			diff, ok = capabilities.UpdateCapabilitiesFeatures(ctx, obj)
 		})
 		Context(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
 			BeforeEach(func() {
@@ -272,6 +276,8 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				obj[capabilities.CapabilityKeyTKGMultipleContentLibraries] = trueString
 			})
 			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("TKGMultipleCL=true"))
 				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
 			})
 		})
@@ -288,6 +294,8 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 					obj[capabilities.CapabilityKeyWorkloadIsolation] = trueString
 				})
 				Specify("Enabled", func() {
+					Expect(ok).To(BeTrue())
+					Expect(diff).To(Equal("WorkloadDomainIsolation=true"))
 					Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
 				})
 			})
@@ -302,7 +310,7 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 			obj.Data = map[string]string{}
 		})
 		JustBeforeEach(func() {
-			capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+			diff, ok = capabilities.UpdateCapabilitiesFeatures(ctx, obj)
 		})
 		Context(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
 			BeforeEach(func() {
@@ -326,6 +334,8 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 					obj.Data[capabilities.CapabilityKeyWorkloadIsolation] = trueString
 				})
 				Specify("Enabled", func() {
+					Expect(ok).To(BeTrue())
+					Expect(diff).To(Equal("WorkloadDomainIsolation=true"))
 					Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
 				})
 			})
@@ -340,7 +350,7 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 			obj.Status.Supervisor = map[capv1.CapabilityName]capv1.CapabilityStatus{}
 		})
 		JustBeforeEach(func() {
-			capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+			diff, ok = capabilities.UpdateCapabilitiesFeatures(ctx, obj)
 		})
 		Context(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 			BeforeEach(func() {
@@ -350,6 +360,8 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				}
 			})
 			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true"))
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeTrue())
 			})
 		})
@@ -361,6 +373,8 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				}
 			})
 			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("TKGMultipleCL=true"))
 				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
 			})
 		})
@@ -372,7 +386,89 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				}
 			})
 			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("WorkloadDomainIsolation=true"))
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+			})
+		})
+	})
+})
+
+var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
+	var (
+		ctx context.Context
+		obj capv1.Capabilities
+
+		ok   bool
+		diff string
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContext()
+		ctx = logr.NewContext(ctx, logf.Log)
+		obj.Status.Supervisor = map[capv1.CapabilityName]capv1.CapabilityStatus{
+			capabilities.CapabilityKeyBringYourOwnKeyProvider: {
+				Activated: true,
+			},
+			capabilities.CapabilityKeyTKGMultipleContentLibraries: {
+				Activated: true,
+			},
+			capabilities.CapabilityKeyWorkloadIsolation: {
+				Activated: true,
+			},
+		}
+
+		ok, diff = false, ""
+	})
+
+	JustBeforeEach(func() {
+		diff, ok = capabilities.WouldUpdateCapabilitiesFeatures(ctx, obj)
+	})
+
+	When("the resource exists", func() {
+		When("the capabilities are not different", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.BringYourOwnEncryptionKey = true
+					config.Features.TKGMultipleCL = true
+					config.Features.WorkloadDomainIsolation = true
+				})
+			})
+			Specify("capabilities did not change", func() {
+				Expect(ok).To(BeFalse())
+				Expect(diff).To(BeEmpty())
+			})
+			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeTrue())
+			})
+			Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeTrue())
+			})
+			Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+			})
+		})
+
+		When("the capabilities are different", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.BringYourOwnEncryptionKey = false
+					config.Features.TKGMultipleCL = false
+					config.Features.WorkloadDomainIsolation = false
+				})
+			})
+			Specify("capabilities changed", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,TKGMultipleCL=true,WorkloadDomainIsolation=true"))
+			})
+			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyTKGMultipleContentLibraries, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.TKGMultipleCL).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
 			})
 		})
 	})

@@ -73,4 +73,18 @@ const (
 	// FastDeployModeLinked is a fast deploy mode. See FastDeployAnnotationKey
 	// for more information.
 	FastDeployModeLinked = "linked"
+
+	// LastRestartTimeAnnotationKey is applied to a Deployment's pod template
+	// spec when the pod needs to restart itself, ex. the capabilities change.
+	// The application of this annotation causes the Deployment to do a rollout
+	// of new pods, ensuring at least one pod is online at all times.
+	// The value is an RFC3339Nano formatted timestamp.
+	LastRestartTimeAnnotationKey = "vmoperator.vmware.com/last-restart-time"
+
+	// LastRestartReasonAnnotationKey is applied to a Deployment's pod template
+	// spec when the pod needs to restart itself, ex. the capabilities change.
+	// The application of this annotation causes the Deployment to do a rollout
+	// of new pods, ensuring at least one pod is online at all times.
+	// The value is the reason for the restart.
+	LastRestartReasonAnnotationKey = "vmoperator.vmware.com/last-restart-reason"
 )

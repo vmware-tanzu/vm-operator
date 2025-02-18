@@ -80,6 +80,10 @@ type Config struct {
 	PodName               string
 	PodNamespace          string
 	PodServiceAccountName string
+	DeploymentName        string
+
+	// SIGUSR2RestartEnabled allows SIGUSR2 to cause the pod to restart.
+	SIGUSR2RestartEnabled bool
 
 	// PrivilegedUsers is a comma-delimited a list of users that are, in
 	// addition to the kube-admin and system users, treated as privileged by

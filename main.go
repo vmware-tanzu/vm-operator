@@ -12,6 +12,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -34,6 +35,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgexit "github.com/vmware-tanzu/vm-operator/pkg/exit"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/pkg/mem"
@@ -89,6 +91,8 @@ func main() {
 	initManager()
 
 	initWebhookServer()
+
+	initSIGUSR2RestartHandler()
 
 	setupLog.Info("Starting controller manager")
 	sigHandler := ctrlsig.SetupSignalHandler()
@@ -379,4 +383,21 @@ func initWebhookServer() {
 		setupLog.Error(err, "Unable to create readiness check")
 		os.Exit(1)
 	}
+}
+
+func initSIGUSR2RestartHandler() {
+	setupLog.Info("SIGUSR2 restart handler",
+		"enabled", defaultConfig.SIGUSR2RestartEnabled)
+
+	if !defaultConfig.SIGUSR2RestartEnabled {
+		return
+	}
+
+	// Allow the pod to restart via pkg/exit.Restart when SIGUSR2 is received.
+	// This simulates the behavior when capabilities are changed and the pod
+	// is the leader.
+	_ = pkgexit.NewRestartSignalHandler(
+		logr.NewContext(ctx, setupLog),
+		mgr.GetClient(),
+		mgr.Elected())
 }

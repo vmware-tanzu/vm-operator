@@ -46,6 +46,8 @@ func FromEnv() Config {
 	setDuration(env.SyncPeriod, &config.SyncPeriod)
 	setInt(env.MaxConcurrentReconciles, &config.MaxConcurrentReconciles)
 	setString(env.LeaderElectionID, &config.LeaderElectionID)
+	setBool(env.SIGUSR2RestartEnabled, &config.SIGUSR2RestartEnabled)
+	setString(env.DeploymentName, &config.DeploymentName)
 	setString(env.PodName, &config.PodName)
 	setString(env.PodNamespace, &config.PodNamespace)
 	setString(env.PodServiceAccountName, &config.PodServiceAccountName)

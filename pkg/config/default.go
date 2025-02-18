@@ -47,6 +47,8 @@ func Default() Config {
 		PoweredOnVMHasIPRequeueDelay: 10 * time.Second,
 		SyncImageRequeueDelay:        10 * time.Second,
 		NetworkProviderType:          NetworkProviderTypeNamed,
+		SIGUSR2RestartEnabled:        false,
+		DeploymentName:               defaultPrefix + "controller-manager",
 		PodName:                      defaultPrefix + "controller-manager",
 		PodNamespace:                 defaultPrefix + "system",
 		PodServiceAccountName:        "default",

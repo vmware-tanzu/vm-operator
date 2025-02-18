@@ -108,6 +108,8 @@ var _ = Describe(
 					Expect(os.Setenv("POWERED_ON_VM_HAS_IP_REQUEUE_DELAY", "126h")).To(Succeed())
 					Expect(os.Setenv("MEM_STATS_PERIOD", "127h")).To(Succeed())
 					Expect(os.Setenv("SYNC_IMAGE_REQUEUE_DELAY", "128h")).To(Succeed())
+					Expect(os.Setenv("DEPLOYMENT_NAME", "129")).To(Succeed())
+					Expect(os.Setenv("SIGUSR2_RESTART_ENABLED", "true")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
@@ -162,6 +164,8 @@ var _ = Describe(
 						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,
 						MemStatsPeriod:               127 * time.Hour,
 						SyncImageRequeueDelay:        128 * time.Hour,
+						DeploymentName:               "129",
+						SIGUSR2RestartEnabled:        true,
 					}))
 				})
 			})

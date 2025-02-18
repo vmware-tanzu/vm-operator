@@ -27,8 +27,6 @@ spec:
         name: vmoperator-controller-manager
     spec:
       containers:
-      # There's an assumption in manager_webhook_patch.yaml that manager is container[0]
-      # If new containers are added, please bear this in mind
       - command:
         - /manager
         image: controller:latest

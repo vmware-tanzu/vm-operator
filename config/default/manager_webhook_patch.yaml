@@ -6,7 +6,6 @@ metadata:
 spec:
   template:
     spec:
-      # There's an assumption in kustomization.yaml that manager is container[0]
       containers:
       - name: manager
         env:

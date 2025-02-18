@@ -9,6 +9,8 @@ spec:
       containers:
       - name: manager
         env:
+        - name: SIGUSR2_RESTART_ENABLED
+          value: "false"
         - name: ASYNC_SIGNAL_ENABLED
           value: "true"
         - name: ASYNC_CREATE_ENABLED

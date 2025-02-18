@@ -1,6 +1,6 @@
-// Copyright (c) 2024 Broadcom. All Rights Reserved.
-// Broadcom Confidential. The term "Broadcom" refers to Broadcom Inc.
-// and/or its subsidiaries.
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package capability
 
@@ -20,14 +20,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/infra/capability/exit"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgexit "github.com/vmware-tanzu/vm-operator/pkg/exit"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -50,6 +49,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	r := NewReconciler(
 		ctx,
+		mgr.GetClient(),
 		cache,
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -60,7 +60,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	c, err := controller.New(controllerName, mgr, controller.Options{
 		Reconciler:              r,
 		MaxConcurrentReconciles: 1,
-		NeedLeaderElection:      ptr.To(false),
 	})
 	if err != nil {
 		return err
@@ -87,13 +86,15 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 func NewReconciler(
 	ctx context.Context,
-	client ctrlclient.Reader,
+	client ctrlclient.Client,
+	reader ctrlclient.Reader,
 	logger logr.Logger,
 	recorder record.Recorder) *Reconciler {
 
 	return &Reconciler{
 		Context:  ctx,
 		Client:   client,
+		Reader:   reader,
 		Logger:   logger,
 		Recorder: recorder,
 	}
@@ -101,7 +102,8 @@ func NewReconciler(
 
 type Reconciler struct {
 	Context  context.Context
-	Client   ctrlclient.Reader
+	Client   ctrlclient.Client
+	Reader   ctrlclient.Reader
 	Logger   logr.Logger
 	Recorder record.Recorder
 }
@@ -112,16 +114,25 @@ func (r *Reconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request) (ctrl.Result, error) {
 
+	r.Logger.Info("Reconciling capabilities")
+
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+	ctx = logr.NewContext(ctx, r.Logger)
 
 	var obj corev1.ConfigMap
-	if err := r.Client.Get(ctx, req.NamespacedName, &obj); err != nil {
+	if err := r.Reader.Get(ctx, req.NamespacedName, &obj); err != nil {
 		return ctrl.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
-	if capabilities.UpdateCapabilitiesFeatures(ctx, obj) {
-		r.Logger.Info("killing pod due to changed capabilities")
-		exit.Exit()
+	if diff, ok := capabilities.WouldUpdateCapabilitiesFeatures(ctx, obj); ok {
+		if err := pkgexit.Restart(
+			ctx,
+			r.Client,
+			fmt.Sprintf("capabilities have changed: %s", diff)); err != nil {
+
+			r.Logger.Error(err, "Failed to exit due to capability change")
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil

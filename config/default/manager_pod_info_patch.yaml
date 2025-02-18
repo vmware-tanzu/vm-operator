@@ -9,6 +9,8 @@ spec:
       containers:
       - name: manager
         env:
+        - name: DEPLOYMENT_NAME
+          value: DEPLOYMENT_NAME
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:

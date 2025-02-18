@@ -1,6 +1,6 @@
-// Copyright (c) 2024 Broadcom. All Rights Reserved.
-// Broadcom Confidential. The term "Broadcom" refers to Broadcom Inc.
-// and/or its subsidiaries.
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package capability
 
@@ -16,13 +16,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/infra/capability/exit"
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgexit "github.com/vmware-tanzu/vm-operator/pkg/exit"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -57,7 +56,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 1,
-			NeedLeaderElection:      ptr.To(false),
 		}).
 		Complete(r)
 }
@@ -90,16 +88,25 @@ func (r *Reconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request) (ctrl.Result, error) {
 
+	r.Logger.Info("Reconciling capabilities")
+
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+	ctx = logr.NewContext(ctx, r.Logger)
 
 	var obj capv1.Capabilities
 	if err := r.Client.Get(ctx, req.NamespacedName, &obj); err != nil {
 		return ctrl.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
-	if capabilities.UpdateCapabilitiesFeatures(ctx, obj) {
-		r.Logger.Info("killing pod due to changed capabilities")
-		exit.Exit()
+	if diff, ok := capabilities.WouldUpdateCapabilitiesFeatures(ctx, obj); ok {
+		if err := pkgexit.Restart(
+			ctx,
+			r.Client,
+			fmt.Sprintf("capabilities have changed: %s", diff)); err != nil {
+
+			r.Logger.Error(err, "Failed to exit due to capability change")
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil

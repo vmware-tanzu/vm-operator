@@ -6,7 +6,10 @@ package capabilities
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
@@ -64,14 +67,16 @@ func UpdateCapabilities(
 		if err := k8sClient.Get(ctx, CapabilitiesKey, &obj); err != nil {
 			return false, err
 		}
-		return UpdateCapabilitiesFeatures(ctx, obj), nil
+		_, ok := UpdateCapabilitiesFeatures(ctx, obj)
+		return ok, nil
 	}
 
 	var obj corev1.ConfigMap
 	if err := k8sClient.Get(ctx, ConfigMapKey, &obj); err != nil {
 		return false, err
 	}
-	return UpdateCapabilitiesFeatures(ctx, obj), nil
+	_, ok := UpdateCapabilitiesFeatures(ctx, obj)
+	return ok, nil
 }
 
 type updateCapTypes interface {
@@ -88,88 +93,128 @@ type updateCapTypes interface {
 // The return value indicates if any of the features changed.
 func UpdateCapabilitiesFeatures[T updateCapTypes](
 	ctx context.Context,
-	obj T) bool {
+	obj T) (string, bool) {
+
+	return updateCapabilitiesFeatures(ctx, obj, false)
+}
+
+// WouldUpdateCapabilitiesFeatures is like UpdateCapabilitiesFeatures but does
+// not actually cause a change to the capabilities.
+func WouldUpdateCapabilitiesFeatures[T updateCapTypes](
+	ctx context.Context,
+	obj T) (string, bool) {
+
+	return updateCapabilitiesFeatures(ctx, obj, true)
+}
+
+func updateCapabilitiesFeatures[T updateCapTypes](
+	ctx context.Context,
+	obj T,
+	dryRun bool) (string, bool) {
 
 	var (
-		logger  = logr.FromContextOrDiscard(ctx)
+		newFeat pkgcfg.FeatureStates
+		logger  = logr.FromContextOrDiscard(ctx).WithValues("dryRun", dryRun)
 		oldFeat = pkgcfg.FromContext(ctx).Features
 	)
 
+	logger.Info(
+		"Checking if capabilities would update features",
+		"oldFeat", oldFeat)
+
 	switch tObj := (any)(obj).(type) {
 	case map[string]string:
-		updateCapabilitiesFeaturesFromMap(ctx, tObj)
+		newFeat = updateCapabilitiesFeaturesFromMap(tObj, oldFeat)
 	case corev1.ConfigMap:
-		updateCapabilitiesFeaturesFromMap(ctx, tObj.Data)
+		newFeat = updateCapabilitiesFeaturesFromMap(tObj.Data, oldFeat)
 	case capv1.Capabilities:
-		updateCapabilitiesFeaturesFromCRD(ctx, tObj)
+		newFeat = updateCapabilitiesFeaturesFromCRD(tObj, oldFeat)
 	}
 
-	if newFeat := pkgcfg.FromContext(ctx).Features; oldFeat != newFeat {
-		logger.Info(
-			"Updated features from capabilities",
-			"diff", cmp.Diff(oldFeat, newFeat))
+	if oldFeat != newFeat {
+		if !dryRun {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features = newFeat
+			})
+		}
 
-		return true
+		// Use a custom diff reporter to get a sanitized version of the
+		// differences between the old and new features.
+		r := &diffReporter{}
+		_ = cmp.Equal(oldFeat, newFeat, cmp.Reporter(r))
+		diff := r.String()
+
+		logger.Info("Updated features from capabilities", "diff", diff)
+		return diff, true
 	}
 
-	return false
+	logger.Info("Features not updated from capabilities")
+	return "", false
 }
 
 func updateCapabilitiesFeaturesFromMap(
-	ctx context.Context,
-	data map[string]string) {
+	data map[string]string,
+	fs pkgcfg.FeatureStates) pkgcfg.FeatureStates {
 
-	pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-		// TKGMultipleCL is unique in that it is a capability but it predates
-		// SVAsyncUpgrade.
-		config.Features.TKGMultipleCL = isEnabled(data[CapabilityKeyTKGMultipleContentLibraries])
+	// TKGMultipleCL is unique in that it is a capability but it predates
+	// SVAsyncUpgrade.
+	fs.TKGMultipleCL = isEnabled(data[CapabilityKeyTKGMultipleContentLibraries])
 
-		if config.Features.SVAsyncUpgrade {
-			// All other capabilities are gated by SVAsyncUpgrade.
-			config.Features.WorkloadDomainIsolation = isEnabled(data[CapabilityKeyWorkloadIsolation])
-		}
-	})
+	if fs.SVAsyncUpgrade {
+		// All other capabilities are gated by SVAsyncUpgrade.
+		fs.WorkloadDomainIsolation = isEnabled(data[CapabilityKeyWorkloadIsolation])
+	}
+
+	return fs
 }
 
 func updateCapabilitiesFeaturesFromCRD(
-	ctx context.Context,
-	obj capv1.Capabilities) {
-
-	var (
-		byok                    *bool
-		tkgMultipleCL           *bool
-		workloadDomainIsolation *bool
-	)
+	obj capv1.Capabilities,
+	fs pkgcfg.FeatureStates) pkgcfg.FeatureStates {
 
 	for capName, capStatus := range obj.Status.Supervisor {
 		switch capName {
 		case CapabilityKeyBringYourOwnKeyProvider:
-			setCap(&byok, capStatus.Activated)
+			fs.BringYourOwnEncryptionKey = capStatus.Activated
 		case CapabilityKeyTKGMultipleContentLibraries:
-			setCap(&tkgMultipleCL, capStatus.Activated)
+			fs.TKGMultipleCL = capStatus.Activated
 		case CapabilityKeyWorkloadIsolation:
-			setCap(&workloadDomainIsolation, capStatus.Activated)
+			fs.WorkloadDomainIsolation = capStatus.Activated
 		}
 	}
-
-	pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-		if byok != nil {
-			config.Features.BringYourOwnEncryptionKey = *byok
-		}
-		if tkgMultipleCL != nil {
-			config.Features.TKGMultipleCL = *tkgMultipleCL
-		}
-		if workloadDomainIsolation != nil {
-			config.Features.WorkloadDomainIsolation = *workloadDomainIsolation
-		}
-	})
-}
-
-func setCap(dst **bool, val bool) {
-	*dst = &val
+	return fs
 }
 
 func isEnabled(v string) bool {
 	ok, _ := strconv.ParseBool(v)
 	return ok
+}
+
+// diffReporter is a custom reporter for comparing config.Features structs
+// that lists only the features that have changed using a single line of
+// comma-separated values.
+type diffReporter struct {
+	path  cmp.Path
+	diffs []string
+}
+
+func (r *diffReporter) PushStep(ps cmp.PathStep) {
+	r.path = append(r.path, ps)
+}
+
+func (r *diffReporter) Report(rs cmp.Result) {
+	if !rs.Equal() {
+		capName := strings.TrimPrefix(r.path.Last().String(), ".")
+		_, newVal := r.path.Last().Values()
+		r.diffs = append(r.diffs, fmt.Sprintf("%s=%v", capName, newVal))
+	}
+}
+
+func (r *diffReporter) PopStep() {
+	r.path = r.path[:len(r.path)-1]
+}
+
+func (r *diffReporter) String() string {
+	slices.Sort(r.diffs)
+	return strings.Join(r.diffs, ",")
 }

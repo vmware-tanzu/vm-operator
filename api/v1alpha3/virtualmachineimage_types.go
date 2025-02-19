@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1a3common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 )
 
 const (
@@ -152,7 +152,7 @@ type VirtualMachineImageSpec struct {
 
 	// ProviderRef is a reference to the resource that contains the source of
 	// this image's information.
-	ProviderRef *vmopv1common.LocalObjectRef `json:"providerRef,omitempty"`
+	ProviderRef *vmopv1a3common.LocalObjectRef `json:"providerRef,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage.
@@ -213,7 +213,7 @@ type VirtualMachineImageStatus struct {
 
 	// VMwareSystemProperties describes the observed VMware system properties defined for
 	// this image.
-	VMwareSystemProperties []vmopv1common.KeyValuePair `json:"vmwareSystemProperties,omitempty"`
+	VMwareSystemProperties []vmopv1a3common.KeyValuePair `json:"vmwareSystemProperties,omitempty"`
 
 	// +optional
 

@@ -84,7 +84,7 @@ type TCPSocketAction struct {
 // GuestHeartbeatStatus is the guest heartbeat status.
 type GuestHeartbeatStatus string
 
-// See govmomi.vim25.types.ManagedEntityStatus
+// See govmomi.vim25.types.ManagedEntityStatus.
 const (
 	// GrayHeartbeatStatus means VMware Tools are not installed or not running.
 	GrayHeartbeatStatus GuestHeartbeatStatus = "gray"

@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+	vmopv1a3common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
 )
 
 const (
@@ -792,7 +792,7 @@ type VirtualMachineStatus struct {
 
 	// Class is a reference to the VirtualMachineClass resource used to deploy
 	// this VM.
-	Class *vmopv1common.LocalObjectRef `json:"class,omitempty"`
+	Class *vmopv1a3common.LocalObjectRef `json:"class,omitempty"`
 
 	// +optional
 

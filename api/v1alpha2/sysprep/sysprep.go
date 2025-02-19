@@ -102,7 +102,7 @@ type GUIUnattended struct {
 	TimeZone int32 `json:"timeZone,omitempty"`
 }
 
-// PasswordSecretKeySelector references the password value from a Secret resource
+// PasswordSecretKeySelector references the password value from a Secret resource.
 type PasswordSecretKeySelector struct {
 	// Name is the name of the secret.
 	Name string `json:"name"`
@@ -148,7 +148,7 @@ type Identification struct {
 	JoinWorkgroup string `json:"joinWorkgroup,omitempty"`
 }
 
-// DomainPasswordSecretKeySelector references the password value from a Secret resource
+// DomainPasswordSecretKeySelector references the password value from a Secret resource.
 type DomainPasswordSecretKeySelector struct {
 	// Name is the name of the secret.
 	Name string `json:"name"`
@@ -214,7 +214,7 @@ type UserData struct {
 	ProductID *ProductIDSecretKeySelector `json:"productID,omitempty"`
 }
 
-// ProductIDSecretKeySelector references the ProductID value from a Secret resource
+// ProductIDSecretKeySelector references the ProductID value from a Secret resource.
 type ProductIDSecretKeySelector struct {
 	// Name is the name of the secret.
 	Name string `json:"name"`

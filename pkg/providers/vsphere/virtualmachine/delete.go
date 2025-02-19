@@ -5,7 +5,6 @@
 package virtualmachine
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -14,18 +13,11 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
-
-// errorVMPausedByAdmin is an error thrown during VM deletion.
-// Indicating because admin paused VM, deletion operation is paused.
-var errorVMPausedByAdmin = errors.New(constants.VMPausedByAdminError)
-
-func ErrorVMPausedByAdmin() error {
-	return errorVMPausedByAdmin
-}
 
 func DeleteVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
@@ -34,19 +26,45 @@ func DeleteVirtualMachine(
 	if err := vcVM.Properties(
 		vmCtx,
 		vcVM.Reference(),
-		[]string{"config.extraConfig"}, &vmCtx.MoVM); err != nil {
+		[]string{
+			"config.extraConfig",
+			"summary.runtime.connectionState",
+		}, &vmCtx.MoVM); err != nil {
 
-		vmCtx.Logger.Error(err, "failed to fetch config.extraConfig properties of VM for DeleteVirtualMachine")
-		return err
+		return fmt.Errorf("failed to fetch props when deleting VM: %w", err)
 	}
+
+	// Only process connected VMs or if the connection state is empty.
+	if cs := vmCtx.MoVM.Summary.Runtime.ConnectionState; cs != "" && cs !=
+		vimtypes.VirtualMachineConnectionStateConnected {
+
+		// Return a NoRequeueError so the VM is not requeued for
+		// reconciliation.
+		//
+		// The watcher service ensures that VMs will be reconciled
+		// immediately upon their summary.runtime.connectionState value
+		// changing.
+		//
+		// TODO(akutz) Determine if we should surface some type of condition
+		//             that indicates this state.
+
+		return fmt.Errorf("failed to delete vm: %w", pkgerr.NoRequeueError{
+			Message: fmt.Sprintf("unsupported VM connection state: %s", cs),
+		})
+	}
+
 	// Throw an error to distinguish from successful deletion.
 	if paused := paused.ByAdmin(vmCtx.MoVM); paused {
 		if vmCtx.VM.Labels == nil {
 			vmCtx.VM.Labels = make(map[string]string)
 		}
 		vmCtx.VM.Labels[vmopv1.PausedVMLabelKey] = "admin"
-		return ErrorVMPausedByAdmin()
+
+		return fmt.Errorf("failed to delete vm: %w", pkgerr.NoRequeueError{
+			Message: constants.VMPausedByAdminError,
+		})
 	}
+
 	if _, err := vmutil.SetAndWaitOnPowerState(
 		logr.NewContext(vmCtx, vmCtx.Logger),
 		vcVM.Client(),

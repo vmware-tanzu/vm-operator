@@ -27,6 +27,7 @@ import (
 
 	vimcrypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -1364,6 +1365,60 @@ func vmTests() {
 				})
 
 				// TODO: More assertions!
+			})
+
+			When("VM is not connected", Ordered, func() {
+				DescribeTable("should return a NoRequeueError",
+					func(state vimtypes.VirtualMachineConnectionState) {
+
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var moVM mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+						simulator.Map.WithLock(
+							simulator.SpoofContext(),
+							vcVM.Reference(),
+							func() {
+								vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+								vm.Summary.Runtime.ConnectionState = state
+							})
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+
+						var noRequeueErr pkgerr.NoRequeueError
+						Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
+						Expect(noRequeueErr.Message).To(Equal(
+							fmt.Sprintf("unsupported VM connection state: %s", state)))
+					},
+					Entry("disconnected", vimtypes.VirtualMachineConnectionStateDisconnected),
+					Entry("inaccessible", vimtypes.VirtualMachineConnectionStateInaccessible),
+					Entry("invalid", vimtypes.VirtualMachineConnectionStateInvalid),
+					Entry("orphaned", vimtypes.VirtualMachineConnectionStateOrphaned),
+				)
+
+				When("connectionState is empty", func() {
+					It("should reconcile the VM", func() {
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var moVM mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+						simulator.Map.WithLock(
+							simulator.SpoofContext(),
+							vcVM.Reference(),
+							func() {
+								vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+								vm.Summary.Runtime.ConnectionState = ""
+							})
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+					})
+				})
 			})
 
 			// TODO(akutz) Promote this block when the FSS WCP_VMService_FastDeploy is

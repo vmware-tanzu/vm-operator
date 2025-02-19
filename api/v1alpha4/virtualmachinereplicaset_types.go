@@ -5,8 +5,9 @@
 package v1alpha4
 
 import (
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 )
 
 const (
@@ -148,7 +149,7 @@ func (rs *VirtualMachineReplicaSet) SetConditions(conditions []metav1.Condition)
 // +kubebuilder:printcolumn:name="Ready",type="integer",JSONPath=".status.readyReplicas",description="Total number of ready virtual machines targeted by this VirtualMachineReplicaSet"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of VirtualMachineReplicaSet"
 
-// VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets API
+// VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets API.
 type VirtualMachineReplicaSet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -159,7 +160,7 @@ type VirtualMachineReplicaSet struct {
 
 // +kubebuilder:object:root=true
 
-// VirtualMachineList contains a list of VirtualMachine.
+// VirtualMachineReplicaSetList contains a list of VirtualMachineReplicaSet.
 type VirtualMachineReplicaSetList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

@@ -59,18 +59,18 @@ type VirtualMachineImageCacheSpec struct {
 // cache object's spec.locations list if such a location does not already exist.
 // Calling this function for a pair of datacenterID and datastoreID values that
 // already exist in the object's spec.locations list has no effect.
-func (o *VirtualMachineImageCache) AddLocation(
+func (i *VirtualMachineImageCache) AddLocation(
 	datacenterID,
 	datastoreID string) {
 
-	for i := range o.Spec.Locations {
-		l := o.Spec.Locations[i]
+	for idx := range i.Spec.Locations {
+		l := i.Spec.Locations[idx]
 		if l.DatacenterID == datacenterID && l.DatastoreID == datastoreID {
 			return
 		}
 	}
-	o.Spec.Locations = append(
-		o.Spec.Locations,
+	i.Spec.Locations = append(
+		i.Spec.Locations,
 		VirtualMachineImageCacheLocationSpec{
 			DatacenterID: datacenterID,
 			DatastoreID:  datastoreID,

@@ -11,15 +11,15 @@ import (
 )
 
 // ConvertTo converts this VirtualMachineImageCache to the Hub version.
-func (src *VirtualMachineImageCache) ConvertTo(dstRaw ctrlconversion.Hub) error {
+func (i *VirtualMachineImageCache) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachineImageCache)
-	return Convert_v1alpha3_VirtualMachineImageCache_To_v1alpha4_VirtualMachineImageCache(src, dst, nil)
+	return Convert_v1alpha3_VirtualMachineImageCache_To_v1alpha4_VirtualMachineImageCache(i, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineImageCache.
-func (dst *VirtualMachineImageCache) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+func (i *VirtualMachineImageCache) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachineImageCache)
-	return Convert_v1alpha4_VirtualMachineImageCache_To_v1alpha3_VirtualMachineImageCache(src, dst, nil)
+	return Convert_v1alpha4_VirtualMachineImageCache_To_v1alpha3_VirtualMachineImageCache(src, i, nil)
 }
 
 // ConvertTo converts this VirtualMachineImageCacheList to the Hub version.

@@ -115,7 +115,7 @@ VirtualMachine as a VirtualMachineImage to an image registry.
 
 
 
-VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets API
+VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets API.
 
 
 

@@ -16,6 +16,7 @@ package utilconversion
 import (
 	"math/rand"
 
+	//nolint:depguard
 	"github.com/onsi/gomega"
 
 	"github.com/google/go-cmp/cmp"

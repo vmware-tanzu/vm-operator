@@ -55,7 +55,7 @@ There are no restrictions on the images that can be deployed by VM Operator. How
 |-------|:----:|:--------:|
 | :fontawesome-solid-clone: Photon OS 4, Rev 2 | amd64 | [OVA :fontawesome-solid-cloud-arrow-down:](https://packages.vmware.com/photon/4.0/Rev2/ova/photon-ova_uefi-4.0-c001795b80.ova) |
 | :fontawesome-solid-clone: Photon OS 3, Rev 3, Update 1 | amd64 | [OVA :fontawesome-solid-cloud-arrow-down:](https://packages.vmware.com/photon/3.0/Rev3/ova/Update1/photon-hw13_uefi-3.0-913b49438.ova) |
-| :fontawesome-brands-ubuntu: Ubuntu 22.10 Server (Kinetic Kudo) | amd64 | [OVA :fontawesome-solid-cloud-arrow-down:](https://cloud-images.ubuntu.com/releases/22.10/release-20230302/ubuntu-22.10-server-cloudimg-amd64.ova) |
+| :fontawesome-brands-ubuntu: Ubuntu 22.10 Server (Kinetic Kudo) | amd64 | [OVA :fontawesome-solid-cloud-arrow-down:](https://cloud-images.ubuntu.com/releases/22.10/release-20230716/ubuntu-22.10-server-cloudimg-amd64.ova) |
 | :fontawesome-brands-ubuntu: Ubuntu 22.04 Server (Jammy Jellyfish) | amd64 | [OVA :fontawesome-solid-cloud-arrow-down:](https://cloud-images.ubuntu.com/releases/22.04/release-20230302/ubuntu-22.04-server-cloudimg-amd64.ova) |
 
 !!! note "Bring your own image..."

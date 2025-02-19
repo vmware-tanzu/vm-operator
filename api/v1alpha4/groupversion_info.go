@@ -24,9 +24,6 @@ var (
 	AddToScheme = schemeBuilder.AddToScheme
 
 	objectTypes = []runtime.Object{}
-
-	// localSchemeBuilder is used for type conversions.
-	localSchemeBuilder = schemeBuilder
 )
 
 func addKnownTypes(scheme *runtime.Scheme) error {

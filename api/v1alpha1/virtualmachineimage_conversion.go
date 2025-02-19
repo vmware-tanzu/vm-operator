@@ -28,7 +28,7 @@ func Convert_v1alpha4_VirtualMachineImageOSInfo_To_v1alpha1_VirtualMachineImageO
 }
 
 func convert_v1alpha1_VirtualMachineImageOSInfo_To_v1alpha4_VirtualMachineImageOSInfo(
-	in *VirtualMachineImageOSInfo, out *vmopv1.VirtualMachineImageOSInfo, s apiconversion.Scope) error {
+	in *VirtualMachineImageOSInfo, out *vmopv1.VirtualMachineImageOSInfo, _ apiconversion.Scope) error {
 
 	out.Type = in.Type
 	out.Version = in.Version
@@ -37,7 +37,7 @@ func convert_v1alpha1_VirtualMachineImageOSInfo_To_v1alpha4_VirtualMachineImageO
 }
 
 func convert_v1alpha4_VirtualMachineImage_OVFProperties_To_v1alpha1_VirtualMachineImage_OVFEnv(
-	in []vmopv1.OVFProperty, out *map[string]OvfProperty, s apiconversion.Scope) error {
+	in []vmopv1.OVFProperty, out *map[string]OvfProperty, _ apiconversion.Scope) error {
 
 	if in != nil {
 		*out = map[string]OvfProperty{}
@@ -56,7 +56,7 @@ func convert_v1alpha4_VirtualMachineImage_OVFProperties_To_v1alpha1_VirtualMachi
 }
 
 func convert_v1alpha1_VirtualMachineImage_OVFEnv_To_v1alpha4_VirtualMachineImage_OVFProperties(
-	in map[string]OvfProperty, out *[]vmopv1.OVFProperty, s apiconversion.Scope) error {
+	in map[string]OvfProperty, out *[]vmopv1.OVFProperty, _ apiconversion.Scope) error {
 
 	if in != nil {
 		*out = make([]vmopv1.OVFProperty, 0, len(in))
@@ -365,7 +365,7 @@ func convert_v1alpha1_VirtualMachineImageAnnotations_To_v1alpha4_VirtualMachineI
 
 	// remove any system annotations in nextver object
 	if *dstAnnotations != nil {
-		for k, _ := range *dstAnnotations {
+		for k := range *dstAnnotations {
 			if strings.HasPrefix(k, "vmware-system") {
 				delete(*dstAnnotations, k)
 			}

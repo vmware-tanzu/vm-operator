@@ -226,14 +226,17 @@ issues:
     - staticcheck
     text: "^SA1019: [^.]+.WaitForResult is deprecated: Please use WaitForResultEx instead."
   - linters:
+    - staticcheck
+    text: "^SA1019: .*TCPSocket is deprecated"
+  - linters:
     - revive
     text: ".*should have (a package )?comment.*"
   - linters:
     - revive
     text: "^exported: comment on exported const"
   - linters:
-    - staticcheck
-    text: "^SA1019: .*TCPSocket is deprecated"
+    - revive
+    text: "unused-parameter: parameter"
   - linters:
     - govet
     text: "printf: non-constant format string in call"
@@ -254,6 +257,12 @@ issues:
     linters:
     - gosec
     - depguard
-  - linters:
-    - revive
-    text: "unused-parameter: parameter"
+  # Ignore underscores in conversion function names as required by K8s API.
+  - path: "_conversion.go"
+    text: ".*use underscores in Go names"
+  # Ignore unsafe.Pointer() calls used in conversion functions.
+  - path: "_conversion.go"
+    text: "G103: Use of unsafe calls should be audited"
+  # Ignore different receiver names in conversion functions (e.g. src vs dst).
+  - path: "_conversion.go"
+    text: ".*receiver name"

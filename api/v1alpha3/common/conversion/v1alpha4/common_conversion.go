@@ -2,7 +2,7 @@
 // The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha2
+package v1alpha4
 
 import (
 	"maps"
@@ -13,6 +13,8 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 )
 
+// Convert_common_ObjectMeta_To_common_ObjectMeta converts the ObjectMeta from
+// v1alpha4 to v1alpha3.
 // Please see https://github.com/kubernetes/code-generator/issues/172 for why
 // this function exists in this directory structure.
 func Convert_common_ObjectMeta_To_common_ObjectMeta(

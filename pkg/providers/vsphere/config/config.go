@@ -34,10 +34,6 @@ type VSphereVMProviderConfig struct {
 	CAFilePath                  string
 	InsecureSkipTLSVerify       bool // Always false in WCP env.
 
-	// These are Zone and/or Namespace specific.
-	ResourcePool string
-	Folder       string
-
 	// Only set in simulated testing env.
 	Datastore string
 	Network   string
@@ -51,8 +47,6 @@ const (
 	vcPNIDKey                = "VcPNID"
 	vcPortKey                = "VcPort"
 	datacenterKey            = "Datacenter"
-	resourcePoolKey          = "ResourcePool"
-	folderKey                = "Folder"
 	datastoreKey             = "Datastore"
 	networkNameKey           = "Network"
 	scRequiredKey            = "StorageClassRequired"
@@ -120,8 +114,6 @@ func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about st
 		VcPort:                      vcPort,
 		VcCreds:                     vcCreds,
 		Datacenter:                  configMap.Data[datacenterKey],
-		ResourcePool:                configMap.Data[resourcePoolKey],
-		Folder:                      configMap.Data[folderKey],
 		Datastore:                   configMap.Data[datastoreKey],
 		Network:                     configMap.Data[networkNameKey],
 		StorageClassRequired:        scRequired,
@@ -221,8 +213,6 @@ func ProviderConfigToConfigMap(
 			vcPNIDKey:                config.VcPNID,
 			vcPortKey:                config.VcPort,
 			datacenterKey:            config.Datacenter,
-			resourcePoolKey:          config.ResourcePool,
-			folderKey:                config.Folder,
 			datastoreKey:             config.Datastore,
 			scRequiredKey:            strconv.FormatBool(config.StorageClassRequired),
 			useInventoryKey:          strconv.FormatBool(config.UseInventoryAsContentSource),

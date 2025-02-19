@@ -38,7 +38,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	vspherevm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
@@ -448,12 +447,6 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 		}()
 
 		if err := r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM); err != nil {
-			// If VM can not be deleted due to reconciliation being paused, ignore that.
-			if errors.Is(err, vspherevm.ErrorVMPausedByAdmin()) {
-				ctx.Logger.Info("VM could not be deleted since it contains the pause reconcile ExtraConfig key")
-				return nil
-			}
-			ctx.Logger.Error(err, "Failed to delete VirtualMachine")
 			return err
 		}
 

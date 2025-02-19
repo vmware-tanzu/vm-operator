@@ -1367,59 +1367,40 @@ func vmTests() {
 				// TODO: More assertions!
 			})
 
-			When("VM is not connected", Ordered, func() {
-				DescribeTable("should return a NoRequeueError",
-					func(state vimtypes.VirtualMachineConnectionState) {
+			DescribeTable("VM is not connected",
+				func(state vimtypes.VirtualMachineConnectionState) {
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
 
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					var moVM mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+					simulator.Map.WithLock(
+						simulator.SpoofContext(),
+						vcVM.Reference(),
+						func() {
+							vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+							vm.Summary.Runtime.ConnectionState = state
+						})
+
+					_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+
+					if state == "" {
 						Expect(err).ToNot(HaveOccurred())
-
-						var moVM mo.VirtualMachine
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
-
-						simulator.Map.WithLock(
-							simulator.SpoofContext(),
-							vcVM.Reference(),
-							func() {
-								vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
-								vm.Summary.Runtime.ConnectionState = state
-							})
-
-						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					} else {
 						Expect(err).To(HaveOccurred())
-
 						var noRequeueErr pkgerr.NoRequeueError
 						Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 						Expect(noRequeueErr.Message).To(Equal(
 							fmt.Sprintf("unsupported VM connection state: %s", state)))
-					},
-					Entry("disconnected", vimtypes.VirtualMachineConnectionStateDisconnected),
-					Entry("inaccessible", vimtypes.VirtualMachineConnectionStateInaccessible),
-					Entry("invalid", vimtypes.VirtualMachineConnectionStateInvalid),
-					Entry("orphaned", vimtypes.VirtualMachineConnectionStateOrphaned),
-				)
-
-				When("connectionState is empty", func() {
-					It("should reconcile the VM", func() {
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-						Expect(err).ToNot(HaveOccurred())
-
-						var moVM mo.VirtualMachine
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
-
-						simulator.Map.WithLock(
-							simulator.SpoofContext(),
-							vcVM.Reference(),
-							func() {
-								vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
-								vm.Summary.Runtime.ConnectionState = ""
-							})
-
-						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-						Expect(err).ToNot(HaveOccurred())
-					})
-				})
-			})
+					}
+				},
+				Entry("empty", vimtypes.VirtualMachineConnectionState("")),
+				Entry("disconnected", vimtypes.VirtualMachineConnectionStateDisconnected),
+				Entry("inaccessible", vimtypes.VirtualMachineConnectionStateInaccessible),
+				Entry("invalid", vimtypes.VirtualMachineConnectionStateInvalid),
+				Entry("orphaned", vimtypes.VirtualMachineConnectionStateOrphaned),
+			)
 
 			// TODO(akutz) Promote this block when the FSS WCP_VMService_FastDeploy is
 			//             removed.
@@ -2955,6 +2936,43 @@ func vmTests() {
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 				Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
 			})
+
+			DescribeTable("VM is not connected",
+				func(state vimtypes.VirtualMachineConnectionState) {
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var moVM mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+					simulator.Map.WithLock(
+						simulator.SpoofContext(),
+						vcVM.Reference(),
+						func() {
+							vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+							vm.Summary.Runtime.ConnectionState = state
+						})
+
+					err = vmProvider.DeleteVirtualMachine(ctx, vm)
+
+					if state == "" {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(ctx.GetVMFromMoID(vm.Status.UniqueID)).To(BeNil())
+					} else {
+						Expect(err).To(HaveOccurred())
+						var noRequeueErr pkgerr.NoRequeueError
+						Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
+						Expect(noRequeueErr.Message).To(Equal(
+							fmt.Sprintf("unsupported VM connection state: %s", state)))
+						Expect(ctx.GetVMFromMoID(vm.Status.UniqueID)).ToNot(BeNil())
+					}
+				},
+				Entry("empty", vimtypes.VirtualMachineConnectionState("")),
+				Entry("disconnected", vimtypes.VirtualMachineConnectionStateDisconnected),
+				Entry("inaccessible", vimtypes.VirtualMachineConnectionStateInaccessible),
+				Entry("invalid", vimtypes.VirtualMachineConnectionStateInvalid),
+				Entry("orphaned", vimtypes.VirtualMachineConnectionStateOrphaned),
+			)
 		})
 
 		Context("Guest Heartbeat", func() {

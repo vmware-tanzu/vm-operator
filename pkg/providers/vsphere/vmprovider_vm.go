@@ -764,9 +764,9 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			//
 			// TODO(akutz) Determine if we should surface some type of condition
 			//             that indicates this state.
-			return pkgerr.NoRequeueError{
+			return fmt.Errorf("failed to update VM: %w", pkgerr.NoRequeueError{
 				Message: fmt.Sprintf("unsupported VM connection state: %s", cs),
-			}
+			})
 		}
 
 		if vmCtx.MoVM.ResourcePool == nil {

@@ -33,6 +33,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
@@ -338,10 +339,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}()
 
 	if !vm.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.ReconcileDelete(vmCtx)
+		return pkgerr.ResultFromError(r.ReconcileDelete(vmCtx))
 	}
 
-	if err = r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
+	if err := r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
+		if result, err := pkgerr.ResultFromError(err); err == nil {
+			return result, nil
+		}
 		vmCtx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		return ctrl.Result{}, err
 	}

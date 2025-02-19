@@ -26,6 +26,7 @@ import (
 
 	vimcrypto "github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -38,6 +39,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -1359,6 +1361,60 @@ func vmTests() {
 				})
 
 				// TODO: More assertions!
+			})
+
+			When("VM is not connected", Ordered, func() {
+				DescribeTable("should return a NoRequeueError",
+					func(state vimtypes.VirtualMachineConnectionState) {
+
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var moVM mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+						simulator.Map.WithLock(
+							simulator.SpoofContext(),
+							vcVM.Reference(),
+							func() {
+								vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+								vm.Summary.Runtime.ConnectionState = state
+							})
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+
+						var noRequeueErr pkgerr.NoRequeueError
+						Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
+						Expect(noRequeueErr.Message).To(Equal(
+							fmt.Sprintf("unsupported VM connection state: %s", state)))
+					},
+					Entry("disconnected", vimtypes.VirtualMachineConnectionStateDisconnected),
+					Entry("inaccessible", vimtypes.VirtualMachineConnectionStateInaccessible),
+					Entry("invalid", vimtypes.VirtualMachineConnectionStateInvalid),
+					Entry("orphaned", vimtypes.VirtualMachineConnectionStateOrphaned),
+				)
+
+				When("connectionState is empty", func() {
+					It("should reconcile the VM", func() {
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var moVM mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+						simulator.Map.WithLock(
+							simulator.SpoofContext(),
+							vcVM.Reference(),
+							func() {
+								vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+								vm.Summary.Runtime.ConnectionState = ""
+							})
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+					})
+				})
 			})
 
 			When("using async create", func() {

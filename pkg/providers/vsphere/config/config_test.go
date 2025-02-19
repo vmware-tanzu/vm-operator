@@ -182,8 +182,6 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 			UseInventoryAsContentSource: false,
 			CAFilePath:                  "/etc/pki/tls/certs/ca-bundle.crt",
 			InsecureSkipTLSVerify:       false,
-			ResourcePool:                "resourcepool-42",
-			Folder:                      "folder-42",
 			Datastore:                   "/DC0/datastore/LocalDS_0",
 		}
 	})

@@ -87,7 +87,7 @@ func vcSimPlacement() {
 	)
 
 	BeforeEach(func() {
-		parentCtx = pkgcfg.NewContext()
+		parentCtx = pkgcfg.NewContextWithDefaultConfig()
 		testConfig = builder.VCSimTestConfig{}
 
 		vm = builder.DummyVirtualMachine()

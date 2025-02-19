@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -44,9 +45,10 @@ func configTests() {
 
 			Context("when a secret doesn't exist", func() {
 				It("returns no provider config and an error", func() {
+					// Note that NewTestContextForVCSim() creates this Secret.
 					secret := &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "vmop-vcsim-dummy-creds",
+							Name:      pkgcfg.FromContext(ctx).VCCredsSecretName,
 							Namespace: ctx.PodNamespace,
 						},
 					}
@@ -164,13 +166,13 @@ func configTests() {
 var _ = Describe("ConfigMapToProviderConfig", func() {
 
 	var (
-		providerCreds    *credentials.VSphereVMProviderCredentials
+		providerCreds    credentials.VSphereVMProviderCredentials
 		providerConfigIn *config.VSphereVMProviderConfig
 		configMap        *corev1.ConfigMap
 	)
 
 	BeforeEach(func() {
-		providerCreds = &credentials.VSphereVMProviderCredentials{Username: "username", Password: "password"}
+		providerCreds = credentials.VSphereVMProviderCredentials{Username: "username", Password: "password"}
 		providerConfigIn = &config.VSphereVMProviderConfig{
 			VcPNID:                      "my-vc.vmware.com",
 			VcPort:                      "433",
@@ -187,7 +189,7 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 	})
 
 	JustBeforeEach(func() {
-		configMap = config.ProviderConfigToConfigMap("dummy-ns", providerConfigIn, "dummy-secrets")
+		configMap = config.ProviderConfigToConfigMap("dummy-ns", providerConfigIn)
 	})
 
 	It("provider config is correctly extracted from the ConfigMap", func() {

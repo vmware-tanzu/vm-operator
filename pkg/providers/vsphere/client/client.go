@@ -13,7 +13,7 @@ import (
 
 type Client struct {
 	*client.Client
-	config *config.VSphereVMProviderConfig
+	config config.VSphereVMProviderConfig
 }
 
 // NewClient creates a new Client. As a side effect, it creates a vim25 client
@@ -38,10 +38,10 @@ func NewClient(
 
 	return &Client{
 		Client: c,
-		config: config,
+		config: *config,
 	}, nil
 }
 
-func (c *Client) Config() *config.VSphereVMProviderConfig {
+func (c *Client) Config() config.VSphereVMProviderConfig {
 	return c.config
 }

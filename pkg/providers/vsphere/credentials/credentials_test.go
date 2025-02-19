@@ -5,31 +5,50 @@
 package credentials_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	. "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func newSecret(name string, ns string, user string, pass string) (*corev1.Secret, *VSphereVMProviderCredentials) {
-	creds := &VSphereVMProviderCredentials{
+func newSecret(name, namespace, user, pass string) (*corev1.Secret, credentials.VSphereVMProviderCredentials) {
+	creds := credentials.VSphereVMProviderCredentials{
 		Username: user,
 		Password: pass,
 	}
-	secret := ProviderCredentialsToSecret(ns, creds, name)
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: map[string][]byte{
+			"username": []byte(creds.Username),
+			"password": []byte(creds.Password),
+		},
+	}
+
 	return secret, creds
 }
 
 var _ = Describe("GetProviderCredentials", func() {
+	var ctx context.Context
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
 
 	Context("when a good secret exists", func() {
 		Specify("returns good credentials with no error", func() {
 			secretIn, credsIn := newSecret("some-name", "some-namespace", "some-user", "some-pass")
 			client := builder.NewFakeClient(secretIn)
-			credsOut, err := GetProviderCredentials(client, secretIn.Namespace, secretIn.Name)
+			credsOut, err := credentials.GetProviderCredentials(ctx, client, secretIn.Namespace, secretIn.Name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(credsOut).To(Equal(credsIn))
 		})
@@ -41,9 +60,9 @@ var _ = Describe("GetProviderCredentials", func() {
 			Specify("returns no credentials with error", func() {
 				secretIn, _ := newSecret("some-name", "some-namespace", "", "some-pass")
 				client := builder.NewFakeClient(secretIn)
-				credsOut, err := GetProviderCredentials(client, secretIn.Namespace, secretIn.Name)
+				credsOut, err := credentials.GetProviderCredentials(ctx, client, secretIn.Namespace, secretIn.Name)
 				Expect(err).To(HaveOccurred())
-				Expect(credsOut).To(BeNil())
+				Expect(credsOut).To(BeZero())
 			})
 		})
 
@@ -51,9 +70,9 @@ var _ = Describe("GetProviderCredentials", func() {
 			Specify("returns no credentials with error", func() {
 				secretIn, _ := newSecret("some-name", "some-namespace", "some-user", "")
 				client := builder.NewFakeClient(secretIn)
-				credsOut, err := GetProviderCredentials(client, secretIn.Namespace, secretIn.Name)
+				credsOut, err := credentials.GetProviderCredentials(ctx, client, secretIn.Namespace, secretIn.Name)
 				Expect(err).To(HaveOccurred())
-				Expect(credsOut).To(BeNil())
+				Expect(credsOut).To(BeZero())
 			})
 		})
 	})
@@ -61,9 +80,9 @@ var _ = Describe("GetProviderCredentials", func() {
 	Context("when no secret exists", func() {
 		Specify("returns no credentials with error", func() {
 			client := builder.NewFakeClient()
-			credsOut, err := GetProviderCredentials(client, "none-namespace", "none-name")
+			credsOut, err := credentials.GetProviderCredentials(ctx, client, "none-namespace", "none-name")
 			Expect(err).To(HaveOccurred())
-			Expect(credsOut).To(BeNil())
+			Expect(credsOut).To(BeZero())
 		})
 	})
 })

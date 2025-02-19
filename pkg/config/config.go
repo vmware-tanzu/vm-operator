@@ -147,6 +147,12 @@ type Config struct {
 	//
 	// Defaults to "direct".
 	FastDeployMode string
+
+	// VCCredsSecretName is the name of the secret in the pod namespace that
+	// contains the VC credentials.
+	//
+	// Defaults to "wcp-vmop-sa-vc-auth".
+	VCCredsSecretName string
 }
 
 // GetMaxDeployThreadsOnProvider returns MaxDeployThreadsOnProvider if it is >0

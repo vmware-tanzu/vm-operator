@@ -81,6 +81,7 @@ var _ = Describe(
 					Expect(os.Setenv("ASYNC_SIGNAL_ENABLED", "false")).To(Succeed())
 					Expect(os.Setenv("ASYNC_CREATE_ENABLED", "false")).To(Succeed())
 					Expect(os.Setenv("FAST_DEPLOY_MODE", pkgconst.FastDeployModeLinked)).To(Succeed())
+					Expect(os.Setenv("VC_CREDS_SECRET_NAME", pkgconst.VCCredsSecretName)).To(Succeed())
 					Expect(os.Setenv("LEADER_ELECTION_ID", "115")).To(Succeed())
 					Expect(os.Setenv("POD_NAME", "116")).To(Succeed())
 					Expect(os.Setenv("POD_NAMESPACE", "117")).To(Succeed())
@@ -135,6 +136,7 @@ var _ = Describe(
 						AsyncSignalEnabled:           false,
 						AsyncCreateEnabled:           false,
 						FastDeployMode:               pkgconst.FastDeployModeLinked,
+						VCCredsSecretName:            pkgconst.VCCredsSecretName,
 						LeaderElectionID:             "115",
 						PodName:                      "116",
 						PodNamespace:                 "117",

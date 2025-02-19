@@ -87,4 +87,8 @@ const (
 	// of new pods, ensuring at least one pod is online at all times.
 	// The value is the reason for the restart.
 	LastRestartReasonAnnotationKey = "vmoperator.vmware.com/last-restart-reason"
+
+	// VCCredsSecretName is the name of the secret in the pod namespace
+	// that contains the VC credentials.
+	VCCredsSecretName = "wcp-vmop-sa-vc-auth" //nolint:gosec
 )

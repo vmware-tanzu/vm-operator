@@ -95,7 +95,7 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 			cfg = &config.VSphereVMProviderConfig{
 				VcPNID: server.URL.Hostname(),
 				VcPort: server.URL.Port(),
-				VcCreds: &credentials.VSphereVMProviderCredentials{
+				VcCreds: credentials.VSphereVMProviderCredentials{
 					Username: expectedPassword,
 					Password: expectedPassword,
 				},

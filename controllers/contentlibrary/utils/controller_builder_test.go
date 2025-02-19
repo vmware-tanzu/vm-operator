@@ -48,7 +48,7 @@ var _ = Describe("AddToManager",
 		)
 
 		BeforeEach(func() {
-			parentCtx = pkgcfg.NewContext()
+			parentCtx = pkgcfg.NewContextWithDefaultConfig()
 		})
 
 		JustBeforeEach(func() {

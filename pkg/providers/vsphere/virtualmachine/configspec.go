@@ -156,6 +156,33 @@ func CreateConfigSpec(
 		}
 	}
 
+	// The documentation for a ResourceAllocation object states that all (VM)
+	// fields must be set for certain APIs, including ImportVApp. A part of
+	// that API is used by the vpxd placement engine to construct fake VMs in
+	// order to support assignable hardware. Therefore:
+	//
+	// CPU allocation:
+	// - Ensure limit is set to -1 if there is a reservation.
+	//
+	// Memory allocation:
+	// - Ensure shares is not nil.
+	// - Ensure limit is set to -1 if there is a reservation.
+	if a := configSpec.CpuAllocation; a != nil {
+		if a.Reservation != nil && a.Limit == nil {
+			a.Limit = ptr.To[int64](-1)
+		}
+	}
+	if a := configSpec.MemoryAllocation; a != nil {
+		if a.Shares == nil {
+			a.Shares = &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
+			}
+		}
+		if a.Reservation != nil && a.Limit == nil {
+			a.Limit = ptr.To[int64](-1)
+		}
+	}
+
 	// If VM Spec guestID is specified, initially set the guest ID in ConfigSpec to ensure VM is created with the expected guest ID.
 	// Afterwards, only update it if the VM spec guest ID differs from the VM's existing ConfigInfo.
 	if guestID := vmCtx.VM.Spec.GuestID; guestID != "" {

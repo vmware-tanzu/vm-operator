@@ -14,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
 )
 
@@ -550,6 +551,35 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
+		Entry("#4",
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
+						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+							FileName: "new",
+						},
+					},
+				},
+			},
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
+						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+							FileName: "old",
+						},
+					},
+				},
+			},
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
+						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+							FileName: "new",
+						},
+					},
+				},
+			},
+		),
 	)
 
 	DescribeTable("MatchVirtualPointingDevice",
@@ -1059,4 +1089,51 @@ var _ = Describe("Match Devices", func() {
 		),
 	)
 
+})
+
+var _ = Describe("Cmp(Ptr)Edit", func() {
+
+	Context("CmpEdit", func() {
+
+		DescribeTable("CmpEdit",
+			func(a, b, expectedC int, expectedEdit bool) {
+				c := 0
+				edit := false
+				resize.CmpEdit(a, b, &c, &edit)
+
+				Expect(edit).To(Equal(expectedEdit))
+				if expectedEdit {
+					Expect(c).To(Equal(expectedC))
+				} else {
+					Expect(c).To(BeZero())
+				}
+			},
+
+			Entry("Same", 1, 1, -1, false),
+			Entry("Diff", 1, 2, 2, true),
+		)
+	})
+
+	Context("cmpPtrEdit", func() {
+
+		DescribeTable("CmpPtrEdit",
+			func(a, b *int, expectedEdit bool) {
+				var editP = new(int)
+				var origEditP = editP
+				var edit bool
+				resize.CmpPtrEdit(a, b, &editP, &edit)
+				Expect(edit).To(Equal(expectedEdit))
+				if expectedEdit {
+					Expect(editP).To(Equal(b))
+				} else {
+					Expect(editP).To(BeIdenticalTo(origEditP))
+				}
+			},
+			Entry("current and expected are nil", nil, nil, false),
+			Entry("current is nil", nil, ptr.To(1), true),
+			Entry("current is not nil and expected is nil", ptr.To(1), nil, false),
+			Entry("current and expected are the same", ptr.To(1), ptr.To(1), false),
+			Entry("current and expected are different", ptr.To(1), ptr.To(2), true),
+		)
+	})
 })

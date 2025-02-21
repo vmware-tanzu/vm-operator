@@ -34,6 +34,7 @@ func DefaultWatchedPropertyPaths() []string {
 		"summary.config.name",
 		"summary.guest",
 		"summary.overallStatus",
+		"summary.runtime.connectionState",
 		"summary.runtime.host",
 		"summary.runtime.powerState",
 		"summary.storage.timestamp",

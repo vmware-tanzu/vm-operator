@@ -35,6 +35,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
@@ -743,6 +744,24 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			&vmCtx.MoVM); err != nil {
 
 			return err
+		}
+
+		// Only reconcile connected VMs or if the connection state is empty.
+		if cs := vmCtx.MoVM.Summary.Runtime.ConnectionState; cs != "" && cs !=
+			vimtypes.VirtualMachineConnectionStateConnected {
+
+			// Return a NoRequeueError so the VM is not requeued for
+			// reconciliation.
+			//
+			// The watcher service ensures that VMs will be reconciled
+			// immediately upon their summary.runtime.connectionState value
+			// changing.
+			//
+			// TODO(akutz) Determine if we should surface some type of condition
+			//             that indicates this state.
+			return fmt.Errorf("failed to update VM: %w", pkgerr.NoRequeueError{
+				Message: fmt.Sprintf("unsupported VM connection state: %s", cs),
+			})
 		}
 
 		if vmCtx.MoVM.ResourcePool == nil {

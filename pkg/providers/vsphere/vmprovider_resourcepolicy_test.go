@@ -178,6 +178,22 @@ func resourcePolicyTests() {
 					Expect(resourcePolicy.Status.ClusterModules).To(HaveExactElements(status.ClusterModules))
 					assertSetResourcePolicy(resourcePolicy, true)
 				})
+
+				It("should create additional cluster modules", func() {
+					assertSetResourcePolicy(resourcePolicy, true)
+					resourcePolicy.Spec.ClusterModuleGroups = append(resourcePolicy.Spec.ClusterModuleGroups, "another-NodeGroup2")
+					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+					Expect(resourcePolicy.Status.ClusterModules).To(HaveLen(len(resourcePolicy.Spec.ClusterModuleGroups) * len(ctx.ZoneNames)))
+					assertSetResourcePolicy(resourcePolicy, true)
+				})
+
+				It("should delete removed cluster modules", func() {
+					assertSetResourcePolicy(resourcePolicy, true)
+					resourcePolicy.Spec.ClusterModuleGroups = resourcePolicy.Spec.ClusterModuleGroups[:1]
+					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+					Expect(resourcePolicy.Status.ClusterModules).To(HaveLen(len(ctx.ZoneNames)))
+					assertSetResourcePolicy(resourcePolicy, true)
+				})
 			})
 
 			Context("for a resource policy with invalid cluster module", func() {

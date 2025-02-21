@@ -10,6 +10,7 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
@@ -58,7 +59,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 			clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
 			if err == nil {
 				clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
-				err = vs.createClusterModules(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
+				err = vs.reconcileClusterModules(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
 			}
 			if err != nil {
 				errs = append(errs, err)
@@ -129,9 +130,9 @@ func (vs *vSphereVMProvider) doClusterModulesExist(
 	return true, nil
 }
 
-// createClusterModules creates all the ClusterModules that has not created yet for a
-// given VirtualMachineSetResourcePolicy in VC.
-func (vs *vSphereVMProvider) createClusterModules(
+// reconcileClusterModules creates all the ClusterModules that has not created yet for a
+// given VirtualMachineSetResourcePolicy in VC and deletes removed ones.
+func (vs *vSphereVMProvider) reconcileClusterModules(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
 	clusterRef vimtypes.ManagedObjectReference,
@@ -189,6 +190,24 @@ func (vs *vSphereVMProvider) createClusterModules(
 			resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules, status)
 		}
 	}
+
+	desiredGroups := sets.New(resourcePolicy.Spec.ClusterModuleGroups...)
+
+	// Cleanup removed cluster module groups.
+	var newClusterModuleStatus []vmopv1.VSphereClusterModuleStatus
+	for _, clusterModuleStatus := range resourcePolicy.Status.ClusterModules {
+		if desiredGroups.Has(clusterModuleStatus.GroupName) {
+			newClusterModuleStatus = append(newClusterModuleStatus, clusterModuleStatus)
+			continue
+		}
+
+		if err := clusterModProvider.DeleteModule(ctx, clusterModuleStatus.ModuleUuid); err != nil {
+			errs = append(errs, fmt.Errorf("error deleting clustermodule %s: %w", clusterModuleStatus.ModuleUuid, err))
+			newClusterModuleStatus = append(newClusterModuleStatus, clusterModuleStatus)
+		}
+	}
+
+	resourcePolicy.Status.ClusterModules = newClusterModuleStatus
 
 	return apierrorsutil.NewAggregate(errs)
 }

@@ -155,7 +155,6 @@ func (v validator) validateAllowedChanges(ctx *pkgctx.WebhookRequestContext, vmR
 	// Validate all fields under spec which are not allowed to change.
 	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.ResourcePool, oldVMRP.Spec.ResourcePool, specPath.Child("resourcePool"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.Folder, oldVMRP.Spec.Folder, specPath.Child("folder"))...)
-	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.ClusterModuleGroups, oldVMRP.Spec.ClusterModuleGroups, specPath.Child("clusterModuleGroups"))...)
 
 	return allErrs
 }

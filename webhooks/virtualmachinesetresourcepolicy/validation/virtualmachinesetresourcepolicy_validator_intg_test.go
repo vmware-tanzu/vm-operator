@@ -135,6 +135,14 @@ func intgTestsValidateUpdate() {
 			Expect(err.Error()).To(ContainSubstring("field is immutable"))
 		})
 	})
+	When("update is performed with additional clusterModuleGroup", func() {
+		BeforeEach(func() {
+			ctx.vmRP.Spec.ClusterModuleGroups = []string{"some-new-group"}
+		})
+		It("should allow the request", func() {
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
 }
 
 func intgTestsValidateDelete() {

@@ -47,6 +47,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 		}
 	}
 
+	clusterReferences := []vimtypes.ManagedObjectReference{}
 	for _, rpMoID := range rpMoIDs {
 		if rpSpec := &resourcePolicy.Spec.ResourcePool; rpSpec.Name != "" {
 			_, err := vcenter.CreateOrUpdateChildResourcePool(ctx, vimClient, rpMoID, rpSpec)
@@ -55,16 +56,18 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 			}
 		}
 
-		if len(resourcePolicy.Spec.ClusterModuleGroups) > 0 {
-			clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
-			if err == nil {
-				clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
-				err = vs.reconcileClusterModules(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
-			}
-			if err != nil {
-				errs = append(errs, err)
-			}
+		clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
+		if err != nil {
+			errs = append(errs, err)
+			continue
 		}
+		clusterReferences = append(clusterReferences, clusterRef)
+	}
+
+	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
+	err = vs.reconcileClusterModules(ctx, clusterModuleProvider, clusterReferences, resourcePolicy)
+	if err != nil {
+		errs = append(errs, err)
 	}
 
 	return apierrorsutil.NewAggregate(errs)
@@ -135,7 +138,7 @@ func (vs *vSphereVMProvider) doClusterModulesExist(
 func (vs *vSphereVMProvider) reconcileClusterModules(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
-	clusterRef vimtypes.ManagedObjectReference,
+	computeClusterReferences []vimtypes.ManagedObjectReference,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
 	var errs []error
@@ -143,60 +146,66 @@ func (vs *vSphereVMProvider) reconcileClusterModules(
 	// There is no way to give a name when creating a VC cluster module, so we have to
 	// resort to using the status as the source of truth. This can result in orphaned
 	// modules if, for instance, we fail to update the resource policy k8s object.
-	for _, groupName := range resourcePolicy.Spec.ClusterModuleGroups {
-		idx, moduleID := clustermodules.FindClusterModuleUUID(ctx, groupName, clusterRef, resourcePolicy)
+	for _, clusterRef := range computeClusterReferences {
+		for _, groupName := range resourcePolicy.Spec.ClusterModuleGroups {
+			idx, moduleID := clustermodules.FindClusterModuleUUID(ctx, groupName, clusterRef, resourcePolicy)
 
-		if moduleID != "" {
-			// Verify this cluster module exists on VC for this cluster.
-			exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
-			if err != nil {
-				errs = append(errs, err)
-				continue
+			if moduleID != "" {
+				// Verify this cluster module exists on VC for this cluster.
+				exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				if !exists {
+					// Status entry is stale. Create below.
+					moduleID = ""
+				}
+			} else {
+				var err error
+				// See if there is already a module for this cluster but without the ClusterMoID field
+				// set that we can claim.
+				idx, moduleID, err = clustermodules.ClaimClusterModuleUUID(ctx, clusterModProvider,
+					groupName, clusterRef, resourcePolicy)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
 			}
-			if !exists {
-				// Status entry is stale. Create below.
-				moduleID = ""
-			}
-		} else {
-			var err error
-			// See if there is already a module for this cluster but without the ClusterMoID field
-			// set that we can claim.
-			idx, moduleID, err = clustermodules.ClaimClusterModuleUUID(ctx, clusterModProvider,
-				groupName, clusterRef, resourcePolicy)
-			if err != nil {
-				errs = append(errs, err)
-				continue
-			}
-		}
 
-		if moduleID == "" {
-			var err error
-			moduleID, err = clusterModProvider.CreateModule(ctx, clusterRef)
-			if err != nil {
-				errs = append(errs, err)
-				continue
+			if moduleID == "" {
+				var err error
+				moduleID, err = clusterModProvider.CreateModule(ctx, clusterRef)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
 			}
-		}
 
-		if idx >= 0 {
-			resourcePolicy.Status.ClusterModules[idx].ModuleUuid = moduleID
-			resourcePolicy.Status.ClusterModules[idx].ClusterMoID = clusterRef.Value
-		} else {
-			status := vmopv1.VSphereClusterModuleStatus{
-				GroupName:   groupName,
-				ModuleUuid:  moduleID,
-				ClusterMoID: clusterRef.Value,
+			if idx >= 0 {
+				resourcePolicy.Status.ClusterModules[idx].ModuleUuid = moduleID
+				resourcePolicy.Status.ClusterModules[idx].ClusterMoID = clusterRef.Value
+			} else {
+				status := vmopv1.VSphereClusterModuleStatus{
+					GroupName:   groupName,
+					ModuleUuid:  moduleID,
+					ClusterMoID: clusterRef.Value,
+				}
+				resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules, status)
 			}
-			resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules, status)
 		}
 	}
 
 	desiredGroups := sets.New(resourcePolicy.Spec.ClusterModuleGroups...)
+	desiredComputeClusterReferences := sets.New[string]()
+	for _, computeClusterReference := range computeClusterReferences {
+		desiredComputeClusterReferences.Insert(computeClusterReference.Value)
+	}
 
 	// Cleanup removed cluster module groups.
 	var newClusterModuleStatus []vmopv1.VSphereClusterModuleStatus
 	for _, clusterModuleStatus := range resourcePolicy.Status.ClusterModules {
-		if desiredGroups.Has(clusterModuleStatus.GroupName) {
+		if desiredGroups.Has(clusterModuleStatus.GroupName) && desiredComputeClusterReferences.Has(clusterModuleStatus.ClusterMoID) {
 			newClusterModuleStatus = append(newClusterModuleStatus, clusterModuleStatus)
 			continue
 		}

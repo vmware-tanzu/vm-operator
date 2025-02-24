@@ -9,7 +9,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	"github.com/vmware/govmomi/vapi/cluster"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -183,16 +182,25 @@ func resourcePolicyTests() {
 					assertSetResourcePolicy(resourcePolicy, true)
 					resourcePolicy.Spec.ClusterModuleGroups = append(resourcePolicy.Spec.ClusterModuleGroups, "another-NodeGroup2")
 					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
-					Expect(resourcePolicy.Status.ClusterModules).To(HaveLen(len(resourcePolicy.Spec.ClusterModuleGroups) * len(ctx.ZoneNames)))
 					assertSetResourcePolicy(resourcePolicy, true)
 				})
 
 				It("should delete removed cluster modules", func() {
 					assertSetResourcePolicy(resourcePolicy, true)
+					status := resourcePolicy.Status.DeepCopy()
+
 					resourcePolicy.Spec.ClusterModuleGroups = resourcePolicy.Spec.ClusterModuleGroups[:1]
 					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
-					Expect(resourcePolicy.Status.ClusterModules).To(HaveLen(len(ctx.ZoneNames)))
 					assertSetResourcePolicy(resourcePolicy, true)
+					for _, clusterModule := range status.ClusterModules {
+						if clusterModule.GroupName == resourcePolicy.Spec.ClusterModuleGroups[0] {
+							// Check that the still existing ClusterModules did not change.
+							Expect(resourcePolicy.Status.ClusterModules).To(ContainElement(clusterModule))
+						} else {
+							// Check that the right ClusterModules got removed.
+							Expect(resourcePolicy.Status.ClusterModules).ToNot(ContainElement(clusterModule))
+						}
+					}
 				})
 			})
 

@@ -577,7 +577,8 @@ func DummyImageAndItemObjectsForCdromBacking(
 	}
 
 	imgStatus := vmopv1.VirtualMachineImageStatus{
-		Type: string(itemType),
+		Type:           string(itemType),
+		ProviderItemID: libItemUUID,
 	}
 	if imgReady {
 		imgStatus.Conditions = []metav1.Condition{
@@ -602,6 +603,10 @@ func DummyImageAndItemObjectsForCdromBacking(
 	}
 
 	if kind == vmiKind {
+		if imgSpec.ProviderRef != nil {
+			imgSpec.ProviderRef.Kind = "ContentLibraryItem"
+		}
+
 		imageObj = &vmopv1.VirtualMachineImage{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -620,6 +625,11 @@ func DummyImageAndItemObjectsForCdromBacking(
 			Status: itemStatus,
 		}
 	} else {
+
+		if imgSpec.ProviderRef != nil {
+			imgSpec.ProviderRef.Kind = "ClusterContentLibraryItem"
+		}
+
 		imageObj = &vmopv1.ClusterVirtualMachineImage{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name,

@@ -1507,9 +1507,6 @@ func (v validator) validateCdrom(
 	}
 
 	f := field.NewPath("spec", "cdrom")
-	if !pkgcfg.FromContext(ctx).Features.IsoSupport {
-		return append(allErrs, field.Forbidden(f, fmt.Sprintf(featureNotEnabled, "CD-ROM (ISO) support")))
-	}
 
 	// GuestID must be set when deploying an ISO VM with CD-ROMs.
 	if vm.Spec.GuestID == "" {

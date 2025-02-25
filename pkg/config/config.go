@@ -168,7 +168,6 @@ func (c Config) GetMaxDeployThreadsOnProvider() int {
 }
 
 type FeatureStates struct {
-	IsoSupport                 bool // FSS_WCP_VMSERVICE_ISO_SUPPORT
 	InstanceStorage            bool // FSS_WCP_INSTANCE_STORAGE
 	K8sWorkloadMgmtAPI         bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR

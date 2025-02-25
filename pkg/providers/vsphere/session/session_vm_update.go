@@ -533,13 +533,11 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
-	if pkgcfg.FromContext(vmCtx).Features.IsoSupport {
-		cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
-		if err != nil {
-			return nil, false, fmt.Errorf("update CD-ROM device changes error: %w", err)
-		}
-		configSpec.DeviceChange = append(configSpec.DeviceChange, cdromDeviceChanges...)
+	cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
+	if err != nil {
+		return nil, false, fmt.Errorf("update CD-ROM device changes error: %w", err)
 	}
+	configSpec.DeviceChange = append(configSpec.DeviceChange, cdromDeviceChanges...)
 
 	return configSpec, needsResize, nil
 }
@@ -802,10 +800,8 @@ func (s *Session) poweredOnVMReconfigure(
 	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, vmCtx.VM, nil)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
-	if pkgcfg.FromContext(vmCtx).Features.IsoSupport {
-		if err := virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
-			return false, fmt.Errorf("update CD-ROM device connection error: %w", err)
-		}
+	if err := virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
+		return false, fmt.Errorf("update CD-ROM device connection error: %w", err)
 	}
 
 	refetchProps, err := doReconfigure(

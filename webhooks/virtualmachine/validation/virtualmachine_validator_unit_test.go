@@ -3902,6 +3902,25 @@ func unitTestsValidateUpdate() {
 		//
 		// RESIZE_CPU is disabled, FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET is disabled
 		//
+
+		Entry("always allow changes to non-class fields for classless VMs",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = ""
+					ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+
+					ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					ctx.vm.Spec.ClassName = ""
+
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMImportNewNet = false
+						config.Features.VMResizeCPUMemory = false
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+
 		Entry("require spec.className for privileged user when FSS_RESIZE_CPU & FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET are disabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {

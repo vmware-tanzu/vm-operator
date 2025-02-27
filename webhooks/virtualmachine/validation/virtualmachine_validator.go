@@ -1497,7 +1497,7 @@ func (v validator) validateNetworkHostAndDomainName(
 	return nil
 }
 
-func (v *validator) validateCdrom(
+func (v validator) validateCdrom(
 	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList

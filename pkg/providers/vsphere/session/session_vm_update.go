@@ -27,7 +27,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	network2 "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
@@ -47,7 +47,7 @@ type VMUpdateArgs struct {
 	ExtraConfig    map[string]string
 	BootstrapData  vmlifecycle.BootstrapData
 	ConfigSpec     vimtypes.VirtualMachineConfigSpec
-	NetworkResults network2.NetworkInterfaceResults
+	NetworkResults network.NetworkInterfaceResults
 }
 
 // VMResizeArgs contains the arguments needed to resize a VM on VC.
@@ -593,11 +593,11 @@ func (s *Session) prePowerOnVMReconfigure(
 
 func (s *Session) ensureNetworkInterfaces(
 	vmCtx pkgctx.VirtualMachineContext,
-	configSpec *vimtypes.VirtualMachineConfigSpec) (network2.NetworkInterfaceResults, error) {
+	configSpec *vimtypes.VirtualMachineConfigSpec) (network.NetworkInterfaceResults, error) {
 
 	networkSpec := vmCtx.VM.Spec.Network
 	if networkSpec == nil || networkSpec.Disabled {
-		return network2.NetworkInterfaceResults{}, nil
+		return network.NetworkInterfaceResults{}, nil
 	}
 
 	// This negative device key is the traditional range used for network interfaces.
@@ -611,7 +611,7 @@ func (s *Session) ensureNetworkInterfaces(
 		)
 	}
 
-	results, err := network2.CreateAndWaitForNetworkInterfaces(
+	results, err := network.CreateAndWaitForNetworkInterfaces(
 		vmCtx,
 		s.K8sClient,
 		s.Client.VimClient(),
@@ -619,7 +619,7 @@ func (s *Session) ensureNetworkInterfaces(
 		&s.ClusterMoRef,
 		networkSpec)
 	if err != nil {
-		return network2.NetworkInterfaceResults{}, err
+		return network.NetworkInterfaceResults{}, err
 	}
 
 	// XXX: The following logic assumes that the order of network interfaces specified in the
@@ -629,9 +629,9 @@ func (s *Session) ensureNetworkInterfaces(
 	for idx := range results.Results {
 		result := &results.Results[idx]
 
-		dev, err := network2.CreateDefaultEthCard(vmCtx, result)
+		dev, err := network.CreateDefaultEthCard(vmCtx, result)
 		if err != nil {
-			return network2.NetworkInterfaceResults{}, err
+			return network.NetworkInterfaceResults{}, err
 		}
 
 		// Use network devices from the class.

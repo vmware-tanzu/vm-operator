@@ -2190,10 +2190,9 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						fmt.Sprintf(`spec.network.interfaces[0].name: Invalid value: "dummy-vm-dummy-nw-%x": is the resulting network interface name: must be no more than 253 characters`, make([]byte, validation.DNS1123SubdomainMaxLength)),
-						`spec.network.interfaces[1].name: Invalid value: "dummy-vm-dummy-nw-dummy_If": is the resulting network interface name: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters`,
-						`'-' or '.'`,
-						`and must start and end with an alphanumeric character (e.g. 'example.com'`,
-						"regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"),
+						`spec.network.interfaces[1].name: Invalid value: "dummy-vm-dummy-nw-dummy_If": is the resulting network interface name: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', `+
+							`and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')`,
+					),
 				},
 			),
 		)

@@ -184,6 +184,10 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigSpec{}),
 
 		Entry("CPU affinity settings needs updating value change",
+			ConfigInfo{CpuAffinity: nil},
+			ConfigSpec{CpuAffinity: &vimtypes.VirtualMachineAffinityInfo{AffinitySet: []int32{1, 3}}},
+			ConfigSpec{CpuAffinity: &vimtypes.VirtualMachineAffinityInfo{AffinitySet: []int32{1, 3}}}),
+		Entry("CPU affinity settings needs updating value change",
 			ConfigInfo{CpuAffinity: &vimtypes.VirtualMachineAffinityInfo{AffinitySet: []int32{2, 3}}},
 			ConfigSpec{CpuAffinity: &vimtypes.VirtualMachineAffinityInfo{AffinitySet: []int32{1, 3}}},
 			ConfigSpec{CpuAffinity: &vimtypes.VirtualMachineAffinityInfo{AffinitySet: []int32{1, 3}}}),

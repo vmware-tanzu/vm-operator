@@ -14,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
 )
 
@@ -310,28 +311,28 @@ var _ = Describe("Match Devices", func() {
 	truePtr, falsePtr := vimtypes.NewBool(true), vimtypes.NewBool(false)
 
 	DescribeTable("MatchVirtualUSBController",
-		func(expected, current, edit *vimtypes.VirtualUSBController) {
+		func(expected, current, expectedEdit *vimtypes.VirtualUSBController) {
 			current.Key = 42
-			e := resize.MatchVirtualUSBController(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualUSBController(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No Change",
 			&vimtypes.VirtualUSBController{},
 			&vimtypes.VirtualUSBController{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - AutoConnectDevices change",
 			&vimtypes.VirtualUSBController{AutoConnectDevices: truePtr},
 			&vimtypes.VirtualUSBController{},
 			&vimtypes.VirtualUSBController{AutoConnectDevices: truePtr},
 		),
-		Entry("#3",
+		Entry("#3 - EhciEnabled change",
 			&vimtypes.VirtualUSBController{EhciEnabled: falsePtr},
 			&vimtypes.VirtualUSBController{EhciEnabled: truePtr},
 			&vimtypes.VirtualUSBController{EhciEnabled: falsePtr},
@@ -339,72 +340,82 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualUSBXHCIController",
-		func(expected, current, edit *vimtypes.VirtualUSBXHCIController) {
+		func(expected, current, expectedEdit *vimtypes.VirtualUSBXHCIController) {
 			current.Key = 42
-			e := resize.MatchVirtualUSBXHCIController(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualUSBXHCIController(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualUSBXHCIController{},
 			&vimtypes.VirtualUSBXHCIController{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - No change",
+			&vimtypes.VirtualUSBXHCIController{AutoConnectDevices: truePtr},
+			&vimtypes.VirtualUSBXHCIController{AutoConnectDevices: truePtr},
+			nil,
+		),
+		Entry("#3 - AutoConnectDevices set",
 			&vimtypes.VirtualUSBXHCIController{AutoConnectDevices: truePtr},
 			&vimtypes.VirtualUSBXHCIController{},
+			&vimtypes.VirtualUSBXHCIController{AutoConnectDevices: truePtr},
+		),
+		Entry("#4 - AutoConnectDevices changed",
+			&vimtypes.VirtualUSBXHCIController{AutoConnectDevices: truePtr},
+			&vimtypes.VirtualUSBXHCIController{AutoConnectDevices: falsePtr},
 			&vimtypes.VirtualUSBXHCIController{AutoConnectDevices: truePtr},
 		),
 	)
 
 	DescribeTable("MatchVirtualMachineVMCIDevice",
-		func(expected, current, edit *vimtypes.VirtualMachineVMCIDevice) {
+		func(expected, current, expectedEdit *vimtypes.VirtualMachineVMCIDevice) {
 			current.Key = 42
-			e := resize.MatchVirtualMachineVMCIDevice(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualMachineVMCIDevice(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualMachineVMCIDevice{},
 			&vimtypes.VirtualMachineVMCIDevice{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - No change",
 			&vimtypes.VirtualMachineVMCIDevice{AllowUnrestrictedCommunication: truePtr},
 			&vimtypes.VirtualMachineVMCIDevice{AllowUnrestrictedCommunication: truePtr},
 			nil,
 		),
-		Entry("#3",
+		Entry("#3 - AllowUnrestrictedCommunication changed",
 			&vimtypes.VirtualMachineVMCIDevice{AllowUnrestrictedCommunication: truePtr},
 			&vimtypes.VirtualMachineVMCIDevice{},
 			&vimtypes.VirtualMachineVMCIDevice{AllowUnrestrictedCommunication: truePtr},
 		),
-		Entry("#4",
+		Entry("#4 - FilterEnable set",
 			&vimtypes.VirtualMachineVMCIDevice{FilterEnable: truePtr},
 			&vimtypes.VirtualMachineVMCIDevice{},
 			&vimtypes.VirtualMachineVMCIDevice{FilterEnable: truePtr},
 		),
-		Entry("#5",
+		Entry("#5 - FilterEnable changed",
 			&vimtypes.VirtualMachineVMCIDevice{FilterEnable: truePtr},
 			&vimtypes.VirtualMachineVMCIDevice{FilterEnable: falsePtr},
 			&vimtypes.VirtualMachineVMCIDevice{FilterEnable: truePtr},
 		),
-		Entry("#6",
+		Entry("#6 - FilterEnable not changed",
 			&vimtypes.VirtualMachineVMCIDevice{},
 			&vimtypes.VirtualMachineVMCIDevice{FilterEnable: truePtr},
 			nil,
 		),
-		Entry("#7",
+		Entry("#7 - FilterInfo not changed",
 			&vimtypes.VirtualMachineVMCIDevice{
 				FilterInfo: &vimtypes.VirtualMachineVMCIDeviceFilterInfo{
 					Filters: []vimtypes.VirtualMachineVMCIDeviceFilterSpec{
@@ -425,7 +436,7 @@ var _ = Describe("Match Devices", func() {
 			},
 			nil,
 		),
-		Entry("#8",
+		Entry("#8 - FilterInfo set",
 			&vimtypes.VirtualMachineVMCIDevice{
 				FilterInfo: &vimtypes.VirtualMachineVMCIDeviceFilterInfo{
 					Filters: []vimtypes.VirtualMachineVMCIDeviceFilterSpec{
@@ -449,28 +460,28 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualMachineVideoCard",
-		func(expected, current, edit *vimtypes.VirtualMachineVideoCard) {
+		func(expected, current, expectedEdit *vimtypes.VirtualMachineVideoCard) {
 			current.Key = 42
-			e := resize.MatchVirtualMachineVideoCard(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualMachineVideoCard(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualMachineVideoCard{},
 			&vimtypes.VirtualMachineVideoCard{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - No change",
 			&vimtypes.VirtualMachineVideoCard{NumDisplays: 2},
 			&vimtypes.VirtualMachineVideoCard{NumDisplays: 2},
 			nil,
 		),
-		Entry("#3",
+		Entry("#3 - Fields set",
 			&vimtypes.VirtualMachineVideoCard{
 				VideoRamSizeInKB:       1,
 				NumDisplays:            2,
@@ -492,23 +503,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualParallelPort",
-		func(expected, current, edit *vimtypes.VirtualParallelPort) {
+		func(expected, current, expectedEdit *vimtypes.VirtualParallelPort) {
 			current.Key = 42
-			e := resize.MatchVirtualParallelPort(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualParallelPort(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualParallelPort{},
 			&vimtypes.VirtualParallelPort{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - Backing set",
 			&vimtypes.VirtualParallelPort{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualParallelPortDeviceBackingInfo{
@@ -529,7 +540,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - Backing set",
 			&vimtypes.VirtualParallelPort{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
@@ -545,6 +556,64 @@ var _ = Describe("Match Devices", func() {
 					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
 						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 							FileName: "foo",
+						},
+					},
+				},
+			},
+		),
+		Entry("#4 - Backing changed",
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
+						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+							FileName: "new",
+						},
+					},
+				},
+			},
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
+						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+							FileName: "old",
+						},
+					},
+				},
+			},
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
+						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+							FileName: "new",
+						},
+					},
+				},
+			},
+		),
+		Entry("#5 - Backing changed",
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortDeviceBackingInfo{
+						VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+							DeviceName: "new",
+						},
+					},
+				},
+			},
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortFileBackingInfo{
+						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+							FileName: "old",
+						},
+					},
+				},
+			},
+			&vimtypes.VirtualParallelPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualParallelPortDeviceBackingInfo{
+						VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+							DeviceName: "new",
 						},
 					},
 				},
@@ -553,23 +622,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualPointingDevice",
-		func(expected, current, edit *vimtypes.VirtualPointingDevice) {
+		func(expected, current, expectedEdit *vimtypes.VirtualPointingDevice) {
 			current.Key = 42
-			e := resize.MatchVirtualPointingDevice(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualPointingDevice(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualPointingDevice{},
 			&vimtypes.VirtualPointingDevice{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - Backing set",
 			&vimtypes.VirtualPointingDevice{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualPointingDeviceDeviceBackingInfo{
@@ -590,7 +659,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - Backing not changed",
 			&vimtypes.VirtualPointingDevice{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualPointingDeviceDeviceBackingInfo{
@@ -610,23 +679,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualPrecisionClock",
-		func(expected, current, edit *vimtypes.VirtualPrecisionClock) {
+		func(expected, current, expectedEdit *vimtypes.VirtualPrecisionClock) {
 			current.Key = 42
-			e := resize.MatchVirtualPrecisionClock(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualPrecisionClock(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualPrecisionClock{},
 			&vimtypes.VirtualPrecisionClock{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - Backing set",
 			&vimtypes.VirtualPrecisionClock{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualPrecisionClockSystemClockBackingInfo{
@@ -643,7 +712,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - Backing not changed",
 			&vimtypes.VirtualPrecisionClock{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualPrecisionClockSystemClockBackingInfo{
@@ -663,23 +732,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualSCSIPassthrough",
-		func(expected, current, edit *vimtypes.VirtualSCSIPassthrough) {
+		func(expected, current, expectedEdit *vimtypes.VirtualSCSIPassthrough) {
 			current.Key = 42
-			e := resize.MatchVirtualSCSIPassthrough(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualSCSIPassthrough(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualSCSIPassthrough{},
 			&vimtypes.VirtualSCSIPassthrough{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - Backing set",
 			&vimtypes.VirtualSCSIPassthrough{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualSCSIPassthroughDeviceBackingInfo{
@@ -700,7 +769,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - Backing not changed",
 			&vimtypes.VirtualSCSIPassthrough{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualSCSIPassthroughDeviceBackingInfo{
@@ -724,23 +793,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualSerialPort",
-		func(expected, current, edit *vimtypes.VirtualSerialPort) {
+		func(expected, current, expectedEdit *vimtypes.VirtualSerialPort) {
 			current.Key = 42
-			e := resize.MatchVirtualSerialPort(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualSerialPort(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualSerialPort{},
 			&vimtypes.VirtualSerialPort{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - Backing set",
 			&vimtypes.VirtualSerialPort{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualSerialPortDeviceBackingInfo{},
@@ -753,7 +822,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - Backing set",
 			&vimtypes.VirtualSerialPort{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualSerialPortFileBackingInfo{},
@@ -766,7 +835,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#4",
+		Entry("#4 - Backing set",
 			&vimtypes.VirtualSerialPort{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualSerialPortPipeBackingInfo{},
@@ -779,7 +848,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#5",
+		Entry("#5 - Backing set",
 			&vimtypes.VirtualSerialPort{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualSerialPortThinPrintBackingInfo{},
@@ -792,13 +861,98 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#6",
+		Entry("#6 - Backing set",
 			&vimtypes.VirtualSerialPort{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualSerialPortURIBackingInfo{},
 				},
 			},
 			&vimtypes.VirtualSerialPort{},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortURIBackingInfo{},
+				},
+			},
+		),
+		Entry("#7 - Backing changed",
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortDeviceBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortURIBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortDeviceBackingInfo{},
+				},
+			},
+		),
+		Entry("#8 - Backing changed",
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortFileBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortURIBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortFileBackingInfo{},
+				},
+			},
+		),
+		Entry("#9 - Backing changed",
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortPipeBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortURIBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortPipeBackingInfo{},
+				},
+			},
+		),
+		Entry("#10 - Backing changed",
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortThinPrintBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortURIBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortThinPrintBackingInfo{},
+				},
+			},
+		),
+		Entry("#11 - Backing changed",
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortURIBackingInfo{},
+				},
+			},
+			&vimtypes.VirtualSerialPort{
+				VirtualDevice: vimtypes.VirtualDevice{
+					Backing: &vimtypes.VirtualSerialPortThinPrintBackingInfo{},
+				},
+			},
 			&vimtypes.VirtualSerialPort{
 				VirtualDevice: vimtypes.VirtualDevice{
 					Backing: &vimtypes.VirtualSerialPortURIBackingInfo{},
@@ -808,23 +962,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualEnsoniq1371",
-		func(expected, current, edit *vimtypes.VirtualEnsoniq1371) {
+		func(expected, current, expectedEdit *vimtypes.VirtualEnsoniq1371) {
 			current.Key = 42
-			e := resize.MatchVirtualEnsoniq1371(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualEnsoniq1371(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualEnsoniq1371{},
 			&vimtypes.VirtualEnsoniq1371{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - Backing set",
 			&vimtypes.VirtualEnsoniq1371{
 				VirtualSoundCard: vimtypes.VirtualSoundCard{
 					VirtualDevice: vimtypes.VirtualDevice{
@@ -841,7 +995,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - No backing change",
 			&vimtypes.VirtualEnsoniq1371{
 				VirtualSoundCard: vimtypes.VirtualSoundCard{
 					VirtualDevice: vimtypes.VirtualDevice{
@@ -861,23 +1015,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualHdAudioCard",
-		func(expected, current, edit *vimtypes.VirtualHdAudioCard) {
+		func(expected, current, expectedEdit *vimtypes.VirtualHdAudioCard) {
 			current.Key = 42
-			e := resize.MatchVirtualHdAudioCard(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualHdAudioCard(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualHdAudioCard{},
 			&vimtypes.VirtualHdAudioCard{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - Backing set",
 			&vimtypes.VirtualHdAudioCard{
 				VirtualSoundCard: vimtypes.VirtualSoundCard{
 					VirtualDevice: vimtypes.VirtualDevice{
@@ -894,7 +1048,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - No backing change",
 			&vimtypes.VirtualHdAudioCard{
 				VirtualSoundCard: vimtypes.VirtualSoundCard{
 					VirtualDevice: vimtypes.VirtualDevice{
@@ -914,23 +1068,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualSoundBlaster16",
-		func(expected, current, edit *vimtypes.VirtualSoundBlaster16) {
+		func(expected, current, expectedEdit *vimtypes.VirtualSoundBlaster16) {
 			current.Key = 42
-			e := resize.MatchVirtualSoundBlaster16(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualSoundBlaster16(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualSoundBlaster16{},
 			&vimtypes.VirtualSoundBlaster16{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - Backing set",
 			&vimtypes.VirtualSoundBlaster16{
 				VirtualSoundCard: vimtypes.VirtualSoundCard{
 					VirtualDevice: vimtypes.VirtualDevice{
@@ -947,7 +1101,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - No backing change",
 			&vimtypes.VirtualSoundBlaster16{
 				VirtualSoundCard: vimtypes.VirtualSoundCard{
 					VirtualDevice: vimtypes.VirtualDevice{
@@ -967,23 +1121,23 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualTPM",
-		func(expected, current, edit *vimtypes.VirtualTPM) {
+		func(expected, current, expectedEdit *vimtypes.VirtualTPM) {
 			current.Key = 42
-			e := resize.MatchVirtualTPM(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualTPM(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualTPM{},
 			&vimtypes.VirtualTPM{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - EndorsementKeyCertificateSigningRequest set",
 			&vimtypes.VirtualTPM{
 				EndorsementKeyCertificateSigningRequest: [][]byte{
 					[]byte("foo"),
@@ -996,7 +1150,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#3",
+		Entry("#3 - EndorsementKeyCertificate set",
 			&vimtypes.VirtualTPM{
 				EndorsementKeyCertificate: [][]byte{
 					[]byte("bar"),
@@ -1009,7 +1163,7 @@ var _ = Describe("Match Devices", func() {
 				},
 			},
 		),
-		Entry("#4",
+		Entry("#4 - EndorsementKeyCertificateSigningRequest not changed",
 			&vimtypes.VirtualTPM{
 				EndorsementKeyCertificateSigningRequest: [][]byte{
 					[]byte("foo"),
@@ -1031,32 +1185,79 @@ var _ = Describe("Match Devices", func() {
 	)
 
 	DescribeTable("MatchVirtualWDT",
-		func(expected, current, edit *vimtypes.VirtualWDT) {
+		func(expected, current, expectedEdit *vimtypes.VirtualWDT) {
 			current.Key = 42
-			e := resize.MatchVirtualWDT(expected, current)
-			if edit != nil {
-				edit.Key = 42
-				Expect(e).To(Equal(edit))
+			edit := resize.MatchVirtualWDT(expected, current)
+			if expectedEdit != nil {
+				expectedEdit.Key = 42
+				Expect(edit).To(Equal(expectedEdit))
 			} else {
-				Expect(e).To(BeNil())
+				Expect(edit).To(BeNil())
 			}
 		},
 
-		Entry("#1",
+		Entry("#1 - No change",
 			&vimtypes.VirtualWDT{},
 			&vimtypes.VirtualWDT{},
 			nil,
 		),
-		Entry("#2",
+		Entry("#2 - RunOnBoot set",
 			&vimtypes.VirtualWDT{RunOnBoot: true},
 			&vimtypes.VirtualWDT{},
 			&vimtypes.VirtualWDT{RunOnBoot: true},
 		),
-		Entry("#3",
+		Entry("#3 - RunOnBoot not changed",
 			&vimtypes.VirtualWDT{RunOnBoot: true},
 			&vimtypes.VirtualWDT{RunOnBoot: true},
 			nil,
 		),
 	)
 
+})
+
+var _ = Describe("Cmp(Ptr)Edit", func() {
+
+	Context("CmpEdit", func() {
+
+		DescribeTable("CmpEdit",
+			func(a, b, expectedC int, expectedEdit bool) {
+				c := 0
+				edit := false
+				resize.CmpEdit(a, b, &c, &edit)
+
+				Expect(edit).To(Equal(expectedEdit))
+				if expectedEdit {
+					Expect(c).To(Equal(expectedC))
+				} else {
+					Expect(c).To(BeZero())
+				}
+			},
+
+			Entry("Same", 1, 1, -1, false),
+			Entry("Diff", 1, 2, 2, true),
+		)
+	})
+
+	Context("cmpPtrEdit", func() {
+
+		DescribeTable("CmpPtrEdit",
+			func(a, b *int, expectedEdit bool) {
+				var editP = new(int)
+				var origEditP = editP
+				var edit bool
+				resize.CmpPtrEdit(a, b, &editP, &edit)
+				Expect(edit).To(Equal(expectedEdit))
+				if expectedEdit {
+					Expect(editP).To(Equal(b))
+				} else {
+					Expect(editP).To(BeIdenticalTo(origEditP))
+				}
+			},
+			Entry("current and expected are nil", nil, nil, false),
+			Entry("current is nil", nil, ptr.To(1), true),
+			Entry("current is not nil and expected is nil", ptr.To(1), nil, false),
+			Entry("current and expected are the same", ptr.To(1), ptr.To(1), false),
+			Entry("current and expected are different", ptr.To(1), ptr.To(2), true),
+		)
+	})
 })

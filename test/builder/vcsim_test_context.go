@@ -127,9 +127,6 @@ type VCSimTestConfig struct {
 	// WithNetworkEnv is the network environment type.
 	WithNetworkEnv NetworkEnv
 
-	// WithISOSupport enables the FSS_WCP_VMSERVICE_ISO_SUPPORT FSS.
-	WithISOSupport bool
-
 	// WithoutEncryptionClass disables the creation of the EncryptionClass
 	// resource in each workload namespace.
 	WithoutEncryptionClass bool
@@ -529,7 +526,6 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.Features.VMResize = config.WithVMResize
 		cc.Features.VMResizeCPUMemory = config.WithVMResizeCPUMemory
 		cc.Features.WorkloadDomainIsolation = !config.WithoutWorkloadDomainIsolation
-		cc.Features.IsoSupport = config.WithISOSupport
 		cc.Features.VMIncrementalRestore = config.WithVMIncrementalRestore
 	})
 }

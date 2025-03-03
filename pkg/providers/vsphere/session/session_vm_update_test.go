@@ -1126,6 +1126,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		vm.Namespace = "my-namespace"
 		vm.Spec.Network.Interfaces = nil
 		vm.Spec.Volumes = nil
+		vm.Spec.Cdrom = nil
 	})
 
 	JustBeforeEach(func() {
@@ -1435,44 +1436,6 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				})
 			})
 
-			When("the boot disk size is changed for ISO VMs", func() {
-				JustBeforeEach(func() {
-					vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
-					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
-					Expect(disks).To(HaveLen(1))
-					Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
-					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-					Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
-
-					q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
-					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-						BootDiskCapacity: &q,
-					}
-					vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: "cdrom",
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: "fake-iso-image",
-							},
-						},
-					}
-				})
-
-				It("should power on the VM without the boot disk resized", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-					vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
-					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
-					Expect(disks).To(HaveLen(1))
-					Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
-					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-					Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
-					// VM is powered on.
-					assertUpdate()
-				})
-			})
-
 			When("there are no NICs", func() {
 				BeforeEach(func() {
 					vm.Spec.Network.Interfaces = nil
@@ -1611,7 +1574,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				})
 			})
 
-			Context("ISO FSS is enabled", func() {
+			When("VM has CD-ROM", func() {
 
 				const (
 					vmiName     = "vmi-iso"
@@ -1620,8 +1583,19 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				)
 
 				BeforeEach(func() {
+					vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: "cdrom1",
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: vmiName,
+								Kind: vmiKind,
+							},
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
+						},
+					}
+
 					testConfig.WithContentLibrary = true
-					testConfig.WithISOSupport = true
 				})
 
 				JustBeforeEach(func() {
@@ -1632,36 +1606,50 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					}
 				})
 
-				When("there are CD-ROM device changes", func() {
+				It("should power on the VM with expected CD-ROM device", func() {
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					cdromDeviceList := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device).SelectByType(&vimtypes.VirtualCdrom{})
+					Expect(cdromDeviceList).To(HaveLen(1))
+					cdrom := cdromDeviceList[0].(*vimtypes.VirtualCdrom)
+					Expect(cdrom.Connectable.StartConnected).To(BeTrue())
+					Expect(cdrom.Connectable.Connected).To(BeTrue())
+					Expect(cdrom.Connectable.AllowGuestControl).To(BeTrue())
+					Expect(cdrom.ControllerKey).ToNot(BeZero())
+					Expect(cdrom.UnitNumber).ToNot(BeNil())
+					Expect(cdrom.Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualCdromIsoBackingInfo{}))
+					backing := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo)
+					Expect(backing.FileName).To(Equal(vmiFileName))
+					assertUpdate()
+				})
 
-					BeforeEach(func() {
-						vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-							{
-								Name: "cdrom-1",
-								Image: vmopv1.VirtualMachineImageRef{
-									Name: vmiName,
-									Kind: vmiKind,
-								},
-								AllowGuestControl: ptr.To(true),
-								Connected:         ptr.To(true),
-							},
+				When("the boot disk size is changed for VM with CD-ROM", func() {
+
+					JustBeforeEach(func() {
+						vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+						disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+						Expect(disks).To(HaveLen(1))
+						Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+						diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+						Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+
+						q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
+						vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+							BootDiskCapacity: &q,
 						}
 					})
 
-					It("should power on the VM with expected CD-ROM device", func() {
+					It("should power on the VM without the boot disk resized", func() {
 						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-						cdromDeviceList := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device).SelectByType(&vimtypes.VirtualCdrom{})
-						Expect(cdromDeviceList).To(HaveLen(1))
-						cdrom := cdromDeviceList[0].(*vimtypes.VirtualCdrom)
-						Expect(cdrom.Connectable.StartConnected).To(BeTrue())
-						Expect(cdrom.Connectable.Connected).To(BeTrue())
-						Expect(cdrom.Connectable.AllowGuestControl).To(BeTrue())
-						Expect(cdrom.ControllerKey).ToNot(BeZero())
-						Expect(cdrom.UnitNumber).ToNot(BeNil())
-						Expect(cdrom.Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualCdromIsoBackingInfo{}))
-						backing := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo)
-						Expect(backing.FileName).To(Equal(vmiFileName))
+						Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+						disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+						Expect(disks).To(HaveLen(1))
+						Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+						diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+						Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+						// VM is powered on.
 						assertUpdate()
 					})
 				})

@@ -23,8 +23,6 @@ spec:
           value: "true"
         - name: NETWORK_PROVIDER
           value: "NAMED"
-        - name: FSS_WCP_VMSERVICE_ISO_SUPPORT
-          value: "false"
         - name: FSS_WCP_VMSERVICE_RESIZE
           value: "false"
         - name: FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
@@ -69,4 +67,5 @@ spec:
           value: "true"
         - name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
           value: "true"
-
+        - name: FSS_WCP_VMSERVICE_ISO_SUPPORT
+          value: "true"

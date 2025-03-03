@@ -53,7 +53,6 @@ const (
 	WebhookSecretName
 	WebhookSecretNamespace
 	FSSInstanceStorage
-	FSSIsoSupport
 	FSSK8sWorkloadMgmtAPI
 	FSSPodVMOnStretchedSupervisor
 	FSSUnifiedStorageQuota
@@ -170,8 +169,6 @@ func (n VarName) String() string {
 		return "WEBHOOK_SECRET_NAMESPACE"
 	case FSSInstanceStorage:
 		return "FSS_WCP_INSTANCE_STORAGE"
-	case FSSIsoSupport:
-		return "FSS_WCP_VMSERVICE_ISO_SUPPORT"
 	case FSSK8sWorkloadMgmtAPI:
 		return "FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API"
 	case FSSPodVMOnStretchedSupervisor:

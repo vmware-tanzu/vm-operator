@@ -209,9 +209,6 @@ func unitTestsValidateCreate() {
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.Features.IsoSupport = true
-		})
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.WorkloadDomainIsolation = true
 		})
 	})
@@ -2521,25 +2518,6 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("disallow creating a VM with CD-ROM when FSS is not enabled",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.IsoSupport = false
-						})
-						ctx.vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-							{
-								Name: "cdrom",
-							},
-						}
-					},
-					validate: doValidateWithMsg(
-						`spec.cdrom: Forbidden: the CD-ROM (ISO) support feature is not enabled`,
-					),
-					expectAllowed: false,
-				},
-			),
-
 			Entry("disallow creating a VM with CD-ROM and empty guest ID",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -2765,9 +2743,6 @@ func unitTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.Features.IsoSupport = true
-		})
 	})
 
 	AfterEach(func() {

@@ -3035,20 +3035,24 @@ func vmTests() {
 				vmClass.Namespace = nsInfo.Namespace
 				Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 
-				clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
-				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryIsoImageName}, clusterVMImage)).To(Succeed())
+				// Add required objects to get CD-ROM backing file name.
+				cvmiName := "vmi-iso"
+				objs := builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, "test-file.iso", ctx.ContentLibraryIsoItemID, true, true, true, "ISO")
+				for _, obj := range objs {
+					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+				}
 
 				vm.Namespace = nsInfo.Namespace
 				vm.Spec.ClassName = vmClass.Name
-				vm.Spec.ImageName = clusterVMImage.Name
+				vm.Spec.ImageName = cvmiName
 				vm.Spec.Image.Kind = cvmiKind
-				vm.Spec.Image.Name = clusterVMImage.Name
+				vm.Spec.Image.Name = cvmiName
 				vm.Spec.StorageClass = ctx.StorageClassName
 				vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{{
 					Name: "cdrom0",
 					Image: vmopv1.VirtualMachineImageRef{
-						Name: cvmiKind,
-						Kind: clusterVMImage.Name,
+						Name: cvmiName,
+						Kind: cvmiKind,
 					},
 				}}
 			})

@@ -37,12 +37,6 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_WCP_VMSERVICE_ISO_SUPPORT
-    value: "<FSS_WCP_VMSERVICE_ISO_SUPPORT_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
     name: PRIVILEGED_USERS
     value: "<COMMA_SEPARATED_LIST_OF_USERS>"
 
@@ -184,4 +178,10 @@
   path: /spec/template/spec/containers/0/env/-
   value:
     name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
+    value: "true"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_VMSERVICE_ISO_SUPPORT
     value: "true"

@@ -5,7 +5,6 @@
 package validation
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -79,7 +78,6 @@ const (
 	invalidImageKind                         = "supported: " + vmiKind + "; " + cvmiKind
 	invalidZone                              = "cannot use zone that is being deleted"
 	restrictedToPrivUsers                    = "restricted to privileged users"
-	invalidPVCBYOKFmt                        = "cannot attach volume to vm with spec.crypto.encryptionClassName=%q"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha4-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha4,name=default.validating.virtualmachine.v1alpha4.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -109,6 +107,15 @@ func NewValidator(client ctrlclient.Client) builder.Validator {
 type validator struct {
 	client    ctrlclient.Client
 	converter runtime.UnstructuredConverter
+}
+
+// vmFromUnstructured returns the VirtualMachine from the unstructured object.
+func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.VirtualMachine, error) {
+	vm := &vmopv1.VirtualMachine{}
+	if err := v.converter.FromUnstructured(obj.UnstructuredContent(), vm); err != nil {
+		return nil, err
+	}
+	return vm, nil
 }
 
 func (v validator) For() schema.GroupVersionKind {
@@ -163,18 +170,14 @@ func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Respo
 func (v validator) validateImageOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	// Allow resetting of image if this is a failover operation.
-	if vmopv1util.IsImagelessVM(*vm) && pkgcfg.FromContext(ctx).Features.VMIncrementalRestore {
-		if metav1.HasAnnotation(vm.ObjectMeta, vmopv1.FailedOverVMAnnotation) {
-
-			if !vmopv1util.ImageRefsEqual(vm.Spec.Image, oldVM.Spec.Image) {
-				if !ctx.IsPrivilegedAccount {
+	if pkgcfg.FromContext(ctx).Features.VMIncrementalRestore {
+		// Allow resetting of image if this is a failover operation.
+		if vmopv1util.IsImagelessVM(*vm) && metav1.HasAnnotation(vm.ObjectMeta, vmopv1.FailedOverVMAnnotation) {
+			if !ctx.IsPrivilegedAccount {
+				if !vmopv1util.ImageRefsEqual(vm.Spec.Image, oldVM.Spec.Image) {
 					allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "image"), restrictedToPrivUsers))
 				}
-			}
-
-			if oldVM.Spec.ImageName != vm.Spec.ImageName {
-				if !ctx.IsPrivilegedAccount {
+				if oldVM.Spec.ImageName != vm.Spec.ImageName {
 					allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "imageName"), restrictedToPrivUsers))
 				}
 			}
@@ -254,7 +257,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 }
 
 func (v validator) validateBootstrap(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -357,8 +360,8 @@ func (v validator) validateInlineSysprep(
 	sysprep *sysprep.Sysprep) field.ErrorList {
 
 	var allErrs field.ErrorList
-
 	s := p.Child("sysprep")
+
 	if guiUnattended := sysprep.GUIUnattended; guiUnattended != nil {
 		if guiUnattended.AutoLogon && guiUnattended.AutoLogonCount == 0 {
 			allErrs = append(allErrs, field.Invalid(s, "guiUnattended",
@@ -401,7 +404,10 @@ func (v validator) validateInlineSysprep(
 	return allErrs
 }
 
-func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImageOnCreate(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
 	var (
 		allErrs field.ErrorList
 		f       = field.NewPath("spec", "image")
@@ -443,24 +449,22 @@ func (v validator) validateImageOnCreate(ctx *pkgctx.WebhookRequestContext, vm *
 	return allErrs
 }
 
-func (v validator) validateClassOnCreate(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateClassOnCreate(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
-	f := field.NewPath("spec", "className")
+	if vmopv1util.IsClasslessVM(*vm) {
+		f := field.NewPath("spec", "className")
 
-	switch {
-	case vmopv1util.IsClasslessVM(*vm) &&
-		pkgcfg.FromContext(ctx).Features.VMImportNewNet:
-
-		// Restrict creating classless VM resources to privileged users.
-		if !ctx.IsPrivilegedAccount {
-			allErrs = append(allErrs, field.Forbidden(f, restrictedToPrivUsers))
+		if pkgcfg.FromContext(ctx).Features.VMImportNewNet {
+			if !ctx.IsPrivilegedAccount {
+				allErrs = append(allErrs, field.Forbidden(f, restrictedToPrivUsers))
+			}
+		} else {
+			allErrs = append(allErrs, field.Required(f, ""))
 		}
-
-	case vm.Spec.ClassName == "":
-
-		allErrs = append(allErrs, field.Required(f, ""))
-
 	}
 
 	return allErrs
@@ -496,7 +500,10 @@ func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 	return allErrs
 }
 
-func (v validator) validateStorageClass(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateStorageClass(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	if vm.Spec.StorageClass == "" {
@@ -576,7 +583,10 @@ func (v validator) validateCrypto(
 	return allErrs
 }
 
-func (v validator) validateNetwork(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateNetwork(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	networkSpec := vm.Spec.Network
@@ -585,8 +595,7 @@ func (v validator) validateNetwork(ctx *pkgctx.WebhookRequestContext, vm *vmopv1
 	}
 
 	networkPath := field.NewPath("spec", "network")
-
-	allErrs = append(allErrs, v.validateNetworkSpecWithBootStrap(ctx, vm)...)
+	allErrs = append(allErrs, v.validateNetworkSpecWithBootStrap(ctx, networkPath, vm)...)
 
 	if len(networkSpec.Nameservers) > 0 {
 		for i, n := range networkSpec.Nameservers {
@@ -732,20 +741,16 @@ func (v validator) validateNetworkInterfaceSpec(
 }
 
 func (v validator) validateNetworkSpecWithBootStrap(
-	ctx context.Context,
+	_ *pkgctx.WebhookRequestContext,
+	networkPath *field.Path,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
-	var allErrs field.ErrorList
-
-	networkSpec := vm.Spec.Network
-	if networkSpec == nil {
-		return allErrs
-	}
-
 	var (
-		cloudInit *vmopv1.VirtualMachineBootstrapCloudInitSpec
-		linuxPrep *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
-		sysPrep   *vmopv1.VirtualMachineBootstrapSysprepSpec
+		networkSpec = vm.Spec.Network
+		cloudInit   *vmopv1.VirtualMachineBootstrapCloudInitSpec
+		linuxPrep   *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
+		sysPrep     *vmopv1.VirtualMachineBootstrapSysprepSpec
+		allErrs     field.ErrorList
 	)
 
 	if vm.Spec.Bootstrap != nil {
@@ -758,14 +763,14 @@ func (v validator) validateNetworkSpecWithBootStrap(
 		if cloudInit != nil {
 			if !ptr.DerefWithDefault(cloudInit.UseGlobalNameserversAsDefault, true) {
 				allErrs = append(allErrs, field.Invalid(
-					field.NewPath("spec", "network", "nameservers"),
+					networkPath.Child("nameservers"),
 					strings.Join(networkSpec.Nameservers, ","),
 					"nameservers is only available for CloudInit when UseGlobalNameserversAsDefault is true",
 				))
 			}
 		} else if linuxPrep == nil && sysPrep == nil {
 			allErrs = append(allErrs, field.Invalid(
-				field.NewPath("spec", "network", "nameservers"),
+				networkPath.Child("nameservers"),
 				strings.Join(networkSpec.Nameservers, ","),
 				"nameservers is available only with the following bootstrap providers: LinuxPrep and Sysprep",
 			))
@@ -776,14 +781,14 @@ func (v validator) validateNetworkSpecWithBootStrap(
 		if cloudInit != nil {
 			if !ptr.DerefWithDefault(cloudInit.UseGlobalSearchDomainsAsDefault, true) {
 				allErrs = append(allErrs, field.Invalid(
-					field.NewPath("spec", "network", "searchDomains"),
+					networkPath.Child("searchDomains"),
 					strings.Join(networkSpec.SearchDomains, ","),
 					"searchDomains is only available for CloudInit when UseGlobalSearchDomainsAsDefault is true",
 				))
 			}
 		} else if linuxPrep == nil && sysPrep == nil {
 			allErrs = append(allErrs, field.Invalid(
-				field.NewPath("spec", "network", "searchDomains"),
+				networkPath.Child("searchDomains"),
 				strings.Join(networkSpec.SearchDomains, ","),
 				"searchDomains is available only with the following bootstrap providers: LinuxPrep and Sysprep",
 			))
@@ -796,7 +801,7 @@ func (v validator) validateNetworkSpecWithBootStrap(
 // MTU, routes, and searchDomains are available only with CloudInit.
 // Nameservers is available only with CloudInit and Sysprep.
 func (v validator) validateNetworkInterfaceSpecWithBootstrap(
-	ctx context.Context,
+	_ *pkgctx.WebhookRequestContext,
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
@@ -867,7 +872,10 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 	return allErrs
 }
 
-func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateVolumes(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 	volumesPath := field.NewPath("spec", "volumes")
 	volumeNames := map[string]bool{}
@@ -926,7 +934,8 @@ func (v validator) validateVolumeWithPVC(
 
 // validateInstanceStorageVolumes validates if instance storage volumes are added/modified.
 func (v validator) validateInstanceStorageVolumes(
-	ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
 
@@ -946,7 +955,20 @@ func (v validator) validateInstanceStorageVolumes(
 	return allErrs
 }
 
-func (v validator) validateReadinessProbe(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookRequestContext) (bool, error) {
+	configMap := &corev1.ConfigMap{}
+	configMapKey := ctrlclient.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
+	if err := v.client.Get(ctx, configMapKey, configMap); err != nil {
+		return false, fmt.Errorf("error get ConfigMap: %s while validating TCP readiness probe port: %w", configMapKey, err)
+	}
+
+	return configMap.Data[isRestrictedNetworkKey] == "true", nil
+}
+
+func (v validator) validateReadinessProbe(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	probe := vm.Spec.ReadinessProbe
@@ -994,7 +1016,10 @@ func (v validator) validateReadinessProbe(ctx *pkgctx.WebhookRequestContext, vm 
 
 var megaByte = resource.MustParse("1Mi")
 
-func (v validator) validateAdvanced(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateAdvanced(
+	_ *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	advanced := vm.Spec.Advanced
@@ -1015,7 +1040,7 @@ func (v validator) validateAdvanced(ctx *pkgctx.WebhookRequestContext, vm *vmopv
 }
 
 func (v validator) validateNextRestartTimeOnCreate(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -1033,10 +1058,10 @@ func (v validator) validateNextRestartTimeOnCreate(
 }
 
 func (v validator) validateNextRestartTimeOnUpdate(
-	ctx *pkgctx.WebhookRequestContext,
-	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	if newVM.Spec.NextRestartTime == oldVM.Spec.NextRestartTime {
+	if vm.Spec.NextRestartTime == oldVM.Spec.NextRestartTime {
 		return nil
 	}
 
@@ -1044,19 +1069,19 @@ func (v validator) validateNextRestartTimeOnUpdate(
 
 	nextRestartTimePath := field.NewPath("spec").Child("nextRestartTime")
 
-	if strings.EqualFold(newVM.Spec.NextRestartTime, "now") {
+	if strings.EqualFold(vm.Spec.NextRestartTime, "now") {
 		allErrs = append(
 			allErrs,
 			field.Invalid(
 				nextRestartTimePath,
-				newVM.Spec.NextRestartTime,
+				vm.Spec.NextRestartTime,
 				invalidNextRestartTimeOnUpdateNow))
-	} else if _, err := time.Parse(time.RFC3339Nano, newVM.Spec.NextRestartTime); err != nil {
+	} else if _, err := time.Parse(time.RFC3339Nano, vm.Spec.NextRestartTime); err != nil {
 		allErrs = append(
 			allErrs,
 			field.Invalid(
 				nextRestartTimePath,
-				newVM.Spec.NextRestartTime,
+				vm.Spec.NextRestartTime,
 				invalidNextRestartTimeOnUpdate))
 	}
 
@@ -1064,21 +1089,20 @@ func (v validator) validateNextRestartTimeOnUpdate(
 }
 
 func (v validator) validatePowerStateOnCreate(
-	ctx *pkgctx.WebhookRequestContext,
-	newVM *vmopv1.VirtualMachine) field.ErrorList {
+	_ *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
-		allErrs       field.ErrorList
-		newPowerState = newVM.Spec.PowerState
+		allErrs field.ErrorList
 	)
 
-	if newPowerState == vmopv1.VirtualMachinePowerStateSuspended {
+	if powerState := vm.Spec.PowerState; powerState == vmopv1.VirtualMachinePowerStateSuspended {
 		allErrs = append(
 			allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("powerState"),
-				newPowerState,
-				fmt.Sprintf(invalidPowerStateOnCreateFmt, newPowerState)))
+				powerState,
+				fmt.Sprintf(invalidPowerStateOnCreateFmt, powerState)))
 	}
 
 	return allErrs
@@ -1086,7 +1110,7 @@ func (v validator) validatePowerStateOnCreate(
 
 func (v validator) validatePowerStateOnUpdate(
 	ctx *pkgctx.WebhookRequestContext,
-	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
 	powerStatePath := field.NewPath("spec").Child("powerState")
@@ -1097,7 +1121,7 @@ func (v validator) validatePowerStateOnUpdate(
 	// we power it off - all changes are allowed.
 	// If a VM is requesting a power on, we can Reconfigure the VM _before_
 	// we power it on - all changes are allowed.
-	newPowerState, oldPowerState := newVM.Spec.PowerState, oldVM.Spec.PowerState
+	newPowerState, oldPowerState := vm.Spec.PowerState, oldVM.Spec.PowerState
 
 	if newPowerState == "" {
 		allErrs = append(
@@ -1115,7 +1139,7 @@ func (v validator) validatePowerStateOnUpdate(
 		// on. Validate fields that may or may not be mutable while a VM is in
 		// a powered on state.
 		if newPowerState == vmopv1.VirtualMachinePowerStateOn {
-			allErrs = append(allErrs, v.validateUpdatesWhenPoweredOn(ctx, newVM, oldVM)...)
+			allErrs = append(allErrs, v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)...)
 		}
 
 	case vmopv1.VirtualMachinePowerStateOff:
@@ -1145,7 +1169,10 @@ func isBootstrapCloudInit(vm *vmopv1.VirtualMachine) bool {
 	return vm.Spec.Bootstrap.CloudInit != nil
 }
 
-func (v validator) validateUpdatesWhenPoweredOn(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateUpdatesWhenPoweredOn(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
@@ -1171,7 +1198,10 @@ func (v validator) validateUpdatesWhenPoweredOn(ctx *pkgctx.WebhookRequestContex
 	return allErrs
 }
 
-func (v validator) validateImmutableFields(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImmutableFields(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
@@ -1192,7 +1222,10 @@ func (v validator) validateImmutableFields(ctx *pkgctx.WebhookRequestContext, vm
 	return allErrs
 }
 
-func (v validator) validateImmutableReserved(_ *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImmutableReserved(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	var newResourcePolicyName, oldResourcePolicyName string
@@ -1207,7 +1240,10 @@ func (v validator) validateImmutableReserved(_ *pkgctx.WebhookRequestContext, vm
 	return append(allErrs, validation.ValidateImmutableField(newResourcePolicyName, oldResourcePolicyName, p.Child("resourcePolicyName"))...)
 }
 
-func (v validator) validateImmutableNetwork(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImmutableNetwork(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	oldNetwork := oldVM.Spec.Network
@@ -1253,7 +1289,10 @@ func (v validator) validateImmutableNetwork(ctx *pkgctx.WebhookRequestContext, v
 	return allErrs
 }
 
-func (v validator) validateAvailabilityZone(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateAvailabilityZone(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	zoneLabelPath := field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey)
@@ -1288,25 +1327,6 @@ func (v validator) validateAvailabilityZone(ctx *pkgctx.WebhookRequestContext, v
 	}
 
 	return allErrs
-}
-
-// vmFromUnstructured returns the VirtualMachine from the unstructured object.
-func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.VirtualMachine, error) {
-	vm := &vmopv1.VirtualMachine{}
-	if err := v.converter.FromUnstructured(obj.UnstructuredContent(), vm); err != nil {
-		return nil, err
-	}
-	return vm, nil
-}
-
-func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookRequestContext) (bool, error) {
-	configMap := &corev1.ConfigMap{}
-	configMapKey := ctrlclient.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
-	if err := v.client.Get(ctx, configMapKey, configMap); err != nil {
-		return false, fmt.Errorf("error get ConfigMap: %s while validating TCP readiness probe port: %w", configMapKey, err)
-	}
-
-	return configMap.Data[isRestrictedNetworkKey] == "true", nil
 }
 
 func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
@@ -1357,7 +1377,10 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 	return allErrs
 }
 
-func (v validator) validateMinHardwareVersion(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateMinHardwareVersion(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 	fieldPath := field.NewPath("spec", "minHardwareVersion")
 
@@ -1396,7 +1419,10 @@ func (v validator) validateMinHardwareVersion(ctx *pkgctx.WebhookRequestContext,
 	return allErrs
 }
 
-func (v validator) validateLabel(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateLabel(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
 	var allErrs field.ErrorList
 
 	if ctx.IsPrivilegedAccount {
@@ -1418,7 +1444,7 @@ func (v validator) validateLabel(ctx *pkgctx.WebhookRequestContext, vm, oldVM *v
 }
 
 func (v validator) validateNetworkHostAndDomainName(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	if vm == nil {
@@ -1426,7 +1452,6 @@ func (v validator) validateNetworkHostAndDomainName(
 	}
 
 	if err := vmopv1util.ValidateHostAndDomainName(*vm); err != nil {
-
 		// Do not complain about the host name exceeding 15 characters for a
 		// Windows guest when the old host name already exceeded 15 characters.
 		// This prevents breaking updates/patches to VMs that existed prior to

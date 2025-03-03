@@ -90,7 +90,7 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 				serverCertFile = f
 			}
 
-			datacenter := simulator.Map.Any("Datacenter")
+			datacenter := model.Map().Any("Datacenter")
 
 			cfg = &config.VSphereVMProviderConfig{
 				VcPNID: server.URL.Hostname(),

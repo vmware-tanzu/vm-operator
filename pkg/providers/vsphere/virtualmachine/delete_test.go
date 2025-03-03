@@ -82,11 +82,11 @@ func deleteTests() {
 		var moVM mo.VirtualMachine
 		Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
 
-		simulator.Map.WithLock(
-			simulator.SpoofContext(),
+		sctx := ctx.SimulatorContext()
+		sctx.WithLock(
 			vcVM.Reference(),
 			func() {
-				vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+				vm := sctx.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
 				vm.Config = &vimtypes.VirtualMachineConfigInfo{
 					ExtraConfig: []vimtypes.BaseOptionValue{
 						&vimtypes.OptionValue{
@@ -111,11 +111,11 @@ func deleteTests() {
 			var moVM mo.VirtualMachine
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
 
-			simulator.Map.WithLock(
-				simulator.SpoofContext(),
+			sctx := ctx.SimulatorContext()
+			sctx.WithLock(
 				vcVM.Reference(),
 				func() {
-					vm := simulator.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
+					vm := sctx.Map.Get(vcVM.Reference()).(*simulator.VirtualMachine)
 					vm.Summary.Runtime.ConnectionState = state
 				})
 

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -235,4 +236,33 @@ func GetZone(
 	var zone topologyv1.Zone
 	err := client.Get(ctx, ctrlclient.ObjectKey{Name: zoneName, Namespace: namespace}, &zone)
 	return zone, err
+}
+
+// GetZoneNames returns a set of zone names.
+func GetZoneNames(
+	ctx context.Context,
+	client ctrlclient.Client,
+	namespace string) (sets.Set[string], error) {
+
+	if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
+		zones, err := GetZones(ctx, client, namespace)
+		if err != nil && !errors.Is(err, ErrNoZones) {
+			return nil, err
+		}
+		s := sets.Set[string]{}
+		for i := range zones {
+			s[zones[i].Name] = sets.Empty{}
+		}
+		return s, nil
+	}
+
+	zones, err := GetAvailabilityZones(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	s := sets.Set[string]{}
+	for i := range zones {
+		s[zones[i].Name] = sets.Empty{}
+	}
+	return s, nil
 }

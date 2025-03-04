@@ -26,6 +26,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -37,6 +38,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
@@ -268,6 +270,40 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteVM")),
 		Logger:  log.WithValues("vmName", vmNamespacedName),
 		VM:      vm,
+	}
+
+	// If the VM is part of a zone placement group then check to see if it is
+	// the VM responsible for driving placement of that group. If so, remove
+	// that responsibility.
+	var (
+		zonePlacementGroup    = vmCtx.VM.Labels[pkgconst.ZonePlacementGroupLabelKey]
+		zonePlacementGroupKey = vmCtx.VM.Namespace + "/" + zonePlacementGroup
+		zonePlacementOrg      = vmCtx.VM.Labels[pkgconst.ZonePlacementOrgLabelKey]
+		zonePlacementOrgKey   = vmCtx.VM.Namespace + "/" + zonePlacementOrg
+	)
+	if zonePlacementOrg != "" || zonePlacementGroup != "" {
+		// Delete the lock if this VM is the one that holds it.
+		if zonePlacementGroups.CompareAndDelete(
+			zonePlacementGroupKey,
+			vmCtx.VM.Name) {
+
+			vmCtx.Logger.Info(
+				"removed zone placement group lock from vm",
+				"zonePlacementGroup", zonePlacementGroup)
+		}
+
+		if zonePlacementOrg != "" {
+			// Delete the ZPO lock as well if it is held by this VM.
+			if zonePlacementOrgs.CompareAndDelete(
+				zonePlacementOrgKey,
+				vmCtx.VM.Name) {
+
+				vmCtx.Logger.Info(
+					"removed zone placement org lock from vm",
+					"zonePlacementOrg", zonePlacementOrg,
+					"zonePlacementGroup", zonePlacementGroup)
+			}
+		}
 	}
 
 	client, err := vs.getVcClient(vmCtx)
@@ -842,7 +878,20 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	return nil
 }
 
+var (
+	zonePlacementOrgs   sync.Map
+	zonePlacementGroups sync.Map
+
+	// ErrRequeueForPlacement is returned from CreateOrUpdateVirtualMachine
+	// and its async variant when the VM needs to be written to etcd with its
+	// zone placement. This will cause the VM to be requeued, but this time it
+	// will be reconciled with its identified zone.
+	ErrRequeueForPlacement = pkgerr.NoRequeueError{Message: "requeue for placement"}
+)
+
 // vmCreateDoPlacement determines placement of the VM prior to creating the VM on VC.
+//
+//nolint:gocyclo
 func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
@@ -858,6 +907,234 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		}
 	}()
 
+	var (
+		requeueForPlacement   bool
+		eligibleZones         = sets.Set[string]{}
+		zoneName              = vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
+		zonePlacementOrg      = vmCtx.VM.Labels[pkgconst.ZonePlacementOrgLabelKey]
+		zonePlacementOrgKey   = vmCtx.VM.Namespace + "/" + zonePlacementOrg
+		zonePlacementGroup    = vmCtx.VM.Labels[pkgconst.ZonePlacementGroupLabelKey]
+		zonePlacementGroupKey = vmCtx.VM.Namespace + "/" + zonePlacementGroup
+	)
+
+	if zonePlacementOrg != "" || zonePlacementGroup != "" {
+		//
+		// The VM is a member of either a Zone Placement Org (ZPO) or Zone
+		// Placement Group (ZPG). This means identifying a zone for the VM has
+		// to be coordinated with other members of the ZPO and ZPG.
+		//
+		// Please note, it is not possible to be be a member of a ZPO without
+		// also being a member of a ZPG. However, it *is* possible to be a
+		// member of a ZPG without being a member of a ZPO.
+		//
+
+		if zoneName != "" {
+			//
+			// The zone is already known, so no need to do anything special.
+			//
+
+			// The zone has been identified for this ZPG so ensure the map that
+			// guards ZPG placement is no longer blocking for this ZPG.
+			if vmThatDidZPGPlacement, ok := zonePlacementGroups.LoadAndDelete(
+				zonePlacementGroupKey); ok {
+
+				vmCtx.Logger.Info(
+					"placement complete for zone placement group",
+					"zonePlacementGroup", zonePlacementGroup,
+					"vmThatDidPlacement", vmThatDidZPGPlacement)
+
+				// The VM that did the ZPG placement is also the one that would
+				// hold the lock in the ZPO map, so delete it as well. This
+				// allows other ZPGs in the ZPO to do their placement.
+				if zonePlacementOrgs.CompareAndDelete(
+					zonePlacementOrgKey,
+					vmThatDidZPGPlacement) {
+
+					vmCtx.Logger.Info(
+						"placement complete for zone placement group in zone placement org",
+						"zonePlacementOrg", zonePlacementOrg,
+						"zonePlacementGroup", zonePlacementGroup,
+						"vmThatDidPlacement", vmCtx.VM.Name)
+				}
+			}
+
+		} else {
+			//
+			// The zone is not yet known, so we need to discover it.
+			//
+
+			// Check if another VM in this ZPG already has a zone.
+			var zpgList vmopv1.VirtualMachineList
+			if err := vs.k8sClient.List(
+				vmCtx,
+				&zpgList,
+				ctrlclient.InNamespace(vmCtx.VM.Namespace),
+				ctrlclient.HasLabels{topology.KubernetesTopologyZoneLabelKey},
+				ctrlclient.MatchingLabels{
+					pkgconst.ZonePlacementGroupLabelKey: zonePlacementGroup,
+				},
+			); err != nil {
+				return fmt.Errorf(
+					"failed to list vms for zone placement group: %w", err)
+			}
+			if len(zpgList.Items) > 0 {
+				zoneName = zpgList.Items[0].Labels[topology.KubernetesTopologyZoneLabelKey]
+			}
+
+			// If the zoneName is still empty at this point it means no other
+			// VM in the ZPG has been placed in a zone. We need to decide which
+			// VM in the ZPG is responsible for driving placement for the ZPG.
+			if zoneName == "" {
+
+				// If the VM is a member of a ZPO, then we need to ensure only
+				// one ZPG at a time is doing placement.
+				if zonePlacementOrg != "" {
+
+					// Only a single member of the ZPO will be able to store the
+					// zonePlacementOrgKey in the zonePlacementOrgs map.
+					if vmDoingPlacement, alreadyPlacing := zonePlacementOrgs.LoadOrStore(
+						zonePlacementOrgKey,
+						vmCtx.VM.Name); alreadyPlacing {
+
+						// There is already placement occurring for this ZPO;
+						// requeue until the placement is complete.
+						return fmt.Errorf(
+							"waiting on zone placement org %q by vm %q: %w",
+							zonePlacementOrgKey,
+							vmDoingPlacement,
+							pkgerr.RequeueError{After: time.Second * 1})
+					}
+
+					// Find all of the other ZPGs in this ZPO that already have
+					// selected zones.
+					var (
+						zpoList          vmopv1.VirtualMachineList
+						zpoLabelSelector = metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      topology.KubernetesTopologyZoneLabelKey,
+									Operator: metav1.LabelSelectorOpExists,
+								},
+								{
+									Key:      pkgconst.ZonePlacementOrgLabelKey,
+									Operator: metav1.LabelSelectorOpIn,
+									Values:   []string{zonePlacementOrg},
+								},
+								{
+									Key:      pkgconst.ZonePlacementGroupLabelKey,
+									Operator: metav1.LabelSelectorOpNotIn,
+									Values:   []string{zonePlacementGroup},
+								},
+							},
+						}
+					)
+
+					zpoSelector, err := metav1.LabelSelectorAsSelector(&zpoLabelSelector)
+					if err != nil {
+						return fmt.Errorf(
+							"failed to build zone placement org selector: %w", err)
+					}
+
+					if err := vs.k8sClient.List(
+						vmCtx,
+						&zpoList,
+						ctrlclient.InNamespace(vmCtx.VM.Namespace),
+						ctrlclient.MatchingLabelsSelector{Selector: zpoSelector},
+					); err != nil {
+						return fmt.Errorf(
+							"failed to list vms for zone placement org: %w", err)
+					}
+
+					// Get a set of all the available zones.
+					availableZones, err := topology.GetZoneNames(vmCtx, vs.k8sClient, vmCtx.VM.Namespace)
+					if err != nil {
+						return fmt.Errorf(
+							"failed to list zones during zone placement org selection: %w",
+							err)
+					}
+
+					// Get a set of the zones already in use by this ZPO.
+					reservedZones := sets.Set[string]{}
+					for i := range zpoList.Items {
+						reservedZones[zpoList.Items[i].Labels[topology.KubernetesTopologyZoneLabelKey]] = sets.Empty{}
+					}
+
+					// The eligible zones are what are not currently reserved.
+					//
+					// Please note, if there are no eligible zones left then
+					// the placement engine considers all zones.
+					eligibleZones = availableZones.Difference(reservedZones)
+				}
+
+				// Only a single member of the ZPG will be able to store the
+				// zonePlacementGroupKey in the zonePlacementGroups
+				// map.
+				if vmDoingPlacement, alreadyPlacing := zonePlacementGroups.LoadOrStore(
+					zonePlacementGroupKey,
+					vmCtx.VM.Name); alreadyPlacing {
+
+					// There is already placement occurring for this ZPG;
+					// requeue until the placement is complete.
+					return fmt.Errorf(
+						"waiting on zone placement group %q by vm %s: %w",
+						zonePlacementGroupKey,
+						vmDoingPlacement,
+						pkgerr.RequeueError{After: time.Second * 1})
+				}
+
+				//
+				// At this point we know *this* VM is responsible for driving
+				// placement for the entire ZPG.
+				//
+
+				// Indicate that if this function makes it to the end without
+				// any error that a pkgerr.NoRequeueError should be returned to
+				// force this reconcile attempt to immediately halt and the VM
+				// to be written back to etcd. This ensures the identified zone
+				// is written to etcd as quickly as possible.
+				requeueForPlacement = true
+			}
+		}
+	}
+
+	if zoneName != "" {
+		// The zone can only be known at this point due to one of the following:
+		//
+		// * The zone was explicitly provided when the VM was created via the
+		//   Kubernetes topology label.
+		// * The zone was identified from another member of the same ZPG.
+		//
+		// In the second case we need to ensure the zone is set via the
+		// topology label so the placement engine can later identify that the VM
+		// already has zonal placement.
+		if vmCtx.VM.Labels == nil {
+			vmCtx.VM.Labels = map[string]string{}
+		}
+		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+	}
+
+	// Get the zones required by any bound PVCs.
+	pvcZones, err := kubeutil.GetPVCZoneConstraints(
+		createArgs.Storage.StorageClasses,
+		createArgs.Storage.PVCs)
+	if err != nil {
+		return err
+	}
+
+	// Narrow down the list of eligible zones. Please note, when eligible zones
+	// is empty, the placement engine considers *all* zones.
+	switch {
+	case len(eligibleZones) > 0 && len(pvcZones) > 0:
+		// When there is a list of eligible zones AND PVC zone restrictions then
+		// only the zones that are in both sets are considered.
+		eligibleZones = eligibleZones.Intersection(pvcZones)
+
+	case len(eligibleZones) == 0 && len(pvcZones) > 0:
+		// When there are no eligible zones and there are PVC zone restrictions,
+		// then the PVC zones become the set of eligible zones.
+		eligibleZones = pvcZones.Clone()
+	}
+
 	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
 		createArgs.ConfigSpec,
@@ -866,25 +1143,16 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		return err
 	}
 
-	pvcZones, err := kubeutil.GetPVCZoneConstraints(
-		createArgs.Storage.StorageClasses,
-		createArgs.Storage.PVCs)
-	if err != nil {
-		return err
-	}
-
-	constraints := placement.Constraints{
-		ChildRPName: createArgs.ChildResourcePoolName,
-		Zones:       pvcZones,
-	}
-
 	result, err := placement.Placement(
 		vmCtx,
 		vs.k8sClient,
 		vcClient.VimClient(),
 		vcClient.Finder(),
 		placementConfigSpec,
-		constraints)
+		placement.Constraints{
+			ChildRPName: createArgs.ChildResourcePoolName,
+			Zones:       eligibleZones,
+		})
 	if err != nil {
 		return err
 	}
@@ -940,6 +1208,10 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 			// then this is the pre-assigned zone on later create attempts.
 			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = result.ZoneName
 		}
+	}
+
+	if requeueForPlacement {
+		return ErrRequeueForPlacement
 	}
 
 	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionPlacementReady)

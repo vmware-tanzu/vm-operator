@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -2373,6 +2374,347 @@ func vmTests() {
 					_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(vm.Status.Zone).To(Equal(azName))
+				})
+			})
+
+			When("VM is part of a zone placement group", func() {
+
+				const zonePlacementGroup = "hello"
+
+				BeforeEach(func() {
+
+					// Need to create the other VM before the main one.
+					skipCreateOrUpdateVM = true
+				})
+
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.MaxDeployThreadsOnProvider = 15
+					})
+
+					if vm.Labels == nil {
+						vm.Labels = map[string]string{}
+					}
+					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+					vm.Labels[pkgconst.ZonePlacementGroupLabelKey] = zonePlacementGroup
+				})
+
+				It("should allow another VM to take over placement if one responsible is deleted", func() {
+					vm2 := vm.DeepCopy()
+					vm2.Name += "-2"
+
+					_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm2)
+					Expect(err).To(HaveOccurred())
+					Expect(errors.Is(err, vsphere.ErrRequeueForPlacement)).To(BeTrue())
+					Expect(vm2.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+					Expect(vm2.Status.Zone).To(BeEmpty())
+
+					_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).To(HaveOccurred())
+					var requeueErr pkgerr.RequeueError
+					Expect(errors.As(err, &requeueErr)).To(BeTrue())
+					Expect(vm.Status.Zone).To(BeEmpty())
+					Expect(vm.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
+
+					Expect(vmProvider.DeleteVirtualMachine(ctx, vm2)).To(Succeed())
+
+					_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(errors.Is(err, vsphere.ErrRequeueForPlacement)).To(BeTrue())
+					Expect(vm.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+					Expect(vm.Status.Zone).To(BeEmpty())
+				})
+
+				When("the zone placement group has a selected zone", func() {
+					It("should use the existing zone", func() {
+						vm2 := vm.DeepCopy()
+						vm2.Name += "-2"
+
+						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm2)
+						Expect(err).To(HaveOccurred())
+						Expect(errors.Is(err, vsphere.ErrRequeueForPlacement)).To(BeTrue())
+						Expect(vm2.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+						Expect(vm2.Status.Zone).To(BeEmpty())
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm2)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(vm2.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+						Expect(vm2.Status.Zone).ToNot(BeEmpty())
+
+						Expect(ctx.Client.Create(ctx, vm2)).To(Succeed())
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(vm.Status.Zone).To(Equal(vm2.Status.Zone))
+						Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, vm.Status.Zone))
+					})
+				})
+
+				When("the zone placement group does not have a selected zone", func() {
+					Specify("all but one VM should receive a requeue error", func() {
+						var (
+							ready           sync.WaitGroup
+							numVMs          = 10
+							start           = make(chan struct{})
+							chanErrs        = make(chan error, numVMs)
+							chanPlacedZones = make(chan string, numVMs)
+						)
+
+						ready.Add(numVMs)
+
+						for i := 0; i < numVMs; i++ {
+							go func(i int, vm *vmopv1.VirtualMachine) {
+								defer GinkgoRecover()
+
+								vm.Name += fmt.Sprintf("-%d", i)
+
+								ready.Done()
+								<-start
+
+								if _, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm); err != nil {
+									chanErrs <- err
+								}
+
+								if n := vm.Labels[topology.KubernetesTopologyZoneLabelKey]; n != "" {
+									chanPlacedZones <- n
+									close(chanPlacedZones)
+								}
+							}(i, vm.DeepCopy())
+						}
+
+						ready.Wait()
+						close(start)
+
+						var (
+							noRequeueErrs []pkgerr.NoRequeueError
+							requeueErrs   []pkgerr.RequeueError
+						)
+
+						for i := 0; i < numVMs; i++ {
+							e := <-chanErrs
+
+							var reqErr pkgerr.RequeueError
+							if errors.As(e, &reqErr) {
+								requeueErrs = append(requeueErrs, reqErr)
+							}
+
+							var noReqErr pkgerr.NoRequeueError
+							if errors.As(e, &noReqErr) {
+								noRequeueErrs = append(noRequeueErrs, noReqErr)
+							}
+						}
+
+						Expect(noRequeueErrs).To(HaveLen(1))
+						Expect(errors.Is(noRequeueErrs[0], vsphere.ErrRequeueForPlacement)).To(BeTrue())
+						Expect(requeueErrs).To(HaveLen(numVMs - 1))
+
+						placedZone := <-chanPlacedZones
+						Expect(placedZone).ToNot(BeEmpty())
+					})
+				})
+
+				When("the VM is also part of a zone placement org", func() {
+
+					const (
+						zonePlacementOrg    = "zpo"
+						zonePlacementGroup1 = "zpg-1"
+						zonePlacementGroup2 = "zpg-2"
+					)
+
+					JustBeforeEach(func() {
+						vm.Labels[pkgconst.ZonePlacementOrgLabelKey] = zonePlacementOrg
+						vm.Labels[pkgconst.ZonePlacementGroupLabelKey] = zonePlacementGroup2
+					})
+
+					It("should allow another VM to take over placement if one responsible is deleted", func() {
+						vm2 := vm.DeepCopy()
+						vm2.Name += "-2"
+						vm2.Labels[pkgconst.ZonePlacementGroupLabelKey] = zonePlacementGroup1
+
+						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm2)
+						Expect(err).To(HaveOccurred())
+						Expect(errors.Is(err, vsphere.ErrRequeueForPlacement)).To(BeTrue())
+						Expect(vm2.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+						Expect(vm2.Status.Zone).To(BeEmpty())
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						var requeueErr pkgerr.RequeueError
+						Expect(errors.As(err, &requeueErr)).To(BeTrue())
+						Expect(vm.Status.Zone).To(BeEmpty())
+						Expect(vm.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
+
+						Expect(vmProvider.DeleteVirtualMachine(ctx, vm2)).To(Succeed())
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(errors.Is(err, vsphere.ErrRequeueForPlacement)).To(BeTrue())
+						Expect(vm.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+						Expect(vm.Status.Zone).To(BeEmpty())
+					})
+
+					It("should consistently pick a different zone than the one used by another zone placement group in the same org", MustPassRepeatedly(5), func() {
+						vm2 := vm.DeepCopy()
+						vm2.Name += "-2"
+						vm2.Labels[pkgconst.ZonePlacementGroupLabelKey] = zonePlacementGroup1
+
+						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm2)
+						Expect(err).To(HaveOccurred())
+						Expect(errors.Is(err, vsphere.ErrRequeueForPlacement)).To(BeTrue())
+						Expect(vm2.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+						Expect(vm2.Status.Zone).To(BeEmpty())
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm2)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(vm2.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+						Expect(vm2.Status.Zone).ToNot(BeEmpty())
+
+						Expect(ctx.Client.Create(ctx, vm2)).To(Succeed())
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(errors.Is(err, vsphere.ErrRequeueForPlacement)).To(BeTrue())
+						Expect(vm.Labels[topology.KubernetesTopologyZoneLabelKey]).ToNot(BeEmpty())
+						Expect(vm.Status.Zone).To(BeEmpty())
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(vm.Status.Zone).ToNot(BeEmpty())
+						Expect(vm.Status.Zone).ToNot(Equal(vm2.Status.Zone))
+						Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, vm.Status.Zone))
+					})
+
+					When("the VM has PVCs", func() {
+						It("should select the zone required by the PVC", func() {
+							Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+							azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+
+							vm2 := vm.DeepCopy()
+							vm2.Name += "-2"
+							vm2.Labels[pkgconst.ZonePlacementGroupLabelKey] = zonePlacementGroup1
+
+							vm2.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+								{
+									Name: "dummy-vol",
+									VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+										PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+											PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+												ClaimName: "pvc-claim-1",
+											},
+										},
+									},
+								},
+							}
+
+							pvc1 := &corev1.PersistentVolumeClaim{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "pvc-claim-1",
+									Namespace: vm2.Namespace,
+									Annotations: map[string]string{
+										"csi.vsphere.volume-accessible-topology": fmt.Sprintf(`[{"topology.kubernetes.io/zone":"%s"}]`, azName),
+									},
+								},
+								Spec: corev1.PersistentVolumeClaimSpec{
+									StorageClassName: ptr.To(ctx.StorageClassName),
+								},
+								Status: corev1.PersistentVolumeClaimStatus{
+									Phase: corev1.ClaimBound,
+								},
+							}
+							Expect(ctx.Client.Create(ctx, pvc1)).To(Succeed())
+							Expect(ctx.Client.Status().Update(ctx, pvc1)).To(Succeed())
+
+							_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm2)
+							Expect(err).To(HaveOccurred())
+							Expect(errors.Is(err, vsphere.ErrRequeueForPlacement)).To(BeTrue())
+							Expect(vm2.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, azName))
+							Expect(vm2.Status.Zone).To(BeEmpty())
+						})
+					})
+
+					When("the zone placement org does not have a selected zone", func() {
+						Specify("all but one VM should receive a requeue error", func() {
+							var (
+								ready           sync.WaitGroup
+								numVMs          = 10
+								start           = make(chan struct{})
+								chanErrs        = make(chan error, numVMs)
+								chanPlacedZones = make(chan string, numVMs)
+							)
+
+							ready.Add(numVMs)
+
+							for i := 0; i < numVMs; i++ {
+								go func(i int, vm *vmopv1.VirtualMachine) {
+									defer GinkgoRecover()
+
+									vm.Name += fmt.Sprintf("-%d", i)
+									if i%2 == 0 {
+										vm.Labels[pkgconst.ZonePlacementGroupLabelKey] = zonePlacementGroup1
+									} else {
+										vm.Labels[pkgconst.ZonePlacementGroupLabelKey] = zonePlacementGroup2
+									}
+
+									ready.Done()
+									<-start
+
+									if _, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm); err != nil {
+										chanErrs <- err
+									}
+
+									if n := vm.Labels[topology.KubernetesTopologyZoneLabelKey]; n != "" {
+										chanPlacedZones <- n
+										close(chanPlacedZones)
+									}
+								}(i, vm.DeepCopy())
+							}
+
+							ready.Wait()
+							close(start)
+
+							var (
+								noRequeueErrs []pkgerr.NoRequeueError
+								requeueErrs   []error
+							)
+
+							for i := 0; i < numVMs; i++ {
+								e := <-chanErrs
+
+								var reqErr pkgerr.RequeueError
+								if errors.As(e, &reqErr) {
+									requeueErrs = append(requeueErrs, e)
+								}
+
+								var noReqErr pkgerr.NoRequeueError
+								if errors.As(e, &noReqErr) {
+									noRequeueErrs = append(noRequeueErrs, noReqErr)
+								}
+							}
+
+							Expect(noRequeueErrs).To(HaveLen(1))
+							Expect(errors.Is(noRequeueErrs[0], vsphere.ErrRequeueForPlacement)).To(BeTrue())
+							Expect(requeueErrs).To(HaveLen(numVMs - 1))
+
+							var (
+								numWaitingOnZPG int
+								numWaitingOnZPO int
+							)
+							for i := range requeueErrs {
+								if strings.HasPrefix(requeueErrs[i].Error(), "waiting on zone placement org ") {
+									numWaitingOnZPO++
+								}
+								if strings.HasPrefix(requeueErrs[i].Error(), "waiting on zone placement group ") {
+									numWaitingOnZPG++
+								}
+							}
+
+							Expect(numWaitingOnZPG).To(Equal(0))
+							Expect(numWaitingOnZPO).To(Equal(numVMs - 1))
+
+							placedZone := <-chanPlacedZones
+							Expect(placedZone).ToNot(BeEmpty())
+						})
+					})
 				})
 			})
 

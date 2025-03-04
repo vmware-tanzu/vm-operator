@@ -35,7 +35,7 @@ spec:
     schema:
       openAPIV3Schema:
         description: VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets
-          API
+          API.
         properties:
           apiVersion:
             description: |-
@@ -1944,7 +1944,7 @@ spec:
     schema:
       openAPIV3Schema:
         description: VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets
-          API
+          API.
         properties:
           apiVersion:
             description: |-

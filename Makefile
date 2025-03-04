@@ -48,6 +48,14 @@ PROJECT_SLUG := github.com/vmware-tanzu/vm-operator
 # ROOT_DIR_IN_GOPATH is non-empty if ROOT_DIR is in the GOPATH.
 ROOT_DIR_IN_GOPATH := $(findstring $(GOPATH)/src/$(PROJECT_SLUG),$(ROOT_DIR))
 
+# R_WILDCARD recursively searches for files matching pattern $2 starting from
+# directory $1.
+R_WILDCARD=$(wildcard $(1)$(2)) $(foreach DIR,$(wildcard $(1)*),$(call R_WILDCARD,$(DIR)/,$(2)))
+
+# Find all the go.mod files and directories from the root and subdirectories.
+GO_MOD_FILES := $(strip $(call R_WILDCARD,./,go.mod))
+GO_MOD_DIRS := $(dir $(GO_MOD_FILES))
+
 # CONVERSION_GEN_FALLBACK_MODE determines how to run the conversion-gen tool if
 # this project is not in the GOPATH at the expected location. Possible values
 # include "symlink" and "docker|podman".
@@ -276,10 +284,18 @@ lint: ## Run all the lint targets
 	$(MAKE) lint-shell
 
 GOLANGCI_LINT_FLAGS ?= --fast=true
+GOLANGCI_LINT_ABS_PATH := $(abspath $(GOLANGCI_LINT))
 .PHONY: lint-go
 lint-go: $(GOLANGCI_LINT)
 lint-go: ## Lint codebase
-	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_FLAGS)
+	@for dir in $(GO_MOD_DIRS); do \
+		if [[ "$$dir" == ./external* || "$$dir" == ./hack/tools* ]]; then \
+			echo "Skipping $$dir"; \
+			continue; \
+		fi; \
+		echo "Running golangci-lint in $$dir"; \
+		(cd $$dir && $(GOLANGCI_LINT_ABS_PATH) run -v $(GOLANGCI_LINT_FLAGS)); \
+	done
 
 .PHONY: lint-go-full
 lint-go-full: GOLANGCI_LINT_FLAGS = --fast=false

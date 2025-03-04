@@ -289,7 +289,6 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			overrideConditionsSeverity(imageStatus.Conditions)
 
 			// Do not exist in nextver.
-			//imageStatus.ContentLibraryRef = nil
 			imageStatus.ImageSupported = nil
 
 			// These are deprecated.

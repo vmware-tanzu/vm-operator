@@ -10,13 +10,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/google/uuid"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
@@ -51,6 +51,8 @@ func intgTestsReconcile() {
 		vmKey                 types.NamespacedName
 		vmVolume1             vmopv1.VirtualMachineVolume
 		vmVolume2             vmopv1.VirtualMachineVolume
+		pvc1                  *corev1.PersistentVolumeClaim
+		pvc2                  *corev1.PersistentVolumeClaim
 		dummyBiosUUID         string
 		dummyDiskUUID1        string
 		dummyDiskUUID2        string
@@ -76,6 +78,23 @@ func intgTestsReconcile() {
 			},
 		}
 
+		pvc1 = &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmVolume1.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
+				Namespace: ctx.Namespace,
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("1Gi"),
+					},
+				},
+				AccessModes: []corev1.PersistentVolumeAccessMode{
+					corev1.ReadWriteOnce,
+				},
+			},
+		}
+
 		vmVolume2 = vmopv1.VirtualMachineVolume{
 			Name: "cns-volume-2",
 			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -83,6 +102,23 @@ func intgTestsReconcile() {
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: "pvc-volume-2",
 					},
+				},
+			},
+		}
+
+		pvc2 = &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmVolume2.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
+				Namespace: ctx.Namespace,
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("2Gi"),
+					},
+				},
+				AccessModes: []corev1.PersistentVolumeAccessMode{
+					corev1.ReadWriteOnce,
 				},
 			},
 		}
@@ -403,6 +439,11 @@ func intgTestsReconcile() {
 			})
 
 			By("Add CNS volume to Spec.Volumes", func() {
+				By("Create PVC and Bind", func() {
+					Expect(ctx.Client.Create(ctx, pvc1)).To(Succeed())
+					pvc1.Status.Phase = corev1.ClaimBound
+					Expect(ctx.Client.Status().Update(ctx, pvc1)).To(Succeed())
+				})
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVolume1)
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
@@ -469,6 +510,15 @@ func intgTestsReconcile() {
 			})
 
 			By("Add CNS volume to Spec.Volumes", func() {
+				By("Create PVCs and Bind", func() {
+					Expect(ctx.Client.Create(ctx, pvc1)).To(Succeed())
+					pvc1.Status.Phase = corev1.ClaimBound
+					Expect(ctx.Client.Status().Update(ctx, pvc1)).To(Succeed())
+
+					Expect(ctx.Client.Create(ctx, pvc2)).To(Succeed())
+					pvc2.Status.Phase = corev1.ClaimBound
+					Expect(ctx.Client.Status().Update(ctx, pvc2)).To(Succeed())
+				})
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVolume1, vmVolume2)
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})

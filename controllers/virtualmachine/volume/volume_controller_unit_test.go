@@ -14,6 +14,7 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +33,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -69,12 +71,16 @@ func unitTestsReconcile() {
 
 		vmVol            vmopv1.VirtualMachineVolume
 		vmVolumeWithPVC1 *vmopv1.VirtualMachineVolume
+		boundPVC1        *corev1.PersistentVolumeClaim
 		vmVolumeWithPVC2 *vmopv1.VirtualMachineVolume
+		boundPVC2        *corev1.PersistentVolumeClaim
 
 		vmVolForInstPVC1 *vmopv1.VirtualMachineVolume
 	)
 
 	BeforeEach(func() {
+		const ns = "dummy-ns"
+
 		vmVolumeWithPVC1 = &vmopv1.VirtualMachineVolume{
 			Name: "cns-volume-1",
 			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -83,6 +89,16 @@ func unitTestsReconcile() {
 						ClaimName: "pvc-volume-1",
 					},
 				},
+			},
+		}
+
+		boundPVC1 = &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmVolumeWithPVC1.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
+				Namespace: ns,
+			},
+			Status: corev1.PersistentVolumeClaimStatus{
+				Phase: corev1.ClaimBound,
 			},
 		}
 
@@ -97,10 +113,20 @@ func unitTestsReconcile() {
 			},
 		}
 
+		boundPVC2 = &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmVolumeWithPVC2.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
+				Namespace: ns,
+			},
+			Status: corev1.PersistentVolumeClaimStatus{
+				Phase: corev1.ClaimBound,
+			},
+		}
+
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
-				Namespace: "dummy-ns",
+				Namespace: ns,
 			},
 			Status: vmopv1.VirtualMachineStatus{
 				BiosUUID: dummyBiosUUID,
@@ -387,10 +413,11 @@ func unitTestsReconcile() {
 			var vmVol1, vmVol2 vmopv1.VirtualMachineVolume
 
 			BeforeEach(func() {
+				initObjects = append(initObjects, boundPVC1, boundPVC2)
+
 				vmVol1 = *vmVolumeWithPVC1
 				vmVol2 = *vmVolumeWithPVC2
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol1, vmVol2)
-
 				vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
 			})
 
@@ -551,6 +578,8 @@ func unitTestsReconcile() {
 
 		When("VM Spec.Volumes contains CNS volumes and need to get VM's hardware version", func() {
 			BeforeEach(func() {
+				initObjects = append(initObjects, boundPVC1)
+
 				vmVol = *vmVolumeWithPVC1
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
 			})
@@ -613,6 +642,8 @@ func unitTestsReconcile() {
 
 		When("VM Spec.Volumes has CNS volume", func() {
 			BeforeEach(func() {
+				initObjects = append(initObjects, boundPVC1)
+
 				vmVol = *vmVolumeWithPVC1
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
 			})
@@ -620,6 +651,136 @@ func unitTestsReconcile() {
 			It("returns success", func() {
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())
+
+				attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+
+				By("Created expected CnsNodeVmAttachment", func() {
+					Expect(attachment).ToNot(BeNil())
+					assertAttachmentSpecFromVMVol(vm, vmVol, attachment)
+				})
+
+				By("Expected VM Status.Volumes", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+				})
+			})
+		})
+
+		When("VM Spec.Volumes has CNS volume that references WFFC StorageClass", func() {
+			const zoneName = "my-zone"
+
+			var node *corev1.Node
+			var storageClass *storagev1.StorageClass
+			var wffcPVC *corev1.PersistentVolumeClaim
+
+			BeforeEach(func() {
+				node = &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "my-node-1",
+						Labels: map[string]string{
+							topology.KubernetesTopologyZoneLabelKey: zoneName,
+						},
+					},
+				}
+				initObjects = append(initObjects, node)
+
+				storageClass = builder.DummyStorageClass()
+				storageClass.VolumeBindingMode = ptr.To(storagev1.VolumeBindingWaitForFirstConsumer)
+				initObjects = append(initObjects, storageClass)
+
+				wffcPVC = boundPVC1.DeepCopy()
+				wffcPVC.Spec.StorageClassName = &storageClass.Name
+				wffcPVC.Status.Phase = corev1.ClaimPending
+				initObjects = append(initObjects, wffcPVC)
+
+				vmVol = *vmVolumeWithPVC1
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+				vm.Status.Zone = zoneName
+			})
+
+			AfterEach(func() {
+				node = nil
+				storageClass = nil
+				wffcPVC = nil
+			})
+
+			When("PVC does not exist", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "bogus"
+				})
+
+				It("returns error", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("cannot get PVC"))
+
+					By("Did not create CnsNodeVmAttachment", func() {
+						Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
+						Expect(vm.Status.Volumes).To(BeEmpty())
+					})
+				})
+			})
+
+			When("PVC StorageClassName is unset", func() {
+				BeforeEach(func() {
+					wffcPVC.Spec.StorageClassName = nil
+				})
+
+				It("returns error", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("does not have StorageClassName set"))
+
+					By("Did not create CnsNodeVmAttachment", func() {
+						Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
+						Expect(vm.Status.Volumes).To(BeEmpty())
+					})
+				})
+			})
+
+			When("StorageClass does not exist", func() {
+				BeforeEach(func() {
+					wffcPVC.Spec.StorageClassName = ptr.To("bogus")
+				})
+
+				It("returns error", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("cannot get StorageClass for PVC"))
+
+					By("Did not create CnsNodeVmAttachment", func() {
+						Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
+						Expect(vm.Status.Volumes).To(BeEmpty())
+					})
+				})
+			})
+
+			When("No Node for Zone exists", func() {
+				BeforeEach(func() {
+					vm.Status.Zone = "bogus"
+				})
+
+				It("returns error", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("no Nodes for zone"))
+
+					By("Did not create CnsNodeVmAttachment", func() {
+						Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
+						Expect(vm.Status.Volumes).To(BeEmpty())
+					})
+				})
+			})
+
+			It("returns success", func() {
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Adds selected-node annotation to PVC", func() {
+					pvc := &corev1.PersistentVolumeClaim{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+					Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, node.Name))
+				})
 
 				attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
 
@@ -672,6 +833,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vmVol = *vmVolumeWithPVC1
 					vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+					initObjects = append(initObjects, boundPVC1)
 
 					attachment := cnsAttachmentForVMVolume(vm, vmVol)
 					attachment.ObjectMeta.OwnerReferences[0].UID = "some-other-uuid"
@@ -703,6 +865,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vmVol = *vmVolumeWithPVC1
 					vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+					initObjects = append(initObjects, boundPVC1)
 
 					attachment := cnsAttachmentForVMVolume(vm, vmVol)
 					attachment.Spec.NodeUUID = "some-old-bios-uuid"
@@ -746,6 +909,7 @@ func unitTestsReconcile() {
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+				initObjects = append(initObjects, boundPVC1)
 
 				attachment := cnsAttachmentForVMVolume(vm, vmVol)
 				attachment.UID = "1d2b1552-8294-4a72-91c7-7cf52b2e0990"
@@ -772,6 +936,16 @@ func unitTestsReconcile() {
 				By("change volume claim name", func() {
 					vmVol.PersistentVolumeClaim.ClaimName = "my-new-claim-name"
 					vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{vmVol}
+
+					newPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      vmVol.PersistentVolumeClaim.ClaimName,
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, newPVC)).To(Succeed())
+					newPVC.Status.Phase = corev1.ClaimBound
+					Expect(ctx.Client.Status().Update(ctx, newPVC)).To(Succeed())
 
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
@@ -806,6 +980,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+				initObjects = append(initObjects, boundPVC1)
 
 				attachment := cnsAttachmentForVMVolume(vm, vmVol)
 				attachment.Status.Attached = true
@@ -836,6 +1011,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
+				initObjects = append(initObjects, boundPVC1)
 				vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
 					Name:     vmVol.Name,
 					DiskUUID: dummyDiskUUID,
@@ -891,6 +1067,8 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 				vmVol2 = *vmVolumeWithPVC2
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol1, vmVol2)
 				vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+
+				initObjects = append(initObjects, boundPVC1, boundPVC2)
 			})
 
 			// We sort by DiskUUID, but the CnsNodeVmAttachment haven't been "attached" yet,
@@ -1075,23 +1253,12 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							}
 
 							When("PVC has limit", func() {
-								BeforeEach(func() {
-									initObjects = append(initObjects,
-										&corev1.PersistentVolumeClaim{
-											ObjectMeta: metav1.ObjectMeta{
-												Namespace: vm.Namespace,
-												Name:      vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName,
-											},
-											Spec: corev1.PersistentVolumeClaimSpec{
-												Resources: corev1.VolumeResourceRequirements{
-													Limits: corev1.ResourceList{
-														corev1.ResourceStorage: resource.MustParse("20Gi"),
-													},
-												},
-											},
-										})
-								})
 								It("should report its limit", func() {
+									boundPVC1.Spec.Resources.Limits = corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("20Gi"),
+									}
+									Expect(ctx.Client.Update(ctx, boundPVC1)).To(Succeed())
+
 									assertBaselineVolStatus()
 									assertPVCHasUsage()
 									assertPVCHasLimit()
@@ -1099,23 +1266,12 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							})
 
 							When("PVC has request", func() {
-								BeforeEach(func() {
-									initObjects = append(initObjects,
-										&corev1.PersistentVolumeClaim{
-											ObjectMeta: metav1.ObjectMeta{
-												Namespace: vm.Namespace,
-												Name:      vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName,
-											},
-											Spec: corev1.PersistentVolumeClaimSpec{
-												Resources: corev1.VolumeResourceRequirements{
-													Requests: corev1.ResourceList{
-														corev1.ResourceStorage: resource.MustParse("20Gi"),
-													},
-												},
-											},
-										})
-								})
 								It("should report its request", func() {
+									boundPVC1.Spec.Resources.Requests = corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("20Gi"),
+									}
+									Expect(ctx.Client.Update(ctx, boundPVC1)).To(Succeed())
+
 									assertBaselineVolStatus()
 									assertPVCHasUsage()
 									assertPVCHasLimit()
@@ -1123,26 +1279,15 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							})
 
 							When("PVC has limit and request", func() {
-								BeforeEach(func() {
-									initObjects = append(initObjects,
-										&corev1.PersistentVolumeClaim{
-											ObjectMeta: metav1.ObjectMeta{
-												Namespace: vm.Namespace,
-												Name:      vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName,
-											},
-											Spec: corev1.PersistentVolumeClaimSpec{
-												Resources: corev1.VolumeResourceRequirements{
-													Limits: corev1.ResourceList{
-														corev1.ResourceStorage: resource.MustParse("20Gi"),
-													},
-													Requests: corev1.ResourceList{
-														corev1.ResourceStorage: resource.MustParse("10Gi"),
-													},
-												},
-											},
-										})
-								})
 								It("should report its limit", func() {
+									boundPVC1.Spec.Resources.Limits = corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("20Gi"),
+									}
+									boundPVC1.Spec.Resources.Requests = corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("10Gi"),
+									}
+									Expect(ctx.Client.Update(ctx, boundPVC1)).To(Succeed())
+
 									assertBaselineVolStatus()
 									assertPVCHasUsage()
 									assertPVCHasLimit()
@@ -1177,7 +1322,6 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							assertBaselineVolStatus()
 							assertPVCHasCrypto()
 						})
-
 					})
 				})
 			})

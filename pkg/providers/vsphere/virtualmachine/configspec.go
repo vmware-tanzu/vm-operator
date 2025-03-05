@@ -78,8 +78,8 @@ func CreateConfigSpec(
 		configSpec.Version = hardwareVersion.String()
 	}
 
-	if val, ok := vmCtx.VM.Annotations[constants.FirmwareOverrideAnnotation]; ok && (val == "efi" || val == "bios") {
-		configSpec.Firmware = val
+	if firmware := vmCtx.VM.Annotations[constants.FirmwareOverrideAnnotation]; firmware == "efi" || firmware == "bios" {
+		configSpec.Firmware = firmware
 	} else if vmImageStatus.Firmware != "" {
 		// Use the image's firmware type if present.
 		// This is necessary until the vSphere UI can support creating VM Classes with

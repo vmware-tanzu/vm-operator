@@ -438,18 +438,6 @@ func UpdateConfigSpecGuestID(
 	}
 }
 
-func UpdateConfigSpecFirmware(
-	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	vm *vmopv1.VirtualMachine) {
-
-	if val, ok := vm.Annotations[constants.FirmwareOverrideAnnotation]; ok {
-		if (val == "efi" || val == "bios") && config.Firmware != val {
-			configSpec.Firmware = val
-		}
-	}
-}
-
 // updateConfigSpec overlays the VM Class spec with the provided ConfigSpec to
 // form a desired ConfigSpec that will be used to reconfigure the VM.
 func updateConfigSpec(
@@ -475,7 +463,6 @@ func updateConfigSpec(
 	UpdateConfigSpecAnnotation(config, configSpec)
 	UpdateConfigSpecChangeBlockTracking(
 		vmCtx, config, configSpec, &updateArgs.ConfigSpec, vmCtx.VM.Spec)
-	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 	UpdateConfigSpecGuestID(config, configSpec, vmCtx.VM.Spec.GuestID)
 
 	needsResize := false

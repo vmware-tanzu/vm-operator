@@ -581,7 +581,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 
 	if config.WithInstanceStorage {
 		// Instance storage (because of CSI) apparently needs the hosts' FQDN to be populated.
-		systems := simulator.Map.AllReference("HostNetworkSystem")
+		systems := vcModel.Map().AllReference("HostNetworkSystem")
 		Expect(systems).ToNot(BeEmpty())
 		for _, s := range systems {
 			hns, ok := s.(*simulator.HostNetworkSystem)
@@ -604,12 +604,12 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	case NetworkEnvVDS:
 		// Nothing more needed for VDS.
 	case NetworkEnvNSXT:
-		dvpg, ok := simulator.Map.Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
+		dvpg, ok := vcModel.Map().Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
 		Expect(ok).To(BeTrue())
 		dvpg.Config.LogicalSwitchUuid = NsxTLogicalSwitchUUID
 		dvpg.Config.BackingType = "nsx"
 	case NetworkEnvVPC:
-		dvpg, ok := simulator.Map.Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
+		dvpg, ok := vcModel.Map().Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
 		Expect(ok).To(BeTrue())
 		dvpg.Config.LogicalSwitchUuid = VPCLogicalSwitchUUID
 		dvpg.Config.BackingType = "nsx"
@@ -793,6 +793,10 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	clusterVMImage.Status.Type = "ISO"
 	conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 	Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
+}
+
+func (c *TestContextForVCSim) SimulatorContext() *simulator.Context {
+	return c.model.Service.Context
 }
 
 func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName string) {

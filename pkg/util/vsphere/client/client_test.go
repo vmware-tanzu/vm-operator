@@ -73,7 +73,7 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 				User: url.UserPassword(expectedUsername, expectedPassword),
 			}
 
-			datacenter := simulator.Map.Any("Datacenter")
+			datacenter := model.Map().Any("Datacenter")
 
 			// Configure TLS.
 			model.Service.TLS = tlsConfig

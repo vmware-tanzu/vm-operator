@@ -125,12 +125,12 @@ func vcSimPlacement() {
 			testConfig,
 			initObjects...)
 
-		for _, dsEnt := range simulator.Map.All("Datastore") {
-			simulator.Map.WithLock(
-				simulator.SpoofContext(),
+		sctx := ctx.SimulatorContext()
+		for _, dsEnt := range sctx.Map.All("Datastore") {
+			sctx.WithLock(
 				dsEnt.Reference(),
 				func() {
-					ds := simulator.Map.Get(dsEnt.Reference()).(*simulator.Datastore)
+					ds := sctx.Map.Get(dsEnt.Reference()).(*simulator.Datastore)
 					ds.Info.GetDatastoreInfo().SupportedVDiskFormats = []string{
 						"native_512", "native_4k",
 					}

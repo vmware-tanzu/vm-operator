@@ -126,12 +126,10 @@ func intgTestsReconcile() {
 	}
 
 	waitForVirtualMachineInstanceStorage := func(objKey types.NamespacedName, selectedNodeSet, bound bool) {
-		getAnnotations := func() map[string]string {
+		getAnnotations := func(g Gomega) map[string]string {
 			vm := getVirtualMachine(objKey)
-			if vm != nil {
-				return vm.Annotations
-			}
-			return map[string]string{}
+			g.Expect(vm).ToNot(BeNil())
+			return vm.Annotations
 		}
 
 		desc := fmt.Sprintf("waiting for selected-node annotation set %v", selectedNodeSet)
@@ -158,7 +156,7 @@ func intgTestsReconcile() {
 		volumes := vmopv1util.FilterInstanceStorageVolumes(vm)
 		Expect(volumes).ToNot(BeEmpty())
 
-		Eventually(func() bool {
+		Eventually(func(g Gomega) {
 			for _, vol := range volumes {
 				pvcKey := client.ObjectKey{
 					Namespace: vm.Namespace,
@@ -166,20 +164,16 @@ func intgTestsReconcile() {
 				}
 
 				pvc := &corev1.PersistentVolumeClaim{}
-				if ctx.Client.Get(ctx, pvcKey, pvc) != nil {
-					return false
-				}
+				g.Expect(ctx.Client.Get(ctx, pvcKey, pvc)).To(Succeed())
 
 				isClaim := vol.PersistentVolumeClaim.InstanceVolumeClaim
-				Expect(pvc.Labels).To(HaveKey(constants.InstanceStorageLabelKey))
-				Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, dummySelectedNode))
-				Expect(pvc.Spec.StorageClassName).ToNot(BeNil())
-				Expect(*pvc.Spec.StorageClassName).To(Equal(isClaim.StorageClass))
-				Expect(pvc.Spec.Resources.Requests).To(HaveKeyWithValue(corev1.ResourceStorage, isClaim.Size))
-				Expect(pvc.Spec.AccessModes).To(ConsistOf(corev1.ReadWriteOnce))
+				g.Expect(pvc.Labels).To(HaveKey(constants.InstanceStorageLabelKey))
+				g.Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, dummySelectedNode))
+				g.Expect(pvc.Spec.StorageClassName).To(HaveValue(Equal(isClaim.StorageClass)))
+				g.Expect(pvc.Spec.Resources.Requests).To(HaveKeyWithValue(corev1.ResourceStorage, isClaim.Size))
+				g.Expect(pvc.Spec.AccessModes).To(ConsistOf(corev1.ReadWriteOnce))
 			}
-			return true
-		}).Should(BeTrue(), "waiting for instance storage PVCs to be created")
+		}).Should(Succeed(), "waiting for instance storage PVCs to be created")
 	}
 
 	waitForInstanceStoragePVCsToBeDeleted := func(objKey types.NamespacedName) {
@@ -189,7 +183,7 @@ func intgTestsReconcile() {
 		volumes := vmopv1util.FilterInstanceStorageVolumes(vm)
 		Expect(volumes).ToNot(BeEmpty())
 
-		Eventually(func() bool {
+		Eventually(func(g Gomega) {
 			for _, vol := range volumes {
 				pvcKey := client.ObjectKey{
 					Namespace: vm.Namespace,
@@ -198,12 +192,14 @@ func intgTestsReconcile() {
 
 				// PVCs gets finalizer set on creation so expect the deletion timestamp to be set.
 				pvc := &corev1.PersistentVolumeClaim{}
-				if err := ctx.Client.Get(ctx, pvcKey, pvc); err != nil || pvc.DeletionTimestamp.IsZero() {
-					return false
+				err := ctx.Client.Get(ctx, pvcKey, pvc)
+				if err == nil {
+					g.Expect(pvc.DeletionTimestamp.IsZero()).To(BeFalse())
+				} else {
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				}
 			}
-			return true
-		}).Should(BeTrue(), "waiting for instance storage PVCs to be deleted")
+		}).Should(Succeed(), "waiting for instance storage PVCs to be deleted")
 	}
 
 	patchInstanceStoragePVCs := func(objKey types.NamespacedName, setStatusBound, setErrorAnnotation bool) {
@@ -383,11 +379,9 @@ func intgTestsReconcile() {
 				})
 
 				By("CnsNodeVmAttachment should not be created for volume", func() {
-					var attachment *cnsv1alpha1.CnsNodeVmAttachment
-					Eventually(func() *cnsv1alpha1.CnsNodeVmAttachment {
-						attachment = getCnsNodeVMAttachment(vm, vmVolume1)
-						return attachment
-					}).Should(BeNil())
+					Consistently(func(g Gomega) {
+						g.Expect(getCnsNodeVMAttachment(vm, vmVolume1)).To(BeNil())
+					}, "3s").Should(Succeed())
 				})
 			})
 		})
@@ -415,10 +409,10 @@ func intgTestsReconcile() {
 
 			By("CnsNodeVmAttachment should be created for volume", func() {
 				var attachment *cnsv1alpha1.CnsNodeVmAttachment
-				Eventually(func() *cnsv1alpha1.CnsNodeVmAttachment {
+				Eventually(func(g Gomega) {
 					attachment = getCnsNodeVMAttachment(vm, vmVolume1)
-					return attachment
-				}).ShouldNot(BeNil())
+					g.Expect(attachment).ToNot(BeNil())
+				}).Should(Succeed())
 
 				Expect(attachment.Spec.NodeUUID).To(Equal(dummyBiosUUID))
 				Expect(attachment.Spec.VolumeName).To(Equal(vmVolume1.PersistentVolumeClaim.ClaimName))
@@ -426,13 +420,11 @@ func intgTestsReconcile() {
 
 			By("VM Status.Volume should have entry for volume", func() {
 				var vm *vmopv1.VirtualMachine
-				Eventually(func() []vmopv1.VirtualMachineVolumeStatus {
+				Eventually(func(g Gomega) {
 					vm = getVirtualMachine(vmKey)
-					if vm != nil {
-						return vm.Status.Volumes
-					}
-					return nil
-				}).Should(HaveLen(1))
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(1))
+				}).Should(Succeed())
 
 				volStatus := vm.Status.Volumes[0]
 				Expect(volStatus.Name).To(Equal(vmVolume1.Name))
@@ -454,13 +446,12 @@ func intgTestsReconcile() {
 
 			By("VM Status.Volume should reflect attached volume", func() {
 				var vm *vmopv1.VirtualMachine
-				Eventually(func() bool {
+				Eventually(func(g Gomega) {
 					vm = getVirtualMachine(vmKey)
-					if vm == nil || len(vm.Status.Volumes) != 1 {
-						return false
-					}
-					return vm.Status.Volumes[0].Attached
-				}).Should(BeTrue())
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(1))
+					g.Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
+				}).Should(Succeed())
 
 				volStatus := vm.Status.Volumes[0]
 				Expect(volStatus.Name).To(Equal(vmVolume1.Name))
@@ -484,10 +475,10 @@ func intgTestsReconcile() {
 
 			By("CnsNodeVmAttachment should be created for volume1", func() {
 				var attachment *cnsv1alpha1.CnsNodeVmAttachment
-				Eventually(func() *cnsv1alpha1.CnsNodeVmAttachment {
+				Eventually(func(g Gomega) {
 					attachment = getCnsNodeVMAttachment(vm, vmVolume1)
-					return attachment
-				}).ShouldNot(BeNil())
+					g.Expect(attachment).ToNot(BeNil())
+				}).Should(Succeed())
 
 				Expect(attachment.Spec.NodeUUID).To(Equal(dummyBiosUUID))
 				Expect(attachment.Spec.VolumeName).To(Equal(vmVolume1.PersistentVolumeClaim.ClaimName))
@@ -498,16 +489,15 @@ func intgTestsReconcile() {
 			})
 
 			By("CnsNodeVmAttachment should not be created for volume2", func() {
-				Consistently(func() *cnsv1alpha1.CnsNodeVmAttachment {
-					return getCnsNodeVMAttachment(vm, vmVolume2)
-				}, "3s").Should(BeNil())
+				Consistently(func(g Gomega) {
+					g.Expect(getCnsNodeVMAttachment(vm, vmVolume2)).To(BeNil())
+				}, "3s").Should(Succeed())
 
-				Eventually(func() []vmopv1.VirtualMachineVolumeStatus {
-					if vm := getVirtualMachine(vmKey); vm != nil {
-						return vm.Status.Volumes
-					}
-					return nil
-				}).Should(HaveLen(1))
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(1))
+				}).Should(Succeed())
 			})
 
 			By("Simulate VM being powered on", func() {
@@ -519,23 +509,21 @@ func intgTestsReconcile() {
 
 			By("CnsNodeVmAttachment should be created for volume2", func() {
 				var attachment *cnsv1alpha1.CnsNodeVmAttachment
-				Eventually(func() *cnsv1alpha1.CnsNodeVmAttachment {
+				Eventually(func(g Gomega) {
 					attachment = getCnsNodeVMAttachment(vm, vmVolume2)
-					return attachment
-				}).ShouldNot(BeNil())
+					g.Expect(attachment).ToNot(BeNil())
+				}).Should(Succeed())
 
 				Expect(attachment.Spec.NodeUUID).To(Equal(dummyBiosUUID))
 				Expect(attachment.Spec.VolumeName).To(Equal(vmVolume2.PersistentVolumeClaim.ClaimName))
 			})
 
 			By("VM Status.Volume should have entry for volume1 and volume2", func() {
-				Eventually(func() []vmopv1.VirtualMachineVolumeStatus {
+				Eventually(func(g Gomega) {
 					vm = getVirtualMachine(vmKey)
-					if vm != nil {
-						return vm.Status.Volumes
-					}
-					return nil
-				}).Should(HaveLen(2))
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(2))
+				}).Should(Succeed())
 
 				volStatus := vm.Status.Volumes[0]
 				Expect(volStatus.Name).To(Equal(vmVolume1.Name))
@@ -567,13 +555,13 @@ func intgTestsReconcile() {
 			})
 
 			By("VM Status.Volume should reflect attached volumes", func() {
-				Eventually(func() bool {
+				Eventually(func(g Gomega) {
 					vm = getVirtualMachine(vmKey)
-					if vm == nil || len(vm.Status.Volumes) != 2 {
-						return false
-					}
-					return vm.Status.Volumes[0].Attached && vm.Status.Volumes[1].Attached
-				}).Should(BeTrue(), "Waiting VM Status.Volumes to show attached")
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(2))
+					g.Expect(vm.Status.Volumes[0].Attached).To(BeTrue())
+					g.Expect(vm.Status.Volumes[1].Attached).To(BeTrue())
+				}).Should(Succeed(), "Waiting VM Status.Volumes to show attached")
 			})
 
 			By("Remove CNS volume1 from VM Spec.Volumes", func() {
@@ -584,22 +572,20 @@ func intgTestsReconcile() {
 			})
 
 			By("CnsNodeVmAttachment for volume1 should marked for deletion", func() {
-				Eventually(func() bool {
+				Eventually(func(g Gomega) {
 					attachment := getCnsNodeVMAttachment(vm, vmVolume1)
-					if attachment != nil {
-						return !attachment.DeletionTimestamp.IsZero()
-					}
-					return false
-				}).Should(BeTrue())
+					g.Expect(attachment).ToNot(BeNil())
+					g.Expect(attachment.DeletionTimestamp.IsZero()).To(BeFalse())
+				}).Should(Succeed())
 			})
 
 			By("VM Status.Volumes should still have entries for volume1 and volume2", func() {
 				// I'm not sure if we have a better way to check for this.
-				Consistently(func() []vmopv1.VirtualMachineVolumeStatus {
+				Consistently(func(g Gomega) {
 					vm = getVirtualMachine(vmKey)
-					Expect(vm).ToNot(BeNil())
-					return vm.Status.Volumes
-				}, "3s").Should(HaveLen(2))
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.Status.Volumes).To(HaveLen(2))
+				}, "3s").Should(Succeed())
 			})
 		})
 	})

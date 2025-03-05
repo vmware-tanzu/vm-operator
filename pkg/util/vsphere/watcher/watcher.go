@@ -128,6 +128,8 @@ type Watcher struct {
 
 	ignoredExtraConfigKeys map[string]struct{}
 	lookupNamespacedName   lookupNamespacedNameFn
+
+	closeOnce sync.Once
 }
 
 // Done returns a channel that is closed when the watcher is shutdown.
@@ -216,15 +218,18 @@ func newWatcher(
 }
 
 func (w *Watcher) close() {
-	w.cancel()
-	close(w.chanDone)
+	w.closeOnce.Do(
+		func() {
+			w.cancel()
+			close(w.chanDone)
 
-	_ = w.pf.Destroy(context.Background())
-	_ = w.pc.Destroy(context.Background())
-	_ = w.lv.Destroy(context.Background())
-	for _, cv := range w.cv {
-		_ = cv.Destroy(context.Background())
-	}
+			_ = w.pf.Destroy(context.Background())
+			_ = w.pc.Destroy(context.Background())
+			_ = w.lv.Destroy(context.Background())
+			for _, cv := range w.cv {
+				_ = cv.Destroy(context.Background())
+			}
+		})
 }
 
 // Start begins watching a vSphere server for updates to VM Service managed VMs.

@@ -58,6 +58,9 @@ func MustSetLastResizedAnnotation(
 }
 
 // SetLastResizedAnnotationClassName sets the resize annotation to just of the class name.
+// This is called from the VM mutation wehbook to record the prior class name of a VM
+// that does not already have the annotation (so that ResizeNeeded() will return true).
+// Note className may be empty if the VM was classless.
 func SetLastResizedAnnotationClassName(
 	vm *vmopv1.VirtualMachine,
 	className string) error {
@@ -107,7 +110,7 @@ func ResizeNeeded(
 	vmClass vmopv1.VirtualMachineClass) bool {
 
 	lra, exists := getLastResizeAnnotation(vm)
-	if !exists || lra.Name == "" {
+	if !exists {
 		// The VM does not have the last resized annotation. Most likely this is an existing VM
 		// and the VM Spec.ClassName hasn't been changed (because the mutation webhook sets the
 		// annotation when it changes). However, if the same class opt-in annotation is set, do

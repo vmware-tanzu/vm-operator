@@ -926,47 +926,22 @@ func (v validator) validateVolumes(ctx *pkgctx.WebhookRequestContext, vm *vmopv1
 }
 
 func (v validator) validateVolumeWithPVC(
-	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine,
+	_ *pkgctx.WebhookRequestContext,
+	_ *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	volPath *field.Path) field.ErrorList {
 
 	var (
-		allErrs   field.ErrorList
-		pvcPath   = volPath.Child("persistentVolumeClaim")
-		claimName = vol.PersistentVolumeClaim.ClaimName
+		allErrs field.ErrorList
+		pvcPath = volPath.Child("persistentVolumeClaim")
 	)
 
 	if vol.PersistentVolumeClaim.ReadOnly {
 		allErrs = append(allErrs, field.NotSupported(pvcPath.Child("readOnly"), true, []string{"false"}))
 	}
 
-	if claimName == "" {
+	if vol.PersistentVolumeClaim.ClaimName == "" {
 		allErrs = append(allErrs, field.Required(pvcPath.Child("claimName"), ""))
-		return allErrs
-	}
-
-	if vol.PersistentVolumeClaim.InstanceVolumeClaim != nil {
-		return allErrs
-	}
-
-	// For now, make this check best effort. There's an ask to provide immediate feedback but
-	// ideally the validation webhooks should just deal with internal consistency.
-	pvc := &corev1.PersistentVolumeClaim{}
-	if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: claimName, Namespace: vm.Namespace}, pvc); err != nil {
-		return allErrs
-	}
-
-	if scName := pvc.Spec.StorageClassName; scName != nil && *scName != "" {
-		// Or just check for "-wffc" suffix instead?
-		sc := &storagev1.StorageClass{}
-		if err := v.client.Get(ctx, ctrlclient.ObjectKey{Name: *scName}, sc); err == nil {
-			if mode := sc.VolumeBindingMode; mode != nil && *mode == storagev1.VolumeBindingWaitForFirstConsumer {
-				allErrs = append(allErrs,
-					field.Forbidden(pvcPath,
-						"PVC with WaitForFirstConsumer StorageClass is not supported for VirtualMachines"))
-			}
-		}
 	}
 
 	return allErrs

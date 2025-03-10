@@ -113,3 +113,21 @@ func Remove(ctx context.Context, ref moRef, id string) (err error) {
 		})
 	return
 }
+
+// Close closes the watcher associated with the context.
+func Close(ctx context.Context) (err error) {
+	if pkgcfg.FromContext(ctx).AsyncSignalDisabled {
+		return ErrAsyncSignalDisabled
+	}
+	ctxgen.ExecWithContext(
+		ctx,
+		contextKeyValue,
+		func(w contextValueType) {
+			if w == nil {
+				err = ErrNoWatcher
+			} else {
+				w.close()
+			}
+		})
+	return
+}

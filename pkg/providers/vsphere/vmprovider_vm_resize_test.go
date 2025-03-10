@@ -212,6 +212,31 @@ func vmResizeTests() {
 					})
 				})
 
+				It("Resizes VM that was classless", func() {
+					newCS := configSpec
+					newCS.NumCPUs = 42
+					newCS.MemoryMB = 8192
+					newVMClass := createVMClass(newCS)
+					vm.Spec.ClassName = newVMClass.Name
+
+					// Simulate what the VM mutation webhook would do by setting the LRA to an empty class name.
+					delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
+					Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, "")).To(Succeed())
+					Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
+
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+					Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+					Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
+					assertExpectedNoReservationFields(o)
+
+					assertExpectedResizedClassFields(vm, newVMClass)
+				})
+
 				Context("CPU/Memory Reservations", func() {
 
 					Context("No reservations", func() {
@@ -388,6 +413,32 @@ func vmResizeTests() {
 						// Simulate what the VM mutation webhook would do by setting the LRA to the prior class name.
 						Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
 						Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, vmClass.Name)).To(Succeed())
+
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+						Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(newCS.NumCPUs))
+						Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(newCS.MemoryMB))
+						assertExpectedNoReservationFields(o)
+
+						assertExpectedResizedClassFields(vm, newVMClass)
+					})
+
+					It("Resizes VM that was classless", func() {
+						newCS := configSpec
+						newCS.NumCPUs = 42
+						newCS.MemoryMB = 8192
+						newVMClass := createVMClass(newCS)
+						vm.Spec.ClassName = newVMClass.Name
+
+						// Simulate what the VM mutation webhook would do by setting the LRA to an emtpy class name.
+						delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
+						Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, "")).To(Succeed())
+						Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))
 
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)

@@ -1148,6 +1148,23 @@ func unitTestsMutating() {
 					})
 				})
 
+				When("existing vm is classless", func() {
+					It("set last-resize annotation", func() {
+						oldVM.Spec.ClassName = ""
+						ctx.vm.Spec.ClassName = newClassName
+
+						updated, err := mutation.SetLastResizeAnnotation(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(updated).To(BeTrue())
+
+						className, uid, gen, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
+						Expect(exists).To(BeTrue())
+						Expect(className).To(Equal(oldVM.Spec.ClassName))
+						Expect(uid).To(BeEmpty())
+						Expect(gen).To(BeZero())
+					})
+				})
+
 				When("vm already has last-resize annotation", func() {
 					It("annotation is not changed", func() {
 						vmClass := builder.DummyVirtualMachineClass("my-class")

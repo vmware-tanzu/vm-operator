@@ -54,6 +54,24 @@ var _ = Describe("SetLastResizedAnnotationClassName", func() {
 		vmClass.Generation = 42
 	})
 
+	When("Classless", func() {
+		It("Sets expected annotation", func() {
+			err := vmopv1util.SetLastResizedAnnotationClassName(vm, "")
+			Expect(err).ToNot(HaveOccurred())
+			val, ok := vm.Annotations[vmopv1util.LastResizedAnnotationKey]
+			Expect(ok).To(BeTrue())
+			Expect(val).To(MatchJSON(`{"name":""}`))
+
+			By("GetLastResizedAnnotation also returns expected values", func() {
+				className, uid, generation, ok := vmopv1util.GetLastResizedAnnotation(*vm)
+				Expect(ok).To(BeTrue())
+				Expect(className).To(BeEmpty())
+				Expect(uid).To(BeEmpty())
+				Expect(generation).To(BeZero())
+			})
+		})
+	})
+
 	It("Sets expected annotation", func() {
 		err := vmopv1util.SetLastResizedAnnotationClassName(vm, vmClass.Name)
 		Expect(err).ToNot(HaveOccurred())
@@ -90,6 +108,20 @@ var _ = Describe("GetLastResizedAnnotation", func() {
 		It("Returns expected values", func() {
 			className, uid, generation, ok := vmopv1util.GetLastResizedAnnotation(*vm)
 			Expect(ok).To(BeFalse())
+			Expect(className).To(BeEmpty())
+			Expect(uid).To(BeEmpty())
+			Expect(generation).To(BeZero())
+		})
+	})
+
+	When("Resize annotation is present from classless VM", func() {
+		BeforeEach(func() {
+			Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, ""))
+		})
+
+		It("Returns expected values", func() {
+			className, uid, generation, ok := vmopv1util.GetLastResizedAnnotation(*vm)
+			Expect(ok).To(BeTrue())
 			Expect(className).To(BeEmpty())
 			Expect(uid).To(BeEmpty())
 			Expect(generation).To(BeZero())
@@ -136,6 +168,30 @@ var _ = Describe("ResizeNeeded", func() {
 		When("same-class annotation is present", func() {
 			BeforeEach(func() {
 				vm.Annotations[vmopv1.VirtualMachineSameVMClassResizeAnnotation] = ""
+			})
+
+			It("returns true", func() {
+				Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeTrue())
+			})
+		})
+	})
+
+	Context("Resize annotation with just ClassName is set", func() {
+		Context("Resize annotation is present via non-classless VM", func() {
+			BeforeEach(func() {
+				Expect(vmopv1util.SetLastResizedAnnotationClassName(&vm, "my-old-class")).To(Succeed())
+				vm.Spec.ClassName = "my-new-class"
+			})
+
+			It("returns true", func() {
+				Expect(vmopv1util.ResizeNeeded(vm, vmClass)).To(BeTrue())
+			})
+		})
+
+		Context("Resize annotation is present via classless VM", func() {
+			BeforeEach(func() {
+				Expect(vmopv1util.SetLastResizedAnnotationClassName(&vm, "")).To(Succeed())
+				vm.Spec.ClassName = "my-new-class"
 			})
 
 			It("returns true", func() {

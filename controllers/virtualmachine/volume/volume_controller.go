@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -39,6 +40,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -717,6 +719,15 @@ func (r *Reconciler) processAttachments(
 			}
 		}
 
+		// Must mark this as true now even if something below fails in order to try
+		// to keep the volumes attached in order.
+		hasPendingAttachment = true
+
+		if err := r.handlePVCWithWFFC(ctx, volume); err != nil {
+			createErrs = append(createErrs, err)
+			continue
+		}
+
 		if err := r.createCNSAttachment(ctx, attachmentName, volume); err != nil {
 			createErrs = append(createErrs, fmt.Errorf("cannot create CnsNodeVmAttachment: %w", err))
 		} else {
@@ -729,9 +740,6 @@ func (r *Reconciler) processAttachments(
 					Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
 				})
 		}
-
-		// Always true even if the creation failed above to try to keep volumes attached in order.
-		hasPendingAttachment = true
 	}
 
 	// Fix up the Volume Status so that attachments that are no longer referenced in the Spec but
@@ -783,6 +791,110 @@ func (r *Reconciler) createCNSAttachment(
 	}
 
 	return nil
+}
+
+// handlePVCWithWFFC sets the selected-node annotation on an unbound PVC if it has
+// a WaitForFirstConsumer StorageClass.
+func (r *Reconciler) handlePVCWithWFFC(
+	ctx *pkgctx.VolumeContext,
+	volume vmopv1.VirtualMachineVolume,
+) error {
+
+	if volume.PersistentVolumeClaim == nil || volume.PersistentVolumeClaim.InstanceVolumeClaim != nil {
+		return nil
+	}
+
+	pvc := corev1.PersistentVolumeClaim{}
+	pvcKey := client.ObjectKey{
+		Namespace: ctx.VM.Namespace,
+		Name:      volume.PersistentVolumeClaim.ClaimName,
+	}
+
+	if err := r.Get(ctx, pvcKey, &pvc); err != nil {
+		return fmt.Errorf("cannot get PVC: %w", err)
+	}
+
+	if pvc.Status.Phase == corev1.ClaimBound {
+		// Regardless of the StorageClass binding mode there is nothing to done if already bound.
+		return nil
+	}
+
+	if pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] != "" {
+		// Once set, this annotation cannot really be changed so just keep going.
+		// TBD: Make check if the Node still exists, and is in the VM's Zone, but
+		// CSI doesn't support changing this yet.
+		return nil
+	}
+
+	scName := pvc.Spec.StorageClassName
+	if scName == nil {
+		return fmt.Errorf("PVC %s does not have StorageClassName set", pvc.Name)
+	} else if *scName == "" {
+		return nil
+	}
+
+	sc := &storagev1.StorageClass{}
+	if err := r.Get(ctx, client.ObjectKey{Name: *scName}, sc); err != nil {
+		return fmt.Errorf("cannot get StorageClass for PVC %s: %w", pvc.Name, err)
+	}
+
+	if mode := sc.VolumeBindingMode; mode == nil || *mode != storagev1.VolumeBindingWaitForFirstConsumer {
+		return nil
+	}
+
+	// We just need the name of any Node that is in this VM's Zone.
+	nodeName, err := getANodeNameInVMZone(ctx, r.Client)
+	if err != nil {
+		return fmt.Errorf("cannot find node for VM: %w", err)
+	}
+
+	if pvc.Annotations == nil {
+		pvc.Annotations = map[string]string{}
+	}
+	pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] = nodeName
+
+	if err := r.Client.Update(ctx, &pvc); err != nil {
+		return fmt.Errorf("cannot update PVC to add selected-node annotation: %w", err)
+	}
+
+	return nil
+}
+
+// getANodeNameInVMZone returns one of the Nodes' name that is in the same
+// Zone as the VM.
+func getANodeNameInVMZone(
+	ctx *pkgctx.VolumeContext,
+	k8sClient client.Client) (string, error) {
+
+	zoneName := ctx.VM.Status.Zone
+	if zoneName == "" {
+		// Fallback to the label value if Status hasn't been updated yet.
+		zoneName = ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
+		if zoneName == "" {
+			return "", fmt.Errorf("VM does not have Zone set")
+		}
+	}
+
+	nodes := &corev1.NodeList{}
+	if err := k8sClient.List(
+		ctx,
+		nodes,
+		client.MatchingLabels{topology.KubernetesTopologyZoneLabelKey: zoneName}); err != nil {
+		return "", err
+	}
+
+	if len(nodes.Items) == 0 {
+		return "", fmt.Errorf("no Nodes for zone %s", zoneName)
+	}
+
+	for i := range nodes.Items {
+		if nodes.Items[i].DeletionTimestamp.IsZero() {
+			return nodes.Items[i].Name, nil
+		}
+	}
+
+	// Otherwise just return the first one.
+	return nodes.Items[0].Name, nil
 }
 
 // createCNSAttachmentButAlreadyExists tries to handle various conditions when a CnsNodeVmAttachment

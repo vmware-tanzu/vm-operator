@@ -170,11 +170,11 @@ linters:
   enable:
   - asciicheck
   - bodyclose
+  - copyloopvar
   - depguard
   - dogsled
   - errcheck
   - errorlint
-  - exportloopref
   - goconst
   - gocritic
   - gocyclo

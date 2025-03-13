@@ -159,7 +159,7 @@ func DetermineHardwareVersion(
 	imgStatus vmopv1.VirtualMachineImageStatus) vimtypes.HardwareVersion {
 
 	// Get the minimum hardware version required by the VM from the VM spec.
-	vmMinVersion := vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion)
+	vmMinVersion := vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion) //nolint:gosec // disable G115
 
 	// Check to see if the ConfigSpec specifies a hardware version.
 	var configSpecVersion vimtypes.HardwareVersion
@@ -181,7 +181,7 @@ func DetermineHardwareVersion(
 	// configured, bump the version so those devices will work.
 	var imageVersion vimtypes.HardwareVersion
 	if imgStatus.HardwareVersion != nil {
-		imageVersion = vimtypes.HardwareVersion(*imgStatus.HardwareVersion)
+		imageVersion = vimtypes.HardwareVersion(*imgStatus.HardwareVersion) //nolint:gosec // disable G115
 	}
 
 	// VMs with PCI pass-through devices require a minimum hardware version, as

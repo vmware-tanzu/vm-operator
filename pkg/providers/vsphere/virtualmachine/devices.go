@@ -61,8 +61,8 @@ func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass vmopv1.VirtualDevices) []
 
 	for _, dynamicDirectPath := range pciDevicesFromVMClass.DynamicDirectPathIODevices {
 		allowedDev := vimtypes.VirtualPCIPassthroughAllowedDevice{
-			VendorId: int32(dynamicDirectPath.VendorID),
-			DeviceId: int32(dynamicDirectPath.DeviceID),
+			VendorId: int32(dynamicDirectPath.VendorID), //nolint:gosec // disable G115
+			DeviceId: int32(dynamicDirectPath.DeviceID), //nolint:gosec // disable G115
 		}
 		backingInfo := &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
 			AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{allowedDev},

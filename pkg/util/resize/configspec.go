@@ -432,8 +432,8 @@ func compareNPIV(
 	// Generate only when the desired WW node/port names are greater than the length of existing WW node/port names
 	// TODO: need support for Op="extend"?.
 	if cs.NpivWorldWideNameOp == string(vimtypes.VirtualMachineConfigSpecNpivWwnOpGenerate) {
-		if cs.NpivDesiredNodeWwns > int16(len(ci.NpivNodeWorldWideName)) &&
-			cs.NpivDesiredPortWwns > int16(len(ci.NpivPortWorldWideName)) {
+		if cs.NpivDesiredNodeWwns > int16(len(ci.NpivNodeWorldWideName)) && //nolint:gosec // disable G115
+			cs.NpivDesiredPortWwns > int16(len(ci.NpivPortWorldWideName)) { //nolint:gosec // disable G115
 			outCS.NpivWorldWideNameOp = cs.NpivWorldWideNameOp
 			outCS.NpivDesiredNodeWwns = cs.NpivDesiredNodeWwns
 			outCS.NpivDesiredPortWwns = cs.NpivDesiredPortWwns

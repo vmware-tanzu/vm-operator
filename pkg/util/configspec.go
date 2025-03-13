@@ -178,7 +178,7 @@ func EnsureMinHardwareVersionInConfigSpec(
 	configSpec *vimtypes.VirtualMachineConfigSpec,
 	minVersion int32) {
 
-	minHwVersion := vimtypes.HardwareVersion(minVersion)
+	minHwVersion := vimtypes.HardwareVersion(minVersion) //nolint:gosec // disable G115
 	if !minHwVersion.IsValid() {
 		return
 	}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -244,7 +245,7 @@ func v1a1TemplateFunctions(
 		}
 		defaultMask := net.ParseIP(IP).DefaultMask()
 		ones, _ := defaultMask.Size()
-		expectedCidrNotation := IP + "/" + fmt.Sprintf("%d", int32(ones))
+		expectedCidrNotation := IP + "/" + strconv.Itoa(ones)
 		return expectedCidrNotation, nil
 	}
 
@@ -423,7 +424,7 @@ func v1a2TemplateFunctions(
 		}
 		defaultMask := net.ParseIP(IP).DefaultMask()
 		ones, _ := defaultMask.Size()
-		expectedCidrNotation := IP + "/" + fmt.Sprintf("%d", int32(ones))
+		expectedCidrNotation := IP + "/" + strconv.Itoa(ones)
 		return expectedCidrNotation, nil
 	}
 
@@ -631,7 +632,7 @@ func v1a3TemplateFunctions(
 		}
 		defaultMask := net.ParseIP(IP).DefaultMask()
 		ones, _ := defaultMask.Size()
-		expectedCidrNotation := IP + "/" + fmt.Sprintf("%d", int32(ones))
+		expectedCidrNotation := IP + "/" + strconv.Itoa(ones)
 		return expectedCidrNotation, nil
 	}
 
@@ -781,7 +782,7 @@ func v1a4TemplateFunctions(
 		}
 		defaultMask := net.ParseIP(IP).DefaultMask()
 		ones, _ := defaultMask.Size()
-		expectedCidrNotation := IP + "/" + fmt.Sprintf("%d", int32(ones))
+		expectedCidrNotation := IP + "/" + strconv.Itoa(ones)
 		return expectedCidrNotation, nil
 	}
 

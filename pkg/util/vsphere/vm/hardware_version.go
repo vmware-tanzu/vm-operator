@@ -47,7 +47,7 @@ func ReconcileMinHardwareVersion(
 	if minHardwareVersion == 0 {
 		return ReconcileMinHardwareVersionResultMinHardwareVersionZero, nil
 	}
-	targetHardwareVersion := vimtypes.HardwareVersion(minHardwareVersion)
+	targetHardwareVersion := vimtypes.HardwareVersion(minHardwareVersion) //nolint:gosec // disable G115
 	if !targetHardwareVersion.IsSupported() {
 		return 0, fmt.Errorf("invalid minHardwareVersion: %d", minHardwareVersion)
 	}

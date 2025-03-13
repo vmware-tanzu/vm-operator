@@ -13,7 +13,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-const vmClassUID = "my-uid"
+const (
+	vmClassUID = "my-uid"
+	myNewClass = "my-new-class"
+)
 
 var _ = Describe("SetLastResizedAnnotation", func() {
 
@@ -180,7 +183,7 @@ var _ = Describe("ResizeNeeded", func() {
 		Context("Resize annotation is present via non-classless VM", func() {
 			BeforeEach(func() {
 				Expect(vmopv1util.SetLastResizedAnnotationClassName(&vm, "my-old-class")).To(Succeed())
-				vm.Spec.ClassName = "my-new-class"
+				vm.Spec.ClassName = myNewClass
 			})
 
 			It("returns true", func() {
@@ -191,7 +194,7 @@ var _ = Describe("ResizeNeeded", func() {
 		Context("Resize annotation is present via classless VM", func() {
 			BeforeEach(func() {
 				Expect(vmopv1util.SetLastResizedAnnotationClassName(&vm, "")).To(Succeed())
-				vm.Spec.ClassName = "my-new-class"
+				vm.Spec.ClassName = myNewClass
 			})
 
 			It("returns true", func() {
@@ -235,7 +238,7 @@ var _ = Describe("ResizeNeeded", func() {
 
 		When("Spec.ClassName changes", func() {
 			BeforeEach(func() {
-				vm.Spec.ClassName = "my-new-class"
+				vm.Spec.ClassName = myNewClass
 			})
 
 			It("returns true", func() {

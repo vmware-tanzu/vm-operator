@@ -35,7 +35,7 @@ func CreateConfigSpec(
 	}
 	// CPU and Memory configurations specified in the VM Class standalone fields take
 	// precedence over values in the config spec
-	configSpec.NumCPUs = int32(vmClassSpec.Hardware.Cpus)
+	configSpec.NumCPUs = int32(vmClassSpec.Hardware.Cpus) //nolint:gosec // disable G115
 	configSpec.MemoryMB = MemoryQuantityToMb(vmClassSpec.Hardware.Memory)
 	configSpec.ManagedBy = &vimtypes.ManagedByInfo{
 		ExtensionKey: vmopv1.ManagedByExtensionKey,

@@ -34,7 +34,12 @@ func ClusterMinCPUFreq(ctx context.Context, cluster *object.ClusterComputeResour
 	var minFreq uint64
 	for i := range hosts {
 		if hw := hosts[i].Summary.Hardware; hw != nil {
-			hostCPUMHz := uint64(hw.CpuMhz)
+			//
+			// Please note, this is a false-positive as there is no overflow
+			// when converting an int32 into a uint64. Until the linter is
+			// fixed, disable the directive that causes the false-positive.
+			//
+			hostCPUMHz := uint64(hw.CpuMhz) //nolint:gosec // disable G115
 			if hostCPUMHz < minFreq || minFreq == 0 {
 				minFreq = hostCPUMHz
 			}

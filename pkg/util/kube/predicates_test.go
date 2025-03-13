@@ -78,23 +78,26 @@ var _ = Describe("Predicates", func() {
 
 		assertEvents := func(
 			newObj, oldObj ctrlclient.Object,
-			create, update, delete, generic bool) {
+			expectCreateEvent,
+			expectUpdateEvent,
+			expectDeleteEvent,
+			expectGenericEvent bool) {
 
 			By("CreateEvent")
 			ExpectWithOffset(1, predicate.Create(
-				event.CreateEvent{Object: newObj})).To(Equal(create))
+				event.CreateEvent{Object: newObj})).To(Equal(expectCreateEvent))
 
 			By("UpdateEvent")
 			ExpectWithOffset(1, predicate.Update(
-				event.UpdateEvent{ObjectNew: newObj, ObjectOld: oldObj})).To(Equal(update))
+				event.UpdateEvent{ObjectNew: newObj, ObjectOld: oldObj})).To(Equal(expectUpdateEvent))
 
 			By("DeleteEvent")
 			ExpectWithOffset(1, predicate.Delete(
-				event.DeleteEvent{Object: newObj})).To(Equal(delete))
+				event.DeleteEvent{Object: newObj})).To(Equal(expectDeleteEvent))
 
 			By("GenericEvent")
 			ExpectWithOffset(1, predicate.Generic(
-				event.GenericEvent{Object: newObj})).To(Equal(generic))
+				event.GenericEvent{Object: newObj})).To(Equal(expectGenericEvent))
 		}
 
 		When("the vm class does not exist", func() {

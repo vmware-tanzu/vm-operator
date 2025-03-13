@@ -285,17 +285,19 @@ lint: ## Run all the lint targets
 
 GOLANGCI_LINT_FLAGS ?= --fast=true
 GOLANGCI_LINT_ABS_PATH := $(abspath $(GOLANGCI_LINT))
+
+GO_MOD_DIRS_TO_LINT := $(GO_MOD_DIRS)
+GO_MOD_DIRS_TO_LINT := $(filter-out ./external%,$(GO_MOD_DIRS_TO_LINT))
+GO_MOD_DIRS_TO_LINT := $(filter-out ./hack/tools%,$(GO_MOD_DIRS_TO_LINT))
+GO_LINT_DIR_TARGETS := $(addprefix lint-,$(GO_MOD_DIRS_TO_LINT))
+
+.PHONY: $(GO_LINT_DIR_TARGETS)
+$(GO_LINT_DIR_TARGETS): | $(GOLANGCI_LINT)
+	cd $(subst lint-,,$@) && $(GOLANGCI_LINT_ABS_PATH) run -v $(GOLANGCI_LINT_FLAGS)
+
 .PHONY: lint-go
-lint-go: $(GOLANGCI_LINT)
+lint-go: $(GO_LINT_DIR_TARGETS)
 lint-go: ## Lint codebase
-	@for dir in $(GO_MOD_DIRS); do \
-		if [[ "$$dir" == ./external* || "$$dir" == ./hack/tools* ]]; then \
-			echo "Skipping $$dir"; \
-			continue; \
-		fi; \
-		echo "Running golangci-lint in $$dir"; \
-		(cd $$dir && $(GOLANGCI_LINT_ABS_PATH) run -v $(GOLANGCI_LINT_FLAGS)); \
-	done
 
 .PHONY: lint-go-full
 lint-go-full: GOLANGCI_LINT_FLAGS = --fast=false

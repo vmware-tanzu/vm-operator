@@ -65,7 +65,7 @@ func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.Customiza
 				}
 				adapter.IpV6Spec.Ip = append(adapter.IpV6Spec.Ip, &vimtypes.CustomizationFixedIpV6{
 					IpAddress:  ip.String(),
-					SubnetMask: int32(ones),
+					SubnetMask: int32(ones), //nolint:gosec // disable G115
 				})
 				adapter.IpV6Spec.Gateway = append(adapter.IpV6Spec.Gateway, ipConfig.Gateway)
 			}

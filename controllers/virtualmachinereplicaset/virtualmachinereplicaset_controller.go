@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -40,8 +41,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/go-logr/logr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -154,7 +153,6 @@ func (r *Reconciler) getReplicaSetsForVM(
 
 	var rss []*vmopv1.VirtualMachineReplicaSet
 	for _, rs := range rsList.Items {
-		rs := rs
 		selector, err := metav1.LabelSelectorAsSelector(rs.Spec.Selector)
 		if err != nil {
 			continue
@@ -623,9 +621,9 @@ func (r *Reconciler) updateStatus(
 
 	}
 
-	newStatus.Replicas = int32(len(filteredVMs))
-	newStatus.FullyLabeledReplicas = int32(fullyLabeledReplicasCount)
-	newStatus.ReadyReplicas = int32(readyReplicasCount)
+	newStatus.Replicas = int32(len(filteredVMs))                      //nolint:gosec // disable G115
+	newStatus.FullyLabeledReplicas = int32(fullyLabeledReplicasCount) //nolint:gosec // disable G115
+	newStatus.ReadyReplicas = int32(readyReplicasCount)               //nolint:gosec // disable G115
 
 	// Copy the newly calculated status into the VirtualMachineReplicaSet.
 	if rs.Status.Replicas != newStatus.Replicas ||

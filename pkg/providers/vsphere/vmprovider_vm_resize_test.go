@@ -435,7 +435,7 @@ func vmResizeTests() {
 						newVMClass := createVMClass(newCS)
 						vm.Spec.ClassName = newVMClass.Name
 
-						// Simulate what the VM mutation webhook would do by setting the LRA to an emtpy class name.
+						// Simulate what the VM mutation webhook would do by setting the LRA to an empty class name.
 						delete(vm.Annotations, vmopv1util.LastResizedAnnotationKey)
 						Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, "")).To(Succeed())
 						Expect(vm.Annotations).To(HaveKey(vmopv1util.LastResizedAnnotationKey))

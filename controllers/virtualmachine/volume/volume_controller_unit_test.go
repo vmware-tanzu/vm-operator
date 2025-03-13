@@ -1394,7 +1394,6 @@ func adjustPVCCreationTimestamp(ctx *pkgctx.VolumeContext, testCtx *builder.Unit
 	Expect(err).ToNot(HaveOccurred())
 
 	for _, pvc := range pvcList {
-		pvc := pvc
 		pvc.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * pkgcfg.FromContext(ctx).InstanceStorage.PVPlacementFailedTTL))
 		Expect(testCtx.Client.Update(ctx, &pvc)).To(Succeed())
 	}
@@ -1431,7 +1430,6 @@ func patchInstanceStoragePVCs(ctx *pkgctx.VolumeContext, testCtx *builder.UnitTe
 	Expect(err).ToNot(HaveOccurred())
 
 	for _, pvc := range pvcList {
-		pvc := pvc
 		if setStatusBound {
 			pvc.Status.Phase = corev1.ClaimBound
 			Expect(testCtx.Client.Status().Update(ctx, &pvc)).To(Succeed())

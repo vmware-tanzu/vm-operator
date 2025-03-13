@@ -411,7 +411,7 @@ func UpdateHardwareConfigSpec(
 	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec) {
 
-	if nCPUs := int32(vmClassSpec.Hardware.Cpus); config.Hardware.NumCPU != nCPUs {
+	if nCPUs := int32(vmClassSpec.Hardware.Cpus); config.Hardware.NumCPU != nCPUs { //nolint:gosec // disable G115
 		configSpec.NumCPUs = nCPUs
 	}
 	if memMB := virtualmachine.MemoryQuantityToMb(vmClassSpec.Hardware.Memory); int64(config.Hardware.MemoryMB) != memMB {

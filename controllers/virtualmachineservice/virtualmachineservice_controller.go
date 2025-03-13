@@ -699,7 +699,11 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			}
 
 			subset.Ports = append(subset.Ports,
-				corev1.EndpointPort{Name: portName, Port: int32(portNum), Protocol: portProto})
+				corev1.EndpointPort{
+					Name:     portName,
+					Port:     int32(portNum), //nolint:gosec // disable G115
+					Protocol: portProto,
+				})
 		}
 
 		subsets = append(subsets, subset)

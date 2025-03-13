@@ -1386,7 +1386,7 @@ func (v validator) validateMinHardwareVersion(ctx *pkgctx.WebhookRequestContext,
 
 	// kubebuilder validations handles check for minHardwareVersion < 13.
 	// This is necessary here to handle brownfield api versions.
-	if vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion) > vimtypes.MaxValidHardwareVersion {
+	if vimtypes.HardwareVersion(vm.Spec.MinHardwareVersion) > vimtypes.MaxValidHardwareVersion { //nolint:gosec // disable G115
 		allErrs = append(allErrs, field.Invalid(
 			fieldPath,
 			vm.Spec.MinHardwareVersion,

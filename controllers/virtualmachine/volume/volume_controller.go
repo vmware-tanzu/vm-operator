@@ -374,8 +374,6 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *pkgctx.VolumeContext) (bo
 	createPVCs := len(selectedNode) > 0
 
 	for _, pvc := range pvcList {
-		pvc := pvc
-
 		if !pvc.DeletionTimestamp.IsZero() {
 			// Ignore PVC that is being deleted. Likely this is from a previous failed
 			// placement and CSI hasn't fully cleaned up yet (a finalizer is still present).

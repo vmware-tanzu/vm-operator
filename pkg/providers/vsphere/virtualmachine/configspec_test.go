@@ -416,6 +416,33 @@ var _ = Describe("CreateConfigSpec", func() {
 				Expect(namespacedName).To(Equal(vm.NamespacedName()))
 			})
 		})
+
+		When("VM Class has reservations", func() {
+			BeforeEach(func() {
+				vmClassSpec.Policies = vmopv1.VirtualMachineClassPolicies{}
+				classConfigSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To[int64](200),
+				}
+				classConfigSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To[int64](200),
+				}
+			})
+			Specify("configSpec should have the allocation defaults", func() {
+				Expect(configSpec.CpuAllocation).ToNot(BeNil())
+				Expect(configSpec.CpuAllocation.Reservation).ToNot(BeNil())
+				Expect(configSpec.CpuAllocation.Limit).ToNot(BeNil())
+				Expect(*configSpec.CpuAllocation.Reservation).To(Equal(int64(200)))
+				Expect(*configSpec.CpuAllocation.Limit).To(Equal(int64(-1)))
+
+				Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+				Expect(configSpec.MemoryAllocation.Reservation).ToNot(BeNil())
+				Expect(configSpec.MemoryAllocation.Limit).ToNot(BeNil())
+				Expect(*configSpec.MemoryAllocation.Reservation).To(Equal(int64(200)))
+				Expect(*configSpec.MemoryAllocation.Limit).To(Equal(int64(-1)))
+				Expect(configSpec.MemoryAllocation.Shares).ToNot(BeNil())
+				Expect(configSpec.MemoryAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
+			})
+		})
 	})
 })
 

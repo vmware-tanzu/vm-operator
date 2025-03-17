@@ -1265,12 +1265,12 @@ func unitTestsValidateCreate() {
 				Entry("storage class associated with namespace",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							storageClass := builder.DummyStorageClass()
+							storageClass := builder.DummyStorageClassWithID("my-policy-id")
 							Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 							ctx.vm.Spec.StorageClass = storageClass.Name
 
 							storagePolicyQuota := builder.DummyStoragePolicyQuota(
-								storageClass.Name+"-storagepolicyquota", ctx.vm.Namespace, storageClass.Name)
+								storageClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "my-policy-id")
 							Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 						},
 						expectAllowed: true,
@@ -1279,12 +1279,12 @@ func unitTestsValidateCreate() {
 				Entry("storage class not associated with namespace",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							storageClass := builder.DummyStorageClass()
+							storageClass := builder.DummyStorageClassWithID("my-policy-id")
 							Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 							ctx.vm.Spec.StorageClass = storageClass.Name
 
 							storagePolicyQuota := builder.DummyStoragePolicyQuota(
-								storageClass.Name+"-storagepolicyquota", ctx.vm.Namespace, storageClass.Name+"foo")
+								storageClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "some-other-id")
 							Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 						},
 						validate: doValidateWithMsg(
@@ -1294,14 +1294,14 @@ func unitTestsValidateCreate() {
 				Entry("WFFC storage class associated with namespace",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							storageClass := builder.DummyStorageClass()
+							storageClass := builder.DummyStorageClassWithID("my-policy-id")
 							baseSCName := storageClass.Name
 							storageClass.Name += "wffc"
 							Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 							ctx.vm.Spec.StorageClass = storageClass.Name
 
 							storagePolicyQuota := builder.DummyStoragePolicyQuota(
-								baseSCName+"-storagepolicyquota", ctx.vm.Namespace, storageClass.Name)
+								baseSCName+"-storagepolicyquota", ctx.vm.Namespace, "my-policy-id")
 							Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 						},
 						expectAllowed: true,

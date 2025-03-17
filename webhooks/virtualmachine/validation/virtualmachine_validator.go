@@ -31,8 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -44,6 +42,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -515,38 +514,16 @@ func (v validator) validateStorageClass(ctx *pkgctx.WebhookRequestContext, vm *v
 		return append(allErrs, field.Invalid(scPath, scName, err.Error()))
 	}
 
-	// This is what enforces that the storage policy has been associated with this namespace.
-	if pkgcfg.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
-		storagePolicyQuotas := &spqv1.StoragePolicyQuotaList{}
-		if err := v.client.List(ctx, storagePolicyQuotas, ctrlclient.InNamespace(vm.Namespace)); err != nil {
-			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
-		}
-
-		for _, q := range storagePolicyQuotas.Items {
-			for i := range q.Status.SCLevelQuotaStatuses {
-				if q.Status.SCLevelQuotaStatuses[i].StorageClassName == scName {
-					return nil
-				}
-			}
-		}
-
-	} else {
-		resourceQuotas := &corev1.ResourceQuotaList{}
-		if err := v.client.List(ctx, resourceQuotas, ctrlclient.InNamespace(vm.Namespace)); err != nil {
-			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
-		}
-
-		prefix := scName + storageResourceQuotaStrPattern
-		for _, resourceQuota := range resourceQuotas.Items {
-			for resourceName := range resourceQuota.Spec.Hard {
-				if strings.HasPrefix(resourceName.String(), prefix) {
-					return nil
-				}
-			}
-		}
+	ok, err := spqutil.IsStorageClassInNamespace(ctx, v.client, sc, vm.Namespace)
+	if err != nil {
+		return append(allErrs, field.Invalid(scPath, scName, err.Error()))
 	}
 
-	return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotAssignedFmt, vm.Namespace)))
+	if !ok {
+		allErrs = append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotAssignedFmt, vm.Namespace)))
+	}
+
+	return allErrs
 }
 
 func (v validator) validateCrypto(

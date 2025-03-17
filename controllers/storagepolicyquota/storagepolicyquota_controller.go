@@ -126,12 +126,11 @@ func (r *Reconciler) ReconcileNormal(
 		return err
 	}
 
-	// Get the list of storage classes for the provided policy ID.
-	objs, err := spqutil.GetStorageClassesForPolicy(
+	// Get the list of storage classes for the provided policy quota.
+	objs, err := spqutil.GetStorageClassesForPolicyQuota(
 		ctx,
 		r.Client,
-		src.Namespace,
-		src.Spec.StoragePolicyId)
+		src)
 	if err != nil {
 		return err
 	}

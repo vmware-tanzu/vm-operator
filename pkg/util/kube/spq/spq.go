@@ -82,6 +82,40 @@ func GetStorageClassesForPolicy(
 	return matches, nil
 }
 
+// GetStorageClassesForPolicyQuota returns the StorageClass resources that reference
+// the provided StoragePolicyQuota. These are StorageClasses that have been associated
+// with the namespace.
+func GetStorageClassesForPolicyQuota(
+	ctx context.Context,
+	k8sClient client.Client,
+	spq *spqv1.StoragePolicyQuota) ([]storagev1.StorageClass, error) {
+
+	var obj storagev1.StorageClassList
+	if err := k8sClient.List(ctx, &obj); err != nil {
+		return nil, client.IgnoreNotFound(err)
+	}
+
+	isSCAssociated := func(scName string) bool {
+		// Only expect a few entries.
+		for _, s := range spq.Status.SCLevelQuotaStatuses {
+			if s.StorageClassName == scName {
+				return true
+			}
+		}
+		return false
+	}
+
+	var matches []storagev1.StorageClass
+	for i := range obj.Items {
+		o := obj.Items[i]
+		if spq.Spec.StoragePolicyId == o.Parameters[storageClassParamPolicyID] && isSCAssociated(o.Name) {
+			matches = append(matches, o)
+		}
+	}
+
+	return matches, nil
+}
+
 // GetStoragePolicyIDFromClass returns the storage policy ID for the named
 // storage class.
 func GetStoragePolicyIDFromClass(

@@ -323,6 +323,120 @@ var _ = Describe("NotFoundInNamespace", func() {
 	})
 })
 
+var _ = Describe("GetStorageClassesForPolicyQuota", func() {
+	var (
+		ctx         context.Context
+		client      ctrlclient.Client
+		withObjects []ctrlclient.Object
+		withFuncs   interceptor.Funcs
+		namespace   string
+		name        string
+		ok          bool
+		err         error
+		sqp         *spqv1.StoragePolicyQuota
+		sc          []storagev1.StorageClass
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContext()
+		namespace = defaultNamespace
+		name = myStorageClass
+		withFuncs = interceptor.Funcs{}
+		withObjects = []ctrlclient.Object{
+			&corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: namespace,
+				},
+			},
+			&storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+				},
+				Parameters: map[string]string{
+					"storagePolicyID": "my-policy-id",
+				},
+			},
+			&storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name + "-other",
+				},
+				Parameters: map[string]string{
+					"storagePolicyID": "my-other-policy-id",
+				},
+			},
+		}
+
+		sqp = &spqv1.StoragePolicyQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      name + "-storagepolicyquota",
+			},
+			Spec: spqv1.StoragePolicyQuotaSpec{
+				StoragePolicyId: "my-policy-id",
+			},
+		}
+	})
+
+	JustBeforeEach(func() {
+		client = builder.NewFakeClientWithInterceptors(withFuncs, withObjects...)
+		sc, err = spqutil.GetStorageClassesForPolicyQuota(ctx, client, sqp)
+	})
+
+	When("listing storage classes returns an error", func() {
+		BeforeEach(func() {
+			withFuncs.List = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				list ctrlclient.ObjectList,
+				opts ...ctrlclient.ListOption) error {
+
+				if _, ok := list.(*storagev1.StorageClassList); ok {
+					return errors.New(fakeString)
+				}
+
+				return client.List(ctx, list, opts...)
+			}
+		})
+
+		It("should return an error", func() {
+			Expect(err).To(MatchError(fakeString))
+			Expect(ok).To(BeFalse())
+			Expect(sc).To(BeEmpty())
+		})
+	})
+
+	When("storage class is not part of policy quota", func() {
+		BeforeEach(func() {
+			sqp.Status.SCLevelQuotaStatuses = []spqv1.SCLevelQuotaStatus{
+				{
+					StorageClassName: "some-other-other-storage-class",
+				},
+			}
+		})
+
+		It("should not return storage class", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sc).To(BeEmpty())
+		})
+	})
+
+	When("storage class is a part of policy quota", func() {
+		BeforeEach(func() {
+			sqp.Status.SCLevelQuotaStatuses = []spqv1.SCLevelQuotaStatus{
+				{
+					StorageClassName: name,
+				},
+			}
+		})
+
+		It("should return storage class", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sc).To(HaveLen(1))
+			Expect(sc[0].Name).To(Equal(name))
+		})
+	})
+})
+
 var _ = Describe("GetStoragePolicyIDFromClass", func() {
 	var (
 		ctx         context.Context

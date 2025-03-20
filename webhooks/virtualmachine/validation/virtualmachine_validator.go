@@ -618,6 +618,7 @@ func (v validator) validateNetwork(
 	return allErrs
 }
 
+//nolint:gocyclo
 func (v validator) validateNetworkInterfaceSpec(
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
@@ -658,7 +659,7 @@ func (v validator) validateNetworkInterfaceSpec(
 		}
 	}
 
-	if ipv4 := interfaceSpec.Gateway4; ipv4 != "" {
+	if ipv4 := interfaceSpec.Gateway4; ipv4 != "" && ipv4 != "disabled" {
 		p := interfacePath.Child("gateway4")
 
 		if len(ipv4Addrs) == 0 {
@@ -670,7 +671,7 @@ func (v validator) validateNetworkInterfaceSpec(
 		}
 	}
 
-	if ipv6 := interfaceSpec.Gateway6; ipv6 != "" {
+	if ipv6 := interfaceSpec.Gateway6; ipv6 != "" && ipv6 != "disabled" {
 		p := interfacePath.Child("gateway6")
 
 		if len(ipv6Addrs) == 0 {

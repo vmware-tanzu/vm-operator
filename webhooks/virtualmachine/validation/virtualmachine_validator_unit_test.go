@@ -1774,6 +1774,30 @@ func unitTestsValidateCreate() {
 				},
 			),
 
+			Entry("allow static without gateways",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							HostName: "my-vm",
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Addresses: []string{
+										"192.168.1.100/24",
+										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
+									},
+									DHCP4:    false,
+									DHCP6:    false,
+									Gateway4: "disabled",
+									Gateway6: "disabled",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
 			Entry("allow guestDeviceName, static address, mtu, nameservers, routes and searchDomains when bootstrap is CloudInit",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

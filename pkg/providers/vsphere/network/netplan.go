@@ -41,8 +41,10 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, err
 			for i := range r.IPConfigs {
 				ipConfig := r.IPConfigs[i]
 				if ipConfig.IsIPv4 {
-					if npEth.Gateway4 == nil || *npEth.Gateway4 == "" {
-						npEth.Gateway4 = &ipConfig.Gateway
+					if ipConfig.Gateway != "" {
+						if npEth.Gateway4 == nil || *npEth.Gateway4 == "" {
+							npEth.Gateway4 = &ipConfig.Gateway
+						}
 					}
 					npEth.Addresses = append(
 						npEth.Addresses,
@@ -57,8 +59,10 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, err
 			for i := range r.IPConfigs {
 				ipConfig := r.IPConfigs[i]
 				if !ipConfig.IsIPv4 {
-					if npEth.Gateway6 == nil || *npEth.Gateway6 == "" {
-						npEth.Gateway6 = &ipConfig.Gateway
+					if ipConfig.Gateway != "" {
+						if npEth.Gateway6 == nil || *npEth.Gateway6 == "" {
+							npEth.Gateway6 = &ipConfig.Gateway
+						}
 					}
 					npEth.Addresses = append(
 						npEth.Addresses,

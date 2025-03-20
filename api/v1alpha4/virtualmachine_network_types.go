@@ -100,12 +100,11 @@ type VirtualMachineNetworkInterfaceSpec struct {
 
 	// Gateway4 is the default, IP4 gateway for this interface.
 	//
+	// If unset, the gateway from the network provider will be used. However,
+	// if set to "None", the network provider gateway will be ignored.
+	//
 	// Please note this field is only supported if the network connection
 	// supports manual IP allocation.
-	//
-	// If the network connection supports manual IP allocation and the
-	// Addresses field includes at least one IP4 address, then this field
-	// is required.
 	//
 	// Please note the IP address must include the network prefix length, ex.
 	// 192.168.0.1/24.
@@ -117,12 +116,11 @@ type VirtualMachineNetworkInterfaceSpec struct {
 
 	// Gateway6 is the primary IP6 gateway for this interface.
 	//
+	// If unset, the gateway from the network provider will be used. However,
+	// if set to "None", the network provider gateway will be ignored.
+	//
 	// Please note this field is only supported if the network connection
 	// supports manual IP allocation.
-	//
-	// If the network connection supports manual IP allocation and the
-	// Addresses field includes at least one IP6 address, then this field
-	// is required.
 	//
 	// Please note the IP address must include the network prefix length, ex.
 	// 2001:db8:101::1/64.

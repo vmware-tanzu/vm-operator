@@ -159,6 +159,8 @@ func CreateConfigSpecForPlacement(
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	storageClassesToIDs map[string]string) (vimtypes.VirtualMachineConfigSpec, error) {
 
+	pciDevKey := pciDevicesStartDeviceKey - 28000
+
 	deviceChangeCopy := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(configSpec.DeviceChange))
 	for _, devChange := range configSpec.DeviceChange {
 		if spec := devChange.GetVirtualDeviceConfigSpec(); spec != nil {
@@ -166,6 +168,13 @@ func CreateConfigSpecForPlacement(
 			// prior status quo until those issues get sorted out.
 			if util.IsEthernetCard(spec.Device) {
 				continue
+			}
+
+			if spec.Device.GetVirtualDevice().Key == 0 {
+				if util.IsDeviceDynamicDirectPathIO(spec.Device) || util.IsDeviceNvidiaVgpu(spec.Device) {
+					spec.Device.GetVirtualDevice().Key = pciDevKey
+					pciDevKey--
+				}
 			}
 		}
 		deviceChangeCopy = append(deviceChangeCopy, devChange)

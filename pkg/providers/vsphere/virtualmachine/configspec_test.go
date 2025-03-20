@@ -157,7 +157,7 @@ var _ = Describe("CreateConfigSpec", func() {
 			It("config spec has expected uuids", func() {
 				Expect(configSpec.Uuid).ToNot(BeEmpty())
 				Expect(configSpec.Uuid).To(Equal(vm.Spec.BiosUUID))
-				Expect(configSpec.InstanceUuid).To(BeEquivalentTo(vm.Spec.InstanceUUID))
+				Expect(configSpec.InstanceUuid).To(Equal(vm.Spec.InstanceUUID))
 			})
 		})
 
@@ -447,6 +447,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				Expect(configSpec.CpuAllocation.Limit).ToNot(BeNil())
 				Expect(*configSpec.CpuAllocation.Reservation).To(Equal(int64(200)))
 				Expect(*configSpec.CpuAllocation.Limit).To(Equal(int64(-1)))
+				Expect(configSpec.CpuAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
 
 				Expect(configSpec.MemoryAllocation).ToNot(BeNil())
 				Expect(configSpec.MemoryAllocation.Reservation).ToNot(BeNil())
@@ -539,6 +540,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			dSpec0 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
 			_, ok := dSpec0.Device.(*vimtypes.VirtualPCIPassthrough)
 			Expect(ok).To(BeTrue())
+			Expect(dSpec0.Device.GetVirtualDevice().Key).ToNot(BeZero())
 			/* Removed until PlaceVmsXCluster() bugs get fixed.
 			dSpec1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
 			_, ok = dSpec1.Device.(*vimtypes.VirtualVmxnet3)

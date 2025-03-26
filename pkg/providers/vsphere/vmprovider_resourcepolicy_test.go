@@ -17,6 +17,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -178,6 +179,20 @@ func resourcePolicyTests() {
 					assertSetResourcePolicy(resourcePolicy, true)
 				})
 
+				It("should recreate missing cluster modules", func() {
+					assertSetResourcePolicy(resourcePolicy, true)
+					status := resourcePolicy.Status.DeepCopy()
+
+					Expect(cluster.NewManager(ctx.RestClient).DeleteModule(ctx, status.ClusterModules[0].ModuleUuid)).To(Succeed())
+
+					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+					Expect(resourcePolicy.Status.ClusterModules[1:]).To(HaveExactElements(status.ClusterModules[1:]))
+					Expect(resourcePolicy.Status.ClusterModules[0].ClusterMoID).To(Equal(status.ClusterModules[0].ClusterMoID))
+					Expect(resourcePolicy.Status.ClusterModules[0].GroupName).To(Equal(status.ClusterModules[0].GroupName))
+					Expect(resourcePolicy.Status.ClusterModules[0].ModuleUuid).ToNot(Equal(status.ClusterModules[0].ModuleUuid))
+					assertSetResourcePolicy(resourcePolicy, true)
+				})
+
 				It("should create additional cluster modules", func() {
 					assertSetResourcePolicy(resourcePolicy, true)
 					resourcePolicy.Spec.ClusterModuleGroups = append(resourcePolicy.Spec.ClusterModuleGroups, "another-NodeGroup2")
@@ -201,6 +216,25 @@ func resourcePolicyTests() {
 							Expect(resourcePolicy.Status.ClusterModules).ToNot(ContainElement(clusterModule))
 						}
 					}
+				})
+
+				It("should delete removed clusters", func() {
+					assertSetResourcePolicy(resourcePolicy, true)
+					status := resourcePolicy.Status.DeepCopy()
+
+					zones, err := topology.GetZones(ctx, ctx.Client, nsInfo.Namespace)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ctx.Client.Delete(ctx, &zones[0])).To(Succeed())
+					newZoneNames := []string{}
+					for _, zone := range zones[1:] {
+						newZoneNames = append(newZoneNames, zone.GetName())
+					}
+					ctx.ZoneNames = newZoneNames
+					ctx.ZoneCount = len(newZoneNames)
+
+					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+					assertSetResourcePolicy(resourcePolicy, true)
+					Expect(resourcePolicy.Status.ClusterModules).ToNot(HaveExactElements(status.ClusterModules))
 				})
 			})
 

@@ -64,13 +64,12 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 		clusterReferences = append(clusterReferences, clusterRef)
 	}
 
-	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
-	err = vs.reconcileClusterModules(ctx, clusterModuleProvider, clusterReferences, resourcePolicy)
-	if err != nil {
-		errs = append(errs, err)
+	if len(errs) > 0 {
+		return apierrorsutil.NewAggregate(errs)
 	}
 
-	return apierrorsutil.NewAggregate(errs)
+	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
+	return vs.reconcileClusterModules(ctx, clusterModuleProvider, clusterReferences, resourcePolicy)
 }
 
 // DeleteVirtualMachineSetResourcePolicy deletes the VirtualMachineSetPolicy.

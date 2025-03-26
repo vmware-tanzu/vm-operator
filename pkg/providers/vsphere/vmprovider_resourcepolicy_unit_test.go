@@ -8,8 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,78 +19,74 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
-func Test_vSphereVMProvider_reconcileClusterModules(t *testing.T) {
+var _ = Describe("vSphereVMProvider.reconcileClusterModules", func() {
 	ctx := context.Background()
 
 	scheme := runtime.NewScheme()
 	_ = vmopv1.AddToScheme(scheme)
 
-	tests := []struct {
-		name                     string
-		objs                     []client.Object
-		existingModules          map[string]fakeClusterModule
-		computeClusterReferences []vimtypes.ManagedObjectReference
-		resourcePolicy           *vmopv1.VirtualMachineSetResourcePolicy
-		wantClusterModuleStatus  []vmopv1.VSphereClusterModuleStatus
-		wantErr                  bool
-	}{
-		{
-			name:                     "don't create a module when having no clusterref",
-			objs:                     []client.Object{},
-			existingModules:          map[string]fakeClusterModule{},
-			computeClusterReferences: []vimtypes.ManagedObjectReference{},
-			resourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
+	DescribeTable("Should reconcile and ", func(
+		computeClusterReferences []vimtypes.ManagedObjectReference,
+		resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy,
+		wantClusterModuleStatus []vmopv1.VSphereClusterModuleStatus,
+		objs []client.Object,
+		existingModules map[string]fakeClusterModule,
+	) {
+		clusterModProvider := &fakeClusterModuleProvider{
+			modules: existingModules,
+		}
+		vs := &vSphereVMProvider{
+			k8sClient: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&vmopv1.VirtualMachineSetResourcePolicy{}).
+				WithObjects(objs...).Build(),
+		}
+
+		Expect(vs.reconcileClusterModules(ctx, clusterModProvider, computeClusterReferences, resourcePolicy)).ToNot(HaveOccurred())
+		Expect(resourcePolicy.Status.ClusterModules).To(BeEquivalentTo(wantClusterModuleStatus))
+		Expect(clusterModProvider.modules).To(HaveLen(len(resourcePolicy.Status.ClusterModules)))
+	},
+		Entry("not create a cluster module when having no clusterref",
+			[]vimtypes.ManagedObjectReference{},
+			&vmopv1.VirtualMachineSetResourcePolicy{Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
 				ClusterModuleGroups: []string{"zero"},
 			}},
-			wantClusterModuleStatus: nil,
-			wantErr:                 false,
-		},
-		{
-			name:                     "create a module when having a clusterref",
-			objs:                     []client.Object{},
-			existingModules:          map[string]fakeClusterModule{},
-			computeClusterReferences: []vimtypes.ManagedObjectReference{{Value: "first"}},
-			resourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
+			nil,
+			[]client.Object{},
+			map[string]fakeClusterModule{},
+		),
+		Entry("create a cluster module when having a clusterref",
+			[]vimtypes.ManagedObjectReference{{Value: "first"}},
+			&vmopv1.VirtualMachineSetResourcePolicy{Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
 				ClusterModuleGroups: []string{"zero"},
 			}},
-			wantClusterModuleStatus: []vmopv1.VSphereClusterModuleStatus{
+			[]vmopv1.VSphereClusterModuleStatus{
 				{GroupName: "zero", ModuleUuid: "created-0", ClusterMoID: "first"},
 			},
-			wantErr: false,
-		},
-		{
-			name:            "create multiple modules when having multiple clusterrefs",
-			objs:            []client.Object{},
-			existingModules: map[string]fakeClusterModule{},
-			computeClusterReferences: []vimtypes.ManagedObjectReference{
+			[]client.Object{},
+			map[string]fakeClusterModule{},
+		),
+		Entry("create multiple modules when having multiple clusterrefs",
+			[]vimtypes.ManagedObjectReference{
 				{Value: "first"},
 				{Value: "second"},
 			},
-			resourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
+			&vmopv1.VirtualMachineSetResourcePolicy{Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
 				ClusterModuleGroups: []string{"zero", "one"},
 			}},
-			wantClusterModuleStatus: []vmopv1.VSphereClusterModuleStatus{
+			[]vmopv1.VSphereClusterModuleStatus{
 				{GroupName: "zero", ModuleUuid: "created-0", ClusterMoID: "first"},
 				{GroupName: "one", ModuleUuid: "created-1", ClusterMoID: "first"},
 				{GroupName: "zero", ModuleUuid: "created-2", ClusterMoID: "second"},
 				{GroupName: "one", ModuleUuid: "created-3", ClusterMoID: "second"},
 			},
-			wantErr: false,
-		},
-		{
-			name: "preserve when no changes",
-			objs: []client.Object{},
-			existingModules: map[string]fakeClusterModule{
-				"pre-existing-0": {clusterRef: "first"},
-				"pre-existing-1": {clusterRef: "first"},
-				"pre-existing-2": {clusterRef: "second"},
-				"pre-existing-3": {clusterRef: "second"},
-			},
-			computeClusterReferences: []vimtypes.ManagedObjectReference{
+			[]client.Object{},
+			map[string]fakeClusterModule{},
+		),
+		Entry("preserve existing cluster modules when not having changes",
+			[]vimtypes.ManagedObjectReference{
 				{Value: "first"},
 				{Value: "second"},
 			},
-			resourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{
+			&vmopv1.VirtualMachineSetResourcePolicy{
 				Spec: vmopv1.VirtualMachineSetResourcePolicySpec{ClusterModuleGroups: []string{"zero", "one"}},
 				Status: vmopv1.VirtualMachineSetResourcePolicyStatus{ClusterModules: []vmopv1.VSphereClusterModuleStatus{
 					{GroupName: "zero", ModuleUuid: "pre-existing-0", ClusterMoID: "first"},
@@ -99,27 +95,25 @@ func Test_vSphereVMProvider_reconcileClusterModules(t *testing.T) {
 					{GroupName: "one", ModuleUuid: "pre-existing-3", ClusterMoID: "second"},
 				}},
 			},
-			wantClusterModuleStatus: []vmopv1.VSphereClusterModuleStatus{
+			[]vmopv1.VSphereClusterModuleStatus{
 				{GroupName: "zero", ModuleUuid: "pre-existing-0", ClusterMoID: "first"},
 				{GroupName: "one", ModuleUuid: "pre-existing-1", ClusterMoID: "first"},
 				{GroupName: "zero", ModuleUuid: "pre-existing-2", ClusterMoID: "second"},
 				{GroupName: "one", ModuleUuid: "pre-existing-3", ClusterMoID: "second"},
 			},
-			wantErr: false,
-		},
-		{
-			name: "delete cluster modules when cluster reference got removed",
-			objs: []client.Object{},
-			existingModules: map[string]fakeClusterModule{
+			[]client.Object{},
+			map[string]fakeClusterModule{
 				"pre-existing-0": {clusterRef: "first"},
 				"pre-existing-1": {clusterRef: "first"},
 				"pre-existing-2": {clusterRef: "second"},
 				"pre-existing-3": {clusterRef: "second"},
 			},
-			computeClusterReferences: []vimtypes.ManagedObjectReference{
+		),
+		Entry("delete cluster modules when cluster reference got removed",
+			[]vimtypes.ManagedObjectReference{
 				{Value: "first"},
 			},
-			resourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{
+			&vmopv1.VirtualMachineSetResourcePolicy{
 				Spec: vmopv1.VirtualMachineSetResourcePolicySpec{ClusterModuleGroups: []string{"zero", "one"}},
 				Status: vmopv1.VirtualMachineSetResourcePolicyStatus{ClusterModules: []vmopv1.VSphereClusterModuleStatus{
 					{GroupName: "zero", ModuleUuid: "pre-existing-0", ClusterMoID: "first"},
@@ -128,26 +122,24 @@ func Test_vSphereVMProvider_reconcileClusterModules(t *testing.T) {
 					{GroupName: "one", ModuleUuid: "pre-existing-3", ClusterMoID: "second"},
 				}},
 			},
-			wantClusterModuleStatus: []vmopv1.VSphereClusterModuleStatus{
+			[]vmopv1.VSphereClusterModuleStatus{
 				{GroupName: "zero", ModuleUuid: "pre-existing-0", ClusterMoID: "first"},
 				{GroupName: "one", ModuleUuid: "pre-existing-1", ClusterMoID: "first"},
 			},
-			wantErr: false,
-		},
-		{
-			name: "delete cluster modules when group got removed got removed",
-			objs: []client.Object{},
-			existingModules: map[string]fakeClusterModule{
+			[]client.Object{},
+			map[string]fakeClusterModule{
 				"pre-existing-0": {clusterRef: "first"},
 				"pre-existing-1": {clusterRef: "first"},
 				"pre-existing-2": {clusterRef: "second"},
 				"pre-existing-3": {clusterRef: "second"},
 			},
-			computeClusterReferences: []vimtypes.ManagedObjectReference{
+		),
+		Entry("delete cluster modules when group got removed got removed",
+			[]vimtypes.ManagedObjectReference{
 				{Value: "first"},
 				{Value: "second"},
 			},
-			resourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{
+			&vmopv1.VirtualMachineSetResourcePolicy{
 				Spec: vmopv1.VirtualMachineSetResourcePolicySpec{ClusterModuleGroups: []string{"one"}},
 				Status: vmopv1.VirtualMachineSetResourcePolicyStatus{ClusterModules: []vmopv1.VSphereClusterModuleStatus{
 					{GroupName: "zero", ModuleUuid: "pre-existing-0", ClusterMoID: "first"},
@@ -156,48 +148,36 @@ func Test_vSphereVMProvider_reconcileClusterModules(t *testing.T) {
 					{GroupName: "one", ModuleUuid: "pre-existing-3", ClusterMoID: "second"},
 				}},
 			},
-			wantClusterModuleStatus: []vmopv1.VSphereClusterModuleStatus{
+			[]vmopv1.VSphereClusterModuleStatus{
 				{GroupName: "one", ModuleUuid: "pre-existing-1", ClusterMoID: "first"},
 				{GroupName: "one", ModuleUuid: "pre-existing-3", ClusterMoID: "second"},
 			},
-			wantErr: false,
-		},
-		{
-			name:            "create cluster module when it does not exist anymore",
-			objs:            []client.Object{},
-			existingModules: map[string]fakeClusterModule{},
-			computeClusterReferences: []vimtypes.ManagedObjectReference{
+			[]client.Object{},
+			map[string]fakeClusterModule{
+				"pre-existing-0": {clusterRef: "first"},
+				"pre-existing-1": {clusterRef: "first"},
+				"pre-existing-2": {clusterRef: "second"},
+				"pre-existing-3": {clusterRef: "second"},
+			},
+		),
+		Entry("recreate a cluster module when it does not exist anymore",
+			[]vimtypes.ManagedObjectReference{
 				{Value: "first"},
 			},
-			resourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{
+			&vmopv1.VirtualMachineSetResourcePolicy{
 				Spec: vmopv1.VirtualMachineSetResourcePolicySpec{ClusterModuleGroups: []string{"zero"}},
 				Status: vmopv1.VirtualMachineSetResourcePolicyStatus{ClusterModules: []vmopv1.VSphereClusterModuleStatus{
 					{GroupName: "zero", ModuleUuid: "not-existing-anymore-0", ClusterMoID: "first"},
 				}},
 			},
-			wantClusterModuleStatus: []vmopv1.VSphereClusterModuleStatus{
+			[]vmopv1.VSphereClusterModuleStatus{
 				{GroupName: "zero", ModuleUuid: "created-0", ClusterMoID: "first"},
 			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-			clusterModProvider := &fakeClusterModuleProvider{
-				modules: tt.existingModules,
-			}
-			vs := &vSphereVMProvider{
-				k8sClient: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&vmopv1.VirtualMachineSetResourcePolicy{}).
-					WithObjects(tt.objs...).Build(),
-			}
-
-			g.Expect(vs.reconcileClusterModules(ctx, clusterModProvider, tt.computeClusterReferences, tt.resourcePolicy)).ToNot(HaveOccurred())
-			g.Expect(tt.resourcePolicy.Status.ClusterModules).To(BeEquivalentTo(tt.wantClusterModuleStatus))
-			g.Expect(clusterModProvider.modules).To(HaveLen(len(tt.resourcePolicy.Status.ClusterModules)))
-		})
-	}
-}
+			[]client.Object{},
+			map[string]fakeClusterModule{},
+		),
+	)
+})
 
 type fakeClusterModule struct {
 	clusterRef string

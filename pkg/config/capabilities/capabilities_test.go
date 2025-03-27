@@ -141,6 +141,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyWorkloadIsolation: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyMutableNetworks: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -150,6 +153,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.BringYourOwnEncryptionKey = true
 							config.Features.TKGMultipleCL = true
 							config.Features.WorkloadDomainIsolation = true
+							config.Features.MutableNetworks = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -163,6 +167,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyMutableNetworks, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeTrue())
 					})
 				})
 
@@ -178,6 +185,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyMutableNetworks, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeTrue())
 					})
 				})
 			})
@@ -202,6 +212,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyWorkloadIsolation: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyMutableNetworks: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -218,6 +231,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
 					})
+					Specify(capabilities.CapabilityKeyMutableNetworks, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeFalse())
+					})
 				})
 
 				When("the capabilities are different", func() {
@@ -226,6 +242,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.BringYourOwnEncryptionKey = true
 							config.Features.TKGMultipleCL = true
 							config.Features.WorkloadDomainIsolation = true
+							config.Features.MutableNetworks = true
 						})
 					})
 					Specify("capabilities changed", func() {
@@ -239,6 +256,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyMutableNetworks, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeFalse())
 					})
 				})
 			})
@@ -416,6 +436,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyWorkloadIsolation: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyMutableNetworks: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -432,6 +455,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.TKGMultipleCL = true
 					config.Features.WorkloadDomainIsolation = true
+					config.Features.MutableNetworks = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -447,6 +471,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyMutableNetworks, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -455,11 +482,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.BringYourOwnEncryptionKey = false
 					config.Features.TKGMultipleCL = false
 					config.Features.WorkloadDomainIsolation = false
+					config.Features.MutableNetworks = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,TKGMultipleCL=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,MutableNetworks=true,TKGMultipleCL=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -469,6 +497,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyWorkloadIsolation, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyMutableNetworks, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeFalse())
 			})
 		})
 	})

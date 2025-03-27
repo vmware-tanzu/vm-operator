@@ -1241,7 +1241,7 @@ func (v validator) validateImmutableReserved(
 }
 
 func (v validator) validateImmutableNetwork(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -1250,6 +1250,10 @@ func (v validator) validateImmutableNetwork(
 	newNetwork := vm.Spec.Network
 
 	if oldNetwork == nil && newNetwork == nil {
+		return allErrs
+	}
+
+	if pkgcfg.FromContext(ctx).Features.MutableNetworks {
 		return allErrs
 	}
 

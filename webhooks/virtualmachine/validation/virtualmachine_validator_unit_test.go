@@ -3990,75 +3990,156 @@ func unitTestsValidateUpdate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("disallow adding Network Interface",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-								},
-							},
-						}
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-								},
-								{
-									Name: "eth1",
-								},
-							},
-						}
-					},
-					validate: doValidateWithMsg(`spec.network.interfaces: Forbidden: network interfaces cannot be added or removed`),
-				},
-			),
-			Entry("disallow Network Interface Name change",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth0",
-								},
-							},
-						}
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name: "eth1",
-								},
-							},
-						}
-					},
-					validate: doValidateWithMsg(`spec.network.interfaces[0].name: Forbidden: field is immutable`),
-				},
-			),
-			Entry("disallow Network Interface Network ref change",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name:    "eth0",
-									Network: &common.PartialObjectRef{Name: "net1"},
-								},
-							},
-						}
-						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-								{
-									Name:    "eth0",
-									Network: &common.PartialObjectRef{Name: "net99"},
-								},
-							},
-						}
-					},
-					validate: doValidateWithMsg(`spec.network.interfaces[0].network: Forbidden: field is immutable`),
-				},
-			),
 		)
+
+		Context("MutableNetworks is disabled", func() {
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.MutableNetworks = false
+				})
+			})
+
+			DescribeTable("disallow updates", doTest,
+				Entry("disallow adding Network Interface",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+									},
+								},
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+									},
+									{
+										Name: "eth1",
+									},
+								},
+							}
+						},
+						validate: doValidateWithMsg(`spec.network.interfaces: Forbidden: network interfaces cannot be added or removed`),
+					},
+				),
+				Entry("disallow Network Interface Name change",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+									},
+								},
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth1",
+									},
+								},
+							}
+						},
+						validate: doValidateWithMsg(`spec.network.interfaces[0].name: Forbidden: field is immutable`),
+					},
+				),
+				Entry("disallow Network Interface Network ref change",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name:    "eth0",
+										Network: &common.PartialObjectRef{Name: "net1"},
+									},
+								},
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name:    "eth0",
+										Network: &common.PartialObjectRef{Name: "net99"},
+									},
+								},
+							}
+						},
+						validate: doValidateWithMsg(`spec.network.interfaces[0].network: Forbidden: field is immutable`),
+					},
+				),
+			)
+		})
+
+		Context("MutableNetworks is enabled", func() {
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.MutableNetworks = true
+				})
+			})
+
+			DescribeTable("allow updates", doTest,
+
+				// When Mutable_Networks Enabled
+				Entry("allow adding Network Interface",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.MutableNetworks = true
+							})
+
+							ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+									},
+								},
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+									},
+									{
+										Name: "eth1",
+									},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("allow Network Interface Network ref change",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.MutableNetworks = true
+							})
+
+							ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name:    "eth0",
+										Network: &common.PartialObjectRef{Name: "net1"},
+									},
+								},
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name:    "eth0",
+										Network: &common.PartialObjectRef{Name: "net99"},
+									},
+								},
+							}
+						},
+						expectAllowed: true,
+					},
+				),
+			)
+		})
 	})
 }
 

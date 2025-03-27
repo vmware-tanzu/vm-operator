@@ -183,6 +183,7 @@ type FeatureStates struct {
 	BringYourOwnEncryptionKey bool // FSS_WCP_VMSERVICE_BYOK
 	SVAsyncUpgrade            bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
 	FastDeploy                bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
+	MutableNetworks           bool
 }
 
 type InstanceStorage struct {

@@ -3121,6 +3121,7 @@ func Convert_v1alpha4_VirtualMachineSetResourcePolicySpec_To_v1alpha2_VirtualMac
 
 func autoConvert_v1alpha2_VirtualMachineSetResourcePolicyStatus_To_v1alpha4_VirtualMachineSetResourcePolicyStatus(in *VirtualMachineSetResourcePolicyStatus, out *v1alpha4.VirtualMachineSetResourcePolicyStatus, s conversion.Scope) error {
 	out.ClusterModules = *(*[]v1alpha4.VSphereClusterModuleStatus)(unsafe.Pointer(&in.ClusterModules))
+	out.FolderID = in.FolderID
 	return nil
 }
 
@@ -3131,6 +3132,7 @@ func Convert_v1alpha2_VirtualMachineSetResourcePolicyStatus_To_v1alpha4_VirtualM
 
 func autoConvert_v1alpha4_VirtualMachineSetResourcePolicyStatus_To_v1alpha2_VirtualMachineSetResourcePolicyStatus(in *v1alpha4.VirtualMachineSetResourcePolicyStatus, out *VirtualMachineSetResourcePolicyStatus, s conversion.Scope) error {
 	out.ClusterModules = *(*[]VSphereClusterModuleStatus)(unsafe.Pointer(&in.ClusterModules))
+	out.FolderID = in.FolderID
 	return nil
 }
 

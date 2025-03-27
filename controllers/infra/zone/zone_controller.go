@@ -130,13 +130,18 @@ func (r *Reconciler) ReconcileDelete(
 				Type:  "Folder",
 				Value: val,
 			},
-			fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
+			fmt.Sprintf(
+				"%s:%s/%s",
+				"Zone",
+				obj.Namespace,
+				obj.Name)); err != nil {
 
 			if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
-				// We don't ignore watcher.ErrNoWatcher here to interlock with the vm watcher
-				// service that is in the process of restarting the watcher. This does mean
-				// that if watcher cannot start like because of invalid VC creds the finalizer
-				// won't be removed.
+				// Do not ignore watcher.ErrNoWatcher here to interlock with
+				// the VM watcher service when it is restarting the watcher.
+				//
+				// This means if the watcher cannot start, ex. invalid vC creds,
+				// the finalizer will not be removed.
 				return ctrl.Result{}, err
 			}
 		}
@@ -162,7 +167,11 @@ func (r *Reconciler) ReconcileNormal(
 				Type:  "Folder",
 				Value: val,
 			},
-			fmt.Sprintf("%s/%s", obj.Namespace, obj.Name)); err != nil {
+			fmt.Sprintf(
+				"%s:%s/%s",
+				"Zone",
+				obj.Namespace,
+				obj.Name)); err != nil {
 
 			if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
 				return ctrl.Result{}, err

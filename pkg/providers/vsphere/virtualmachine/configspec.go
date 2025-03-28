@@ -114,15 +114,8 @@ func CreateConfigSpec(
 		} else {
 			configSpec.CpuAllocation.Limit = ptr.To[int64](-1)
 		}
-	} else if configSpec.CpuAllocation == nil {
-		// Default to best effort.
-		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
-			Shares: &vimtypes.SharesInfo{
-				Level: vimtypes.SharesLevelNormal,
-			},
-			Reservation: ptr.To[int64](0),
-			Limit:       ptr.To[int64](-1),
-		}
+	} else {
+		initResourceAllocation(&configSpec.CpuAllocation)
 	}
 
 	// Populate the memory reservation and limits in the ConfigSpec if VAPI fields specify any.
@@ -145,42 +138,8 @@ func CreateConfigSpec(
 		} else {
 			configSpec.MemoryAllocation.Limit = ptr.To[int64](-1)
 		}
-	} else if configSpec.MemoryAllocation == nil {
-		// Default to best effort.
-		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
-			Shares: &vimtypes.SharesInfo{
-				Level: vimtypes.SharesLevelNormal,
-			},
-			Reservation: ptr.To[int64](0),
-			Limit:       ptr.To[int64](-1),
-		}
-	}
-
-	// The documentation for a ResourceAllocation object states that all (VM)
-	// fields must be set for certain APIs, including ImportVApp. A part of
-	// that API is used by the vpxd placement engine to construct fake VMs in
-	// order to support assignable hardware. Therefore:
-	//
-	// CPU allocation:
-	// - Ensure limit is set to -1 if there is a reservation.
-	//
-	// Memory allocation:
-	// - Ensure shares is not nil.
-	// - Ensure limit is set to -1 if there is a reservation.
-	if a := configSpec.CpuAllocation; a != nil {
-		if a.Reservation != nil && a.Limit == nil {
-			a.Limit = ptr.To[int64](-1)
-		}
-	}
-	if a := configSpec.MemoryAllocation; a != nil {
-		if a.Shares == nil {
-			a.Shares = &vimtypes.SharesInfo{
-				Level: vimtypes.SharesLevelNormal,
-			}
-		}
-		if a.Reservation != nil && a.Limit == nil {
-			a.Limit = ptr.To[int64](-1)
-		}
+	} else {
+		initResourceAllocation(&configSpec.MemoryAllocation)
 	}
 
 	// If VM Spec guestID is specified, initially set the guest ID in ConfigSpec to ensure VM is created with the expected guest ID.
@@ -290,4 +249,29 @@ func ConfigSpecFromVMClassDevices(vmClassSpec *vmopv1.VirtualMachineClassSpec) v
 		})
 	}
 	return configSpec
+}
+
+func initResourceAllocation(ap **vimtypes.ResourceAllocationInfo) {
+	if *ap == nil {
+		*ap = &vimtypes.ResourceAllocationInfo{}
+	}
+	a := *ap
+
+	// The documentation for a ResourceAllocation object states that all (VM)
+	// fields must be set for certain APIs, including ImportVApp. A part of
+	// that API is used by the vpxd placement engine to construct fake VMs in
+	// order to support assignable hardware. Therefore:
+	// - default Shares level to normal
+	// - default Reservation/Limit to their best effort values
+	if a.Shares == nil {
+		a.Shares = &vimtypes.SharesInfo{
+			Level: vimtypes.SharesLevelNormal,
+		}
+	}
+	if a.Reservation == nil {
+		a.Reservation = ptr.To[int64](0)
+	}
+	if a.Limit == nil {
+		a.Limit = ptr.To[int64](-1)
+	}
 }

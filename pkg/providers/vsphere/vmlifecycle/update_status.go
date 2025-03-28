@@ -337,13 +337,11 @@ func MarkVMToolsRunningStatusCondition(
 
 	switch guestInfo.ToolsRunningStatus {
 	case string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsNotRunning):
-		msg := "VMware Tools is not running"
-		conditions.MarkFalse(vm, vmopv1.VirtualMachineToolsCondition, vmopv1.VirtualMachineToolsNotRunningReason, msg)
+		conditions.MarkFalse(vm, vmopv1.VirtualMachineToolsCondition, vmopv1.VirtualMachineToolsNotRunningReason, "VMware Tools is not running")
 	case string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsRunning), string(vimtypes.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts):
 		conditions.MarkTrue(vm, vmopv1.VirtualMachineToolsCondition)
 	default:
-		msg := "Unexpected VMware Tools running status"
-		conditions.MarkUnknown(vm, vmopv1.VirtualMachineToolsCondition, "Unknown", msg)
+		conditions.MarkUnknown(vm, vmopv1.VirtualMachineToolsCondition, "Unknown", "Unexpected VMware Tools running status")
 	}
 }
 
@@ -367,13 +365,13 @@ func MarkCustomizationInfoCondition(vm *vmopv1.VirtualMachine, guestInfo *vimtyp
 		if errorMsg == "" {
 			errorMsg = "vSphere VM Customization failed due to an unknown error."
 		}
-		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationFailedReason, errorMsg)
+		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationFailedReason, "%s", errorMsg)
 	default:
 		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
 		if errorMsg == "" {
 			errorMsg = "Unexpected VM Customization status"
 		}
-		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, "Unknown", errorMsg)
+		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, "Unknown", "%s", errorMsg)
 	}
 }
 func MarkReconciliationCondition(vm *vmopv1.VirtualMachine) {
@@ -422,7 +420,7 @@ func MarkBootstrapCondition(
 		c.Message = msg
 		conditions.Set(vm, c)
 	} else {
-		conditions.MarkFalse(vm, vmopv1.GuestBootstrapCondition, reason, msg)
+		conditions.MarkFalse(vm, vmopv1.GuestBootstrapCondition, reason, "%s", msg)
 	}
 }
 
@@ -992,10 +990,10 @@ func updateProbeStatus(
 		cond = conditions.TrueCondition(vmopv1.ReadyConditionType)
 	case probeResultFailure:
 		cond = conditions.FalseCondition(
-			vmopv1.ReadyConditionType, probeReasonNotReady, resultMsg)
+			vmopv1.ReadyConditionType, probeReasonNotReady, "%s", resultMsg)
 	default:
 		cond = conditions.UnknownCondition(
-			vmopv1.ReadyConditionType, probeReasonUnknown, resultMsg)
+			vmopv1.ReadyConditionType, probeReasonUnknown, "%s", resultMsg)
 	}
 
 	// Emit event whe the condition is added or its status changes.

@@ -179,7 +179,7 @@ func mirror(from Getter, targetCondition string, options ...MirrorOptions) *meta
 		case true:
 			condition = TrueCondition(targetCondition)
 		case false:
-			condition = FalseCondition(targetCondition, mirrorOpt.fallbackReason, mirrorOpt.fallbackMessage)
+			condition = FalseCondition(targetCondition, mirrorOpt.fallbackReason, "%s", mirrorOpt.fallbackMessage)
 		}
 	}
 

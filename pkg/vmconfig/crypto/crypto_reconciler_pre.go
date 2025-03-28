@@ -391,11 +391,11 @@ func setConditionAndReturnErr(args reconcileArgs, err error, r Reason) error {
 	} else if apierrors.IsNotFound(err) {
 		r = ReasonEncryptionClassNotFound
 	}
-	conditions.MarkFalse(
+	conditions.MarkError(
 		args.vm,
 		vmopv1.VirtualMachineEncryptionSynced,
 		r.String(),
-		err.Error())
+		err)
 	return err
 }
 

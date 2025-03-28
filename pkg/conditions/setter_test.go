@@ -19,6 +19,7 @@ package conditions
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -213,6 +214,16 @@ func TestMarkMethods(t *testing.T) {
 		Status:  metav1.ConditionFalse,
 		Reason:  "reasonBar",
 		Message: "messageBar",
+	}))
+
+	// test MarkError
+	tErr := fmt.Errorf("errorBar")
+	MarkError(&obj, "conditionBar", "reasonBar", tErr)
+	g.Expect(Get(obj, "conditionBar")).To(haveSameStateOf(&metav1.Condition{
+		Type:    "conditionBar",
+		Status:  metav1.ConditionFalse,
+		Reason:  "reasonBar",
+		Message: "errorBar",
 	}))
 
 	// test MarkUnknown

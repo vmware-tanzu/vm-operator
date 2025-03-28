@@ -1609,7 +1609,7 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 			})
 			It("sets condition false", func() {
 				expectedConditions := []metav1.Condition{
-					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationFailedReason, guestInfo.CustomizationInfo.ErrorMsg),
+					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationFailedReason, "%s", guestInfo.CustomizationInfo.ErrorMsg),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -1621,7 +1621,7 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 			})
 			It("sets condition false", func() {
 				expectedConditions := []metav1.Condition{
-					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, "Unknown", guestInfo.CustomizationInfo.ErrorMsg),
+					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, "Unknown", "%s", guestInfo.CustomizationInfo.ErrorMsg),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})

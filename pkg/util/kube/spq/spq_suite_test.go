@@ -28,4 +28,6 @@ const (
 	defaultNamespace = "default"
 	myStorageClass   = "my-storage-class"
 	fakeString       = "fake"
+	sc1PolicyID      = "my-storage-policy-id-1"
+	sc2PolicyID      = "my-storage-policy-id-2"
 )

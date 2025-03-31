@@ -6,7 +6,6 @@ package spq
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -55,7 +54,7 @@ func GetStorageClassesForPolicy(
 
 	var obj storagev1.StorageClassList
 	if err := k8sClient.List(ctx, &obj); err != nil {
-		return nil, client.IgnoreNotFound(err)
+		return nil, err
 	}
 
 	var matches []storagev1.StorageClass
@@ -65,17 +64,38 @@ func GetStorageClassesForPolicy(
 			ok, err := IsStorageClassInNamespace(
 				ctx,
 				k8sClient,
-				namespace,
-				o.Name)
+				&o,
+				namespace)
 			if err != nil {
-				var notFoundInNamespace NotFoundInNamespace
-				if !errors.As(err, &notFoundInNamespace) {
-					return nil, err
-				}
+				return nil, err
 			}
 			if ok {
 				matches = append(matches, o)
 			}
+		}
+	}
+
+	return matches, nil
+}
+
+// GetStorageClassesForPolicyQuota returns the StorageClass resources that reference
+// the provided StoragePolicyQuota. These are StorageClasses that have been associated
+// with the namespace.
+func GetStorageClassesForPolicyQuota(
+	ctx context.Context,
+	k8sClient client.Client,
+	spq *spqv1.StoragePolicyQuota) ([]storagev1.StorageClass, error) {
+
+	var obj storagev1.StorageClassList
+	if err := k8sClient.List(ctx, &obj); err != nil {
+		return nil, err
+	}
+
+	var matches []storagev1.StorageClass
+	for i := range obj.Items {
+		o := obj.Items[i]
+		if spq.Spec.StoragePolicyId == o.Parameters[storageClassParamPolicyID] {
+			matches = append(matches, o)
 		}
 	}
 
@@ -134,12 +154,19 @@ func GetStorageClassInNamespace(
 		return storagev1.StorageClass{}, err
 	}
 
-	ok, err := IsStorageClassInNamespace(ctx, k8sClient, namespace, sc.Name)
-	if ok {
-		return sc, nil
+	ok, err := IsStorageClassInNamespace(ctx, k8sClient, &sc, namespace)
+	if err != nil {
+		return storagev1.StorageClass{}, err
 	}
 
-	return storagev1.StorageClass{}, err
+	if !ok {
+		return storagev1.StorageClass{}, NotFoundInNamespace{
+			Namespace:    namespace,
+			StorageClass: name,
+		}
+	}
+
+	return sc, nil
 }
 
 // IsStorageClassInNamespace returns true if the provided storage class is
@@ -147,9 +174,15 @@ func GetStorageClassInNamespace(
 func IsStorageClassInNamespace(
 	ctx context.Context,
 	k8sClient client.Client,
-	namespace, name string) (bool, error) {
+	sc *storagev1.StorageClass,
+	namespace string) (bool, error) {
 
 	if pkgcfg.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
+		policyID := sc.Parameters[storageClassParamPolicyID]
+		if policyID == "" {
+			return false, fmt.Errorf("StorageClass does not have policy ID")
+		}
+
 		var obj spqv1.StoragePolicyQuotaList
 		if err := k8sClient.List(
 			ctx,
@@ -160,11 +193,8 @@ func IsStorageClassInNamespace(
 		}
 
 		for i := range obj.Items {
-			for j := range obj.Items[i].Status.SCLevelQuotaStatuses {
-				qs := obj.Items[i].Status.SCLevelQuotaStatuses[j]
-				if qs.StorageClassName == name {
-					return true, nil
-				}
+			if obj.Items[i].Spec.StoragePolicyId == policyID {
+				return true, nil
 			}
 		}
 
@@ -178,7 +208,7 @@ func IsStorageClassInNamespace(
 			return false, err
 		}
 
-		prefix := name + storageResourceQuotaStrPattern
+		prefix := sc.Name + storageResourceQuotaStrPattern
 		for i := range obj.Items {
 			for name := range obj.Items[i].Spec.Hard {
 				if strings.HasPrefix(name.String(), prefix) {
@@ -188,10 +218,7 @@ func IsStorageClassInNamespace(
 		}
 	}
 
-	return false, NotFoundInNamespace{
-		Namespace:    namespace,
-		StorageClass: name,
-	}
+	return false, nil
 }
 
 // GetWebhookCABundle returns the CA Bundle used for validating webhooks. It attempts to fetch the CA Bundle

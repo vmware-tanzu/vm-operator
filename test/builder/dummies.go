@@ -50,13 +50,17 @@ const (
 )
 
 func DummyStorageClass() *storagev1.StorageClass {
+	return DummyStorageClassWithID("id42")
+}
+
+func DummyStorageClassWithID(policyID string) *storagev1.StorageClass {
 	return &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: DummyStorageClassName,
 		},
 		Provisioner: "foo",
 		Parameters: map[string]string{
-			"storagePolicyID": "id42",
+			"storagePolicyID": policyID,
 		},
 	}
 }
@@ -156,33 +160,14 @@ func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLib
 	}
 }
 
-func DummyStoragePolicyQuota(quotaName, quotaNs, className string) *spqv1.StoragePolicyQuota {
+func DummyStoragePolicyQuota(name, namespace, policyID string) *spqv1.StoragePolicyQuota {
 	return &spqv1.StoragePolicyQuota{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      quotaName,
-			Namespace: quotaNs,
+			Name:      name,
+			Namespace: namespace,
 		},
-		Spec: spqv1.StoragePolicyQuotaSpec{StoragePolicyId: "uuid-abcd-1234"},
-		Status: spqv1.StoragePolicyQuotaStatus{
-			SCLevelQuotaStatuses: []spqv1.SCLevelQuotaStatus{
-				{
-					StorageClassName: className,
-				},
-			},
-			ResourceTypeLevelQuotaStatuses: []spqv1.ResourceTypeLevelQuotaStatus{
-				{
-					ResourceExtensionName: "volume.cns.vsphere.vmware.com",
-					ResourceTypeSCLevelQuotaStatuses: []spqv1.SCLevelQuotaStatus{{
-						StorageClassName: className,
-					}},
-				},
-				{
-					ResourceExtensionName: "volume.cns.vsphere.vmware.com",
-					ResourceTypeSCLevelQuotaStatuses: []spqv1.SCLevelQuotaStatus{{
-						StorageClassName: className + "-abcde",
-					}},
-				},
-			},
+		Spec: spqv1.StoragePolicyQuotaSpec{
+			StoragePolicyId: policyID,
 		},
 	}
 }

@@ -18,15 +18,6 @@ GO_TEST_FLAGS+=("-r")           # recursive
 GO_TEST_FLAGS+=("--race")       # check for possible races
 GO_TEST_FLAGS+=("--keep-going") # do not fail on the first error
 
-# disable govet's printf analyzer during tests until the issue
-# outlined at https://github.com/golang/go/issues/60529#issuecomment-2043669945
-# and https://github.com/kubernetes/kubernetes/issues/127191
-# is able to be solved at point-of-use.
-#
-# since ginkgo does not allow disabling a specific analyzer, the list
-# must contain all *but* the printf analyzer
-GO_TEST_FLAGS+=("--vet=appends,asmdecl,assign,atomic,bools,buildtag,cgocall,composites,copylocks,defers,directive,errorsas,framepointer,httpresponse,ifaceassert,loopclosure,lostcancel,nilfunc,shift,sigchanyzer,slog,stdmethods,stringintconv,structtag,testinggoroutine,tests,timeformat,unmarshal,unreachable,unsafeptr,unusedresult")
-
 # Only run tests that match given labels if LABEL_FILTER is non-empty.
 if [ -n "${LABEL_FILTER:-}" ]; then
   GO_TEST_FLAGS+=("--label-filter" "${LABEL_FILTER:-}")

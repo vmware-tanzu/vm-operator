@@ -62,9 +62,9 @@ func merge(conditions []localizedCondition, targetCondition string, options *mer
 	targetReason := getReason(g, options)
 	targetMessage := getMessage(g, options)
 	if g.TopGroup().status == metav1.ConditionFalse {
-		return FalseCondition(targetCondition, targetReason, targetMessage)
+		return FalseCondition(targetCondition, targetReason, "%s", targetMessage)
 	}
-	return UnknownCondition(targetCondition, targetReason, targetMessage)
+	return UnknownCondition(targetCondition, targetReason, "%s", targetMessage)
 }
 
 // getConditionGroups groups a list of conditions according to status, severity values.

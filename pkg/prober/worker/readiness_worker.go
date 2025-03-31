@@ -156,8 +156,8 @@ func (w *readinessWorker) getCondition(res probe.Result, err error) *metav1.Cond
 	case probe.Success:
 		return conditions.TrueCondition(vmopv1.ReadyConditionType)
 	case probe.Failure:
-		return conditions.FalseCondition(vmopv1.ReadyConditionType, notReadyReason, msg)
+		return conditions.FalseCondition(vmopv1.ReadyConditionType, notReadyReason, "%s", msg)
 	default: // probe.Unknown
-		return conditions.UnknownCondition(vmopv1.ReadyConditionType, unknownReason, msg)
+		return conditions.UnknownCondition(vmopv1.ReadyConditionType, unknownReason, "%s", msg)
 	}
 }

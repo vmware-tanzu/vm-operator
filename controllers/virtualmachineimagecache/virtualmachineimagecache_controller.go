@@ -145,11 +145,11 @@ func (r *reconciler) ReconcileNormal(
 	// the object's Ready condition.
 	defer func() {
 		if retErr != nil {
-			pkgcond.MarkFalse(
+			pkgcond.MarkError(
 				obj,
 				vmopv1.ReadyConditionType,
 				conditionReasonFailed,
-				retErr.Error())
+				retErr)
 		}
 	}()
 
@@ -179,11 +179,11 @@ func (r *reconciler) ReconcileNormal(
 
 	// Reconcile the OVF envelope.
 	if err := reconcileOVF(ctx, r.Client, clProv, obj); err != nil {
-		pkgcond.MarkFalse(
+		pkgcond.MarkError(
 			obj,
 			vmopv1.VirtualMachineImageCacheConditionOVFReady,
 			conditionReasonFailed,
-			err.Error())
+			err)
 	} else {
 		pkgcond.MarkTrue(
 			obj,
@@ -193,11 +193,11 @@ func (r *reconciler) ReconcileNormal(
 	if len(obj.Spec.Locations) > 0 {
 		// Reconcile the underlying library item.
 		if err := reconcileLibraryItem(ctx, clProv, obj); err != nil {
-			pkgcond.MarkFalse(
+			pkgcond.MarkError(
 				obj,
 				vmopv1.VirtualMachineImageCacheConditionProviderReady,
 				conditionReasonFailed,
-				err.Error())
+				err)
 		} else {
 			pkgcond.MarkTrue(
 				obj,
@@ -206,11 +206,11 @@ func (r *reconciler) ReconcileNormal(
 
 		// Reconcile the disks.
 		if err := r.reconcileDisks(ctx, c, clProv, obj); err != nil {
-			pkgcond.MarkFalse(
+			pkgcond.MarkError(
 				obj,
 				vmopv1.VirtualMachineImageCacheConditionDisksReady,
 				conditionReasonFailed,
-				err.Error())
+				err)
 		} else {
 			// Aggregate each location's Ready condition into the top-level
 			// VirtualMachineImageCacheConditionDisksReady condition.
@@ -330,10 +330,10 @@ func (r *reconciler) reconcileLocations(
 			dstDiskFormat,
 			srcDiskURIs)
 		if err != nil {
-			conditions = conditions.MarkFalse(
+			conditions = conditions.MarkError(
 				vmopv1.ReadyConditionType,
 				conditionReasonFailed,
-				err.Error())
+				err)
 		} else {
 			status.Disks = cachedDisks
 			conditions = conditions.MarkTrue(vmopv1.ReadyConditionType)

@@ -64,7 +64,7 @@ func GetVirtualMachineClass(
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
 		conditions.MarkFalse(
-			vmCtx.VM, vmopv1.VirtualMachineConditionClassReady, reason, msg)
+			vmCtx.VM, vmopv1.VirtualMachineConditionClassReady, reason, "%s", msg)
 		return vmopv1.VirtualMachineClass{}, err
 	}
 
@@ -211,7 +211,7 @@ func GetVirtualMachineImageSpecAndStatus(
 		// call stack for this function changes.
 		reason := "UnknownKind"
 		msg := vmCtx.VM.Spec.Image.Kind
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, msg)
+		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, "%s", msg)
 
 		return nil,
 			vmopv1.VirtualMachineImageSpec{},
@@ -225,7 +225,7 @@ func GetVirtualMachineImageSpecAndStatus(
 			reason = "NotFound"
 		}
 		msg := objErr.Error()
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, msg)
+		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, reason, "%s", msg)
 
 		return nil,
 			vmopv1.VirtualMachineImageSpec{},
@@ -283,7 +283,7 @@ func getSecretData(
 		configMap := &corev1.ConfigMap{}
 		if err := k8sClient.Get(vmCtx, key, configMap); err != nil {
 			reason, msg := errToConditionReasonAndMessage(err)
-			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
 			return nil, err
 		}
 
@@ -292,7 +292,7 @@ func getSecretData(
 		secret := &corev1.Secret{}
 		if err := k8sClient.Get(vmCtx, key, secret); err != nil {
 			reason, msg := errToConditionReasonAndMessage(err)
-			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
 			return nil, err
 		}
 
@@ -331,7 +331,7 @@ func getSecretData(
 
 		if !found {
 			err := fmt.Errorf("required key %q not found in Secret %s", resKey, resName)
-			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err.Error())
+			conditions.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err)
 			return nil, err
 		}
 	}
@@ -363,7 +363,7 @@ func GetVirtualMachineBootstrap(
 				*cooked)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
-				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
 				return vmlifecycle.BootstrapData{}, err
 			}
 			cloudConfigSecretData = &out
@@ -372,7 +372,7 @@ func GetVirtualMachineBootstrap(
 			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, true)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
-				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
 				return vmlifecycle.BootstrapData{}, err
 			}
 		}
@@ -385,7 +385,7 @@ func GetVirtualMachineBootstrap(
 				cooked)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
-				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
 				return vmlifecycle.BootstrapData{}, err
 			}
 			sysprepSecretData = &out
@@ -394,7 +394,7 @@ func GetVirtualMachineBootstrap(
 			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, false)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
-				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
 				return vmlifecycle.BootstrapData{}, err
 			}
 		}
@@ -408,7 +408,7 @@ func GetVirtualMachineBootstrap(
 			vAppData, err = getSecretData(vmCtx, k8sClient, vApp.RawProperties, "", false)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
-				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
 				return vmlifecycle.BootstrapData{}, err
 			}
 
@@ -425,7 +425,7 @@ func GetVirtualMachineBootstrap(
 					fromData, err := getSecretData(vmCtx, k8sClient, from.Name, from.Key, false)
 					if err != nil {
 						reason, msg := errToConditionReasonAndMessage(err)
-						conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+						conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
 						return vmlifecycle.BootstrapData{}, err
 					}
 
@@ -436,7 +436,7 @@ func GetVirtualMachineBootstrap(
 				} else if from.Key != "" {
 					if _, ok := data[from.Key]; !ok {
 						err := fmt.Errorf("required key %q not found in vApp Properties Secret %s", from.Key, from.Name)
-						conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err.Error())
+						conditions.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err)
 						return vmlifecycle.BootstrapData{}, err
 					}
 				}
@@ -472,7 +472,7 @@ func GetVMSetResourcePolicy(
 	resourcePolicy := &vmopv1.VirtualMachineSetResourcePolicy{}
 	if err := k8sClient.Get(vmCtx, key, resourcePolicy); err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionVMSetResourcePolicyReady, reason, msg)
+		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionVMSetResourcePolicyReady, reason, "%s", msg)
 		return nil, err
 	}
 
@@ -480,8 +480,8 @@ func GetVMSetResourcePolicy(
 	// allow a VM to use a policy that's being deleted.
 	if !resourcePolicy.DeletionTimestamp.IsZero() {
 		err := fmt.Errorf("VirtualMachineSetResourcePolicy is being deleted")
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionVMSetResourcePolicyReady,
-			"NotReady", err.Error())
+		conditions.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionVMSetResourcePolicyReady,
+			"NotReady", err)
 		return nil, err
 	}
 

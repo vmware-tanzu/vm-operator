@@ -112,5 +112,5 @@ func markEncryptionStateNotSynced(
 		vm,
 		vmopv1.VirtualMachineEncryptionSynced,
 		reason.String(),
-		SprintfStateNotSynced(op, msgs...))
+		"%s", SprintfStateNotSynced(op, msgs...))
 }

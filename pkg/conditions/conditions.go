@@ -165,6 +165,13 @@ func (l Conditions) MarkFalse(
 	return l.Set(FalseCondition(t, reason, messageFormat, messageArgs...))
 }
 
+// MarkError sets Status=False and the error message for the condition with the given type.
+func (l Conditions) MarkError(
+	t, reason string, err error) Conditions {
+
+	return l.Set(FalseCondition(t, reason, "%s", err.Error()))
+}
+
 // SetSummary sets a Ready condition with a summary of all the existing
 // conditions. If there are no existing conditions, no summary condition is
 // generated.

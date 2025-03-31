@@ -368,10 +368,10 @@ func (r *Reconciler) checkIsSourceValid(ctx *pkgctx.VirtualMachinePublishRequest
 	if err != nil {
 		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
 		if apierrors.IsNotFound(err) {
-			conditions.MarkFalse(vmPubReq,
+			conditions.MarkError(vmPubReq,
 				vmopv1.VirtualMachinePublishRequestConditionSourceValid,
 				vmopv1.SourceVirtualMachineNotExistReason,
-				err.Error())
+				err)
 		}
 		return err
 	}
@@ -379,10 +379,10 @@ func (r *Reconciler) checkIsSourceValid(ctx *pkgctx.VirtualMachinePublishRequest
 
 	if vm.Status.UniqueID == "" {
 		err = errors.New("VM hasn't been created and has no uniqueID")
-		conditions.MarkFalse(vmPubReq,
+		conditions.MarkError(vmPubReq,
 			vmopv1.VirtualMachinePublishRequestConditionSourceValid,
 			vmopv1.SourceVirtualMachineNotCreatedReason,
-			err.Error())
+			err)
 		return err
 	}
 
@@ -401,20 +401,20 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 	if err := r.Get(ctx, objKey, contentLibrary); err != nil {
 		ctx.Logger.Error(err, "failed to get ContentLibrary", "cl", objKey)
 		if apierrors.IsNotFound(err) {
-			conditions.MarkFalse(vmPubReq,
+			conditions.MarkError(vmPubReq,
 				vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 				vmopv1.TargetContentLibraryNotExistReason,
-				err.Error())
+				err)
 		}
 		return err
 	}
 
 	if !contentLibrary.Spec.Writable {
 		err := fmt.Errorf("target location %s is not writable", contentLibrary.Status.Name)
-		conditions.MarkFalse(vmPubReq,
+		conditions.MarkError(vmPubReq,
 			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 			vmopv1.TargetContentLibraryNotWritableReason,
-			err.Error())
+			err)
 		return err
 	}
 
@@ -429,10 +429,10 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 
 	if !isReady {
 		err := fmt.Errorf("target location %s is not ready", contentLibrary.Status.Name)
-		conditions.MarkFalse(vmPubReq,
+		conditions.MarkError(vmPubReq,
 			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 			vmopv1.TargetContentLibraryNotReadyReason,
-			err.Error())
+			err)
 		return err
 	}
 
@@ -466,8 +466,7 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 		conditions.MarkFalse(vmPubReq,
 			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
 			vmopv1.TargetItemAlreadyExistsReason,
-			fmt.Sprintf("item with name %s already exists in the content library %s", targetItemName,
-				contentLibrary.Status.Name))
+			"item with name %s already exists in the content library %s", targetItemName, contentLibrary.Status.Name)
 		return nil
 	}
 
@@ -676,7 +675,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 		conditions.MarkFalse(ctx.VMPublishRequest,
 			vmopv1.VirtualMachinePublishRequestConditionUploaded,
 			vmopv1.UploadFailureReason,
-			errMsg)
+			"%s", errMsg)
 		return true, nil
 	}
 

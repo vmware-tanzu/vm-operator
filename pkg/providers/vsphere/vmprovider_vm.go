@@ -602,18 +602,18 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 	if err != nil {
 		ctx.Logger.Error(err, "CreateVirtualMachine failed")
-		pkgcnd.MarkFalse(
+		pkgcnd.MarkError(
 			ctx.VM,
 			vmopv1.VirtualMachineConditionCreated,
 			"Error",
-			err.Error())
+			err)
 
 		if pkgcfg.FromContext(ctx).Features.FastDeploy {
-			pkgcnd.MarkFalse(
+			pkgcnd.MarkError(
 				ctx.VM,
 				vmopv1.VirtualMachineConditionPlacementReady,
 				"Error",
-				err.Error())
+				err)
 		}
 
 		return nil, err
@@ -666,18 +666,18 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 		func() error {
 
 			if vimErr != nil {
-				pkgcnd.MarkFalse(
+				pkgcnd.MarkError(
 					ctx.VM,
 					vmopv1.VirtualMachineConditionCreated,
 					"Error",
-					vimErr.Error())
+					vimErr)
 
 				if pkgcfg.FromContext(ctx).Features.FastDeploy {
-					pkgcnd.MarkFalse(
+					pkgcnd.MarkError(
 						ctx.VM,
 						vmopv1.VirtualMachineConditionPlacementReady,
 						"Error",
-						vimErr.Error())
+						vimErr)
 				}
 
 				return nil
@@ -850,11 +850,11 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 
 	defer func() {
 		if retErr != nil {
-			pkgcnd.MarkFalse(
+			pkgcnd.MarkError(
 				vmCtx.VM,
 				vmopv1.VirtualMachineConditionPlacementReady,
 				"NotReady",
-				retErr.Error())
+				retErr)
 		}
 	}()
 
@@ -1323,7 +1323,7 @@ func (vs *vSphereVMProvider) vmCreateGetVirtualMachineImage(
 	default:
 		if !SkipVMImageCLProviderCheck {
 			err := fmt.Errorf("unsupported image provider kind: %s", providerRef.Kind)
-			pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, "NotSupported", err.Error())
+			pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, "NotSupported", err)
 			return err
 		}
 		// Testing only: we'll clone the source VM found in the Inventory.
@@ -1395,20 +1395,20 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		// This will be true in WCP.
 		if cfg.StorageClassRequired {
 			err := fmt.Errorf("StorageClass is required but not specified")
-			pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "StorageClassRequired", err.Error())
+			pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "StorageClassRequired", err)
 			return err
 		}
 
 		// Testing only for standalone gce2e.
 		if cfg.Datastore == "" {
 			err := fmt.Errorf("no Datastore provided in configuration")
-			pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err.Error())
+			pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err)
 			return err
 		}
 
 		datastore, err := vcClient.Finder().Datastore(vmCtx, cfg.Datastore)
 		if err != nil {
-			pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err.Error())
+			pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err)
 			return fmt.Errorf("failed to find Datastore %s: %w", cfg.Datastore, err)
 		}
 
@@ -1418,7 +1418,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 	vmStorage, err := storage.GetVMStorageData(vmCtx, vs.k8sClient)
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
-		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, msg)
+		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, "%s", msg)
 		return err
 	}
 
@@ -1426,7 +1426,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 	provisioningType, err := virtualmachine.GetDefaultDiskProvisioningType(vmCtx, vcClient, vmStorageProfileID)
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
-		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, msg)
+		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, "%s", msg)
 		return err
 	}
 
@@ -1457,7 +1457,7 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 		nil, // Don't know the CCR yet (needed to resolve backings for NSX-T)
 		networkSpec)
 	if err != nil {
-		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady, "NotReady", err.Error())
+		pkgcnd.MarkError(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady, "NotReady", err)
 		return err
 	}
 

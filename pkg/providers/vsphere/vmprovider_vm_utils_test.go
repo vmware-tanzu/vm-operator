@@ -84,7 +84,7 @@ func vmUtilTests() {
 				*conditions.FalseCondition(
 					vmopv1.VirtualMachineConditionClassReady,
 					"NotFound",
-					expectedErrMsg),
+					"%s", expectedErrMsg),
 			}
 			ExpectWithOffset(1, vmCtx.VM.Status.Conditions).To(
 				conditions.MatchConditions(expectedCondition))
@@ -249,7 +249,7 @@ func vmUtilTests() {
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 					expectedCondition := []metav1.Condition{
-						*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, "NotFound", expectedErrMsg),
+						*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, "NotFound", "%s", expectedErrMsg),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
@@ -304,7 +304,7 @@ func vmUtilTests() {
 				expectedErrMsg := fmt.Sprintf("%s: %s", expectedReason, vmCtx.VM.Spec.Image.Kind)
 				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 				expectedCondition := []metav1.Condition{
-					*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, expectedReason, vmCtx.VM.Spec.Image.Kind),
+					*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, expectedReason, "%s", vmCtx.VM.Spec.Image.Kind),
 				}
 				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 			})
@@ -319,7 +319,7 @@ func vmUtilTests() {
 				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 				expectedCondition := []metav1.Condition{
-					*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, "NotFound", expectedErrMsg),
+					*conditions.FalseCondition(vmopv1.VirtualMachineConditionImageReady, "NotFound", "%s", expectedErrMsg),
 				}
 				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 			})
@@ -337,7 +337,7 @@ func vmUtilTests() {
 					conditions.MarkFalse(nsVMImage,
 						vmopv1.ReadyConditionType,
 						reason,
-						errMsg)
+						"%s", errMsg)
 					initObjects = append(initObjects, nsVMImage)
 					vmCtx.VM.Spec.Image.Name = nsVMImage.Name
 				})
@@ -350,7 +350,7 @@ func vmUtilTests() {
 
 					expectedCondition := []metav1.Condition{
 						*conditions.FalseCondition(
-							vmopv1.VirtualMachineConditionImageReady, reason, errMsg),
+							vmopv1.VirtualMachineConditionImageReady, reason, "%s", errMsg),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})

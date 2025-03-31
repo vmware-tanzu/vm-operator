@@ -487,11 +487,11 @@ func (r *Reconciler) syncReplicas(
 				log.Error(err, "Error while creating VirtualMachine")
 				r.Recorder.Warnf(rs, "FailedCreate", "Failed to create VirtualMachine: %v", err)
 				errs = append(errs, err)
-				conditions.MarkFalse(
+				conditions.MarkError(
 					rs,
 					vmopv1.VirtualMachinesCreatedCondition,
 					vmopv1.VirtualMachineCreationFailedReason,
-					err.Error(),
+					err,
 				)
 				continue
 			}

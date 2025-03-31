@@ -1377,10 +1377,7 @@ func UpdateVMGuestIDReconfiguredCondition(
 			vm,
 			vmopv1.GuestIDReconfiguredCondition,
 			"Invalid",
-			fmt.Sprintf(
-				"The specified guest ID value is not supported: %s",
-				configSpec.GuestId,
-			),
+			"The specified guest ID value is not supported: %s", configSpec.GuestId,
 		)
 		return
 	}

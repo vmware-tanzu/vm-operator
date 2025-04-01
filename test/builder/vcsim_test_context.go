@@ -60,6 +60,7 @@ import (
 	// _ "github.com/vmware/govmomi/pbm/simulator"
 
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
@@ -430,19 +431,33 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		}
 	}
 
-	resourceQuota := &corev1.ResourceQuota{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dummy-resource-quota",
-			Namespace: ns.Name,
-		},
-		Spec: corev1.ResourceQuotaSpec{
-			Hard: corev1.ResourceList{
-				corev1.ResourceName(c.StorageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims"):          resource.MustParse("1"),
-				corev1.ResourceName(c.EncryptedStorageProfileID + ".storageclass.storage.k8s.io/persistentvolumeclaims"): resource.MustParse("1"),
+	if pkgcfg.FromContext(c).Features.PodVMOnStretchedSupervisor {
+		storagePolicyQuota := &spqv1.StoragePolicyQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      c.StorageClassName + "-storagepolicyquota",
+				Namespace: ns.Name,
 			},
-		},
+			Spec: spqv1.StoragePolicyQuotaSpec{
+				StoragePolicyId: c.StorageProfileID,
+			},
+		}
+		Expect(c.Client.Create(c, storagePolicyQuota)).To(Succeed())
+
+	} else {
+		resourceQuota := &corev1.ResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dummy-resource-quota",
+				Namespace: ns.Name,
+			},
+			Spec: corev1.ResourceQuotaSpec{
+				Hard: corev1.ResourceList{
+					corev1.ResourceName(c.StorageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims"):          resource.MustParse("1"),
+					corev1.ResourceName(c.EncryptedStorageProfileID + ".storageclass.storage.k8s.io/persistentvolumeclaims"): resource.MustParse("1"),
+				},
+			},
+		}
+		Expect(c.Client.Create(c, resourceQuota)).To(Succeed())
 	}
-	Expect(c.Client.Create(c, resourceQuota)).To(Succeed())
 
 	var (
 		encryptionClass1KeyID string

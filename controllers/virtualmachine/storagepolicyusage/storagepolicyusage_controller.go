@@ -36,6 +36,19 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
+	// Index the VM's spec.storageClass field to make it easy to list VMs in a
+	// namespace by the field.
+	if err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&vmopv1.VirtualMachine{},
+		"spec.storageClass",
+		func(rawObj client.Object) []string {
+			vm := rawObj.(*vmopv1.VirtualMachine)
+			return []string{vm.Spec.StorageClass}
+		}); err != nil {
+		return err
+	}
+
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
@@ -118,6 +131,7 @@ func (r *Reconciler) ReconcileNormal(
 		ctx,
 		&list,
 		client.InNamespace(namespace),
+		client.MatchingFields{"spec.storageClass": obj.Spec.StorageClassName},
 		//
 		// !!! WARNING !!!
 		//

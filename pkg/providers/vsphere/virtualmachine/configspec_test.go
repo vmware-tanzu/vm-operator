@@ -115,11 +115,11 @@ var _ = Describe("CreateConfigSpec", func() {
 					Expect(configSpec.CpuAllocation.Shares).ToNot(BeNil())
 					Expect(configSpec.CpuAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
 					Expect(configSpec.CpuAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
-					Expect(configSpec.CpuAllocation.Reservation).To(HaveValue(BeEquivalentTo(0)))
+					Expect(configSpec.CpuAllocation.Reservation).To(HaveValue(BeZero()))
 					Expect(configSpec.MemoryAllocation.Shares).ToNot(BeNil())
 					Expect(configSpec.MemoryAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
 					Expect(configSpec.MemoryAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
-					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(0)))
+					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeZero()))
 				})
 			})
 
@@ -199,6 +199,12 @@ var _ = Describe("CreateConfigSpec", func() {
 			classConfigSpec = vimtypes.VirtualMachineConfigSpec{
 				Name:       "dont-use-this-dummy-VM",
 				Annotation: "test-annotation",
+				CpuAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To[int64](42),
+				},
+				MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To[int64](42),
+				},
 				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
 					&vimtypes.VirtualDeviceConfigSpec{
 						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
@@ -222,7 +228,15 @@ var _ = Describe("CreateConfigSpec", func() {
 			Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
 			Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
 			Expect(configSpec.CpuAllocation).ToNot(BeNil())
+			Expect(configSpec.CpuAllocation.Shares).ToNot(BeNil())
+			Expect(configSpec.CpuAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
+			Expect(configSpec.CpuAllocation.Reservation).To(HaveValue(BeEquivalentTo(2684354560000)))
+			Expect(configSpec.CpuAllocation.Limit).To(HaveValue(BeEquivalentTo(5368709120000)))
 			Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+			Expect(configSpec.MemoryAllocation.Shares).ToNot(BeNil())
+			Expect(configSpec.MemoryAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
+			Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(2048)))
+			Expect(configSpec.MemoryAllocation.Limit).To(HaveValue(BeEquivalentTo(4096)))
 			Expect(configSpec.Firmware).To(Equal(vmImageStatus.Firmware))
 			Expect(configSpec.DeviceChange).To(HaveLen(1))
 			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()

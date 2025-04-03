@@ -508,6 +508,8 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
+	vmopv1util.ReconcileNetworkDeviceConnectionState(config, configSpec)
+
 	var expectedPCIDevices []vimtypes.BaseVirtualDevice
 	if configSpecDevs := pkgutil.DevicesFromConfigSpec(&updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
 		pciPassthruFromConfigSpec := pkgutil.SelectVirtualPCIPassthrough(configSpecDevs)
@@ -786,6 +788,7 @@ func (s *Session) poweredOnVMReconfigure(
 
 	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, vmCtx.VM, nil)
 	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
+	vmopv1util.ReconcileNetworkDeviceConnectionState(config, configSpec)
 
 	if err := virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
 		return false, fmt.Errorf("update CD-ROM device connection error: %w", err)
@@ -876,13 +879,17 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 
 			return false, err
 		}
-	} else if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
-		vmCtx,
-		*vmCtx.VM,
-		*moVM.Config,
-		&configSpec); err != nil {
+	} else {
+		vmopv1util.ReconcileNetworkDeviceConnectionState(moVM.Config, &configSpec)
 
-		return false, err
+		if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
+			vmCtx,
+			*vmCtx.VM,
+			*moVM.Config,
+			&configSpec); err != nil {
+
+			return false, err
+		}
 	}
 
 	refetchProps, err := doReconfigure(

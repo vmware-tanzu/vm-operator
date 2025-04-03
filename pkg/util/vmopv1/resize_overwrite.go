@@ -34,6 +34,7 @@ func OverwriteResizeConfigSpec(
 
 	overwriteGuestID(vm, ci, cs)
 	overwriteExtraConfig(vm, ci, cs)
+	ReconcileNetworkDeviceConnectionState(&ci, cs)
 
 	return nil
 }
@@ -242,6 +243,107 @@ func updateV1Alpha1CompatibleEC(
 
 	return []vimtypes.BaseOptionValue{
 		&vimtypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled},
+	}
+}
+
+// ReconcileNetworkDeviceConnectionState ensures the VMs network interface
+// devices are connected and start connected. Please note, this function should
+// only modify the configSpec if:
+//   - there is a network device in configInfo that is not connected or does not
+//     start connected and is not being removed in the configSpec.
+//   - there is a new network device in configSpec (i.e. it has a negative
+//     device key) and is not marked connected or not marked as starting
+//     connected.
+//
+// The ci parameter may be nil when this function is used to ensure the correct
+// behavior for a ConfigSpec used to create a new VM.
+func ReconcileNetworkDeviceConnectionState(
+	ci *vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec) {
+
+	// Get a list of current NICs.
+	curDevLst := []*vimtypes.VirtualEthernetCard{}
+	curDevMap := map[int32]*vimtypes.VirtualEthernetCard{}
+	if ci != nil {
+		for i := range ci.Hardware.Device {
+			if bd, ok := ci.Hardware.Device[i].(vimtypes.BaseVirtualEthernetCard); ok {
+				d := bd.GetVirtualEthernetCard()
+				curDevMap[d.Key] = d
+				curDevLst = append(curDevLst, d)
+			}
+		}
+	}
+
+	// Parse the ConfigSpec for new/modified NICs.
+	modDevs := map[int32]*vimtypes.VirtualEthernetCard{}
+	if cs != nil {
+		for i := range cs.DeviceChange {
+			ds := cs.DeviceChange[i].GetVirtualDeviceConfigSpec()
+			if bd, ok := ds.Device.(vimtypes.BaseVirtualEthernetCard); ok {
+				d := bd.GetVirtualEthernetCard()
+				if _, ok := curDevMap[d.Key]; ok {
+					//
+					// NIC already exists.
+					//
+					if ds.Operation == vimtypes.VirtualDeviceConfigSpecOperationRemove {
+						//
+						// NIC is being removed.
+						//
+						delete(curDevMap, d.Key)
+					} else {
+						//
+						// NIC is being updated.
+						//
+						modDevs[d.Key] = d
+					}
+				} else {
+					//
+					// NIC is being added, ensure it is connected.
+					//
+					if d.Connectable == nil {
+						d.Connectable = &vimtypes.VirtualDeviceConnectInfo{}
+					}
+					d.Connectable.StartConnected = true
+					d.Connectable.Connected = true
+				}
+			}
+		}
+	}
+
+	// Ensure all current NICs are connected and start connected.
+	for _, d := range curDevLst {
+		if _, ok := curDevMap[d.Key]; ok {
+
+			if d.Connectable == nil ||
+				!d.Connectable.Connected ||
+				!d.Connectable.StartConnected {
+
+				connectable := d.Connectable
+				if connectable == nil {
+					connectable = &vimtypes.VirtualDeviceConnectInfo{}
+				}
+				connectable.Connected = true
+				connectable.StartConnected = true
+
+				// The NIC is either not connected or not set to start
+				// connected.
+				if md, ok := modDevs[d.Key]; ok {
+					// The NIC is already part of the ConfigSpec, so update
+					// it there so its connection state information is
+					// correct.
+					md.Connectable = connectable
+				} else if cs != nil {
+					// Add the NIC to the ConfigSpec to ensure it is
+					// connected and starts connected.
+					d.Connectable = connectable
+					cs.DeviceChange = append(cs.DeviceChange,
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+							Device:    d,
+						})
+				}
+			}
+		}
 	}
 }
 

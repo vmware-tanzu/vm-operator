@@ -58,12 +58,8 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 	}()
 
 	resVM := res.NewVMFromObject(opts.VcVM)
-	moVM, err := resVM.GetProperties(opts.VMCtx, []string{"config.extraConfig"})
-	if err != nil {
-		opts.VMCtx.Logger.Error(err, "failed to get VM properties for backup")
-		return err
-	}
-	curExCfg := pkgutil.OptionValues(moVM.Config.ExtraConfig)
+
+	curExCfg := pkgutil.OptionValues(opts.VMCtx.MoVM.Config.ExtraConfig)
 	var ecToUpdate pkgutil.OptionValues
 
 	/*
@@ -406,10 +402,7 @@ func getBackupResourceVersions(ecResourceData string) (map[string]string, error)
 
 func getDesiredDiskDataForBackup(opts BackupVirtualMachineOptions) (string, string, error) {
 
-	deviceList, err := opts.VcVM.Device(opts.VMCtx)
-	if err != nil {
-		return "", "", err
-	}
+	deviceList := object.VirtualDeviceList(opts.VMCtx.MoVM.Config.Hardware.Device)
 
 	var (
 		pvcDiskData     []backupapi.PVCDiskData

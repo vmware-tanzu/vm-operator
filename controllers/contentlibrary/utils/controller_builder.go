@@ -462,10 +462,20 @@ func (r *Reconciler) syncImageContent(
 	vmiStatus *vmopv1.VirtualMachineImageStatus) error {
 
 	latestVersion := cliStatus.ContentVersion
-	if vmiStatus.ProviderContentVersion == latestVersion {
-		// Hack: populate Disks fields during version upgrade.
-		if len(vmiStatus.Disks) != 0 {
-			return nil
+
+	if !pkgcfg.FromContext(ctx).Features.FastDeploy {
+		// This same check is performed in the VMI Cache controller, which is
+		// what actually retrieves the OVF when syncing a VMI when Fast Deploy
+		// is enabled. Therefore this check does not need to be performed here.
+		//
+		// Additionally, if the Fast Deploy FSS is enabled *after* a VMI is
+		// created, the following content version check would prevent the VMI
+		// Cache object from being created.
+		if vmiStatus.ProviderContentVersion == latestVersion {
+			// Hack: populate Disks fields during version upgrade.
+			if len(vmiStatus.Disks) != 0 {
+				return nil
+			}
 		}
 	}
 

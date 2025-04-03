@@ -21,6 +21,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	zonectrl "github.com/vmware-tanzu/vm-operator/controllers/infra/zone"
+	setrpctrl "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -119,27 +120,29 @@ func (s Service) vmFolderMoRefWithIDs(
 	// Get a list of all the folders that can contain VM Service VMs.
 	var (
 		zones                 topologyv1.ZoneList
+		setrp                 vmopv1.VirtualMachineSetResourcePolicyList
 		objSet                []vimtypes.ObjectSpec
 		moids                 = map[string][]string{}
 		zonesWithoutFinalizer []topologyv1.Zone
+		setrpWithoutFinalizer []vmopv1.VirtualMachineSetResourcePolicy
 	)
 
+	// Get the Zone objects.
 	if err := s.Client.List(ctx, &zones); err != nil {
 		return nil, err
 	}
-
 	for i := range zones.Items {
-		z := zones.Items[i]
+		o := zones.Items[i]
 
-		if v := z.Spec.ManagedVMs.FolderMoID; v != "" {
+		if v := o.Spec.ManagedVMs.FolderMoID; v != "" {
 
-			// If a zone is being deleted and it does not have any
-			// finalizer, the zone controller has already stopped the
-			// watcher and removed the finalizer. Or, a zone is being
-			// deleted even before a watcher could start. In either
-			// case, no need to watch this folder.
-			if !z.DeletionTimestamp.IsZero() &&
-				!controllerutil.ContainsFinalizer(&z, zonectrl.Finalizer) {
+			// If an object is being deleted and it does not have a finalizer,
+			// the object's controller has already stopped the watcher and
+			// removed the finalizer. Or, an object is being deleted before a
+			// watcher could start. In either case there is no need to watch the
+			// folder.
+			if !o.DeletionTimestamp.IsZero() &&
+				!controllerutil.ContainsFinalizer(&o, zonectrl.Finalizer) {
 				continue
 			}
 
@@ -153,11 +156,55 @@ func (s Service) vmFolderMoRefWithIDs(
 					},
 				})
 			}
-			moids[v] = append(moids[v], fmt.Sprintf("%s/%s", z.Namespace, z.Name))
+			moids[v] = append(
+				moids[v],
+				fmt.Sprintf("%s:%s/%s", "Zone", o.Namespace, o.Name))
 
-			// Ensure we add a finalizer to zones that the watcher is watching.
-			if !controllerutil.ContainsFinalizer(&z, zonectrl.Finalizer) {
-				zonesWithoutFinalizer = append(zonesWithoutFinalizer, z)
+			// Ensure a finalizer is added to watched objects.
+			if !controllerutil.ContainsFinalizer(&o, zonectrl.Finalizer) {
+				zonesWithoutFinalizer = append(zonesWithoutFinalizer, o)
+			}
+		}
+	}
+
+	// Get the VirtualMachineSetResourcePolicy objects.
+	if err := s.Client.List(ctx, &setrp); err != nil {
+		return nil, err
+	}
+	for i := range setrp.Items {
+		o := setrp.Items[i]
+
+		if v := o.Status.FolderID; v != "" {
+
+			// If an object is being deleted and it does not have a finalizer,
+			// the object's controller has already stopped the watcher and
+			// removed the finalizer. Or, an object is being deleted before a
+			// watcher could start. In either case there is no need to watch the
+			// folder.
+			if !o.DeletionTimestamp.IsZero() &&
+				!controllerutil.ContainsFinalizer(&o, setrpctrl.Finalizer) {
+				continue
+			}
+
+			if _, ok := moids[v]; !ok {
+				moids[v] = make([]string, 0, 1)
+
+				objSet = append(objSet, vimtypes.ObjectSpec{
+					Obj: vimtypes.ManagedObjectReference{
+						Type:  "Folder",
+						Value: v,
+					},
+				})
+			}
+			moids[v] = append(
+				moids[v],
+				fmt.Sprintf(
+					"%s:%s/%s",
+					"VirtualMachineSetResourcePolicy", o.Namespace, o.Name))
+
+			// Ensure a finalizer is added to watched objects.
+			if !controllerutil.ContainsFinalizer(&o, setrpctrl.Finalizer) {
+				setrpWithoutFinalizer = append(setrpWithoutFinalizer, o)
 			}
 		}
 	}
@@ -166,9 +213,12 @@ func (s Service) vmFolderMoRefWithIDs(
 		return nil, nil
 	}
 
-	// Filter the folder MoIDs for ones that exist on VC. The watcher will fail to start if
-	// any of the initial MoIDs don't exist but need to watcher to start. For any stale Zones
-	// the infra Zone controller will keep retrying to add their folder to the watcher.
+	// Filter the folder MoIDs for ones that exist on VC. The watcher will fail
+	// to start if any of the initial MoIDs don't exist but need to watcher to
+	// start.
+	//
+	// For any stale objects, their controllers will keep trying to add their
+	// folder to the watcher.
 	pc := property.DefaultCollector(vcClient.VimClient())
 	res, err := pc.RetrieveProperties(ctx, vimtypes.RetrieveProperties{
 		SpecSet: []vimtypes.PropertyFilterSpec{
@@ -184,7 +234,8 @@ func (s Service) vmFolderMoRefWithIDs(
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get managed VMs folder properties: %w", err)
+		return nil, fmt.Errorf(
+			"failed to get managed VMs folder properties: %w", err)
 	}
 
 	moRefWithIDs := make(map[vimtypes.ManagedObjectReference][]string, len(res.Returnval))
@@ -192,18 +243,39 @@ func (s Service) vmFolderMoRefWithIDs(
 		moRefWithIDs[o.Obj] = moids[o.Obj.Value]
 	}
 
-	// For Zones with a valid FolderMoID but without the finalizer, add it before starting the
-	// watcher so the infra Zone controller will remove it from the watcher.
-	for _, z := range zonesWithoutFinalizer {
+	// For Zone objects with a valid FolderMoID but without the finalizer, add
+	// the finalizer before starting the watcher so the zone controller will
+	// remove it from the watcher.
+	for _, o := range zonesWithoutFinalizer {
 		moref := vimtypes.ManagedObjectReference{
 			Type:  "Folder",
-			Value: z.Spec.ManagedVMs.FolderMoID,
+			Value: o.Spec.ManagedVMs.FolderMoID,
 		}
-
 		if _, ok := moRefWithIDs[moref]; ok {
-			zPatch := ctrlclient.MergeFromWithOptions(z.DeepCopy(), ctrlclient.MergeFromWithOptimisticLock{})
-			z.Finalizers = append(z.Finalizers, zonectrl.Finalizer)
-			if err := s.Client.Patch(ctx, &z, zPatch); err != nil {
+			p := ctrlclient.MergeFromWithOptions(
+				o.DeepCopy(),
+				ctrlclient.MergeFromWithOptimisticLock{})
+			o.Finalizers = append(o.Finalizers, zonectrl.Finalizer)
+			if err := s.Client.Patch(ctx, &o, p); err != nil {
+				return nil, fmt.Errorf("failed to add finalizer: %w", err)
+			}
+		}
+	}
+
+	// For VirtualMachineSetResourcePolicy objects with a valid FolderMoID but
+	// without the finalizer, add the finalizer before starting the watcher so
+	// the zone controller will remove it from the watcher.
+	for _, o := range setrpWithoutFinalizer {
+		moref := vimtypes.ManagedObjectReference{
+			Type:  "Folder",
+			Value: o.Status.FolderID,
+		}
+		if _, ok := moRefWithIDs[moref]; ok {
+			p := ctrlclient.MergeFromWithOptions(
+				o.DeepCopy(),
+				ctrlclient.MergeFromWithOptimisticLock{})
+			o.Finalizers = append(o.Finalizers, setrpctrl.Finalizer)
+			if err := s.Client.Patch(ctx, &o, p); err != nil {
 				return nil, fmt.Errorf("failed to add finalizer: %w", err)
 			}
 		}

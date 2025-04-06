@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -80,8 +81,22 @@ func unitTestsReconcile() {
 			withObjects = append(withObjects, vm2)
 		}
 
-		ctx = suite.NewUnitTestContextForControllerWithFuncs(
-			withFuncs, withObjects...)
+		ctx = suite.NewUnitTestContextForController()
+
+		// Replace the client with one that has the indexed field.
+		ctx.Client = ctrlfake.NewClientBuilder().
+			WithScheme(builder.NewScheme()).
+			WithIndex(
+				&vmopv1.VirtualMachine{},
+				"spec.storageClass",
+				func(rawObj ctrlclient.Object) []string {
+					vm := rawObj.(*vmopv1.VirtualMachine)
+					return []string{vm.Spec.StorageClass}
+				}).
+			WithObjects(withObjects...).
+			WithInterceptorFuncs(withFuncs).
+			WithStatusSubresource(builder.KnownObjectTypes()...).
+			Build()
 
 		reconciler = storagepolicyusage.NewReconciler(
 			pkgcfg.UpdateContext(
@@ -287,6 +302,7 @@ func unitTestsReconcile() {
 							Kind: "VirtualMachineImage",
 							Name: "my-vmi",
 						},
+						StorageClass: name,
 					},
 					Status: vmopv1.VirtualMachineStatus{
 						Conditions: []metav1.Condition{
@@ -327,6 +343,7 @@ func unitTestsReconcile() {
 							Kind: "VirtualMachineImage",
 							Name: "my-vmi",
 						},
+						StorageClass: name,
 					},
 					Status: vmopv1.VirtualMachineStatus{
 						Conditions: []metav1.Condition{
@@ -416,6 +433,14 @@ func unitTestsReconcile() {
 					vm1.Finalizers = []string{"fake.com/finalizer"}
 				})
 				Specify("the reported information should only include non-deleted VMs", func() {
+					assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("1.5Gi"))
+				})
+			})
+			Context("that have different storage classes", func() {
+				BeforeEach(func() {
+					vm1.Spec.StorageClass = name + "1"
+				})
+				Specify("the reported information should only include VMs that use the same storage class", func() {
 					assertReportedTotals(spu, err, nil, zeroQuantity, resource.MustParse("1.5Gi"))
 				})
 			})

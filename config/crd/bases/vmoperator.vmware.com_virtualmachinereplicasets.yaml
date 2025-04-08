@@ -3532,6 +3532,22 @@ spec:
                         - PoweredOn
                         - Suspended
                         type: string
+                      promoteDisksMode:
+                        default: Online
+                        description: |-
+                          PromoteDisksMode describes the mode used to promote a VM's delta disks to
+                          full disks. The available modes are:
+
+                          - Disabled -- Do not promote disks.
+                          - Online   -- Promote disks while the VM is powered on. VMs with
+                                        snapshots do not support online promotion.
+                          - Offline  -- Promote disks while the VM is powered off.
+
+                          Defaults to Online.
+                        enum:
+                        - Online
+                        - Offline
+                        type: string
                       readinessProbe:
                         description: ReadinessProbe describes a probe used to determine
                           the VM's ready state.

@@ -46,6 +46,10 @@ const (
 	// encryption state is synced to the desired encryption state.
 	VirtualMachineEncryptionSynced = "VirtualMachineEncryptionSynced"
 
+	// VirtualMachineDiskPromotionSynced indicates that the VirtualMachine's
+	// disk promotion state is synced to the desired promotion state.
+	VirtualMachineDiskPromotionSynced = "VirtualMachineDiskPromotionSynced"
+
 	// VirtualMachineConditionCreated indicates that the VM has been created.
 	VirtualMachineConditionCreated = "VirtualMachineCreated"
 
@@ -453,6 +457,29 @@ type VirtualMachineCryptoSpec struct {
 	UseDefaultKeyProvider *bool `json:"useDefaultKeyProvider,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=Direct;Linked
+
+// VirtualMachineDeployMode represents the available modes in which a VM may be
+// deployed.
+type VirtualMachineDeployMode string
+
+const (
+	VirtualMachineDeployModeDirect VirtualMachineDeployMode = "Direct"
+	VirtualMachineDeployModeLinked VirtualMachineDeployMode = "Linked"
+)
+
+// +kubebuilder:validation:Enum=Online;Offline
+
+// VirtualMachinePromoteDisksMode represents the available modes for promoting
+// child disks to full clones.
+type VirtualMachinePromoteDisksMode string
+
+const (
+	VirtualMachinePromoteDisksModeDisabled VirtualMachinePromoteDisksMode = "Disabled"
+	VirtualMachinePromoteDisksModeOnline   VirtualMachinePromoteDisksMode = "Online"
+	VirtualMachinePromoteDisksModeOffline  VirtualMachinePromoteDisksMode = "Offline"
+)
+
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
 	// +optional
@@ -752,6 +779,20 @@ type VirtualMachineSpec struct {
 	//
 	// This field is required when the VM has any CD-ROM devices attached.
 	GuestID string `json:"guestID,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=Online
+
+	// PromoteDisksMode describes the mode used to promote a VM's delta disks to
+	// full disks. The available modes are:
+	//
+	// - Disabled -- Do not promote disks.
+	// - Online   -- Promote disks while the VM is powered on. VMs with
+	//               snapshots do not support online promotion.
+	// - Offline  -- Promote disks while the VM is powered off.
+	//
+	// Defaults to Online.
+	PromoteDisksMode VirtualMachinePromoteDisksMode `json:"promoteDisksMode,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options
@@ -930,6 +971,12 @@ type VirtualMachineStatus struct {
 
 	// Storage describes the observed state of the VirtualMachine's storage.
 	Storage *VirtualMachineStorageStatus `json:"storage,omitempty"`
+
+	// +optional
+
+	// TaskID describes the observed ID of the task created by VM Operator to
+	// perform some long-running operation on the VM.
+	TaskID string `json:"taskID,omitempty"`
 }
 
 // +kubebuilder:object:root=true

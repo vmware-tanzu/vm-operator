@@ -25,6 +25,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -100,6 +101,9 @@ func backupTests() {
 					Logger:  logger.WithValues("vmName", vcVM.Name()),
 					VM:      builder.DummyVirtualMachine(),
 				}
+
+				err = vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
+				Expect(err).NotTo(HaveOccurred())
 
 				// Add last-apply annotation and managed fields to verify they are not backed up in VM's ExtraConfig.
 				vmCtx.VM.Annotations[corev1.LastAppliedConfigAnnotation] = "last-applied-vm"
@@ -354,6 +358,9 @@ func backupTests() {
 							ExtraConfig: extraConfig,
 						})
 						Expect(err).NotTo(HaveOccurred())
+
+						err = vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
+						Expect(err).NotTo(HaveOccurred())
 					})
 
 					It("Should skip backing up VM resource YAML in ExtraConfig", func() {
@@ -559,6 +566,9 @@ func backupTests() {
 							ExtraConfig: extraConfig,
 						})
 						Expect(err).NotTo(HaveOccurred())
+
+						err = vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
+						Expect(err).NotTo(HaveOccurred())
 					})
 
 					It("Should skip backing up the additional resource YAML in ExtraConfig", func() {
@@ -723,6 +733,9 @@ func backupTests() {
 
 						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
+						err := vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &backupOpts.VMCtx.MoVM)
+						Expect(err).NotTo(HaveOccurred())
+
 						backupOpts.DiskUUIDToPVC = nil
 
 						if IncrementalRestore {
@@ -767,6 +780,9 @@ func backupTests() {
 							_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
 								ExtraConfig: extraConfig,
 							})
+							Expect(err).NotTo(HaveOccurred())
+
+							err = vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
 							Expect(err).NotTo(HaveOccurred())
 						})
 
@@ -837,6 +853,9 @@ func backupTests() {
 							_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
 								ExtraConfig: extraConfig,
 							})
+							Expect(err).NotTo(HaveOccurred())
+
+							err = vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
 							Expect(err).NotTo(HaveOccurred())
 						})
 
@@ -923,6 +942,9 @@ func backupTests() {
 								ExtraConfig: extraConfig,
 							})
 							Expect(err).NotTo(HaveOccurred())
+
+							err = vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
+							Expect(err).NotTo(HaveOccurred())
 						})
 
 						It("backup fails", func() {
@@ -964,6 +986,9 @@ func backupTests() {
 							_, err = vcVM.Reconfigure(vmCtx, vimtypes.VirtualMachineConfigSpec{
 								ExtraConfig: extraConfig,
 							})
+							Expect(err).NotTo(HaveOccurred())
+
+							err = vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
 							Expect(err).NotTo(HaveOccurred())
 						})
 
@@ -1032,6 +1057,9 @@ func backupTests() {
 								BackupVersion:    vT1,
 							}
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+
+							err := vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
+							Expect(err).NotTo(HaveOccurred())
 						})
 
 						It("Should skip backing up classic disk data", func() {
@@ -1058,6 +1086,9 @@ func backupTests() {
 								BackupVersion:    vT1,
 							}
 							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+
+							err := vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
+							Expect(err).NotTo(HaveOccurred())
 						})
 
 						It("Should clear classic disk data backup if no classic disks in ExtraConfig", func() {

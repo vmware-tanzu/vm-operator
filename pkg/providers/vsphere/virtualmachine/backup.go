@@ -57,13 +57,14 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 		}
 	}()
 
-	resVM := res.NewVMFromObject(opts.VcVM)
-	moVM, err := resVM.GetProperties(opts.VMCtx, []string{"config.extraConfig"})
-	if err != nil {
-		opts.VMCtx.Logger.Error(err, "failed to get VM properties for backup")
-		return err
+	config := opts.VMCtx.MoVM.Config
+	if config == nil || config.ExtraConfig == nil || config.Hardware.Device == nil {
+		// Fetch the properties we need for backup if either are not present.
+		if err := opts.VcVM.Properties(opts.VMCtx, opts.VcVM.Reference(), []string{"config.extraConfig", "config.hardware.device"}, &opts.VMCtx.MoVM); err != nil {
+			return err
+		}
 	}
-	curExCfg := pkgutil.OptionValues(moVM.Config.ExtraConfig)
+	curExCfg := pkgutil.OptionValues(opts.VMCtx.MoVM.Config.ExtraConfig)
 	var ecToUpdate pkgutil.OptionValues
 
 	/*
@@ -213,6 +214,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 		// reconfigure the VM, it is not what "update" means to a user.
 		ctx := ctxop.WithContext(opts.VMCtx)
 
+		resVM := res.NewVMFromObject(opts.VcVM)
 		if _, err := resVM.Reconfigure(ctx, configSpec); err != nil {
 			opts.VMCtx.Logger.Error(err, "failed to update VM ExtraConfig with latest backup data")
 			return err
@@ -406,10 +408,7 @@ func getBackupResourceVersions(ecResourceData string) (map[string]string, error)
 
 func getDesiredDiskDataForBackup(opts BackupVirtualMachineOptions) (string, string, error) {
 
-	deviceList, err := opts.VcVM.Device(opts.VMCtx)
-	if err != nil {
-		return "", "", err
-	}
+	deviceList := object.VirtualDeviceList(opts.VMCtx.MoVM.Config.Hardware.Device)
 
 	var (
 		pvcDiskData     []backupapi.PVCDiskData

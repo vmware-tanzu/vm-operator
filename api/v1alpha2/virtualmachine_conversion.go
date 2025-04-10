@@ -13,6 +13,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
+func Convert_v1alpha4_VirtualMachineBootstrapSpec_To_v1alpha2_VirtualMachineBootstrapSpec(
+	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha4_VirtualMachineBootstrapSpec_To_v1alpha2_VirtualMachineBootstrapSpec(in, out, s)
+}
+
 func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(
 	in *vmopv1.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s apiconversion.Scope) error {
 
@@ -141,6 +147,15 @@ func Convert_v1alpha4_VirtualMachine_To_v1alpha2_VirtualMachine(
 	}
 
 	return nil
+}
+
+func restore_v1alpha4_VirtualMachineBootstrapJoinDomainMode(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Bootstrap != nil {
+		if dst.Spec.Bootstrap == nil {
+			dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+		}
+		dst.Spec.Bootstrap.JoinDomainMode = src.Spec.Bootstrap.JoinDomainMode
+	}
 }
 
 func restore_v1alpha4_VirtualMachineCryptoSpec(dst, src *vmopv1.VirtualMachine) {
@@ -300,6 +315,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha4_VirtualMachineGuestID(dst, restored)
 	restore_v1alpha4_VirtualMachineCdrom(dst, restored)
 	restore_v1alpha4_VirtualMachineCryptoSpec(dst, restored)
+	restore_v1alpha4_VirtualMachineBootstrapJoinDomainMode(dst, restored)
 
 	// END RESTORE
 

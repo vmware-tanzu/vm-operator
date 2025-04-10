@@ -280,3 +280,7 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 		},
 	}
 }
+
+func ptrOf[T any](v T) *T {
+	return &v
+}

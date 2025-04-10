@@ -2495,6 +2495,41 @@ spec:
                                   Defaults to true if omitted.
                                 type: boolean
                             type: object
+                          joinDomainMode:
+                            default: Create
+                            description: |-
+                              JoinDomainMode describes the mode used when joining the VM to an Active
+                              Directory. There are two supported modes: Create and Wait:
+
+                              - Create, the default mode, requires the credentials used to join the
+                                domain to have privileges to create the Computer object for the system
+                                in the Active Directory.
+
+                              - Wait only requires the account used to join the domain to have the join
+                                privilege.
+
+                              Specifying the Wait mode when creating a new VM Operator VirtualMachine
+                              object causes VM Operator's mutation webhook to add the annotation
+                              vmoperator.vmware.com/paused to the VM, preventing the VM from being
+                              reconciled until the annotation is removed. This allows an external
+                              control plane to:
+
+                              1. Monitor and respond to the creation of new VirtualMachine objects.
+                              2. Create Computer objects in Active Directory for these VMs.
+                              3. Remove the pause annotation from the VM.
+
+                              Once the pause annotation is removed, the VirtualMachine will be
+                              reconciled as normal, eventually joining the Active Directory using the
+                              Computer object that was created by the external control plane.
+
+                              Please note, this field may only be set when creating a new VM object,
+                              after which it is immutable.
+
+                              Defaults to Create.
+                            enum:
+                            - Create
+                            - Wait
+                            type: string
                           linuxPrep:
                             description: |-
                               LinuxPrep may be used to bootstrap Linux guests.

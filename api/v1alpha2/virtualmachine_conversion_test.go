@@ -55,6 +55,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				ClassName:    "my-class",
 				StorageClass: "my-storage-class",
 				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					JoinDomainMode: vmopv1.VirtualMachineBootstrapJoinDomainModeCreate,
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 						CloudConfig: &vmopv1cloudinit.CloudConfig{
 							Timezone: "my-tz",

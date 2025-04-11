@@ -2824,6 +2824,18 @@ func vmTests() {
 				resourcePolicy = nil
 			})
 
+			When("a cluster module is specified without resource policy", func() {
+				JustBeforeEach(func() {
+					vm.Spec.Reserved.ResourcePolicyName = ""
+				})
+
+				It("returns error", func() {
+					_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("cannot set cluster module without resource policy"))
+				})
+			})
+
 			It("VM is created in child Folder and ResourcePool", func() {
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())

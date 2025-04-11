@@ -34,7 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -49,7 +49,6 @@ import (
 
 const (
 	webHookName                          = "default"
-	storageResourceQuotaStrPattern       = ".storageclass.storage.k8s.io/"
 	isRestrictedNetworkKey               = "IsRestrictedNetwork"
 	allowedRestrictedNetworkTCPProbePort = 6443
 
@@ -1332,16 +1331,26 @@ func (v validator) validateAvailabilityZone(
 func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
+	annotationPath := field.NewPath("metadata", "annotations")
+
+	clusterModuleName := vm.Annotations[pkgconst.ClusterModuleNameAnnotationKey]
+	if clusterModuleName != "" {
+		if vm.Spec.Reserved == nil || vm.Spec.Reserved.ResourcePolicyName == "" {
+			allErrs = append(allErrs, field.Forbidden(
+				annotationPath.Key(pkgconst.ClusterModuleNameAnnotationKey),
+				"cluster module assignment requires spec.reserved.resourcePolicyName to specify a VirtualMachineSetResourcePolicy"))
+		}
+	}
+
 	if ctx.IsPrivilegedAccount {
 		return allErrs
 	}
 
 	// Use an empty VM if the oldVM is nil to validate a creation request.
-	if oldVM == nil {
+	create := oldVM == nil
+	if create {
 		oldVM = &vmopv1.VirtualMachine{}
 	}
-
-	annotationPath := field.NewPath("metadata", "annotations")
 
 	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
@@ -1365,12 +1374,18 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 
 	// The following annotations will be added by the mutation webhook upon VM creation.
 	if !reflect.DeepEqual(oldVM, &vmopv1.VirtualMachine{}) {
-		if vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] != oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] {
-			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(constants.CreatedAtBuildVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+		if vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] != oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] {
+			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.CreatedAtBuildVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
 		}
 
-		if vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] != oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] {
-			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(constants.CreatedAtSchemaVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+		if vm.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] != oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] {
+			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.CreatedAtSchemaVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+		}
+	}
+
+	if !create {
+		if clusterModuleName != oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] {
+			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ClusterModuleNameAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
 		}
 	}
 

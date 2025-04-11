@@ -37,6 +37,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
@@ -1786,9 +1787,16 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		return nil, err
 	}
 
-	resourcePolicy, err := GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
-	if err != nil {
-		return nil, err
+	var resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
+	if vmCtx.VM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] != "" {
+		// Post create the resource policy is only needed to set the cluster module.
+		resourcePolicy, err = GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
+		if err != nil {
+			return nil, err
+		}
+		if resourcePolicy == nil {
+			return nil, fmt.Errorf("cannot set cluster module without resource policy")
+		}
 	}
 
 	bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)

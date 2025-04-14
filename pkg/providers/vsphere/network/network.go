@@ -7,6 +7,7 @@ package network
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -340,7 +343,7 @@ func createNetOPNetworkInterface(
 	}
 
 	_, err := controllerutil.CreateOrPatch(vmCtx, client, netIf, func() error {
-		if err := controllerutil.SetOwnerReference(vmCtx.VM, netIf, client.Scheme()); err != nil {
+		if err := SetNetworkInterfaceOwnerRef(vmCtx.VM, netIf, client.Scheme()); err != nil {
 			// If this fails we likely have an object name collision, and we're in a tough spot.
 			return err
 		}
@@ -508,7 +511,7 @@ func createNCPNetworkInterface(
 	}
 
 	_, err := controllerutil.CreateOrPatch(vmCtx, client, vnetIf, func() error {
-		if err := controllerutil.SetOwnerReference(vmCtx.VM, vnetIf, client.Scheme()); err != nil {
+		if err := SetNetworkInterfaceOwnerRef(vmCtx.VM, vnetIf, client.Scheme()); err != nil {
 			return err
 		}
 
@@ -643,7 +646,7 @@ func createVPCNetworkInterface(
 	}
 
 	_, err := controllerutil.CreateOrPatch(vmCtx, client, vpcSubnetPort, func() error {
-		if err := controllerutil.SetOwnerReference(vmCtx.VM, vpcSubnetPort, client.Scheme()); err != nil {
+		if err := SetNetworkInterfaceOwnerRef(vmCtx.VM, vpcSubnetPort, client.Scheme()); err != nil {
 			return err
 		}
 		if vpcSubnetPort.Labels == nil {
@@ -887,6 +890,41 @@ func ApplyInterfaceResultToVirtualEthCard(
 			return fmt.Errorf("unable to get ethernet card backing info for network %v: %w", result.NetworkID, err)
 		}
 		ethCard.Backing = backing
+	}
+
+	return nil
+}
+
+func SetNetworkInterfaceOwnerRef(vm *vmopv1.VirtualMachine, object metav1.Object, scheme *runtime.Scheme) error {
+	err := controllerutil.SetControllerReference(vm, object, scheme)
+	if err != nil {
+		var aoe *controllerutil.AlreadyOwnedError
+		if !errors.As(err, &aoe) {
+			return fmt.Errorf("failed to set controller owner ref for network interface: %w", err)
+		}
+
+		if owner := aoe.Owner; owner.Kind == "VirtualMachine" {
+			gv, err := schema.ParseGroupVersion(owner.APIVersion)
+			if err != nil {
+				return err
+			}
+
+			if vmopv1.GroupName == gv.Group {
+				// This network interface CR has another VM marked as the controller
+				// owner. That is not expected, and to prevent us from using an
+				// interface CR that does not belong to this VM and return an error.
+				return fmt.Errorf("network interface CR %s is already owned by VM %s", object.GetName(), owner.Name)
+			}
+		}
+
+		// Historically, we were just setting an owner ref instead of being the controller
+		// owner on the network interface CRs we created. Fallback to just that since this
+		// interface CR already has a controller owner but ideally we would have been using
+		// a controller ref from the start so we better assert that this interface is for
+		// this VM.
+		if err := controllerutil.SetOwnerReference(vm, object, scheme); err != nil {
+			return fmt.Errorf("failed to set owner ref for network interface: %w", err)
+		}
 	}
 
 	return nil

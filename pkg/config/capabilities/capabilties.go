@@ -42,6 +42,10 @@ const (
 	// CapabilityKeyWorkloadIsolation is the name of capability key
 	// defined in the capabilities ConfigMap and/or CRD.
 	CapabilityKeyWorkloadIsolation = "Workload_Domain_Isolation_Supported"
+
+	// CapabilityKeyMutableNetworks is the name of capability key
+	// defined in the capabilities ConfigMap and/or CRD.
+	CapabilityKeyMutableNetworks = "supports_VM_service_mutable_networks"
 )
 
 var (
@@ -180,6 +184,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.TKGMultipleCL = capStatus.Activated
 		case CapabilityKeyWorkloadIsolation:
 			fs.WorkloadDomainIsolation = capStatus.Activated
+		case CapabilityKeyMutableNetworks:
+			fs.MutableNetworks = capStatus.Activated
 		}
 	}
 	return fs

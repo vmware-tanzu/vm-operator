@@ -40,17 +40,21 @@ import (
 )
 
 type NetworkInterfaceResults struct {
-	Results []NetworkInterfaceResult
+	Results                   []NetworkInterfaceResult
+	AddedEthernetCard         bool
+	OrphanedNetworkInterfaces []ctrlclient.Object
 }
 
 type NetworkInterfaceResult struct {
+	ObjectName string
 	IPConfigs  []NetworkInterfaceIPConfig
 	MacAddress string
 	ExternalID string
 	NetworkID  string
 	Backing    object.NetworkReference
 
-	Device vimtypes.BaseVirtualDevice
+	Device    vimtypes.BaseVirtualDevice
+	DeviceKey int32
 
 	// Fields from the InterfaceSpec used later during customization.
 	Name            string
@@ -105,14 +109,11 @@ var (
 //     this burns an IP, and the user must know that DHCP is actually configured.
 //   - CR naming has mostly been working by luck, and sometimes didn't offer very good
 //     discoverability. Here, with v1a2 we now have a "name" field in our InterfaceSpec,
-//     so we use that (BMV: need to double-check that field meets k8s name requirements)
-//     A longer term option is to use GenerateName to ensure a unique name, and then
-//     client.List() and filter by the OwnerRef to find the VM's network CRs, and to
+//     so we use that. A longer term option is to use GenerateName to ensure a unique name,
+//     and then client.List() and filter by the OwnerRef to find the VM's network CRs, and to
 //     annotate the CRs to help identify which VM InterfaceSpec it corresponds to.
 //     Note that for existing v1a1 VMs we may need to add legacy name support here to
 //     find their interface CRs.
-//   - Instead of CreateOrUpdate, use CreateOrPatch to lessen the odds of blowing away
-//     any new fields.
 func CreateAndWaitForNetworkInterfaces(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
@@ -167,10 +168,6 @@ func CreateAndWaitForNetworkInterfaces(
 
 		results = append(results, *result)
 	}
-
-	// TODO: Once we really support network changing on the fly, we need to keep track of now
-	// unused network interface CRDs so they can be deleted after they're removed from the VM
-	// via Reconfigure, instead of delaying that until the VM is deleted via GC.
 
 	return NetworkInterfaceResults{
 		Results: results,
@@ -349,13 +346,13 @@ func createNetOPNetworkInterface(
 		Name:      NetOPCRName(vmCtx.VM.Name, networkRefName, interfaceSpec.Name, true),
 	}
 
-	// check if a networkIf object exists with the older (v1a1) naming convention
+	// Check if a networkIf object exists with the older (v1a1) naming convention.
 	if err := client.Get(vmCtx, netIfKey, netIf); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return nil, err
 		}
 
-		// if notFound set the netIf to the new v1a2 naming convention
+		// If NotFound set the netIf to the new v1a2 naming convention.
 		netIf.ObjectMeta = metav1.ObjectMeta{
 			Name:      NetOPCRName(vmCtx.VM.Name, networkRefName, interfaceSpec.Name, false),
 			Namespace: vmCtx.VM.Namespace,
@@ -411,6 +408,7 @@ func netOpNetIfToResult(
 	}
 
 	return &NetworkInterfaceResult{
+		ObjectName: netIf.Name,
 		IPConfigs:  ipConfigs,
 		MacAddress: netIf.Status.MacAddress, // Not set by NetOP.
 		ExternalID: netIf.Status.ExternalID, // Ditto.
@@ -608,6 +606,7 @@ func ncpNetIfToResult(
 	}
 
 	result := &NetworkInterfaceResult{
+		ObjectName: vnetIf.Name,
 		IPConfigs:  ipConfigs,
 		MacAddress: vnetIf.Status.MacAddress,
 		ExternalID: vnetIf.Status.InterfaceID,
@@ -712,7 +711,6 @@ func vpcSubnetPortToResult(
 	}
 
 	ipConfigs := []NetworkInterfaceIPConfig{}
-
 	for _, ipAddr := range subnetPort.Status.NetworkInterfaceConfig.IPAddresses {
 		// An empty ipAddress is NSX Operator's way of saying DHCP.
 		if ipAddr.IPAddress == "" {
@@ -731,6 +729,7 @@ func vpcSubnetPortToResult(
 	}
 
 	result := &NetworkInterfaceResult{
+		ObjectName: subnetPort.Name,
 		IPConfigs:  ipConfigs,
 		MacAddress: subnetPort.Status.NetworkInterfaceConfig.MACAddress,
 		ExternalID: subnetPort.Status.Attachment.ID,
@@ -769,10 +768,10 @@ func waitForReadyVPCSubnetPort(
 			// Try to return a more meaningful error when timed out.
 			for _, cond := range subnetPort.Status.Conditions {
 				if cond.Type == vpcv1alpha1.Ready && cond.Status != corev1.ConditionTrue {
-					return nil, fmt.Errorf("subnetPort is not ready: %s - %s", cond.Reason, cond.Message)
+					return nil, fmt.Errorf("network interface is not ready: %s - %s", cond.Reason, cond.Message)
 				}
 			}
-			return nil, fmt.Errorf("subnetPort is not ready yet")
+			return nil, fmt.Errorf("network interface is not ready yet")
 		}
 
 		return nil, err

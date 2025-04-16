@@ -38,7 +38,7 @@ var _ = Describe("GOSC", func() {
 		)
 
 		BeforeEach(func() {
-			results.Results = nil
+			results = network.NetworkInterfaceResults{}
 		})
 
 		JustBeforeEach(func() {

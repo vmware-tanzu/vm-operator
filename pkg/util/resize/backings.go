@@ -218,3 +218,46 @@ func MatchVirtualSCSIPassthroughDeviceBackingInfo(
 		expectedBacking.GetVirtualDeviceDeviceBackingInfo(),
 		curBacking.GetVirtualDeviceDeviceBackingInfo())
 }
+
+func MatchVirtualEthernetCardNetworkBackingInfo(
+	expectedBacking *vimtypes.VirtualEthernetCardNetworkBackingInfo,
+	baseBacking vimtypes.BaseVirtualDeviceBackingInfo) bool {
+
+	curBacking, ok := baseBacking.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
+	if !ok {
+		return false
+	}
+
+	// Ignore Network field since this is just used for testing.
+	// InPassthroughMode is deprecated.
+
+	return MatchVirtualDeviceDeviceBackingInfo(
+		expectedBacking.GetVirtualDeviceDeviceBackingInfo(),
+		curBacking.GetVirtualDeviceDeviceBackingInfo())
+}
+
+func MatchVirtualEthernetCardDistributedVirtualPortBackingInfo(
+	expectedBacking *vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo,
+	baseBacking vimtypes.BaseVirtualDeviceBackingInfo) bool {
+
+	curBacking, ok := baseBacking.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+	if !ok {
+		return false
+	}
+
+	return expectedBacking.Port.SwitchUuid == curBacking.Port.SwitchUuid &&
+		expectedBacking.Port.PortgroupKey == curBacking.Port.PortgroupKey
+}
+
+func MatchVirtualEthernetCardOpaqueNetworkBackingInfo(
+	expectedBacking *vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo,
+	baseBacking vimtypes.BaseVirtualDeviceBackingInfo) bool {
+
+	curBacking, ok := baseBacking.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
+	if !ok {
+		return false
+	}
+
+	return expectedBacking.OpaqueNetworkId == curBacking.OpaqueNetworkId &&
+		expectedBacking.OpaqueNetworkType == curBacking.OpaqueNetworkType
+}

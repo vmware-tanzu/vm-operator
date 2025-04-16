@@ -93,6 +93,9 @@ type VCSimTestConfig struct {
 	// NumFaultDomains is the number of zones.
 	NumFaultDomains int
 
+	// NumNetworks is the number of networks.
+	NumNetworks int
+
 	// WithContentLibrary configures a Content Library, populated with one image's
 	// name available in the TestContextForVCSim.ContentLibraryImageName.
 	WithContentLibrary bool
@@ -186,8 +189,10 @@ type TestContextForVCSim struct {
 	// When WithoutNativeKeyProvider is false:
 	NativeKeyProviderID string
 
-	networkEnv NetworkEnv
-	NetworkRef object.NetworkReference
+	networkEnv   NetworkEnv
+	networkCount int
+	NetworkRef   object.NetworkReference
+	NetworkRefs  []object.NetworkReference
 
 	model             *simulator.Model
 	server            *simulator.Server
@@ -219,6 +224,20 @@ const (
 	// clustersPerZone is how many clusters to create per zone.
 	clustersPerZone = 1
 )
+
+func GetNsxTLogicalSwitchUUID(idx int) string {
+	if idx == 0 {
+		return NsxTLogicalSwitchUUID
+	}
+	return fmt.Sprintf("%s-%d", NsxTLogicalSwitchUUID, idx)
+}
+
+func GetVPCTLogicalSwitchUUID(idx int) string {
+	if idx == 0 {
+		return VPCLogicalSwitchUUID
+	}
+	return fmt.Sprintf("%s-%d", VPCLogicalSwitchUUID, idx)
+}
 
 func NewTestContextForVCSim(
 	parentCtx context.Context,
@@ -329,9 +348,11 @@ func newTestContextForVCSim(
 	} else {
 		ctx.ZoneCount = zoneCount
 	}
-
 	ctx.ClustersPerZone = clustersPerZone
 	ctx.workloadDomainIsolation = !config.WithoutWorkloadDomainIsolation
+
+	ctx.networkEnv = config.WithNetworkEnv
+	ctx.networkCount = max(1, config.NumNetworks)
 
 	return ctx
 }
@@ -557,6 +578,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	vcModel.Host = 0
 	vcModel.Cluster = c.ZoneCount * c.ClustersPerZone
 	vcModel.ClusterHost = 2
+	vcModel.Portgroup = c.networkCount
 
 	Expect(vcModel.Create()).To(Succeed())
 
@@ -610,24 +632,27 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 		}
 	}
 
-	// For now just use a DVPG we get for free from vcsim. We can create our own later if needed.
-	c.NetworkRef, err = c.Finder.Network(c, "DC0_DVPG0")
-	Expect(err).ToNot(HaveOccurred())
-	c.networkEnv = config.WithNetworkEnv
+	for i := range c.networkCount {
+		networkRef, err := c.Finder.Network(c, fmt.Sprintf("DC0_DVPG%d", i))
+		Expect(err).ToNot(HaveOccurred())
+		if i == 0 {
+			c.NetworkRef = networkRef
+		}
+		c.NetworkRefs = append(c.NetworkRefs, networkRef)
 
-	switch c.networkEnv {
-	case NetworkEnvVDS:
-		// Nothing more needed for VDS.
-	case NetworkEnvNSXT:
-		dvpg, ok := vcModel.Map().Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
-		Expect(ok).To(BeTrue())
-		dvpg.Config.LogicalSwitchUuid = NsxTLogicalSwitchUUID
-		dvpg.Config.BackingType = "nsx"
-	case NetworkEnvVPC:
-		dvpg, ok := vcModel.Map().Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
-		Expect(ok).To(BeTrue())
-		dvpg.Config.LogicalSwitchUuid = VPCLogicalSwitchUUID
-		dvpg.Config.BackingType = "nsx"
+		switch c.networkEnv {
+		case NetworkEnvVDS:
+			// Nothing more needed for VDS.
+		case NetworkEnvNSXT, NetworkEnvVPC:
+			dvpg, ok := vcModel.Map().Get(networkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
+			Expect(ok).To(BeTrue())
+			if c.networkEnv == NetworkEnvNSXT {
+				dvpg.Config.LogicalSwitchUuid = GetNsxTLogicalSwitchUUID(i)
+			} else {
+				dvpg.Config.LogicalSwitchUuid = GetVPCTLogicalSwitchUUID(i)
+			}
+			dvpg.Config.BackingType = "nsx"
+		}
 	}
 
 	c.VCClientConfig = pkgclient.Config{

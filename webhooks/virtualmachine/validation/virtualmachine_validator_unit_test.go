@@ -30,14 +30,13 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
-
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -54,6 +53,7 @@ const (
 	dummyPausedVMLabelVal          = "dummy-devops"
 	dummyVmiName                   = "vmi-dummy"
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
+	dummyClusterModuleAnnVal       = "dummy-cluster-module"
 	vmiKind                        = "VirtualMachineImage"
 	cvmiKind                       = "Cluster" + vmiKind
 	invalidKind                    = "InvalidKind"
@@ -1041,6 +1041,26 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 					},
 					expectAllowed: true,
+				},
+			),
+			Entry("should allow creating VM with cluster module",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
+						ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{
+							ResourcePolicyName: "resource-policy",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should disallow creating VM with cluster module without resource policy",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations[vsphere-cluster-module-group]: Forbidden: cluster module assignment requires spec.reserved.resourcePolicyName to specify a VirtualMachineSetResourcePolicy`),
 				},
 			),
 		)
@@ -2767,16 +2787,16 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
-						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
-						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
@@ -2784,8 +2804,8 @@ func unitTestsValidateUpdate() {
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -2797,8 +2817,8 @@ func unitTestsValidateUpdate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
@@ -2806,8 +2826,8 @@ func unitTestsValidateUpdate() {
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -2821,16 +2841,16 @@ func unitTestsValidateUpdate() {
 
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
-						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
-						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
@@ -2845,11 +2865,12 @@ func unitTestsValidateUpdate() {
 
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
+						ctx.oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
 					},
 					expectAllowed: true,
 				},
@@ -2869,16 +2890,16 @@ func unitTestsValidateUpdate() {
 
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
-						ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
-						ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
@@ -2901,13 +2922,25 @@ func unitTestsValidateUpdate() {
 
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
-						ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
-						ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+						ctx.oldVM.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 					},
 					expectAllowed: true,
+				},
+			),
+			Entry("should disallow changing cluster module annotation by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
+						ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{ResourcePolicyName: "resource-policy"}
+						ctx.oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal + updateSuffix
+						ctx.oldVM.Spec.Reserved = ctx.vm.Spec.Reserved
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations[vsphere-cluster-module-group]: Forbidden: modifying this annotation is not allowed for non-admin users`),
 				},
 			),
 		)

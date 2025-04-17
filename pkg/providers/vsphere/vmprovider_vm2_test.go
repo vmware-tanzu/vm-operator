@@ -355,7 +355,7 @@ func vmE2ETests() {
 			bsSysprep   = "sysPrep"
 		)
 
-		DescribeTableSubtree("WTF",
+		DescribeTableSubtree("Simulate VM operations",
 			func(networkEnv builder.NetworkEnv, bootstrap string) {
 				var np fakeNetworkProvider
 

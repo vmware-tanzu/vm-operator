@@ -1286,4 +1286,82 @@ func unitTestsMutating() {
 			Expect(ctx.vm.Spec.ImageName).To(Equal("vmi-new"))
 		})
 	})
+
+	DescribeTable("ReconcileSysprepJoinDomainMode",
+		func(vm *vmopv1.VirtualMachine, expModified, expAnnotation bool) {
+			Expect(mutation.ReconcileSysprepJoinDomainMode(&ctx.WebhookRequestContext, vm)).To(Equal(expModified))
+			Expect(metav1.HasAnnotation(vm.ObjectMeta, vmopv1.PauseAnnotation)).To(Equal(expAnnotation))
+		},
+		Entry(
+			"spec.bootstrap is nil",
+			&vmopv1.VirtualMachine{},
+			false,
+			false,
+		),
+		Entry(
+			"spec.bootstrap is nil but has pause annotation",
+			&vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						vmopv1.PauseAnnotation: "",
+					},
+				},
+			},
+			false,
+			true,
+		),
+		Entry(
+			"spec.bootstrap.joinDomainMode is empty",
+			&vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+					},
+				},
+			},
+			false,
+			false,
+		),
+		Entry(
+			"spec.bootstrap.joinDomainMode is Create",
+			&vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						JoinDomainMode: vmopv1.VirtualMachineBootstrapJoinDomainModeCreate,
+					},
+				},
+			},
+			false,
+			false,
+		),
+		Entry(
+			"spec.bootstrap.joinDomainMode is Wait",
+			&vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						JoinDomainMode: vmopv1.VirtualMachineBootstrapJoinDomainModeWait,
+					},
+				},
+			},
+			true,
+			true,
+		),
+		Entry(
+			"spec.bootstrap.joinDomainMode is Wait but VM already paused",
+			&vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						vmopv1.PauseAnnotation: "",
+					},
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						JoinDomainMode: vmopv1.VirtualMachineBootstrapJoinDomainModeWait,
+					},
+				},
+			},
+			false,
+			true,
+		),
+	)
 }

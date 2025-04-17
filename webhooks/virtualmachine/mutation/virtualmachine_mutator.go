@@ -124,6 +124,7 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		SetDefaultPowerState(ctx, m.client, modified)
 		SetDefaultCdromImgKindOnCreate(ctx, modified)
 		SetImageNameFromCdrom(ctx, modified)
+		ReconcileSysprepJoinDomainMode(ctx, modified)
 		if _, err := SetDefaultInstanceUUID(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
 		}
@@ -612,4 +613,28 @@ func SetDefaultEncryptionClass(
 
 	return true, nil
 
+}
+
+// ReconcileSysprepJoinDomainMode adds the pause annotation to the VM if
+// spec.bootstrap.sysprep.joinDomainMode is set to "Wait".
+func ReconcileSysprepJoinDomainMode(
+	_ *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) bool {
+
+	modified := false
+
+	if bs := vm.Spec.Bootstrap; bs != nil {
+		if bs.JoinDomainMode == vmopv1.VirtualMachineBootstrapJoinDomainModeWait {
+			if vm.Annotations == nil {
+				vm.Annotations = map[string]string{}
+				modified = true
+			}
+			if !metav1.HasAnnotation(vm.ObjectMeta, vmopv1.PauseAnnotation) {
+				vm.Annotations[vmopv1.PauseAnnotation] = ""
+				modified = true
+			}
+		}
+	}
+
+	return modified
 }

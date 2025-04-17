@@ -247,6 +247,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBootstrapJoinDomainModeOnUpdate(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -254,6 +255,33 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+}
+
+func (v validator) validateBootstrapJoinDomainModeOnUpdate(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	var (
+		jdm    vmopv1.VirtualMachineBootstrapJoinDomainMode
+		oldJDM vmopv1.VirtualMachineBootstrapJoinDomainMode
+	)
+
+	if vm.Spec.Bootstrap != nil {
+		jdm = vm.Spec.Bootstrap.JoinDomainMode
+	}
+	if oldVM.Spec.Bootstrap != nil {
+		oldJDM = oldVM.Spec.Bootstrap.JoinDomainMode
+	}
+
+	allErrs = append(allErrs,
+		validation.ValidateImmutableField(
+			jdm,
+			oldJDM,
+			field.NewPath("spec", "bootstrap", "joinDomainMode"))...)
+
+	return allErrs
 }
 
 func (v validator) validateBootstrap(

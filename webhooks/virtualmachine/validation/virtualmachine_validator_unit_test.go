@@ -3258,6 +3258,64 @@ func unitTestsValidateUpdate() {
 		)
 	})
 
+	Context("JoinDomainMode", func() {
+		DescribeTable("Forbid changing spec.bootstrap.joinDomainMode", doTest,
+			Entry("oldVM.spec.bootstrap is nil",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.oldVM.Spec.Bootstrap = nil
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							JoinDomainMode: vmopv1.VirtualMachineBootstrapJoinDomainModeCreate,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "bootstrap", "joinDomainMode"),
+							vmopv1.VirtualMachineBootstrapJoinDomainModeCreate,
+							apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+			Entry("oldVM.spec.bootstrap.joinDomainMode is empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							JoinDomainMode: vmopv1.VirtualMachineBootstrapJoinDomainModeCreate,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "bootstrap", "joinDomainMode"),
+							vmopv1.VirtualMachineBootstrapJoinDomainModeCreate,
+							apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+			Entry("oldVM.spec.bootstrap.joinDomainMode is non-empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							JoinDomainMode: vmopv1.VirtualMachineBootstrapJoinDomainModeWait,
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							JoinDomainMode: vmopv1.VirtualMachineBootstrapJoinDomainModeCreate,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(field.NewPath("spec", "bootstrap", "joinDomainMode"),
+							vmopv1.VirtualMachineBootstrapJoinDomainModeCreate,
+							apivalidation.FieldImmutableErrorMsg).Error()),
+				},
+			),
+		)
+	})
+
 	Context("Network", func() {
 
 		DescribeTable("update network", doTest,

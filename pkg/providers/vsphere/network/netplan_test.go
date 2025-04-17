@@ -112,6 +112,26 @@ var _ = Describe("Netplan", func() {
 				Expect(*route.Via).To(Equal("10.1.1.1"))
 				Expect(*route.Metric).To(BeEquivalentTo(42))
 			})
+
+			Context("Gateway4/6 are disabled", func() {
+				BeforeEach(func() {
+					results.Results[0].IPConfigs[0].Gateway = ""
+					results.Results[0].IPConfigs[1].Gateway = ""
+				})
+
+				It("gateways are nil", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(config).ToNot(BeNil())
+					Expect(config.Version).To(Equal(constants.NetPlanVersion))
+
+					Expect(config.Ethernets).To(HaveLen(1))
+					Expect(config.Ethernets).To(HaveKey(ifName))
+
+					np := config.Ethernets[ifName]
+					Expect(np.Gateway4).To(BeNil())
+					Expect(np.Gateway6).To(BeNil())
+				})
+			})
 		})
 
 		Context("IPv4/6 DHCP", func() {

@@ -21,9 +21,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
-	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -824,7 +824,7 @@ func (s *Session) attachClusterModule(
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
 	// The clusterModule is required be able to enforce the vm-vm anti-affinity policy.
-	clusterModuleName := vmCtx.VM.Annotations[pkg.ClusterModuleNameKey]
+	clusterModuleName := vmCtx.VM.Annotations[pkgconst.ClusterModuleNameAnnotationKey]
 	if clusterModuleName == "" {
 		return nil
 	}

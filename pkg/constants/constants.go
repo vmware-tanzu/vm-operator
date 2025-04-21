@@ -91,4 +91,8 @@ const (
 	// VCCredsSecretName is the name of the secret in the pod namespace
 	// that contains the VC credentials.
 	VCCredsSecretName = "wcp-vmop-sa-vc-auth" //nolint:gosec
+
+	// ClusterModuleNameAnnotationKey is the annotation key for cluster module group name for
+	// the VM. The VM must have a VirtualMachineSetResourcePolicy assigned.
+	ClusterModuleNameAnnotationKey string = "vsphere-cluster-module-group"
 )

@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
@@ -51,6 +52,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "network-test-vm",
 				Namespace: "network-test-ns",
+				UID:       "network-test-uid",
 			},
 		}
 
@@ -274,6 +276,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						},
 					}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					Expect(metav1.IsControlledBy(netInterface, vm)).To(BeTrue())
 					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
 					Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
@@ -364,6 +367,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(metav1.IsControlledBy(netInterface, vm)).To(BeTrue())
 						Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
 						Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
@@ -466,6 +470,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						},
 					}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					Expect(metav1.IsControlledBy(netInterface, vm)).To(BeTrue())
 					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
 					Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
 
@@ -569,6 +574,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(metav1.IsControlledBy(netInterface, vm)).To(BeTrue())
 						Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
 
 						netInterface.Status.InterfaceID = interfaceID
@@ -687,10 +693,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							Namespace: vm.Namespace,
 						},
 					}
-					annotationVal := "virtualmachine/" + vm.Name + "/" + interfaceName
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
-					Expect(subnetPort.Spec.SubnetSet).To(Equal(networkName))
+					Expect(metav1.IsControlledBy(subnetPort, vm)).To(BeTrue())
+					annotationVal := "virtualmachine/" + vm.Name + "/" + interfaceName
 					Expect(subnetPort.Annotations).To(HaveKeyWithValue(constants.VPCAttachmentRef, annotationVal))
+					Expect(subnetPort.Spec.SubnetSet).To(Equal(networkName))
 
 					subnetPort.Status.Attachment.ID = interfaceID
 					subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
@@ -756,6 +763,69 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(results.Results[0].Backing).ToNot(BeNil())
 				Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
 			})
+		})
+	})
+})
+
+var _ = Describe("SetNetworkInterfaceOwnerRef", func() {
+	var (
+		vm           *vmopv1.VirtualMachine
+		netInterface *netopv1alpha1.NetworkInterface
+		client       client.Client
+	)
+
+	BeforeEach(func() {
+		vm = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-vm",
+				Namespace: "my-ns",
+				UID:       "my-vm-uid",
+			},
+		}
+		netInterface = &netopv1alpha1.NetworkInterface{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-interface",
+				Namespace: vm.Namespace,
+			},
+		}
+
+		client = builder.NewFakeClient()
+	})
+
+	When("Network interface has VM owner ref", func() {
+		It("owner ref gets upgraded to controller ref", func() {
+			Expect(controllerutil.SetOwnerReference(vm, netInterface, client.Scheme())).To(Succeed())
+
+			err := network.SetNetworkInterfaceOwnerRef(vm, netInterface, client.Scheme())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(netInterface.OwnerReferences).To(HaveLen(1))
+			Expect(metav1.IsControlledBy(netInterface, vm)).To(BeTrue())
+		})
+	})
+
+	When("Network interface already has a controller ref", func() {
+		It("VM is added as owner ref", func() {
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "my-cm", Namespace: vm.Namespace, UID: "my-cm-uid"}}
+			Expect(controllerutil.SetControllerReference(cm, netInterface, client.Scheme())).To(Succeed())
+
+			err := network.SetNetworkInterfaceOwnerRef(vm, netInterface, client.Scheme())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(netInterface.OwnerReferences).To(HaveLen(2))
+			Expect(netInterface.OwnerReferences[0].Name).To(Equal(cm.Name))
+			Expect(netInterface.OwnerReferences[1].Name).To(Equal(vm.Name))
+			Expect(metav1.IsControlledBy(netInterface, cm)).To(BeTrue())
+		})
+	})
+
+	When("Network interface already has a controller ref that is a VM", func() {
+		It("New VM is not added as owner ref", func() {
+			ownerVM := &vmopv1.VirtualMachine{ObjectMeta: metav1.ObjectMeta{Name: "my-vm-1", Namespace: vm.Namespace}}
+			Expect(controllerutil.SetControllerReference(ownerVM, netInterface, client.Scheme())).To(Succeed())
+
+			err := network.SetNetworkInterfaceOwnerRef(vm, netInterface, client.Scheme())
+			Expect(err).To(HaveOccurred())
+			Expect(netInterface.OwnerReferences).To(HaveLen(1))
+			Expect(metav1.IsControlledBy(netInterface, ownerVM)).To(BeTrue())
 		})
 	})
 })

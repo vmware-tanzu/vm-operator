@@ -172,18 +172,15 @@ type FeatureStates struct {
 	K8sWorkloadMgmtAPI         bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
 	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR
 	TKGMultipleCL              bool // to be fetched dynamically from capability
-	// TODO(akutz) This FSS is a placeholder until leadership can figure out the
-	//             plan for FSSs going forward.
-	UnifiedStorageQuota       bool // FSS_PLACEHOLDER_WCP_UNIFIED_STORAGE_QUOTA
-	VMResize                  bool // FSS_WCP_VMSERVICE_RESIZE
-	VMResizeCPUMemory         bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
-	VMImportNewNet            bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
-	WorkloadDomainIsolation   bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
-	VMIncrementalRestore      bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
-	BringYourOwnEncryptionKey bool // FSS_WCP_VMSERVICE_BYOK
-	SVAsyncUpgrade            bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
-	FastDeploy                bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
-	MutableNetworks           bool
+	VMResize                   bool // FSS_WCP_VMSERVICE_RESIZE
+	VMResizeCPUMemory          bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
+	VMImportNewNet             bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
+	WorkloadDomainIsolation    bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
+	VMIncrementalRestore       bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
+	BringYourOwnEncryptionKey  bool // FSS_WCP_VMSERVICE_BYOK
+	SVAsyncUpgrade             bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
+	FastDeploy                 bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
+	MutableNetworks            bool
 }
 
 type InstanceStorage struct {

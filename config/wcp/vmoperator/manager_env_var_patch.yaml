@@ -97,12 +97,6 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_STORAGE_QUOTA_M2
-    value: "<FSS_STORAGE_QUOTA_M2>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
     name: FSS_WCP_VMSERVICE_BYOK
     value: "<FSS_WCP_VMSERVICE_BYOK>"
 
@@ -184,4 +178,10 @@
   path: /spec/template/spec/containers/0/env/-
   value:
     name: FSS_WCP_VMSERVICE_ISO_SUPPORT
+    value: "true"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_STORAGE_QUOTA_M2
     value: "true"

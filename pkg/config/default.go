@@ -28,7 +28,6 @@ func Default() Config {
 			InstanceStorage:            true,
 			PodVMOnStretchedSupervisor: false,
 			TKGMultipleCL:              false,
-			UnifiedStorageQuota:        false,
 			WorkloadDomainIsolation:    false,
 		},
 		InstanceStorage: InstanceStorage{

@@ -56,10 +56,8 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota {
-		if err := unifiedstoragequota.AddToManager(ctx, mgr); err != nil {
-			return fmt.Errorf("failed to initialize UnifiedStorageQuota webhooks: %w", err)
-		}
+	if err := unifiedstoragequota.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to initialize UnifiedStorageQuota webhooks: %w", err)
 	}
 
 	return nil

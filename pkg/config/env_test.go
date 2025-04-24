@@ -95,7 +95,6 @@ var _ = Describe(
 					Expect(os.Setenv("FSS_WCP_INSTANCE_STORAGE", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_NAMESPACED_VM_CLASS", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API", "true")).To(Succeed())
-					Expect(os.Setenv("FSS_STORAGE_QUOTA_M2", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", "true")).To(Succeed())
@@ -150,7 +149,6 @@ var _ = Describe(
 						Features: pkgcfg.FeatureStates{
 							InstanceStorage:           false,
 							K8sWorkloadMgmtAPI:        true,
-							UnifiedStorageQuota:       true,
 							VMResize:                  true,
 							VMResizeCPUMemory:         true,
 							VMImportNewNet:            true,

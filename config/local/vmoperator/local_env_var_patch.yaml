@@ -33,8 +33,6 @@ spec:
           value: "false"
         - name: FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
           value: "false"
-        - name: FSS_STORAGE_QUOTA_M2
-          value: "false"
         - name: FSS_WCP_VMSERVICE_BYOK
           value: "false"
         - name: FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
@@ -68,4 +66,6 @@ spec:
         - name: FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
           value: "true"
         - name: FSS_WCP_VMSERVICE_ISO_SUPPORT
+          value: "true"
+        - name: FSS_STORAGE_QUOTA_M2
           value: "true"

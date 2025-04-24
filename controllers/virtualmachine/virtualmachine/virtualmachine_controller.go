@@ -349,12 +349,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	defer func() {
-		if pkgcfg.FromContext(ctx).Features.UnifiedStorageQuota {
-			vmopv1util.SyncStorageUsageForNamespace(
-				ctx,
-				vm.Namespace,
-				vm.Spec.StorageClass)
-		}
+		vmopv1util.SyncStorageUsageForNamespace(
+			ctx,
+			vm.Namespace,
+			vm.Spec.StorageClass)
 		if err := patchHelper.Patch(ctx, vm); err != nil {
 			if reterr == nil {
 				reterr = err

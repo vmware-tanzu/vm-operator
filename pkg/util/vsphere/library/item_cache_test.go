@@ -6,6 +6,7 @@ package library_test
 
 import (
 	"context"
+	"os"
 	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -23,9 +24,8 @@ type nilContextKey uint8
 var nilContext = context.WithValue(context.Background(), nilContextKey(0), "nil")
 
 type fakeCacheStorageURIsClient struct {
-	queryErr    error
-	queryResult string
-	queryCalls  int32
+	queryErr   error
+	queryCalls int32
 
 	copyErr    error
 	copyResult *object.Task
@@ -38,13 +38,13 @@ type fakeCacheStorageURIsClient struct {
 	waitCalls int32
 }
 
-func (m *fakeCacheStorageURIsClient) QueryVirtualDiskUuid( //nolint:revive,stylecheck
+func (m *fakeCacheStorageURIsClient) DatastoreFileExists(
 	ctx context.Context,
 	name string,
-	datacenter *object.Datacenter) (string, error) {
+	datacenter *object.Datacenter) error {
 
 	_ = atomic.AddInt32(&m.queryCalls, 1)
-	return m.queryResult, m.queryErr
+	return m.queryErr
 }
 
 func (m *fakeCacheStorageURIsClient) CopyVirtualDisk(
@@ -252,7 +252,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			When("querying the virtual disk fails with FileNotFound", func() {
 
 				BeforeEach(func() {
-					client.queryErr = soap.WrapVimFault(&vimtypes.FileNotFound{})
+					client.queryErr = os.ErrNotExist
 				})
 
 				When("creating the path where the disk is cached fails", func() {

@@ -6,18 +6,23 @@ package virtualmachineimagecache
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"os"
 	"path"
 	"reflect"
 	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/fault"
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -551,10 +556,7 @@ func getDatacenters(
 	vimClient *vim25.Client,
 	obj *vmopv1.VirtualMachineImageCache) (map[string]*object.Datacenter, error) {
 
-	var (
-		refList []vimtypes.ManagedObjectReference
-		objMap  = map[string]*object.Datacenter{}
-	)
+	objMap := map[string]*object.Datacenter{}
 
 	// Get a set of unique datacenters used by the item's storage.
 	for i := range obj.Spec.Locations {
@@ -564,29 +566,22 @@ func getDatacenters(
 				Type:  "Datacenter",
 				Value: l.DatacenterID,
 			}
-			objMap[l.DatacenterID] = object.NewDatacenter(vimClient, ref)
-			refList = append(refList, ref)
+
+			var err error
+			dc := object.NewDatacenter(vimClient, ref)
+			// Needed for dcPath param to NewDatastoreURL
+			dc.InventoryPath, err = find.InventoryPath(ctx, vimClient, ref)
+			if err != nil {
+				var f *vimtypes.ManagedObjectNotFound
+				if _, ok := fault.As(err, &f); ok {
+					return nil, fmt.Errorf("invalid datacenter ID: %s", f.Obj.Value)
+				}
+
+				return nil, fmt.Errorf("failed to get datacenter properties: %w", err)
+			}
+
+			objMap[l.DatacenterID] = dc
 		}
-	}
-
-	var (
-		moList []mo.Datacenter
-		pc     = property.DefaultCollector(vimClient)
-	)
-
-	// Populate the properties of the unique datacenters.
-	if err := pc.Retrieve(
-		ctx,
-		refList,
-		[]string{"name"},
-		&moList); err != nil {
-
-		var f *vimtypes.ManagedObjectNotFound
-		if _, ok := fault.As(err, &f); ok {
-			return nil, fmt.Errorf("invalid datacenter ID: %s", f.Obj.Value)
-		}
-
-		return nil, fmt.Errorf("failed to get datacenter properties: %w", err)
 	}
 
 	return objMap, nil
@@ -727,6 +722,34 @@ func newCacheStorageURIsClient(c *vim25.Client) clsutil.CacheStorageURIsClient {
 type cacheStorageURIsClient struct {
 	*object.FileManager
 	*object.VirtualDiskManager
+}
+
+func (c *cacheStorageURIsClient) DatastoreFileExists(
+	ctx context.Context,
+	name string,
+	datacenter *object.Datacenter) error {
+
+	var p object.DatastorePath
+	p.FromString(name)
+
+	vc := c.FileManager.Client()
+	u := object.NewDatastoreURL(*vc.URL(), datacenter.InventoryPath, p.Datastore, p.Path)
+
+	res, err := vc.DownloadRequest(ctx, u, &soap.Download{Method: http.MethodHead})
+	if err != nil {
+		return err
+	}
+
+	_ = res.Body.Close() // No Body sent with HEAD request, but still need to close
+
+	switch res.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return os.ErrNotExist
+	default:
+		return errors.New(res.Status)
+	}
 }
 
 func (c *cacheStorageURIsClient) WaitForTask(

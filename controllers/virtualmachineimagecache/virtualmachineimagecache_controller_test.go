@@ -421,12 +421,12 @@ var _ = Describe(
 					func() vmopv1.VirtualMachineImageCache {
 
 						faker.fakeSRIClient = true
-						faker.queryVirtualDiskUuidFn = func(
+						faker.datastoreFileExistsFn = func(
 							context.Context,
 							string,
-							*object.Datacenter) (string, error) {
+							*object.Datacenter) error {
 
-							return "", errors.New("query disk error")
+							return errors.New("query disk error")
 						}
 
 						return getVMICacheObj(
@@ -440,7 +440,7 @@ var _ = Describe(
 					},
 					true, "", // OVFReady
 					true, "", // ProviderReady
-					false, "0 of 1 completed", "failed to cache storage items: failed to query disk uuid: query disk error", // DisksReady
+					false, "0 of 1 completed", "failed to cache storage items: failed to query disk: query disk error", // DisksReady
 					false, "2 of 3 completed", // Ready
 				),
 			)
@@ -485,10 +485,10 @@ type fakeClient struct {
 	fakeCLSProvdr bool
 	fakeSRIClient bool
 
-	queryVirtualDiskUuidFn func( //nolint:revive,stylecheck
+	datastoreFileExistsFn func(
 		ctx context.Context,
 		name string,
-		datacenter *object.Datacenter) (string, error)
+		datacenter *object.Datacenter) error
 
 	copyVirtualDiskFn func(
 		ctx context.Context,
@@ -561,7 +561,7 @@ func (m *fakeClient) reset() {
 	m.fakeCLSProvdr = false
 	m.fakeSRIClient = false
 
-	m.queryVirtualDiskUuidFn = nil
+	m.datastoreFileExistsFn = nil
 	m.copyVirtualDiskFn = nil
 	m.makeDirectoryFn = nil
 	m.waitForTaskFn = nil
@@ -597,15 +597,15 @@ func (m *fakeClient) newCacheStorageURIsClientFn(
 	return nil
 }
 
-func (m *fakeClient) QueryVirtualDiskUuid( //nolint:revive,stylecheck
+func (m *fakeClient) DatastoreFileExists(
 	ctx context.Context,
 	name string,
-	datacenter *object.Datacenter) (string, error) {
+	datacenter *object.Datacenter) error {
 
-	if fn := m.queryVirtualDiskUuidFn; fn != nil {
+	if fn := m.datastoreFileExistsFn; fn != nil {
 		return fn(ctx, name, datacenter)
 	}
-	return "", nil
+	return nil
 }
 
 func (m *fakeClient) CopyVirtualDisk(

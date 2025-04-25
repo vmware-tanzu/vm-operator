@@ -137,6 +137,7 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 			JoinWorkgroup: from.Identification.JoinWorkgroup,
 			JoinDomain:    bsArgs.DomainName,
 			DomainAdmin:   from.Identification.DomainAdmin,
+			DomainOU:      from.Identification.DomainOU,
 		}
 		if bootstrapData.Sysprep != nil && bootstrapData.Sysprep.DomainPassword != "" {
 			sysprepCustomization.Identification.DomainAdminPassword = &vimtypes.CustomizationPassword{

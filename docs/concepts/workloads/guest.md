@@ -195,8 +195,8 @@ When more advanced configurations are required, a raw cloud config may be used v
       bootstrap:
         cloudInit:
           rawCloudConfig:
-            key:  my-vm-bootstrap-data
-            name: user-data
+            name:  my-vm-bootstrap-data
+            key: user-data
     ```
 
 === "CloudConfig"

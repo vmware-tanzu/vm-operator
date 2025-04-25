@@ -724,9 +724,13 @@ func (v validator) validateNetworkInterfaceSpec(
 		p := interfacePath.Child("routes")
 
 		for i, r := range interfaceSpec.Routes {
-			ip, _, err := net.ParseCIDR(r.To)
-			if err != nil {
-				allErrs = append(allErrs, field.Invalid(p.Index(i).Child("to"), r.To, err.Error()))
+			var toIP net.IP
+			if r.To != "default" {
+				ip, _, err := net.ParseCIDR(r.To)
+				if err != nil {
+					allErrs = append(allErrs, field.Invalid(p.Index(i).Child("to"), r.To, err.Error()))
+				}
+				toIP = ip
 			}
 
 			viaIP := net.ParseIP(r.Via)
@@ -735,9 +739,11 @@ func (v validator) validateNetworkInterfaceSpec(
 					field.Invalid(p.Index(i).Child("via"), r.Via, "must be an IPv4 or IPv6 address"))
 			}
 
-			if (ip.To4() != nil) != (viaIP.To4() != nil) {
-				allErrs = append(allErrs,
-					field.Invalid(p.Index(i), "", "cannot mix IP address families"))
+			if toIP != nil {
+				if (toIP.To4() != nil) != (viaIP.To4() != nil) {
+					allErrs = append(allErrs,
+						field.Invalid(p.Index(i), "", "cannot mix IP address families"))
+				}
 			}
 		}
 	}

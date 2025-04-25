@@ -677,4 +677,106 @@ var _ = Describe("Backings", func() {
 		),
 	)
 
+	DescribeTable("MatchVirtualPCIPassthroughVmiopBackingInfo",
+		func(expected *vimtypes.VirtualPCIPassthroughVmiopBackingInfo, current vimtypes.BaseVirtualDeviceBackingInfo, match bool) {
+			m := resize.MatchVirtualPCIPassthroughVmiopBackingInfo(expected, current)
+			Expect(m).To(Equal(match), cmp.Diff(current, expected))
+		},
+
+		Entry("#1",
+			&vimtypes.VirtualPCIPassthroughVmiopBackingInfo{},
+			&vimtypes.VirtualNVDIMMBackingInfo{},
+			false,
+		),
+		Entry("#2",
+			&vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+				Vgpu: "foo",
+			},
+			&vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+				Vgpu: "foo",
+			},
+			true,
+		),
+		Entry("#3",
+			&vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+				Vgpu: "foo",
+			},
+			&vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+				Vgpu: "bar",
+			},
+			false,
+		),
+	)
+
+	DescribeTable("MatchVirtualPCIPassthroughDynamicBackingInfo",
+		func(expected *vimtypes.VirtualPCIPassthroughDynamicBackingInfo, current vimtypes.BaseVirtualDeviceBackingInfo, match bool) {
+			m := resize.MatchVirtualPCIPassthroughDynamicBackingInfo(expected, current)
+			Expect(m).To(Equal(match), cmp.Diff(current, expected))
+		},
+
+		Entry("#1",
+			&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{},
+			&vimtypes.VirtualNVDIMMBackingInfo{},
+			false,
+		),
+		Entry("#2",
+			&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+				CustomLabel: "foo",
+			},
+			&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+				CustomLabel: "bar",
+			},
+			false,
+		),
+		Entry("#3",
+			&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+				CustomLabel: "foo",
+				AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
+					{
+						VendorId: 1,
+						DeviceId: 2,
+					},
+				},
+			},
+			&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+				CustomLabel: "foo",
+				AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
+					{
+						VendorId: 1,
+						DeviceId: 200,
+					},
+					{
+						VendorId: 100,
+						DeviceId: 2,
+					},
+				},
+			},
+			false,
+		),
+		Entry("#4",
+			&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+				CustomLabel: "foo",
+				AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
+					{
+						VendorId: 1,
+						DeviceId: 2,
+					},
+					{
+						VendorId: 3,
+						DeviceId: 4,
+					},
+				},
+			},
+			&vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+				CustomLabel: "foo",
+				AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
+					{
+						VendorId: 3,
+						DeviceId: 4,
+					},
+				},
+			},
+			true,
+		),
+	)
 })

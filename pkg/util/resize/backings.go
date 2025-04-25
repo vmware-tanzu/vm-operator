@@ -261,3 +261,49 @@ func MatchVirtualEthernetCardOpaqueNetworkBackingInfo(
 	return expectedBacking.OpaqueNetworkId == curBacking.OpaqueNetworkId &&
 		expectedBacking.OpaqueNetworkType == curBacking.OpaqueNetworkType
 }
+
+func MatchVirtualPCIPassthroughVmiopBackingInfo(
+	expectedBacking *vimtypes.VirtualPCIPassthroughVmiopBackingInfo,
+	baseBacking vimtypes.BaseVirtualDeviceBackingInfo) bool {
+
+	curBacking, ok := baseBacking.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
+	if !ok {
+		return false
+	}
+
+	if expectedBacking.Vgpu != curBacking.Vgpu {
+		return false
+	}
+
+	return true
+}
+
+func MatchVirtualPCIPassthroughDynamicBackingInfo(
+	expectedBacking *vimtypes.VirtualPCIPassthroughDynamicBackingInfo,
+	baseBacking vimtypes.BaseVirtualDeviceBackingInfo) bool {
+
+	curBacking, ok := baseBacking.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
+	if !ok {
+		return false
+	}
+
+	if label := expectedBacking.CustomLabel; label != "" {
+		if label != curBacking.CustomLabel {
+			return false
+		}
+	}
+
+	if len(expectedBacking.AllowedDevice) == 0 {
+		return true
+	}
+
+	for _, x := range curBacking.AllowedDevice {
+		for _, y := range expectedBacking.AllowedDevice {
+			if x.DeviceId == y.DeviceId && x.VendorId == y.VendorId {
+				return true
+			}
+		}
+	}
+
+	return false
+}

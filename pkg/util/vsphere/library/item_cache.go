@@ -6,11 +6,12 @@ package library
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 
-	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -31,10 +32,10 @@ type CachedDisk struct {
 // CacheStorageURIsClient implements the client methods used by the
 // CacheStorageURIs method.
 type CacheStorageURIsClient interface {
-	QueryVirtualDiskUuid(
+	DatastoreFileExists(
 		ctx context.Context,
 		name string,
-		datacenter *object.Datacenter) (string, error)
+		datacenter *object.Datacenter) error
 
 	CopyVirtualDisk(
 		ctx context.Context,
@@ -111,7 +112,7 @@ func copyDisk(
 	)
 
 	// Check to see if the disk is already cached.
-	_, queryDiskErr := client.QueryVirtualDiskUuid(
+	queryDiskErr := client.DatastoreFileExists(
 		ctx,
 		dstFilePath,
 		dstDatacenter)
@@ -119,8 +120,8 @@ func copyDisk(
 		// Disk exists, return the path to it.
 		return dstFilePath, nil
 	}
-	if !fault.Is(queryDiskErr, &vimtypes.FileNotFound{}) {
-		return "", fmt.Errorf("failed to query disk uuid: %w", queryDiskErr)
+	if !errors.Is(queryDiskErr, os.ErrNotExist) {
+		return "", fmt.Errorf("failed to query disk: %w", queryDiskErr)
 	}
 
 	// Ensure the directory where the disks will be cached exists.

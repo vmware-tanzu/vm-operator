@@ -92,7 +92,7 @@ The data in the above `Secret` is referenced by portions of the `VirtualMachine`
 
 #### Schema Differences
 
-Please note, there are a few differences between the inline Cloud Config and the official format. Please refer to [`./api/v1alpha2/cloudinit/cloudconfig.go`](https://github.com/vmware-tanzu/vm-operator/blob/main/api/v1alpha2/cloudinit/cloudconfig.go) for up-to-date information on how the inline Cloud Config compares to the official format.
+Please note, there are a few differences between the inline Cloud Config and the official format. Please refer to [`./api/v1alpha4/cloudinit/cloudconfig.go`](https://github.com/vmware-tanzu/vm-operator/blob/main/api/v1alpha4/cloudinit/cloudconfig.go) for up-to-date information on how the inline Cloud Config compares to the official format.
 
 ##### Default User
 
@@ -380,16 +380,16 @@ The following YAML may be used to bootstrap a Windows image with minimal informa
                   <Ipv6Settings>
                     <DhcpEnabled>false</DhcpEnabled>
                   </Ipv6Settings>
-                  <Identifier>{{ V1alpha1_FirstNicMacAddr }}</Identifier>
+                  <Identifier>{{ V1alpha4_FirstNicMacAddr }}</Identifier>
                   <UnicastIpAddresses>
-                    <IpAddress wcm:action="add" wcm:keyValue="1">{{ V1alpha1_FirstIP }}</IpAddress>
+                    <IpAddress wcm:action="add" wcm:keyValue="1">{{ V1alpha4_FirstIP }}</IpAddress>
                   </UnicastIpAddresses>
                   <Routes>
                     <Route wcm:action="add">
                       <Identifier>0</Identifier>
                       <Metric>10</Metric>
-                      <NextHopAddress>{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}</NextHopAddress>
-                      <Prefix>{{ V1alpha1_SubnetMask V1alpha1_FirstIP }}</Prefix>
+                      <NextHopAddress>{{ (index .V1alpha4.Net.Devices 0).Gateway4 }}</NextHopAddress>
+                      <Prefix>{{ V1alpha4_SubnetMask V1alpha4_FirstIP }}</Prefix>
                     </Route>
                   </Routes>
                 </Interface>
@@ -401,8 +401,8 @@ The following YAML may be used to bootstrap a Windows image with minimal informa
               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
               <Interfaces>
                 <Interface wcm:action="add">
-                  <Identifier>{{ V1alpha1_FirstNicMacAddr }}</Identifier>
-                  <DNSServerSearchOrder> {{ range .V1alpha1.Net.Nameservers }} <IpAddress
+                  <Identifier>{{ V1alpha4_FirstNicMacAddr }}</Identifier>
+                  <DNSServerSearchOrder> {{ range .V1alpha4.Net.Nameservers }} <IpAddress
                       wcm:action="add"
                       wcm:keyValue="{{.}}"></IpAddress> {{ end }} </DNSServerSearchOrder>
                 </Interface>

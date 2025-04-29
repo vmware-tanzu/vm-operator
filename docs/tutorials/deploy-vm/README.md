@@ -26,7 +26,7 @@ spec:
       allowGuestControl: true
 ```
 
-1.  :wave: The field `apiVersion` indicates the resource's schema, ex. `vmoperator.vmware.com`, and version, ex.`v1alpha2`.
+1.  :wave: The field `apiVersion` indicates the resource's schema, ex. `vmoperator.vmware.com`, and version, ex.`v1alpha4`.
 
 2.  :wave: The field `kind` specifies the kind of resource, ex. `VirtualMachine`.
 

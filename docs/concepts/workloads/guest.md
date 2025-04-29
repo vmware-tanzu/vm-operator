@@ -330,6 +330,11 @@ Sometimes it is necessary to provide the sysprep [answers file](https://learn.mi
 
 #### Minimal Config
 
+!!! warning
+
+    If some fields in the minimal config are not provided, the VM may fail to power on due to guest OS customization failures.
+
+
 The following YAML may be used to bootstrap a Windows image with minimal information. For proper network configuration and Guest OS Customization (GOSC) completion, Sysprep unattend data requires a template for providing network info and `RunSynchronousCommand` to record GOSC status. Both components are essential for Windows Vista and later versions.
 
 !!! note "Product Key"

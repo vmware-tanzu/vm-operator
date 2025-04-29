@@ -21,16 +21,16 @@ spec:
       properties:
       - key: nameservers
         value:
-          value: "{{ (index .V1alpha2.Net.Nameservers 0) }}"
+          value: "{{ (index .V1alpha4.Net.Nameservers 0) }}"
       - key: management_ip
         value:
-          value: "{{ (index (index .V1alpha2.Net.Devices 0).IPAddresses 0) }}"
+          value: "{{ (index (index .V1alpha4.Net.Devices 0).IPAddresses 0) }}"
       - key: hostname
         value:
-          value: "{{ .V1alpha2.VM.Name }}"
+          value: "{{ .V1alpha4.VM.Name }}"
       - key: management_gateway
         value:
-          value: "{{ (index .V1alpha2.Net.Devices 0).Gateway4 }}"
+          value: "{{ (index .V1alpha4.Net.Devices 0).Gateway4 }}"
 ```
 
 For more information on the templating used, please refer to the [documentation](./../../concepts/workloads/guest.md#vappconfig) for the vAppConfig bootstrap provider.

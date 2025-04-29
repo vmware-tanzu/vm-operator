@@ -1365,6 +1365,20 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 			})
 
+			When("there is a power on check annotation", func() {
+				BeforeEach(func() {
+					vm.Annotations = map[string]string{
+						vmopv1.CheckAnnotationPowerOn + "/app": "reason",
+					}
+				})
+				It("should not power on the VM", func() {
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+					assertUpdate()
+				})
+			})
+
 			const (
 				oldDiskSizeBytes = int64(10 * 1024 * 1024 * 1024)
 				newDiskSizeGi    = 20
@@ -1715,6 +1729,20 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
 				Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 				assertUpdate()
+			})
+
+			When("there is a power on check annotation", func() {
+				BeforeEach(func() {
+					vm.Annotations = map[string]string{
+						vmopv1.CheckAnnotationPowerOn + "/app": "reason",
+					}
+				})
+				It("should not power on the VM", func() {
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
+					assertUpdate()
+				})
 			})
 		})
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -1100,7 +1101,17 @@ func (s *Session) updateVMDesiredPowerStateOn(
 		return refetchProps, err
 	}
 
-	if existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
+	var skipPowerOn bool
+	for k, v := range vmCtx.VM.Annotations {
+		if strings.HasPrefix(k, vmopv1.CheckAnnotationPowerOn+"/") {
+			skipPowerOn = true
+			vmCtx.Logger.Info(
+				"Skipping poweron due to annotation",
+				"annotationKey", k, "annotationValue", v)
+		}
+	}
+
+	if !skipPowerOn && existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
 		// A suspended VM cannot be reconfigured.
 		err = resVM.SetPowerState(
 			logr.NewContext(vmCtx, vmCtx.Logger),
@@ -1141,19 +1152,21 @@ func (s *Session) updateVMDesiredPowerStateOn(
 		return refetchProps, err
 	}
 
-	err = resVM.SetPowerState(
-		logr.NewContext(vmCtx, vmCtx.Logger),
-		existingPowerState,
-		vmCtx.VM.Spec.PowerState,
-		vmopv1.VirtualMachinePowerOpModeHard)
-	if err != nil {
-		return refetchProps, err
-	}
+	if !skipPowerOn {
+		err = resVM.SetPowerState(
+			logr.NewContext(vmCtx, vmCtx.Logger),
+			existingPowerState,
+			vmCtx.VM.Spec.PowerState,
+			vmopv1.VirtualMachinePowerOpModeHard)
+		if err != nil {
+			return refetchProps, err
+		}
 
-	if vmCtx.VM.Annotations == nil {
-		vmCtx.VM.Annotations = map[string]string{}
+		if vmCtx.VM.Annotations == nil {
+			vmCtx.VM.Annotations = map[string]string{}
+		}
+		vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
 	}
-	vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
 
 	return refetchProps, err
 }

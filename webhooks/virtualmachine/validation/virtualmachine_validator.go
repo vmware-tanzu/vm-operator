@@ -77,6 +77,9 @@ const (
 	invalidImageKind                         = "supported: " + vmiKind + "; " + cvmiKind
 	invalidZone                              = "cannot use zone that is being deleted"
 	restrictedToPrivUsers                    = "restricted to privileged users"
+	addRestrictedAnnotation                  = "adding this annotation is restricted to privileged users"
+	delRestrictedAnnotation                  = "removing this annotation is restricted to privileged users"
+	modRestrictedAnnotation                  = "modifying this annotation is restricted to privileged users"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha4-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha4,name=default.validating.virtualmachine.v1alpha4.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -152,6 +155,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -246,6 +250,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1567,4 +1572,88 @@ var capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-t
 // isCAPVServiceAccount checks if the username matches that of the CAPV service account.
 func isCAPVServiceAccount(username string) bool {
 	return capvDefaultServiceAccount.Match([]byte(username))
+}
+
+func (v validator) validateChecks(
+	ctx *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if errs := v.validateChecksAnnotation(
+		ctx,
+		newVM,
+		oldVM,
+		vmopv1.CheckAnnotationPowerOn+"/",
+		true); len(errs) > 0 {
+
+		allErrs = append(allErrs, errs...)
+	}
+
+	if errs := v.validateChecksAnnotation(
+		ctx,
+		newVM,
+		oldVM,
+		vmopv1.CheckAnnotationDelete+"/",
+		false); len(errs) > 0 {
+
+		allErrs = append(allErrs, errs...)
+	}
+
+	return allErrs
+}
+
+func (v validator) validateChecksAnnotation(
+	ctx *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine,
+	prefix string,
+	allowNonPrivilegedAddOnCreate bool) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if ctx.IsPrivilegedAccount {
+		return allErrs
+	}
+
+	if oldVM != nil {
+		for k := range oldVM.Annotations {
+			if strings.HasPrefix(k, prefix) {
+				f := field.NewPath("metadata", "annotations", k)
+				if _, onNewVM := newVM.Annotations[k]; !onNewVM {
+					allErrs = append(allErrs, field.Forbidden(f, delRestrictedAnnotation))
+				}
+			}
+		}
+	}
+
+	for k := range newVM.Annotations {
+		if strings.HasPrefix(k, prefix) {
+			var (
+				oldVal    string
+				onOldVM   bool
+				f         = field.NewPath("metadata", "annotations", k)
+				newVal, _ = newVM.Annotations[k]
+				create    = oldVM == nil
+			)
+
+			if oldVM != nil {
+				oldVal, onOldVM = oldVM.Annotations[k]
+			}
+
+			if create {
+				if !allowNonPrivilegedAddOnCreate {
+					allErrs = append(allErrs, field.Forbidden(f, addRestrictedAnnotation))
+				}
+			} else {
+				switch {
+				case !onOldVM:
+					allErrs = append(allErrs, field.Forbidden(f, addRestrictedAnnotation))
+				case oldVal != newVal:
+					allErrs = append(allErrs, field.Forbidden(f, modRestrictedAnnotation))
+				}
+			}
+		}
+	}
+
+	return allErrs
 }

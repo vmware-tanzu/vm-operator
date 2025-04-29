@@ -2581,6 +2581,66 @@ func unitTestsValidateCreate() {
 			),
 		)
 	})
+
+	Context("check.vmoperator.vmware.com", func() {
+
+		DescribeTable("poweron.check.vmoperator.vmware.com", doTest,
+
+			Entry("allow adding annotation for privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow adding annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+
+		DescribeTable("delete.check.vmoperator.vmware.com", doTest,
+
+			Entry("allow adding annotation for privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow adding annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.delete.check.vmoperator.vmware.com/app1: Forbidden: adding this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateUpdate() {
@@ -4173,6 +4233,313 @@ func unitTestsValidateUpdate() {
 				),
 			)
 		})
+	})
+
+	Context("check.vmoperator.vmware.com", func() {
+
+		DescribeTable("poweron.check.vmoperator.vmware.com", doTest,
+
+			Entry("allow adding annotation for privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations = map[string]string{}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow deleting annotation for privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow modifying annotation for privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason1",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow adding annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.poweron.check.vmoperator.vmware.com/app1: Forbidden: adding this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow deleting annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.poweron.check.vmoperator.vmware.com/app1: Forbidden: removing this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow modifying annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason1",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.poweron.check.vmoperator.vmware.com/app1: Forbidden: modifying this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow adding one annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+							vmopv1.CheckAnnotationPowerOn + "/" + "app2": "reason",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.poweron.check.vmoperator.vmware.com/app2: Forbidden: adding this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow deleting one annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+							vmopv1.CheckAnnotationPowerOn + "/" + "app2": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.poweron.check.vmoperator.vmware.com/app2: Forbidden: removing this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow modifying one annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+							vmopv1.CheckAnnotationPowerOn + "/" + "app2": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn + "/" + "app1": "reason",
+							vmopv1.CheckAnnotationPowerOn + "/" + "app2": "reason1",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.poweron.check.vmoperator.vmware.com/app2: Forbidden: modifying this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+		)
+
+		DescribeTable("delete.check.vmoperator.vmware.com", doTest,
+
+			Entry("allow adding annotation for privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations = map[string]string{}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow deleting annotation for privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow modifying annotation for privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason1",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow adding annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.delete.check.vmoperator.vmware.com/app1: Forbidden: adding this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow deleting annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.delete.check.vmoperator.vmware.com/app1: Forbidden: removing this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow modifying annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason1",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.delete.check.vmoperator.vmware.com/app1: Forbidden: modifying this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow adding one annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+							vmopv1.CheckAnnotationDelete + "/" + "app2": "reason",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.delete.check.vmoperator.vmware.com/app2: Forbidden: adding this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow deleting one annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+							vmopv1.CheckAnnotationDelete + "/" + "app2": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.delete.check.vmoperator.vmware.com/app2: Forbidden: removing this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow modifying one annotation for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+							vmopv1.CheckAnnotationDelete + "/" + "app2": "reason",
+						}
+						ctx.vm.Annotations = map[string]string{
+							vmopv1.CheckAnnotationDelete + "/" + "app1": "reason",
+							vmopv1.CheckAnnotationDelete + "/" + "app2": "reason1",
+						}
+					},
+					validate: doValidateWithMsg(
+						`metadata.annotations.delete.check.vmoperator.vmware.com/app2: Forbidden: modifying this annotation is restricted to privileged users`,
+					),
+					expectAllowed: false,
+				},
+			),
+		)
 	})
 }
 

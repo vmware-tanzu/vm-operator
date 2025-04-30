@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-logr/logr"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -430,11 +429,19 @@ func requeueDelay(
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr error) {
 	ctx.Logger.Info("Reconciling VirtualMachine Deletion")
 
-	// If the VM reconciliation has been paused by the developer,
-	// skip deletion and return.
-	if metav1.HasAnnotation(ctx.VM.ObjectMeta, vmopv1.PauseAnnotation) {
-		ctx.Logger.Info("Skipping deletion since VirtualMachine contains the pause annotation")
+	skipDelete := false
+	for k, v := range ctx.VM.Annotations {
+		switch {
+		case k == vmopv1.PauseAnnotation,
+			strings.HasPrefix(k, vmopv1.CheckAnnotationDelete+"/"):
 
+			skipDelete = true
+			ctx.Logger.Info(
+				"Skipping delete due to annotation",
+				"annotationKey", k, "annotationValue", v)
+		}
+	}
+	if skipDelete {
 		return nil
 	}
 

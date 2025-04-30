@@ -323,8 +323,15 @@ func unitTestsReconcile() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("will not delete the created VM when VM is paused by devops ", func() {
+		It("will not delete the created VM when VM is paused by devops", func() {
 			vm.Annotations[vmopv1.PauseAnnotation] = "enabled"
+			err := reconciler.ReconcileDelete(vmCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(vm.GetFinalizers()).To(ContainElement(finalizer))
+		})
+
+		It("will not delete the created VM when VM has delete.check annotation", func() {
+			vm.Annotations[vmopv1.CheckAnnotationDelete+"/app1"] = "reason"
 			err := reconciler.ReconcileDelete(vmCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vm.GetFinalizers()).To(ContainElement(finalizer))

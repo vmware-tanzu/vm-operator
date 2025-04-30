@@ -152,6 +152,53 @@ const (
 )
 
 const (
+	// checkAnnotationSubDomain is the sub-domain to be used for all check-style
+	// annotations that enable external components to participate in a VM's
+	// lifecycle events.
+	checkAnnotationSubDomain = "check.vmoperator.vmware.com"
+
+	// CheckAnnotationPowerOn is an annotation that may be used to prevent a
+	// VM from being powered on. A user can still set a VM's spec.powerState to
+	// PoweredOn, but the VM will not be powered on until the check annotation
+	// is removed.
+	//
+	// Please note, there may be multiple check annotations, ex.:
+	//
+	// - poweron.check.vmoperator.vmware.com/component1: "reason"
+	// - poweron.check.vmoperator.vmware.com/component2: "reason"
+	// - poweron.check.vmoperator.vmware.com/component3: "reason"
+	//
+	// All check annotations must be removed before a VM can be powered on.
+	//
+	// This annotation may only be applied when creating a new VM by any user.
+	//
+	// Only privileged users may apply this annotation to existing VMs.
+	//
+	// Only privileged users may remove this annotation from a VM. If a
+	// non-privileged user accidentally adds this annotation when creating a VM,
+	// the recourse is to delete the VM and recreate it without the annotation.
+	CheckAnnotationPowerOn = "poweron." + checkAnnotationSubDomain
+
+	// CheckAnnotationDelete is an annotation that may be used to prevent a
+	// VM from being deleted. A user can still delete the VM, but the VM will
+	// not *actually* be removed until the annotation is removed.
+	//
+	// Unlike a finalizer, this annotation *also* prevents the underlying
+	// vSphere VM from being deleted as well.
+	//
+	// Please note, there may be multiple check annotations, ex.:
+	//
+	// - delete.check.vmoperator.vmware.com/component1: "reason"
+	// - delete.check.vmoperator.vmware.com/component2: "reason"
+	// - delete.check.vmoperator.vmware.com/component3: "reason"
+	//
+	// All check annotations must be removed before a VM can be deleted.
+	//
+	// Only privileged users may add or remove this annotation.
+	CheckAnnotationDelete = "delete." + checkAnnotationSubDomain
+)
+
+const (
 	// ManagedByExtensionKey and ManagedByExtensionType represent the ManagedBy
 	// field on the VM. They are used to differentiate VM Service managed VMs
 	// from traditional vSphere VMs.

@@ -110,6 +110,35 @@ It is possible to update parts of an existing `VirtualMachine` resource. Some fi
 
 Some of a VM's hardware resources are derived from the policies defined by your infrastructure administrator, others may be influenced directly by a user.
 
+## Deleting a VM
+
+### Delete Check
+
+The annotation `delete.check.vmoperator.vmware.com/<COMPONENT>: <REASON>` may be applied to new or existing VMs in order to prevent the VM from being deleted until the annotation is removed.
+
+This allows external components to participate in a VM's delete event. For example, there may be an external service that watches all `VirtualMachine` objects and deletes Computer objects in Active Directory for VMs being deleted, and needs to ensure the VM is not removed on the underlying hypervisor until its Computer object is deleted. This service can use a mutation webhook to apply the annotation to new VMs, only removing it once the Computer object is deleted in Active Directory.
+
+There may be multiple instances of the annotation on a VM, hence its format:
+
+```yaml
+delete.check.vmoperator.vmware.com/<COMPONENT>: <REASON>
+```
+
+For example:
+
+```yaml
+annotations:
+  delete.check.vmoperator.vmware.com/ad: "waiting on computer object"
+  delete.check.vmoperator.vmware.com/net: "waiting on net auth"
+  delete.check.vmoperator.vmware.com/app1: "waiting on app auth"
+```
+
+All check annotations must be removed before a VM can be deleted.
+
+This annotation may only be added, modified, or removed by privileged users. This is to prevent a non-privileged from creating a situation where the VM cannot be deleted.
+
+Non-privileged users cannot remove the annotation is because it is designed to be used by external services that want to _ensure_ the underlying VM is not deleted until some external condition is met. If a non-privileged user could bypass this, it would defeat the purpose of the annotation.
+
 ## CPU and Memory
 
 CPU and memory of a VM are derived from the `VirtualMachineClass` resource used to deploy the VM. Specifically, the `spec.configSpec.numCPUs` and `spec.configSpec.memoryMB` properties in the `VirtualMachineClass` resource dictate the number of CPUs and amount of memory allocated to the VM.
@@ -783,6 +812,38 @@ The fields `spec.powerOffMode`, `spec.suspendMode`, and `spec.restartMode` contr
 | `Hard` | Halts, suspends, or restarts the VM with no interaction with the guest |  |
 | `Soft` | The guest is shutdown, suspended, or restarted gracefully (requires VM Tools) |  |
 | `TrySoft` | Attempts a graceful shutdown/standby/restart if VM Tools is present, otherwise falls back to a hard operation the VM has not achieved the desired power state after five minutes. | ✓ |
+
+### Power On Check
+
+The annotation `poweron.check.vmoperator.vmware.com/<COMPONENT>: <REASON>` may be applied when creating a new VM in order to prevent the VM from being powered on until the annotation is removed. The VM's `spec.powerState` field may still be set to `PoweredOn`, but the VM will not be powered on until the annotation is removed.
+
+This allows external components to participate in a VM's power-on event. For example, there may be an external service that watches all `VirtualMachine` objects and creates new Computer objects in Active Directory, and needs to ensure the VM does not power on until its Computer object is created. This service can use a mutation webhook to apply the annotation to new VMs, only removing it once the Computer object is created in Active Directory.
+
+There may be multiple instances of the annotation on a VM, hence its format:
+
+```yaml
+poweron.check.vmoperator.vmware.com/<COMPONENT>: <REASON>
+```
+
+For example:
+
+```yaml
+annotations:
+  poweron.check.vmoperator.vmware.com/ad: "waiting on computer object"
+  poweron.check.vmoperator.vmware.com/net: "waiting on net auth"
+  poweron.check.vmoperator.vmware.com/app1: "waiting on app auth"
+```
+
+All check annotations must be removed before a VM can be powered on. This annotation is also subject to the following rules:
+
+* May be applied by any user when creating a new VM.
+* May be applied by privileged users when updating existing VMs.
+* May be removed by privileged users when updating existing VMs.
+
+Please note, non-privileged users cannot remove this annotation. If a non-privileged user accidentally creates a _new_ VM with this annotation, it would mean the VM cannot be powered on until a _privileged_ user removes the annotation. In this case, the non-privileged user's best recourse is to delete the VM and redeploy it without the annotation. The reasons non-privileged users can only _add_ the annotation and not remove it are:
+
+* External services that want to ensure new VMs are subject to this annotation would use mutation webhooks, which act in the context of the end-user.
+* External services also want to prevent the end-user from _removing_ the annotation until such time that some external condition is met that allows the VM to be powered on, at which point the external service can remove the annotation.
 
 ## Identifiers
 

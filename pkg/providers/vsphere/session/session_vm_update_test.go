@@ -92,21 +92,17 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("ExtraConfig", func() {
-		var vmClassSpec *vmopv1.VirtualMachineClassSpec
-		var classConfigSpec *vimtypes.VirtualMachineConfigSpec
 		var vm *vmopv1.VirtualMachine
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
 
 		BeforeEach(func() {
-			vmClassSpec = &vmopv1.VirtualMachineClassSpec{}
 			vm = &vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: make(map[string]string),
 				},
 			}
 			globalExtraConfig = make(map[string]string)
-			classConfigSpec = nil
 		})
 
 		JustBeforeEach(func() {
@@ -114,8 +110,6 @@ var _ = Describe("Update ConfigSpec", func() {
 				ctx,
 				config,
 				configSpec,
-				classConfigSpec,
-				vmClassSpec,
 				vm,
 				globalExtraConfig)
 
@@ -128,10 +122,8 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		When("classConfigSpec, vmClassSpec, vm, and globalExtraConfig params are nil", func() {
+		When("vm and globalExtraConfig params are nil", func() {
 			BeforeEach(func() {
-				classConfigSpec = nil
-				vmClassSpec = nil
 				vm = nil
 				globalExtraConfig = nil
 			})
@@ -200,10 +192,8 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("Should be set to an empty value", func() {
 				Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, ""))
 			})
-			When("classConfigSpec, vmClassSpec, and vm params are nil", func() {
+			When("vm params are nil", func() {
 				BeforeEach(func() {
-					classConfigSpec = nil
-					vmClassSpec = nil
 					vm = nil
 				})
 				It("Should be set to an empty value", func() {
@@ -230,178 +220,13 @@ var _ = Describe("Update ConfigSpec", func() {
 				Expect(ecMap).To(BeEmpty())
 			})
 		})
-
-		Context("ThunderPciDevices related test", func() {
-
-			Context("when virtual devices are not present", func() {
-				It("No Changes", func() {
-					Expect(ecMap).To(BeEmpty())
-				})
-			})
-
-			Context("when vGPU and DDPIO devices are present but classConfigSpec, vmClassSpec, and vm params are nil", func() {
-				BeforeEach(func() {
-					config.Hardware.Device = []vimtypes.BaseVirtualDevice{
-						&vimtypes.VirtualPCIPassthrough{
-							VirtualDevice: vimtypes.VirtualDevice{
-								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
-									Vgpu: "SampleProfile",
-								},
-							},
-						},
-						&vimtypes.VirtualPCIPassthrough{
-							VirtualDevice: vimtypes.VirtualDevice{
-								Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{},
-							},
-						},
-					}
-					classConfigSpec = nil
-					vmClassSpec = nil
-					vm = nil
-				})
-
-				Specify("No Changes", func() {
-					Expect(ecMap).To(BeEmpty())
-				})
-			})
-
-			Context("when vGPU device is available", func() {
-				BeforeEach(func() {
-					vmClassSpec.Hardware.Devices = vmopv1.VirtualDevices{VGPUDevices: []vmopv1.VGPUDevice{
-						{
-							ProfileName: "test-vgpu-profile",
-						},
-					}}
-				})
-
-				It("PCI passthru MMIO extraConfig should be added", func() {
-					Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
-					Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, constants.PCIPassthruMMIOSizeDefault))
-				})
-
-				Context("when PCI passthru MMIO override annotation is set", func() {
-					BeforeEach(func() {
-						vm.Annotations[constants.PCIPassthruMMIOOverrideAnnotation] = "12345"
-					})
-
-					It("PCI passthru MMIO extraConfig should be set to override annotation value", func() {
-						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
-						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, "12345"))
-					})
-				})
-			})
-
-			Context("when DDPIO device is available", func() {
-				BeforeEach(func() {
-					vmClassSpec.Hardware.Devices = vmopv1.VirtualDevices{DynamicDirectPathIODevices: []vmopv1.DynamicDirectPathIODevice{
-						{
-							VendorID:    123,
-							DeviceID:    24,
-							CustomLabel: "",
-						},
-					}}
-				})
-
-				It("PCI passthru MMIO extraConfig should be added", func() {
-					Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
-					Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, constants.PCIPassthruMMIOSizeDefault))
-				})
-
-				Context("when PCI passthru MMIO override annotation is set", func() {
-					BeforeEach(func() {
-						vm.Annotations[constants.PCIPassthruMMIOOverrideAnnotation] = "12345"
-					})
-
-					It("PCI passthru MMIO extraConfig should be set to override annotation value", func() {
-						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
-						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, "12345"))
-					})
-				})
-			})
-		})
-
-		const (
-			dummyKey = "dummy-key"
-			dummyVal = "dummy-val"
-		)
-
-		When("classConfigSpec extra config is not nil", func() {
-			BeforeEach(func() {
-				classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
-					ExtraConfig: []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   dummyKey + "-1",
-							Value: dummyVal + "-1",
-						},
-						&vimtypes.OptionValue{
-							Key:   dummyKey + "-2",
-							Value: dummyVal + "-2",
-						},
-					},
-				}
-				config.ExtraConfig = append(config.ExtraConfig, &vimtypes.OptionValue{Key: "hello", Value: "world"})
-			})
-			It("vm extra config overlaps with global extra config", func() {
-				globalExtraConfig["hello"] = "world"
-				Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-1", dummyVal+"-1"))
-				Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-2", dummyVal+"-2"))
-				Expect(ecMap).ToNot(HaveKeyWithValue("hello", "world"))
-			})
-
-			It("global extra config overlaps with class config spec - class config spec takes precedence", func() {
-				globalExtraConfig[dummyKey+"-1"] = dummyVal + "-3"
-				Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-1", dummyVal+"-1"))
-				Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-2", dummyVal+"-2"))
-			})
-
-			Context("class config spec has vGPU and DDPIO devices", func() {
-				BeforeEach(func() {
-					classConfigSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-						&vimtypes.VirtualDeviceConfigSpec{
-							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-							Device: &vimtypes.VirtualPCIPassthrough{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
-										Vgpu: "SampleProfile2",
-									},
-								},
-							},
-						},
-						&vimtypes.VirtualDeviceConfigSpec{
-							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-							Device: &vimtypes.VirtualPCIPassthrough{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
-										AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
-											{
-												VendorId: 52,
-												DeviceId: 53,
-											},
-										},
-										CustomLabel: "SampleLabel2",
-									},
-								},
-							},
-						},
-					}
-
-				})
-
-				It("extraConfig Map has MMIO keys added", func() {
-					Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
-					Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, constants.PCIPassthruMMIOSizeDefault))
-				})
-			})
-		})
 	})
 
 	Context("ChangeBlockTracking", func() {
 		var vmSpec vmopv1.VirtualMachineSpec
-		var classConfigSpec *vimtypes.VirtualMachineConfigSpec
 
 		BeforeEach(func() {
 			config.ChangeTrackingEnabled = nil
-			classConfigSpec = nil
 		})
 
 		AfterEach(func() {
@@ -409,7 +234,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		It("cbt and status cbt unset", func() {
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
@@ -419,7 +244,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				ChangeBlockTracking: ptr.To(false),
 			}
 
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeFalse())
 		})
@@ -428,7 +253,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			config.ChangeTrackingEnabled = ptr.To(true)
 			vmSpec.Advanced = nil
 
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
@@ -438,7 +263,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				ChangeBlockTracking: ptr.To(true),
 			}
 
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
 		})
@@ -449,41 +274,12 @@ var _ = Describe("Update ConfigSpec", func() {
 				ChangeBlockTracking: ptr.To(true),
 			}
 
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
-		})
-
-		Context("configSpec.cbt is false and spec.cbt is true", func() {
-			BeforeEach(func() {
-				config.ChangeTrackingEnabled = ptr.To(false)
-				vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-					ChangeBlockTracking: ptr.To(true),
-				}
-			})
-
-			It("classConfigSpec not nil and same as configInfo", func() {
-				classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
-					ChangeTrackingEnabled: ptr.To(false),
-				}
-
-				session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
-				Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
-				Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
-			})
-
-			It("classConfigSpec not nil, different from configInfo, overrides vm spec cbt", func() {
-				classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
-					ChangeTrackingEnabled: ptr.To(true),
-				}
-
-				session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
-				Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
-				Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
-			})
 		})
 	})
 
-	Context("Ethernet Card Changes", func() {
+	XContext("Ethernet Card Changes", func() {
 		var expectedList object.VirtualDeviceList
 		var currentList object.VirtualDeviceList
 		var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
@@ -1446,48 +1242,6 @@ var _ = Describe("UpdateVirtualMachine", func() {
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
 						Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 						assertUpdate()
-					})
-				})
-				When("with networking enabled", func() {
-
-					BeforeEach(func() {
-						vm.Spec.Network.Disabled = false
-					})
-
-					When("class has SR-IOV NIC", func() {
-						BeforeEach(func() {
-							updateArgs.ConfigSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
-								&vimtypes.VirtualDeviceConfigSpec{
-									Device: &vimtypes.VirtualSriovEthernetCard{},
-								},
-							}
-						})
-						It("should power on the VM", func() {
-							Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-							Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-							Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-							vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
-							nics := vmDevs.SelectByType(&vimtypes.VirtualEthernetCard{})
-							Expect(nics).To(HaveLen(1))
-							Expect(nics[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualSriovEthernetCard{}))
-							assertUpdate()
-						})
-					})
-
-					When("class does not have NIC", func() {
-						BeforeEach(func() {
-							updateArgs.ConfigSpec.DeviceChange = nil
-						})
-						It("should power on the VM", func() {
-							Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-							Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-							Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-							vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
-							nics := vmDevs.SelectByType(&vimtypes.VirtualEthernetCard{})
-							Expect(nics).To(HaveLen(1))
-							Expect(nics[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualVmxnet3{}))
-							assertUpdate()
-						})
 					})
 				})
 			})

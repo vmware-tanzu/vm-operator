@@ -140,6 +140,12 @@ type Identification struct {
 	// +optional
 	JoinDomain string `json:"joinDomain,omitempty"`
 
+	// DomainOU is the MachineObjectOU which specifies the full LDAP path name of
+	// the OU to which the computer belongs.
+	//
+	// +optional
+	DomainOU string `json:"domainOU,omitempty"`
+
 	// JoinWorkgroup is the workgroup that the virtual machine should join. If
 	// this value is supplied, then the JoinDomain and the authentication fields
 	// (DomainAdmin and DomainAdminPassword) must be empty.

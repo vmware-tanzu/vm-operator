@@ -778,6 +778,11 @@ spec:
                                         - key
                                         - name
                                         type: object
+                                      domainOU:
+                                        description: |-
+                                          DomainOU is the MachineObjectOU which specifies the full LDAP path name of
+                                          the OU to which the computer belongs.
+                                        type: string
                                       joinWorkgroup:
                                         description: |-
                                           JoinWorkgroup is the workgroup that the virtual machine should join. If
@@ -2687,6 +2692,11 @@ spec:
                                         - key
                                         - name
                                         type: object
+                                      domainOU:
+                                        description: |-
+                                          DomainOU is the MachineObjectOU which specifies the full LDAP path name of
+                                          the OU to which the computer belongs.
+                                        type: string
                                       joinWorkgroup:
                                         description: |-
                                           JoinWorkgroup is the workgroup that the virtual machine should join. If

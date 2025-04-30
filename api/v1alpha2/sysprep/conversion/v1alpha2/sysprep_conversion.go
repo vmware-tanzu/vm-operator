@@ -35,6 +35,7 @@ func Convert_sysprep_Sysprep_To_sysprep_Sysprep(
 		out.Identification = &vmopv1sysprep.Identification{
 			DomainAdmin:         id.DomainAdmin,
 			DomainAdminPassword: (*vmopv1sysprep.DomainPasswordSecretKeySelector)(unsafe.Pointer(id.DomainAdminPassword)),
+			DomainOU:            id.DomainOU,
 			JoinWorkgroup:       id.JoinWorkgroup,
 		}
 	}

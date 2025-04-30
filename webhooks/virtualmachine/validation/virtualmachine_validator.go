@@ -398,9 +398,9 @@ func (v validator) validateInlineSysprep(
 		}
 
 		if identification.JoinWorkgroup != "" {
-			if identification.DomainAdmin != "" || identification.DomainAdminPassword != nil {
+			if identification.DomainAdmin != "" || identification.DomainAdminPassword != nil || identification.DomainOU != "" {
 				allErrs = append(allErrs, field.Invalid(s, "identification",
-					"joinWorkgroup and domainAdmin/domainAdminPassword are mutually exclusive"))
+					"joinWorkgroup and domainAdmin/domainAdminPassword/domainOU are mutually exclusive"))
 			}
 		}
 	}

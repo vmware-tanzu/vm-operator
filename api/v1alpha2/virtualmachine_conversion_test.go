@@ -86,6 +86,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 							},
 							Identification: &vmopv1sysprep.Identification{
 								DomainAdmin: "my-admin",
+								DomainOU:    "my-ou",
 							},
 							UserData: vmopv1sysprep.UserData{
 								FullName: "vmware",

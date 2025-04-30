@@ -135,6 +135,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 						DomainAdmin:         "[Foo/Administrator]",
 						JoinWorkgroup:       "foo.local.wg",
 						DomainAdminPassword: &vmopv1sysprep.DomainPasswordSecretKeySelector{Key: "admin_pwd_key"},
+						DomainOU:            "OU=MyOu,DC=MyDom,DC=MyCompany,DC=com",
 					},
 					LicenseFilePrintData: &vmopv1sysprep.LicenseFilePrintData{
 						AutoMode:  vmopv1sysprep.CustomizationLicenseDataModePerServer,
@@ -175,6 +176,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				Expect(sysPrep.Identification.DomainAdmin).To(Equal("[Foo/Administrator]"))
 				Expect(sysPrep.Identification.JoinDomain).To(Equal("foo.local"))
 				Expect(sysPrep.Identification.DomainAdminPassword.Value).To(Equal(domainPassword))
+				Expect(sysPrep.Identification.DomainOU).To(Equal("OU=MyOu,DC=MyDom,DC=MyCompany,DC=com"))
 				Expect(sysPrep.Identification.JoinWorkgroup).To(Equal("foo.local.wg"))
 
 				Expect(sysPrep.LicenseFilePrintData.AutoMode).To(Equal(vimtypes.CustomizationLicenseDataModePerServer))

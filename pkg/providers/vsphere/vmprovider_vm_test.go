@@ -2147,6 +2147,8 @@ func vmTests() {
 
 			Context("VM Class with PCI passthrough devices", func() {
 				BeforeEach(func() {
+					// For old behavior, we'll fallback to these standalone fields when the class
+					// does not have a ConfigSpec.
 					vmClass.Spec.Hardware.Devices = vmopv1.VirtualDevices{
 						VGPUDevices: []vmopv1.VGPUDevice{
 							{
@@ -2163,7 +2165,7 @@ func vmTests() {
 					}
 				})
 
-				It("VM should not have PCI devices from VM Class", func() {
+				It("VM should have PCI devices from VM Class", func() {
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
@@ -2172,7 +2174,7 @@ func vmTests() {
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 					p := devList.SelectByType(&vimtypes.VirtualPCIPassthrough{})
-					Expect(p).To(BeEmpty())
+					Expect(p).To(HaveLen(2))
 				})
 			})
 

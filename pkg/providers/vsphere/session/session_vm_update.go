@@ -242,8 +242,7 @@ func UpdatePCIDeviceChanges(
 func UpdateConfigSpecExtraConfig(
 	ctx context.Context,
 	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec, classConfigSpec *vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vm *vmopv1.VirtualMachine,
 	globalExtraConfig map[string]string) {
 
@@ -254,24 +253,6 @@ func UpdateConfigSpecExtraConfig(
 		extraConfig = map[string]string{}
 	} else {
 		extraConfig = maps.Clone(globalExtraConfig)
-	}
-
-	// Ensure a VM with vGPUs or dynamic direct path I/O devices has the
-	// correct flags in ExtraConfig for memory mapped I/O. Please see
-	// https://kb.vmware.com/s/article/2142307 for more information about these
-	// flags.
-	if hasvGPUOrDDPIODevices(config, classConfigSpec, vmClassSpec) {
-		setMemoryMappedIOFlagsInExtraConfig(vm, extraConfig)
-	}
-
-	if classConfigSpec != nil {
-		// Merge non-intersecting keys from the desired config spec extra config
-		// with the class config spec extra config (ie) class config spec extra
-		// config keys takes precedence over the desired config spec extra
-		// config keys.
-		extraConfig = pkgutil.OptionValues(classConfigSpec.ExtraConfig).
-			Append(pkgutil.OptionValuesFromMap(extraConfig)...).
-			StringMap()
 	}
 
 	// Note if the VM uses both LinuxPrep and vAppConfig. This is used in the
@@ -325,72 +306,10 @@ func isLinuxPrepAndVAppConfig(vm *vmopv1.VirtualMachine) bool {
 	return vm.Spec.Bootstrap.LinuxPrep != nil && vm.Spec.Bootstrap.VAppConfig != nil
 }
 
-func hasvGPUOrDDPIODevices(
-	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec) bool {
-
-	return hasvGPUOrDDPIODevicesInVM(config) ||
-		hasvGPUOrDDPIODevicesInVMClass(configSpec, vmClassSpec)
-}
-
-func hasvGPUOrDDPIODevicesInVM(config *vimtypes.VirtualMachineConfigInfo) bool {
-	if config == nil {
-		return false
-	}
-	if len(pkgutil.SelectNvidiaVgpu(config.Hardware.Device)) > 0 {
-		return true
-	}
-	if len(pkgutil.SelectDynamicDirectPathIO(config.Hardware.Device)) > 0 {
-		return true
-	}
-	return false
-}
-
-func hasvGPUOrDDPIODevicesInVMClass(
-	configSpec *vimtypes.VirtualMachineConfigSpec,
-	vmClassSpec *vmopv1.VirtualMachineClassSpec) bool {
-
-	if vmClassSpec != nil {
-		if len(vmClassSpec.Hardware.Devices.VGPUDevices) > 0 {
-			return true
-		}
-		if len(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices) > 0 {
-			return true
-		}
-	}
-
-	if configSpec != nil {
-		return pkgutil.HasVirtualPCIPassthroughDeviceChange(configSpec.DeviceChange)
-	}
-
-	return false
-}
-
-// setMemoryMappedIOFlagsInExtraConfig sets flags in ExtraConfig that can
-// improve the performance of VMs with vGPUs and dynamic direct path I/O
-// devices. Please see https://kb.vmware.com/s/article/2142307 for more
-// information about these flags.
-func setMemoryMappedIOFlagsInExtraConfig(
-	vm *vmopv1.VirtualMachine, extraConfig map[string]string) {
-	if vm == nil {
-		return
-	}
-
-	mmioSize := vm.Annotations[constants.PCIPassthruMMIOOverrideAnnotation]
-	if mmioSize == "" {
-		mmioSize = constants.PCIPassthruMMIOSizeDefault
-	}
-	if mmioSize != "0" {
-		extraConfig[constants.PCIPassthruMMIOExtraConfigKey] = constants.ExtraConfigTrue
-		extraConfig[constants.PCIPassthruMMIOSizeExtraConfigKey] = mmioSize
-	}
-}
-
 func UpdateConfigSpecChangeBlockTracking(
 	ctx context.Context,
 	config *vimtypes.VirtualMachineConfigInfo,
-	configSpec, classConfigSpec *vimtypes.VirtualMachineConfigSpec,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmSpec vmopv1.VirtualMachineSpec) {
 
 	if adv := vmSpec.Advanced; adv != nil && adv.ChangeBlockTracking != nil {
@@ -398,12 +317,6 @@ func UpdateConfigSpecChangeBlockTracking(
 			configSpec.ChangeTrackingEnabled = adv.ChangeBlockTracking
 		}
 		return
-	}
-
-	if classConfigSpec != nil && classConfigSpec.ChangeTrackingEnabled != nil {
-		if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
-			configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
-		}
 	}
 }
 
@@ -447,7 +360,6 @@ func updateConfigSpec(
 	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, bool, error) {
 
 	configSpec := &vimtypes.VirtualMachineConfigSpec{}
-	vmClassSpec := updateArgs.VMClass.Spec
 
 	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
 		vmCtx,
@@ -458,17 +370,15 @@ func updateConfigSpec(
 		return nil, false, err
 	}
 
-	UpdateConfigSpecExtraConfig(
-		vmCtx, config, configSpec, &updateArgs.ConfigSpec,
-		&vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
+	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, vmCtx.VM, updateArgs.ExtraConfig)
 	UpdateConfigSpecAnnotation(config, configSpec)
-	UpdateConfigSpecChangeBlockTracking(
-		vmCtx, config, configSpec, &updateArgs.ConfigSpec, vmCtx.VM.Spec)
+	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecGuestID(config, configSpec, vmCtx.VM.Spec.GuestID)
 
 	needsResize := false
 	if pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory && vmopv1util.ResizeNeeded(*vmCtx.VM, updateArgs.VMClass) {
 		needsResize = true
+		vmClassSpec := updateArgs.VMClass.Spec
 		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 		resize.CompareCPUAllocation(*config, updateArgs.ConfigSpec, configSpec)
 		resize.CompareMemoryAllocation(*config, updateArgs.ConfigSpec, configSpec)
@@ -489,8 +399,6 @@ func (s *Session) prePowerOnVMConfigSpec(
 
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
 	currentDisks := virtualDevices.SelectByType((*vimtypes.VirtualDisk)(nil))
-	currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
-	currentPciDevices := virtualDevices.SelectByType((*vimtypes.VirtualPCIPassthrough)(nil))
 
 	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, currentDisks)
 	if err != nil {
@@ -498,28 +406,19 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, diskDeviceChanges...)
 
-	var expectedEthCards object.VirtualDeviceList
-	for idx := range updateArgs.NetworkResults.Results {
-		expectedEthCards = append(expectedEthCards, updateArgs.NetworkResults.Results[idx].Device)
-	}
+	/*
+		currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+		var expectedEthCards object.VirtualDeviceList
+		for idx := range updateArgs.NetworkResults.Results {
+			expectedEthCards = append(expectedEthCards, updateArgs.NetworkResults.Results[idx].Device)
+		}
 
-	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, expectedEthCards, currentEthCards)
-	if err != nil {
-		return nil, false, err
-	}
-	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
-
-	var expectedPCIDevices []vimtypes.BaseVirtualDevice
-	if configSpecDevs := pkgutil.DevicesFromConfigSpec(&updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
-		pciPassthruFromConfigSpec := pkgutil.SelectVirtualPCIPassthrough(configSpecDevs)
-		expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
-	}
-
-	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPCIDevices, currentPciDevices)
-	if err != nil {
-		return nil, false, err
-	}
-	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
+		ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, expectedEthCards, currentEthCards)
+		if err != nil {
+			return nil, false, err
+		}
+		configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
+	*/
 
 	cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
 	if err != nil {
@@ -785,8 +684,8 @@ func (s *Session) poweredOnVMReconfigure(
 		return false, err
 	}
 
-	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, nil, nil, vmCtx.VM, nil)
-	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
+	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, vmCtx.VM, nil)
+	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, vmCtx.VM.Spec)
 
 	if err := virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
 		return false, fmt.Errorf("update CD-ROM device connection error: %w", err)

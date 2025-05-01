@@ -287,11 +287,13 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 	Context("GetCloudInitMetadata", func() {
 		var (
-			uid           string
-			hostName      string
-			domainName    string
-			netPlan       *netplan.Network
-			sshPublicKeys string
+			uid            string
+			hostName       string
+			domainName     string
+			netPlan        *netplan.Network
+			sshPublicKeys  string
+			waitOnNetwork4 *bool
+			waitOnNetwork6 *bool
 
 			mdYaml string
 			err    error
@@ -310,10 +312,12 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				},
 			}
 			sshPublicKeys = "my-ssh-key"
+			waitOnNetwork4 = nil
+			waitOnNetwork6 = nil
 		})
 
 		JustBeforeEach(func() {
-			mdYaml, err = vmlifecycle.GetCloudInitMetadata(uid, hostName, domainName, netPlan, sshPublicKeys)
+			mdYaml, err = vmlifecycle.GetCloudInitMetadata(uid, hostName, domainName, netPlan, sshPublicKeys, waitOnNetwork4, waitOnNetwork6)
 		})
 
 		When("domainName is empty", func() {
@@ -351,6 +355,24 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				Expect(ciMetadata.PublicKeys).To(Equal(sshPublicKeys))
 				Expect(ciMetadata.Network.Version).To(BeEquivalentTo(42))
 				Expect(ciMetadata.Network.Ethernets).To(HaveKey("eth0"))
+			})
+		})
+
+		When("wait-on-network is configured", func() {
+			BeforeEach(func() {
+				waitOnNetwork4 = ptr.To(true)
+				waitOnNetwork6 = ptr.To(true)
+			})
+			It("includes wait-on-network in metadata", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mdYaml).ToNot(BeEmpty())
+
+				ciMetadata := &vmlifecycle.CloudInitMetadata{}
+				Expect(yaml.Unmarshal([]byte(mdYaml), ciMetadata)).To(Succeed())
+
+				Expect(ciMetadata.WaitOnNetwork).ToNot(BeNil())
+				Expect(ciMetadata.WaitOnNetwork.IPv4).To(BeTrue())
+				Expect(ciMetadata.WaitOnNetwork.IPv6).To(BeTrue())
 			})
 		})
 

@@ -872,6 +872,8 @@ func restore_v1alpha4_VirtualMachineBootstrapSpec(
 			dstCloudInit.SSHAuthorizedKeys = srcCloudInit.SSHAuthorizedKeys
 			dstCloudInit.UseGlobalNameserversAsDefault = srcCloudInit.UseGlobalNameserversAsDefault
 			dstCloudInit.UseGlobalSearchDomainsAsDefault = srcCloudInit.UseGlobalSearchDomainsAsDefault
+			dstCloudInit.WaitOnNetwork4 = srcCloudInit.WaitOnNetwork4
+			dstCloudInit.WaitOnNetwork6 = srcCloudInit.WaitOnNetwork6
 		}
 	}
 

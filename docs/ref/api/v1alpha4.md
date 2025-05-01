@@ -543,6 +543,16 @@ in the NetworkSpec as the per-interface search domains when the per-interface
 search domains is not provided.
 
 Defaults to true if omitted. |
+| `waitOnNetwork4` _boolean_ | WaitOnNetwork4 indicates whether the cloud-init datasource should wait
+for an IPv4 address to be available before writing the instance-data.
+
+When set to true, the cloud-init datasource will sleep for a second,
+check network status, and repeat until an IPv4 address is available. |
+| `waitOnNetwork6` _boolean_ | WaitOnNetwork6 indicates whether the cloud-init datasource should wait
+for an IPv6 address to be available before writing the instance-data.
+
+When set to true, the cloud-init datasource will sleep for a second,
+check network status, and repeat until an IPv6 address is available. |
 
 ### VirtualMachineBootstrapLinuxPrepSpec
 

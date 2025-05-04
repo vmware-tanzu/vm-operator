@@ -253,6 +253,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						Connected:         ptrOf(true),
 					},
 				},
+				PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOffline,
 			},
 		}
 

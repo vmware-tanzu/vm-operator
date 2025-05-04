@@ -175,20 +175,18 @@ type VirtualMachineStorageStatus struct {
 type VirtualMachineStorageStatusUsage struct {
 	// +optional
 
-	// Total describes the total storage space used by a VirtualMachine that
-	// counts against the Namespace's storage quota.
-	Total *resource.Quantity `json:"total,omitempty"`
+	// Committed is the total storage space committed to this VirtualMachine.
+	Committed *resource.Quantity `json:"committed,omitempty"`
 
 	// +optional
 
-	// Disks describes the total storage space used by a VirtualMachine's
-	// non-PVC disks.
-	Disks *resource.Quantity `json:"disks,omitempty"`
+	// Uncommitted is the total storage space potentially used by this
+	// VirtualMachine.
+	Uncommitted *resource.Quantity `json:"uncommitted,omitempty"`
 
 	// +optional
 
-	// Other describes the total storage space used by the VirtualMachine's
-	// non disk files, ex. the configuration file, swap space, logs, snapshots,
-	// etc.
-	Other *resource.Quantity `json:"other,omitempty"`
+	// Unshared is the total storage space occupied by this VirtualMachine that
+	// is not shared with any other VirtualMachine.
+	Unshared *resource.Quantity `json:"unshared,omitempty"`
 }

@@ -10,6 +10,7 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <References>
     <File ovf:href="ttylinux-pc_i486-16.1-disk1.vmdk" ovf:id="file1" ovf:size="10595840" />
+    <File ovf:href="ttylinux-pc_i486-16.1-2.nvram" ovf:id="file2" ovf:size="8684" />
   </References>
   <DiskSection>
     <Info>Virtual disk information</Info>

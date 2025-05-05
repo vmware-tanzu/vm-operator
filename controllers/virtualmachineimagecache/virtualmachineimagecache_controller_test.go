@@ -777,6 +777,9 @@ references:
 - href: ttylinux-pc_i486-16.1-disk1.vmdk
   id: file1
   size: 10595840
+- href: ttylinux-pc_i486-16.1-2.nvram
+  id: file2
+  size: 8684
 virtualSystem:
   id: vm
   info: A virtual machine

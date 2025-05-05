@@ -1,2 +1,3 @@
 SHA1 (ttylinux-pc_i486-16.1.ovf) = 87271da9a5ae979f29e0ce7be824df428c178914
 SHA1 (ttylinux-pc_i486-16.1-disk1.vmdk) = ed64564a37366bfe1c93af80e2ead0cbd398c3d3
+SHA1 (ttylinux-pc_i486-16.1-2.nvram) = 701e98837a28018430889f021571d171ba2252c4

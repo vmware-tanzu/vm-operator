@@ -256,6 +256,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						Connected:         ptrOf(true),
 					},
 				},
+				GroupName: "my-vm-group",
 			},
 		}
 

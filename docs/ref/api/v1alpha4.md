@@ -61,6 +61,24 @@ resource.
 | `spec` _[VirtualMachineClassSpec](#virtualmachineclassspec)_ |  |
 | `status` _[VirtualMachineClassStatus](#virtualmachineclassstatus)_ |  |
 
+### VirtualMachineGroup
+
+
+
+VirtualMachineGroup is the schema for the VirtualMachineGroup API and
+represents the desired state and observed status of a VirtualMachineGroup
+resource.
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
+| `kind` _string_ | `VirtualMachineGroup`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineGroupSpec](#virtualmachinegroupspec)_ |  |
+| `status` _[VirtualMachineGroupStatus](#virtualmachinegroupstatus)_ |  |
+
 ### VirtualMachineImage
 
 
@@ -934,6 +952,119 @@ _Appears in:_
 - [VirtualMachineCryptoStatus](#virtualmachinecryptostatus)
 
 
+### VirtualMachineGroupPlacementDatastoreStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineGroupPlacementStatus](#virtualmachinegroupplacementstatus)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name describes the name of a datastore. |
+| `id` _string_ | ID describes the datastore ID. |
+| `url` _string_ | URL describes the datastore URL. |
+| `supportedDiskFormats` _string array_ | SupportedDiskFormat describes the list of disk formats supported by this
+datastore. |
+| `diskKey` _integer_ | DiskKey describes the device key to which this recommendation applies.
+When omitted, this recommendation is for the VM's home directory. |
+
+### VirtualMachineGroupPlacementStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineGroupStatus](#virtualmachinegroupstatus)
+
+| Field | Description |
+| --- | --- |
+| `member` _[LocalObjectRef](#localobjectref)_ | Member references a specific group member to which this placement
+status applies. |
+| `zoneID` _string_ | Zone describes the recommended zone for this VM. |
+| `node` _string_ | Node describes the recommended node for this VM. |
+| `pool` _string_ | Pool describes the recommended resource pool for this VM. |
+| `datastores` _[VirtualMachineGroupPlacementDatastoreStatus](#virtualmachinegroupplacementdatastorestatus) array_ | Datastores describe the recommended datastores for this VM. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this placement.
+
+Generally this should just include the ReadyType condition. |
+
+### VirtualMachineGroupPowerOp
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineGroupSpec](#virtualmachinegroupspec)
+
+| Field | Description |
+| --- | --- |
+| `member` _[LocalObjectRef](#localobjectref)_ | Member references a specific group member to which this power operation
+applies. |
+| `delay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | Delay is the amount of time to wait before performing the power
+operation. |
+
+### VirtualMachineGroupSpec
+
+
+
+VirtualMachineGroupSpec defines the desired state of VirtualMachineGroup.
+
+_Appears in:_
+- [VirtualMachineGroup](#virtualmachinegroup)
+
+| Field | Description |
+| --- | --- |
+| `members` _[LocalObjectRef](#localobjectref) array_ | Members contains references to the VirtualMachine or VirtualMachineGroup
+objects belonging to this group. All referenced objects must exist in
+the same namespace as this group. |
+| `powerOnOrder` _[VirtualMachineGroupPowerOp](#virtualmachinegrouppowerop) array_ | PowerOnOrder describes the order in which members of this group are
+powered on.
+
+Please note that not all members need to be present in this list. If
+omitted, there is no guarantee about the order in which a member's
+power state is changed. |
+| `powerOffOrder` _[VirtualMachineGroupPowerOp](#virtualmachinegrouppowerop) array_ | PowerOffOrder describes the order in which members of this group are
+powered off.
+
+Please note that not all members need to be present in this list. If
+omitted, there is no guarantee about the order in which a member's
+power state is changed. |
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the desired power state of a VirtualMachineGroup.
+
+Please note this field may be omitted when creating a new VM group. This
+ensures that the power states of any existing VMs that are added to the
+group do not have their power states changed until the group's power
+state is explicitly altered.
+
+However, once the field is set to a non-empty value, it may no longer be
+set to an empty value. This means that if the group's power state is
+PoweredOn, and a VM whose power state is PoweredOff is added to the
+group, that VM will be powered on. |
+
+### VirtualMachineGroupStatus
+
+
+
+VirtualMachineGroupStatus defines the observed state of VirtualMachineGroup.
+
+_Appears in:_
+- [VirtualMachineGroup](#virtualmachinegroup)
+
+| Field | Description |
+| --- | --- |
+| `placement` _[VirtualMachineGroupPlacementStatus](#virtualmachinegroupplacementstatus) array_ | Placement describes the placement results for the group members. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this placement.
+
+- The PlacementReady condition is True when all of the placement results
+  have a True ReadyType condition.
+- The ReadyType condition is True when all of the members have a True
+  ReadyType condition. |
+
 
 ### VirtualMachineImageCacheDiskStatus
 
@@ -1799,6 +1930,7 @@ _Underlying type:_ `string`
 VirtualMachinePowerState defines a VM's desired and observed power states.
 
 _Appears in:_
+- [VirtualMachineGroupSpec](#virtualmachinegroupspec)
 - [VirtualMachineSpec](#virtualmachinespec)
 - [VirtualMachineStatus](#virtualmachinestatus)
 
@@ -2454,6 +2586,18 @@ To change the guest ID after the VM is powered on, the VM must be powered
 off and then powered on again with the updated guest ID spec.
 
 This field is required when the VM has any CD-ROM devices attached. |
+| `groupName` _string_ | GroupName describes the name of a VirtualMachineGroup resource used to
+manage this VM and other VMs / VM groups together as a collective group.
+
+When managed by a group:
+
+- Direct changes to a VM's PowerState field are disallowed. The power
+  state must be managed via the VirtualMachineGroup object.
+- All placement / mobility operations are executed in the context of the
+  group.
+- An OwnerReference is placed on the VM that points to the group.
+- Deleting the group will delete the VM.
+- Deleting the VM will be blocked as long as it is managed by a group. |
 
 ### VirtualMachineStatus
 

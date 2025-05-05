@@ -18,6 +18,12 @@ func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMa
 	return autoConvert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(in, out, s)
 }
 
+func Convert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(
+	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in, out, s)
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -34,6 +40,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	// BEGIN RESTORE
 
 	restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
+	restore_v1alpha4_VirtualMachineGroupName(dst, restored)
 
 	// END RESTORE
 
@@ -77,4 +84,8 @@ func restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vm
 			}
 		}
 	}
+}
+
+func restore_v1alpha4_VirtualMachineGroupName(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.GroupName = src.Spec.GroupName
 }

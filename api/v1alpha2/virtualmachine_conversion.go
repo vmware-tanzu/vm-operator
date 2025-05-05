@@ -273,14 +273,11 @@ func restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vm
 	if bs := src.Spec.Bootstrap; bs != nil {
 		if ci := bs.CloudInit; ci != nil {
 			if ci.WaitOnNetwork4 != nil || ci.WaitOnNetwork6 != nil {
-				if dst.Spec.Bootstrap == nil {
-					dst.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+				// Only restore these values if dst still has a CloudInit spec.
+				if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.CloudInit != nil {
+					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork4 = ci.WaitOnNetwork4
+					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork6 = ci.WaitOnNetwork6
 				}
-				if dst.Spec.Bootstrap.CloudInit == nil {
-					dst.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
-				}
-				dst.Spec.Bootstrap.CloudInit.WaitOnNetwork4 = ci.WaitOnNetwork4
-				dst.Spec.Bootstrap.CloudInit.WaitOnNetwork6 = ci.WaitOnNetwork6
 			}
 		}
 	}

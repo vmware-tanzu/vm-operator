@@ -752,6 +752,22 @@ type VirtualMachineSpec struct {
 	//
 	// This field is required when the VM has any CD-ROM devices attached.
 	GuestID string `json:"guestID,omitempty"`
+
+	// +optional
+
+	// GroupName describes the name of a VirtualMachineGroup resource used to
+	// manage this VM and other VMs / VM groups together as a collective group.
+	//
+	// When managed by a group:
+	//
+	// - Direct changes to a VM's PowerState field are disallowed. The power
+	//   state must be managed via the VirtualMachineGroup object.
+	// - All placement / mobility operations are executed in the context of the
+	//   group.
+	// - An OwnerReference is placed on the VM that points to the group.
+	// - Deleting the group will delete the VM.
+	// - Deleting the VM will be blocked as long as it is managed by a group.
+	GroupName string `json:"groupName,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options

@@ -93,6 +93,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 						SSHAuthorizedKeys:               []string{"my-ssh-key"},
 						UseGlobalNameserversAsDefault:   ptrOf(true),
 						UseGlobalSearchDomainsAsDefault: ptrOf(true),
+						WaitOnNetwork4:                  ptrOf(true),
+						WaitOnNetwork6:                  ptrOf(true),
 					},
 				},
 				Network: &vmopv1.VirtualMachineNetworkSpec{
@@ -264,6 +266,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 						SSHAuthorizedKeys:               []string{"my-ssh-key"},
 						UseGlobalNameserversAsDefault:   ptrOf(true),
 						UseGlobalSearchDomainsAsDefault: ptrOf(false),
+						WaitOnNetwork4:                  ptrOf(true),
+						WaitOnNetwork6:                  ptrOf(false),
 					},
 				},
 			},
@@ -290,6 +294,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 						SSHAuthorizedKeys:               []string{"my-ssh-key"},
 						UseGlobalNameserversAsDefault:   ptrOf(false),
 						UseGlobalSearchDomainsAsDefault: ptrOf(true),
+						WaitOnNetwork4:                  ptrOf(true),
+						WaitOnNetwork6:                  ptrOf(false),
 					},
 				},
 			},
@@ -333,6 +339,32 @@ func TestVirtualMachineConversion(t *testing.T) {
 				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 						UseGlobalSearchDomainsAsDefault: ptrOf(true),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub2, &vmopv1a1.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine hub-spoke-hub with WaitOnNetwork", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub1 := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						WaitOnNetwork4: ptrOf(true),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub1, &vmopv1a1.VirtualMachine{})
+
+		hub2 := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						WaitOnNetwork6: ptrOf(true),
 					},
 				},
 			},

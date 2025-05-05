@@ -269,6 +269,20 @@ func restore_v1alpha4_VirtualMachineBootstrapCloudInitInstanceID(
 	dst.Spec.Bootstrap.CloudInit.InstanceID = iid
 }
 
+func restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if ci := bs.CloudInit; ci != nil {
+			if ci.WaitOnNetwork4 != nil || ci.WaitOnNetwork6 != nil {
+				// Only restore these values if dst still has a CloudInit spec.
+				if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.CloudInit != nil {
+					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork4 = ci.WaitOnNetwork4
+					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork6 = ci.WaitOnNetwork6
+				}
+			}
+		}
+	}
+}
+
 func restore_v1alpha4_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
@@ -296,6 +310,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha4_VirtualMachineInstanceUUID(dst, restored)
 	restore_v1alpha4_VirtualMachineBiosUUID(dst, restored)
 	restore_v1alpha4_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
+	restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha4_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha4_VirtualMachineGuestID(dst, restored)
 	restore_v1alpha4_VirtualMachineCdrom(dst, restored)

@@ -28,6 +28,12 @@ type CloudInitMetadata struct {
 	Hostname      string          `json:"hostname,omitempty"`
 	Network       netplan.Network `json:"network,omitempty"`
 	PublicKeys    string          `json:"public-keys,omitempty"`
+	WaitOnNetwork *WaitOnNetwork  `json:"wait-on-network,omitempty"`
+}
+
+type WaitOnNetwork struct {
+	IPv4 bool `json:"ipv4,omitempty"`
+	IPv6 bool `json:"ipv6,omitempty"`
 }
 
 // CloudInitUserDataSecretKeys are the Secret keys that in v1a1 we'd check for the userdata.
@@ -114,7 +120,8 @@ func BootStrapCloudInit(
 	iid := BootStrapCloudInitInstanceID(vmCtx, cloudInitSpec)
 
 	metadata, err := GetCloudInitMetadata(
-		iid, bsArgs.HostName, bsArgs.DomainName, netPlan, sshPublicKeys)
+		iid, bsArgs.HostName, bsArgs.DomainName, netPlan, sshPublicKeys,
+		cloudInitSpec.WaitOnNetwork4, cloudInitSpec.WaitOnNetwork6)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -163,7 +170,8 @@ func BootStrapCloudInit(
 func GetCloudInitMetadata(
 	instanceID, hostName, domainName string,
 	netplan *netplan.Network,
-	sshPublicKeys string) (string, error) {
+	sshPublicKeys string,
+	waitOnNetwork4, waitOnNetwork6 *bool) (string, error) {
 
 	fqdn := hostName
 	if domainName != "" {
@@ -176,6 +184,21 @@ func GetCloudInitMetadata(
 		Hostname:      fqdn,
 		Network:       *netplan,
 		PublicKeys:    sshPublicKeys,
+	}
+
+	// Only set WaitOnNetwork if at least one of the IPv4 or IPv6 values is set.
+	if waitOnNetwork4 != nil || waitOnNetwork6 != nil {
+		waitOnNetwork := WaitOnNetwork{}
+
+		if waitOnNetwork4 != nil {
+			waitOnNetwork.IPv4 = *waitOnNetwork4
+		}
+
+		if waitOnNetwork6 != nil {
+			waitOnNetwork.IPv6 = *waitOnNetwork6
+		}
+
+		metadata.WaitOnNetwork = &waitOnNetwork
 	}
 
 	metadataBytes, err := yaml.Marshal(metadata)

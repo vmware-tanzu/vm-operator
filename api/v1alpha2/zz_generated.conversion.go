@@ -1463,6 +1463,8 @@ func autoConvert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_Virtu
 	out.SSHAuthorizedKeys = *(*[]string)(unsafe.Pointer(&in.SSHAuthorizedKeys))
 	out.UseGlobalNameserversAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalNameserversAsDefault))
 	out.UseGlobalSearchDomainsAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalSearchDomainsAsDefault))
+	// WARNING: in.WaitOnNetwork4 requires manual conversion: does not exist in peer-type
+	// WARNING: in.WaitOnNetwork6 requires manual conversion: does not exist in peer-type
 	return nil
 }
 

@@ -2499,6 +2499,22 @@ spec:
 
                                   Defaults to true if omitted.
                                 type: boolean
+                              waitOnNetwork4:
+                                description: |-
+                                  WaitOnNetwork4 indicates whether the cloud-init datasource should wait
+                                  for an IPv4 address to be available before writing the instance-data.
+
+                                  When set to true, the cloud-init datasource will sleep for a second,
+                                  check network status, and repeat until an IPv4 address is available.
+                                type: boolean
+                              waitOnNetwork6:
+                                description: |-
+                                  WaitOnNetwork6 indicates whether the cloud-init datasource should wait
+                                  for an IPv6 address to be available before writing the instance-data.
+
+                                  When set to true, the cloud-init datasource will sleep for a second,
+                                  check network status, and repeat until an IPv6 address is available.
+                                type: boolean
                             type: object
                           linuxPrep:
                             description: |-

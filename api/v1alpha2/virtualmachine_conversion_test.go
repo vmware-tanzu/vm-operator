@@ -71,6 +71,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 						SSHAuthorizedKeys:               []string{"my-ssh-key"},
 						UseGlobalNameserversAsDefault:   ptrOf(true),
 						UseGlobalSearchDomainsAsDefault: ptrOf(true),
+						WaitOnNetwork4:                  ptrOf(true),
+						WaitOnNetwork6:                  ptrOf(false),
 					},
 					LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
 						HardwareClockIsUTC: ptrOf(true),
@@ -458,6 +460,32 @@ func TestVirtualMachineConversion(t *testing.T) {
 			},
 		}
 		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine hub-spoke-hub with cloud-init wait-on-network", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub1 := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						WaitOnNetwork4: ptrOf(true),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub1, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+
+		hub2 := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						WaitOnNetwork6: ptrOf(true),
+					},
+				},
+			},
+		}
+		hubSpokeHub(g, &hub2, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
 	})
 
 	t.Run("VirtualMachine and spec.network.domainName", func(t *testing.T) {

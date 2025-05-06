@@ -514,6 +514,15 @@ type datastore struct {
 	obj          *object.Datastore
 }
 
+func includeItemFile(s string) bool {
+	switch strings.ToLower(path.Ext(s)) {
+	case ".vmdk", ".nvram":
+		return true
+	default:
+		return false
+	}
+}
+
 func getSourceDiskPaths(
 	ctx context.Context,
 	p clprov.Provider,
@@ -542,7 +551,7 @@ func getSourceDiskPaths(
 		is := itemStor[i]
 		for j := range is.StorageURIs {
 			s := is.StorageURIs[j]
-			if strings.EqualFold(".vmdk", path.Ext(s)) {
+			if includeItemFile(s) {
 				srcDiskURIs = append(srcDiskURIs, s)
 			}
 		}

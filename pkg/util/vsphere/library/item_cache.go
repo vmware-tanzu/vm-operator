@@ -43,6 +43,12 @@ type CacheStorageURIsClient interface {
 		dstName string, dstDatacenter *object.Datacenter,
 		dstSpec vimtypes.BaseVirtualDiskSpec, force bool) (*object.Task, error)
 
+	CopyDatastoreFile(
+		ctx context.Context,
+		srcName string, srcDatacenter *object.Datacenter,
+		dstName string, dstDatacenter *object.Datacenter,
+		force bool) (*object.Task, error)
+
 	MakeDirectory(
 		ctx context.Context,
 		name string,
@@ -107,7 +113,8 @@ func copyDisk(
 
 	var (
 		srcFileName = path.Base(srcFilePath)
-		dstFileName = GetCachedFileNameForVMDK(srcFileName) + ".vmdk"
+		srcFileExt  = path.Ext(srcFilePath)
+		dstFileName = GetCachedFileNameForVMDK(srcFileName) + srcFileExt
 		dstFilePath = path.Join(dstDir, dstFileName)
 	)
 
@@ -134,26 +141,42 @@ func copyDisk(
 		return "", fmt.Errorf("failed to create folder %q: %w", dstDir, err)
 	}
 
-	// The base disk does not exist, create it.
-	copyDiskTask, err := client.CopyVirtualDisk(
-		ctx,
-		srcFilePath,
-		srcDatacenter,
-		dstFilePath,
-		dstDatacenter,
-		&vimtypes.FileBackedVirtualDiskSpec{
-			VirtualDiskSpec: vimtypes.VirtualDiskSpec{
-				AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
-				DiskType:    string(vimtypes.VirtualDiskTypeThin),
+	var (
+		copyTask *object.Task
+		err      error
+	)
+
+	if srcFileExt == ".vmdk" {
+		// The base disk does not exist, create it.
+		copyTask, err = client.CopyVirtualDisk(
+			ctx,
+			srcFilePath,
+			srcDatacenter,
+			dstFilePath,
+			dstDatacenter,
+			&vimtypes.FileBackedVirtualDiskSpec{
+				VirtualDiskSpec: vimtypes.VirtualDiskSpec{
+					AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
+					DiskType:    string(vimtypes.VirtualDiskTypeThin),
+				},
+				SectorFormat: string(dstDisksFormat),
 			},
-			SectorFormat: string(dstDisksFormat),
-		},
-		false)
-	if err != nil {
-		return "", fmt.Errorf("failed to call copy disk: %w", err)
+			false)
+	} else {
+		copyTask, err = client.CopyDatastoreFile(
+			ctx,
+			srcFilePath,
+			srcDatacenter,
+			dstFilePath,
+			dstDatacenter,
+			false)
 	}
-	if err := client.WaitForTask(ctx, copyDiskTask); err != nil {
-		return "", fmt.Errorf("failed to wait for copy disk: %w", err)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to call copy %s: %w", srcFileExt, err)
+	}
+	if err := client.WaitForTask(ctx, copyTask); err != nil {
+		return "", fmt.Errorf("failed to wait for copy %s: %w", srcFileExt, err)
 	}
 
 	return dstFilePath, nil

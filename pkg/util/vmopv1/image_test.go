@@ -271,49 +271,548 @@ var _ = DescribeTable("GetStorageURIsForLibraryItemDisks",
 	),
 )
 
-var _ = XDescribe("GetContentLibraryItemForImage", func() {
+var _ = Describe("GetContentLibraryItemForImage", func() {
+	const (
+		vmiName       = builder.DummyVMIName
+		clItem        = "fake-content-library-item"
+		cclItem       = "fake-cluster-content-library-item"
+		namespaceName = "fake"
+	)
 
 	var (
 		ctx       context.Context
 		k8sClient ctrlclient.Client
 		img       vmopv1.VirtualMachineImage
+		withObjs  []ctrlclient.Object
+		withFuncs interceptor.Funcs
+		cli       *imgregv1a1.ContentLibraryItem
+		ccli      *imgregv1a1.ClusterContentLibraryItem
 		expOut    imgregv1a1.ContentLibraryItem
 		expErr    error
 	)
 
-	_, _, _, _, _ = ctx, k8sClient, img, expOut, expErr
+	BeforeEach(func() {
+		withObjs = nil
+		withFuncs = interceptor.Funcs{}
 
-	// TODO(akutz) Implement test
+		ctx = context.Background()
+
+		img = *builder.DummyVirtualMachineImage(vmiName)
+
+		cli = &imgregv1a1.ContentLibraryItem{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clItem,
+				Namespace: namespaceName,
+			},
+			Spec: imgregv1a1.ContentLibraryItemSpec{
+				UUID: clItem,
+			},
+		}
+
+		ccli = &imgregv1a1.ClusterContentLibraryItem{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: cclItem,
+			},
+			Spec: imgregv1a1.ContentLibraryItemSpec{
+				UUID: cclItem,
+			},
+		}
+
+		img.Spec.ProviderRef = &vmopv1common.LocalObjectRef{
+			Name: clItem,
+		}
+	})
+
+	JustBeforeEach(func() {
+		withObjs = append(withObjs, cli, ccli)
+		k8sClient = builder.NewFakeClientWithInterceptors(withFuncs, withObjs...)
+		Expect(k8sClient).ToNot(BeNil())
+	})
+
+	When("panic is expected", func() {
+		When("ctx is nil", func() {
+			JustBeforeEach(func() {
+				ctx = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_, _ = vmopv1util.GetContentLibraryItemForImage(ctx, k8sClient, img)
+				}).To(PanicWith("context is nil"))
+			})
+		})
+
+		When("k8sClient is nil", func() {
+			JustBeforeEach(func() {
+				k8sClient = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_, _ = vmopv1util.GetContentLibraryItemForImage(ctx, k8sClient, img)
+				}).To(PanicWith("k8sClient is nil"))
+			})
+		})
+	})
+
+	When("panic is not expected", func() {
+		When("image is namespace-scoped", func() {
+			BeforeEach(func() {
+				img.Namespace = namespaceName
+			})
+			It("should return the correct object", func() {
+				var obj imgregv1a1.ContentLibraryItem
+				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: cli.Name, Namespace: cli.Namespace}, &obj)).To(Succeed())
+				expOut = obj
+
+				item, err := vmopv1util.GetContentLibraryItemForImage(ctx, k8sClient, img)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(item).To(Equal(expOut))
+			})
+			When("there is an error getting library item", func() {
+				BeforeEach(func() {
+					expErr = errors.New("fake error")
+					withFuncs.Get = func(
+						ctx context.Context,
+						client ctrlclient.WithWatch,
+						key ctrlclient.ObjectKey,
+						obj ctrlclient.Object,
+						opts ...ctrlclient.GetOption) error {
+
+						return expErr
+					}
+				})
+				It("should return an error", func() {
+					img, err := vmopv1util.GetContentLibraryItemForImage(ctx, k8sClient, img)
+					Expect(err).Should(HaveOccurred())
+					Expect(err.Error()).To(Equal(expErr.Error()))
+					Expect(img).To(Equal(imgregv1a1.ContentLibraryItem{}))
+				})
+			})
+		})
+
+		When("image is cluster-scoped", func() {
+			BeforeEach(func() {
+				img.Spec.ProviderRef.Name = cclItem
+			})
+			It("should return the correct object", func() {
+				var obj imgregv1a1.ClusterContentLibraryItem
+				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: ccli.Name, Namespace: ccli.Namespace}, &obj)).To(Succeed())
+				expOut = imgregv1a1.ContentLibraryItem(obj)
+
+				item, err := vmopv1util.GetContentLibraryItemForImage(ctx, k8sClient, img)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(item).To(Equal(expOut))
+			})
+			When("there is an error getting library item", func() {
+				BeforeEach(func() {
+					expErr = errors.New("fake error")
+					withFuncs.Get = func(
+						ctx context.Context,
+						client ctrlclient.WithWatch,
+						key ctrlclient.ObjectKey,
+						obj ctrlclient.Object,
+						opts ...ctrlclient.GetOption) error {
+
+						return expErr
+					}
+				})
+				It("should return an error", func() {
+					img, err := vmopv1util.GetContentLibraryItemForImage(ctx, k8sClient, img)
+					Expect(err).Should(HaveOccurred())
+					Expect(err.Error()).To(Equal(expErr.Error()))
+					Expect(img).To(Equal(imgregv1a1.ContentLibraryItem{}))
+				})
+			})
+		})
+	})
 })
 
-var _ = XDescribe("GetImageDiskInfo", func() {
+var _ = Describe("GetImageDiskInfo", func() {
+	const (
+		vmiName       = builder.DummyVMIName
+		cliName       = "fake-content-library-item"
+		namespaceName = "fake"
+	)
+
 	var (
 		ctx       context.Context
 		k8sClient ctrlclient.Client
 		imgRef    vmopv1.VirtualMachineImageRef
 		namespace string
-		expOut    vmopv1util.ImageDiskInfo
+		withObjs  []ctrlclient.Object
+		withFuncs interceptor.Funcs
+		vmi       *vmopv1.VirtualMachineImage
+		cli       *imgregv1a1.ContentLibraryItem
 		expErr    error
 	)
 
-	_, _, _, _, _, _ = ctx, k8sClient, imgRef, namespace, expOut, expErr
+	BeforeEach(func() {
+		withObjs = nil
+		withFuncs = interceptor.Funcs{}
+		namespace = namespaceName
 
-	// TODO(akutz) Implement test
+		ctx = context.Background()
+		imgRef = vmopv1.VirtualMachineImageRef{
+			Kind: "VirtualMachineImage",
+			Name: vmiName,
+		}
+
+		vmi = builder.DummyVirtualMachineImage(vmiName)
+		vmi.Namespace = namespaceName
+		vmi.Spec.ProviderRef = &vmopv1common.LocalObjectRef{
+			Name: cliName,
+		}
+		vmi.Status.Type = string(imgregv1a1.ContentLibraryItemTypeOvf)
+		vmi.Status.Conditions = []metav1.Condition{
+			{
+				Type:   vmopv1.ReadyConditionType,
+				Status: metav1.ConditionTrue,
+			},
+		}
+
+		cli = &imgregv1a1.ContentLibraryItem{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cliName,
+				Namespace: namespaceName,
+			},
+			Spec: imgregv1a1.ContentLibraryItemSpec{
+				UUID: cliName,
+			},
+			Status: imgregv1a1.ContentLibraryItemStatus{
+				Cached:      true,
+				SizeInBytes: *resource.NewQuantity(1024, resource.BinarySI),
+				FileInfo: []imgregv1a1.FileInfo{
+					{
+						StorageURI: "ds://vmfs/volumes/123/my-image-disk-1.vmdk",
+					},
+				},
+			},
+		}
+	})
+
+	JustBeforeEach(func() {
+		withObjs = append(withObjs, vmi, cli)
+		k8sClient = builder.NewFakeClientWithInterceptors(withFuncs, withObjs...)
+		Expect(k8sClient).ToNot(BeNil())
+	})
+
+	When("panic is expected", func() {
+		When("ctx is nil", func() {
+			JustBeforeEach(func() {
+				ctx = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_, _ = vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+				}).To(PanicWith("context is nil"))
+			})
+		})
+
+		When("k8sClient is nil", func() {
+			JustBeforeEach(func() {
+				k8sClient = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_, _ = vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+				}).To(PanicWith("k8sClient is nil"))
+			})
+		})
+	})
+
+	When("there is an error getting image", func() {
+		BeforeEach(func() {
+			expErr = errors.New("fake error")
+			withFuncs.Get = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				key ctrlclient.ObjectKey,
+				obj ctrlclient.Object,
+				opts ...ctrlclient.GetOption) error {
+
+				if _, ok := obj.(*vmopv1.VirtualMachineImage); ok {
+					return expErr
+				}
+
+				return client.Get(ctx, key, obj, opts...)
+			}
+		})
+		It("should return an error", func() {
+			_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(Equal(expErr.Error()))
+		})
+	})
+
+	When("image fails checks", func() {
+		When("image is not an OVF", func() {
+			BeforeEach(func() {
+				vmi.Status.Type = string(imgregv1a1.ContentLibraryItemTypeIso)
+			})
+			It("should return an error", func() {
+				_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+				Expect(err).Should(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("is not OVF"))
+			})
+		})
+		When("image is not ready", func() {
+			BeforeEach(func() {
+				vmi.Status.Conditions = []metav1.Condition{
+					{
+						Type:   vmopv1.ReadyConditionType,
+						Status: metav1.ConditionFalse,
+					},
+				}
+			})
+			It("should return an error", func() {
+				_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+				Expect(err).Should(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("image condition is not ready"))
+			})
+		})
+		When("image provider is not ready", func() {
+			When("provider ref is nil", func() {
+				BeforeEach(func() {
+					vmi.Spec.ProviderRef = nil
+				})
+				It("should return an error", func() {
+					_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+					Expect(err).Should(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("image provider ref is empty"))
+				})
+			})
+			When("provider ref name is empty", func() {
+				BeforeEach(func() {
+					vmi.Spec.ProviderRef.Name = ""
+				})
+				It("should return an error", func() {
+					_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+					Expect(err).Should(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("image provider ref is empty"))
+				})
+			})
+		})
+	})
+
+	When("there is an error getting content library item", func() {
+		BeforeEach(func() {
+			expErr = errors.New("fake error")
+			withFuncs.Get = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				key ctrlclient.ObjectKey,
+				obj ctrlclient.Object,
+				opts ...ctrlclient.GetOption) error {
+
+				if _, ok := obj.(*imgregv1a1.ContentLibraryItem); ok {
+					return expErr
+				}
+
+				return client.Get(ctx, key, obj, opts...)
+			}
+		})
+		It("should return an error", func() {
+			_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(Equal(expErr.Error()))
+		})
+	})
+
+	When("library item is not synced", func() {
+		When("library item is not cached", func() {
+			BeforeEach(func() {
+				cli.Status.Cached = false
+			})
+			It("should return an error", func() {
+				_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+				Expect(err).Should(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("image not synced"))
+			})
+		})
+		When("library item size is zero", func() {
+			BeforeEach(func() {
+				cli.Status.SizeInBytes = *resource.NewQuantity(0, resource.BinarySI)
+			})
+			It("should return an error", func() {
+				_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+				Expect(err).Should(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("image not synced"))
+			})
+		})
+	})
+
+	When("there is an error gettting disk URIs", func() {
+		BeforeEach(func() {
+			cli.Status.FileInfo = nil
+		})
+		It("should return an error", func() {
+			_, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("no vmdk files found in the content library item status"))
+		})
+	})
+
+	When("no error is expected", func() {
+		It("should return the correct disk info", func() {
+			diskInfo, err := vmopv1util.GetImageDiskInfo(ctx, k8sClient, imgRef, namespace)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(diskInfo.DiskURIs).To(HaveLen(1))
+		})
+	})
+
 })
 
-var _ = XDescribe("GetImage", func() {
+var _ = Describe("GetImage", func() {
+	const (
+		vmiName       = builder.DummyVMIName
+		cvmiName      = builder.DummyCVMIName
+		namespaceName = "fake"
+	)
+
 	var (
 		ctx       context.Context
 		k8sClient ctrlclient.Client
 		imgRef    vmopv1.VirtualMachineImageRef
 		namespace string
+		withObjs  []ctrlclient.Object
+		withFuncs interceptor.Funcs
+		vmi       *vmopv1.VirtualMachineImage
+		cvmi      *vmopv1.ClusterVirtualMachineImage
 		expOut    vmopv1.VirtualMachineImage
 		expErr    error
 	)
 
-	_, _, _, _, _, _ = ctx, k8sClient, imgRef, namespace, expOut, expErr
+	BeforeEach(func() {
+		withObjs = nil
+		withFuncs = interceptor.Funcs{}
+		namespace = namespaceName
 
-	// TODO(akutz) Implement test
+		ctx = context.Background()
+		imgRef = vmopv1.VirtualMachineImageRef{
+			Kind: "VirtualMachineImage",
+			Name: vmiName,
+		}
+
+		vmi = builder.DummyVirtualMachineImage(vmiName)
+		vmi.Namespace = namespaceName
+
+		cvmi = builder.DummyClusterVirtualMachineImage(cvmiName)
+	})
+
+	JustBeforeEach(func() {
+		withObjs = append(withObjs, vmi, cvmi)
+		k8sClient = builder.NewFakeClientWithInterceptors(withFuncs, withObjs...)
+		Expect(k8sClient).ToNot(BeNil())
+	})
+
+	When("panic is expected", func() {
+		When("ctx is nil", func() {
+			JustBeforeEach(func() {
+				ctx = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_, _ = vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+				}).To(PanicWith("context is nil"))
+			})
+		})
+
+		When("k8sClient is nil", func() {
+			JustBeforeEach(func() {
+				k8sClient = nil
+			})
+			It("should panic", func() {
+				Expect(func() {
+					_, _ = vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+				}).To(PanicWith("k8sClient is nil"))
+			})
+		})
+	})
+
+	When("panic is not expected", func() {
+		When("image kind is VirtualMachineImage", func() {
+			It("should return the correct object", func() {
+				var obj vmopv1.VirtualMachineImage
+				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: vmi.Name, Namespace: vmi.Namespace}, &obj)).To(Succeed())
+				expOut = obj
+
+				img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(img).To(Equal(expOut))
+			})
+			When("there is an error getting image", func() {
+				BeforeEach(func() {
+					expErr = errors.New("fake error")
+					withFuncs.Get = func(
+						ctx context.Context,
+						client ctrlclient.WithWatch,
+						key ctrlclient.ObjectKey,
+						obj ctrlclient.Object,
+						opts ...ctrlclient.GetOption) error {
+
+						return expErr
+					}
+				})
+				It("should return an error", func() {
+					img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+					Expect(err).Should(HaveOccurred())
+					Expect(err.Error()).To(Equal(expErr.Error()))
+					Expect(img).To(Equal(vmopv1.VirtualMachineImage{}))
+				})
+			})
+		})
+
+		When("image kind is ClusterVirtualMachineImage", func() {
+			BeforeEach(func() {
+				imgRef = vmopv1.VirtualMachineImageRef{
+					Kind: "ClusterVirtualMachineImage",
+					Name: cvmiName,
+				}
+			})
+			It("should return the correct object", func() {
+				var obj vmopv1.ClusterVirtualMachineImage
+				Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: cvmi.Name, Namespace: cvmi.Namespace}, &obj)).To(Succeed())
+				expOut = vmopv1.VirtualMachineImage(obj)
+
+				img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(img).To(Equal(expOut))
+			})
+			When("there is an error getting image", func() {
+				BeforeEach(func() {
+					expErr = errors.New("fake error")
+					withFuncs.Get = func(
+						ctx context.Context,
+						client ctrlclient.WithWatch,
+						key ctrlclient.ObjectKey,
+						obj ctrlclient.Object,
+						opts ...ctrlclient.GetOption) error {
+
+						return expErr
+					}
+				})
+				It("should return an error", func() {
+					img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+					Expect(err).Should(HaveOccurred())
+					Expect(err.Error()).To(Equal(expErr.Error()))
+					Expect(img).To(Equal(vmopv1.VirtualMachineImage{}))
+				})
+			})
+		})
+
+		When("image kind is not valid", func() {
+			BeforeEach(func() {
+				imgRef = vmopv1.VirtualMachineImageRef{
+					Kind: "Facsimile",
+					Name: vmiName,
+				}
+			})
+			It("should return an error", func() {
+				img, err := vmopv1util.GetImage(ctx, k8sClient, imgRef, namespace)
+				Expect(err).Should(HaveOccurred())
+				Expect(img).To(Equal(vmopv1.VirtualMachineImage{}))
+			})
+		})
+	})
 })
 
 var _ = Describe("VirtualMachineImageCacheToItemMapper", func() {

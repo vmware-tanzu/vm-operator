@@ -7,10 +7,15 @@ package util
 import (
 	"bytes"
 	"context"
+	"errors"
+	"net/http"
+	"os"
 	"reflect"
 	"regexp"
 
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 
@@ -218,6 +223,36 @@ func DatastoreNameFromStorageURI(s string) string {
 		return ""
 	}
 	return m[1]
+}
+
+// DatastoreFileExists returns nil if name exists in the given Datacenter.
+// If the file can be checked and does not exist, os.ErrNotExist is returned.
+func DatastoreFileExists(
+	ctx context.Context,
+	vimClient *vim25.Client,
+	name string,
+	datacenter *object.Datacenter) error {
+
+	var p object.DatastorePath
+	p.FromString(name)
+
+	u := object.NewDatastoreURL(*vimClient.URL(), datacenter.InventoryPath, p.Datastore, p.Path)
+
+	res, err := vimClient.DownloadRequest(ctx, u, &soap.Download{Method: http.MethodHead})
+	if err != nil {
+		return err
+	}
+
+	_ = res.Body.Close() // No Body sent with HEAD request, but still need to close
+
+	switch res.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return os.ErrNotExist
+	default:
+		return errors.New(res.Status)
+	}
 }
 
 // CopyStorageControllersAndDisks copies the storage controllers and disks from

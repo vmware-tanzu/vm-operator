@@ -6,10 +6,7 @@ package virtualmachineimagecache
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
-	"os"
 	"path"
 	"reflect"
 	"strings"
@@ -22,7 +19,6 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -738,27 +734,9 @@ func (c *cacheStorageURIsClient) DatastoreFileExists(
 	name string,
 	datacenter *object.Datacenter) error {
 
-	var p object.DatastorePath
-	p.FromString(name)
-
 	vc := c.FileManager.Client()
-	u := object.NewDatastoreURL(*vc.URL(), datacenter.InventoryPath, p.Datastore, p.Path)
 
-	res, err := vc.DownloadRequest(ctx, u, &soap.Download{Method: http.MethodHead})
-	if err != nil {
-		return err
-	}
-
-	_ = res.Body.Close() // No Body sent with HEAD request, but still need to close
-
-	switch res.StatusCode {
-	case http.StatusOK:
-		return nil
-	case http.StatusNotFound:
-		return os.ErrNotExist
-	default:
-		return errors.New(res.Status)
-	}
+	return pkgutil.DatastoreFileExists(ctx, vc, name, datacenter)
 }
 
 func (c *cacheStorageURIsClient) WaitForTask(

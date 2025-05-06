@@ -998,6 +998,10 @@ func restore_v1alpha4_VirtualMachineCdrom(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Cdrom = src.Spec.Cdrom
 }
 
+func restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
+}
+
 func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha4_Conditions(
 	dst *vmopv1.VirtualMachine) []metav1.Condition {
 
@@ -1250,6 +1254,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha4_VirtualMachineGuestID(dst, restored)
 	restore_v1alpha4_VirtualMachineCdrom(dst, restored)
 	restore_v1alpha4_VirtualMachineCryptoSpec(dst, restored)
+	restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, restored)
 
 	// END RESTORE
 

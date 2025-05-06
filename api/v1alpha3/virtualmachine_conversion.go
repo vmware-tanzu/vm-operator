@@ -18,6 +18,30 @@ func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMa
 	return autoConvert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(in, out, s)
 }
 
+func Convert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(
+	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in, out, s); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func Convert_v1alpha4_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
+	in *vmopv1.VirtualMachineStatus, out *VirtualMachineStatus, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(in, out, s); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -34,6 +58,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	// BEGIN RESTORE
 
 	restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
+	restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, restored)
 
 	// END RESTORE
 

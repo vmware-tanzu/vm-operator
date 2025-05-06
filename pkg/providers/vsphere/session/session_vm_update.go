@@ -1079,10 +1079,14 @@ func (s *Session) UpdateVirtualMachine(
 	var (
 		refetchProps bool
 		updateErr    error
+		isPaused     = isVMPaused(vmCtx)
+		hasTask      = vmCtx.VM.Status.TaskID != ""
 	)
 
-	// Only update VM's power state when VM is not paused.
-	if !isVMPaused(vmCtx) {
+	// Only update VM's power state when VM:
+	// - is not paused
+	// - does not have an outstanding task
+	if !isPaused && !hasTask {
 		// Translate the VM's current power state into the VM Op power state value.
 		var existingPowerState vmopv1.VirtualMachinePowerState
 		switch vmCtx.MoVM.Summary.Runtime.PowerState {
@@ -1116,7 +1120,8 @@ func (s *Session) UpdateVirtualMachine(
 				existingPowerState)
 		}
 	} else {
-		vmCtx.Logger.Info("VirtualMachine is paused. PowerState is not updated.")
+		vmCtx.Logger.Info("PowerState is not updated.",
+			"isPaused", isPaused, "hasTask", hasTask)
 		refetchProps, updateErr = defaultReconfigure(vmCtx, s.K8sClient, vcVM)
 	}
 

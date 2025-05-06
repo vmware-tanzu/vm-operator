@@ -51,6 +51,19 @@ func fastDeploy(
 	}
 	logger.Info("Got destination disk paths", "dstDiskPaths", dstDiskPaths)
 
+	srcFilePaths := createArgs.FilePaths
+	logger.Info("Got source file paths", "srcFilePaths", srcFilePaths)
+
+	dstFilePaths := make([]string, len(srcFilePaths))
+	for i := 0; i < len(dstFilePaths); i++ {
+		// Rename file using vm name + same extension
+		ext := path.Ext(srcFilePaths[i])
+		name := createArgs.ConfigSpec.Name + ext
+
+		dstFilePaths[i] = path.Join(vmDir, name)
+	}
+	logger.Info("Got destination file paths", "dstFilePaths", dstFilePaths)
+
 	// Collect the disks and remove the storage profile from them.
 	var (
 		disks     []*vimtypes.VirtualDisk
@@ -94,6 +107,16 @@ func fastDeploy(
 	fm := object.NewFileManager(vimClient)
 	if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
 		return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
+	}
+
+	for i := range dstFilePaths {
+		task, err := fm.CopyDatastoreFile(vmCtx, srcFilePaths[i], datacenter, dstFilePaths[i], datacenter, false)
+		if err != nil {
+			return nil, err
+		}
+		if err = task.Wait(vmCtx); err != nil {
+			return nil, err
+		}
 	}
 
 	// If any error occurs after this point, the newly created VM directory and

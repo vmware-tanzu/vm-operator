@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"path"
 	"strings"
 	"sync"
 	"text/template"
@@ -1075,9 +1076,13 @@ func (vs *vSphereVMProvider) vmCreateGetSourceDiskPaths(
 
 						// Update the createArgs.DiskPaths with the paths from
 						// the cached disks slice.
-						createArgs.DiskPaths = make([]string, len(l.Disks))
 						for i := range l.Disks {
-							createArgs.DiskPaths[i] = l.Disks[i].ID
+							switch path.Ext(l.Disks[i].ID) {
+							case ".vmdk":
+								createArgs.DiskPaths = append(createArgs.DiskPaths, l.Disks[i].ID)
+							default:
+								createArgs.FilePaths = append(createArgs.FilePaths, l.Disks[i].ID)
+							}
 						}
 
 						return nil
@@ -1108,12 +1113,11 @@ func (vs *vSphereVMProvider) vmCreateGetSourceDiskPathsVerify(
 	obj vmopv1.VirtualMachineImageCache,
 	srcDisks []vmopv1.VirtualMachineImageCacheDiskStatus) bool {
 
-	vdm := object.NewVirtualDiskManager(vcClient.VimClient())
-
 	for i := range srcDisks {
 		s := srcDisks[i]
-		if _, err := vdm.QueryVirtualDiskUuid(
+		if err := pkgutil.DatastoreFileExists(
 			vmCtx,
+			vcClient.VimClient(),
 			s.ID,
 			vcClient.Datacenter()); err != nil {
 

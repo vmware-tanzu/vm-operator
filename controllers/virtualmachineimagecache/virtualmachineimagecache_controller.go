@@ -336,7 +336,7 @@ func (r *reconciler) reconcileLocations(
 				conditionReasonFailed,
 				err)
 		} else {
-			status.Disks = cachedDisks
+			status.Files = cachedDisks
 			conditions = conditions.MarkTrue(vmopv1.ReadyConditionType)
 		}
 
@@ -350,7 +350,7 @@ func (r *reconciler) cacheDisks(
 	dstDatacenter, srcDatacenter *object.Datacenter,
 	tldPath, itemID, itemVersion string,
 	dstDiskFormat vimtypes.DatastoreSectorFormat,
-	srcDiskURIs []string) ([]vmopv1.VirtualMachineImageCacheDiskStatus, error) {
+	srcDiskURIs []string) ([]vmopv1.VirtualMachineImageCacheFileStatus, error) {
 
 	itemCacheDir := clsutil.GetCacheDirForLibraryItem(
 		tldPath,
@@ -380,7 +380,7 @@ func (r *reconciler) cacheDisks(
 	}
 
 	cachedDiskStatuses := make(
-		[]vmopv1.VirtualMachineImageCacheDiskStatus, len(cachedDisks))
+		[]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDisks))
 
 	for i := range cachedDisks {
 		if v := cachedDisks[i].Path; v != "" {

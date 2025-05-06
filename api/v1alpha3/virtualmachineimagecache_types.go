@@ -77,10 +77,10 @@ func (i *VirtualMachineImageCache) AddLocation(
 		})
 }
 
-type VirtualMachineImageCacheDiskStatus struct {
+type VirtualMachineImageCacheFileStatus struct {
 
-	// ID describes the value used to locate the disk.
-	// The value of this field depends on the type of disk.
+	// ID describes the value used to locate the file.
+	// The value of this field depends on the type of file.
 	// For Type=Classic, the ID value describes a datastore path, ex.
 	// "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk".
 	// For Type=Managed, the ID value describes a First Class Disk (FCD).
@@ -109,8 +109,8 @@ type VirtualMachineImageCacheLocationStatus struct {
 	// +listMapKey=id
 	// +listMapKey=type
 
-	// Disks describes the image's disks cached on this datastore.
-	Disks []VirtualMachineImageCacheDiskStatus `json:"disks,omitempty"`
+	// Files describes the image's files cached on this datastore.
+	Files []VirtualMachineImageCacheFileStatus `json:"files,omitempty"`
 
 	// +optional
 

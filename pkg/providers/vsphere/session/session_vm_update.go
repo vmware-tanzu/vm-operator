@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,99 +59,72 @@ type VMResizeArgs struct {
 	ConfigSpec vimtypes.VirtualMachineConfigSpec
 }
 
-func ethCardMatch(newBaseEthCard, curBaseEthCard vimtypes.BaseVirtualEthernetCard) bool {
-	if reflect.TypeOf(curBaseEthCard) != reflect.TypeOf(newBaseEthCard) {
-		return false
-	}
+func findMatchingEthCard(
+	currentEthCards object.VirtualDeviceList,
+	ethCard vimtypes.BaseVirtualEthernetCard) int {
 
-	curEthCard := curBaseEthCard.GetVirtualEthernetCard()
-	newEthCard := newBaseEthCard.GetVirtualEthernetCard()
-	if newEthCard.AddressType == string(vimtypes.VirtualEthernetCardMacTypeManual) {
-		// If the new card has an assigned MAC address, then it should match with
-		// the current card. Note only NCP sets the MAC address.
-		if newEthCard.MacAddress != curEthCard.MacAddress {
-			return false
+	ethDev := ethCard.GetVirtualEthernetCard()
+	matchingIdx := -1
+
+	for idx := range currentEthCards {
+		curDev := currentEthCards[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+
+		if ethDev.AddressType == string(vimtypes.VirtualEthernetCardMacTypeManual) {
+			if ethDev.MacAddress != curDev.MacAddress {
+				continue
+			}
+		}
+
+		if ethDev.ExternalId != "" {
+			if ethDev.ExternalId != curDev.ExternalId {
+				continue
+			}
+		}
+
+		if curDev.Backing == nil {
+			continue
+		}
+
+		var backingMatch bool
+		switch a := ethDev.Backing.(type) {
+		case *vimtypes.VirtualEthernetCardNetworkBackingInfo:
+			backingMatch = resize.MatchVirtualEthernetCardNetworkBackingInfo(a, curDev.Backing)
+		case *vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo:
+			backingMatch = resize.MatchVirtualEthernetCardDistributedVirtualPortBackingInfo(a, curDev.Backing)
+		case *vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo:
+			backingMatch = resize.MatchVirtualEthernetCardOpaqueNetworkBackingInfo(a, curDev.Backing)
+		}
+
+		if backingMatch {
+			matchingIdx = idx
+			break
 		}
 	}
 
-	if newEthCard.ExternalId != "" {
-		// If the new card has a specific ExternalId, then it should match with the
-		// current card. Note only NCP sets the ExternalId.
-		if newEthCard.ExternalId != curEthCard.ExternalId {
-			return false
-		}
-	}
-
-	return true
+	return matchingIdx
 }
 
 func UpdateEthCardDeviceChanges(
-	ctx context.Context,
-	expectedEthCards object.VirtualDeviceList,
+	_ context.Context,
+	results *network.NetworkInterfaceResults,
 	currentEthCards object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 
 	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
-	for _, expectedDev := range expectedEthCards {
-		expectedNic := expectedDev.(vimtypes.BaseVirtualEthernetCard)
-		expectedBacking := expectedNic.GetVirtualEthernetCard().Backing
-		expectedBackingType := reflect.TypeOf(expectedBacking)
 
-		var matchingIdx = -1
-
-		// Try to match the expected NIC with an existing NIC but this isn't that great. We mostly
-		// depend on the backing but we can improve that later on. When not generated, we could use
-		// the MAC address. When we support something other than just vmxnet3 we should compare
-		// those types too. And we should make this truly reconcile as well by comparing the full
-		// state (support EDIT instead of only ADD/REMOVE operations).
-		//
-		// Another tack we could take is force the VM's device order to match the Spec order, but
-		// that could lead to spurious removals. Or reorder the NetIfList to not be that of the
-		// Spec, but in VM device order.
-		for idx, curDev := range currentEthCards {
-			nic := curDev.(vimtypes.BaseVirtualEthernetCard)
-
-			// This assumes we don't have multiple NICs in the same backing network. This is kind of, sort
-			// of enforced by the webhook, but we lack a guaranteed way to match up the NICs.
-
-			if !ethCardMatch(expectedNic, nic) {
-				continue
-			}
-
-			db := nic.GetVirtualEthernetCard().Backing
-			if db == nil || reflect.TypeOf(db) != expectedBackingType {
-				continue
-			}
-
-			var backingMatch bool
-
-			// Cribbed from VirtualDeviceList.SelectByBackingInfo().
-			switch a := db.(type) {
-			case *vimtypes.VirtualEthernetCardNetworkBackingInfo:
-				// This backing is only used in testing.
-				b := expectedBacking.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
-				backingMatch = a.DeviceName == b.DeviceName
-			case *vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo:
-				b := expectedBacking.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-				backingMatch = a.Port.SwitchUuid == b.Port.SwitchUuid && a.Port.PortgroupKey == b.Port.PortgroupKey
-			case *vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo:
-				b := expectedBacking.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
-				backingMatch = a.OpaqueNetworkId == b.OpaqueNetworkId
-			}
-
-			if backingMatch {
-				matchingIdx = idx
-				break
-			}
-		}
-
+	for idx, r := range results.Results {
+		matchingIdx := findMatchingEthCard(currentEthCards, r.Device.(vimtypes.BaseVirtualEthernetCard))
 		if matchingIdx == -1 {
-			// No matching backing found so add new card.
+			results.AddedEthernetCard = true
 			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-				Device:    expectedDev,
+				Device:    r.Device,
 				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 			})
 		} else {
-			// Matching backing found so keep this card (don't remove it below after this loop).
+			matchDev := currentEthCards[matchingIdx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+			results.Results[idx].DeviceKey = matchDev.Key
+			results.Results[idx].MacAddress = matchDev.MacAddress
+
+			// This expected ethernet card from the results matched with a current one so claim it.
 			currentEthCards = append(currentEthCards[:matchingIdx], currentEthCards[matchingIdx+1:]...)
 		}
 	}
@@ -399,6 +373,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
 	currentDisks := virtualDevices.SelectByType((*vimtypes.VirtualDisk)(nil))
+	currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
 
 	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, currentDisks)
 	if err != nil {
@@ -406,19 +381,11 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, diskDeviceChanges...)
 
-	/*
-		currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
-		var expectedEthCards object.VirtualDeviceList
-		for idx := range updateArgs.NetworkResults.Results {
-			expectedEthCards = append(expectedEthCards, updateArgs.NetworkResults.Results[idx].Device)
-		}
-
-		ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, expectedEthCards, currentEthCards)
-		if err != nil {
-			return nil, false, err
-		}
-		configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
-	*/
+	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, &updateArgs.NetworkResults, currentEthCards)
+	if err != nil {
+		return nil, false, err
+	}
+	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	cdromDeviceChanges, err := virtualmachine.UpdateCdromDeviceChanges(vmCtx, s.Client.RestClient(), s.K8sClient, virtualDevices)
 	if err != nil {
@@ -439,8 +406,7 @@ func (s *Session) prePowerOnVMReconfigure(
 	var needsResize bool
 	var err error
 
-	features := pkgcfg.FromContext(vmCtx).Features
-	if features.VMResize {
+	if pkgcfg.FromContext(vmCtx).Features.VMResize {
 		configSpec, needsResize, err = s.prePowerOnVMResizeConfigSpec(vmCtx, config, updateArgs)
 	} else {
 		configSpec, needsResize, err = s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
@@ -477,23 +443,12 @@ func (s *Session) prePowerOnVMReconfigure(
 }
 
 func (s *Session) ensureNetworkInterfaces(
-	vmCtx pkgctx.VirtualMachineContext,
-	configSpec *vimtypes.VirtualMachineConfigSpec) (network.NetworkInterfaceResults, error) {
+	vmCtx pkgctx.VirtualMachineContext) (network.NetworkInterfaceResults, error) {
 
 	networkSpec := vmCtx.VM.Spec.Network
 	if networkSpec == nil || networkSpec.Disabled {
+		// TODO: Remove all interfaces.
 		return network.NetworkInterfaceResults{}, nil
-	}
-
-	// This negative device key is the traditional range used for network interfaces.
-	deviceKey := int32(-100)
-
-	var networkDevices []vimtypes.BaseVirtualDevice
-	if configSpec != nil {
-		networkDevices = pkgutil.SelectDevices[vimtypes.BaseVirtualDevice](
-			pkgutil.DevicesFromConfigSpec(configSpec),
-			pkgutil.IsEthernetCard,
-		)
 	}
 
 	results, err := network.CreateAndWaitForNetworkInterfaces(
@@ -507,10 +462,6 @@ func (s *Session) ensureNetworkInterfaces(
 		return network.NetworkInterfaceResults{}, err
 	}
 
-	// XXX: The following logic assumes that the order of network interfaces specified in the
-	// VM spec matches one to one with the device changes in the ConfigSpec in VM class.
-	// This is a safe assumption for now since VM service only supports one network interface.
-	// TODO: Needs update when VM Service supports VMs with more then one network interface.
 	for idx := range results.Results {
 		result := &results.Results[idx]
 
@@ -519,30 +470,13 @@ func (s *Session) ensureNetworkInterfaces(
 			return network.NetworkInterfaceResults{}, err
 		}
 
-		// Use network devices from the class.
-		if idx < len(networkDevices) {
-			ethCardFromNetProvider := dev.(vimtypes.BaseVirtualEthernetCard)
-
-			if mac := ethCardFromNetProvider.GetVirtualEthernetCard().MacAddress; mac != "" {
-				networkDevices[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = mac
-				networkDevices[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
-			}
-
-			networkDevices[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId =
-				ethCardFromNetProvider.GetVirtualEthernetCard().ExternalId
-			// If the device from VM class has a DVX backing, this should still work if the backing as well
-			// as the DVX backing are set. VPXD checks for DVX backing before checking for normal device backings.
-			networkDevices[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing =
-				ethCardFromNetProvider.GetVirtualEthernetCard().Backing
-
-			dev = networkDevices[idx]
-		}
-
-		// govmomi assigns a random device key. Fix that up here.
-		dev.GetVirtualDevice().Key = deviceKey
-		deviceKey--
-
 		result.Device = dev
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
+		if err := network.ListOrphanedNetworkInterfaces(vmCtx, s.K8sClient, &results); err != nil {
+			return network.NetworkInterfaceResults{}, err
+		}
 	}
 
 	return results, nil
@@ -581,6 +515,10 @@ func (s *Session) fixupMacAddresses(
 	resVM *res.VirtualMachine,
 	updateArgs *VMUpdateArgs) error {
 
+	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
+		return s.fixupMacAddressMutableNetworks(vmCtx, resVM, updateArgs)
+	}
+
 	missingMAC := false
 	for i := range updateArgs.NetworkResults.Results {
 		if updateArgs.NetworkResults.Results[i].MacAddress == "" {
@@ -611,6 +549,43 @@ func (s *Session) fixupMacAddresses(
 	return nil
 }
 
+func (s *Session) fixupMacAddressMutableNetworks(
+	vmCtx pkgctx.VirtualMachineContext,
+	resVM *res.VirtualMachine,
+	updateArgs *VMUpdateArgs) error {
+
+	if !updateArgs.NetworkResults.AddedEthernetCard {
+		return nil
+	}
+
+	networkDevices, err := resVM.GetNetworkDevices(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	for idx, r := range updateArgs.NetworkResults.Results {
+		if r.DeviceKey != 0 {
+			matchingIdx := slices.IndexFunc(networkDevices,
+				func(d vimtypes.BaseVirtualDevice) bool { return d.GetVirtualDevice().Key == r.DeviceKey })
+			if matchingIdx >= 0 {
+				networkDevices = append(networkDevices[:matchingIdx], networkDevices[matchingIdx+1:]...)
+			}
+			continue
+		}
+
+		matchingIdx := findMatchingEthCard(networkDevices, r.Device.(vimtypes.BaseVirtualEthernetCard))
+		if matchingIdx >= 0 {
+			matchDev := networkDevices[matchingIdx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+			updateArgs.NetworkResults.Results[idx].DeviceKey = matchDev.Key
+			updateArgs.NetworkResults.Results[idx].MacAddress = matchDev.MacAddress
+
+			networkDevices = append(networkDevices[:matchingIdx], networkDevices[matchingIdx+1:]...)
+		}
+	}
+
+	return nil
+}
+
 func (s *Session) customize(
 	vmCtx pkgctx.VirtualMachineContext,
 	resVM *res.VirtualMachine,
@@ -626,7 +601,7 @@ func (s *Session) prepareVMForPowerOn(
 	cfg *vimtypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) error {
 
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx, &updateArgs.ConfigSpec)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx)
 	if err != nil {
 		return err
 	}
@@ -634,6 +609,12 @@ func (s *Session) prepareVMForPowerOn(
 
 	if err := s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs); err != nil {
 		return err
+	}
+
+	for i := range updateArgs.NetworkResults.OrphanedNetworkInterfaces {
+		if err := s.K8sClient.Delete(vmCtx, updateArgs.NetworkResults.OrphanedNetworkInterfaces[i]); err != nil {
+			return err
+		}
 	}
 
 	if err := s.fixupMacAddresses(vmCtx, resVM, updateArgs); err != nil {

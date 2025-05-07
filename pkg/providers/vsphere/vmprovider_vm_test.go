@@ -61,6 +61,8 @@ import (
 const (
 	// Hardcoded vcsim CPU frequency.
 	vcsimCPUFreq = 2294
+
+	cvmiKind = "ClusterVirtualMachineImage"
 )
 
 //nolint:gocyclo // allowed is 30, this function is 32

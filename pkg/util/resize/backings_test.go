@@ -567,4 +567,114 @@ var _ = Describe("Backings", func() {
 		),
 	)
 
+	DescribeTable("MatchVirtualEthernetCardNetworkBackingInfo",
+		func(expected *vimtypes.VirtualEthernetCardNetworkBackingInfo, current vimtypes.BaseVirtualDeviceBackingInfo, match bool) {
+			m := resize.MatchVirtualEthernetCardNetworkBackingInfo(expected, current)
+			Expect(m).To(Equal(match), cmp.Diff(current, expected))
+		},
+
+		Entry("#1",
+			&vimtypes.VirtualEthernetCardNetworkBackingInfo{},
+			&vimtypes.VirtualNVDIMMBackingInfo{},
+			false,
+		),
+		Entry("#2",
+			&vimtypes.VirtualEthernetCardNetworkBackingInfo{},
+			&vimtypes.VirtualEthernetCardNetworkBackingInfo{},
+			true,
+		),
+		Entry("#3",
+			&vimtypes.VirtualEthernetCardNetworkBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{DeviceName: "bar"},
+			},
+			&vimtypes.VirtualEthernetCardNetworkBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{DeviceName: "bar"},
+			},
+			true,
+		),
+	)
+
+	DescribeTable("MatchVirtualEthernetCardDistributedVirtualPortBackingInfo",
+		func(expected *vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo, current vimtypes.BaseVirtualDeviceBackingInfo, match bool) {
+			m := resize.MatchVirtualEthernetCardDistributedVirtualPortBackingInfo(expected, current)
+			Expect(m).To(Equal(match), cmp.Diff(current, expected))
+		},
+
+		Entry("#1",
+			&vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{},
+			&vimtypes.VirtualNVDIMMBackingInfo{},
+			false,
+		),
+		Entry("#2",
+			&vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{},
+			&vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{},
+			true,
+		),
+		Entry("#3",
+			&vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+				Port: vimtypes.DistributedVirtualSwitchPortConnection{
+					SwitchUuid:   "foo",
+					PortgroupKey: "bar",
+				},
+			},
+			&vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+				Port: vimtypes.DistributedVirtualSwitchPortConnection{
+					SwitchUuid:   "foo",
+					PortgroupKey: "bar",
+				},
+			},
+			true,
+		),
+		Entry("#4",
+			&vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+				Port: vimtypes.DistributedVirtualSwitchPortConnection{
+					SwitchUuid:   "foo",
+					PortgroupKey: "foo",
+				},
+			},
+			&vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+				Port: vimtypes.DistributedVirtualSwitchPortConnection{
+					SwitchUuid:   "bar",
+					PortgroupKey: "bar",
+				},
+			},
+			false,
+		),
+	)
+
+	DescribeTable("MatchVirtualEthernetCardOpaqueNetworkBackingInfo",
+		func(expected *vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo, current vimtypes.BaseVirtualDeviceBackingInfo, match bool) {
+			m := resize.MatchVirtualEthernetCardOpaqueNetworkBackingInfo(expected, current)
+			Expect(m).To(Equal(match), cmp.Diff(current, expected))
+		},
+
+		Entry("#1",
+			&vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo{},
+			&vimtypes.VirtualNVDIMMBackingInfo{},
+			false,
+		),
+		Entry("#2",
+			&vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo{
+				OpaqueNetworkId:   "foo",
+				OpaqueNetworkType: "bar",
+			},
+			&vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo{
+				OpaqueNetworkId:   "foo",
+				OpaqueNetworkType: "bar",
+			},
+			true,
+		),
+		Entry("#3",
+			&vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo{
+				OpaqueNetworkId:   "foo",
+				OpaqueNetworkType: "foo",
+			},
+			&vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo{
+				OpaqueNetworkId:   "bar",
+				OpaqueNetworkType: "bar",
+			},
+			false,
+		),
+	)
+
 })

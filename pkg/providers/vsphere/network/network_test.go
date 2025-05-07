@@ -503,7 +503,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					netInterface.Status.InterfaceID = interfaceID
 					netInterface.Status.MacAddress = macAddress
 					netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-						NsxLogicalSwitchID: builder.NsxTLogicalSwitchUUID,
+						NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(0),
 					}
 					netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
 						{
@@ -539,7 +539,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				result := results.Results[0]
 				Expect(result.MacAddress).To(Equal(macAddress))
 				Expect(result.ExternalID).To(Equal(interfaceID))
-				Expect(result.NetworkID).To(Equal(builder.NsxTLogicalSwitchUUID))
+				Expect(result.NetworkID).To(Equal(builder.GetNsxTLogicalSwitchUUID(0)))
 				Expect(result.Name).To(Equal(interfaceName))
 
 				Expect(result.IPConfigs).To(HaveLen(2))
@@ -606,7 +606,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						netInterface.Status.InterfaceID = interfaceID
 						netInterface.Status.MacAddress = macAddress
 						netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-							NsxLogicalSwitchID: builder.NsxTLogicalSwitchUUID,
+							NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(0),
 						}
 						netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
 							{
@@ -642,7 +642,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					result := results.Results[0]
 					Expect(result.MacAddress).To(Equal(macAddress))
 					Expect(result.ExternalID).To(Equal(interfaceID))
-					Expect(result.NetworkID).To(Equal(builder.NsxTLogicalSwitchUUID))
+					Expect(result.NetworkID).To(Equal(builder.GetNsxTLogicalSwitchUUID(0)))
 					Expect(result.Name).To(Equal(interfaceName))
 
 					Expect(result.IPConfigs).To(HaveLen(2))
@@ -709,7 +709,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(ctx.NetworkRef.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
 
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("subnetPort is not ready yet"))
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
 				Expect(results.Results).To(BeEmpty())
 
 				By("simulate successful NSX Operator reconcile", func() {
@@ -727,7 +727,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 
 					subnetPort.Status.Attachment.ID = interfaceID
 					subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
-					subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.VPCLogicalSwitchUUID
+					subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
 					subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 						{
 							IPAddress: "192.168.1.110/24",
@@ -760,7 +760,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				result := results.Results[0]
 				Expect(result.MacAddress).To(Equal(macAddress))
 				Expect(result.ExternalID).To(Equal(interfaceID))
-				Expect(result.NetworkID).To(Equal(builder.VPCLogicalSwitchUUID))
+				Expect(result.NetworkID).To(Equal(builder.GetVPCTLogicalSwitchUUID(0)))
 				Expect(result.Name).To(Equal(interfaceName))
 
 				Expect(result.IPConfigs).To(HaveLen(2))

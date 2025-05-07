@@ -611,21 +611,6 @@ func testRequestedCapacityHandlerHandleCreate() {
 				})
 			})
 
-			When("vm image is nil", func() {
-				BeforeEach(func() {
-					vm = &vmopv1.VirtualMachine{}
-				})
-
-				It("should write StatusBadRequest code and an empty RequestedCapacity to the response", func() {
-					Expect(resp.Allowed).To(BeFalse())
-					Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
-
-					Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
-					Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
-					Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
-				})
-			})
-
 			Context("vmi is specified as vm image kind", func() {
 				var vmi *vmopv1.VirtualMachineImage
 

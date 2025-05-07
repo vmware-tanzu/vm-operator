@@ -150,9 +150,11 @@ func (h *RequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContex
 		return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
 	}
 
-	if vm.Spec.Image == nil {
-		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, errors.New("vm.Spec.Image is required"))}
-	}
+	// This webhook will not be called if vm.Spec.Image is not set. This is done in order to ensure that imageless VMs
+	// do not participate in quota validation. The VirtualMachine ValidatingWebhook still performs image validation.
+	//
+	// Please see https://github.com/vmware-tanzu/vm-operator/pull/822 and
+	// https://github.com/vmware-tanzu/vm-operator/blob/main/config/webhook/storage_quota_webhook_configuration.yaml#L30-L31
 	vmiName := vm.Spec.Image.Name
 	var imageStatus vmopv1.VirtualMachineImageStatus
 

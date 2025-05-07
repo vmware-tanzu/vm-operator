@@ -95,6 +95,36 @@ var _ = Describe("GOSC", func() {
 				Expect(addressSpec.IpAddress).To(Equal(ipv6))
 				Expect(addressSpec.SubnetMask).To(BeEquivalentTo(ipv6Subnet))
 			})
+
+			Context("Gateway4/6 are disabled", func() {
+				BeforeEach(func() {
+					results.Results[0].IPConfigs[0].Gateway = ""
+					results.Results[0].IPConfigs[1].Gateway = ""
+				})
+
+				It("returns success", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(adapterMappings).To(HaveLen(1))
+					mapping := adapterMappings[0]
+
+					adapter := mapping.Adapter
+					Expect(adapter.Gateway).To(BeNil())
+					Expect(adapter.SubnetMask).To(Equal("255.255.255.0"))
+					Expect(adapter.DnsServerList).To(Equal([]string{dnsServer1}))
+					Expect(adapter.Ip).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIp{}))
+					fixedIP := adapter.Ip.(*vimtypes.CustomizationFixedIp)
+					Expect(fixedIP.IpAddress).To(Equal(ipv4))
+
+					ipv6Spec := adapter.IpV6Spec
+					Expect(ipv6Spec).ToNot(BeNil())
+					Expect(ipv6Spec.Gateway).To(BeNil())
+					Expect(ipv6Spec.Ip).To(HaveLen(1))
+					Expect(ipv6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationFixedIpV6{}))
+					addressSpec := ipv6Spec.Ip[0].(*vimtypes.CustomizationFixedIpV6)
+					Expect(addressSpec.IpAddress).To(Equal(ipv6))
+					Expect(addressSpec.SubnetMask).To(BeEquivalentTo(ipv6Subnet))
+				})
+			})
 		})
 
 		Context("IPv4/6 DHCP", func() {

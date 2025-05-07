@@ -78,6 +78,7 @@ type NetworkInterfaceRoute struct {
 const (
 	retryInterval           = 100 * time.Millisecond
 	defaultEthernetCardType = "vmxnet3"
+	gatewayIgnored          = "None"
 
 	// VMNameLabel is the label put on a network interface CR that identifies its VM by name.
 	VMNameLabel = pkg.VMOperatorKey + "/vm-name"
@@ -208,13 +209,32 @@ func applyInterfaceSpecToResult(
 
 			if ipConfig.IsIPv4 {
 				dhcp4 = false
-				ipConfig.Gateway = interfaceSpec.Gateway4
+				if interfaceSpec.Gateway4 == gatewayIgnored {
+					ipConfig.Gateway = ""
+				} else {
+					ipConfig.Gateway = interfaceSpec.Gateway4
+				}
 			} else {
 				dhcp6 = false
-				ipConfig.Gateway = interfaceSpec.Gateway6
+				if interfaceSpec.Gateway6 == gatewayIgnored {
+					ipConfig.Gateway = ""
+				} else {
+					ipConfig.Gateway = interfaceSpec.Gateway6
+				}
 			}
 
 			result.IPConfigs = append(result.IPConfigs, ipConfig)
+		}
+	} else {
+		gw4Disabled := interfaceSpec.Gateway4 == gatewayIgnored
+		gw6Disabled := interfaceSpec.Gateway6 == gatewayIgnored
+
+		if gw4Disabled || gw6Disabled {
+			for i := range result.IPConfigs {
+				if (gw4Disabled && result.IPConfigs[i].IsIPv4) || (gw6Disabled && !result.IPConfigs[i].IsIPv4) {
+					result.IPConfigs[i].Gateway = ""
+				}
+			}
 		}
 	}
 

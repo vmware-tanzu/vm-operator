@@ -190,6 +190,32 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(result.Routes[0].Metric).To(BeEquivalentTo(42))
 				})
 
+				Context("Gateway4/6 are disabled", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces[0].Gateway4 = "None"
+						networkSpec.Interfaces[0].Gateway6 = "None"
+					})
+
+					It("returns success", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(results.Results).To(HaveLen(1))
+
+						result := results.Results[0]
+
+						By("has no gateways", func() {
+							Expect(result.IPConfigs).To(HaveLen(2))
+							ipConfig := result.IPConfigs[0]
+							Expect(ipConfig.IPCIDR).To(Equal("172.42.1.100/24"))
+							Expect(ipConfig.IsIPv4).To(BeTrue())
+							Expect(ipConfig.Gateway).To(BeEmpty())
+							ipConfig = result.IPConfigs[1]
+							Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:000f/56"))
+							Expect(ipConfig.IsIPv4).To(BeFalse())
+							Expect(ipConfig.Gateway).To(BeEmpty())
+						})
+					})
+				})
+
 				Context("Bootstrap has use globals as defaults", func() {
 					BeforeEach(func() {
 						vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{

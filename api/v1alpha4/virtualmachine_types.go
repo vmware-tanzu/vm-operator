@@ -468,7 +468,7 @@ const (
 	VirtualMachineDeployModeLinked VirtualMachineDeployMode = "Linked"
 )
 
-// +kubebuilder:validation:Enum=Online;Offline
+// +kubebuilder:validation:Enum=Online;Offline;Disabled
 
 // VirtualMachinePromoteDisksMode represents the available modes for promoting
 // child disks to full clones.

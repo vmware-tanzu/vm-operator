@@ -13,6 +13,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
+func Convert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVolumeClaimVolumeSource(
+	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVolumeClaimVolumeSource(in, out, s)
+}
+
 func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(
 	in *vmopv1.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s apiconversion.Scope) error {
 
@@ -295,6 +301,36 @@ func restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMac
 	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
 }
 
+func restore_v1alpha4_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
+	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
+	for i := range src.Spec.Volumes {
+		vol := &src.Spec.Volumes[i]
+		srcVolMap[vol.Name] = vol
+	}
+	for i := range dst.Spec.Volumes {
+		dstVol := &dst.Spec.Volumes[i]
+		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
+			if dstPvc := dstVol.PersistentVolumeClaim; dstPvc != nil {
+				if srcPvc := srcVol.PersistentVolumeClaim; srcPvc != nil {
+					dstPvc.ApplicationType = srcPvc.ApplicationType
+					dstPvc.ControllerName = srcPvc.ControllerName
+					dstPvc.ControllerType = srcPvc.ControllerType
+					dstPvc.DiskMode = srcPvc.DiskMode
+					dstPvc.SharingMode = srcPvc.SharingMode
+					dstPvc.UnitNumber = srcPvc.UnitNumber
+				}
+			}
+		}
+	}
+}
+
+func restore_v1alpha4_VirtualMachineDeviceControllers(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.IDEControllers = src.Spec.IDEControllers
+	dst.Spec.NVMEControllers = src.Spec.NVMEControllers
+	dst.Spec.SATAControllers = src.Spec.SATAControllers
+	dst.Spec.SCSIControllers = src.Spec.SCSIControllers
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -320,6 +356,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha4_VirtualMachineCdrom(dst, restored)
 	restore_v1alpha4_VirtualMachineCryptoSpec(dst, restored)
 	restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, restored)
+	restore_v1alpha4_VirtualMachineVolumes(dst, restored)
+	restore_v1alpha4_VirtualMachineDeviceControllers(dst, restored)
 
 	// END RESTORE
 

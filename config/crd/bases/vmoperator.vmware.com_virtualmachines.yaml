@@ -6581,6 +6581,32 @@ spec:
 
                   This field is required when the VM has any CD-ROM devices attached.
                 type: string
+              ideControllers:
+                description: |-
+                  IDEControllers describes the desired list of IDE controllers for the VM.
+
+                  Defaults to two IDE controllers, with bus 0 and bus 1.
+                items:
+                  properties:
+                    busNumber:
+                      description: |-
+                        BusNumber describes the desired bus number of the controller.
+
+                        This value must be unique.
+
+                        Defaults to the first available bus number.
+                      format: int32
+                      type: integer
+                    name:
+                      description: Name describes the name of the controller.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               image:
                 description: |-
                   Image describes the reference to the VirtualMachineImage or
@@ -7019,6 +7045,51 @@ spec:
                   field. The only value that users may set is the string "now"
                   (case-insensitive).
                 type: string
+              nvmeControllers:
+                description: |-
+                  NVMEControllers describes the desired list of NVME controllers for the
+                  VM.
+                items:
+                  properties:
+                    busNumber:
+                      description: |-
+                        BusNumber describes the desired bus number of the controller.
+
+                        This value must be unique.
+
+                        Defaults to the first available bus number.
+                      format: int32
+                      type: integer
+                    name:
+                      description: Name describes the name of the controller.
+                      type: string
+                    pciSlotNumber:
+                      description: |-
+                        PCISlotNumber describes the desired PCI slot number to use for this
+                        controller.
+
+                        Please note, most of the time this field should be empty so the system
+                        can pick an available slot.
+                      format: int32
+                      type: integer
+                    sharingMode:
+                      default: None
+                      description: |-
+                        SharingMode describes the sharing mode for the controller.
+
+                        Defaults to None.
+                      enum:
+                      - None
+                      - Physical
+                      - Virtual
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               powerOffMode:
                 default: TrySoft
                 description: |-
@@ -7214,6 +7285,99 @@ spec:
                 - Soft
                 - TrySoft
                 type: string
+              sataControllers:
+                description: |-
+                  SATAControllers describes the desired list of SATA controllers for the
+                  VM.
+
+                  Please note, all SATA controllers are VirtualAHCI.
+                items:
+                  properties:
+                    busNumber:
+                      description: |-
+                        BusNumber describes the desired bus number of the controller.
+
+                        This value must be unique.
+
+                        Defaults to the first available bus number.
+                      format: int32
+                      type: integer
+                    name:
+                      description: Name describes the name of the controller.
+                      type: string
+                    pciSlotNumber:
+                      description: |-
+                        PCISlotNumber describes the desired PCI slot number to use for this
+                        controller.
+
+                        Please note, most of the time this field should be empty so the system
+                        can pick an available slot.
+                      format: int32
+                      type: integer
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              scsiControllers:
+                description: |-
+                  SCSIControllers describes the desired list of SCSI controllers for the
+                  VM.
+                items:
+                  properties:
+                    busNumber:
+                      description: |-
+                        BusNumber describes the desired bus number of the controller.
+
+                        This value must be unique.
+
+                        Defaults to the first available bus number.
+                      format: int32
+                      type: integer
+                    name:
+                      description: Name describes the name of the controller.
+                      type: string
+                    pciSlotNumber:
+                      description: |-
+                        PCISlotNumber describes the desired PCI slot number to use for this
+                        controller.
+
+                        Please note, most of the time this field should be empty so the system
+                        can pick an available slot.
+                      format: int32
+                      type: integer
+                    sharingMode:
+                      default: None
+                      description: |-
+                        SharingMode describes the sharing mode for the controller.
+
+                        Defaults to None.
+                      enum:
+                      - None
+                      - Physical
+                      - Virtual
+                      type: string
+                    type:
+                      default: ParaVirtual
+                      description: |-
+                        Type describes the desired type of SCSI controller.
+
+                        Defaults to ParaVirtual.
+                      enum:
+                      - ParaVirtual
+                      - BusLogic
+                      - LsiLogic
+                      - LsiLogicSAS
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               storageClass:
                 description: |-
                   StorageClass describes the name of a Kubernetes StorageClass resource
@@ -7242,7 +7406,7 @@ spec:
                 - TrySoft
                 type: string
               volumes:
-                description: Volumes describes a list of volumes that can be mounted
+                description: Volumes describes the desired list of volumes to attach
                   to the VM.
                 items:
                   description: VirtualMachineVolume represents a named volume in a
@@ -7261,10 +7425,104 @@ spec:
                         More information is available at
                         https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
                       properties:
+                        applicationType:
+                          description: |-
+                            ApplicationType describes the type of application for which this volume
+                            is intended to be used.
+
+                              - OracleRAC      -- The volume is configured with
+                                                  diskMode=IndependentPersistent and
+                                                  sharingMode=MultiWriter and attached to the first
+                                                  SCSI controller with an available slot.
+                                                  If no such controller with an available slot
+                                                  exists, a new ParaVirtualSCSI controller will be
+                                                  created with sharingMode=None long as there are
+                                                  currently three or fewer SCSI controllers.
+                              - MicrosoftWSFC  -- The volume is configured with
+                                                  diskMode=IndependentPersistent and attached to a
+                                                  SCSI controller with sharingMode=Physical.
+                                                  If no such controller with an available slot
+                                                  exists, a new ParaVirtualSCSI controller will be
+                                                  created with sharingMode=Physical as long as there
+                                                  are currently three or fewer SCSI controllers.
+                          enum:
+                          - OracleRAC
+                          - MicrosoftWSFC
+                          type: string
                         claimName:
                           description: |-
                             claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
                             More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                          type: string
+                        controllerName:
+                          description: |-
+                            ControllerName describes the name of the controller to which this volume
+                            should be attached.
+
+                            The controllerType points to the list in which the named controller
+                            exists:
+
+                              - IDE  -- spec.ideControllers
+                              - NVME -- spec.nvmeControllers
+                              - SATA -- spec.sataControllers
+                              - SCSI -- spec.scsiControllers
+
+                            If omitted, the volume will be attached to the first available SCSI
+                            controller. If there is no SCSI controller with an available slot, a new
+                            ParaVirtual SCSI controller will be added as long as there are currently
+                            three or fewer SCSI controllers.
+
+                            If the specified controller has no available slots, the request will be
+                            denied.
+                          type: string
+                        controllerType:
+                          default: SCSI
+                          description: |-
+                            ControllerType describes the type of the controller to which this volume
+                            should be attached.
+
+                            Please keep in mind the number of volumes support by each type of
+                            controller:
+
+                              - IDE                -- 4 total (2 per controller)
+                              - NVME               -- 256 total (64 per controller)
+                              - SATA               -- 120 total (30 per controller)
+                              - SCSI (ParaVirtual) -- 252 total (63 per controller)
+                              - SCSI (BusLogic)    -- 60 total (15 per controller)
+                              - SCSI (LsiLogic)    -- 60 total (15 per controller)
+                              - SCSI (LsiLogicSAS) -- 60 total (15 per controller)
+
+                            Please note, the number of supported volumes per SCSI controller may seem
+                            off, but remember that a SCSI controller occupies a slot on its own bus.
+                            Thus even though a ParaVirtual SCSI controller supports 64 targets and
+                            the other types of SCSI controllers support 16 targets, one of the
+                            targets is occupied by the controller itself.
+
+                            Defaults to SCSI.
+                          enum:
+                          - IDE
+                          - NVME
+                          - SCSI
+                          - SATA
+                          type: string
+                        diskMode:
+                          default: Persistent
+                          description: |-
+                            DiskMode describes the desired mode to use when attaching the volume.
+
+                            Please note, volumes attached as IndependentNonPersistent or
+                            IndependentPersistent are not included in a VM's snapshots or backups.
+
+                            Also, any data written to volumes attached as IndependentNonPersistent or
+                            NonPersistent will be discarded when the VM is powered off.
+
+                            Defaults to Persistent.
+                          enum:
+                          - IndependentNonPersistent
+                          - IndependentPersistent
+                          - NonPersistent
+                          - Persistent
+                          - Dependent
                           type: string
                         instanceVolumeClaim:
                           description: InstanceVolumeClaim is set if the PVC is backed
@@ -7292,6 +7550,32 @@ spec:
                             readOnly Will force the ReadOnly setting in VolumeMounts.
                             Default false.
                           type: boolean
+                        sharingMode:
+                          description: |-
+                            SharingMode describes the volume's desired sharing mode.
+
+                            When applicationType=OracleRAC, the field defaults to MultiWriter.
+                            Otherwise, defaults to None.
+                          enum:
+                          - MultiWriter
+                          - None
+                          type: string
+                        unitNumber:
+                          description: |-
+                            UnitNumber describes the desired unit number for attaching the volume to
+                            a volume controller.
+
+                            When omitted, the next available unit number of the selected controller
+                            is used.
+
+                            This value must be unique for the controller referenced by the
+                            controllerType and controllerName properties. If the value is already
+                            used by another volume, this volume will not be attached.
+
+                            Please note the value 7 is invalid if controllerType=SCSI as 7 is the
+                            unit number of the SCSI controller on its own bus.
+                          format: int32
+                          type: integer
                       required:
                       - claimName
                       type: object
@@ -8141,6 +8425,10 @@ spec:
                         Attached represents whether a volume has been successfully attached to
                         the VirtualMachine or not.
                       type: boolean
+                    controllerName:
+                      description: ControllerName describes volume's observed controller
+                        name.
+                      type: string
                     crypto:
                       description: Crypto describes the volume's encryption status.
                       properties:
@@ -8157,6 +8445,15 @@ spec:
                             encrypted.
                           type: string
                       type: object
+                    diskMode:
+                      description: DiskMode describes the volume's observed disk mode.
+                      enum:
+                      - IndependentNonPersistent
+                      - IndependentPersistent
+                      - NonPersistent
+                      - Persistent
+                      - Dependent
+                      type: string
                     diskUUID:
                       description: |-
                         DiskUUID represents the underlying virtual disk UUID and is present when
@@ -8176,6 +8473,13 @@ spec:
                       x-kubernetes-int-or-string: true
                     name:
                       description: Name is the name of the attached volume.
+                      type: string
+                    sharingMode:
+                      description: SharingMode describes the volume's observed sharing
+                        mode.
+                      enum:
+                      - MultiWriter
+                      - None
                       type: string
                     type:
                       default: Managed

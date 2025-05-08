@@ -47,6 +47,46 @@ type VirtualMachineVolumeSource struct {
 	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=IndependentNonPersistent;IndependentPersistent;NonPersistent;Persistent;Dependent
+
+type VirtualMachineVolumeDiskMode string
+
+const (
+	VirtualMachineVolumeDiskModeIndependentNonPersistent VirtualMachineVolumeDiskMode = "IndependentNonPersistent"
+	VirtualMachineVolumeDiskModeIndependentPersistent    VirtualMachineVolumeDiskMode = "IndependentPersistent"
+	VirtualMachineVolumeDiskModeNonPersistent            VirtualMachineVolumeDiskMode = "NonPersistent"
+	VirtualMachineVolumeDiskModePersistent               VirtualMachineVolumeDiskMode = "Persistent"
+)
+
+// +kubebuilder:validation:Enum=MultiWriter;None
+
+type VirtualMachineVolumeSharingMode string
+
+const (
+	VirtualMachineVolumeSharingModeMultiWriter VirtualMachineVolumeSharingMode = "MultiWriter"
+	VirtualMachineVolumeSharingModeNone        VirtualMachineVolumeSharingMode = "None"
+)
+
+// +kubebuilder:validation:Enum=OracleRAC;MicrosoftWSFC
+
+type VolumeApplicationType string
+
+const (
+	VolumeApplicationTypeOracleRAC     VolumeApplicationType = "OracleRAC"
+	VolumeApplicationTypeMicrosoftWSFC VolumeApplicationType = "MicrosoftWSFC"
+)
+
+// +kubebuilder:validation:Enum=IDE;NVME;SCSI;SATA
+
+type DiskControllerType string
+
+const (
+	DiskControllerTypeIDE  = "IDE"
+	DiskControllerTypeNVME = "NVME"
+	DiskControllerTypeSCSI = "SCSI"
+	DiskControllerTypeSATA = "SATA"
+)
+
 // PersistentVolumeClaimVolumeSource is a composite for the Kubernetes
 // corev1.PersistentVolumeClaimVolumeSource and instance storage options.
 type PersistentVolumeClaimVolumeSource struct {
@@ -56,6 +96,112 @@ type PersistentVolumeClaimVolumeSource struct {
 
 	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
 	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
+
+	// +optional
+
+	// ApplicationType describes the type of application for which this volume
+	// is intended to be used.
+	//
+	//   - OracleRAC      -- The volume is configured with
+	//                       diskMode=IndependentPersistent and
+	//                       sharingMode=MultiWriter and attached to the first
+	//                       SCSI controller with an available slot.
+	//                       If no such controller with an available slot
+	//                       exists, a new ParaVirtualSCSI controller will be
+	//                       created with sharingMode=None long as there are
+	//                       currently three or fewer SCSI controllers.
+	//   - MicrosoftWSFC  -- The volume is configured with
+	//                       diskMode=IndependentPersistent and attached to a
+	//                       SCSI controller with sharingMode=Physical.
+	//                       If no such controller with an available slot
+	//                       exists, a new ParaVirtualSCSI controller will be
+	//                       created with sharingMode=Physical as long as there
+	//                       are currently three or fewer SCSI controllers.
+	ApplicationType VolumeApplicationType `json:"applicationType,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=SCSI
+
+	// ControllerType describes the type of the controller to which this volume
+	// should be attached.
+	//
+	// Please keep in mind the number of volumes support by each type of
+	// controller:
+	//
+	//   - IDE                -- 4 total (2 per controller)
+	//   - NVME               -- 256 total (64 per controller)
+	//   - SATA               -- 120 total (30 per controller)
+	//   - SCSI (ParaVirtual) -- 252 total (63 per controller)
+	//   - SCSI (BusLogic)    -- 60 total (15 per controller)
+	//   - SCSI (LsiLogic)    -- 60 total (15 per controller)
+	//   - SCSI (LsiLogicSAS) -- 60 total (15 per controller)
+	//
+	// Please note, the number of supported volumes per SCSI controller may seem
+	// off, but remember that a SCSI controller occupies a slot on its own bus.
+	// Thus even though a ParaVirtual SCSI controller supports 64 targets and
+	// the other types of SCSI controllers support 16 targets, one of the
+	// targets is occupied by the controller itself.
+	//
+	// Defaults to SCSI.
+	ControllerType DiskControllerType `json:"controllerType,omitempty"`
+
+	// +optional
+
+	// ControllerName describes the name of the controller to which this volume
+	// should be attached.
+	//
+	// The controllerType points to the list in which the named controller
+	// exists:
+	//
+	//   - IDE  -- spec.ideControllers
+	//   - NVME -- spec.nvmeControllers
+	//   - SATA -- spec.sataControllers
+	//   - SCSI -- spec.scsiControllers
+	//
+	// If omitted, the volume will be attached to the first available SCSI
+	// controller. If there is no SCSI controller with an available slot, a new
+	// ParaVirtual SCSI controller will be added as long as there are currently
+	// three or fewer SCSI controllers.
+	//
+	// If the specified controller has no available slots, the request will be
+	// denied.
+	ControllerName string `json:"controllerName,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=Persistent
+
+	// DiskMode describes the desired mode to use when attaching the volume.
+	//
+	// Please note, volumes attached as IndependentNonPersistent or
+	// IndependentPersistent are not included in a VM's snapshots or backups.
+	//
+	// Also, any data written to volumes attached as IndependentNonPersistent or
+	// NonPersistent will be discarded when the VM is powered off.
+	//
+	// Defaults to Persistent.
+	DiskMode VirtualMachineVolumeDiskMode `json:"diskMode,omitempty"`
+
+	// +optional
+
+	// SharingMode describes the volume's desired sharing mode.
+	//
+	// When applicationType=OracleRAC, the field defaults to MultiWriter.
+	// Otherwise, defaults to None.
+	SharingMode VirtualMachineVolumeSharingMode `json:"sharingMode,omitempty"`
+
+	// UnitNumber describes the desired unit number for attaching the volume to
+	// a volume controller.
+	//
+	// When omitted, the next available unit number of the selected controller
+	// is used.
+	//
+	// This value must be unique for the controller referenced by the
+	// controllerType and controllerName properties. If the value is already
+	// used by another volume, this volume will not be attached.
+	//
+	// Please note the value 7 is invalid if controllerType=SCSI as 7 is the
+	// unit number of the SCSI controller on its own bus.
+	UnitNumber *int32 `json:"unitNumber,omitempty"`
 }
 
 // InstanceVolumeClaimVolumeSource contains information about the instance
@@ -107,10 +253,25 @@ type VirtualMachineVolumeStatus struct {
 	// Name is the name of the attached volume.
 	Name string `json:"name"`
 
+	// +optional
+
+	// ControllerName describes volume's observed controller name.
+	ControllerName string `json:"controllerName,omitempty"`
+
 	// +kubebuilder:default=Managed
 
 	// Type is the type of the attached volume.
 	Type VirtualMachineVolumeType `json:"type"`
+
+	// +optional
+
+	// DiskMode describes the volume's observed disk mode.
+	DiskMode VirtualMachineVolumeDiskMode `json:"diskMode,omitempty"`
+
+	// +optional
+
+	// SharingMode describes the volume's observed sharing mode.
+	SharingMode VirtualMachineVolumeSharingMode `json:"sharingMode,omitempty"`
 
 	// +optional
 
@@ -191,4 +352,140 @@ type VirtualMachineStorageStatusUsage struct {
 	// non disk files, ex. the configuration file, swap space, logs, snapshots,
 	// etc.
 	Other *resource.Quantity `json:"other,omitempty"`
+}
+
+type IDEControllerSpec struct {
+	// +required
+
+	// Name describes the name of the controller.
+	Name string `json:"name"`
+
+	// +optional
+
+	// BusNumber describes the desired bus number of the controller.
+	//
+	// This value must be unique.
+	//
+	// Defaults to the first available bus number.
+	BusNumber *int32 `json:"busNumber,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=None;Physical;Virtual
+
+type DiskControllerSharingMode string
+
+const (
+	DiskControllerSharingModeNone     DiskControllerSharingMode = "None"
+	DiskControllerSharingModePhysical DiskControllerSharingMode = "Physical"
+	DiskControllerSharingModeVirtual  DiskControllerSharingMode = "Virtual"
+)
+
+type NVMEControllerSpec struct {
+	// +required
+
+	// Name describes the name of the controller.
+	Name string `json:"name"`
+
+	// +optional
+
+	// BusNumber describes the desired bus number of the controller.
+	//
+	// This value must be unique.
+	//
+	// Defaults to the first available bus number.
+	BusNumber *int32 `json:"busNumber,omitempty"`
+
+	// +optional
+
+	// PCISlotNumber describes the desired PCI slot number to use for this
+	// controller.
+	//
+	// Please note, most of the time this field should be empty so the system
+	// can pick an available slot.
+	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=None
+
+	// SharingMode describes the sharing mode for the controller.
+	//
+	// Defaults to None.
+	SharingMode DiskControllerSharingMode `json:"sharingMode,omitempty"`
+}
+
+type SATAControllerSpec struct {
+	// +required
+
+	// Name describes the name of the controller.
+	Name string `json:"name"`
+
+	// +optional
+
+	// BusNumber describes the desired bus number of the controller.
+	//
+	// This value must be unique.
+	//
+	// Defaults to the first available bus number.
+	BusNumber *int32 `json:"busNumber,omitempty"`
+
+	// +optional
+
+	// PCISlotNumber describes the desired PCI slot number to use for this
+	// controller.
+	//
+	// Please note, most of the time this field should be empty so the system
+	// can pick an available slot.
+	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=ParaVirtual;BusLogic;LsiLogic;LsiLogicSAS
+
+type SCSIControllerType string
+
+const (
+	SCSIControllerTypeParaVirtualSCSI = "ParaVirtual"
+	SCSIControllerTypeBusLogic        = "BusLogic"
+	SCSIControllerTypeLsiLogic        = "LsiLogic"
+	SCSIControllerTypeLsiLogicSAS     = "LsiLogicSAS"
+)
+
+type SCSIControllerSpec struct {
+	// +required
+
+	// Name describes the name of the controller.
+	Name string `json:"name"`
+
+	// +optional
+
+	// BusNumber describes the desired bus number of the controller.
+	//
+	// This value must be unique.
+	//
+	// Defaults to the first available bus number.
+	BusNumber *int32 `json:"busNumber,omitempty"`
+
+	// +optional
+
+	// PCISlotNumber describes the desired PCI slot number to use for this
+	// controller.
+	//
+	// Please note, most of the time this field should be empty so the system
+	// can pick an available slot.
+	PCISlotNumber *int32 `json:"pciSlotNumber,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=None
+
+	// SharingMode describes the sharing mode for the controller.
+	//
+	// Defaults to None.
+	SharingMode DiskControllerSharingMode `json:"sharingMode,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=ParaVirtual
+
+	// Type describes the desired type of SCSI controller.
+	//
+	// Defaults to ParaVirtual.
+	Type SCSIControllerType `json:"type,omitempty"`
 }

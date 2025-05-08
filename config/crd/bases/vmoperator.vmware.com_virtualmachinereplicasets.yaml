@@ -3543,6 +3543,7 @@ spec:
                         enum:
                         - Online
                         - Offline
+                        - Disabled
                         type: string
                       readinessProbe:
                         description: ReadinessProbe describes a probe used to determine

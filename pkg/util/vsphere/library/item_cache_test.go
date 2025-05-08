@@ -57,6 +57,16 @@ func (m *fakeCacheStorageURIsClient) CopyVirtualDisk(
 	return m.copyResult, m.copyErr
 }
 
+func (m *fakeCacheStorageURIsClient) CopyDatastoreFile(
+	ctx context.Context,
+	srcName string, srcDatacenter *object.Datacenter,
+	dstName string, dstDatacenter *object.Datacenter,
+	force bool) (*object.Task, error) {
+
+	_ = atomic.AddInt32(&m.copyCalls, 1)
+	return m.copyResult, m.copyErr
+}
+
 func (m *fakeCacheStorageURIsClient) MakeDirectory(
 	ctx context.Context,
 	name string,

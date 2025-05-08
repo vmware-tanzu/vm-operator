@@ -153,9 +153,15 @@ var _ = Describe(
 				"ttylinux-pc_i486-16.1-disk1.vmdk") + ".vmdk"
 			vmdkFilePath := path.Join(itemCacheDir, vmdkFileName)
 
-			g.ExpectWithOffset(1, status.Disks).To(HaveLen(1))
+			nvramFileName := clsutil.GetCachedFileNameForVMDK(
+				"ttylinux-pc_i486-16.1-2.nvram") + ".nvram"
+			nvramFilePath := path.Join(itemCacheDir, nvramFileName)
+
+			g.ExpectWithOffset(1, status.Disks).To(HaveLen(2))
 			g.ExpectWithOffset(1, status.Disks[0].ID).To(Equal(vmdkFilePath))
 			g.ExpectWithOffset(1, status.Disks[0].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
+			g.ExpectWithOffset(1, status.Disks[1].ID).To(Equal(nvramFilePath))
+			g.ExpectWithOffset(1, status.Disks[1].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
 		}
 
 		Context("Ordered", Ordered, func() {
@@ -496,6 +502,12 @@ type fakeClient struct {
 		dstName string, dstDatacenter *object.Datacenter,
 		dstSpec vimtypes.BaseVirtualDiskSpec, force bool) (*object.Task, error)
 
+	copyDatastoreFileFn func(
+		ctx context.Context,
+		srcName string, srcDatacenter *object.Datacenter,
+		dstName string, dstDatacenter *object.Datacenter,
+		force bool) (*object.Task, error)
+
 	makeDirectoryFn func(
 		ctx context.Context,
 		name string,
@@ -563,6 +575,7 @@ func (m *fakeClient) reset() {
 
 	m.datastoreFileExistsFn = nil
 	m.copyVirtualDiskFn = nil
+	m.copyDatastoreFileFn = nil
 	m.makeDirectoryFn = nil
 	m.waitForTaskFn = nil
 	m.getLibraryItemsFn = nil
@@ -616,6 +629,18 @@ func (m *fakeClient) CopyVirtualDisk(
 
 	if fn := m.copyVirtualDiskFn; fn != nil {
 		return fn(ctx, srcName, srcDatacenter, dstName, dstDatacenter, dstSpec, force)
+	}
+	return nil, nil
+}
+
+func (m *fakeClient) CopyDatastoreFile(
+	ctx context.Context,
+	srcName string, srcDatacenter *object.Datacenter,
+	dstName string, dstDatacenter *object.Datacenter,
+	force bool) (*object.Task, error) {
+
+	if fn := m.copyDatastoreFileFn; fn != nil {
+		return fn(ctx, srcName, srcDatacenter, dstName, dstDatacenter, force)
 	}
 	return nil, nil
 }
@@ -777,6 +802,9 @@ references:
 - href: ttylinux-pc_i486-16.1-disk1.vmdk
   id: file1
   size: 10595840
+- href: ttylinux-pc_i486-16.1-2.nvram
+  id: file2
+  size: 8684
 virtualSystem:
   id: vm
   info: A virtual machine

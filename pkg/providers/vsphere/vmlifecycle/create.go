@@ -29,6 +29,7 @@ type CreateArgs struct {
 	DatastoreMoID       string // gce2e only: used only if StorageProfileID is unset
 	Datastores          []DatastoreRef
 	DiskPaths           []string
+	FilePaths           []string
 	ZoneName            string
 }
 

@@ -19,15 +19,44 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
+// ListNetworkInterfaces lists all the network interfaces for the VM.
+func ListNetworkInterfaces(
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
+) ([]ctrlclient.Object, error) {
+	return listInterfacesWithIgnore(vmCtx, client, nil)
+}
+
+// ListOrphanedNetworkInterfaces gets the interfaces for a VM that are not
+// referenced by the VM Spec.Network.Interfaces.
 func ListOrphanedNetworkInterfaces(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
 	results *NetworkInterfaceResults,
 ) error {
+	expectedInterfaceNames := sets.Set[string]{}
+	for idx := range results.Results {
+		expectedInterfaceNames.Insert(results.Results[idx].ObjectName)
+	}
+
+	interfaces, err := listInterfacesWithIgnore(vmCtx, client, expectedInterfaceNames)
+	if err != nil {
+		return err
+	}
+
+	results.OrphanedNetworkInterfaces = interfaces
+	return nil
+}
+
+func listInterfacesWithIgnore(
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
+	ignore sets.Set[string],
+) ([]ctrlclient.Object, error) {
 
 	networkType := pkgcfg.FromContext(vmCtx).NetworkProviderType
 	if networkType == "" {
-		return fmt.Errorf("no network provider set")
+		return nil, fmt.Errorf("no network provider set")
 	}
 
 	// TODO: Anything v1a2 or later will have the label. Maybe check the created at annotation
@@ -37,22 +66,17 @@ func ListOrphanedNetworkInterfaces(
 		ctrlclient.MatchingLabels{VMNameLabel: vmCtx.VM.Name},
 	}
 
-	expectedInterfaceNames := sets.Set[string]{}
-	for idx := range results.Results {
-		expectedInterfaceNames.Insert(results.Results[idx].ObjectName)
-	}
-
 	var objList []ctrlclient.Object
 
 	switch networkType {
 	case pkgcfg.NetworkProviderTypeVDS:
 		var list netopv1alpha1.NetworkInterfaceList
 		if err := client.List(vmCtx, &list, listOpts...); err != nil {
-			return err
+			return nil, err
 		}
 
 		for i := range list.Items {
-			if !expectedInterfaceNames.Has(list.Items[i].Name) && isOwnedBy(vmCtx.VM, &list.Items[i]) {
+			if !ignore.Has(list.Items[i].Name) && isOwnedBy(vmCtx.VM, &list.Items[i]) {
 				objList = append(objList, &list.Items[i])
 			}
 		}
@@ -60,11 +84,11 @@ func ListOrphanedNetworkInterfaces(
 	case pkgcfg.NetworkProviderTypeNSXT:
 		var list ncpv1alpha1.VirtualNetworkInterfaceList
 		if err := client.List(vmCtx, &list, listOpts...); err != nil {
-			return err
+			return nil, err
 		}
 
 		for i := range list.Items {
-			if !expectedInterfaceNames.Has(list.Items[i].Name) && isOwnedBy(vmCtx.VM, &list.Items[i]) {
+			if !ignore.Has(list.Items[i].Name) && isOwnedBy(vmCtx.VM, &list.Items[i]) {
 				objList = append(objList, &list.Items[i])
 			}
 		}
@@ -72,11 +96,11 @@ func ListOrphanedNetworkInterfaces(
 	case pkgcfg.NetworkProviderTypeVPC:
 		var list vpcv1alpha1.SubnetPortList
 		if err := client.List(vmCtx, &list, listOpts...); err != nil {
-			return err
+			return nil, err
 		}
 
 		for i := range list.Items {
-			if !expectedInterfaceNames.Has(list.Items[i].Name) && isOwnedBy(vmCtx.VM, &list.Items[i]) {
+			if !ignore.Has(list.Items[i].Name) && isOwnedBy(vmCtx.VM, &list.Items[i]) {
 				objList = append(objList, &list.Items[i])
 			}
 		}
@@ -85,11 +109,10 @@ func ListOrphanedNetworkInterfaces(
 		// No objects.
 
 	default:
-		return fmt.Errorf("unsupported network provider envvar value: %q", networkType)
+		return nil, fmt.Errorf("unsupported network provider envvar value: %q", networkType)
 	}
 
-	results.OrphanedNetworkInterfaces = objList
-	return nil
+	return objList, nil
 }
 
 func isOwnedBy(vm *vmopv1.VirtualMachine, object ctrlclient.Object) bool {

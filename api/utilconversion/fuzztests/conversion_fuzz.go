@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package utilconversion
+package fuzztests
 
 import (
 	"math/rand"
@@ -28,6 +28,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
+
+	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 )
 
 // GetFuzzer returns a new fuzzer to be used for testing.
@@ -94,7 +96,7 @@ func SpokeHubSpoke(input FuzzTestFuncInput) {
 		// NOTE: There are use case when we want to skip this operation, e.g. if the spoke object does not have ObjectMeta (e.g. kubeadm types).
 		if !input.SkipSpokeAnnotationCleanup {
 			metaAfter := spokeAfter.(metav1.Object)
-			delete(metaAfter.GetAnnotations(), AnnotationKey)
+			delete(metaAfter.GetAnnotations(), utilconversion.AnnotationKey)
 		}
 
 		if input.SpokeAfterMutation != nil {

@@ -641,6 +641,7 @@ func createVPCNetworkInterface(
 		networkRefName string
 		networkRefType metav1.TypeMeta
 	)
+
 	if netRef := interfaceSpec.Network; netRef != nil {
 		networkRefName = netRef.Name
 		networkRefType = netRef.TypeMeta
@@ -654,9 +655,7 @@ func createVPCNetworkInterface(
 	}
 
 	switch networkRefType.Kind {
-	case "SubnetSet":
-		vpcSubnetPort.Spec.SubnetSet = networkRefName
-	case "":
+	case "SubnetSet", "":
 		vpcSubnetPort.Spec.SubnetSet = networkRefName
 	case "Subnet":
 		vpcSubnetPort.Spec.Subnet = networkRefName

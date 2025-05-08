@@ -57,10 +57,17 @@ var (
 	}
 )
 
+type UpdateStatusData struct {
+	// NetworkDeviceKeysToSpecIdx maps the network device's DeviceKey to its
+	// corresponding index in the VM's Spec.Network.Interfaces[].
+	NetworkDeviceKeysToSpecIdx map[int32]int
+}
+
 func UpdateStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
-	vcVM *object.VirtualMachine) error {
+	vcVM *object.VirtualMachine,
+	data UpdateStatusData) error {
 
 	vm := vmCtx.VM
 
@@ -101,7 +108,7 @@ func UpdateStatus(
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
 	hardwareVersion, _ := vimtypes.ParseHardwareVersion(summary.Config.HwVersion)
 	vm.Status.HardwareVersion = int32(hardwareVersion)
-	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest, extraConfig)
+	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest, extraConfig, data.NetworkDeviceKeysToSpecIdx)
 	updateStorageStatus(vmCtx.VM, vmCtx.MoVM)
 
 	if pkgcfg.FromContext(vmCtx).AsyncSignalEnabled {
@@ -646,7 +653,8 @@ func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
 func updateGuestNetworkStatus(
 	vm *vmopv1.VirtualMachine,
 	gi *vimtypes.GuestInfo,
-	extraConfig map[string]string) {
+	extraConfig map[string]string,
+	deviceKeyToSpecIdx map[int32]int) {
 
 	var (
 		primaryIP4      string
@@ -687,14 +695,6 @@ func updateGuestNetworkStatus(
 				ifaceSpecs = vm.Spec.Network.Interfaces
 			}
 
-			slices.SortFunc(gi.Net, func(a, b vimtypes.GuestNicInfo) int {
-				// Sort by the DeviceKey (DeviceConfigId) to order the guest info
-				// list by the order in the initial ConfigSpec which is the order of
-				// the []ifaceSpecs since it is immutable.
-				return int(a.DeviceConfigId - b.DeviceConfigId)
-			})
-
-			ifaceIdx := 0
 			for i := range gi.Net {
 				deviceKey := gi.Net[i].DeviceConfigId
 
@@ -704,9 +704,8 @@ func updateGuestNetworkStatus(
 				}
 
 				var ifaceName string
-				if ifaceIdx < len(ifaceSpecs) {
-					ifaceName = ifaceSpecs[ifaceIdx].Name
-					ifaceIdx++
+				if idx, ok := deviceKeyToSpecIdx[deviceKey]; ok && idx < len(ifaceSpecs) {
+					ifaceName = ifaceSpecs[idx].Name
 				}
 
 				ifaceStatuses = append(

@@ -54,6 +54,7 @@ var _ = Describe("UpdateStatus", func() {
 		ctx   *builder.TestContextForVCSim
 		vmCtx pkgctx.VirtualMachineContext
 		vcVM  *object.VirtualMachine
+		data  vmlifecycle.UpdateStatusData
 	)
 
 	BeforeEach(func() {
@@ -78,6 +79,10 @@ var _ = Describe("UpdateStatus", func() {
 			vcVM.Reference(),
 			vmlifecycle.VMStatusPropertiesSelector,
 			&vmCtx.MoVM)).To(Succeed())
+
+		data = vmlifecycle.UpdateStatusData{
+			NetworkDeviceKeysToSpecIdx: map[int32]int{},
+		}
 	})
 
 	AfterEach(func() {
@@ -86,7 +91,7 @@ var _ = Describe("UpdateStatus", func() {
 	})
 
 	JustBeforeEach(func() {
-		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM)
+		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, data)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -332,6 +337,8 @@ var _ = Describe("UpdateStatus", func() {
 							Name: "eth42",
 						},
 					}
+
+					data.NetworkDeviceKeysToSpecIdx[4000] = 0
 				})
 
 				It("Skips pseudo devices", func() {
@@ -365,6 +372,8 @@ var _ = Describe("UpdateStatus", func() {
 							Name: "eth42",
 						},
 					}
+
+					data.NetworkDeviceKeysToSpecIdx[4000] = 0
 				})
 
 				It("Reports all interfaces", func() {
@@ -376,6 +385,48 @@ var _ = Describe("UpdateStatus", func() {
 					Expect(network.Interfaces[0].IP).ToNot(BeNil())
 					Expect(network.Interfaces[0].IP.MACAddr).To(Equal("mac-4000"))
 					Expect(network.Interfaces[1].Name).To(BeEmpty())
+					Expect(network.Interfaces[1].IP).ToNot(BeNil())
+					Expect(network.Interfaces[1].IP.MACAddr).To(Equal("mac-4001"))
+				})
+			})
+
+			Context("VM has multiple interfaces", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest = &vimtypes.GuestInfo{
+						Net: []vimtypes.GuestNicInfo{
+							{
+								DeviceConfigId: 4000,
+								MacAddress:     "mac-4000",
+							},
+							{
+								DeviceConfigId: 4001,
+								MacAddress:     "mac-4001",
+							},
+						},
+					}
+
+					vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth42",
+						},
+						{
+							Name: "eth99",
+						},
+					}
+
+					data.NetworkDeviceKeysToSpecIdx[4000] = 1
+					data.NetworkDeviceKeysToSpecIdx[4001] = 0
+				})
+
+				It("Reports all interfaces", func() {
+					network := vmCtx.VM.Status.Network
+					Expect(network).ToNot(BeNil())
+
+					Expect(network.Interfaces).To(HaveLen(2))
+					Expect(network.Interfaces[0].Name).To(Equal("eth99"))
+					Expect(network.Interfaces[0].IP).ToNot(BeNil())
+					Expect(network.Interfaces[0].IP.MACAddr).To(Equal("mac-4000"))
+					Expect(network.Interfaces[1].Name).To(Equal("eth42"))
 					Expect(network.Interfaces[1].IP).ToNot(BeNil())
 					Expect(network.Interfaces[1].IP.MACAddr).To(Equal("mac-4001"))
 				})

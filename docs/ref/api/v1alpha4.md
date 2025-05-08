@@ -935,7 +935,7 @@ _Appears in:_
 
 
 
-### VirtualMachineImageCacheDiskStatus
+### VirtualMachineImageCacheFileStatus
 
 
 
@@ -984,7 +984,7 @@ _Appears in:_
 be cached. |
 | `datastoreID` _string_ | DatastoreID describes the ID of the datastore to which the image should
 be cached. |
-| `disks` _[VirtualMachineImageCacheDiskStatus](#virtualmachineimagecachediskstatus) array_ | Disks describes the image's disks cached on this datastore. |
+| `files` _[VirtualMachineImageCacheFileStatus](#virtualmachineimagecachediskstatus) array_ | Disks describes the image's disks cached on this datastore. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cache location.
 
 Generally this should just include the ReadyType condition. |
@@ -2648,7 +2648,7 @@ _Underlying type:_ `string`
 VirtualMachineVolumeType describes the type of a VirtualMachine volume.
 
 _Appears in:_
-- [VirtualMachineImageCacheDiskStatus](#virtualmachineimagecachediskstatus)
+- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachediskstatus)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 

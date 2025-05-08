@@ -157,11 +157,11 @@ var _ = Describe(
 				"ttylinux-pc_i486-16.1-2.nvram") + ".nvram"
 			nvramFilePath := path.Join(itemCacheDir, nvramFileName)
 
-			g.ExpectWithOffset(1, status.Disks).To(HaveLen(2))
-			g.ExpectWithOffset(1, status.Disks[0].ID).To(Equal(vmdkFilePath))
-			g.ExpectWithOffset(1, status.Disks[0].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
-			g.ExpectWithOffset(1, status.Disks[1].ID).To(Equal(nvramFilePath))
-			g.ExpectWithOffset(1, status.Disks[1].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
+			g.ExpectWithOffset(1, status.Files).To(HaveLen(2))
+			g.ExpectWithOffset(1, status.Files[0].ID).To(Equal(vmdkFilePath))
+			g.ExpectWithOffset(1, status.Files[0].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
+			g.ExpectWithOffset(1, status.Files[1].ID).To(Equal(nvramFilePath))
+			g.ExpectWithOffset(1, status.Files[1].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
 		}
 
 		Context("Ordered", Ordered, func() {

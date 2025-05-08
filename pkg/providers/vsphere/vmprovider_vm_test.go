@@ -1508,7 +1508,7 @@ func vmTests() {
 								{
 									DatacenterID: ctx.Datacenter.Reference().Value,
 									DatastoreID:  ctx.Datastore.Reference().Value,
-									Disks: []vmopv1.VirtualMachineImageCacheDiskStatus{
+									Files: []vmopv1.VirtualMachineImageCacheFileStatus{
 										{
 											ID:   ctx.ContentLibraryItemDiskPath,
 											Type: vmopv1.VirtualMachineStorageDiskTypeClassic,

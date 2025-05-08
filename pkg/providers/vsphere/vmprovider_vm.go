@@ -1069,19 +1069,19 @@ func (vs *vSphereVMProvider) vmCreateGetSourceDiskPaths(
 						vmCtx,
 						vcClient,
 						obj,
-						l.Disks) {
+						l.Files) {
 
 						// The location has the cached disks.
-						vmCtx.Logger.Info("got source disks", "disks", l.Disks)
+						vmCtx.Logger.Info("got source disks", "disks", l.Files)
 
 						// Update the createArgs.DiskPaths with the paths from
 						// the cached disks slice.
-						for i := range l.Disks {
-							switch path.Ext(l.Disks[i].ID) {
+						for i := range l.Files {
+							switch path.Ext(l.Files[i].ID) {
 							case ".vmdk":
-								createArgs.DiskPaths = append(createArgs.DiskPaths, l.Disks[i].ID)
+								createArgs.DiskPaths = append(createArgs.DiskPaths, l.Files[i].ID)
 							default:
-								createArgs.FilePaths = append(createArgs.FilePaths, l.Disks[i].ID)
+								createArgs.FilePaths = append(createArgs.FilePaths, l.Files[i].ID)
 							}
 						}
 
@@ -1111,7 +1111,7 @@ func (vs *vSphereVMProvider) vmCreateGetSourceDiskPathsVerify(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	obj vmopv1.VirtualMachineImageCache,
-	srcDisks []vmopv1.VirtualMachineImageCacheDiskStatus) bool {
+	srcDisks []vmopv1.VirtualMachineImageCacheFileStatus) bool {
 
 	for i := range srcDisks {
 		s := srcDisks[i]

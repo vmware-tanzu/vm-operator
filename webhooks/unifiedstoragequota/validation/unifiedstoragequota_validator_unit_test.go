@@ -697,11 +697,19 @@ func testRequestedCapacityHandlerHandleCreate() {
 								Capacity: nil,
 							},
 						}
+
+						expected = validation.CapacityResponse{
+							RequestedCapacity: validation.RequestedCapacity{
+								Capacity:         *resource.NewQuantity(0, resource.BinarySI),
+								StoragePolicyID:  "id42",
+								StorageClassName: "dummy-storage-class",
+							},
+						}
 					})
 
-					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
-						Expect(resp.Allowed).To(BeFalse())
-						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+					It("should write StatusOK code and the correct RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeTrue())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
 
 						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
 						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
@@ -727,6 +735,42 @@ func testRequestedCapacityHandlerHandleCreate() {
 					})
 
 					It("should write StatusOK code and the correct RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeTrue())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("there are multiple disks listed", func() {
+					BeforeEach(func() {
+						vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+							{
+								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							},
+							{
+								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							},
+							{
+								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							},
+							{
+								Capacity: nil,
+							},
+						}
+
+						expected = validation.CapacityResponse{
+							RequestedCapacity: validation.RequestedCapacity{
+								Capacity:         *resource.NewQuantity(3*10*1024*1024*1024, resource.BinarySI),
+								StoragePolicyID:  "id42",
+								StorageClassName: "dummy-storage-class",
+							},
+						}
+					})
+
+					It("should return the sum of all disks in the response", func() {
 						Expect(resp.Allowed).To(BeTrue())
 						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
 
@@ -817,11 +861,19 @@ func testRequestedCapacityHandlerHandleCreate() {
 							},
 						}
 						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
+
+						expected = validation.CapacityResponse{
+							RequestedCapacity: validation.RequestedCapacity{
+								Capacity:         *resource.NewQuantity(0, resource.BinarySI),
+								StoragePolicyID:  "id42",
+								StorageClassName: "dummy-storage-class",
+							},
+						}
 					})
 
-					It("should write StatusNotFound code and an empty RequestedCapacity to the response", func() {
-						Expect(resp.Allowed).To(BeFalse())
-						Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+					It("should write StatusOK code and the correct RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeTrue())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
 
 						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
 						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
@@ -848,6 +900,40 @@ func testRequestedCapacityHandlerHandleCreate() {
 					})
 
 					It("should write StatusOK code and the correct RequestedCapacity to the response", func() {
+						Expect(resp.Allowed).To(BeTrue())
+						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+						Expect(resp.Capacity.String()).To(Equal(expected.Capacity.String()))
+						Expect(resp.StoragePolicyID).To(Equal(expected.StoragePolicyID))
+						Expect(resp.StorageClassName).To(Equal(expected.StorageClassName))
+					})
+				})
+
+				When("there are multiple disks listed", func() {
+					BeforeEach(func() {
+						cvmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+							{
+								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							},
+							{
+								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							},
+							{
+								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+							},
+						}
+						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
+
+						expected = validation.CapacityResponse{
+							RequestedCapacity: validation.RequestedCapacity{
+								Capacity:         *resource.NewQuantity(3*10*1024*1024*1024, resource.BinarySI),
+								StoragePolicyID:  "id42",
+								StorageClassName: "dummy-storage-class",
+							},
+						}
+					})
+
+					It("should return the sum of all disks in the response", func() {
 						Expect(resp.Allowed).To(BeTrue())
 						Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
 

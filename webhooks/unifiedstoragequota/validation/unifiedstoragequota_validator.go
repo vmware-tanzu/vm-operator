@@ -186,10 +186,21 @@ func (h *RequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContex
 		return CapacityResponse{Response: webhook.Allowed("")}
 	}
 
-	if len(imageStatus.Disks) < 1 || imageStatus.Disks[0].Capacity == nil {
-		return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, errors.New("boot disk not found in image status"))}
+	if len(imageStatus.Disks) < 1 {
+		return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, errors.New("no disks found in image status"))}
 	}
-	capacity := imageStatus.Disks[0].Capacity
+
+	capacity := resource.NewQuantity(0, resource.BinarySI)
+	// This is used to add zero to the total capacity for any disks in the image status that have nil capacity.
+	emptyCapacity := resource.NewQuantity(0, resource.BinarySI)
+
+	for _, disk := range imageStatus.Disks {
+		if disk.Capacity == nil {
+			capacity.Add(*emptyCapacity)
+		} else {
+			capacity.Add(*disk.Capacity)
+		}
+	}
 
 	return CapacityResponse{
 		RequestedCapacity: RequestedCapacity{

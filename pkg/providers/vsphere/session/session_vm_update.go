@@ -1151,7 +1151,19 @@ func (s *Session) UpdateVirtualMachine(
 		}
 	}
 
-	if err := vmlifecycle.UpdateStatus(vmCtx, s.K8sClient, vcVM); err != nil {
+	var networkDeviceKeysToSpecIdx map[int32]int
+	if vmCtx.MoVM.Config != nil {
+		networkDeviceKeysToSpecIdx = network.MapEthernetDevicesToSpecIdx(vmCtx, vmCtx.MoVM.Config.Hardware.Device)
+	}
+
+	err := vmlifecycle.UpdateStatus(
+		vmCtx,
+		s.K8sClient,
+		vcVM,
+		vmlifecycle.UpdateStatusData{
+			NetworkDeviceKeysToSpecIdx: networkDeviceKeysToSpecIdx,
+		})
+	if err != nil {
 		err = fmt.Errorf("updating status failed with %w", err)
 		if updateErr == nil {
 			updateErr = err

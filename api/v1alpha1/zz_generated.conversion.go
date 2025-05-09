@@ -2102,7 +2102,8 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 }
 
 func autoConvert_v1alpha1_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(in *VirtualMachineStatus, out *v1alpha4.VirtualMachineStatus, s conversion.Scope) error {
-	out.Host = in.Host
+	// WARNING: in.Host requires manual conversion: does not exist in peer-type
+	// WARNING: in.HostName requires manual conversion: does not exist in peer-type
 	out.PowerState = v1alpha4.VirtualMachinePowerState(in.PowerState)
 	// WARNING: in.Phase requires manual conversion: does not exist in peer-type
 	if in.Conditions != nil {
@@ -2141,7 +2142,7 @@ func autoConvert_v1alpha1_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 
 func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(in *v1alpha4.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type
-	out.Host = in.Host
+	// WARNING: in.NodeName requires manual conversion: does not exist in peer-type
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions

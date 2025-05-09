@@ -551,7 +551,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 		now := time.Now()
 		hub := vmopv1.VirtualMachine{
 			Status: vmopv1.VirtualMachineStatus{
-				Host:       "my-host",
+				NodeName:   "my-host",
 				PowerState: vmopv1.VirtualMachinePowerStateOn,
 				Conditions: []metav1.Condition{
 					{
@@ -603,7 +603,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 		spoke := &vmopv1a1.VirtualMachine{}
 		g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
 
-		g.Expect(spoke.Status.Host).To(Equal(hub.Status.Host))
+		g.Expect(spoke.Status.Host).To(Equal(hub.Status.NodeName))
 		g.Expect(spoke.Status.PowerState).To(Equal(vmopv1a1.VirtualMachinePoweredOn))
 		g.Expect(spoke.Status.VmIp).To(Equal(hub.Status.Network.PrimaryIP4))
 		g.Expect(spoke.Status.NetworkInterfaces[0].MacAddress).To(Equal("my-mac"))
@@ -667,7 +667,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hub := &vmopv1.VirtualMachine{}
 		g.Expect(spoke.ConvertTo(hub)).To(Succeed())
 
-		g.Expect(hub.Status.Host).To(Equal(spoke.Status.Host))
+		g.Expect(hub.Status.NodeName).To(Equal(spoke.Status.Host))
 		g.Expect(hub.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 		g.Expect(hub.Status.Conditions).To(HaveLen(1))
 		g.Expect(hub.Status.Conditions[0].Type).To(Equal("Cond"))

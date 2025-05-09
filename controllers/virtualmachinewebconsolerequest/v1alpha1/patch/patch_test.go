@@ -555,7 +555,7 @@ func intgTestsPatch() {
 				Expect(err).NotTo(HaveOccurred())
 
 				By("Updating the object status")
-				obj.Status.Host = "vm-host"
+				obj.Status.HardwareVersion = 5
 
 				By("Patching the object")
 				Expect(patcher.Patch(ctx, obj)).To(Succeed())
@@ -589,7 +589,7 @@ func intgTestsPatch() {
 				obj.Spec.ImageName = "image-name"
 
 				By("Updating the object status")
-				obj.Status.Host = "vm-host"
+				obj.Status.HardwareVersion = 5
 
 				By("Setting Ready condition")
 				conditions.MarkTrue(obj, vmopv1a1.ReadyCondition)
@@ -604,7 +604,7 @@ func intgTestsPatch() {
 						return false
 					}
 
-					return obj.Status.Host == objAfter.Status.Host &&
+					return obj.Status.HardwareVersion == objAfter.Status.HardwareVersion &&
 						conditions.IsTrue(objAfter, vmopv1a1.ReadyCondition) &&
 						reflect.DeepEqual(obj.Spec, objAfter.Spec)
 				}, timeout).Should(BeTrue())

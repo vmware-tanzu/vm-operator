@@ -35,6 +35,20 @@ func Convert_v1alpha4_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
 		return err
 	}
 
+	out.Host = in.NodeName
+
+	return nil
+}
+
+func Convert_v1alpha3_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
+	in *VirtualMachineStatus, out *vmopv1.VirtualMachineStatus, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha3_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(in, out, s); err != nil {
+		return err
+	}
+
+	out.NodeName = in.Host
+
 	return nil
 }
 

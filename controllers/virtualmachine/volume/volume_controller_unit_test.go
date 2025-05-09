@@ -33,7 +33,6 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -669,21 +668,10 @@ func unitTestsReconcile() {
 		When("VM Spec.Volumes has CNS volume that references WFFC StorageClass", func() {
 			const zoneName = "my-zone"
 
-			var node *corev1.Node
 			var storageClass *storagev1.StorageClass
 			var wffcPVC *corev1.PersistentVolumeClaim
 
 			BeforeEach(func() {
-				node = &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "my-node-1",
-						Labels: map[string]string{
-							topology.KubernetesTopologyZoneLabelKey: zoneName,
-						},
-					},
-				}
-				initObjects = append(initObjects, node)
-
 				storageClass = builder.DummyStorageClass()
 				storageClass.VolumeBindingMode = ptr.To(storagev1.VolumeBindingWaitForFirstConsumer)
 				initObjects = append(initObjects, storageClass)
@@ -699,7 +687,6 @@ func unitTestsReconcile() {
 			})
 
 			AfterEach(func() {
-				node = nil
 				storageClass = nil
 				wffcPVC = nil
 			})
@@ -755,15 +742,15 @@ func unitTestsReconcile() {
 				})
 			})
 
-			When("No Node for Zone exists", func() {
+			When("VM does not have Zone assigned", func() {
 				BeforeEach(func() {
-					vm.Status.Zone = "bogus"
+					vm.Status.Zone = ""
 				})
 
 				It("returns error", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("no Nodes for zone"))
+					Expect(err.Error()).To(ContainSubstring("VM does not have Zone set"))
 
 					By("Did not create CnsNodeVmAttachment", func() {
 						Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
@@ -776,10 +763,11 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())
 
-				By("Adds selected-node annotation to PVC", func() {
+				By("Adds node-is-zone and selected-node annotation to PVC", func() {
 					pvc := &corev1.PersistentVolumeClaim{}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
-					Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, node.Name))
+					Expect(pvc.Annotations).To(HaveKeyWithValue(volume.CNSSelectedNodeIsZoneAnnotationKey, "true"))
+					Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, zoneName))
 				})
 
 				attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)

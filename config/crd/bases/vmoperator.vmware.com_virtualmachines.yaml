@@ -586,6 +586,15 @@ spec:
                 description: Host describes the hostname or IP address of the infrastructure
                   host that the VirtualMachine is executing on.
                 type: string
+              hostName:
+                description: |-
+                  HostName describes the observed hostname reported by the VirtualMachine's
+                  guest operating system.
+
+                  Please note, this value is only reported if VMware Tools is installed in
+                  the guest, and the value may or may not be a fully qualified domain name
+                  (FQDN), it simply depends on what is reported by the guest.
+                type: string
               instanceUUID:
                 description: InstanceUUID describes the unique instance UUID provided
                   by the underlying infrastructure provider, such as vSphere.
@@ -2416,6 +2425,15 @@ spec:
                           type: object
                         type: array
                     type: object
+                  hostName:
+                    description: |-
+                      HostName describes the observed hostname reported by the VirtualMachine's
+                      guest operating system.
+
+                      Please note, this value is only reported if VMware Tools is installed in
+                      the guest, and the value may or may not be a fully qualified domain name
+                      (FQDN), it simply depends on what is reported by the guest.
+                    type: string
                   interfaces:
                     description: Interfaces describes the status of the VM's network
                       interfaces.
@@ -4963,6 +4981,15 @@ spec:
                           type: object
                         type: array
                     type: object
+                  hostName:
+                    description: |-
+                      HostName describes the observed hostname reported by the VirtualMachine's
+                      guest operating system.
+
+                      Please note, this value is only reported if VMware Tools is installed in
+                      the guest, and the value may or may not be a fully qualified domain name
+                      (FQDN), it simply depends on what is reported by the guest.
+                    type: string
                   interfaces:
                     description: Interfaces describes the status of the VM's network
                       interfaces.
@@ -7443,11 +7470,6 @@ spec:
                   information on the topic of a VM's hardware version.
                 format: int32
                 type: integer
-              host:
-                description: |-
-                  Host describes the hostname or IP address of the infrastructure host
-                  where the VM is executed.
-                type: string
               instanceUUID:
                 description: |-
                   InstanceUUID describes the unique instance UUID provided by the
@@ -7617,6 +7639,15 @@ spec:
                           type: object
                         type: array
                     type: object
+                  hostName:
+                    description: |-
+                      HostName describes the observed hostname reported by the VirtualMachine's
+                      guest operating system.
+
+                      Please note, this value is only reported if VMware Tools is installed in
+                      the guest, and the value may or may not be a fully qualified domain name
+                      (FQDN), it simply depends on what is reported by the guest.
+                    type: string
                   interfaces:
                     description: Interfaces describes the status of the VM's network
                       interfaces.
@@ -8070,6 +8101,11 @@ spec:
                       https://bit.ly/3Au0jM4 for more information.
                     type: string
                 type: object
+              nodeName:
+                description: |-
+                  NodeName describes the observed name of the node where the VirtualMachine
+                  is scheduled.
+                type: string
               powerState:
                 description: PowerState describes the observed power state of the
                   VirtualMachine.

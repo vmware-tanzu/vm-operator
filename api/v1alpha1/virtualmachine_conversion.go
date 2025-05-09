@@ -702,6 +702,14 @@ func Convert_v1alpha1_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 
 	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha4_VirtualMachinePowerState(in.PowerState)
 	out.Network = convert_v1alpha1_Network_To_v1alpha4_NetworkStatus(in.VmIp, in.NetworkInterfaces)
+	out.NodeName = in.Host
+
+	if in.HostName != "" {
+		if out.Network == nil {
+			out.Network = &vmopv1.VirtualMachineNetworkStatus{}
+		}
+		out.Network.HostName = in.HostName
+	}
 
 	// WARNING: in.Phase requires manual conversion: does not exist in peer-type
 
@@ -819,6 +827,12 @@ func Convert_v1alpha4_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type
+
+	out.Host = in.NodeName
+
+	if in.Network != nil {
+		out.HostName = in.Network.HostName
+	}
 
 	return nil
 }

@@ -617,6 +617,16 @@ type VirtualMachineStatus struct {
 	// +optional
 	Host string `json:"host,omitempty"`
 
+	// +optional
+
+	// HostName describes the observed hostname reported by the VirtualMachine's
+	// guest operating system.
+	//
+	// Please note, this value is only reported if VMware Tools is installed in
+	// the guest, and the value may or may not be a fully qualified domain name
+	// (FQDN), it simply depends on what is reported by the guest.
+	HostName string `json:"hostName,omitempty"`
+
 	// PowerState describes the current power state of the VirtualMachine.
 	// +optional
 	PowerState VirtualMachinePowerState `json:"powerState,omitempty"`

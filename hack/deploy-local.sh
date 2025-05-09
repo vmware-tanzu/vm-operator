@@ -65,7 +65,7 @@ if [ -z "${VERIFY_MANIFESTS:-}" ]; then
 fi
 
 # Apply the infrastructure YAML.
-$KUBECTL apply -f "$YAML"
+$KUBECTL apply --server-side=true -f "$YAML"
 
 # If VERIFY_MANIFESTS is set then we can go ahead and exit.
 if [ -n "${VERIFY_MANIFESTS:-}" ]; then
@@ -87,7 +87,7 @@ if [[ $# -eq 2 ]]; then
   # validating webhook is available.
   VMOP_VMCLASSES_ATTEMPTS=0
   while true; do
-    $KUBECTL apply -f "${VMCLASSES_YAML}" && break
+    $KUBECTL apply --server-side=true -f "${VMCLASSES_YAML}" && break
     VMOP_VMCLASSES_ATTEMPTS=$((VMOP_VMCLASSES_ATTEMPTS + 1))
     if [[ $VMOP_VMCLASSES_ATTEMPTS -ge 60 ]]; then
       echo "Failed to apply default VM Classes"

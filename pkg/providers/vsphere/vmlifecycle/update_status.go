@@ -103,9 +103,16 @@ func UpdateStatus(
 		updateProbeStatus(vmCtx, vm, vmCtx.MoVM)
 	}
 
-	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
+	vm.Status.NodeName, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {
 		errs = append(errs, err)
+	}
+
+	if summary.Guest != nil && summary.Guest.HostName != "" {
+		if vm.Status.Network == nil {
+			vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
+		}
+		vm.Status.Network.HostName = summary.Guest.HostName
 	}
 
 	MarkReconciliationCondition(vmCtx.VM)

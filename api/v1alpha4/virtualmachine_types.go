@@ -884,9 +884,9 @@ type VirtualMachineStatus struct {
 
 	// +optional
 
-	// Host describes the hostname or IP address of the infrastructure host
-	// where the VM is executed.
-	Host string `json:"host,omitempty"`
+	// NodeName describes the observed name of the node where the VirtualMachine
+	// is scheduled.
+	NodeName string `json:"nodeName,omitempty"`
 
 	// +optional
 

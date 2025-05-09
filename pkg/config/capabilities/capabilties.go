@@ -50,6 +50,10 @@ const (
 	// CapabilityKeyVMGroups is the name of capability key defined in the
 	// Supervisor capabilities CRD.
 	CapabilityKeyVMGroups = "supports_VM_service_VM_groups"
+
+	// CapabilityKeyImmutableClasses is the name of capability key defined in the
+	// Supervisor capabilities CRD.
+	CapabilityKeyImmutableClasses = "supports_VM_service_immutable_VM_classes"
 )
 
 var (
@@ -192,6 +196,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.MutableNetworks = capStatus.Activated
 		case CapabilityKeyVMGroups:
 			fs.VMGroups = capStatus.Activated
+		case CapabilityKeyImmutableClasses:
+			fs.ImmutableClasses = capStatus.Activated
 		}
 	}
 	return fs

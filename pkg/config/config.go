@@ -182,6 +182,7 @@ type FeatureStates struct {
 	FastDeploy                 bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
 	MutableNetworks            bool
 	VMGroups                   bool
+	ImmutableClasses           bool
 }
 
 type InstanceStorage struct {

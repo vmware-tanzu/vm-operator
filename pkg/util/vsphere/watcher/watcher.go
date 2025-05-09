@@ -483,11 +483,15 @@ func (w *Watcher) add(ctx context.Context, ref moRef, id string) error {
 		return nil
 	}
 
+	// Do not recurse into child folders.
+	// Please see BZ 3502919 for more information.
+	recursive := ref.Type != string(vimtypes.ManagedObjectTypesFolder)
+
 	cv, err := w.vm.CreateContainerView(
 		ctx,
 		ref,
 		[]string{virtualMachineType},
-		true)
+		recursive)
 	if err != nil {
 		return err
 	}

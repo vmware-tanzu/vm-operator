@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -132,74 +131,6 @@ func UpdateEthCardDeviceChanges(
 	// Remove any unmatched existing interfaces.
 	removeDeviceChanges := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(currentEthCards))
 	for _, dev := range currentEthCards {
-		removeDeviceChanges = append(removeDeviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-			Device:    dev,
-			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
-		})
-	}
-
-	// Process any removes first.
-	return append(removeDeviceChanges, deviceChanges...), nil
-}
-
-// UpdatePCIDeviceChanges returns devices changes for PCI devices attached to a VM. There are 2 types of PCI devices
-// processed here and in case of cloning a VM, devices listed in VMClass are considered as source of truth.
-func UpdatePCIDeviceChanges(
-	expectedPciDevices object.VirtualDeviceList,
-	currentPciDevices object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
-
-	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
-	for _, expectedDev := range expectedPciDevices {
-		expectedPci := expectedDev.(*vimtypes.VirtualPCIPassthrough)
-		expectedBacking := expectedPci.Backing
-		expectedBackingType := reflect.TypeOf(expectedBacking)
-
-		var matchingIdx = -1
-		for idx, curDev := range currentPciDevices {
-			curBacking := curDev.GetVirtualDevice().Backing
-			if curBacking == nil || reflect.TypeOf(curBacking) != expectedBackingType {
-				continue
-			}
-
-			var backingMatch bool
-			switch a := curBacking.(type) {
-			case *vimtypes.VirtualPCIPassthroughVmiopBackingInfo:
-				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
-				backingMatch = a.Vgpu == b.Vgpu
-
-			case *vimtypes.VirtualPCIPassthroughDynamicBackingInfo:
-				currAllowedDevs := a.AllowedDevice
-				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
-				if a.CustomLabel == b.CustomLabel {
-					// b.AllowedDevice has only one element because CreatePCIDevices() adds only one device based
-					// on the devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
-					expectedAllowedDev := b.AllowedDevice[0]
-					for i := 0; i < len(currAllowedDevs) && !backingMatch; i++ {
-						backingMatch = expectedAllowedDev.DeviceId == currAllowedDevs[i].DeviceId &&
-							expectedAllowedDev.VendorId == currAllowedDevs[i].VendorId
-					}
-				}
-			}
-
-			if backingMatch {
-				matchingIdx = idx
-				break
-			}
-		}
-
-		if matchingIdx == -1 {
-			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
-				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-				Device:    expectedPci,
-			})
-		} else {
-			// There could be multiple vGPUs with same BackingInfo. Remove current device if matching found.
-			currentPciDevices = append(currentPciDevices[:matchingIdx], currentPciDevices[matchingIdx+1:]...)
-		}
-	}
-	// Remove any unmatched existing devices.
-	removeDeviceChanges := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(currentPciDevices))
-	for _, dev := range currentPciDevices {
 		removeDeviceChanges = append(removeDeviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,

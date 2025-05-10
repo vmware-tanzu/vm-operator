@@ -464,9 +464,9 @@ type VirtualMachineCryptoSpec struct {
 type VirtualMachineBootOptionsBootableDevice string
 
 const (
-	VirtualMachineBootOptionsBootableDiskDevice    VirtualMachineBootOptionsBootableDevice = "disk"
-	VirtualMachineBootOptionsBootableNetworkDevice VirtualMachineBootOptionsBootableDevice = "network"
-	VirtualMachineBootOptionsBootableCDRomDevice   VirtualMachineBootOptionsBootableDevice = "cdrom"
+	VirtualMachineBootOptionsBootableDiskDevice    VirtualMachineBootOptionsBootableDevice = "Disk"
+	VirtualMachineBootOptionsBootableNetworkDevice VirtualMachineBootOptionsBootableDevice = "Network"
+	VirtualMachineBootOptionsBootableCDRomDevice   VirtualMachineBootOptionsBootableDevice = "CDRom"
 )
 
 // +kubebuilder:validation:Enum=ipv4;ipv6
@@ -476,8 +476,8 @@ const (
 type VirtualMachineBootOptionsNetworkBootProtocol string
 
 const (
-	VirtualMachineBootOptionsNetworkBootProtocolIPv4 VirtualMachineBootOptionsNetworkBootProtocol = "ipv4"
-	VirtualMachineBootOptionsNetworkBootProtocolIPv6 VirtualMachineBootOptionsNetworkBootProtocol = "ipv6"
+	VirtualMachineBootOptionsNetworkBootProtocolIP4 VirtualMachineBootOptionsNetworkBootProtocol = "IP4"
+	VirtualMachineBootOptionsNetworkBootProtocolIP6 VirtualMachineBootOptionsNetworkBootProtocol = "IP6"
 )
 
 // VirtualMachineBootOptions defines the boot-time behavior of a virtual machine.
@@ -498,6 +498,13 @@ type VirtualMachineBootOptions struct {
 	// number of devices it supports. If bootable device is not reached before platform's limit
 	// is hit, boot will fail. At least single entry is supported by all products supporting
 	// boot order settings.
+	//
+	// The available devices are:
+	//
+	// - Disk    -- If there are classic and managed disks, the first classic disk is selected.
+	//              If there are only managed disks, the first disk is selected.
+	// - Network -- The first interface listed in spec.network.interfaces.
+	// - CDRom   -- The first bootable CD-ROM device.
 	BootOrder []VirtualMachineBootOptionsBootableDevice `json:"bootOrder,omitempty"`
 
 	// +optional
@@ -530,12 +537,16 @@ type VirtualMachineBootOptions struct {
 	// will refuse to start any images which do not pass those signature checks.
 	//
 	// Please note, this field will not be honored unless the value of spec.firmware
-	// is "efi".
+	// is "EFI".
 	EFISecureBootEnabled bool `json:"efiSecureBootEnabled,omitempty"`
 
 	// +optional
 
 	// NetworkBootProtocol is the protocol to attempt during PXE network boot or NetBoot.
+	// The available protocols are:
+	//
+	// - IP4 -- PXE (or Apple NetBoot) over IPv4. The default.
+	// - IP6 -- PXE over IPv6. Only meaningful for EFI virtual machines.
 	NetworkBootProtocol VirtualMachineBootOptionsNetworkBootProtocol `json:"networkBootProtocol,omitempty"`
 }
 
@@ -875,6 +886,13 @@ type VirtualMachineSpec struct {
 	//
 	// Defaults to Online.
 	PromoteDisksMode VirtualMachinePromoteDisksMode `json:"promoteDisksMode,omitempty"`
+
+	// +optional
+
+	// BootOptions describes the settings that control the boot behavior of the
+	// virtual machine. These settings take effect during the next power-on of the
+	// virtual machine.
+	BootOptions *VirtualMachineBootOptions `json:"bootOptions,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options

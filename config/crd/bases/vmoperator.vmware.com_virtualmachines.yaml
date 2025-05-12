@@ -1771,7 +1771,8 @@ spec:
                                 format: int32
                                 type: integer
                               to:
-                                description: To is an IP4 or IP6 address.
+                                description: To is either "default", or an IP4 or
+                                  IP6 address.
                                 type: string
                               via:
                                 description: Via is an IP4 or IP6 address.
@@ -4320,7 +4321,8 @@ spec:
                                 format: int32
                                 type: integer
                               to:
-                                description: To is an IP4 or IP6 address.
+                                description: To is either "default", or an IP4 or
+                                  IP6 address.
                                 type: string
                               via:
                                 description: Via is an IP4 or IP6 address.
@@ -6967,7 +6969,8 @@ spec:
                                 format: int32
                                 type: integer
                               to:
-                                description: To is an IP4 or IP6 address.
+                                description: To is either "default", or an IP4 or
+                                  IP6 address.
                                 type: string
                               via:
                                 description: Via is an IP4 or IP6 address.

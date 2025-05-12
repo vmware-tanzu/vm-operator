@@ -2124,6 +2124,28 @@ func unitTestsValidateCreate() {
 				},
 			),
 
+			Entry("allow routes with default To when bootstrap supports routes",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network.Interfaces[0].Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
+							{
+								To:     "default",
+								Via:    "10.10.1.1",
+								Metric: 42,
+							},
+							{
+								To:  "default",
+								Via: "ef71:6ce2:3b91:8349:b2b2:f76c:86ae:915b",
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
 			// Please note this feature is available only with the following bootstrap providers: CloudInit
 			Entry("validate searchDomains when bootstrap doesn't support searchDomains",
 				testParams{

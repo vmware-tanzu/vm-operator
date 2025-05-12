@@ -82,13 +82,21 @@ func Convert_v1alpha4_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 		}
 	}
 
+	out.Host = in.NodeName
+
 	return nil
 }
 
 func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	in *VirtualMachineStatus, out *vmopv1.VirtualMachineStatus, s apiconversion.Scope) error {
 
-	return autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(in, out, s)
+	if err := autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(in, out, s); err != nil {
+		return err
+	}
+
+	out.NodeName = in.Host
+
+	return nil
 }
 
 func Convert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(

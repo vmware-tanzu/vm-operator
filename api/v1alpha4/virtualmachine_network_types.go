@@ -673,6 +673,16 @@ type VirtualMachineNetworkStatus struct {
 
 	// +optional
 
+	// HostName describes the observed hostname reported by the VirtualMachine's
+	// guest operating system.
+	//
+	// Please note, this value is only reported if VMware Tools is installed in
+	// the guest, and the value may or may not be a fully qualified domain name
+	// (FQDN), it simply depends on what is reported by the guest.
+	HostName string `json:"hostName,omitempty"`
+
+	// +optional
+
 	// Interfaces describes the status of the VM's network interfaces.
 	Interfaces []VirtualMachineNetworkInterfaceStatus `json:"interfaces,omitempty"`
 

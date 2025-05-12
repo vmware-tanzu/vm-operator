@@ -545,7 +545,7 @@ func intgTests() {
 				Expect(err).NotTo(HaveOccurred())
 
 				By("Updating the object status")
-				obj.Status.Host = "vm-host"
+				obj.Status.NodeName = "vm-host"
 
 				By("Patching the object")
 				Expect(patcher.Patch(ctx, obj)).To(Succeed())
@@ -579,7 +579,7 @@ func intgTests() {
 				obj.Spec.ImageName = "image-name"
 
 				By("Updating the object status")
-				obj.Status.Host = "vm-host"
+				obj.Status.NodeName = "vm-host"
 
 				By("Setting Ready condition")
 				conditions.MarkTrue(obj, vmopv1.ReadyConditionType)
@@ -594,7 +594,7 @@ func intgTests() {
 						return false
 					}
 
-					return obj.Status.Host == objAfter.Status.Host &&
+					return obj.Status.NodeName == objAfter.Status.NodeName &&
 						conditions.IsTrue(objAfter, vmopv1.ReadyConditionType) &&
 						reflect.DeepEqual(obj.Spec, objAfter.Spec)
 				}, timeout).Should(BeTrue())

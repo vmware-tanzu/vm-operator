@@ -1288,7 +1288,7 @@ func vmTests() {
 
 				By("has expected Status values", func() {
 					Expect(vm.Status.PowerState).To(Equal(vm.Spec.PowerState))
-					Expect(vm.Status.Host).ToNot(BeEmpty())
+					Expect(vm.Status.NodeName).ToNot(BeEmpty())
 					Expect(vm.Status.InstanceUUID).To(And(Not(BeEmpty()), Equal(o.Config.InstanceUuid)))
 					Expect(vm.Status.BiosUUID).To(And(Not(BeEmpty()), Equal(o.Config.Uuid)))
 
@@ -2219,7 +2219,7 @@ func vmTests() {
 
 					By("has expected Status values", func() {
 						Expect(vm.Status.PowerState).To(Equal(vm.Spec.PowerState))
-						Expect(vm.Status.Host).ToNot(BeEmpty())
+						Expect(vm.Status.NodeName).ToNot(BeEmpty())
 						Expect(vm.Status.InstanceUUID).To(And(Not(BeEmpty()), Equal(o.Config.InstanceUuid)))
 						Expect(vm.Status.BiosUUID).To(And(Not(BeEmpty()), Equal(o.Config.Uuid)))
 

@@ -2577,6 +2577,7 @@ func autoConvert_v1alpha2_VirtualMachineNetworkStatus_To_v1alpha4_VirtualMachine
 	} else {
 		out.Config = nil
 	}
+	out.HostName = in.HostName
 	out.Interfaces = *(*[]v1alpha4.VirtualMachineNetworkInterfaceStatus)(unsafe.Pointer(&in.Interfaces))
 	out.IPStacks = *(*[]v1alpha4.VirtualMachineNetworkIPStackStatus)(unsafe.Pointer(&in.IPStacks))
 	out.PrimaryIP4 = in.PrimaryIP4
@@ -2599,6 +2600,7 @@ func autoConvert_v1alpha4_VirtualMachineNetworkStatus_To_v1alpha2_VirtualMachine
 	} else {
 		out.Config = nil
 	}
+	out.HostName = in.HostName
 	out.Interfaces = *(*[]VirtualMachineNetworkInterfaceStatus)(unsafe.Pointer(&in.Interfaces))
 	out.IPStacks = *(*[]VirtualMachineNetworkIPStackStatus)(unsafe.Pointer(&in.IPStacks))
 	out.PrimaryIP4 = in.PrimaryIP4
@@ -3226,7 +3228,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 func autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(in *VirtualMachineStatus, out *v1alpha4.VirtualMachineStatus, s conversion.Scope) error {
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	out.Class = (*common.LocalObjectRef)(unsafe.Pointer(in.Class))
-	out.Host = in.Host
+	// WARNING: in.Host requires manual conversion: does not exist in peer-type
 	out.PowerState = v1alpha4.VirtualMachinePowerState(in.PowerState)
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
 	if in.Network != nil {
@@ -3261,7 +3263,7 @@ func autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 
 func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(in *v1alpha4.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
 	out.Class = (*v1alpha2common.LocalObjectRef)(unsafe.Pointer(in.Class))
-	out.Host = in.Host
+	// WARNING: in.NodeName requires manual conversion: does not exist in peer-type
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
 	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type

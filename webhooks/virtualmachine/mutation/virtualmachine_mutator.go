@@ -156,6 +156,12 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			wasMutated = true
 		}
 
+		if pkgcfg.FromContext(ctx).Features.MutableNetworks {
+			if ok := SetDefaultNetworkOnUpdate(ctx, m.client, modified); ok {
+				wasMutated = true
+			}
+		}
+
 		if ok := SetDefaultCdromImgKindOnUpdate(ctx, modified, oldVM); ok {
 			wasMutated = true
 		}
@@ -216,21 +222,53 @@ func SetNextRestartTime(
 		`may only be set to "now"`)
 }
 
-// AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set
-// and no NetworkInterface is specified.
-// Return true if default NetworkInterface is added, otherwise return false.
-func AddDefaultNetworkInterface(ctx *pkgctx.WebhookRequestContext, client ctrlclient.Client, vm *vmopv1.VirtualMachine) bool {
-	// Continue to support this ad-hoc v1a1 annotation. I don't think need or want to have this annotation
-	// in v1a2: Disabled mostly already covers it. We could map between the two for version conversion, but
-	// they do mean slightly different things, and kind of complicated to know what to do like if the annotation
-	// is removed.
-	if _, ok := vm.Annotations[v1alpha1.NoDefaultNicAnnotation]; ok {
-		return false
+func setDefaultNetworkInterfaceNetwork(
+	vm *vmopv1.VirtualMachine,
+	ifaceIdx int,
+	networkRef common.PartialObjectRef,
+) bool {
+	ifaceNetwork := vm.Spec.Network.Interfaces[ifaceIdx].Network
+
+	if networkRef.Kind != "" {
+		if ifaceNetwork == nil {
+			ifaceNetwork = &common.PartialObjectRef{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: networkRef.APIVersion,
+					Kind:       networkRef.Kind,
+				},
+			}
+			vm.Spec.Network.Interfaces[ifaceIdx].Network = ifaceNetwork
+			return true
+		}
+
+		if ifaceNetwork.Kind == "" && ifaceNetwork.APIVersion == "" {
+			ifaceNetwork.Kind = networkRef.Kind
+			ifaceNetwork.APIVersion = networkRef.APIVersion
+			return true
+		}
+
+	} else {
+		// Named network only.
+		if ifaceNetwork == nil {
+			ifaceNetwork = &common.PartialObjectRef{
+				Name: networkRef.Name,
+			}
+			vm.Spec.Network.Interfaces[ifaceIdx].Network = ifaceNetwork
+			return true
+		}
+
+		if networkRef.Name != "" && ifaceNetwork.Name == "" {
+			ifaceNetwork.Name = networkRef.Name
+			return true
+		}
 	}
 
-	if vm.Spec.Network != nil && vm.Spec.Network.Disabled {
-		return false
-	}
+	return false
+}
+
+func getDefaultNetworkRef(
+	ctx *pkgctx.WebhookRequestContext,
+	client ctrlclient.Client) (bool, common.PartialObjectRef) {
 
 	kind, apiVersion, netName := "", "", ""
 	switch pkgcfg.FromContext(ctx).NetworkProviderType {
@@ -249,15 +287,41 @@ func AddDefaultNetworkInterface(ctx *pkgctx.WebhookRequestContext, client ctrlcl
 			netName = defaultNamedNetwork
 		}
 	default:
-		return false
+		return false, common.PartialObjectRef{}
 	}
 
-	networkRef := common.PartialObjectRef{
+	return true, common.PartialObjectRef{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       kind,
 			APIVersion: apiVersion,
 		},
 		Name: netName,
+	}
+}
+
+// AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set
+// and no NetworkInterface is specified.
+// Return true if default NetworkInterface is added, otherwise return false.
+func AddDefaultNetworkInterface(
+	ctx *pkgctx.WebhookRequestContext,
+	client ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) bool {
+
+	// Continue to support this ad-hoc v1a1 annotation. I don't think need or want to have this annotation
+	// in v1a2: Disabled mostly already covers it. We could map between the two for version conversion, but
+	// they do mean slightly different things, and kind of complicated to know what to do like if the annotation
+	// is removed.
+	if _, ok := vm.Annotations[v1alpha1.NoDefaultNicAnnotation]; ok {
+		return false
+	}
+
+	if vm.Spec.Network != nil && vm.Spec.Network.Disabled {
+		return false
+	}
+
+	ok, networkRef := getDefaultNetworkRef(ctx, client)
+	if !ok {
+		return false
 	}
 
 	if vm.Spec.Network == nil {
@@ -275,34 +339,33 @@ func AddDefaultNetworkInterface(ctx *pkgctx.WebhookRequestContext, client ctrlcl
 		updated = true
 	} else {
 		for i := range vm.Spec.Network.Interfaces {
-			ifaceNetwork := vm.Spec.Network.Interfaces[i].Network
-
-			if networkRef.Kind != "" && ifaceNetwork == nil {
-				ifaceNetwork = &common.PartialObjectRef{
-					TypeMeta: metav1.TypeMeta{
-						APIVersion: networkRef.APIVersion,
-						Kind:       networkRef.Kind,
-					},
-				}
-				vm.Spec.Network.Interfaces[i].Network = ifaceNetwork
-				updated = true
-
-			} else if networkRef.Kind != "" && ifaceNetwork.Kind == "" && ifaceNetwork.APIVersion == "" {
-				ifaceNetwork.Kind = networkRef.Kind
-				ifaceNetwork.APIVersion = networkRef.APIVersion
+			if ok := setDefaultNetworkInterfaceNetwork(vm, i, networkRef); ok {
 				updated = true
 			}
+		}
+	}
 
-			// Named network only.
-			if networkRef.Kind != "" && ifaceNetwork == nil {
-				ifaceNetwork = &common.PartialObjectRef{
-					Name: networkRef.Name,
-				}
-				vm.Spec.Network.Interfaces[i].Network = ifaceNetwork
-			} else if networkRef.Name != "" && ifaceNetwork.Name == "" {
-				ifaceNetwork.Name = networkRef.Name
-				updated = true
-			}
+	return updated
+}
+
+func SetDefaultNetworkOnUpdate(
+	ctx *pkgctx.WebhookRequestContext,
+	client ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) bool {
+
+	if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 || vm.Spec.Network.Disabled {
+		return false
+	}
+
+	ok, networkRef := getDefaultNetworkRef(ctx, client)
+	if !ok {
+		return false
+	}
+
+	var updated bool
+	for i := range vm.Spec.Network.Interfaces {
+		if ok := setDefaultNetworkInterfaceNetwork(vm, i, networkRef); ok {
+			updated = true
 		}
 	}
 
@@ -407,7 +470,6 @@ func SetDefaultBiosUUID(
 const (
 	vmiKind            = "VirtualMachineImage"
 	cvmiKind           = "Cluster" + vmiKind
-	imgNotFoundFormat  = "no VM image exists for %q in namespace or cluster scope"
 	imgNameNotMatchRef = "must refer to the same resource as spec.image"
 )
 

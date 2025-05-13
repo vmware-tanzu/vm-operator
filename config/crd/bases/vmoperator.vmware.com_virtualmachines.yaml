@@ -5708,9 +5708,9 @@ spec:
                         VirtualMachineBootOptionsBootableDevice represents the type of bootable device
                         that a VM may be booted from.
                       enum:
-                      - disk
-                      - network
-                      - cdrom
+                      - Disk
+                      - Network
+                      - CDRom
                       type: string
                     type: array
                   bootRetryDelay:
@@ -5750,8 +5750,8 @@ spec:
                       - IP4 -- PXE (or Apple NetBoot) over IPv4. The default.
                       - IP6 -- PXE over IPv6. Only meaningful for EFI virtual machines.
                     enum:
-                    - ipv4
-                    - ipv6
+                    - IP4
+                    - IP6
                     type: string
                 type: object
               bootstrap:

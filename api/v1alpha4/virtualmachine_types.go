@@ -457,7 +457,7 @@ type VirtualMachineCryptoSpec struct {
 	UseDefaultKeyProvider *bool `json:"useDefaultKeyProvider,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=disk;network;cdrom
+// +kubebuilder:validation:Enum=Disk;Network;CDRom
 
 // VirtualMachineBootOptionsBootableDevice represents the type of bootable device
 // that a VM may be booted from.
@@ -469,7 +469,7 @@ const (
 	VirtualMachineBootOptionsBootableCDRomDevice   VirtualMachineBootOptionsBootableDevice = "CDRom"
 )
 
-// +kubebuilder:validation:Enum=ipv4;ipv6
+// +kubebuilder:validation:Enum=IP4;IP6
 
 // VirtualMachineBootOptionsNetworkBootProtocol represents the protocol to
 // use during PXE network boot or NetBoot.

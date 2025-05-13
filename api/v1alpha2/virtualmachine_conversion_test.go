@@ -6,6 +6,7 @@ package v1alpha2_test
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -257,6 +258,19 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 				PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOffline,
+				BootOptions: &vmopv1.VirtualMachineBootOptions{
+					BootDelay: &metav1.Duration{Duration: time.Second * 10},
+					BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+						vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+						vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+						vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+					},
+					BootRetryEnabled:     true,
+					BootRetryDelay:       &metav1.Duration{Duration: time.Second * 10},
+					EnterBIOSSetup:       true,
+					EFISecureBootEnabled: false,
+					NetworkBootProtocol:  vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
+				},
 			},
 		}
 

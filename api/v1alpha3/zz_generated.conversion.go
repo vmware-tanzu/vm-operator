@@ -3758,6 +3758,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *
 	out.BiosUUID = in.BiosUUID
 	out.GuestID = in.GuestID
 	// WARNING: in.PromoteDisksMode requires manual conversion: does not exist in peer-type
+	// WARNING: in.BootOptions requires manual conversion: does not exist in peer-type
 	return nil
 }
 

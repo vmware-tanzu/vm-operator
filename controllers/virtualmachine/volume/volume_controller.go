@@ -47,6 +47,10 @@ import (
 
 const (
 	AttributeFirstClassDiskUUID = "diskUUID"
+
+	// CNSSelectedNodeIsZoneAnnotationKey is used to indicate to CNS that the selected-node annotation
+	// is the name of the VM's Zone instead of a Node in the zone.
+	CNSSelectedNodeIsZoneAnnotationKey = "cns.vmware.com/selected-node-is-zone"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -840,59 +844,26 @@ func (r *Reconciler) handlePVCWithWFFC(
 		return nil
 	}
 
-	// We just need the name of any Node that is in this VM's Zone.
-	nodeName, err := getANodeNameInVMZone(ctx, r.Client)
-	if err != nil {
-		return fmt.Errorf("cannot find node for VM: %w", err)
+	zoneName := ctx.VM.Status.Zone
+	if zoneName == "" {
+		// Fallback to the label value if Status hasn't been updated yet.
+		zoneName = ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
+		if zoneName == "" {
+			return fmt.Errorf("VM does not have Zone set")
+		}
 	}
 
 	if pvc.Annotations == nil {
 		pvc.Annotations = map[string]string{}
 	}
-	pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] = nodeName
+	pvc.Annotations[CNSSelectedNodeIsZoneAnnotationKey] = "true"
+	pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] = zoneName
 
 	if err := r.Client.Update(ctx, &pvc); err != nil {
 		return fmt.Errorf("cannot update PVC to add selected-node annotation: %w", err)
 	}
 
 	return nil
-}
-
-// getANodeNameInVMZone returns one of the Nodes' name that is in the same
-// Zone as the VM.
-func getANodeNameInVMZone(
-	ctx *pkgctx.VolumeContext,
-	k8sClient client.Client) (string, error) {
-
-	zoneName := ctx.VM.Status.Zone
-	if zoneName == "" {
-		// Fallback to the label value if Status hasn't been updated yet.
-		zoneName = ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
-		if zoneName == "" {
-			return "", fmt.Errorf("VM does not have Zone set")
-		}
-	}
-
-	nodes := &corev1.NodeList{}
-	if err := k8sClient.List(
-		ctx,
-		nodes,
-		client.MatchingLabels{topology.KubernetesTopologyZoneLabelKey: zoneName}); err != nil {
-		return "", err
-	}
-
-	if len(nodes.Items) == 0 {
-		return "", fmt.Errorf("no Nodes for zone %s", zoneName)
-	}
-
-	for i := range nodes.Items {
-		if nodes.Items[i].DeletionTimestamp.IsZero() {
-			return nodes.Items[i].Name, nil
-		}
-	}
-
-	// Otherwise just return the first one.
-	return nodes.Items[0].Name, nil
 }
 
 // createCNSAttachmentButAlreadyExists tries to handle various conditions when a CnsNodeVmAttachment

@@ -167,6 +167,11 @@ type VirtualMachineClassSpec struct {
 	// this VirtualMachineClass.
 	// This field is only valid in conjunction with reservedProfileID.
 	ReservedSlots int32 `json:"reservedSlots,omitempty"`
+
+	// +optional
+
+	// DisplayName is the user defined name of the VirtualMachineClass.
+	DisplayName string `json:"displayName,omitempty"`
 }
 
 // VirtualMachineClassStatus defines the observed state of VirtualMachineClass.

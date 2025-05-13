@@ -770,6 +770,9 @@ spec:
                   is not related to virtual hardware or infrastructure policy. This field
                   is used to address remaining specs about this VirtualMachineClass.
                 type: string
+              displayName:
+                description: DisplayName is the user defined name of the VirtualMachineClass.
+                type: string
               hardware:
                 description: |-
                   Hardware describes the configuration of the VirtualMachineClass

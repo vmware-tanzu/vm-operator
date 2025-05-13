@@ -68,6 +68,9 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineClass{},
 				Spoke:  &vmopv1a2.VirtualMachineClass{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineClassFieldsFuncs,
+				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -260,6 +263,15 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			// Since only VMOP updates the CVMI/VMI's we didn't bother with conversion
 			// when adding this field.
 			vmiStatus.Disks = nil
+		},
+	}
+}
+
+func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
+	return []interface{}{
+		func(msg *json.RawMessage, c fuzz.Continue) {
+			// Else fuzzed ConfigSpec conversion fails via DefaultUnstructuredConverter
+			*msg = []byte(`{"foo": "bar"}`)
 		},
 	}
 }

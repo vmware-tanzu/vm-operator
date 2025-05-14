@@ -3722,6 +3722,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *
 	out.Image = (*VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
+	// WARNING: in.Affinity requires manual conversion: does not exist in peer-type
 	out.Crypto = (*VirtualMachineCryptoSpec)(unsafe.Pointer(in.Crypto))
 	out.StorageClass = in.StorageClass
 	if in.Bootstrap != nil {

@@ -929,3 +929,79 @@ The `spec.cdrom[].connected` field controls the connection state of the CD-ROM d
 The `spec.cdrom[].allowGuestControl` field controls the guest OS's ability to connect/disconnect the CD-ROM device. If set to `true` (default value), a web console connection may be used to connect/disconnect the CD-ROM device from within the guest OS.
 
 For more information on the ISO VM workflow, please refer to the [Deploy a VM with ISO](../../../tutorials/deploy-vm/iso/) tutorial.
+
+## Affinity
+
+The optional field `spec.affinity` that may be used to define a set of affinity/anti-affinity scheduling rules for VMs.
+
+### Zone Affinity/Anti-affinity
+
+The `spec.affinity.zoneAffinity` and `spec.affinity.zoneAntiAffinity` fields are used to define scheduling rules related to zones.
+
+### Virtual Machine Affinity/Anti-affinity
+
+The `spec.affinity.vmAffinity` and `spec.affinity.vmAntiAffinity` fields are used to define scheduling rules related to other VMs.
+
+### Affinity/Anti-affinity verbs
+
+Note: Please refer to the 'Validation rules' section below for supported affinity/anti-affinity verb combinations in the context of a zone/host.
+
+#### RequiredDuringSchedulingIgnoredDuringExecution
+
+RequiredDuringSchedulingIgnoredDuringExecution describes affinity requirements that must be met or the VM will not be scheduled. This setting is available via `zoneAffinity/zoneAntiAffinity` and `vmAffinity/vmAntiAffinity` fields in `spec.affinity`.
+
+#### PreferredDuringSchedulingIgnoredDuringExecution
+
+PreferredDuringSchedulingIgnoredDuringExecution describes affinity requirements that should be met, but the VM can still be scheduled if the requirement cannot be satisfied. This setting is available via `zoneAffinity/zoneAntiAffinity` and `vmAffinity/vmAntiAffinity` fields in `spec.affinity`.
+
+#### RequiredDuringSchedulingPreferredDuringExecution
+
+RequiredDuringSchedulingPreferredDuringExecution describes affinity requirements that must be met or the VM will not be scheduled. Additionally, it also describes the affinity requirements that should be met during run-time, but the VM can still be run if the requirements cannot be satisfied. This setting is available via `vmAntiAffinity` fields in `spec.affinity`.
+
+#### PreferredDuringSchedulingPreferredDuringExecution
+
+PreferredDuringSchedulingPreferredDuringExecution describes affinity requirements that should be met, but the VM can still be scheduled if the requirement cannot be satisfied. The scheduler will prefer to schedule VMs that satisfy the affinity expressions specified by this field, but it may choose to violate one or more of the expressions. Additionally, it also describes the affinity requirements that should be met during run-time, but the VM can still be run if the requirements cannot be satisfied. This setting is available via `vmAntiAffinity` fields in `spec.affinity`.
+
+#### TopologyKey 
+The `topologyKey` field is specified with the VM Affinity/Anti-Affinity based scheduling constraints to designate the scope of the rule. Commonly used values include:
+
+* `kubernetes.io/hostname` -- The rule is executed in the context of a node/host.
+* `topology.kubernetes.io/zone` -- This rule is executed in the context of a zone.
+
+### Validation rules
+
+The above affinity/anti-affinity settings are available with the following rules in place:
+
+* When topology key is in the context of a zone, the only supported verbs are PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution.
+* When topology key is in the context of a host, the only supported verbs are PreferredDuringSchedulingPreferredDuringExecution and RequiredDuringSchedulingPreferredDuringExecution for VM-VM node-level anti-affinity scheduling.
+* When topology key is in the context of a host, the only supported verbs are PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution for VM-VM node-level anti-affinity scheduling.
+
+
+### Example
+
+The following is an example of VM AF that uses the topologyKey field to indicate the VM AF rule applies to the Zone scope:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha4
+kind: VirtualMachine
+metadata:
+  name: my-vm-1
+  namespace: my-namespace-1
+  labels:
+    app: my-app-1
+spec:
+  affinity:
+    vmAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        labelSelector:
+        - matchLabels:
+            app: my-app-1
+        # The topology key is what designates the scope of the rule.
+        # For example, "topologyKey: kubernetes.io/hostname" would
+        # indicate the rule applies to nodes and not zones.
+        # For more detail, please refer to 
+        # https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/.
+        topologyKey: topology.kubernetes.io/zone
+```
+
+

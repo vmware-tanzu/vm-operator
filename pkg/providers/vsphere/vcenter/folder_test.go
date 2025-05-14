@@ -78,14 +78,14 @@ func createDeleteExistsFolder() {
 		parentFolderMoID = ""
 	})
 
-	Context("CreateFolder", func() {
+	Context("CreateOrGetFolder", func() {
 		It("creates child Folder", func() {
-			childMoID, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
+			childMoID, err := vcenter.CreateOrGetFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(childMoID).ToNot(BeEmpty())
 
 			By("NoOp when child Folder already exists", func() {
-				moID, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
+				moID, err := vcenter.CreateOrGetFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(moID).To(Equal(childMoID))
 			})
@@ -98,7 +98,7 @@ func createDeleteExistsFolder() {
 		})
 
 		It("returns error when parent Folder MoID does not exist", func() {
-			childMoID, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, "bogus", "myFolder")
+			childMoID, err := vcenter.CreateOrGetFolder(ctx, ctx.VCClient.Client, "bogus", "myFolder")
 			Expect(err).To(HaveOccurred())
 			Expect(childMoID).To(BeEmpty())
 		})
@@ -106,7 +106,7 @@ func createDeleteExistsFolder() {
 
 	Context("GetChildFolder", func() {
 		It("returns success when child Folder exists", func() {
-			childFolderMoID, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
+			childFolderMoID, err := vcenter.CreateOrGetFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
 			Expect(err).ToNot(HaveOccurred())
 
 			parentFolder := object.NewFolder(ctx.VCClient.Client, vimtypes.ManagedObjectReference{
@@ -135,7 +135,7 @@ func createDeleteExistsFolder() {
 
 	Context("DoesChildFolderExist", func() {
 		It("returns true when child Folder exists", func() {
-			_, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
+			_, err := vcenter.CreateOrGetFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
 			Expect(err).ToNot(HaveOccurred())
 
 			exists, err := vcenter.DoesChildFolderExist(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
@@ -158,7 +158,7 @@ func createDeleteExistsFolder() {
 
 	Context("DeleteFolder", func() {
 		It("deletes child Folder", func() {
-			childMoID, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
+			childMoID, err := vcenter.CreateOrGetFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
 			Expect(err).ToNot(HaveOccurred())
 
 			err = vcenter.DeleteChildFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")

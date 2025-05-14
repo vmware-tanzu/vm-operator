@@ -121,6 +121,10 @@ func restore_v1alpha4_VirtualMachineBootOptions(dst, src *vmopv1.VirtualMachine)
 	dst.Spec.BootOptions = src.Spec.BootOptions
 }
 
+func restore_v1alpha4_VirtualMachineAffinitySpec(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Affinity = src.Spec.Affinity
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -139,6 +143,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha4_VirtualMachineBootOptions(dst, restored)
+	restore_v1alpha4_VirtualMachineAffinitySpec(dst, restored)
 
 	// END RESTORE
 

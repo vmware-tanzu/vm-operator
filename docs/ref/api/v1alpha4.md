@@ -485,6 +485,37 @@ _Appears in:_
 | --- | --- |
 | `profileName` _string_ |  |
 
+### VMAffinityTerm
+
+
+
+VMAffinityTerm defines the VM affinity/anti-affinity term.
+
+_Appears in:_
+- [VirtualMachineAffinityVMAffinitySpec](#virtualmachineaffinityvmaffinityspec)
+- [VirtualMachineAntiAffinityVMAffinitySpec](#virtualmachineantiaffinityvmaffinityspec)
+
+| Field | Description |
+| --- | --- |
+| `labelSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#labelselector-v1-meta)_ | LabelSelector is a label query over a set of VMs.
+When omitted, this term matches with no VMs. |
+| `topologyKey` _string_ | TopologyKey describes where this VM should be co-located (affinity) or not
+co-located (anti-affinity).
+Commonly used values include:
+`kubernetes.io/hostname` -- The rule is executed in the context of a node/host.
+`topology.kubernetes.io/zone` -- This rule is executed in the context of a zone.
+
+Please note, The following rules apply when specifying the topology key in the context of a zone/host.
+
+- When topology key is in the context of a zone, the only supported verbs are
+  PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution.
+- When topology key is in the context of a host, the only supported verbs are
+  PreferredDuringSchedulingPreferredDuringExecution and RequiredDuringSchedulingPreferredDuringExecution
+  for VM-VM node-level anti-affinity scheduling.
+- When topology key is in the context of a host, the only supported verbs are
+  PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution
+  for VM-VM node-level anti-affinity scheduling. |
+
 ### VSphereClusterModuleStatus
 
 
@@ -544,6 +575,143 @@ persistent volumes managed by this VM. |
 | `changeBlockTracking` _boolean_ | ChangeBlockTracking is a flag that enables incremental backup support
 for this VM, a feature utilized by external backup systems such as
 VMware Data Recovery. |
+
+### VirtualMachineAffinitySpec
+
+
+
+VirtualMachineAffinitySpec defines the group of affinity scheduling rules.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `zoneAffinity` _[VirtualMachineAffinityZoneAffinitySpec](#virtualmachineaffinityzoneaffinityspec)_ | ZoneAffinity describes affinity scheduling rules related to a zone. |
+| `zoneAntiAffinity` _[VirtualMachineAntiAffinityZoneAffinitySpec](#virtualmachineantiaffinityzoneaffinityspec)_ | ZoneAntiAffinity describes anti-affinity scheduling rules related to a zone. |
+| `vmAffinity` _[VirtualMachineAffinityVMAffinitySpec](#virtualmachineaffinityvmaffinityspec)_ | VMAffinity describes affinity scheduling rules related to other VMs. |
+| `vmAntiAffinity` _[VirtualMachineAntiAffinityVMAffinitySpec](#virtualmachineantiaffinityvmaffinityspec)_ | VMAntiAffinity describes anti-affinity scheduling rules related to other VMs. |
+
+### VirtualMachineAffinityVMAffinitySpec
+
+
+
+VirtualMachineAffinityVMAffinitySpec defines the affinity requirements for scheduling
+rules related to other VMs.
+
+_Appears in:_
+- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
+
+| Field | Description |
+| --- | --- |
+| `requiredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
+requirements that must be met or the VM will not be scheduled.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+| `preferredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
+that satisfy the anti-affinity expressions specified by this field, but it may choose to
+violate one or more of the expressions.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+
+### VirtualMachineAffinityZoneAffinitySpec
+
+
+
+VirtualMachineAffinityZoneAffinitySpec defines the affinity scheduling rules
+related to zones.
+
+_Appears in:_
+- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
+
+| Field | Description |
+| --- | --- |
+| `requiredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
+requirements that must be met or the VM will not be scheduled.
+
+When there are multiple elements, the lists of zones corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+| `preferredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
+that satisfy the anti-affinity expressions specified by this field, but it may choose to
+violate one or more of the expressions.
+
+When there are multiple elements, the lists of zones corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+
+### VirtualMachineAntiAffinityVMAffinitySpec
+
+
+
+VirtualMachineAntiAffinityVMAffinitySpec defines the anti-affinity requirements for scheduling
+rules related to other VMs.
+
+_Appears in:_
+- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
+
+| Field | Description |
+| --- | --- |
+| `requiredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes anti-affinity
+requirements that must be met or the VM will not be scheduled.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+| `preferredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes anti-affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
+that satisfy the affinity expressions specified by this field, but it may choose to
+violate one or more of the expressions.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+| `requiredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingPreferredExecution describes anti-affinity
+requirements that must be met or the VM will not be scheduled. Additionally,
+it also describes the anti-affinity requirements that should be met during run-time,
+but the VM can still be run if the requirements cannot be satisfied.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+| `preferredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingPreferredDuringExecution describes anti-affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
+that satisfy the affinity expressions specified by this field, but it may choose to
+violate one or more of the expressions. Additionally,
+it also describes the anti-affinity requirements that should be met during run-time,
+but the VM can still be run if the requirements cannot be satisfied.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+
+### VirtualMachineAntiAffinityZoneAffinitySpec
+
+
+
+VirtualMachineAntiAffinityZoneAffinitySpec defines the anti-affinity scheduling rules
+related to zones.
+
+_Appears in:_
+- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
+
+| Field | Description |
+| --- | --- |
+| `requiredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
+requirements that must be met or the VM will not be scheduled.
+
+When there are multiple elements, the lists of zones corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
+| `preferredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to schedule VMs to
+that satisfy the anti-affinity expressions specified by this field, but it may choose to
+violate one or more of the expressions.
+
+When there are multiple elements, the lists of zones corresponding to
+each term are intersected, i.e. all terms must be satisfied. |
 
 ### VirtualMachineBootOptions
 
@@ -2568,6 +2736,7 @@ Please note, this field *may* be empty if the VM was imported instead of
 deployed by VM Operator. An imported VirtualMachine resource references
 an existing VM on the underlying platform that was not deployed from a
 VM class. |
+| `affinity` _[VirtualMachineAffinitySpec](#virtualmachineaffinityspec)_ | Affinity describes the VM's scheduling constraints. |
 | `crypto` _[VirtualMachineCryptoSpec](#virtualmachinecryptospec)_ | Crypto describes the desired encryption state of the VirtualMachine. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
 used to configure this VM's storage-related attributes.
@@ -2980,3 +3149,50 @@ optional port. For example, valid values include:
 In other words, the field may be set to any value that is parsable
 by Go's https://pkg.go.dev/net#ResolveIPAddr and
 https://pkg.go.dev/net#ParseIP functions. |
+
+### ZoneSelectorOperator
+
+_Underlying type:_ `string`
+
+ZoneSelectorOperator specifies the type of operator used by
+the zone selector to represent key-value relationships.
+
+_Appears in:_
+- [ZoneSelectorRequirement](#zoneselectorrequirement)
+
+
+### ZoneSelectorRequirement
+
+
+
+ZoneSelectorRequirement defines the key value relationships for a matching zone selector.
+
+_Appears in:_
+- [ZoneSelectorTerm](#zoneselectorterm)
+
+| Field | Description |
+| --- | --- |
+| `key` _string_ | Key is the label key to which the selector applies. |
+| `operator` _[ZoneSelectorOperator](#zoneselectoroperator)_ | Operator represents a key's relationship to a set of values.
+Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt. |
+| `values` _string array_ | Values is a list of values to which the operator applies.
+If the operator is In or NotIn, the values list must be non-empty.
+If the operator is Exists or DoesNotExist, the values list must be empty.
+If the operator is Gt or Lt, the values list must have a single element,
+which will be interpreted as an integer. |
+
+### ZoneSelectorTerm
+
+
+
+ZoneSelectorTerm defines the matching zone selector requirements for zone based affinity/anti-affinity scheduling.
+
+_Appears in:_
+- [VirtualMachineAffinityZoneAffinitySpec](#virtualmachineaffinityzoneaffinityspec)
+- [VirtualMachineAntiAffinityZoneAffinitySpec](#virtualmachineantiaffinityzoneaffinityspec)
+
+| Field | Description |
+| --- | --- |
+| `matchExpressions` _[ZoneSelectorRequirement](#zoneselectorrequirement) array_ | MatchExpressions is a list of zone selector requirements by zone's
+labels. |
+| `matchFields` _[ZoneSelectorRequirement](#zoneselectorrequirement) array_ | MatchFields is a list of zone selector requirements by zone's fields. |

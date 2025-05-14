@@ -75,9 +75,13 @@ var _ = Describe("Netplan", func() {
 						SearchDomains:   []string{searchDomain1},
 						Routes: []network.NetworkInterfaceRoute{
 							{
-								To:     "185.107.56.59",
+								To:     "185.107.56.0/24",
 								Via:    "10.1.1.1",
 								Metric: 42,
+							},
+							{
+								To:  "134.23.5.3.0/24",
+								Via: "20.2.2.2",
 							},
 						},
 					},
@@ -93,24 +97,29 @@ var _ = Describe("Netplan", func() {
 				Expect(config.Ethernets).To(HaveKey(ifName))
 
 				np := config.Ethernets[ifName]
-				Expect(*np.Match.Macaddress).To(Equal(macAddr1Norm))
-				Expect(*np.SetName).To(Equal(guestDevName))
-				Expect(*np.Dhcp4).To(BeFalse())
-				Expect(*np.Dhcp6).To(BeFalse())
-				Expect(*np.AcceptRa).To(BeFalse())
+				Expect(np.Match.Macaddress).To(HaveValue(Equal(macAddr1Norm)))
+				Expect(np.SetName).To(HaveValue(Equal(guestDevName)))
+				Expect(np.Dhcp4).To(HaveValue(BeFalse()))
+				Expect(np.Dhcp6).To(HaveValue(BeFalse()))
+				Expect(np.AcceptRa).To(HaveValue(BeFalse()))
 				Expect(np.Addresses).To(HaveLen(2))
 				Expect(np.Addresses[0]).To(Equal(netplan.Address{String: ptr.To(ipv4CIDR)}))
 				Expect(np.Addresses[1]).To(Equal(netplan.Address{String: ptr.To(ipv6 + fmt.Sprintf("/%d", ipv6Subnet))}))
-				Expect(*np.Gateway4).To(Equal(ipv4Gateway))
-				Expect(*np.Gateway6).To(Equal(ipv6Gateway))
-				Expect(*np.MTU).To(BeEquivalentTo(1500))
+				Expect(np.Gateway4).To(HaveValue(Equal(ipv4Gateway)))
+				Expect(np.Gateway6).To(HaveValue(Equal(ipv6Gateway)))
+				Expect(np.MTU).To(HaveValue(BeEquivalentTo(1500)))
 				Expect(np.Nameservers.Addresses).To(Equal([]string{dnsServer1}))
 				Expect(np.Nameservers.Search).To(Equal([]string{searchDomain1}))
-				Expect(np.Routes).To(HaveLen(1))
-				route := np.Routes[0]
-				Expect(*route.To).To(Equal("185.107.56.59"))
-				Expect(*route.Via).To(Equal("10.1.1.1"))
-				Expect(*route.Metric).To(BeEquivalentTo(42))
+
+				Expect(np.Routes).To(HaveLen(2))
+				route0 := np.Routes[0]
+				Expect(route0.To).To(HaveValue(Equal("185.107.56.0/24")))
+				Expect(route0.Via).To(HaveValue(Equal("10.1.1.1")))
+				Expect(route0.Metric).To(HaveValue(BeEquivalentTo(42)))
+				route1 := np.Routes[1]
+				Expect(route1.To).To(HaveValue(Equal("134.23.5.3.0/24")))
+				Expect(route1.Via).To(HaveValue(Equal("20.2.2.2")))
+				Expect(route1.Metric).To(BeNil())
 			})
 
 			Context("Gateway4/6 are disabled", func() {
@@ -159,12 +168,12 @@ var _ = Describe("Netplan", func() {
 				Expect(config.Ethernets).To(HaveKey(ifName))
 
 				np := config.Ethernets[ifName]
-				Expect(*np.Match.Macaddress).To(Equal(macAddr1Norm))
-				Expect(*np.SetName).To(Equal(guestDevName))
-				Expect(*np.Dhcp4).To(BeTrue())
-				Expect(*np.Dhcp6).To(BeTrue())
-				Expect(*np.AcceptRa).To(BeTrue())
-				Expect(*np.MTU).To(BeEquivalentTo(9000))
+				Expect(np.Match.Macaddress).To(HaveValue(Equal(macAddr1Norm)))
+				Expect(np.SetName).To(HaveValue(Equal(guestDevName)))
+				Expect(np.Dhcp4).To(HaveValue(BeTrue()))
+				Expect(np.Dhcp6).To(HaveValue(BeTrue()))
+				Expect(np.AcceptRa).To(HaveValue(BeTrue()))
+				Expect(np.MTU).To(HaveValue(BeEquivalentTo(9000)))
 				Expect(np.Nameservers.Addresses).To(Equal([]string{dnsServer1}))
 				Expect(np.Nameservers.Search).To(Equal([]string{searchDomain1}))
 				Expect(np.Routes).To(BeEmpty())

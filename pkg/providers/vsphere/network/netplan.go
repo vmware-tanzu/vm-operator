@@ -76,11 +76,17 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, err
 
 		for i := range r.Routes {
 			route := r.Routes[i]
+
+			var metric *int64
+			if route.Metric != 0 {
+				metric = ptr.To(int64(route.Metric))
+			}
+
 			npEth.Routes = append(
 				npEth.Routes,
 				netplan.Route{
 					To:     &route.To,
-					Metric: ptr.To(int64(route.Metric)),
+					Metric: metric,
 					Via:    &route.Via,
 				},
 			)

@@ -1,6 +1,6 @@
-// Copyright (c) 2024 Broadcom. All Rights Reserved.
-// Broadcom Confidential. The term "Broadcom" refers to Broadcom Inc.
-// and/or its subsidiaries.
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package capabilities
 
@@ -46,6 +46,10 @@ const (
 	// CapabilityKeyMutableNetworks is the name of capability key
 	// defined in the capabilities ConfigMap and/or CRD.
 	CapabilityKeyMutableNetworks = "supports_VM_service_mutable_networks"
+
+	// CapabilityKeyVMGroups is the name of capability key defined in the
+	// Supervisor capabilities CRD.
+	CapabilityKeyVMGroups = "supports_VM_service_VM_groups"
 )
 
 var (
@@ -186,6 +190,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.WorkloadDomainIsolation = capStatus.Activated
 		case CapabilityKeyMutableNetworks:
 			fs.MutableNetworks = capStatus.Activated
+		case CapabilityKeyVMGroups:
+			fs.VMGroups = capStatus.Activated
 		}
 	}
 	return fs

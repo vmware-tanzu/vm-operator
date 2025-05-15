@@ -181,6 +181,7 @@ type FeatureStates struct {
 	SVAsyncUpgrade             bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
 	FastDeploy                 bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
 	MutableNetworks            bool
+	VMGroups                   bool
 }
 
 type InstanceStorage struct {

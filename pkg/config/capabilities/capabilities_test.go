@@ -1,6 +1,6 @@
-// Copyright (c) 2024 Broadcom. All Rights Reserved.
-// Broadcom Confidential. The term "Broadcom" refers to Broadcom Inc.
-// and/or its subsidiaries.
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package capabilities_test
 
@@ -144,6 +144,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyMutableNetworks: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyVMGroups: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -154,6 +157,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.TKGMultipleCL = true
 							config.Features.WorkloadDomainIsolation = true
 							config.Features.MutableNetworks = true
+							config.Features.VMGroups = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -170,6 +174,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyMutableNetworks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVMGroups, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeTrue())
 					})
 				})
 
@@ -188,6 +195,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyMutableNetworks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVMGroups, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeTrue())
 					})
 				})
 			})
@@ -215,6 +225,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyMutableNetworks: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyVMGroups: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -234,6 +247,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyMutableNetworks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeFalse())
 					})
+					Specify(capabilities.CapabilityKeyVMGroups, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeFalse())
+					})
 				})
 
 				When("the capabilities are different", func() {
@@ -243,6 +259,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.TKGMultipleCL = true
 							config.Features.WorkloadDomainIsolation = true
 							config.Features.MutableNetworks = true
+							config.Features.VMGroups = true
 						})
 					})
 					Specify("capabilities changed", func() {
@@ -259,6 +276,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyMutableNetworks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVMGroups, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeFalse())
 					})
 				})
 			})
@@ -411,6 +431,32 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyMutableNetworks, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyMutableNetworks] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("MutableNetworks=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeTrue())
+			})
+		})
+		Context(capabilities.CapabilityKeyVMGroups, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVMGroups] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VMGroups=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -439,6 +485,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyMutableNetworks: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVMGroups: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -456,6 +505,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.TKGMultipleCL = true
 					config.Features.WorkloadDomainIsolation = true
 					config.Features.MutableNetworks = true
+					config.Features.VMGroups = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -474,6 +524,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyMutableNetworks, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVMGroups, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -483,11 +536,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.TKGMultipleCL = false
 					config.Features.WorkloadDomainIsolation = false
 					config.Features.MutableNetworks = false
+					config.Features.VMGroups = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,MutableNetworks=true,TKGMultipleCL=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -500,6 +554,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyMutableNetworks, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.MutableNetworks).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVMGroups, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeFalse())
 			})
 		})
 	})

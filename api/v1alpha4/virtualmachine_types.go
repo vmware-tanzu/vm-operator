@@ -480,6 +480,47 @@ const (
 	VirtualMachinePromoteDisksModeOffline  VirtualMachinePromoteDisksMode = "Offline"
 )
 
+type VirtualMachineHardwareSpec struct {
+	// +optional
+	// +listType=map
+	// +listMapKey=busNumber
+	// +kubebuilder:validation:MaxItems=2
+
+	// IDEControllers describes the desired list of IDE controllers for the VM.
+	//
+	// Defaults to two IDE controllers, with bus 0 and bus 1.
+	IDEControllers []IDEControllerSpec `json:"ideControllers,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=busNumber
+	// +kubebuilder:validation:MaxItems=4
+
+	// NVMEControllers describes the desired list of NVME controllers for the
+	// VM.
+	NVMEControllers []NVMEControllerSpec `json:"nvmeControllers,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=busNumber
+	// +kubebuilder:validation:MaxItems=4
+
+	// SATAControllers describes the desired list of SATA controllers for the
+	// VM.
+	//
+	// Please note, all SATA controllers are VirtualAHCI.
+	SATAControllers []SATAControllerSpec `json:"sataControllers,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=busNumber
+	// +kubebuilder:validation:MaxItems=4
+
+	// SCSIControllers describes the desired list of SCSI controllers for the
+	// VM.
+	SCSIControllers []SCSIControllerSpec `json:"scsiControllers,omitempty"`
+}
+
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
 	// +optional
@@ -674,7 +715,7 @@ type VirtualMachineSpec struct {
 	// +listType=map
 	// +listMapKey=name
 
-	// Volumes describes a list of volumes that can be mounted to the VM.
+	// Volumes describes the desired list of volumes to attach to the VM.
 	Volumes []VirtualMachineVolume `json:"volumes,omitempty"`
 
 	// +optional
@@ -793,6 +834,11 @@ type VirtualMachineSpec struct {
 	//
 	// Defaults to Online.
 	PromoteDisksMode VirtualMachinePromoteDisksMode `json:"promoteDisksMode,omitempty"`
+
+	// +optional
+
+	// Hardware describes the VM's desired hardware.
+	Hardware *VirtualMachineHardwareSpec `json:"hardware,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options
@@ -829,7 +875,7 @@ type VirtualMachineAdvancedSpec struct {
 
 	// DefaultVolumeProvisioningMode specifies the default provisioning mode for
 	// persistent volumes managed by this VM.
-	DefaultVolumeProvisioningMode VirtualMachineVolumeProvisioningMode `json:"defaultVolumeProvisioningMode,omitempty"`
+	DefaultVolumeProvisioningMode VolumeProvisioningMode `json:"defaultVolumeProvisioningMode,omitempty"`
 
 	// +optional
 

@@ -18,14 +18,22 @@ func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMa
 	return autoConvert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(in, out, s)
 }
 
+func Convert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha3_PersistentVolumeClaimVolumeSource(
+	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha3_PersistentVolumeClaimVolumeSource(in, out, s)
+}
+
+func Convert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(
+	in *vmopv1.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in, out, s)
+}
+
 func Convert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(
 	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
 
-	if err := autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in, out, s); err != nil {
-		return err
-	}
-
-	return nil
+	return autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in, out, s)
 }
 
 func Convert_v1alpha4_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
@@ -56,6 +64,37 @@ func restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMac
 	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
 }
 
+func restore_v1alpha4_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
+	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
+	for i := range src.Spec.Volumes {
+		vol := &src.Spec.Volumes[i]
+		srcVolMap[vol.Name] = vol
+	}
+	for i := range dst.Spec.Volumes {
+		dstVol := &dst.Spec.Volumes[i]
+		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
+			if dstPvc := dstVol.PersistentVolumeClaim; dstPvc != nil {
+				if srcPvc := srcVol.PersistentVolumeClaim; srcPvc != nil {
+					dstPvc.ApplicationType = srcPvc.ApplicationType
+					dstPvc.ControllerBusNumber = srcPvc.ControllerBusNumber
+					dstPvc.ControllerType = srcPvc.ControllerType
+					dstPvc.DiskMode = srcPvc.DiskMode
+					dstPvc.SharingMode = srcPvc.SharingMode
+					dstPvc.UnitNumber = srcPvc.UnitNumber
+				}
+			}
+		}
+	}
+}
+
+func restore_v1alpha4_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Hardware != nil {
+		dst.Spec.Hardware = src.Spec.Hardware.DeepCopy()
+	} else {
+		dst.Spec.Hardware = nil
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -73,6 +112,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, restored)
+	restore_v1alpha4_VirtualMachineVolumes(dst, restored)
+	restore_v1alpha4_VirtualMachineHardware(dst, restored)
 
 	// END RESTORE
 

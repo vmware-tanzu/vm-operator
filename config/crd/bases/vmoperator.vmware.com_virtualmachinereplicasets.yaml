@@ -1483,6 +1483,7 @@ spec:
                                         description: Metric is the weight/priority
                                           of the route.
                                         format: int32
+                                        minimum: 1
                                         type: integer
                                       to:
                                         description: To is an IP4 or IP6 address.
@@ -1491,7 +1492,6 @@ spec:
                                         description: Via is an IP4 or IP6 address.
                                         type: string
                                     required:
-                                    - metric
                                     - to
                                     - via
                                     type: object
@@ -3411,6 +3411,7 @@ spec:
                                         description: Metric is the weight/priority
                                           of the route.
                                         format: int32
+                                        minimum: 1
                                         type: integer
                                       to:
                                         description: To is an IP4 or IP6 address.
@@ -3419,7 +3420,6 @@ spec:
                                         description: Via is an IP4 or IP6 address.
                                         type: string
                                     required:
-                                    - metric
                                     - to
                                     - via
                                     type: object

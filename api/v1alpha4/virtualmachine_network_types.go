@@ -18,8 +18,11 @@ type VirtualMachineNetworkRouteSpec struct {
 	// Via is an IP4 or IP6 address.
 	Via string `json:"via"`
 
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+
 	// Metric is the weight/priority of the route.
-	Metric int32 `json:"metric"`
+	Metric int32 `json:"metric,omitempty"`
 }
 
 // VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's

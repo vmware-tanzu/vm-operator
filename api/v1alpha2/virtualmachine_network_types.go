@@ -19,7 +19,10 @@ type VirtualMachineNetworkRouteSpec struct {
 	Via string `json:"via"`
 
 	// Metric is the weight/priority of the route.
-	Metric int32 `json:"metric"`
+	//
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Metric int32 `json:"metric,omitempty"`
 }
 
 // VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's

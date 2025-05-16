@@ -385,10 +385,10 @@ func (r *reconciler) cacheDisks(
 	for i := range cachedDisks {
 		if v := cachedDisks[i].Path; v != "" {
 			cachedDiskStatuses[i].ID = v
-			cachedDiskStatuses[i].Type = vmopv1.VirtualMachineStorageDiskTypeClassic
+			cachedDiskStatuses[i].Type = vmopv1.VolumeTypeClassic
 		} else {
 			cachedDiskStatuses[i].ID = cachedDisks[i].VDiskID
-			cachedDiskStatuses[i].Type = vmopv1.VirtualMachineStorageDiskTypeManaged
+			cachedDiskStatuses[i].Type = vmopv1.VolumeTypeManaged
 		}
 	}
 

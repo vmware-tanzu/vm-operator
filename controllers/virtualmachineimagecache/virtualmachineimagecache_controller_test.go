@@ -159,9 +159,9 @@ var _ = Describe(
 
 			g.ExpectWithOffset(1, status.Files).To(HaveLen(2))
 			g.ExpectWithOffset(1, status.Files[0].ID).To(Equal(vmdkFilePath))
-			g.ExpectWithOffset(1, status.Files[0].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
+			g.ExpectWithOffset(1, status.Files[0].Type).To(Equal(vmopv1.VolumeTypeClassic))
 			g.ExpectWithOffset(1, status.Files[1].ID).To(Equal(nvramFilePath))
-			g.ExpectWithOffset(1, status.Files[1].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
+			g.ExpectWithOffset(1, status.Files[1].Type).To(Equal(vmopv1.VolumeTypeClassic))
 		}
 
 		Context("Ordered", Ordered, func() {

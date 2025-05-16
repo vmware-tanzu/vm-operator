@@ -5,12 +5,66 @@
 package v1alpha3
 
 import (
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
+
+var cdromNameRegex = regexp.MustCompile(`^(ide|sata):([0-3]):([0-29])$`)
+
+func Convert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(
+	in *VirtualMachineCdromSpec, out *vmopv1.VirtualMachineCdromSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in, out, s); err != nil {
+		return err
+	}
+
+	if m := cdromNameRegex.FindStringSubmatch(in.Name); len(m) != 0 {
+		switch vmopv1.StorageControllerType(strings.ToUpper(m[1])) {
+		case vmopv1.StorageControllerTypeIDE:
+			out.ControllerType = vmopv1.StorageControllerTypeIDE
+		case vmopv1.StorageControllerTypeSATA:
+			out.ControllerType = vmopv1.StorageControllerTypeSATA
+		}
+
+		busNumber, err := strconv.ParseInt(m[2], 10, 32)
+		if err != nil {
+			return err
+		}
+		unitNumber, err := strconv.ParseInt(m[3], 10, 32)
+		if err != nil {
+			return err
+		}
+		busNumber32, unitNumber32 := int32(busNumber), int32(unitNumber)
+		out.ControllerBusNumber = &busNumber32
+		out.UnitNumber = &unitNumber32
+	}
+
+	return nil
+}
+
+func Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(
+	in *vmopv1.VirtualMachineCdromSpec, out *VirtualMachineCdromSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(in, out, s); err != nil {
+		return err
+	}
+
+	out.Name = fmt.Sprintf(
+		"%s:%d:%d",
+		strings.ToLower(string(in.ControllerType)),
+		in.ControllerBusNumber,
+		in.UnitNumber)
+
+	return nil
+}
 
 func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(
 	in *vmopv1.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s apiconversion.Scope) error {
@@ -56,6 +110,28 @@ func Convert_v1alpha3_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	}
 
 	out.NodeName = in.Host
+
+	return nil
+}
+
+func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(
+	in *VirtualMachineSpec, out *vmopv1.VirtualMachineSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in, out, s); err != nil {
+		return err
+	}
+
+	if len(in.Cdrom) > 0 {
+		if out.Hardware == nil {
+			out.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+			out.Hardware.Cdrom = make([]vmopv1.VirtualMachineCdromSpec, len(in.Cdrom))
+			for i := range in.Cdrom {
+				if err := autoConvert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(&in.Cdrom[i], &out.Hardware.Cdrom[i], s); err != nil {
+					return err
+				}
+			}
+		}
+	}
 
 	return nil
 }

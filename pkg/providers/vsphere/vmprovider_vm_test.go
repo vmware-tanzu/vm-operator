@@ -3064,13 +3064,15 @@ func vmTests() {
 				vm.Spec.Image.Kind = cvmiKind
 				vm.Spec.Image.Name = cvmiName
 				vm.Spec.StorageClass = ctx.StorageClassName
-				vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{{
-					Name: "cdrom0",
-					Image: vmopv1.VirtualMachineImageRef{
-						Name: cvmiName,
-						Kind: cvmiKind,
-					},
-				}}
+				vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					Cdrom: []vmopv1.VirtualMachineCdromSpec{{
+						Name: "cdrom0",
+						Image: vmopv1.VirtualMachineImageRef{
+							Name: cvmiName,
+							Kind: cvmiKind,
+						},
+					}},
+				}
 			})
 
 			Context("return config", func() {

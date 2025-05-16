@@ -301,10 +301,6 @@ func restore_v1alpha4_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
 
-func restore_v1alpha4_VirtualMachineCdrom(dst, src *vmopv1.VirtualMachine) {
-	dst.Spec.Cdrom = src.Spec.Cdrom
-}
-
 func restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
 }
@@ -362,7 +358,6 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha4_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha4_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha4_VirtualMachineGuestID(dst, restored)
-	restore_v1alpha4_VirtualMachineCdrom(dst, restored)
 	restore_v1alpha4_VirtualMachineCryptoSpec(dst, restored)
 	restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha4_VirtualMachineVolumes(dst, restored)

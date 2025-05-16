@@ -191,6 +191,17 @@ func TestVirtualMachineConversion(t *testing.T) {
 				NextRestartTime: "tomorrow",
 				RestartMode:     vmopv1.VirtualMachinePowerOpModeSoft,
 				Hardware: &vmopv1.VirtualMachineHardwareSpec{
+					Cdrom: []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: "cdrom1",
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: "my-cdrom-image",
+								Kind: "VirtualMachineImage",
+							},
+							AllowGuestControl: ptrOf(true),
+							Connected:         ptrOf(true),
+						},
+					},
 					IDEControllers: []vmopv1.IDEControllerSpec{
 						{
 							BusNumber: 0,
@@ -275,7 +286,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 									ClaimName: "my-claim",
 								},
 								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
-								ControllerType:      vmopv1.VolumeControllerTypeSCSI,
+								ControllerType:      vmopv1.StorageControllerTypeSCSI,
 								ControllerBusNumber: ptrOf(int32(0)),
 								DiskMode:            vmopv1.VolumeDiskModePersistent,
 								UnitNumber:          ptrOf(int32(0)),
@@ -326,18 +337,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				InstanceUUID:       uuid.NewString(),
 				BiosUUID:           uuid.NewString(),
 				GuestID:            "my-guest-id",
-				Cdrom: []vmopv1.VirtualMachineCdromSpec{
-					{
-						Name: "cdrom1",
-						Image: vmopv1.VirtualMachineImageRef{
-							Name: "my-cdrom-image",
-							Kind: "VirtualMachineImage",
-						},
-						AllowGuestControl: ptrOf(true),
-						Connected:         ptrOf(true),
-					},
-				},
-				PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOffline,
+				PromoteDisksMode:   vmopv1.VirtualMachinePromoteDisksModeOffline,
 			},
 		}
 

@@ -69,13 +69,13 @@ const (
 
 // +kubebuilder:validation:Enum=IDE;NVME;SCSI;SATA
 
-type VolumeControllerType string
+type StorageControllerType string
 
 const (
-	VolumeControllerTypeIDE  = "IDE"
-	VolumeControllerTypeNVME = "NVME"
-	VolumeControllerTypeSCSI = "SCSI"
-	VolumeControllerTypeSATA = "SATA"
+	StorageControllerTypeIDE  = "IDE"
+	StorageControllerTypeNVME = "NVME"
+	StorageControllerTypeSCSI = "SCSI"
+	StorageControllerTypeSATA = "SATA"
 )
 
 // +kubebuilder:validation:Enum=None;Physical;Virtual
@@ -156,13 +156,35 @@ type PersistentVolumeClaimVolumeSource struct {
 	ApplicationType VolumeApplicationType `json:"applicationType,omitempty"`
 
 	// +optional
+
+	// ControllerBusNumber describes the bus number of the controller to which
+	// this volume should be attached.
+	//
+	// The bus number specifies a controller based on the value of the
+	// controllerType field:
+	//
+	//   - IDE  -- spec.hardware.ideControllers
+	//   - NVME -- spec.hardware.nvmeControllers
+	//   - SATA -- spec.hardware.sataControllers
+	//   - SCSI -- spec.hardware.scsiControllers
+	//
+	// If this and controllerType are both omitted, the volume will be attached
+	// to the first available SCSI controller. If there is no SCSI controller
+	// with an available slot, a new ParaVirtual SCSI controller will be added
+	// as long as there are currently three or fewer SCSI controllers.
+	//
+	// If the specified controller has no available slots, the request will be
+	// denied.
+	ControllerBusNumber *int32 `json:"controllerBusNumber,omitempty"`
+
+	// +optional
 	// +kubebuilder:default=SCSI
 
 	// ControllerType describes the type of the controller to which this volume
 	// should be attached.
 	//
-	// Please keep in mind the number of volumes support by each type of
-	// controller:
+	// Please keep in mind the number of volumes supported by the different
+	// types of controllers:
 	//
 	//   - IDE                -- 4 total (2 per controller)
 	//   - NVME               -- 256 total (64 per controller)
@@ -178,30 +200,10 @@ type PersistentVolumeClaimVolumeSource struct {
 	// the other types of SCSI controllers support 16 targets, one of the
 	// targets is occupied by the controller itself.
 	//
-	// Defaults to SCSI.
-	ControllerType VolumeControllerType `json:"controllerType,omitempty"`
-
-	// +optional
-
-	// ControllerBusNumber describes the bus number of the controller to which
-	// this volume should be attached.
-	//
-	// The bus number specifies a controller based on the value of the
-	// controllerType field:
-	//
-	//   - IDE  -- spec.Hardware.ideControllers
-	//   - NVME -- spec.Hardware.nvmeControllers
-	//   - SATA -- spec.Hardware.sataControllers
-	//   - SCSI -- spec.Hardware.scsiControllers
-	//
-	// If omitted, the volume will be attached to the first available SCSI
-	// controller. If there is no SCSI controller with an available slot, a new
-	// ParaVirtual SCSI controller will be added as long as there are currently
-	// three or fewer SCSI controllers.
-	//
-	// If the specified controller has no available slots, the request will be
-	// denied.
-	ControllerBusNumber *int32 `json:"controllerBusNumber,omitempty"`
+	// Defaults to SCSI when controllerBusNumber is also omitted; otherwise the
+	// default value is determined by the logic outlined in the description of
+	// the controllerBusNumber field.
+	ControllerType StorageControllerType `json:"controllerType,omitempty"`
 
 	// +optional
 	// +kubebuilder:default=Persistent
@@ -226,14 +228,14 @@ type PersistentVolumeClaimVolumeSource struct {
 	SharingMode VolumeSharingMode `json:"sharingMode,omitempty"`
 
 	// UnitNumber describes the desired unit number for attaching the volume to
-	// a volume controller.
+	// a storage controller.
 	//
 	// When omitted, the next available unit number of the selected controller
 	// is used.
 	//
 	// This value must be unique for the controller referenced by the
-	// controllerType and controllerName properties. If the value is already
-	// used by another volume, this volume will not be attached.
+	// controllerBusNumber and controllerType properties. If the value is
+	// already used by another device, this volume will not be attached.
 	//
 	// Please note the value 7 is invalid if controllerType=SCSI as 7 is the
 	// unit number of the SCSI controller on its own bus.
@@ -281,7 +283,7 @@ type VirtualMachineVolumeStatus struct {
 	// +optional
 
 	// ControllerType describes volume's observed controller's type.
-	ControllerType VolumeControllerType `json:"controllerType,omitempty"`
+	ControllerType StorageControllerType `json:"controllerType,omitempty"`
 
 	// +kubebuilder:default=Managed
 
@@ -464,4 +466,102 @@ type SCSIControllerSpec struct {
 	//
 	// Defaults to ParaVirtual.
 	Type SCSIControllerType `json:"type,omitempty"`
+}
+
+// VirtualMachineCdromSpec describes the desired state of a CD-ROM device.
+type VirtualMachineCdromSpec struct {
+	// +required
+	// +kubebuilder:validation:Pattern="^[a-z0-9]{2,}$"
+
+	// Name consists of at least two lowercase letters or digits of this CD-ROM.
+	// It must be unique among all CD-ROM devices attached to the VM.
+	//
+	// This field is immutable when the VM is powered on.
+	Name string `json:"name"`
+
+	// Image describes the reference to an ISO type VirtualMachineImage or
+	// ClusterVirtualMachineImage resource used as the backing for the CD-ROM.
+	// If the image kind is omitted, it defaults to VirtualMachineImage.
+	//
+	// This field is immutable when the VM is powered on.
+	//
+	// Please note, unlike the spec.imageName field, the value of this
+	// spec.cdrom.image.name MUST be a Kubernetes object name.
+	Image VirtualMachineImageRef `json:"image"`
+
+	// +optional
+
+	// ControllerBusNumber describes the bus number of the controller to which
+	// this CD-ROM should be attached.
+	//
+	// The bus number specifies a controller based on the value of the
+	// controllerType field:
+	//
+	//   - IDE  -- spec.hardware.ideControllers
+	//   - SATA -- spec.hardware.sataControllers
+	//
+	// If this and controllerType are both omitted, the CD-ROM will be attached
+	// to the  first available IDE controller. If there is no IDE controller
+	// with an available slot, a new SATA controller will be added as long as
+	// there are currently three or fewer SATA controllers.
+	//
+	// If the specified controller has no available slots, the request will be
+	// denied.
+	ControllerBusNumber *int32 `json:"controllerBusNumber,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Enum=IDE;SATA
+
+	// ControllerType describes the type of the controller to which this CD-ROM
+	// should be attached.
+	//
+	// Please keep in mind the number of devices supported by the different
+	// types of controllers:
+	//
+	//   - IDE                -- 4 total (2 per controller)
+	//   - SATA               -- 120 total (30 per controller)
+	//
+	// Defaults to IDE when controllerBusNumber is also omitted; otherwise the
+	// default value is determined by the logic outlined in the description of
+	// the controllerBusNumber field.
+	ControllerType StorageControllerType `json:"controllerType,omitempty"`
+
+	// UnitNumber describes the desired unit number for attaching the CD-ROM to
+	// a storage controller.
+	//
+	// When omitted, the next available unit number of the selected controller
+	// is used.
+	//
+	// This value must be unique for the controller referenced by the
+	// controllerBusNumber and controllerType properties. If the value is
+	// already used by another device, this CD-ROM will not be attached.
+	UnitNumber *int32 `json:"unitNumber,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=true
+
+	// Connected describes the desired connection state of the CD-ROM device.
+	//
+	// When true, the CD-ROM device is added and connected to the VM.
+	// If the device already exists, it is updated to a connected state.
+	//
+	// When explicitly set to false, the CD-ROM device is added but remains
+	// disconnected from the VM. If the CD-ROM device already exists, it is
+	// updated to a disconnected state.
+	//
+	// Note: Before disconnecting a CD-ROM, the device may need to be unmounted
+	// in the guest OS. Refer to the following KB article for more details:
+	// https://knowledge.broadcom.com/external/article?legacyId=2144053
+	//
+	// Defaults to true if omitted.
+	Connected *bool `json:"connected,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=true
+
+	// AllowGuestControl describes whether or not a web console connection
+	// may be used to connect/disconnect the CD-ROM device.
+	//
+	// Defaults to true if omitted.
+	AllowGuestControl *bool `json:"allowGuestControl,omitempty"`
 }

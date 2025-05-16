@@ -1269,8 +1269,8 @@ func autoConvert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha2_Persiste
 	out.PersistentVolumeClaimVolumeSource = in.PersistentVolumeClaimVolumeSource
 	out.InstanceVolumeClaim = (*InstanceVolumeClaimVolumeSource)(unsafe.Pointer(in.InstanceVolumeClaim))
 	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
-	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
 	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
@@ -3195,7 +3195,6 @@ func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *Virt
 }
 
 func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *v1alpha4.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
-	// WARNING: in.Cdrom requires manual conversion: does not exist in peer-type
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName

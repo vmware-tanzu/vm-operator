@@ -285,16 +285,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineCdromSpec)(nil), (*v1alpha4.VirtualMachineCdromSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(a.(*VirtualMachineCdromSpec), b.(*v1alpha4.VirtualMachineCdromSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha4.VirtualMachineCdromSpec)(nil), (*VirtualMachineCdromSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(a.(*v1alpha4.VirtualMachineCdromSpec), b.(*VirtualMachineCdromSpec), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineClass)(nil), (*v1alpha4.VirtualMachineClass)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VirtualMachineClass_To_v1alpha4_VirtualMachineClass(a.(*VirtualMachineClass), b.(*v1alpha4.VirtualMachineClass), scope)
 	}); err != nil {
@@ -995,11 +985,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineSpec)(nil), (*v1alpha4.VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(a.(*VirtualMachineSpec), b.(*v1alpha4.VirtualMachineSpec), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineStorageStatus)(nil), (*v1alpha4.VirtualMachineStorageStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VirtualMachineStorageStatus_To_v1alpha4_VirtualMachineStorageStatus(a.(*VirtualMachineStorageStatus), b.(*v1alpha4.VirtualMachineStorageStatus), scope)
 	}); err != nil {
@@ -1115,6 +1100,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*VirtualMachineCdromSpec)(nil), (*v1alpha4.VirtualMachineCdromSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(a.(*VirtualMachineCdromSpec), b.(*v1alpha4.VirtualMachineCdromSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*VirtualMachineSpec)(nil), (*v1alpha4.VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(a.(*VirtualMachineSpec), b.(*v1alpha4.VirtualMachineSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*VirtualMachineStatus)(nil), (*v1alpha4.VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha3_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(a.(*VirtualMachineStatus), b.(*v1alpha4.VirtualMachineStatus), scope)
 	}); err != nil {
@@ -1127,6 +1122,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*v1alpha4.VirtualMachineBootstrapCloudInitSpec)(nil), (*VirtualMachineBootstrapCloudInitSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(a.(*v1alpha4.VirtualMachineBootstrapCloudInitSpec), b.(*VirtualMachineBootstrapCloudInitSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha4.VirtualMachineCdromSpec)(nil), (*VirtualMachineCdromSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(a.(*v1alpha4.VirtualMachineCdromSpec), b.(*VirtualMachineCdromSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -1459,8 +1459,8 @@ func autoConvert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha3_Persiste
 	out.PersistentVolumeClaimVolumeSource = in.PersistentVolumeClaimVolumeSource
 	out.InstanceVolumeClaim = (*InstanceVolumeClaimVolumeSource)(unsafe.Pointer(in.InstanceVolumeClaim))
 	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
-	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
 	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
@@ -1788,24 +1788,17 @@ func autoConvert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdro
 	return nil
 }
 
-// Convert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec is an autogenerated conversion function.
-func Convert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in *VirtualMachineCdromSpec, out *v1alpha4.VirtualMachineCdromSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in, out, s)
-}
-
 func autoConvert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(in *v1alpha4.VirtualMachineCdromSpec, out *VirtualMachineCdromSpec, s conversion.Scope) error {
 	out.Name = in.Name
 	if err := Convert_v1alpha4_VirtualMachineImageRef_To_v1alpha3_VirtualMachineImageRef(&in.Image, &out.Image, s); err != nil {
 		return err
 	}
+	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
+	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
 	out.Connected = (*bool)(unsafe.Pointer(in.Connected))
 	out.AllowGuestControl = (*bool)(unsafe.Pointer(in.AllowGuestControl))
 	return nil
-}
-
-// Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec is an autogenerated conversion function.
-func Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(in *v1alpha4.VirtualMachineCdromSpec, out *VirtualMachineCdromSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(in, out, s)
 }
 
 func autoConvert_v1alpha3_VirtualMachineClass_To_v1alpha4_VirtualMachineClass(in *VirtualMachineClass, out *v1alpha4.VirtualMachineClass, s conversion.Scope) error {
@@ -3691,7 +3684,7 @@ func Convert_v1alpha4_VirtualMachineSetResourcePolicyStatus_To_v1alpha3_VirtualM
 }
 
 func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *VirtualMachineSpec, out *v1alpha4.VirtualMachineSpec, s conversion.Scope) error {
-	out.Cdrom = *(*[]v1alpha4.VirtualMachineCdromSpec)(unsafe.Pointer(&in.Cdrom))
+	// WARNING: in.Cdrom requires manual conversion: does not exist in peer-type
 	out.Image = (*v1alpha4.VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
@@ -3733,13 +3726,7 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *
 	return nil
 }
 
-// Convert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec is an autogenerated conversion function.
-func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *VirtualMachineSpec, out *v1alpha4.VirtualMachineSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in, out, s)
-}
-
 func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *v1alpha4.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
-	out.Cdrom = *(*[]VirtualMachineCdromSpec)(unsafe.Pointer(&in.Cdrom))
 	out.Image = (*VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName

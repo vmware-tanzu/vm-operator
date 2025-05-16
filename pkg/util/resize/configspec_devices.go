@@ -26,7 +26,7 @@ func compareHardwareDevices(
 
 	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 
-	pciDeviceChanges := comparePCIDevices(csDeviceList, deviceList)
+	pciDeviceChanges := ComparePCIDevices(csDeviceList, deviceList)
 	deviceChanges = append(deviceChanges, pciDeviceChanges...)
 
 	moreDeviceChanges := compareDevicesByZipping(csDeviceList, deviceList)

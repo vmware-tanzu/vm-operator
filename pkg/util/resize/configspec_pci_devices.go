@@ -5,17 +5,15 @@
 package resize
 
 import (
-	"reflect"
-
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
-// comparePCIDevices is the old "Session" comparison code in which we try to match devices
+// ComparePCIDevices is the old "Session" comparison code in which we try to match devices
 // by the backing instead of zipping.
-func comparePCIDevices(
+func ComparePCIDevices(
 	desiredPCIDevices, currentDevices []vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
 
 	currentPassthruPCIDevices := pkgutil.SelectVirtualPCIPassthrough(currentDevices)
@@ -26,34 +24,20 @@ func comparePCIDevices(
 	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 	for _, expectedDev := range expectedPCIDevices {
 		expectedPci := expectedDev.(*vimtypes.VirtualPCIPassthrough)
-		expectedBacking := expectedPci.Backing
-		expectedBackingType := reflect.TypeOf(expectedBacking)
 
 		var matchingIdx = -1
 		for idx, curDev := range currentPassthruPCIDevices {
 			curBacking := curDev.GetVirtualDevice().Backing
-			if curBacking == nil || reflect.TypeOf(curBacking) != expectedBackingType {
+			if curBacking == nil {
 				continue
 			}
 
 			var backingMatch bool
-			switch a := curBacking.(type) {
+			switch a := expectedPci.Backing.(type) {
 			case *vimtypes.VirtualPCIPassthroughVmiopBackingInfo:
-				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
-				backingMatch = a.Vgpu == b.Vgpu
-
+				backingMatch = MatchVirtualPCIPassthroughVmiopBackingInfo(a, curBacking)
 			case *vimtypes.VirtualPCIPassthroughDynamicBackingInfo:
-				currAllowedDevs := a.AllowedDevice
-				b := expectedBacking.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
-				if a.CustomLabel == b.CustomLabel && len(b.AllowedDevice) > 0 {
-					// b.AllowedDevice has only one element because CreatePCIDevices() adds only one device based
-					// on the devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
-					expectedAllowedDev := b.AllowedDevice[0]
-					for i := 0; i < len(currAllowedDevs) && !backingMatch; i++ {
-						backingMatch = expectedAllowedDev.DeviceId == currAllowedDevs[i].DeviceId &&
-							expectedAllowedDev.VendorId == currAllowedDevs[i].VendorId
-					}
-				}
+				backingMatch = MatchVirtualPCIPassthroughDynamicBackingInfo(a, curBacking)
 			}
 
 			if backingMatch {

@@ -12,7 +12,7 @@ import (
 
 // VirtualMachineNetworkRouteSpec defines a static route for a guest.
 type VirtualMachineNetworkRouteSpec struct {
-	// To is an IP4 or IP6 address.
+	// To is either "default", or an IP4 or IP6 address.
 	To string `json:"to"`
 
 	// Via is an IP4 or IP6 address.

@@ -312,7 +312,9 @@ func AddDefaultNetworkInterface(
 	// they do mean slightly different things, and kind of complicated to know what to do like if the annotation
 	// is removed.
 	if _, ok := vm.Annotations[v1alpha1.NoDefaultNicAnnotation]; ok {
-		return false
+		if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 {
+			return false
+		}
 	}
 
 	if vm.Spec.Network != nil && vm.Spec.Network.Disabled {

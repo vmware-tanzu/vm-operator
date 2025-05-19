@@ -457,6 +457,99 @@ type VirtualMachineCryptoSpec struct {
 	UseDefaultKeyProvider *bool `json:"useDefaultKeyProvider,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=Disk;Network;CDRom
+
+// VirtualMachineBootOptionsBootableDevice represents the type of bootable device
+// that a VM may be booted from.
+type VirtualMachineBootOptionsBootableDevice string
+
+const (
+	VirtualMachineBootOptionsBootableDiskDevice    VirtualMachineBootOptionsBootableDevice = "Disk"
+	VirtualMachineBootOptionsBootableNetworkDevice VirtualMachineBootOptionsBootableDevice = "Network"
+	VirtualMachineBootOptionsBootableCDRomDevice   VirtualMachineBootOptionsBootableDevice = "CDRom"
+)
+
+// +kubebuilder:validation:Enum=IP4;IP6
+
+// VirtualMachineBootOptionsNetworkBootProtocol represents the protocol to
+// use during PXE network boot or NetBoot.
+type VirtualMachineBootOptionsNetworkBootProtocol string
+
+const (
+	VirtualMachineBootOptionsNetworkBootProtocolIP4 VirtualMachineBootOptionsNetworkBootProtocol = "IP4"
+	VirtualMachineBootOptionsNetworkBootProtocolIP6 VirtualMachineBootOptionsNetworkBootProtocol = "IP6"
+)
+
+// VirtualMachineBootOptions defines the boot-time behavior of a virtual machine.
+type VirtualMachineBootOptions struct {
+	// +optional
+
+	// BootDelay is the delay before starting the boot sequence. The boot delay
+	// specifies a time interval between virtual machine power on or restart and
+	// the beginning of the boot sequence.
+	BootDelay *metav1.Duration `json:"bootDelay,omitempty"`
+
+	// +optional
+
+	// BootOrder represents the boot order of the virtual machine. After list is exhausted,
+	// default BIOS boot device algorithm is used for booting. Note that order of the entries
+	// in the list is important: device listed first is used for boot first, if that one
+	// fails second entry is used, and so on. Platform may have some internal limit on the
+	// number of devices it supports. If bootable device is not reached before platform's limit
+	// is hit, boot will fail. At least single entry is supported by all products supporting
+	// boot order settings.
+	//
+	// The available devices are:
+	//
+	// - Disk    -- If there are classic and managed disks, the first classic disk is selected.
+	//              If there are only managed disks, the first disk is selected.
+	// - Network -- The first interface listed in spec.network.interfaces.
+	// - CDRom   -- The first bootable CD-ROM device.
+	BootOrder []VirtualMachineBootOptionsBootableDevice `json:"bootOrder,omitempty"`
+
+	// +optional
+
+	// BootRetryEnabled specifies whether a virtual machine that fails to boot
+	// will try again. If set to true, a virtual machine that fails to boot will
+	// try again after BootRetryDelay time period has expired. If set to false, the
+	// virtual machine waits indefinitely for you to initiate boot retry.
+	BootRetryEnabled bool `json:"bootRetryEnabled,omitempty"`
+
+	// +optional
+
+	// BootRetryDelay specifies a time interval between virtual machine boot failure
+	// and the subsequent attempt to boot again. The virtual machine uses this value
+	// only if BootRetryEnabled is true.
+	BootRetryDelay *metav1.Duration `json:"bootRetryDelay,omitempty"`
+
+	// +optional
+
+	// EnterBIOSSetup specifies whether to automatically enter BIOS setup the next
+	// time the virtual machine boots. The virtual machine resets this flag to false
+	// so that subsequent boots proceed normally.
+	EnterBIOSSetup bool `json:"enterBIOSSetup,omitempty"`
+
+	// +optional
+
+	// EFISecureBootEnabled specifies whether the virtual machine's firmware will
+	// perform signature checks of any EFI images loaded during startup. If set to
+	// true, signature checks will be performed and the virtual machine's firmware
+	// will refuse to start any images which do not pass those signature checks.
+	//
+	// Please note, this field will not be honored unless the value of spec.firmware
+	// is "EFI".
+	EFISecureBootEnabled bool `json:"efiSecureBootEnabled,omitempty"`
+
+	// +optional
+
+	// NetworkBootProtocol is the protocol to attempt during PXE network boot or NetBoot.
+	// The available protocols are:
+	//
+	// - IP4 -- PXE (or Apple NetBoot) over IPv4. The default.
+	// - IP6 -- PXE over IPv6. Only meaningful for EFI virtual machines.
+	NetworkBootProtocol VirtualMachineBootOptionsNetworkBootProtocol `json:"networkBootProtocol,omitempty"`
+}
+
 // +kubebuilder:validation:Enum=Direct;Linked
 
 // VirtualMachineDeployMode represents the available modes in which a VM may be
@@ -793,6 +886,13 @@ type VirtualMachineSpec struct {
 	//
 	// Defaults to Online.
 	PromoteDisksMode VirtualMachinePromoteDisksMode `json:"promoteDisksMode,omitempty"`
+
+	// +optional
+
+	// BootOptions describes the settings that control the boot behavior of the
+	// virtual machine. These settings take effect during the next power-on of the
+	// virtual machine.
+	BootOptions *VirtualMachineBootOptions `json:"bootOptions,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options

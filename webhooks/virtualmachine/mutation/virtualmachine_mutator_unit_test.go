@@ -176,7 +176,7 @@ func unitTestsMutating() {
 				It("Should add default network interface with name set in the configMap Network", func() {
 					configMap := &corev1.ConfigMap{
 						ObjectMeta: metav1.ObjectMeta{
-							Namespace: "vmware-system-vmop",
+							Namespace: ctx.Namespace,
 							Name:      config.ProviderConfigMapName,
 						},
 						Data: map[string]string{"Network": networkName},
@@ -222,7 +222,11 @@ func unitTestsMutating() {
 							Name: "eth0",
 						},
 						{
-							Name: "eth1",
+							Name:    "eth1",
+							Network: &common.PartialObjectRef{},
+						},
+						{
+							Name: "eth2",
 							Network: &common.PartialObjectRef{
 								Name: "do-not-change-this-network-name",
 							},
@@ -231,20 +235,227 @@ func unitTestsMutating() {
 				}
 
 				Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+				Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(3))
 
-				Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(2))
 				iface0 := &ctx.vm.Spec.Network.Interfaces[0]
 				Expect(iface0.Name).To(Equal("eth0"))
 				Expect(iface0.Network).ToNot(BeNil())
 				Expect(iface0.Network.Name).To(BeEmpty())
 				Expect(iface0.Network.Kind).To(Equal("Network"))
 				Expect(iface0.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
 				iface1 := &ctx.vm.Spec.Network.Interfaces[1]
 				Expect(iface1.Name).To(Equal("eth1"))
 				Expect(iface1.Network).ToNot(BeNil())
-				Expect(iface1.Network.Name).To(Equal("do-not-change-this-network-name"))
+				Expect(iface1.Network.Name).To(BeEmpty())
 				Expect(iface1.Network.Kind).To(Equal("Network"))
 				Expect(iface1.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface2 := &ctx.vm.Spec.Network.Interfaces[2]
+				Expect(iface2.Name).To(Equal("eth2"))
+				Expect(iface2.Network).ToNot(BeNil())
+				Expect(iface2.Network.Name).To(Equal("do-not-change-this-network-name"))
+				Expect(iface2.Network.Kind).To(Equal("Network"))
+				Expect(iface2.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+			})
+		})
+	})
+
+	Describe("SetDefaultNetworkOnUpdate", func() {
+
+		Context("When VM Network is nil", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Network = nil
+			})
+
+			// Just any network is OK here - just checking that we don't NPE.
+			When("VDS network", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+					})
+				})
+
+				It("Should not update VM", func() {
+					Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
+					Expect(ctx.vm.Spec.Network).To(BeNil())
+				})
+			})
+		})
+
+		Context("When interface is added without network set", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+					},
+				}
+			})
+
+			When("VDS network", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+					})
+				})
+
+				It("Should set network ref with type vsphere-distributed", func() {
+					Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+					Expect(ctx.vm.Spec.Network.Interfaces).Should(HaveLen(1))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Name).Should(Equal("eth0"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network).ShouldNot(BeNil())
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).Should(Equal("Network"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.APIVersion).Should(Equal("netoperator.vmware.com/v1alpha1"))
+				})
+			})
+
+			When("NSX-T network", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeNSXT
+					})
+				})
+
+				It("Should set network ref with type NSX-T", func() {
+					Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+					Expect(ctx.vm.Spec.Network.Interfaces).Should(HaveLen(1))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Name).Should(Equal("eth0"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network).ShouldNot(BeNil())
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).Should(Equal("VirtualNetwork"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.APIVersion).Should(Equal("vmware.com/v1alpha1"))
+				})
+			})
+
+			When("VPC network", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
+					})
+				})
+
+				It("Should set network ref with type SubnetSet", func() {
+					Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+					Expect(ctx.vm.Spec.Network.Interfaces).Should(HaveLen(1))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Name).Should(Equal("eth0"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network).ShouldNot(BeNil())
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).Should(Equal("SubnetSet"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.APIVersion).Should(Equal("crd.nsx.vmware.com/v1alpha1"))
+				})
+			})
+
+			When("Named network", func() {
+				const networkName = "VM Network"
+
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.NetworkProviderType = pkgcfg.NetworkProviderTypeNamed
+					})
+
+					configMap := &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: ctx.Namespace,
+							Name:      config.ProviderConfigMapName,
+						},
+						Data: map[string]string{"Network": networkName},
+					}
+					Expect(ctx.Client.Create(ctx, configMap)).To(Succeed())
+				})
+
+				It("Should set network ref with name set in the configMap Network", func() {
+					Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+					Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(1))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network).ShouldNot(BeNil())
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).To(BeEmpty())
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.APIVersion).To(BeEmpty())
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Name).To(Equal(networkName))
+				})
+
+				Context("Network ref is partial set", func() {
+					BeforeEach(func() {
+						ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name:    "eth0",
+								Network: &common.PartialObjectRef{},
+							},
+							{
+								Name: "eth1",
+								Network: &common.PartialObjectRef{
+									Name: "my-network",
+								},
+							},
+						}
+
+					})
+
+					It("Should update network ref", func() {
+						Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+						Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(2))
+
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Name).To(Equal("eth0"))
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network).ShouldNot(BeNil())
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).To(BeEmpty())
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network.APIVersion).To(BeEmpty())
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Name).To(Equal(networkName))
+
+						Expect(ctx.vm.Spec.Network.Interfaces[1].Name).To(Equal("eth1"))
+						Expect(ctx.vm.Spec.Network.Interfaces[1].Network).ShouldNot(BeNil())
+						Expect(ctx.vm.Spec.Network.Interfaces[1].Network.Kind).To(BeEmpty())
+						Expect(ctx.vm.Spec.Network.Interfaces[1].Network.APIVersion).To(BeEmpty())
+						Expect(ctx.vm.Spec.Network.Interfaces[1].Network.Name).To(Equal("my-network"))
+					})
+				})
+			})
+		})
+
+		Context("VM Network.Interfaces is not empty", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+				})
+			})
+
+			It("Should set default network for interfaces that don't have it set", func() {
+				ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+						},
+						{
+							Name:    "eth1",
+							Network: &common.PartialObjectRef{},
+						},
+						{
+							Name: "eth2",
+							Network: &common.PartialObjectRef{
+								Name: "do-not-change-this-network-name",
+							},
+						},
+					},
+				}
+
+				Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+				Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(3))
+
+				iface0 := &ctx.vm.Spec.Network.Interfaces[0]
+				Expect(iface0.Name).To(Equal("eth0"))
+				Expect(iface0.Network).ToNot(BeNil())
+				Expect(iface0.Network.Name).To(BeEmpty())
+				Expect(iface0.Network.Kind).To(Equal("Network"))
+				Expect(iface0.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface1 := &ctx.vm.Spec.Network.Interfaces[1]
+				Expect(iface1.Name).To(Equal("eth1"))
+				Expect(iface1.Network).ToNot(BeNil())
+				Expect(iface1.Network.Name).To(BeEmpty())
+				Expect(iface1.Network.Kind).To(Equal("Network"))
+				Expect(iface1.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
+
+				iface2 := &ctx.vm.Spec.Network.Interfaces[2]
+				Expect(iface2.Name).To(Equal("eth2"))
+				Expect(iface2.Network).ToNot(BeNil())
+				Expect(iface2.Network.Name).To(Equal("do-not-change-this-network-name"))
+				Expect(iface2.Network.Kind).To(Equal("Network"))
+				Expect(iface2.Network.APIVersion).To(Equal("netoperator.vmware.com/v1alpha1"))
 			})
 		})
 	})

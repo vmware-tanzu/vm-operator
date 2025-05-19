@@ -253,6 +253,22 @@ type VirtualMachinePublishRequestSpec struct {
 	// automatically deleted. If this field is set to zero then the request
 	// resource is eligible for deletion immediately after it finishes.
 	TTLSecondsAfterFinished *int64 `json:"ttlSecondsAfterFinished,omitempty"`
+
+	// +optional
+
+	// GroupName describes the name of a VirtualMachineGroupPublishRequest
+	// resource used to manage this VirtualMachinePublishRequest and other
+	// VirtualMachinePublishRequests together as a collective group.
+	//
+	// When managed by a group:
+	//
+	// - An OwnerReference is placed on the VirtualMachinePublishRequest that
+	// points to the VirtualMachineGroupPublishRequest.
+	// - Deleting the VirtualMachineGroupPublishRequest will delete all the
+	// VirtualMachinePublishRequest that is managed by the same group.
+	// - Deleting the VirtualMachinePublishRequest will be blocked as long as
+	// it is managed by a group.
+	GroupName string `json:"groupName,omitempty"`
 }
 
 // VirtualMachinePublishRequestStatus defines the observed state of a

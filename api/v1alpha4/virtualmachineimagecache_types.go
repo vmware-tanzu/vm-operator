@@ -87,7 +87,7 @@ type VirtualMachineImageCacheFileStatus struct {
 	ID string `json:"id"`
 
 	// Type describes the type of disk.
-	Type VirtualMachineVolumeType `json:"type"`
+	Type VolumeType `json:"type"`
 
 	// TODO(akutz) In the future there may be additional information about the
 	//             disk, such as its sector format (512 vs 4k), is encrypted,

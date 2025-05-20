@@ -96,7 +96,7 @@ func cdromTests() {
 			When("VM.Spec.Cdrom is empty and VM has no existing CD-ROM device", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = nil
+					vmCtx.VM.Spec.Hardware = nil
 				})
 
 				It("should return an empty list of device changes", func() {
@@ -107,15 +107,17 @@ func cdromTests() {
 			When("VM.Spec.Cdrom adds a new CD-ROM device", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -239,24 +241,26 @@ func cdromTests() {
 			When("VM.Spec.Cdrom adds multiple new CD-ROM devices with different connection state", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
-						},
-						{
-							Name: cdromName2,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: cvmiName,
-								Kind: cvmiKind,
+							{
+								Name: cdromName2,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: cvmiName,
+									Kind: cvmiKind,
+								},
+								AllowGuestControl: ptr.To(false),
+								Connected:         ptr.To(false),
 							},
-							AllowGuestControl: ptr.To(false),
-							Connected:         ptr.To(false),
 						},
 					}
 
@@ -303,19 +307,21 @@ func cdromTests() {
 			When("VM.Spec.Cdrom adds multiple new CD-ROM devices assigning to different SATA controllers", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
 							},
-						},
-						{
-							Name: cdromName2,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: cvmiName,
-								Kind: cvmiKind,
+							{
+								Name: cdromName2,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: cvmiName,
+									Kind: cvmiKind,
+								},
 							},
 						},
 					}
@@ -383,15 +389,17 @@ func cdromTests() {
 			When("VM.Spec.Cdrom removes existing CD-ROM devices", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 					curDevices = object.VirtualDeviceList{
@@ -430,16 +438,18 @@ func cdromTests() {
 			When("VM.Spec.Cdrom updates existing CD-ROM devices connection", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName2,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName2,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								// Disconnect the CD-ROM device and disallow guest control.
+								AllowGuestControl: ptr.To(false),
+								Connected:         ptr.To(false),
 							},
-							// Disconnect the CD-ROM device and disallow guest control.
-							AllowGuestControl: ptr.To(false),
-							Connected:         ptr.To(false),
 						},
 					}
 					curDevices = object.VirtualDeviceList{
@@ -473,16 +483,18 @@ func cdromTests() {
 			When("VM.spec.Cdrom replaces an existing CD-ROM device", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							// CD-ROM to be added with a new backing image.
-							Name: cdromName2,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: cvmiName,
-								Kind: cvmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								// CD-ROM to be added with a new backing image.
+								Name: cdromName2,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: cvmiName,
+									Kind: cvmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 					curDevices = object.VirtualDeviceList{
@@ -547,15 +559,17 @@ func cdromTests() {
 			When("VM.Spec.Cdrom specifics a VMI cannot be found", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: "non-existent-vmi",
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: "non-existent-vmi",
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -570,15 +584,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, false, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -593,15 +609,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeOvf)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -616,15 +634,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, false, false, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -639,15 +659,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, false, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -660,15 +682,17 @@ func cdromTests() {
 			When("VM.Spec.Cdrom specifics a CVMI cannot be found", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: "non-existent-cvmi",
-								Kind: cvmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: "non-existent-cvmi",
+									Kind: cvmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -683,15 +707,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, false, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: cvmiName,
-								Kind: cvmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: cvmiName,
+									Kind: cvmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -706,15 +732,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeOvf)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: cvmiName,
-								Kind: cvmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: cvmiName,
+									Kind: cvmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -729,15 +757,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, false, false, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: cvmiName,
-								Kind: cvmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: cvmiName,
+									Kind: cvmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -752,15 +782,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, false, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: cvmiName,
-								Kind: cvmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: cvmiName,
+									Kind: cvmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -773,15 +805,17 @@ func cdromTests() {
 			When("VM.Spec.Cdrom specifies an invalid image kind", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: "invalid-kind",
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: "invalid-kind",
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -796,15 +830,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, "", ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -819,15 +855,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, "invalid-item-uuid", true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -882,15 +920,17 @@ func cdromTests() {
 
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, itemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -911,15 +951,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 
@@ -957,12 +999,14 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
 							},
 						},
 					}
@@ -1106,15 +1150,17 @@ func cdromTests() {
 						},
 					}
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -1154,15 +1200,17 @@ func cdromTests() {
 					}
 
 					// Update the CD-ROM device to be disconnected and disallow guest control.
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(false),
+								Connected:         ptr.To(false),
 							},
-							AllowGuestControl: ptr.To(false),
-							Connected:         ptr.To(false),
 						},
 					}
 				})
@@ -1191,15 +1239,17 @@ func cdromTests() {
 			When("error getting backing file name by image ref", func() {
 
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: "non-existent-vmi",
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: "non-existent-vmi",
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -1242,15 +1292,17 @@ func cdromTests() {
 
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})
@@ -1265,15 +1317,17 @@ func cdromTests() {
 				BeforeEach(func() {
 					k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, imgregv1a1.ContentLibraryItemTypeIso)
 
-					vmCtx.VM.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: cdromName1,
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{
+							{
+								Name: cdromName1,
+								Image: vmopv1.VirtualMachineImageRef{
+									Name: vmiName,
+									Kind: vmiKind,
+								},
+								AllowGuestControl: ptr.To(true),
+								Connected:         ptr.To(true),
 							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
 						},
 					}
 				})

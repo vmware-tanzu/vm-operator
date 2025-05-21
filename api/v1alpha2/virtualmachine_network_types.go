@@ -69,9 +69,6 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Please note this field may not contain IP4 addresses if DHCP4 is set
 	// to true or IP6 addresses if DHCP6 is set to true.
 	//
-	// Please note if the Interfaces field is non-empty then this field is
-	// ignored and should be specified on the elements in the Interfaces list.
-	//
 	// +optional
 	Addresses []string `json:"addresses,omitempty"`
 

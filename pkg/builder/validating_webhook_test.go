@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgctxfake "github.com/vmware-tanzu/vm-operator/pkg/context/fake"
 )
@@ -93,12 +94,16 @@ var _ = Describe("NewValidatingWebhook", func() {
 			ExpectWithOffset(1, r.Allowed).To(BeTrue())
 		}
 
-		assertInvalidChar := func(req admission.Request) {
+		assertNotOkay := func(req admission.Request, code int32, msg string) {
 			r := wh.Handle(ctx, req)
 			ExpectWithOffset(1, r.Result).ToNot(BeNil())
-			ExpectWithOffset(1, r.Result.Message).To(Equal(`invalid character '\x00' looking for beginning of value`))
-			ExpectWithOffset(1, r.Result.Code).To(Equal(int32(400)))
+			ExpectWithOffset(1, r.Result.Message).To(Equal(msg))
+			ExpectWithOffset(1, r.Result.Code).To(Equal(code))
 			ExpectWithOffset(1, r.Allowed).To(BeFalse())
+		}
+
+		assertInvalidChar := func(req admission.Request) {
+			assertNotOkay(req, 400, `invalid character '\x00' looking for beginning of value`)
 		}
 
 		It("should return a new webhook handler", func() {
@@ -145,6 +150,27 @@ var _ = Describe("NewValidatingWebhook", func() {
 						assertInvalidChar(req)
 					})
 				})
+
+				When("skipping validation", func() {
+					BeforeEach(func() {
+						obj.SetAnnotations(map[string]string{
+							pkgconst.SkipValidationAnnotationKey: "",
+						})
+					})
+					When("privileged user", func() {
+						It("should return true", func() {
+							req := getAdmissionRequest(obj, admissionv1.Create)
+							req.UserInfo.Groups = []string{"system:masters"}
+							assertOkay(req, pkgbuilder.SkipValidationAllowed)
+						})
+					})
+					When("unprivileged user", func() {
+						It("should return false", func() {
+							req := getAdmissionRequest(obj, admissionv1.Create)
+							assertNotOkay(req, 403, pkgbuilder.SkipValidationDenied)
+						})
+					})
+				})
 			})
 
 			Context("update", func() {
@@ -181,6 +207,27 @@ var _ = Describe("NewValidatingWebhook", func() {
 						req := getAdmissionRequest(obj, admissionv1.Update)
 						req.AdmissionRequest.OldObject.Raw = []byte{0}
 						assertInvalidChar(req)
+					})
+				})
+
+				When("skipping validation", func() {
+					BeforeEach(func() {
+						obj.SetAnnotations(map[string]string{
+							pkgconst.SkipValidationAnnotationKey: "",
+						})
+					})
+					When("privileged user", func() {
+						It("should return true", func() {
+							req := getAdmissionRequest(obj, admissionv1.Update)
+							req.UserInfo.Groups = []string{"system:masters"}
+							assertOkay(req, pkgbuilder.SkipValidationAllowed)
+						})
+					})
+					When("unprivileged user", func() {
+						It("should return false", func() {
+							req := getAdmissionRequest(obj, admissionv1.Update)
+							assertNotOkay(req, 403, pkgbuilder.SkipValidationDenied)
+						})
 					})
 				})
 			})

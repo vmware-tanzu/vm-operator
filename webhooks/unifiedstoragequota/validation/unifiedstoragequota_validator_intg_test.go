@@ -21,6 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/unifiedstoragequota/validation"
@@ -64,7 +66,7 @@ func intgTestsValidateCreate() {
 		vm, oldVM   *vmopv1.VirtualMachine
 		obj, oldObj []byte
 
-		r *validation.RequestedCapacity
+		r *validation.CapacityResponse
 
 		httpClient = &http.Client{
 			Transport: &http.Transport{
@@ -126,7 +128,7 @@ func intgTestsValidateCreate() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		r = &validation.RequestedCapacity{}
+		r = &validation.CapacityResponse{}
 		Expect(json.NewDecoder(resp.Body).Decode(r)).To(Succeed())
 
 		Expect(resp.Body.Close()).To(Succeed())
@@ -143,6 +145,25 @@ func intgTestsValidateCreate() {
 					},
 				},
 			}
+		})
+
+		When("vm has skip annotation", func() {
+			BeforeEach(func() {
+				vm.Annotations = map[string]string{
+					pkgconst.SkipValidationAnnotationKey: "",
+				}
+			})
+
+			JustBeforeEach(func() {
+				if r.RequestedCapacity.Capacity == resource.MustParse("0") {
+					r.RequestedCapacity.Capacity = resource.Quantity{}
+				}
+			})
+
+			It("should return zero capacity", func() {
+				Expect(r).ToNot(BeNil())
+				Expect(*r).To(Equal(validation.CapacityResponse{Response: webhook.Allowed(pkgbuilder.SkipValidationAllowed)}))
+			})
 		})
 
 		When("vm uses VirtualMachineImage", func() {
@@ -193,7 +214,7 @@ func intgTestsValidateUpdate() {
 		vm, oldVM   *vmopv1.VirtualMachine
 		obj, oldObj []byte
 
-		r *validation.RequestedCapacity
+		r *validation.CapacityResponse
 
 		httpClient = &http.Client{
 			Transport: &http.Transport{
@@ -261,13 +282,32 @@ func intgTestsValidateUpdate() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		r = &validation.RequestedCapacity{}
+		r = &validation.CapacityResponse{}
 		Expect(json.NewDecoder(resp.Body).Decode(r)).To(Succeed())
 
 		Expect(resp.Body.Close()).To(Succeed())
 	})
 
 	When("update is called", func() {
+		When("vm has skip annotation", func() {
+			BeforeEach(func() {
+				vm.Annotations = map[string]string{
+					pkgconst.SkipValidationAnnotationKey: "",
+				}
+			})
+
+			JustBeforeEach(func() {
+				if r.RequestedCapacity.Capacity == resource.MustParse("0") {
+					r.RequestedCapacity.Capacity = resource.Quantity{}
+				}
+			})
+
+			It("should return zero capacity", func() {
+				Expect(r).ToNot(BeNil())
+				Expect(*r).To(Equal(validation.CapacityResponse{Response: webhook.Allowed(pkgbuilder.SkipValidationAllowed)}))
+			})
+		})
+
 		When("boot disk size has not changed", func() {
 
 			It("should return an empty response", func() {

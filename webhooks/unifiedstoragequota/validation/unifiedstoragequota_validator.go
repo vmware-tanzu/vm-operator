@@ -27,6 +27,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -98,18 +99,24 @@ func (h *RequestedCapacityHandler) Handle(req admission.Request) CapacityRespons
 		handleRequest func(ctx *pkgctx.WebhookRequestContext) CapacityResponse
 	)
 
-	if req.Operation == v1.Create {
+	if req.Operation == v1.Create || req.Operation == v1.Update {
 		obj = &unstructured.Unstructured{}
 		if err := h.DecodeRaw(req.Object, obj); err != nil {
 			return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
 		}
+	}
+
+	if _, ok := obj.GetAnnotations()[pkgconst.SkipValidationAnnotationKey]; ok {
+		// The VM has the skip validation annotation, so just allow this VM to
+		// effectively bypass quota validation by returning 0 to the quota
+		// framework.
+		return CapacityResponse{Response: webhook.Allowed(builder.SkipValidationAllowed)}
+	}
+
+	if req.Operation == v1.Create {
 		handleRequest = h.HandleCreate
 	}
 	if req.Operation == v1.Update {
-		obj = &unstructured.Unstructured{}
-		if err := h.DecodeRaw(req.Object, obj); err != nil {
-			return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
-		}
 		oldObj = &unstructured.Unstructured{}
 		if err := h.DecodeRaw(req.OldObject, oldObj); err != nil {
 			return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
@@ -348,7 +355,7 @@ func (h *RequestedCapacityHandler) WriteResponse(w http.ResponseWriter, response
 		response.Reason = response.Response.Result.Message
 		w.WriteHeader(int(response.Response.Result.Code))
 	}
-	if err := json.NewEncoder(w).Encode(response.RequestedCapacity); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.WebhookContext.Logger.Error(err, "unable to encode and write the response")
 
 		serverError := webhook.Errored(http.StatusInternalServerError, err)

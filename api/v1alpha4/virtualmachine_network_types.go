@@ -70,9 +70,6 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	//
 	// Please note this field may not contain IP4 addresses if DHCP4 is set
 	// to true or IP6 addresses if DHCP6 is set to true.
-	//
-	// Please note if the Interfaces field is non-empty then this field is
-	// ignored and should be specified on the elements in the Interfaces list.
 	Addresses []string `json:"addresses,omitempty"`
 
 	// +optional
@@ -197,7 +194,7 @@ type VirtualMachineNetworkSpec struct {
 	//   * Underscores are not allowed.
 	//   * Dashes are permitted, but not at the start or end of the value.
 	//   * Symbol unicode points, such as emoji, are permitted, ex. ✓. However,
-	//     please notes that the use of emoji, even where allowed, may not
+	//     please note that the use of emoji, even where allowed, may not
 	//     compatible with the guest operating system, so it recommended to
 	//     stick with more common characters for this value.
 	//   * The value may be a valid IP4 or IP6 address. Please note, the use of

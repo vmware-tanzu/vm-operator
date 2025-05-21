@@ -3750,6 +3750,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *
 	out.GuestID = in.GuestID
 	// WARNING: in.PromoteDisksMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.BootOptions requires manual conversion: does not exist in peer-type
+	// WARNING: in.CurrentSnapshot requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -3825,6 +3826,8 @@ func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
 		out.Storage = nil
 	}
 	// WARNING: in.TaskID requires manual conversion: does not exist in peer-type
+	// WARNING: in.CurrentSnapshot requires manual conversion: does not exist in peer-type
+	// WARNING: in.RootSnapshots requires manual conversion: does not exist in peer-type
 	return nil
 }
 

@@ -7,6 +7,7 @@
 package v1alpha4
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -793,6 +794,29 @@ type VirtualMachineSpec struct {
 	//
 	// Defaults to Online.
 	PromoteDisksMode VirtualMachinePromoteDisksMode `json:"promoteDisksMode,omitempty"`
+
+	// +optional
+
+	// CurrentSnapshot represents the desired snapshot that the
+	// virtual machine should point to. This field can have three
+	// possible values:
+	//
+	// The value of this field is nil when the working snapshot is at
+	// the root of the snapshot tree.
+	//
+	// When a new snapshot is requested by creating a new
+	// VirtualMachineSnapshot, the value of this field is set to the
+	// new snapshot resource's name.
+	//
+	// If the value of this field is set to an existing snapshot that
+	// is different from the status.currentSnapshot, the virtual machine is
+	// reverted to the requested snapshot. A revert operation results
+	// in the virtual machine's configuration and data being rolled
+	// back to the state of the snapshot. When other fields of the
+	// VirtualMachineSpec (e.g., PowerState) are updated along with
+	// the revert operation, then those are applied once the revert is
+	// completed.
+	CurrentSnapshot *corev1.LocalObjectReference `json:"currentSnapshot,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options
@@ -977,6 +1001,18 @@ type VirtualMachineStatus struct {
 	// TaskID describes the observed ID of the task created by VM Operator to
 	// perform some long-running operation on the VM.
 	TaskID string `json:"taskID,omitempty"`
+
+	// +optional
+
+	// CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
+	CurrentSnapshot *corev1.TypedObjectReference `json:"currentSnapshot,omitempty"`
+
+	// +optional
+
+	// RootSnapshots represents the observed list of root snapshots of
+	// a VM. These references can effectively be used to iterate over
+	// the entire snapshot chain of a virtual machine.
+	RootSnapshots []corev1.TypedLocalObjectReference `json:"rootSnapshots,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -6659,6 +6659,45 @@ spec:
                       Defaults to true if omitted.
                     type: boolean
                 type: object
+              currentSnapshot:
+                description: |-
+                  CurrentSnapshot represents the desired snapshot that the
+                  virtual machine should point to. This field can have three
+                  possible values:
+
+                  The value of this field is nil when the working snapshot is at
+                  the root of the snapshot tree.
+
+                  When a new snapshot is requested by creating a new
+                  VirtualMachineSnapshot, the value of this field is set to the
+                  new snapshot resource's name.
+
+                  If the value of this field is set to an existing snapshot that
+                  is different from the status.currentSnapshot, the virtual machine is
+                  reverted to the requested snapshot. A revert operation results
+                  in the virtual machine's configuration and data being rolled
+                  back to the state of the snapshot. When other fields of the
+                  VirtualMachineSpec (e.g., PowerState) are updated along with
+                  the revert operation, then those are applied once the revert is
+                  completed.
+                properties:
+                  apiGroup:
+                    description: |-
+                      APIGroup is the group for the resource being referenced.
+                      If APIGroup is not specified, the specified Kind must be in the core API group.
+                      For any other third-party types, APIGroup is required.
+                    type: string
+                  kind:
+                    description: Kind is the type of resource being referenced
+                    type: string
+                  name:
+                    description: Name is the name of resource being referenced
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+                x-kubernetes-map-type: atomic
               guestID:
                 description: |-
                   GuestID describes the desired guest operating system identifier for a VM.
@@ -7536,6 +7575,27 @@ spec:
                       encrypted.
                     type: string
                 type: object
+              currentSnapshot:
+                description: CurrentSnapshot describes the observed working snapshot
+                  of the VirtualMachine.
+                properties:
+                  apiGroup:
+                    description: |-
+                      APIGroup is the group for the resource being referenced.
+                      If APIGroup is not specified, the specified Kind must be in the core API group.
+                      For any other third-party types, APIGroup is required.
+                    type: string
+                  kind:
+                    description: Kind is the type of resource being referenced
+                    type: string
+                  name:
+                    description: Name is the name of resource being referenced
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+                x-kubernetes-map-type: atomic
               hardwareVersion:
                 description: |-
                   HardwareVersion describes the VirtualMachine resource's observed
@@ -8189,6 +8249,34 @@ spec:
                 - PoweredOn
                 - Suspended
                 type: string
+              rootSnapshots:
+                description: |-
+                  RootSnapshots represents the observed list of root snapshots of
+                  a VM. These references can effectively be used to iterate over
+                  the entire snapshot chain of a virtual machine.
+                items:
+                  description: |-
+                    TypedLocalObjectReference contains enough information to let you locate the
+                    typed referenced object inside the same namespace.
+                  properties:
+                    apiGroup:
+                      description: |-
+                        APIGroup is the group for the resource being referenced.
+                        If APIGroup is not specified, the specified Kind must be in the core API group.
+                        For any other third-party types, APIGroup is required.
+                      type: string
+                    kind:
+                      description: Kind is the type of resource being referenced
+                      type: string
+                    name:
+                      description: Name is the name of resource being referenced
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
               storage:
                 description: Storage describes the observed state of the VirtualMachine's
                   storage.

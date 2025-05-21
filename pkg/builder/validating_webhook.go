@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -161,6 +162,18 @@ func (h *validatingWebhookHandler) Handle(_ context.Context, req admission.Reque
 }
 
 func (h *validatingWebhookHandler) HandleValidate(req admission.Request, ctx *pkgctx.WebhookRequestContext) admission.Response {
+
+	if _, ok := ctx.Obj.GetAnnotations()[pkgconst.SkipValidationAnnotationKey]; ok {
+		if !ctx.IsPrivilegedAccount {
+			// Only privileged users may set the skip validation annotation.
+			return webhook.Denied(SkipValidationDenied)
+		}
+
+		// The object has the skip validation annotation, so allow the object to
+		// bypass validation.
+		return webhook.Allowed(SkipValidationAllowed)
+	}
+
 	switch req.Operation {
 	case admissionv1.Create:
 		return h.ValidateCreate(ctx)

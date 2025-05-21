@@ -95,4 +95,8 @@ const (
 	// ClusterModuleNameAnnotationKey is the annotation key for cluster module group name for
 	// the VM. The VM must have a VirtualMachineSetResourcePolicy assigned.
 	ClusterModuleNameAnnotationKey string = "vsphere-cluster-module-group"
+
+	// SkipValidationAnnotationKey is a privileged annotation that may be used
+	// to skip the validation webhooks for a given object.
+	SkipValidationAnnotationKey string = "vmoperator.vmware.com.protected/skip-validation"
 )

@@ -637,7 +637,7 @@ The following steps describe how to provide additional storage with [PersistentV
     spec:
       accessModes:
       - ReadWriteOnce
-      volumeMode: Filesystem
+      volumeMode: Block
       resources:
         requests:
           storage: 8Gi

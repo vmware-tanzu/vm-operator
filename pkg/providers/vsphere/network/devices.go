@@ -38,6 +38,8 @@ func MapEthernetDevicesToSpecIdx(
 	devKeyToSpecIdx := make(map[int32]int)
 
 	if !pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
+		// For immutable, just zip these lists together. This assumes that the
+		// devices are in the same order as the VM Spec.Network.Interfaces.
 		for i := range min(len(ethCards), len(vmCtx.VM.Spec.Network.Interfaces)) {
 			devKeyToSpecIdx[ethCards[i].GetVirtualDevice().Key] = i
 		}
@@ -45,7 +47,7 @@ func MapEthernetDevicesToSpecIdx(
 	}
 
 	for i, interfaceSpec := range vmCtx.VM.Spec.Network.Interfaces {
-		matchingIdx := findMatchingEthCard(vmCtx, client, interfaceSpec, ethCards)
+		matchingIdx := findMatchingEthCardForInterfaceSpec(vmCtx, client, interfaceSpec, ethCards)
 		if matchingIdx >= 0 {
 			devKeyToSpecIdx[ethCards[matchingIdx].GetVirtualDevice().Key] = i
 			ethCards = append(ethCards[:matchingIdx], ethCards[matchingIdx+1:]...)
@@ -54,7 +56,7 @@ func MapEthernetDevicesToSpecIdx(
 
 	return devKeyToSpecIdx
 }
-func findMatchingEthCard(
+func findMatchingEthCardForInterfaceSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
@@ -120,6 +122,13 @@ func findMatchingEthCardVDS(
 		}
 	}
 
+	return findMatchingEthCardNetOpNetIf(netIf, ethCards)
+}
+
+func findMatchingEthCardNetOpNetIf(
+	netIf *netopv1alpha1.NetworkInterface,
+	ethCards object.VirtualDeviceList) int {
+
 	// For NetOP until we start to set the ExternalID we just zip interfaces by backing.
 	for i, dev := range ethCards {
 		dvpg, ok := dev.GetVirtualDevice().Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
@@ -175,6 +184,13 @@ func findMatchingEthCardNSXT(
 		}
 	}
 
+	return findMatchingEthCardNCPNetIf(vnetIf, ethCards)
+}
+
+func findMatchingEthCardNCPNetIf(
+	netIf *ncpv1alpha1.VirtualNetworkInterface,
+	ethCards object.VirtualDeviceList) int {
+
 	for i, dev := range ethCards {
 		bEthCard, ok := dev.(vimtypes.BaseVirtualEthernetCard)
 		if !ok {
@@ -182,7 +198,7 @@ func findMatchingEthCardNSXT(
 		}
 
 		ethCard := bEthCard.GetVirtualEthernetCard()
-		if ethCard.ExternalId == vnetIf.Status.InterfaceID || ethCard.MacAddress == vnetIf.Status.MacAddress {
+		if ethCard.ExternalId == netIf.Status.InterfaceID || ethCard.MacAddress == netIf.Status.MacAddress {
 			return i
 		}
 	}
@@ -196,35 +212,28 @@ func findMatchingEthCardVPC(
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	ethCards object.VirtualDeviceList) int {
 
-	var (
-		networkRefName string
-		networkRefType metav1.TypeMeta
-	)
-
+	var networkRefName string
 	if netRef := interfaceSpec.Network; netRef != nil {
 		networkRefName = netRef.Name
-		networkRefType = netRef.TypeMeta
 	}
 
-	vpcSubnetPort := &vpcv1alpha1.SubnetPort{
+	subnetPort := &vpcv1alpha1.SubnetPort{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      VPCCRName(vmCtx.VM.Name, networkRefName, interfaceSpec.Name),
 			Namespace: vmCtx.VM.Namespace,
 		},
 	}
 
-	switch networkRefType.Kind {
-	case "SubnetSet", "":
-		vpcSubnetPort.Spec.SubnetSet = networkRefName
-	case "Subnet":
-		vpcSubnetPort.Spec.Subnet = networkRefName
-	default:
+	if err := client.Get(vmCtx, ctrlclient.ObjectKeyFromObject(subnetPort), subnetPort); err != nil {
 		return -1
 	}
 
-	if err := client.Get(vmCtx, ctrlclient.ObjectKeyFromObject(vpcSubnetPort), vpcSubnetPort); err != nil {
-		return -1
-	}
+	return findMatchingEthCardVPCSubnetPort(subnetPort, ethCards)
+}
+
+func findMatchingEthCardVPCSubnetPort(
+	subnetPort *vpcv1alpha1.SubnetPort,
+	ethCards object.VirtualDeviceList) int {
 
 	for i, dev := range ethCards {
 		bEthCard, ok := dev.(vimtypes.BaseVirtualEthernetCard)
@@ -233,7 +242,7 @@ func findMatchingEthCardVPC(
 		}
 
 		ethCard := bEthCard.GetVirtualEthernetCard()
-		if ethCard.ExternalId == vpcSubnetPort.Status.Attachment.ID || ethCard.MacAddress == vpcSubnetPort.Status.NetworkInterfaceConfig.MACAddress {
+		if ethCard.ExternalId == subnetPort.Status.Attachment.ID || ethCard.MacAddress == subnetPort.Status.NetworkInterfaceConfig.MACAddress {
 			return i
 		}
 	}

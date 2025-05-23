@@ -37,6 +37,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
@@ -567,7 +568,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 				go func(obj client.Object) {
 					failed := false
 					for err := range chanErr {
-						if err != nil {
+						if err != nil && !errors.Is(err, vsphere.ErrCreatedVM) {
 							failed = true
 							r.Recorder.EmitEvent(obj, "Create", err, false)
 						}

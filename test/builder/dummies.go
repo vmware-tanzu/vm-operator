@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -361,7 +362,7 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 					AllowGuestControl: ptr.To(true),
 				},
 			},
-			GuestID: DummyOSType,
+			GuestID: string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
 		},
 	}
 }
@@ -548,7 +549,7 @@ func DummyVirtualMachineWebConsoleRequest(namespace, wcrName, vmName, pubKey str
 
 func DummyImageAndItemObjectsForCdromBacking(
 	name, ns, kind, storageURI, libItemUUID string,
-	imgReady, imgHasProviderRef, itemObjExists bool,
+	imgReady, imgCached bool, imgSize resource.Quantity, imgHasProviderRef, itemObjExists bool,
 	itemType imgregv1a1.ContentLibraryItemType) []ctrlclient.Object {
 	var imageObj, itemObj ctrlclient.Object
 
@@ -579,10 +580,14 @@ func DummyImageAndItemObjectsForCdromBacking(
 	}
 
 	itemStatus := imgregv1a1.ContentLibraryItemStatus{
-		Type: itemType,
+		Type:        itemType,
+		Cached:      imgCached,
+		SizeInBytes: imgSize,
 		FileInfo: []imgregv1a1.FileInfo{
 			{
-				StorageURI: storageURI,
+				StorageURI:  storageURI,
+				Cached:      imgCached,
+				SizeInBytes: imgSize,
 			},
 		},
 	}

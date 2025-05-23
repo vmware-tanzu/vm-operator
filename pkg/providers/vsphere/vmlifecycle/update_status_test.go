@@ -86,7 +86,7 @@ var _ = Describe("UpdateStatus", func() {
 	})
 
 	JustBeforeEach(func() {
-		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM)
+		err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM)
 		Expect(err).ToNot(HaveOccurred())
 	})
 

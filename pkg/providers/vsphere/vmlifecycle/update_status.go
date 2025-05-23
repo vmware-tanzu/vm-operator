@@ -57,10 +57,12 @@ var (
 	}
 )
 
-func UpdateStatus(
+func ReconcileStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	vcVM *object.VirtualMachine) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling status")
 
 	vm := vmCtx.VM
 

@@ -11,7 +11,9 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/storagepolicyusage"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volume"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
@@ -25,6 +27,11 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 	if err := volume.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize virtualmachine volume controller: %w", err)
+	}
+	if pkgcfg.FromContext(ctx).Features.VMGroups {
+		if err := virtualmachinegroup.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize virtualmachinegroup controller: %w", err)
+		}
 	}
 
 	return nil

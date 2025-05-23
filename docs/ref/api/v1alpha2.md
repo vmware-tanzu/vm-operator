@@ -1186,10 +1186,7 @@ Please note IP4 and IP6 addresses must include the network prefix length,
 ex. 192.168.0.10/24 or 2001:db8:101::a/64.
 
 Please note this field may not contain IP4 addresses if DHCP4 is set
-to true or IP6 addresses if DHCP6 is set to true.
-
-Please note if the Interfaces field is non-empty then this field is
-ignored and should be specified on the elements in the Interfaces list. |
+to true or IP6 addresses if DHCP6 is set to true. |
 | `dhcp4` _boolean_ | DHCP4 indicates whether or not this interface uses DHCP for IP4
 networking.
 
@@ -1208,12 +1205,11 @@ Please note this field is mutually exclusive with IP6 addresses in the
 Addresses field and the Gateway6 field. |
 | `gateway4` _string_ | Gateway4 is the default, IP4 gateway for this interface.
 
+If unset, the gateway from the network provider will be used. However,
+if set to "None", the network provider gateway will be ignored.
+
 Please note this field is only supported if the network connection
 supports manual IP allocation.
-
-If the network connection supports manual IP allocation and the
-Addresses field includes at least one IP4 address, then this field
-is required.
 
 Please note the IP address must include the network prefix length, ex.
 192.168.0.1/24.
@@ -1221,12 +1217,11 @@ Please note the IP address must include the network prefix length, ex.
 Please note this field is mutually exclusive with DHCP4. |
 | `gateway6` _string_ | Gateway6 is the primary IP6 gateway for this interface.
 
+If unset, the gateway from the network provider will be used. However,
+if set to "None", the network provider gateway will be ignored.
+
 Please note this field is only supported if the network connection
 supports manual IP allocation.
-
-If the network connection supports manual IP allocation and the
-Addresses field includes at least one IP6 address, then this field
-is required.
 
 Please note the IP address must include the network prefix length, ex.
 2001:db8:101::1/64.
@@ -1373,6 +1368,12 @@ Please note this information does *not* represent the *observed* network
 state of the VM, but is intended for situations where someone boots a VM
 with no appropriate bootstrap engine and needs to know the network config
 valid for the deployed VM. |
+| `hostName` _string_ | HostName describes the observed hostname reported by the VirtualMachine's
+guest operating system.
+
+Please note, this value is only reported if VMware Tools is installed in
+the guest, and the value may or may not be a fully qualified domain name
+(FQDN), it simply depends on what is reported by the guest. |
 | `interfaces` _[VirtualMachineNetworkInterfaceStatus](#virtualmachinenetworkinterfacestatus) array_ | Interfaces describes the status of the VM's network interfaces. |
 | `ipStacks` _[VirtualMachineNetworkIPStackStatus](#virtualmachinenetworkipstackstatus) array_ | IPStacks describes information about the guest's configured IP networking
 stacks. |

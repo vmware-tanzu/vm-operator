@@ -1497,6 +1497,12 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `host` _string_ | Host describes the hostname or IP address of the infrastructure host that the VirtualMachine is executing on. |
+| `hostName` _string_ | HostName describes the observed hostname reported by the VirtualMachine's
+guest operating system.
+
+Please note, this value is only reported if VMware Tools is installed in
+the guest, and the value may or may not be a fully qualified domain name
+(FQDN), it simply depends on what is reported by the guest. |
 | `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the current power state of the VirtualMachine. |
 | `phase` _[VMStatusPhase](#vmstatusphase)_ | Phase describes the current phase information of the VirtualMachine. |
 | `conditions` _[Condition](#condition) array_ | Conditions describes the current condition information of the VirtualMachine. |

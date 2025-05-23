@@ -328,6 +328,10 @@ func overrideVirtualMachinePublishRequestFieldsFuncs(codecs runtimeserializer.Co
 			c.Fuzz(publishStatus)
 			overrideConditionsObservedGeneration(publishStatus.Conditions)
 		},
+		func(publishReq *vmopv1.VirtualMachinePublishRequest, c fuzz.Continue) {
+			c.Fuzz(publishReq)
+			publishReq.Spec.GroupName = ""
+		},
 	}
 }
 

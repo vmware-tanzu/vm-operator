@@ -1086,6 +1086,21 @@ spec:
               applying a VirtualMachinePublishRequest resource that has the same name
               as said VM in the same namespace as said VM.
             properties:
+              groupName:
+                description: |-
+                  GroupName describes the name of a VirtualMachineGroupPublishRequest
+                  resource used to manage this VirtualMachinePublishRequest and other
+                  VirtualMachinePublishRequests together as a collective group.
+
+                  When managed by a group:
+
+                  - An OwnerReference is placed on the VirtualMachinePublishRequest that
+                  points to the VirtualMachineGroupPublishRequest.
+                  - Deleting the VirtualMachineGroupPublishRequest will delete all the
+                  VirtualMachinePublishRequest that is managed by the same group.
+                  - Deleting the VirtualMachinePublishRequest will be blocked as long as
+                  it is managed by a group.
+                type: string
               source:
                 description: |-
                   Source is the source of the publication request, ex. a VirtualMachine

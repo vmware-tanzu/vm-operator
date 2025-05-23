@@ -1609,6 +1609,7 @@ func autoConvert_v1alpha4_VirtualMachinePublishRequestSpec_To_v1alpha1_VirtualMa
 		return err
 	}
 	out.TTLSecondsAfterFinished = (*int64)(unsafe.Pointer(in.TTLSecondsAfterFinished))
+	// WARNING: in.GroupName requires manual conversion: does not exist in peer-type
 	return nil
 }
 

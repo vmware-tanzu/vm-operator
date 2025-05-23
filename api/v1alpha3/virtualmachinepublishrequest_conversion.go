@@ -13,6 +13,8 @@ import (
 // ConvertTo converts this VirtualMachinePublishRequest to the Hub version.
 func (src *VirtualMachinePublishRequest) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachinePublishRequest)
+	restored := &vmopv1.VirtualMachinePublishRequest{}
+	restore_v1alpha4_VirtualMachinePublishRequestGroupName(dst, restored)
 	return Convert_v1alpha3_VirtualMachinePublishRequest_To_v1alpha4_VirtualMachinePublishRequest(src, dst, nil)
 }
 
@@ -32,4 +34,8 @@ func (src *VirtualMachinePublishRequestList) ConvertTo(dstRaw ctrlconversion.Hub
 func (dst *VirtualMachinePublishRequestList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachinePublishRequestList)
 	return Convert_v1alpha4_VirtualMachinePublishRequestList_To_v1alpha3_VirtualMachinePublishRequestList(src, dst, nil)
+}
+
+func restore_v1alpha4_VirtualMachinePublishRequestGroupName(dst, src *vmopv1.VirtualMachinePublishRequest) {
+	dst.Spec.GroupName = src.Spec.GroupName
 }

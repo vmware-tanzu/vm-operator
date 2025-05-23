@@ -936,8 +936,8 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `id` _string_ | ID describes the value used to locate the disk.
-The value of this field depends on the type of disk.
+| `id` _string_ | ID describes the value used to locate the file.
+The value of this field depends on the type of file.
 For Type=Classic, the ID value describes a datastore path, ex.
 "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk".
 For Type=Managed, the ID value describes a First Class Disk (FCD). |
@@ -974,7 +974,7 @@ _Appears in:_
 be cached. |
 | `datastoreID` _string_ | DatastoreID describes the ID of the datastore to which the image should
 be cached. |
-| `files` _[VirtualMachineImageCacheFileStatus](#virtualmachineimagecachediskstatus) array_ | Disks describes the image's disks cached on this datastore. |
+| `files` _[VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus) array_ | Files describes the image's files cached on this datastore. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cache location.
 
 Generally this should just include the ReadyType condition. |
@@ -1517,10 +1517,7 @@ Please note IP4 and IP6 addresses must include the network prefix length,
 ex. 192.168.0.10/24 or 2001:db8:101::a/64.
 
 Please note this field may not contain IP4 addresses if DHCP4 is set
-to true or IP6 addresses if DHCP6 is set to true.
-
-Please note if the Interfaces field is non-empty then this field is
-ignored and should be specified on the elements in the Interfaces list. |
+to true or IP6 addresses if DHCP6 is set to true. |
 | `dhcp4` _boolean_ | DHCP4 indicates whether or not this interface uses DHCP for IP4
 networking.
 
@@ -1539,12 +1536,11 @@ Please note this field is mutually exclusive with IP6 addresses in the
 Addresses field and the Gateway6 field. |
 | `gateway4` _string_ | Gateway4 is the default, IP4 gateway for this interface.
 
+If unset, the gateway from the network provider will be used. However,
+if set to "None", the network provider gateway will be ignored.
+
 Please note this field is only supported if the network connection
 supports manual IP allocation.
-
-If the network connection supports manual IP allocation and the
-Addresses field includes at least one IP4 address, then this field
-is required.
 
 Please note the IP address must include the network prefix length, ex.
 192.168.0.1/24.
@@ -1552,12 +1548,11 @@ Please note the IP address must include the network prefix length, ex.
 Please note this field is mutually exclusive with DHCP4. |
 | `gateway6` _string_ | Gateway6 is the primary IP6 gateway for this interface.
 
+If unset, the gateway from the network provider will be used. However,
+if set to "None", the network provider gateway will be ignored.
+
 Please note this field is only supported if the network connection
 supports manual IP allocation.
-
-If the network connection supports manual IP allocation and the
-Addresses field includes at least one IP6 address, then this field
-is required.
 
 Please note the IP address must include the network prefix length, ex.
 2001:db8:101::1/64.
@@ -1659,7 +1654,7 @@ for DNS labels:
   * Underscores are not allowed.
   * Dashes are permitted, but not at the start or end of the value.
   * Symbol unicode points, such as emoji, are permitted, ex. ✓. However,
-    please notes that the use of emoji, even where allowed, may not
+    please note that the use of emoji, even where allowed, may not
     compatible with the guest operating system, so it recommended to
     stick with more common characters for this value.
   * The value may be a valid IP4 or IP6 address. Please note, the use of
@@ -1747,6 +1742,12 @@ Please note this information does *not* represent the *observed* network
 state of the VM, but is intended for situations where someone boots a VM
 with no appropriate bootstrap engine and needs to know the network config
 valid for the deployed VM. |
+| `hostName` _string_ | HostName describes the observed hostname reported by the VirtualMachine's
+guest operating system.
+
+Please note, this value is only reported if VMware Tools is installed in
+the guest, and the value may or may not be a fully qualified domain name
+(FQDN), it simply depends on what is reported by the guest. |
 | `interfaces` _[VirtualMachineNetworkInterfaceStatus](#virtualmachinenetworkinterfacestatus) array_ | Interfaces describes the status of the VM's network interfaces. |
 | `ipStacks` _[VirtualMachineNetworkIPStackStatus](#virtualmachinenetworkipstackstatus) array_ | IPStacks describes information about the guest's configured IP networking
 stacks. |
@@ -2432,12 +2433,14 @@ Otherwise, if the VM is deployed from an OVF template that defines a
 guest ID, then that value is used.
 The guest ID from VirtualMachineClass used to deploy the VM is ignored.
 
-For a complete list of supported values, refer to https://bit.ly/3TiZX3G.
-Note that some guest ID values may require a minimal hardware version,
-which can be set using the `spec.minHardwareVersion` field.
+For a complete list of supported values, please refer to
+https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html.
+
+Please note that some guest ID values may require a minimal hardware
+version, which can be set using the `spec.minHardwareVersion` field.
 To see the mapping between virtual hardware versions and the product
-versions that support a specific guest ID, visit the following link:
-https://knowledge.broadcom.com/external/article/315655/virtual-machine-hardware-versions.html
+versions that support a specific guest ID, please refer to
+https://knowledge.broadcom.com/external/article/315655/virtual-machine-hardware-versions.html.
 
 Please note that this field is immutable after the VM is powered on.
 To change the guest ID after the VM is powered on, the VM must be powered
@@ -2638,7 +2641,7 @@ _Underlying type:_ `string`
 VirtualMachineVolumeType describes the type of a VirtualMachine volume.
 
 _Appears in:_
-- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachediskstatus)
+- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 

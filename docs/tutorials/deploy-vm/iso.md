@@ -115,7 +115,7 @@ spec:
 ```
 
 1.  :wave: The `storage` field specifies the size of the VM's boot disk.
-2.  :wave: The `guestID` field is required to specify the [guest operating system identifier](https://dp-downloads.broadcom.com/api-content/apis/API_VWSA_001/8.0U3/html/ReferenceGuides/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html) when deploying a VM from an ISO image.
+2.  :wave: The `guestID` field is required to specify the [guest operating system identifier](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html) when deploying a VM from an ISO image.
 3.  :wave: The `name` field must consist of at least two lowercase letters or digits and be unique among all CD-ROM devices attached to the VM.
 4.  :wave: The `image.kind` field specifies the type of the ISO image (either `VirtualMachineImage` or `ClusterVirtualMachineImage`).
 5.  :wave: The `image.name` field specifies the Kubernetes object name of the ISO type `VirtualMachineImage` or `ClusterVirtualMachineImage` resource.

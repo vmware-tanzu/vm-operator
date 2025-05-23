@@ -869,7 +869,7 @@ govc vm.info -vm.uuid $(k get vm -o jsonpath='{.spec.instanceUUID}' -n $ns $name
 
 ### Guest ID
 
-The optional field `spec.guestID` that may be used when deploying a VM to specify its guest operating system identifier. This field may also be updated when a VM is powered off. The value of this field is derived from the list of [supported guest identifiers](https://dp-downloads.broadcom.com/api-content/apis/API_VWSA_001/8.0U2/html/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html). The following command may be used to query the currently supported guest identifiers for a given vSphere environment:
+The optional field `spec.guestID` that may be used when deploying a VM to specify its guest operating system identifier. This field may also be updated when a VM is powered off. The value of this field is derived from the list of [supported guest identifiers](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html). The following command may be used to query the currently supported guest identifiers for a given vSphere environment:
 
 ```shell
 govc vm.option.info -cluster CLUSTER_NAME

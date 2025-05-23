@@ -692,12 +692,14 @@ type VirtualMachineSpec struct {
 	// guest ID, then that value is used.
 	// The guest ID from VirtualMachineClass used to deploy the VM is ignored.
 	//
-	// For a complete list of supported values, refer to https://bit.ly/3TiZX3G.
-	// Note that some guest ID values may require a minimal hardware version,
-	// which can be set using the `spec.minHardwareVersion` field.
+	// For a complete list of supported values, please refer to
+	// https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html.
+	//
+	// Please note that some guest ID values may require a minimal hardware
+	// version, which can be set using the `spec.minHardwareVersion` field.
 	// To see the mapping between virtual hardware versions and the product
-	// versions that support a specific guest ID, visit the following link:
-	// https://knowledge.broadcom.com/external/article/315655/virtual-machine-hardware-versions.html
+	// versions that support a specific guest ID, please refer to
+	// https://knowledge.broadcom.com/external/article/315655/virtual-machine-hardware-versions.html.
 	//
 	// Please note that this field is immutable after the VM is powered on.
 	// To change the guest ID after the VM is powered on, the VM must be powered

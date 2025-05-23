@@ -30,6 +30,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -64,8 +65,7 @@ func UpdateStatus(
 	vm := vmCtx.VM
 
 	// This is implicitly true: ensure the condition is set since it is how we determine the old v1a1 Phase.
-	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
-	// TODO: Might set other "prereq" conditions too for version conversion but we'd have to fib a little.
+	conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
 
 	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {
 		if vm.Status.Class == nil {
@@ -85,10 +85,15 @@ func UpdateStatus(
 	}
 
 	var (
-		err     error
-		errs    []error
-		summary = vmCtx.MoVM.Summary
+		err         error
+		errs        []error
+		extraConfig map[string]string
+		summary     = vmCtx.MoVM.Summary
 	)
+
+	if config := vmCtx.MoVM.Config; config != nil {
+		extraConfig = object.OptionValueList(config.ExtraConfig).StringMap()
+	}
 
 	vm.Status.PowerState = convertPowerState(summary.Runtime.PowerState)
 	vm.Status.UniqueID = vcVM.Reference().Value
@@ -96,11 +101,11 @@ func UpdateStatus(
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
 	hardwareVersion, _ := vimtypes.ParseHardwareVersion(summary.Config.HwVersion)
 	vm.Status.HardwareVersion = int32(hardwareVersion)
-	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest)
+	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest, extraConfig)
 	updateStorageStatus(vmCtx.VM, vmCtx.MoVM)
 
 	if pkgcfg.FromContext(vmCtx).AsyncSignalEnabled {
-		updateProbeStatus(vmCtx, vm, vmCtx.MoVM)
+		updateProbeStatus(vmCtx, vm, vmCtx.MoVM, extraConfig)
 	}
 
 	vm.Status.NodeName, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
@@ -118,7 +123,7 @@ func UpdateStatus(
 	MarkReconciliationCondition(vmCtx.VM)
 	MarkVMToolsRunningStatusCondition(vmCtx.VM, vmCtx.MoVM.Guest)
 	MarkCustomizationInfoCondition(vmCtx.VM, vmCtx.MoVM.Guest)
-	MarkBootstrapCondition(vmCtx.VM, vmCtx.MoVM.Config)
+	MarkBootstrapCondition(vmCtx.VM, extraConfig)
 
 	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
 		MarkVMClassConfigurationSynced(vmCtx, vmCtx.VM, k8sClient)
@@ -399,21 +404,15 @@ func MarkReconciliationCondition(vm *vmopv1.VirtualMachine) {
 
 func MarkBootstrapCondition(
 	vm *vmopv1.VirtualMachine,
-	configInfo *vimtypes.VirtualMachineConfigInfo) {
+	extraConfig map[string]string) {
 
-	if configInfo == nil {
-		conditions.MarkUnknown(
-			vm, vmopv1.GuestBootstrapCondition, "NoConfigInfo", "")
-		return
-	}
-
-	if len(configInfo.ExtraConfig) == 0 {
+	if len(extraConfig) == 0 {
 		conditions.MarkUnknown(
 			vm, vmopv1.GuestBootstrapCondition, "NoExtraConfig", "")
 		return
 	}
 
-	status, reason, msg, ok := util.GetBootstrapConditionValues(configInfo)
+	status, reason, msg, ok := util.GetBootstrapConditionValues(extraConfig)
 	if !ok {
 		conditions.MarkUnknown(
 			vm, vmopv1.GuestBootstrapCondition, "NoBootstrapStatus", "")
@@ -642,7 +641,13 @@ func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
 
 // updateGuestNetworkStatus updates the provided VM's status.network
 // field with information from the guestInfo.
-func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *vimtypes.GuestInfo) {
+//
+//nolint:gocyclo
+func updateGuestNetworkStatus(
+	vm *vmopv1.VirtualMachine,
+	gi *vimtypes.GuestInfo,
+	extraConfig map[string]string) {
+
 	var (
 		primaryIP4      string
 		primaryIP6      string
@@ -650,24 +655,28 @@ func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *vimtypes.GuestInfo)
 		ipStackStatuses []vmopv1.VirtualMachineNetworkIPStackStatus
 	)
 
+	validatePrimaryIP := func(ip string) net.IP {
+		if a := net.ParseIP(ip); len(a) > 0 {
+			// Ignore local IP addresses, i.e. addresses that are only valid on
+			// the guest OS. Please note this does not include private, or RFC
+			// 1918 (IPv4) and RFC 4193 (IPv6) addresses, ex. 192.168.0.2.
+			if !a.IsUnspecified() &&
+				!a.IsLinkLocalMulticast() &&
+				!a.IsLinkLocalUnicast() &&
+				!a.IsLoopback() {
+				return a
+			}
+		}
+		return nil
+	}
+
 	if gi != nil {
 		if ip := gi.IpAddress; ip != "" {
-			// Only act on the IP if it is valid.
-			if a := net.ParseIP(ip); len(a) > 0 {
-
-				// Ignore local IP addresses, i.e. addresses that are only valid on
-				// the guest OS. Please note this does not include private, or RFC
-				// 1918 (IPv4) and RFC 4193 (IPv6) addresses, ex. 192.168.0.2.
-				if !a.IsUnspecified() &&
-					!a.IsLinkLocalMulticast() &&
-					!a.IsLinkLocalUnicast() &&
-					!a.IsLoopback() {
-
-					if a.To4() != nil {
-						primaryIP4 = ip
-					} else {
-						primaryIP6 = ip
-					}
+			if a := validatePrimaryIP(ip); a != nil {
+				if a.To4() != nil {
+					primaryIP4 = ip
+				} else {
+					primaryIP6 = ip
 				}
 			}
 		}
@@ -713,6 +722,21 @@ func updateGuestNetworkStatus(vm *vmopv1.VirtualMachine, gi *vimtypes.GuestInfo)
 			ipStackStatuses = make([]vmopv1.VirtualMachineNetworkIPStackStatus, lip)
 			for i := range gi.IpStack {
 				ipStackStatuses[i] = guestIPStackInfoToIPStackStatus(&gi.IpStack[i])
+			}
+		}
+	}
+
+	if bs := vm.Spec.Bootstrap; bs != nil && bs.CloudInit != nil {
+		// When CloudInit is used, prefer the local IPs that the VMware datasource publishes.
+		if ip4 := extraConfig[constants.CloudInitGuestInfoLocalIPv4Key]; ip4 != "" {
+			if a := validatePrimaryIP(ip4); a != nil && a.To4() != nil {
+				primaryIP4 = ip4
+			}
+		}
+
+		if ip6 := extraConfig[constants.CloudInitGuestInfoLocalIPv6Key]; ip6 != "" {
+			if a := validatePrimaryIP(ip6); a != nil && a.To4() == nil {
+				primaryIP6 = ip6
 			}
 		}
 	}
@@ -972,7 +996,8 @@ func heartbeatValue(value string) int {
 func updateProbeStatus(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine) {
+	moVM mo.VirtualMachine,
+	extraConfig map[string]string) {
 
 	p := vm.Spec.ReadinessProbe
 	if p == nil || p.TCPSocket != nil {
@@ -988,7 +1013,7 @@ func updateProbeStatus(
 	case p.GuestHeartbeat != nil:
 		result, resultMsg = updateProbeStatusHeartbeat(vm, moVM)
 	case p.GuestInfo != nil:
-		result, resultMsg = updateProbeStatusGuestInfo(vm, moVM)
+		result, resultMsg = updateProbeStatusGuestInfo(vm, extraConfig)
 	}
 
 	var cond *metav1.Condition
@@ -1042,46 +1067,26 @@ func updateProbeStatusHeartbeat(
 
 func updateProbeStatusGuestInfo(
 	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine) (probeResult, string) { //nolint:unparam
+	extraConfig map[string]string) (probeResult, string) { //nolint:unparam
 
-	numProbes := len(vm.Spec.ReadinessProbe.GuestInfo)
-	if numProbes == 0 {
+	if len(vm.Spec.ReadinessProbe.GuestInfo) == 0 {
 		return probeResultUnknown, ""
 	}
 
-	// Build the list of guestinfo keys.
-	var (
-		guestInfoKeys    = make([]string, numProbes)
-		guestInfoKeyVals = make(map[string]string, numProbes)
-	)
-	for i := range vm.Spec.ReadinessProbe.GuestInfo {
-		gi := vm.Spec.ReadinessProbe.GuestInfo[i]
-		giKey := fmt.Sprintf("guestinfo.%s", gi.Key)
-		guestInfoKeys[i] = giKey
-		guestInfoKeyVals[giKey] = gi.Value
-	}
+	for _, gi := range vm.Spec.ReadinessProbe.GuestInfo {
+		key := fmt.Sprintf("guestinfo.%s", gi.Key)
 
-	if moVM.Config == nil {
-		panic("moVM.Config is nil")
-	}
-
-	results := object.OptionValueList(moVM.Config.ExtraConfig).StringMap()
-
-	for i := range guestInfoKeys {
-		key := guestInfoKeys[i]
-		expectedVal := guestInfoKeyVals[key]
-
-		actualVal, ok := results[key]
+		actualVal, ok := extraConfig[key]
 		if !ok {
 			return probeResultFailure, ""
 		}
 
-		if expectedVal == "" {
+		if gi.Value == "" {
 			// Matches everything.
 			continue
 		}
 
-		expectedValRx, err := regexp.Compile(expectedVal)
+		expectedValRx, err := regexp.Compile(gi.Value)
 		if err != nil {
 			// Treat an invalid expressions as a wildcard too.
 			continue

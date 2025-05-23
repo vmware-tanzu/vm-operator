@@ -5,308 +5,138 @@
 package util_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
-var _ = Describe("GetBootstrapConditionValuesTest", func() {
-	var (
-		configInfo *vimtypes.VirtualMachineConfigInfo
-		status     bool
-		reason     string
-		msg        string
-		ok         bool
-	)
-	JustBeforeEach(func() {
-		status, reason, msg, ok = util.GetBootstrapConditionValues(configInfo)
-	})
-	AfterEach(func() {
-		configInfo = nil
-		status = false
-		reason = ""
-		msg = ""
-		ok = false
-	})
-	assertResult := func(s bool, r, m string, o bool) {
-		ExpectWithOffset(1, status).To(Equal(s))
-		ExpectWithOffset(1, reason).To(Equal(r))
-		ExpectWithOffset(1, msg).To(Equal(m))
-		ExpectWithOffset(1, ok).To(Equal(o))
-	}
-	When("configInfo is nil", func() {
-		It("should return status=false, reason=\"\", msg=\"\", ok=false", func() {
-			assertResult(false, "", "", false)
-		})
-	})
-	When("extraConfig is zero-length", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{}
-		})
-		It("should return status=false, reason=\"\", msg=\"\", ok=false", func() {
-			assertResult(false, "", "", false)
-		})
-	})
-	When("extraConfig is missing guestinfo key", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   "key1",
-						Value: "val1",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"\", msg=\"\", ok=false", func() {
-			assertResult(false, "", "", false)
-		})
-	})
-	When("guestinfo val is empty", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   "key1",
-						Value: "val1",
-					},
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"\", msg=\"\", ok=true", func() {
-			assertResult(false, "", "", true)
-		})
-	})
-	When("status is 1", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "1",
-					},
-				},
-			}
-		})
-		It("should return status=true, reason=\"\", msg=\"\", ok=true", func() {
-			assertResult(true, "", "", true)
-		})
-	})
-	When("status is TRUE", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "TRUE",
-					},
-				},
-			}
-		})
-		It("should return status=true, reason=\"\", msg=\"\", ok=true", func() {
-			assertResult(true, "", "", true)
-		})
-	})
-	When("status is true", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "true",
-					},
-				},
-			}
-		})
-		It("should return status=true, reason=\"\", msg=\"\", ok=true", func() {
-			assertResult(true, "", "", true)
-		})
-	})
-	When("status is true with a reason", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "true,my-reason",
-					},
-				},
-			}
-		})
-		It("should return status=true, reason=\"my-reason\", msg=\"\", ok=true", func() {
-			assertResult(true, "my-reason", "", true)
-		})
-	})
-	When("status is true with a reason and message", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "true,my-reason,my,comma,delimited,message",
-					},
-				},
-			}
-		})
-		It("should return status=true, reason=\"my-reason\", msg=\"my,comma,delimited,message\", ok=true", func() {
-			assertResult(true, "my-reason", "my,comma,delimited,message", true)
-		})
-	})
-	When("status is true with a reason and message with leading or trailing whitespace", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "  true ,  my-reason ,   my,comma,delimited,message ",
-					},
-				},
-			}
-		})
-		It("should return status=true, reason=\"my-reason\", msg=\"my,comma,delimited,message\", ok=true", func() {
-			assertResult(true, "my-reason", "my,comma,delimited,message", true)
-		})
-	})
-	When("status is empty with empty reason and message", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "  ,,  ",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"\", msg=\"\", ok=true", func() {
-			assertResult(false, "", "", true)
-		})
-	})
-	When("status is 0", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "0",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"\", msg=\"\", ok=true", func() {
-			assertResult(false, "", "", true)
-		})
-	})
-	When("status is FALSE", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "FALSE",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"\", msg=\"\", ok=true", func() {
-			assertResult(false, "", "", true)
-		})
-	})
-	When("status is false", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "false",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"\", msg=\"\", ok=true", func() {
-			assertResult(false, "", "", true)
-		})
-	})
-	When("status is false with a reason", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "false,my-reason",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"my-reason\", msg=\"\", ok=true", func() {
-			assertResult(false, "my-reason", "", true)
-		})
-	})
-	When("status is empty with a reason", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "  ,my-reason",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"my-reason\", msg=\"\", ok=true", func() {
-			assertResult(false, "my-reason", "", true)
-		})
-	})
-	When("status is false with a reason and message", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "false,my-reason,my,comma,delimited,message",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"my-reason\", msg=\"my,comma,delimited,message\", ok=true", func() {
-			assertResult(false, "my-reason", "my,comma,delimited,message", true)
-		})
-	})
-	When("status is false with a reason and message with leading or trailing whitespace", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "  false ,  my-reason ,   my,comma,delimited,message ",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"my-reason\", msg=\"my,comma,delimited,message\", ok=true", func() {
-			assertResult(false, "my-reason", "my,comma,delimited,message", true)
-		})
-	})
-	When("status is empty with a reason and message with leading or trailing whitespace", func() {
-		BeforeEach(func() {
-			configInfo = &vimtypes.VirtualMachineConfigInfo{
-				ExtraConfig: []vimtypes.BaseOptionValue{
-					&vimtypes.OptionValue{
-						Key:   util.GuestInfoBootstrapCondition,
-						Value: "   ,  my-reason ,   my,comma,delimited,message ",
-					},
-				},
-			}
-		})
-		It("should return status=false, reason=\"my-reason\", msg=\"my,comma,delimited,message\", ok=true", func() {
-			assertResult(false, "my-reason", "my,comma,delimited,message", true)
-		})
-	})
-})
+var _ = DescribeTable("GetBootstrapConditionValuesTest",
+	func(extraConfig map[string]string,
+		expectedStatus bool, expectedReason string, expectedMsg string, expectedOK bool) {
+
+		status, reason, msg, ok := util.GetBootstrapConditionValues(extraConfig)
+		Expect(status).To(Equal(expectedStatus))
+		Expect(reason).To(Equal(expectedReason))
+		Expect(msg).To(Equal(expectedMsg))
+		Expect(ok).To(Equal(expectedOK))
+	},
+	func(extraConfig map[string]string,
+		expectedStatus bool, expectedReason string, expectedMsg string, expectedOK bool) string {
+		return fmt.Sprintf("ExtraConfig '%v' should return status=%v, reason=%q, msg=%q, ok=%v",
+			extraConfig, expectedStatus, expectedReason, expectedMsg, expectedOK)
+	},
+	Entry(nil,
+		nil,
+		false, "", "", false,
+	),
+	Entry(nil,
+		map[string]string{},
+		false, "", "", false,
+	),
+	Entry(nil,
+		map[string]string{
+			"key1": "val1",
+		},
+		false, "", "", false,
+	),
+	Entry(nil,
+		map[string]string{
+			"key1":                           "val1",
+			util.GuestInfoBootstrapCondition: "",
+		},
+		false, "", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "1",
+		},
+		true, "", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "TRUE",
+		},
+		true, "", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "true",
+		},
+		true, "", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "true,my-reason",
+		},
+		true, "my-reason", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "true,my-reason,my,comma,delimited,message",
+		},
+		true, "my-reason", "my,comma,delimited,message", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "  true ,  my-reason ,   my,comma,delimited,message ",
+		},
+		true, "my-reason", "my,comma,delimited,message", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "  ,,  ",
+		},
+		false, "", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "0",
+		},
+		false, "", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "FALSE",
+		},
+		false, "", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "false",
+		},
+		false, "", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "false,my-reason",
+		},
+		false, "my-reason", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "  ,my-reason",
+		},
+		false, "my-reason", "", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "false,my-reason,my,comma,delimited,message",
+		},
+		false, "my-reason", "my,comma,delimited,message", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "  false ,  my-reason ,   my,comma,delimited,message ",
+		},
+		false, "my-reason", "my,comma,delimited,message", true,
+	),
+	Entry(nil,
+		map[string]string{
+			util.GuestInfoBootstrapCondition: "   ,  my-reason ,   my,comma,delimited,message ",
+		},
+		false, "my-reason", "my,comma,delimited,message", true,
+	),
+)

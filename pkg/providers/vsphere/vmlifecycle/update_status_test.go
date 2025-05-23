@@ -23,6 +23,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -250,6 +251,61 @@ var _ = Describe("UpdateStatus", func() {
 						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
 						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(BeEmpty())
 						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(validIP6))
+					})
+				})
+			})
+
+			Context("CloudInit", func() {
+				const (
+					localIP4 = "192.168.0.200"
+					localIP6 = "FD00:F53B:82E4::5F"
+				)
+
+				BeforeEach(func() {
+					vmCtx.MoVM.Guest.IpAddress = validIP4
+					vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{}
+					vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+					}
+				})
+
+				Context("ExtraConfig contains local-ip values with valid IPs", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   constants.CloudInitGuestInfoLocalIPv4Key,
+								Value: localIP4,
+							},
+							&vimtypes.OptionValue{
+								Key:   constants.CloudInitGuestInfoLocalIPv6Key,
+								Value: localIP6,
+							},
+						}
+					})
+					It("status.network.primaryIP4/6 should be expected values", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(localIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(Equal(localIP6))
+					})
+				})
+
+				Context("ExtraConfig contains local-ip values with invalid IPs", func() {
+					BeforeEach(func() {
+						vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+							&vimtypes.OptionValue{
+								Key:   constants.CloudInitGuestInfoLocalIPv4Key,
+								Value: invalid,
+							},
+							&vimtypes.OptionValue{
+								Key:   constants.CloudInitGuestInfoLocalIPv6Key,
+								Value: invalid,
+							},
+						}
+					})
+					It("status.network.primaryIP4/6 should be expected values", func() {
+						Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
+						Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(validIP4))
+						Expect(vmCtx.VM.Status.Network.PrimaryIP6).To(BeEmpty())
 					})
 				})
 			})
@@ -1633,34 +1689,26 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 	Context("MarkBootstrapCondition", func() {
 		var (
-			vm         *vmopv1.VirtualMachine
-			configInfo *vimtypes.VirtualMachineConfigInfo
+			vm          *vmopv1.VirtualMachine
+			extraConfig map[string]string
 		)
 
 		BeforeEach(func() {
 			vm = &vmopv1.VirtualMachine{}
-			configInfo = &vimtypes.VirtualMachineConfigInfo{}
 		})
 
 		JustBeforeEach(func() {
-			vmlifecycle.MarkBootstrapCondition(vm, configInfo)
+			vmlifecycle.MarkBootstrapCondition(vm, extraConfig)
+		})
+
+		AfterEach(func() {
+			extraConfig = nil
 		})
 
 		Context("unknown condition", func() {
-			When("configInfo unset", func() {
-				BeforeEach(func() {
-					configInfo = nil
-				})
-				It("sets condition unknown", func() {
-					expectedConditions := []metav1.Condition{
-						*conditions.UnknownCondition(vmopv1.GuestBootstrapCondition, "NoConfigInfo", ""),
-					}
-					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-				})
-			})
 			When("extraConfig unset", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = nil
+					extraConfig = nil
 				})
 				It("sets condition unknown", func() {
 					expectedConditions := []metav1.Condition{
@@ -1671,11 +1719,8 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("no bootstrap status", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
+					extraConfig = map[string]string{
+						"key1": "val1",
 					}
 				})
 				It("sets condition unknown", func() {
@@ -1689,55 +1734,9 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 		Context("successful condition", func() {
 			When("status is 1", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "1",
-						},
-					}
-				})
-				It("sets condition true", func() {
-					expectedConditions := []metav1.Condition{
-						*conditions.TrueCondition(vmopv1.GuestBootstrapCondition),
-					}
-					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-				})
-			})
-			When("status is TRUE", func() {
-				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "TRUE",
-						},
-					}
-				})
-				It("sets condition true", func() {
-					expectedConditions := []metav1.Condition{
-						*conditions.TrueCondition(vmopv1.GuestBootstrapCondition),
-					}
-					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-				})
-			})
-			When("status is true", func() {
-				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "true",
-						},
+					extraConfig = map[string]string{
+						"key1":                           "val1",
+						util.GuestInfoBootstrapCondition: "1",
 					}
 				})
 				It("sets condition true", func() {
@@ -1749,15 +1748,9 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is true and there is a reason", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "true,my-reason",
-						},
+					extraConfig = map[string]string{
+						"key1":                           "val1",
+						util.GuestInfoBootstrapCondition: "true,my-reason",
 					}
 				})
 				It("sets condition true", func() {
@@ -1770,15 +1763,9 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is true and there is a reason and message", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "true,my-reason,my,comma,delimited,message",
-						},
+					extraConfig = map[string]string{
+						"key1":                           "val1",
+						util.GuestInfoBootstrapCondition: "true,my-reason,my,comma,delimited,message",
 					}
 				})
 				It("sets condition true", func() {
@@ -1794,57 +1781,9 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 		Context("failed condition", func() {
 			When("status is 0", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "0",
-						},
-					}
-				})
-				It("sets condition false", func() {
-					expectedConditions := []metav1.Condition{
-						*conditions.FalseCondition(
-							vmopv1.GuestBootstrapCondition, "", ""),
-					}
-					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-				})
-			})
-			When("status is FALSE", func() {
-				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "FALSE",
-						},
-					}
-				})
-				It("sets condition false", func() {
-					expectedConditions := []metav1.Condition{
-						*conditions.FalseCondition(
-							vmopv1.GuestBootstrapCondition, "", ""),
-					}
-					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-				})
-			})
-			When("status is false", func() {
-				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "false",
-						},
+					extraConfig = map[string]string{
+						"key1":                           "val1",
+						util.GuestInfoBootstrapCondition: "0",
 					}
 				})
 				It("sets condition false", func() {
@@ -1857,15 +1796,9 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is non-truthy", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "not a boolean value",
-						},
+					extraConfig = map[string]string{
+						"key1":                           "val1",
+						util.GuestInfoBootstrapCondition: "not a boolean value",
 					}
 				})
 				It("sets condition false", func() {
@@ -1878,15 +1811,9 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is false and there is a reason", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "false,my-reason",
-						},
+					extraConfig = map[string]string{
+						"key1":                           "val1",
+						util.GuestInfoBootstrapCondition: "false,my-reason",
 					}
 				})
 				It("sets condition false", func() {
@@ -1899,15 +1826,9 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			})
 			When("status is false and there is a reason and message", func() {
 				BeforeEach(func() {
-					configInfo.ExtraConfig = []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "key1",
-							Value: "val1",
-						},
-						&vimtypes.OptionValue{
-							Key:   util.GuestInfoBootstrapCondition,
-							Value: "false,my-reason,my,comma,delimited,message",
-						},
+					extraConfig = map[string]string{
+						"key1":                           "val1",
+						util.GuestInfoBootstrapCondition: "false,my-reason,my,comma,delimited,message",
 					}
 				})
 				It("sets condition false", func() {

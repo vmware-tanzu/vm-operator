@@ -69,6 +69,11 @@ const (
 	CloudInitGuestInfoUserdata         = "guestinfo.userdata"
 	CloudInitGuestInfoUserdataEncoding = "guestinfo.userdata.encoding"
 
+	// CloudInitGuestInfoLocalIPv4Key and CloudInitGuestInfoLocalIPv6Key are the local IPs
+	// reported by the VMware datasource: https://bit.ly/3NJB534.
+	CloudInitGuestInfoLocalIPv4Key = "guestinfo.local-ipv4"
+	CloudInitGuestInfoLocalIPv6Key = "guestinfo.local-ipv6"
+
 	// EncryptionClassNameAnnotation specifies the name of an EncryptionClass
 	// resource. This is used by APIs that participate in BYOK but cannot modify
 	// their spec to do so, such as the PersistentVolumeClaim API.

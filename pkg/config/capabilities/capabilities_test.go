@@ -147,6 +147,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVMGroups: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyImmutableClasses: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -158,6 +161,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.WorkloadDomainIsolation = true
 							config.Features.MutableNetworks = true
 							config.Features.VMGroups = true
+							config.Features.ImmutableClasses = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -177,6 +181,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMGroups, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyImmutableClasses, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeTrue())
 					})
 				})
 
@@ -198,6 +205,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMGroups, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyImmutableClasses, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeTrue())
 					})
 				})
 			})
@@ -228,6 +238,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVMGroups: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyImmutableClasses: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -249,6 +262,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMGroups, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyImmutableClasses, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeFalse())
 					})
 				})
 
@@ -279,6 +295,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMGroups, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyImmutableClasses, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeFalse())
 					})
 				})
 			})
@@ -457,6 +476,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyImmutableClasses, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyImmutableClasses] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("ImmutableClasses=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -488,6 +520,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyVMGroups: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyImmutableClasses: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -506,6 +541,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.WorkloadDomainIsolation = true
 					config.Features.MutableNetworks = true
 					config.Features.VMGroups = true
+					config.Features.ImmutableClasses = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -527,6 +563,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyVMGroups, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyImmutableClasses, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -541,7 +580,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -557,6 +596,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyVMGroups, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMGroups).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyImmutableClasses, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeFalse())
 			})
 		})
 	})

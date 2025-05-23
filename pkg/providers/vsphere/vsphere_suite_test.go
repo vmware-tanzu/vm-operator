@@ -5,19 +5,23 @@
 package vsphere_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/object"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -41,19 +45,71 @@ var _ = BeforeSuite(suite.BeforeSuite)
 var _ = AfterSuite(suite.AfterSuite)
 
 func createOrUpdateVM(
-	ctx *builder.TestContextForVCSim,
+	testCtx *builder.TestContextForVCSim,
 	provider providers.VirtualMachineProviderInterface,
 	vm *vmopv1.VirtualMachine) error {
 
-	if pkgcfg.FromContext(ctx).AsyncSignalEnabled &&
-		pkgcfg.FromContext(ctx).AsyncCreateEnabled {
+	var fn func(ctx context.Context) error
+
+	if pkgcfg.FromContext(testCtx).AsyncSignalEnabled &&
+		pkgcfg.FromContext(testCtx).AsyncCreateEnabled {
 
 		By("non-blocking createOrUpdateVM")
-		return createOrUpdateVMAsync(ctx, provider, vm)
+		fn = func(ctx context.Context) error {
+			return createOrUpdateVMAsync(testCtx, provider, vm)
+		}
+	} else {
+		By("blocking createOrUpdateVM")
+		fn = func(ctx context.Context) error {
+			return provider.CreateOrUpdateVirtualMachine(ctx, vm)
+		}
 	}
 
-	By("blocking createOrUpdateVM")
-	return provider.CreateOrUpdateVirtualMachine(ctx, vm)
+	var (
+		totalCallCount    = 0
+		nonErrorCallCount = 0
+	)
+
+	for {
+		var (
+			err    error
+			repeat bool
+		)
+
+		if err = fn(ctxop.WithContext(testCtx)); err != nil {
+			switch {
+			case errors.Is(err, vsphere.ErrCreatedVM),
+				errors.Is(err, session.ErrBackingUpVM),
+				errors.Is(err, session.ErrReconfigure),
+				errors.Is(err, session.ErrRestartVM),
+				errors.Is(err, session.ErrSetPowerState),
+				errors.Is(err, session.ErrUpgradeHardwareVersion):
+
+				repeat = true
+			default:
+				GinkgoLogr.Error(err, "createOrUpdateVM fail")
+				return err
+			}
+		}
+
+		totalCallCount++
+
+		if !repeat {
+			nonErrorCallCount++
+		}
+
+		if nonErrorCallCount == 2 {
+			GinkgoLogr.Info(
+				"createOrUpdateVM success",
+				"totalCalls", totalCallCount)
+			return nil
+		}
+
+		GinkgoLogr.Info(
+			"createOrUpdateVM repeat",
+			"totalCalls", totalCallCount,
+			"err", err)
+	}
 }
 
 func createOrUpdateAndGetVcVM(
@@ -72,50 +128,41 @@ func createOrUpdateAndGetVcVM(
 }
 
 func createOrUpdateVMAsync(
-	testCtx *builder.TestContextForVCSim,
+	ctx *builder.TestContextForVCSim,
 	provider providers.VirtualMachineProviderInterface,
 	vm *vmopv1.VirtualMachine) error {
 
-	// This ensures there is no current operation set on the context.
-	ctx := ctxop.WithContext(testCtx)
+	GinkgoLogr.Info("entered createOrUpdateVMAsync")
 
 	chanErr, err := provider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
 	if err != nil {
+		GinkgoLogr.Info("createOrUpdateVMAsync returned", "err", err)
 		return err
 	}
 
-	// Unlike the VM controller, this test helper blocks until the async
-	// parts of CreateOrUpdateVM are complete. This is to avoid a large
-	// refactor for now.
-	for err2 := range chanErr {
-		if err2 != nil {
-			if err == nil {
-				err = err2
-			} else {
-				err = fmt.Errorf("%w,%w", err, err2)
+	if chanErr != nil {
+		// Unlike the VM controller, this test helper blocks until the async
+		// parts of CreateOrUpdateVM are complete. This is to avoid a large
+		// refactor for now.
+		for err2 := range chanErr {
+			if err2 != nil {
+				GinkgoLogr.Info("createOrUpdateVMAsync chanErr", "err", err2)
+				if err == nil {
+					err = err2
+				} else {
+					err = fmt.Errorf("%w,%w", err, err2)
+				}
 			}
 		}
 	}
-	if err != nil {
-		return err
-	}
 
-	if ctxop.IsCreate(ctx) {
-		// The async create operation does not fall-through to the
-		// update logic, so we need to call CreateOrUpdateVirtualMachine
-		// a second time to cause the update.
-		ExpectWithOffset(1, testCtx.Client.Get(
+	if errors.Is(err, vsphere.ErrCreatedVM) {
+		ExpectWithOffset(1, ctx.Client.Get(
 			ctx,
 			client.ObjectKeyFromObject(vm),
 			vm)).To(Succeed())
-
-		if _, err := provider.CreateOrUpdateVirtualMachineAsync(
-			ctx,
-			vm); err != nil {
-
-			return err
-		}
 	}
 
-	return nil
+	GinkgoLogr.Info("createOrUpdateVMAsync returned post channel", "err", err)
+	return err
 }

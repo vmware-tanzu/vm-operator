@@ -169,6 +169,8 @@ func vmTests() {
 			vm.Spec.Image.Kind = cvmiKind
 			vm.Spec.Image.Name = clusterVMImage.Name
 			vm.Spec.StorageClass = ctx.StorageClassName
+
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -1273,6 +1275,7 @@ func vmTests() {
 				zoneName = ctx.GetFirstZoneName()
 				// Explicitly place the VM into one of the zones that the test context will create.
 				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
 			It("Basic VM", func() {
@@ -1590,6 +1593,7 @@ func vmTests() {
 								done.Add(1)
 								go func(copyOfVM *vmopv1.VirtualMachine) {
 									defer done.Done()
+									defer GinkgoRecover()
 									<-start
 									err := createOrUpdateVM(ctx, vmProvider, copyOfVM)
 									if err != nil {
@@ -1633,7 +1637,8 @@ func vmTests() {
 									createErrs = append(createErrs, e)
 								}
 							}
-							Expect(createErrs).Should(BeEmpty())
+							Expect(createErrs).Should(HaveLen(1))
+							Expect(createErrs[0]).To(MatchError(vsphere.ErrCreatedVM))
 
 							Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 						})
@@ -1667,6 +1672,9 @@ func vmTests() {
 				vm.Labels[kubeutil.CAPVClusterRoleLabelKey] = ""
 				vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = ""
 
+				if vm.Annotations == nil {
+					vm.Annotations = make(map[string]string)
+				}
 				vm.Annotations[vmopv1.ForceEnableBackupAnnotation] = "true"
 
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
@@ -1749,6 +1757,7 @@ func vmTests() {
 				When("deploying an encrypted vm", func() {
 					JustBeforeEach(func() {
 						vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 					})
 
 					When("using a default provider", func() {
@@ -1922,9 +1931,6 @@ func vmTests() {
 
 							It("should succeed", func() {
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
@@ -1944,9 +1950,6 @@ func vmTests() {
 							})
 
 							It("should succeed", func() {
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
@@ -1969,9 +1972,6 @@ func vmTests() {
 
 						It("should succeed", func() {
 							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-							Expect(vm.Status.Crypto).To(BeNil())
-
-							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 							Expect(vm.Status.Crypto).ToNot(BeNil())
 
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
@@ -1986,6 +1986,7 @@ func vmTests() {
 						When("using a non-encryption storage class", func() {
 							JustBeforeEach(func() {
 								vm.Spec.StorageClass = ctx.StorageClassName
+								vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 							})
 
 							When("there is no vTPM", func() {
@@ -1996,7 +1997,7 @@ func vmTests() {
 									Expect(c).ToNot(BeNil())
 									Expect(c.Status).To(Equal(metav1.ConditionFalse))
 									Expect(c.Reason).To(Equal("InvalidState"))
-									Expect(c.Message).To(Equal("Must use encryption storage class or have vTPM when encrypting vm"))
+									Expect(c.Message).To(Equal("Must use encryption storage class or have vTPM when encrypting vm"), c.Message)
 								})
 							})
 
@@ -2005,9 +2006,6 @@ func vmTests() {
 									hasVTPM = true
 								})
 								It("should succeed", func() {
-									Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-									Expect(vm.Status.Crypto).To(BeNil())
-
 									Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 									Expect(vm.Status.Crypto).ToNot(BeNil())
 
@@ -2055,9 +2053,6 @@ func vmTests() {
 
 							It("should succeed", func() {
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
@@ -2078,9 +2073,6 @@ func vmTests() {
 							})
 
 							It("should succeed", func() {
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
@@ -2104,9 +2096,6 @@ func vmTests() {
 
 						It("should succeed", func() {
 							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-							Expect(vm.Status.Crypto).To(BeNil())
-
-							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 							Expect(vm.Status.Crypto).ToNot(BeNil())
 
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
@@ -2128,9 +2117,6 @@ func vmTests() {
 							})
 
 							It("should succeed", func() {
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
@@ -2375,7 +2361,8 @@ func vmTests() {
 
 					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 					_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError("failed to reconcile config: updating state failed with status update pending for persistent volume: dummy-vol on VM"))
 					Expect(vm.Status.Zone).To(Equal(azName))
 				})
 			})
@@ -3038,7 +3025,7 @@ func vmTests() {
 
 			BeforeEach(func() {
 				vmClass = builder.DummyVirtualMachineClassGenName()
-				vm = builder.DummyBasicVirtualMachine("test-vm", "")
+				vm = builder.DummyBasicVirtualMachine("test-vm-iso", "")
 
 				// Reduce diff from old tests: by default don't create an NIC.
 				if vm.Spec.Network == nil {
@@ -3053,7 +3040,7 @@ func vmTests() {
 
 				// Add required objects to get CD-ROM backing file name.
 				cvmiName := "vmi-iso"
-				objs := builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, "test-file.iso", ctx.ContentLibraryIsoItemID, true, true, true, "ISO")
+				objs := builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, "test-file.iso", ctx.ContentLibraryIsoItemID, true, true, resource.MustParse("100Mi"), true, true, "ISO")
 				for _, obj := range objs {
 					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
 				}
@@ -3071,6 +3058,8 @@ func vmTests() {
 						Kind: cvmiKind,
 					},
 				}}
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 			})
 
 			Context("return config", func() {

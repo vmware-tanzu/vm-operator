@@ -42,6 +42,13 @@ func (e NoRequeueError) Error() string {
 	return e.Message
 }
 
+// IsNoRequeueError returns true if the error or a nested error is a
+// NoRequeueError.
+func IsNoRequeueError(err error) bool {
+	var noRequeue NoRequeueError
+	return errors.As(err, &noRequeue)
+}
+
 // ResultFromError returns a ReconcileResult based on the provided error. If
 // the error contains an embedded RequeueError or NoRequeueError, then it is
 // used to influence the result. An embedded RequeueError is favored in an

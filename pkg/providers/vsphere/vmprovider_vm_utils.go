@@ -51,6 +51,7 @@ func GetVirtualMachineClass(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineClass, error) {
 
+	// TODO(akutz) Do we still need to check the second condition?
 	if vmopv1util.IsClasslessVM(*vmCtx.VM) &&
 		pkgcfg.FromContext(vmCtx).Features.VMImportNewNet {
 

@@ -260,6 +260,144 @@ func TestVirtualMachineConversion(t *testing.T) {
 					EFISecureBootEnabled: false,
 					NetworkBootProtocol:  vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
 				},
+				Affinity: &vmopv1.VirtualMachineAffinitySpec{
+					ZoneAffinity: &vmopv1.VirtualMachineAffinityZoneAffinitySpec{
+						RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{
+							{
+								MatchExpressions: []vmopv1.ZoneSelectorRequirement{
+									{
+										Key:      "foo",
+										Operator: vmopv1.ZoneSelectorOpExists,
+										Values: []string{
+											"bar",
+										},
+									},
+								},
+								MatchFields: []vmopv1.ZoneSelectorRequirement{
+									{
+										Key:      "zone-code",
+										Operator: vmopv1.ZoneSelectorOpGt,
+										Values: []string{
+											"1000",
+										},
+									},
+								},
+							},
+						},
+						PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{
+							{
+								MatchExpressions: []vmopv1.ZoneSelectorRequirement{
+									{
+										Key:      "foo",
+										Operator: vmopv1.ZoneSelectorOpExists,
+										Values: []string{
+											"bar",
+										},
+									},
+								},
+								MatchFields: []vmopv1.ZoneSelectorRequirement{
+									{
+										Key:      "zone-code",
+										Operator: vmopv1.ZoneSelectorOpGt,
+										Values: []string{
+											"1001",
+										},
+									},
+								},
+							},
+						},
+					},
+					ZoneAntiAffinity: &vmopv1.VirtualMachineAntiAffinityZoneAffinitySpec{
+						RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{
+							{
+								MatchExpressions: []vmopv1.ZoneSelectorRequirement{
+									{
+										Key:      "foo",
+										Operator: vmopv1.ZoneSelectorOpExists,
+										Values: []string{
+											"bar",
+										},
+									},
+								},
+								MatchFields: []vmopv1.ZoneSelectorRequirement{
+									{
+										Key:      "zone-code",
+										Operator: vmopv1.ZoneSelectorOpGt,
+										Values: []string{
+											"1000",
+										},
+									},
+								},
+							},
+						},
+						PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{
+							{
+								MatchExpressions: []vmopv1.ZoneSelectorRequirement{
+									{
+										Key:      "foo",
+										Operator: vmopv1.ZoneSelectorOpExists,
+										Values: []string{
+											"bar",
+										},
+									},
+								},
+								MatchFields: []vmopv1.ZoneSelectorRequirement{
+									{
+										Key:      "zone-code",
+										Operator: vmopv1.ZoneSelectorOpGt,
+										Values: []string{
+											"1001",
+										},
+									},
+								},
+							},
+						},
+					},
+					VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+						RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"foo": "bar",
+									},
+								},
+								TopologyKey: "topology.kubernetes.io/abc",
+							},
+						},
+						PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "trivia",
+									},
+								},
+								TopologyKey: "topology.kubernetes.io/xyz",
+							},
+						},
+					},
+					VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+						RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "chess",
+									},
+								},
+								TopologyKey: "topology.kubernetes.io/def",
+							},
+						},
+						PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "football",
+									},
+								},
+								TopologyKey: "topology.kubernetes.io/ghi",
+							},
+						},
+					},
+				},
 			},
 		}
 

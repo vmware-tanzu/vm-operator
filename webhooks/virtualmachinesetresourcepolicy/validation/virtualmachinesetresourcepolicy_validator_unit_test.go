@@ -148,8 +148,9 @@ func unitTestsValidateUpdate() {
 	)
 
 	type updateArgs struct {
-		changeCPU    bool
-		changeMemory bool
+		changeCPU                 bool
+		changeMemory              bool
+		changeClusterModuleGroups bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -162,6 +163,9 @@ func unitTestsValidateUpdate() {
 		if args.changeMemory {
 			ctx.vmRP.Spec.ResourcePool.Reservations.Memory = resource.MustParse("5Gi")
 			ctx.vmRP.Spec.ResourcePool.Limits.Memory = resource.MustParse("10Gi")
+		}
+		if args.changeClusterModuleGroups {
+			ctx.vmRP.Spec.ClusterModuleGroups = []string{"foo"}
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmRP)
@@ -186,7 +190,7 @@ func unitTestsValidateUpdate() {
 
 	immutableFieldMsg := "field is immutable"
 	DescribeTable("update table", validateUpdate,
-		Entry("should allow", updateArgs{}, true, nil, nil),
+		Entry("should allow", updateArgs{changeClusterModuleGroups: true}, true, nil, nil),
 		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, false, immutableFieldMsg, nil),
 		Entry("should deny policy memory change", updateArgs{changeMemory: true}, false, immutableFieldMsg, nil),
 	)

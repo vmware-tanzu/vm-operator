@@ -15,10 +15,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi"
 	_ "github.com/vmware/govmomi/pbm/simulator" // load PBM simulator
 	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/session/keepalive"
 	"github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/simulator/sim25"
 	"github.com/vmware/govmomi/vapi/rest"
 	_ "github.com/vmware/govmomi/vapi/simulator" // load VAPI simulator
 	"github.com/vmware/govmomi/vim25"
@@ -33,7 +35,7 @@ const (
 	valid   = "valid"
 )
 
-var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for pkg symbol simulator.SessionIdleTimeout */, func() {
+var _ = Describe("Client", Label(testlabels.VCSim), func() {
 
 	Describe("NewClient", func() {
 		var (
@@ -205,9 +207,7 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 		})
 	})
 
-	// The keepalive tests must be ordered after the NewClient tests so that
-	// setting simulator.SessionIdleTimeout does not impact the NewClient tests.
-	Describe("Keepalive", Ordered, func() {
+	Describe("Keepalive", func() {
 
 		var (
 			ctx                context.Context
@@ -228,10 +228,6 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 			ExpectWithOffset(1, s).To(BeNil())
 		}
 
-		BeforeAll(func() {
-			simulator.SessionIdleTimeout = sessionIdleTimeout
-		})
-
 		BeforeEach(func() {
 			ctx = context.Background()
 		})
@@ -240,7 +236,14 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 			Context("with a logged out session)", func() {
 				It("logs back into the session", func() {
 					simulator.Test(func(ctx context.Context, c *vim25.Client) {
+						Expect(sim25.SetSessionTimeout(ctx, c, sessionIdleTimeout)).To(Succeed())
+
+						newC, err := govmomi.NewClient(ctx, c.URL(), true)
+						ExpectWithOffset(1, err).NotTo(HaveOccurred())
+						c = newC.Client
+
 						m := session.NewManager(c)
+						Expect(m.Login(ctx, simulator.DefaultLogin)).To(Succeed())
 
 						// Session should be valid since simulator logs in the
 						// client by default
@@ -303,9 +306,15 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 				Context("and handler is called with correct userInfo", func() {
 					It("log back into the session", func() {
 						simulator.Test(func(ctx context.Context, c *vim25.Client) {
+							Expect(sim25.SetSessionTimeout(ctx, c, sessionIdleTimeout)).To(Succeed())
+
+							newC, err := govmomi.NewClient(ctx, c.URL(), true)
+							ExpectWithOffset(1, err).NotTo(HaveOccurred())
+							c = newC.Client
 
 							// With custom keepalive handler
 							m1 := session.NewManager(c)
+							Expect(m1.Login(ctx, simulator.DefaultLogin)).To(Succeed())
 							// Orchestrator session
 							m2 := getNewSessionManager(c.URL())
 
@@ -355,9 +364,15 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 				Context("and handler is called with wrong userInfo", func() {
 					It("fails to log back into the session", func() {
 						simulator.Test(func(ctx context.Context, c *vim25.Client) {
+							Expect(sim25.SetSessionTimeout(ctx, c, sessionIdleTimeout)).To(Succeed())
+
+							newC, err := govmomi.NewClient(ctx, c.URL(), true)
+							ExpectWithOffset(1, err).NotTo(HaveOccurred())
+							c = newC.Client
 
 							// With custom keepalive handler
 							m1 := session.NewManager(c)
+							Expect(m1.Login(ctx, simulator.DefaultLogin)).To(Succeed())
 							// With default keepalive handler
 							m2 := getNewSessionManager(c.URL())
 
@@ -424,7 +439,11 @@ var _ = Describe("Client", Label(testlabels.VCSim), Ordered /* Avoided race for 
 			When("a REST session is logged out)", func() {
 				It("logs back into the session", func() {
 					simulator.Test(func(ctx context.Context, vc *vim25.Client) {
-						c := rest.NewClient(vc)
+						Expect(sim25.SetSessionTimeout(ctx, vc, sessionIdleTimeout)).To(Succeed())
+
+						newC, err := govmomi.NewClient(ctx, vc.URL(), true)
+						Expect(err).NotTo(HaveOccurred())
+						c := rest.NewClient(newC.Client)
 
 						Expect(c.Login(ctx, simulator.DefaultLogin)).To(Succeed())
 

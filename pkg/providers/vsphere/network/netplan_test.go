@@ -141,6 +141,24 @@ var _ = Describe("Netplan", func() {
 					Expect(np.Gateway6).To(BeNil())
 				})
 			})
+
+			Context("MTU is zero", func() {
+				BeforeEach(func() {
+					results.Results[0].MTU = 0
+				})
+
+				It("MTU is nil", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(config).ToNot(BeNil())
+					Expect(config.Version).To(Equal(constants.NetPlanVersion))
+
+					Expect(config.Ethernets).To(HaveLen(1))
+					Expect(config.Ethernets).To(HaveKey(ifName))
+
+					np := config.Ethernets[ifName]
+					Expect(np.MTU).To(BeNil())
+				})
+			})
 		})
 
 		Context("IPv4/6 DHCP", func() {

@@ -24,11 +24,14 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, err
 				Macaddress: ptr.To(NormalizeNetplanMac(r.MacAddress)),
 			},
 			SetName: &r.GuestDeviceName,
-			MTU:     &r.MTU,
 			Nameservers: &netplan.Nameserver{
 				Addresses: r.Nameservers,
 				Search:    r.SearchDomains,
 			},
+		}
+
+		if r.MTU > 0 {
+			npEth.MTU = &r.MTU
 		}
 
 		npEth.Dhcp4 = &r.DHCP4

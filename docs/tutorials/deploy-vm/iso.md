@@ -86,7 +86,8 @@ metadata:
   namespace: my-namespace
 spec:
   accessModes:
-    - ReadWriteOnce
+  - ReadWriteOnce
+  volumeMode: Block
   resources:
     requests:
       storage: 20Gi # (1)

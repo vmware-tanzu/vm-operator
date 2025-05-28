@@ -298,8 +298,11 @@ func TestVirtualMachineConversion(t *testing.T) {
 			hub := vmopv1.VirtualMachine{
 				Status: vmopv1.VirtualMachineStatus{
 					Storage: &vmopv1.VirtualMachineStorageStatus{
-						Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-							Total: ptrOf(resource.MustParse("20Gi")),
+						Total: ptrOf(resource.MustParse("60Gi")),
+						Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+							Disks: ptrOf(resource.MustParse("50Gi")),
+						},
+						Used: &vmopv1.VirtualMachineStorageStatusUsed{
 							Disks: ptrOf(resource.MustParse("10Gi")),
 							Other: ptrOf(resource.MustParse("10Gi")),
 						},

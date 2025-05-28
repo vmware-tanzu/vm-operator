@@ -566,18 +566,24 @@ The following fields summarize a `VirtualMachine` resource's overall storage usa
 
 | Name | Description |
 |------|-------------|
-| `status.storage.committed` | The total storage space committed to this `VirtualMachine`. |
-| `status.storage.uncommitted` | The total storage space potentially used by this `VirtualMachine` |
-| `status.storage.unshared` | The total storage space occupied by this VirtualMachine that is not shared with any other `VirtualMachine`. |
+| `status.storage.other.used` | The total storage space used by all of the VM's non-disk files, ex. snapshots, logs, etc. |
+| `status.storage.other.disks` | The total storage space used by all of the VM's non-PVC disks. |
+| `status.storage.requested.disks` | The total storage space requested by all of the VM's non-PVC disks. |
+| `status.storage.total` | A sum of `status.storage.other.used` and `status.storage.requested.disks`. |
+
+The value of `status.storage.total` is what is reported against the namespace's storage quota.
 
 For example, the following illustrates the storage usage for a `VirtualMachine`:
 
 ```yaml
 status:
   storage:
-    committed: 6Gi
-    uncommitted: 7Gi
-    unshared: 2Gi
+    total: 11Gi
+    used:
+      other: 1Gi
+      disks: 5Gi
+    requested:
+      disks: 10Gi
 ```
 
 Individual volume usage may be determined by inspecting [`status.volumes`](#volume-status).
@@ -598,13 +604,18 @@ The VM in the above scenario will fail the admission check. While the image's di
 
 #### Storage Quota Usage
 
-Deployed `VirtualMachine` resources contribute to the total storage usage in a given namespace. The usage of a `VirtualMachine` is not calculated based on the total possible space the VM _can_consume, rather usage is the total number of unshared bytes on disk used by a `VirtualMachine` less the space used by any of the VM's [managed volumes](#volume-type). For example, consider the following:
+Deployed `VirtualMachine` resources contribute to the total storage usage in a given namespace. The usage of a `VirtualMachine` is calculated based on the total usage of a VM's non disk files (ex. snapshots, logs, etc.) and the requested capacity of a VM's non-PVC disks. For example, consider the following VM:
 
-* A VM is using `2Gi` of unshared space.
-* The VM has three volumes, two of which are managed that, combined, consume `1Gi`.
+| File | Used        | Requested | Counted against quota |
+|------|:-----------:|:---------:|:---------------------:|
+| Snapshots | `5Gi` | | Yes |
+| Logs | `1Gi` | | Yes |
+| Disk 1 | `1Gi` | | No |
+| Disk 1 | | `10Gi` | Yes |
+| PVC 1 | `5Gi` | | No |
+| PVC 1 | | `50Gi` | No |
 
-In the above scenario, the VM's total usage will be reported as `1Gi`.
-
+The value of `status.storage.total` will be `16Gi`, which is what will be counted against the namespace's storage quota.
 
 ### Volumes
 
@@ -682,10 +693,11 @@ The field `status.volumes` described the observed state of a `VirtualMachine` re
     | `crypto` | An optional field set only if the volume is encrypted. |
     | `diskUUID` | The unique identifier of the volume's underlying disk. |
     | `error` | The last observed error that may have occurred when attaching/detaching the disk. |
-    | `limit` | The maximum amount of space that may be used by this volume. |
     | `name` | The name of the volume. For managed disks this is the name from `spec.volumes` and for classic disks this is the name of the underlying disk. |
     | `type` | The [type](#volume-type) of the attached volume, i.e. either `Classic` or `Managed` |
-    | `used` | The total storage space occupied by this VirtualMachine that is not shared with any other `VirtualMachine`. |
+    | `limit` | The maximum amount of space that may be used by this volume. |
+    | `requested` | The minimum amount of space that may be used by this volume. |
+    | `used` | The total storage space occupied by the volume on disk. |
 
 === "Encryption Properties"
 

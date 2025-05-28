@@ -312,9 +312,7 @@ func unitTestsReconcile() {
 							},
 						},
 						Storage: &vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: ptr.To(resource.MustParse("10Gi")),
-							},
+							Total: ptr.To(resource.MustParse("10Gi")),
 						},
 					},
 				}
@@ -339,9 +337,7 @@ func unitTestsReconcile() {
 							},
 						},
 						Storage: &vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: ptr.To(resource.MustParse("10Gi")),
-							},
+							Total: ptr.To(resource.MustParse("10Gi")),
 						},
 					},
 				}

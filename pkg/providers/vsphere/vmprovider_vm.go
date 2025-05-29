@@ -578,10 +578,6 @@ func (vs *vSphereVMProvider) getCreateArgs(
 		}
 	}
 
-	if err := vs.vmCreateFixupConfigSpec(vmCtx, vcClient, createArgs); err != nil {
-		return nil, err
-	}
-
 	if err := vs.vmCreateIsReady(vmCtx, vcClient, createArgs); err != nil {
 		return nil, err
 	}
@@ -1139,31 +1135,6 @@ func (vs *vSphereVMProvider) vmCreateGetSourceDiskPathsVerify(
 	}
 
 	return true
-}
-
-func (vs *vSphereVMProvider) vmCreateFixupConfigSpec(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcClient *vcclient.Client,
-	createArgs *VMCreateArgs) error {
-
-	fixedUp, err := network.ResolveBackingPostPlacement(
-		vmCtx,
-		vcClient.VimClient(),
-		createArgs.ClusterMoRef,
-		&createArgs.NetworkResults)
-	if err != nil {
-		return err
-	}
-
-	if fixedUp {
-		// Now that the backing is resolved for this CCR, re-zip to update the ConfigSpec. What a mess.
-		err = vs.vmCreateGenConfigSpecZipNetworkInterfaces(vmCtx, createArgs)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (vs *vSphereVMProvider) vmCreateIsReady(
@@ -1770,14 +1741,10 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 			return err
 		}
 
-		// May not have the backing yet (NSX-T). We come back through here after placement once we
-		// know the backing.
-		if ethCardDev != nil {
-			createArgs.ConfigSpec.DeviceChange = append(createArgs.ConfigSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
-				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-				Device:    ethCardDev,
-			})
-		}
+		createArgs.ConfigSpec.DeviceChange = append(createArgs.ConfigSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+			Device:    ethCardDev,
+		})
 	}
 
 	return nil

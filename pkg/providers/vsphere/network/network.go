@@ -560,19 +560,8 @@ func ncpNetIfToResult(
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	vnetIf *ncpv1alpha1.VirtualNetworkInterface) (*NetworkInterfaceResult, error) {
 
-	// NSX-T makes the backing determination difficult: NsxLogicalSwitchID must be mapped to an
-	// actual DVPG since that is the backing, but the DVPG can, in some very rare but supported
-	// configurations, vary between CCRs. If we know the CCR - either the VM already exists, or
-	// (for later work) we might pre-determine CCR w/o placement if there is only one possibility -
-	// get that backing now.
-	// Otherwise, we'll do it post-placement via ResolveNCPBackingPostPlacement() so that we create
-	// the VM with the correct backing. That means we cannot make this a part of the PlaceVMxCluster()
-	// ConfigSpec since we don't know the backing: we'd have to pre-filter the placement candidates.
-	// What a mess. This is an unfortunate decision that forces mapping logic to every NCP consumer.
-
 	var backing object.NetworkReference
 	networkID := vnetIf.Status.ProviderStatus.NsxLogicalSwitchID
-
 	if clusterMoRef != nil {
 		ccr := object.NewClusterComputeResource(vimClient, *clusterMoRef)
 
@@ -582,6 +571,8 @@ func ncpNetIfToResult(
 		}
 
 		backing = networkRef
+	} else {
+		backing = newNSXOpaqueNetwork(networkID)
 	}
 
 	var ipConfigs []NetworkInterfaceIPConfig
@@ -707,6 +698,8 @@ func vpcSubnetPortToResult(
 		}
 
 		backing = networkRef
+	} else {
+		backing = newNSXOpaqueNetwork(networkID)
 	}
 
 	ipConfigs := []NetworkInterfaceIPConfig{}
@@ -851,12 +844,6 @@ func CreateDefaultEthCard(
 	ctx context.Context,
 	result *NetworkInterfaceResult) (vimtypes.BaseVirtualDevice, error) {
 
-	// We may not have the backing yet if this is NSX-T. The backing will be resolved after placement
-	// when we'll know the CCR, so we can resolve the correct DVPG.
-	if result.Backing == nil {
-		return nil, nil
-	}
-
 	backing, err := result.Backing.EthernetCardBackingInfo(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get ethernet card backing info for network %v: %w", result.Backing.Reference(), err)
@@ -886,6 +873,12 @@ func ApplyInterfaceResultToVirtualEthCard(
 	ethCard *vimtypes.VirtualEthernetCard,
 	result *NetworkInterfaceResult) error {
 
+	backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to get ethernet card backing info for network %v: %w", result.NetworkID, err)
+	}
+	ethCard.Backing = backing
+
 	ethCard.ExternalId = result.ExternalID
 	if result.MacAddress != "" {
 		// BMV: Too much confusion and possible breakage if we don't honor the provider MAC.
@@ -898,16 +891,6 @@ func ApplyInterfaceResultToVirtualEthCard(
 		// We should have a MAC address field to the VM.Spec if we want this to be specified by the user.
 		// ethCard.MacAddress = ""
 		// ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated)
-	}
-
-	// We may not have the backing yet if this is NSX-T. The backing will be resolved after placement
-	// when we'll know the CCR, so we can resolve the correct DVPG.
-	if result.Backing != nil {
-		backing, err := result.Backing.EthernetCardBackingInfo(ctx)
-		if err != nil {
-			return fmt.Errorf("unable to get ethernet card backing info for network %v: %w", result.NetworkID, err)
-		}
-		ethCard.Backing = backing
 	}
 
 	return nil

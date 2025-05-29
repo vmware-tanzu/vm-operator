@@ -10,67 +10,49 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-
-	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
-// ResolveBackingPostPlacement fixes up the backings where we did not know the CCR until after
-// placement. This should be called if CreateAndWaitForNetworkInterfaces() was called with a nil
-// clusterMoRef. Returns true if a backing was resolved, so the ConfigSpec needs to be updated.
-func ResolveBackingPostPlacement(
-	ctx context.Context,
-	vimClient *vim25.Client,
-	clusterMoRef vimtypes.ManagedObjectReference,
-	results *NetworkInterfaceResults) (bool, error) {
+type nsxOpaqueBacking struct {
+	vimtypes.ManagedObjectReference // Won't be set.
+	logicalSwitchUID                string
+}
 
-	if len(results.Results) == 0 {
-		return false, nil
+// NSX-T/VPC provides us with the logical switch UID, not the opaque network
+// MoRef, so implement a simpler version of govmomi's OpaqueNetwork here.
+var _ object.NetworkReference = &nsxOpaqueBacking{}
+
+func newNSXOpaqueNetwork(lsUID string) *nsxOpaqueBacking {
+	return &nsxOpaqueBacking{
+		logicalSwitchUID: lsUID,
+	}
+}
+
+func (n nsxOpaqueBacking) GetInventoryPath() string {
+	return ""
+}
+
+// EthernetCardBackingInfo returns the VirtualDeviceBackingInfo for this Network.
+func (n nsxOpaqueBacking) EthernetCardBackingInfo(ctx context.Context) (vimtypes.BaseVirtualDeviceBackingInfo, error) {
+	summary, err := n.Summary(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	networkType := pkgcfg.FromContext(ctx).NetworkProviderType
-	if networkType == "" {
-		return false, fmt.Errorf("no network provider set")
+	backing := &vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo{
+		OpaqueNetworkId:   summary.OpaqueNetworkId,
+		OpaqueNetworkType: summary.OpaqueNetworkType,
 	}
 
-	ccr := object.NewClusterComputeResource(vimClient, clusterMoRef)
-	fixedUp := false
+	return backing, nil
+}
 
-	for idx := range results.Results {
-		if results.Results[idx].Backing != nil {
-			continue
-		}
-
-		var backing object.NetworkReference
-		var err error
-
-		switch networkType {
-		case pkgcfg.NetworkProviderTypeNSXT:
-			backing, err = searchNsxtNetworkReference(ctx, ccr, results.Results[idx].NetworkID)
-			if err != nil {
-				err = fmt.Errorf("post placement NSX backing fixup failed: %w", err)
-			}
-		// VPC is an NSX-T construct that is attached to an NSX-T Project.
-		case pkgcfg.NetworkProviderTypeVPC:
-			backing, err = searchNsxtNetworkReference(ctx, ccr, results.Results[idx].NetworkID)
-			if err != nil {
-				err = fmt.Errorf("post placement NSX-VPC backing fixup failed: %w", err)
-			}
-		default:
-			err = fmt.Errorf("only NSX networks are expected to need post placement backing fixup")
-		}
-
-		if err != nil {
-			return false, err
-		}
-
-		fixedUp = true
-		results.Results[idx].Backing = backing
-	}
-
-	return fixedUp, nil
+func (n nsxOpaqueBacking) Summary(_ context.Context) (*vimtypes.OpaqueNetworkSummary, error) {
+	return &vimtypes.OpaqueNetworkSummary{
+		OpaqueNetworkId:   n.logicalSwitchUID,
+		OpaqueNetworkType: "nsx.LogicalSwitch",
+	}, nil
 }
 
 // searchNsxtNetworkReference takes in NSX-T LogicalSwitchUUID and returns the reference of the network.

@@ -542,6 +542,13 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(result.NetworkID).To(Equal(builder.GetNsxTLogicalSwitchUUID(0)))
 				Expect(result.Name).To(Equal(interfaceName))
 
+				Expect(result.Backing).ToNot(BeNil())
+				backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
+				Expect(ok).To(BeTrue())
+				Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(builder.NsxTLogicalSwitchUUID))
+
 				Expect(result.IPConfigs).To(HaveLen(2))
 				ipConfig := result.IPConfigs[0]
 				Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
@@ -552,21 +559,21 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(ipConfig.IsIPv4).To(BeFalse())
 				Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 
-				// Without the ClusterMoRef on the first call this will be nil for NSXT.
-				Expect(result.Backing).To(BeNil())
+				By("Returns DVPG backing when CCR is provided", func() {
+					clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						&clusterMoRef,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
 
-				clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
-				results, err = network.CreateAndWaitForNetworkInterfaces(
-					vmCtx,
-					ctx.Client,
-					ctx.VCClient.Client,
-					ctx.Finder,
-					&clusterMoRef,
-					networkSpec)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(results.Results).To(HaveLen(1))
-				Expect(results.Results[0].Backing).ToNot(BeNil())
-				Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+					Expect(results.Results).To(HaveLen(1))
+					Expect(results.Results[0].Backing).ToNot(BeNil())
+					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+				})
 			})
 
 			When("v1a1 NCP network interface exists", func() {
@@ -645,6 +652,13 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(result.NetworkID).To(Equal(builder.GetNsxTLogicalSwitchUUID(0)))
 					Expect(result.Name).To(Equal(interfaceName))
 
+					Expect(result.Backing).ToNot(BeNil())
+					backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
+					Expect(ok).To(BeTrue())
+					Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(builder.NsxTLogicalSwitchUUID))
+
 					Expect(result.IPConfigs).To(HaveLen(2))
 					ipConfig := result.IPConfigs[0]
 					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
@@ -655,21 +669,21 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ipConfig.IsIPv4).To(BeFalse())
 					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 
-					// Without the ClusterMoRef on the first call this will be nil for NSXT.
-					Expect(result.Backing).To(BeNil())
+					By("Returns DVPG backing when CCR is provided", func() {
+						clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
+						results, err = network.CreateAndWaitForNetworkInterfaces(
+							vmCtx,
+							ctx.Client,
+							ctx.VCClient.Client,
+							ctx.Finder,
+							&clusterMoRef,
+							networkSpec)
+						Expect(err).ToNot(HaveOccurred())
 
-					clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
-					results, err = network.CreateAndWaitForNetworkInterfaces(
-						vmCtx,
-						ctx.Client,
-						ctx.VCClient.Client,
-						ctx.Finder,
-						&clusterMoRef,
-						networkSpec)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(results.Results).To(HaveLen(1))
-					Expect(results.Results[0].Backing).ToNot(BeNil())
-					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+						Expect(results.Results).To(HaveLen(1))
+						Expect(results.Results[0].Backing).ToNot(BeNil())
+						Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+					})
 				})
 			})
 		})
@@ -763,6 +777,13 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(result.NetworkID).To(Equal(builder.GetVPCTLogicalSwitchUUID(0)))
 				Expect(result.Name).To(Equal(interfaceName))
 
+				Expect(result.Backing).ToNot(BeNil())
+				backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				opaqueNetwork, ok := backing.(*vimtypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
+				Expect(ok).To(BeTrue())
+				Expect(opaqueNetwork.OpaqueNetworkId).To(Equal(builder.VPCLogicalSwitchUUID))
+
 				Expect(result.IPConfigs).To(HaveLen(2))
 				ipConfig := result.IPConfigs[0]
 				Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
@@ -773,21 +794,21 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(ipConfig.IsIPv4).To(BeFalse())
 				Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 
-				// Without the ClusterMoRef on the first call this will be nil for NSXT.
-				Expect(result.Backing).To(BeNil())
+				By("Returns DVPG backing when CCR is provided", func() {
+					clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						&clusterMoRef,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
 
-				clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
-				results, err = network.CreateAndWaitForNetworkInterfaces(
-					vmCtx,
-					ctx.Client,
-					ctx.VCClient.Client,
-					ctx.Finder,
-					&clusterMoRef,
-					networkSpec)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(results.Results).To(HaveLen(1))
-				Expect(results.Results[0].Backing).ToNot(BeNil())
-				Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+					Expect(results.Results).To(HaveLen(1))
+					Expect(results.Results[0].Backing).ToNot(BeNil())
+					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+				})
 			})
 		})
 	})

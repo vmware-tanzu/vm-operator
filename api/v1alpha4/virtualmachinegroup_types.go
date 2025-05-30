@@ -9,31 +9,13 @@ import (
 )
 
 const (
-	// VirtualMachineGroupConditionPlacementReady indicates placement is ready
-	// for all the initial members of the group.
-	VirtualMachineGroupConditionPlacementReady = "PlacementReady"
+	// VirtualMachineGroupMemberConditionGroupLinked indicates that the member
+	// exists and has its "Spec.GroupName" field set to the group's name.
+	VirtualMachineGroupMemberConditionGroupLinked = "GroupLinked"
 
-	// VirtualMachineGroupConditionMembersOwnerRefReady indicates that
-	// all the members of the group have an owner reference set to the group.
-	VirtualMachineGroupConditionMembersOwnerRefReady = "MembersOwnerRefReady"
-
-	// VirtualMachineGroupConditionPowerStateReady indicates that all desired
-	// group members have their power state set to the group's power state.
-	VirtualMachineGroupConditionPowerStateReady = "PowerStateReady"
-)
-
-const (
-	// LastUpdatedPowerStateTimeAnnotation is the annotation key for the last
-	// updated time of the power state.
-	LastUpdatedPowerStateTimeAnnotation = GroupName + "/last-updated-power-state-time"
-
-	// ScheduledPowerStateTimeAnnotation is the annotation key for the scheduled
-	// time when a power state change should be applied.
-	ScheduledPowerStateTimeAnnotation = GroupName + "/scheduled-power-state-time"
-
-	// ScheduledPowerStateAnnotation is the annotation key for the power state
-	// that should be applied at the scheduled time.
-	ScheduledPowerStateAnnotation = GroupName + "/scheduled-power-state"
+	// VirtualMachineGroupMemberConditionPowerStateSynced indicates that the
+	// member has been updated to match the group's power state.
+	VirtualMachineGroupMemberConditionPowerStateSynced = "PowerStateSynced"
 )
 
 type GroupMember struct {
@@ -227,24 +209,48 @@ type VirtualMachinePlacementStatus struct {
 
 	// Datastores describe the recommended datastores for this VM.
 	Datastores []VirtualMachineGroupPlacementDatastoreStatus `json:"datastores,omitempty"`
-
-	// +optional
-
-	// Conditions describes any conditions associated with this placement.
-	//
-	// Generally this should just include the ReadyType condition.
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-type VirtualMachinePowerStateStatus struct {
-	// Name is the name of VirtualMachine member of this group.
+// VirtualMachineGroupMemberStatus describes the observed status of a group
+// member.
+type VirtualMachineGroupMemberStatus struct {
+	// Name is the name of this member.
 	Name string `json:"name"`
+
+	// +kubebuilder:validation:Enum=VirtualMachine;VirtualMachineGroup
+
+	// Kind is the kind of this member, which can be either VirtualMachine or
+	// VirtualMachineGroup.
+	Kind string `json:"kind"`
 
 	// +optional
 
-	// PowerState describes the observed power state of the VirtualMachine
-	// group member.
-	PowerState VirtualMachinePowerState `json:"powerState,omitempty"`
+	// Placement describes the placement results for this member.
+	//
+	// Please note this field is only set for VirtualMachine members.
+	Placement *VirtualMachinePlacementStatus `json:"placement,omitempty"`
+
+	// +optional
+
+	// PowerState describes the observed power state of this member.
+	//
+	// Please note this field is only set for VirtualMachine members.
+	PowerState *VirtualMachinePowerState `json:"powerState,omitempty"`
+
+	// +optional
+
+	// Conditions describes any conditions associated with this member.
+	//
+	// - The GroupLinked condition is True when the member exists and has its
+	//   "Spec.GroupName" field set to the group's name.
+	// - The PowerStateSynced condition is True when the member kind is
+	//   VirtualMachine, and it has the power state that matches the group's
+	//   power state.
+	// - The PlacementReady condition is True when the member kind is
+	//   VirtualMachine, and it has a placement decision ready.
+	// - The ReadyType condition is True when the member kind is
+	//   VirtualMachineGroup, and all of its members' conditions are True.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // VirtualMachineGroupStatus defines the observed state of VirtualMachineGroup.
@@ -252,17 +258,10 @@ type VirtualMachineGroupStatus struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=name
+	// +listMapKey=kind
 
-	// Placement describes the placement results for the group members.
-	Placement []VirtualMachinePlacementStatus `json:"placement,omitempty"`
-
-	// +optional
-	// +listType=map
-	// +listMapKey=name
-
-	// PowerState describes the observed power state of all direct or indirect
-	// VirtualMachine members of this group.
-	PowerState []VirtualMachinePowerStateStatus `json:"powerState,omitempty"`
+	// Members describes the observed status of group members.
+	Members []VirtualMachineGroupMemberStatus `json:"members,omitempty"`
 
 	// +optional
 
@@ -274,17 +273,13 @@ type VirtualMachineGroupStatus struct {
 
 	// Conditions describes any conditions associated with this VM Group.
 	//
-	// - The MembersOwnerReferenceReady condition is True when all of the
-	//   members of the group exist and have an owner reference to the group.
-	// - The PlacementReady condition is True when all of the placement results
-	//   have a True ReadyType condition.
-	// - The ReadyType condition is True when all of the members have a True
-	//   ReadyType condition.
+	// - The ReadyType condition is True when all of the group members have
+	//   all of their expected conditions set to True.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,shortName=vmgroup
+// +kubebuilder:resource:scope=Namespaced,shortName=vmg
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
@@ -299,12 +294,20 @@ type VirtualMachineGroup struct {
 	Status VirtualMachineGroupStatus `json:"status,omitempty"`
 }
 
-func (vm *VirtualMachineGroup) GetConditions() []metav1.Condition {
-	return vm.Status.Conditions
+func (vmg *VirtualMachineGroup) GetConditions() []metav1.Condition {
+	return vmg.Status.Conditions
 }
 
-func (vm *VirtualMachineGroup) SetConditions(conditions []metav1.Condition) {
-	vm.Status.Conditions = conditions
+func (vmg *VirtualMachineGroup) SetConditions(conditions []metav1.Condition) {
+	vmg.Status.Conditions = conditions
+}
+
+func (m *VirtualMachineGroupMemberStatus) GetConditions() []metav1.Condition {
+	return m.Conditions
+}
+
+func (m *VirtualMachineGroupMemberStatus) SetConditions(conditions []metav1.Condition) {
+	m.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true

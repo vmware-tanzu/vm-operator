@@ -1043,6 +1043,39 @@ _Appears in:_
 - [VirtualMachineCryptoStatus](#virtualmachinecryptostatus)
 
 
+### VirtualMachineGroupMemberStatus
+
+
+
+VirtualMachineGroupMemberStatus describes the observed status of a group
+member.
+
+_Appears in:_
+- [VirtualMachineGroupStatus](#virtualmachinegroupstatus)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name is the name of this member. |
+| `kind` _string_ | Kind is the kind of this member, which can be either VirtualMachine or
+VirtualMachineGroup. |
+| `placement` _[VirtualMachinePlacementStatus](#virtualmachineplacementstatus)_ | Placement describes the placement results for this member.
+
+Please note this field is only set for VirtualMachine members. |
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the observed power state of this member.
+
+Please note this field is only set for VirtualMachine members. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this member.
+
+- The GroupLinked condition is True when the member exists and has its
+  "Spec.GroupName" field set to the group's name.
+- The PowerStateSynced condition is True when the member kind is
+  VirtualMachine, and it has the power state that matches the group's
+  power state.
+- The PlacementReady condition is True when the member kind is
+  VirtualMachine, and it has a placement decision ready.
+- The ReadyType condition is True when the member kind is
+  VirtualMachineGroup, and all of its members' conditions are True. |
+
 ### VirtualMachineGroupPlacementDatastoreStatus
 
 
@@ -1169,19 +1202,13 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `placement` _[VirtualMachinePlacementStatus](#virtualmachineplacementstatus) array_ | Placement describes the placement results for the group members. |
-| `powerState` _[VirtualMachinePowerStateStatus](#virtualmachinepowerstatestatus) array_ | PowerState describes the observed power state of all direct or indirect
-VirtualMachine members of this group. |
+| `members` _[VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus) array_ | Members describes the observed status of group members. |
 | `lastUpdatedPowerStateTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | LastUpdatedPowerStateTime describes the observed time when the power
 state of the group was last updated. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this VM Group.
 
-- The MembersOwnerReferenceReady condition is True when all of the
-  members of the group exist and have an owner reference to the group.
-- The PlacementReady condition is True when all of the placement results
-  have a True ReadyType condition.
-- The ReadyType condition is True when all of the members have a True
-  ReadyType condition. |
+- The ReadyType condition is True when all of the group members have
+  all of their expected conditions set to True. |
 
 
 ### VirtualMachineImageCacheFileStatus
@@ -2038,7 +2065,7 @@ https://bit.ly/3Au0jM4 for more information. |
 
 
 _Appears in:_
-- [VirtualMachineGroupStatus](#virtualmachinegroupstatus)
+- [VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus)
 
 | Field | Description |
 | --- | --- |
@@ -2047,9 +2074,6 @@ _Appears in:_
 | `node` _string_ | Node describes the recommended node for this VM. |
 | `pool` _string_ | Pool describes the recommended resource pool for this VM. |
 | `datastores` _[VirtualMachineGroupPlacementDatastoreStatus](#virtualmachinegroupplacementdatastorestatus) array_ | Datastores describe the recommended datastores for this VM. |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this placement.
-
-Generally this should just include the ReadyType condition. |
 
 ### VirtualMachinePowerOpMode
 
@@ -2070,26 +2094,11 @@ _Underlying type:_ `string`
 VirtualMachinePowerState defines a VM's desired and observed power states.
 
 _Appears in:_
+- [VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus)
 - [VirtualMachineGroupSpec](#virtualmachinegroupspec)
-- [VirtualMachinePowerStateStatus](#virtualmachinepowerstatestatus)
 - [VirtualMachineSpec](#virtualmachinespec)
 - [VirtualMachineStatus](#virtualmachinestatus)
 
-
-### VirtualMachinePowerStateStatus
-
-
-
-
-
-_Appears in:_
-- [VirtualMachineGroupStatus](#virtualmachinegroupstatus)
-
-| Field | Description |
-| --- | --- |
-| `name` _string_ | Name is the name of VirtualMachine member of this group. |
-| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the observed power state of the VirtualMachine
-group member. |
 
 ### VirtualMachinePromoteDisksMode
 

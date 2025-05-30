@@ -185,30 +185,26 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineGroupContext) (ct
 
 	if err := r.reconcileMembers(ctx); err != nil {
 		ctx.Logger.Error(err, "Failed to reconcile group members")
-		conditions.MarkFalse(ctx.VMGroup, vmopv1.VirtualMachineGroupConditionMembersOwnerRefReady, "ReconcileMembersError", "%v", err)
 		return ctrl.Result{}, err
 	}
-	conditions.MarkTrue(ctx.VMGroup, vmopv1.VirtualMachineGroupConditionMembersOwnerRefReady)
 
 	if err := r.reconcilePlacement(ctx); err != nil {
 		ctx.Logger.Error(err, "Failed to reconcile group placement")
-		conditions.MarkFalse(ctx.VMGroup, vmopv1.VirtualMachineGroupConditionPlacementReady, "ReconcilePlacementError", "%v", err)
 		return ctrl.Result{}, err
 	}
-	conditions.MarkTrue(ctx.VMGroup, vmopv1.VirtualMachineGroupConditionPlacementReady)
 
 	if err := r.reconcilePowerState(ctx); err != nil {
 		ctx.Logger.Error(err, "Failed to reconcile group power state")
-		conditions.MarkFalse(ctx.VMGroup, vmopv1.VirtualMachineGroupConditionPowerStateReady, "ReconcilePowerStateError", "%v", err)
 		return ctrl.Result{}, err
 	}
-	conditions.MarkTrue(ctx.VMGroup, vmopv1.VirtualMachineGroupConditionPowerStateReady)
+
+	setReadyCondition(ctx)
 
 	return ctrl.Result{}, nil
 }
 
-// reconcileMembers reconciles group members by checking if their group name is
-// set to the current VM Group's name and adding an owner reference on them.
+// reconcileMembers reconciles all current members of the group and updates
+// the group's Status.Members accordingly.
 func (r *Reconciler) reconcileMembers(ctx *pkgctx.VirtualMachineGroupContext) error {
 	ownerRef := []metav1.OwnerReference{
 		{
@@ -219,15 +215,40 @@ func (r *Reconciler) reconcileMembers(ctx *pkgctx.VirtualMachineGroupContext) er
 		},
 	}
 
-	var errs []error
+	existingStatuses := make(map[string]*vmopv1.VirtualMachineGroupMemberStatus, len(ctx.VMGroup.Status.Members))
+	for i := range ctx.VMGroup.Status.Members {
+		ms := &ctx.VMGroup.Status.Members[i]
+		key := ms.Kind + "/" + ms.Name
+		existingStatuses[key] = ms
+	}
+
+	var (
+		newStatuses = make([]vmopv1.VirtualMachineGroupMemberStatus, len(ctx.VMGroup.Spec.Members))
+		errs        = make([]error, len(ctx.VMGroup.Spec.Members))
+	)
 
 	for _, member := range ctx.VMGroup.Spec.Members {
-		memberKey := client.ObjectKey{Namespace: ctx.VMGroup.Namespace, Name: member.Name}
+		key := member.Kind + "/" + member.Name
+
+		// Check if we have an existing status to update, or create a new one.
+		var ms *vmopv1.VirtualMachineGroupMemberStatus
+		if s, ok := existingStatuses[key]; ok {
+			ms = s.DeepCopy()
+		} else {
+			ms = &vmopv1.VirtualMachineGroupMemberStatus{
+				Name: member.Name,
+				Kind: member.Kind,
+			}
+		}
+
+		objKey := client.ObjectKey{Namespace: ctx.VMGroup.Namespace, Name: member.Name}
 		switch member.Kind {
 		case "VirtualMachine":
 			vm := &vmopv1.VirtualMachine{}
-			if err := r.Get(ctx, memberKey, vm); err != nil {
+			if err := r.Get(ctx, objKey, vm); err != nil {
+				conditions.MarkError(ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked, "GetError", err)
 				errs = append(errs, err)
+				newStatuses = append(newStatuses, *ms)
 				continue
 			}
 
@@ -238,31 +259,47 @@ func (r *Reconciler) reconcileMembers(ctx *pkgctx.VirtualMachineGroupContext) er
 			patch := client.MergeFrom(vm.DeepCopy())
 			vm.OwnerReferences = ownerRef
 			if err := r.Patch(ctx, vm, patch); err != nil {
+				conditions.MarkError(ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked, "OwnerRefPatchError", err)
 				errs = append(errs, err)
+				newStatuses = append(newStatuses, *ms)
 				continue
 			}
 
+			conditions.MarkTrue(ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+
 		case "VirtualMachineGroup":
 			group := &vmopv1.VirtualMachineGroup{}
-			if err := r.Get(ctx, memberKey, group); err != nil {
+			if err := r.Get(ctx, objKey, group); err != nil {
+				conditions.MarkError(ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked, "GetError", err)
 				errs = append(errs, err)
+				newStatuses = append(newStatuses, *ms)
 				continue
 			}
 
 			if group.Spec.GroupName != ctx.VMGroup.Name {
-				errs = append(errs, fmt.Errorf("group %s is not a member of group %s", group.Name, ctx.VMGroup.Name))
+				err := fmt.Errorf("member has a different group name: %s", group.Spec.GroupName)
+				conditions.MarkError(ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked, "InvalidGroupName", err)
+				errs = append(errs, err)
+				newStatuses = append(newStatuses, *ms)
 				continue
 			}
 
 			patch := client.MergeFrom(group.DeepCopy())
 			group.OwnerReferences = ownerRef
 			if err := r.Patch(ctx, group, patch); err != nil {
+				conditions.MarkError(ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked, "OwnerRefPatchError", err)
 				errs = append(errs, err)
+				newStatuses = append(newStatuses, *ms)
 				continue
 			}
+
+			conditions.MarkTrue(ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
 		}
+
+		newStatuses = append(newStatuses, *ms)
 	}
 
+	ctx.VMGroup.Status.Members = newStatuses
 	return apierrorsutil.NewAggregate(errs)
 }
 
@@ -274,4 +311,74 @@ func (r *Reconciler) reconcilePlacement(ctx *pkgctx.VirtualMachineGroupContext) 
 // TODO(sai): Implement power state logic for all group members.
 func (r *Reconciler) reconcilePowerState(ctx *pkgctx.VirtualMachineGroupContext) error {
 	return nil
+}
+
+// setReadyCondition sets the Ready condition for the group based on the
+// status of its members.
+func setReadyCondition(ctx *pkgctx.VirtualMachineGroupContext) {
+	if len(ctx.VMGroup.Status.Members) == 0 {
+		conditions.MarkTrue(ctx.VMGroup, vmopv1.ReadyConditionType)
+		return
+	}
+
+	var readyCount int
+	var totalCount = len(ctx.VMGroup.Status.Members)
+	var failureReasons []string
+
+	for _, member := range ctx.VMGroup.Status.Members {
+		ready, reason := isMemberReady(member)
+		if ready {
+			readyCount++
+		} else {
+			failureReasons = append(failureReasons, reason)
+		}
+	}
+
+	if readyCount == totalCount {
+		conditions.MarkTrue(ctx.VMGroup, vmopv1.ReadyConditionType)
+	} else {
+		msg := fmt.Sprintf("%d of %d members ready", readyCount, totalCount)
+		if len(failureReasons) > 0 {
+			msg = fmt.Sprintf("%s: %s", msg, strings.Join(failureReasons, "; "))
+		}
+		conditions.MarkFalse(ctx.VMGroup, vmopv1.ReadyConditionType, "MembersNotReady", "%s", msg)
+	}
+}
+
+// isMemberReady checks if a member has all expected conditions set to true.
+func isMemberReady(member vmopv1.VirtualMachineGroupMemberStatus) (bool, string) {
+	// Define expected conditions based on member kind.
+	var expectedConditions []string
+	switch member.Kind {
+	case "VirtualMachine":
+		expectedConditions = []string{
+			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+			vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
+			vmopv1.VirtualMachineConditionPlacementReady,
+		}
+	case "VirtualMachineGroup":
+		expectedConditions = []string{
+			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+			vmopv1.ReadyConditionType,
+		}
+	}
+
+	conditionMap := make(map[string]*metav1.Condition)
+	for _, condition := range member.Conditions {
+		conditionMap[condition.Type] = &condition
+	}
+
+	memberKey := fmt.Sprintf("%s/%s", member.Kind, member.Name)
+	for _, expectedType := range expectedConditions {
+		condition, exists := conditionMap[expectedType]
+		if !exists {
+			return false, fmt.Sprintf("%s missing condition %s", memberKey, expectedType)
+		}
+
+		if condition.Status != metav1.ConditionTrue {
+			return false, fmt.Sprintf("%s condition %s is %s", memberKey, expectedType, condition.Status)
+		}
+	}
+
+	return true, ""
 }

@@ -12,7 +12,7 @@ spec:
     listKind: VirtualMachineGroupList
     plural: virtualmachinegroups
     shortNames:
-    - vmgroup
+    - vmg
     singular: virtualmachinegroup
   scope: Namespaced
   versions:
@@ -233,12 +233,8 @@ spec:
                 description: |-
                   Conditions describes any conditions associated with this VM Group.
 
-                  - The MembersOwnerReferenceReady condition is True when all of the
-                    members of the group exist and have an owner reference to the group.
-                  - The PlacementReady condition is True when all of the placement results
-                    have a True ReadyType condition.
-                  - The ReadyType condition is True when all of the members have a True
-                    ReadyType condition.
+                  - The ReadyType condition is True when all of the group members have
+                    all of their expected conditions set to True.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -300,16 +296,26 @@ spec:
                   state of the group was last updated.
                 format: date-time
                 type: string
-              placement:
-                description: Placement describes the placement results for the group
-                  members.
+              members:
+                description: Members describes the observed status of group members.
                 items:
+                  description: |-
+                    VirtualMachineGroupMemberStatus describes the observed status of a group
+                    member.
                   properties:
                     conditions:
                       description: |-
-                        Conditions describes any conditions associated with this placement.
+                        Conditions describes any conditions associated with this member.
 
-                        Generally this should just include the ReadyType condition.
+                        - The GroupLinked condition is True when the member exists and has its
+                          "Spec.GroupName" field set to the group's name.
+                        - The PowerStateSynced condition is True when the member kind is
+                          VirtualMachine, and it has the power state that matches the group's
+                          power state.
+                        - The PlacementReady condition is True when the member kind is
+                          VirtualMachine, and it has a placement decision ready.
+                        - The ReadyType condition is True when the member kind is
+                          VirtualMachineGroup, and all of its members' conditions are True.
                       items:
                         description: Condition contains details for one aspect of
                           the current state of this API Resource.
@@ -366,86 +372,94 @@ spec:
                         - type
                         type: object
                       type: array
-                    datastores:
-                      description: Datastores describe the recommended datastores
-                        for this VM.
-                      items:
-                        properties:
-                          diskKey:
-                            description: |-
-                              DiskKey describes the device key to which this recommendation applies.
-                              When omitted, this recommendation is for the VM's home directory.
-                            format: int32
-                            type: integer
-                          id:
-                            description: ID describes the datastore ID.
-                            type: string
-                          name:
-                            description: Name describes the name of a datastore.
-                            type: string
-                          supportedDiskFormats:
-                            description: |-
-                              SupportedDiskFormat describes the list of disk formats supported by this
-                              datastore.
-                            items:
-                              type: string
-                            type: array
-                          url:
-                            description: URL describes the datastore URL.
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      type: array
-                      x-kubernetes-list-map-keys:
+                    kind:
+                      description: |-
+                        Kind is the kind of this member, which can be either VirtualMachine or
+                        VirtualMachineGroup.
+                      enum:
+                      - VirtualMachine
+                      - VirtualMachineGroup
+                      type: string
+                    name:
+                      description: Name is the name of this member.
+                      type: string
+                    placement:
+                      description: |-
+                        Placement describes the placement results for this member.
+
+                        Please note this field is only set for VirtualMachine members.
+                      properties:
+                        datastores:
+                          description: Datastores describe the recommended datastores
+                            for this VM.
+                          items:
+                            properties:
+                              diskKey:
+                                description: |-
+                                  DiskKey describes the device key to which this recommendation applies.
+                                  When omitted, this recommendation is for the VM's home directory.
+                                format: int32
+                                type: integer
+                              id:
+                                description: ID describes the datastore ID.
+                                type: string
+                              name:
+                                description: Name describes the name of a datastore.
+                                type: string
+                              supportedDiskFormats:
+                                description: |-
+                                  SupportedDiskFormat describes the list of disk formats supported by this
+                                  datastore.
+                                items:
+                                  type: string
+                                type: array
+                              url:
+                                description: URL describes the datastore URL.
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        name:
+                          description: Name is the name of VirtualMachine member of
+                            this group.
+                          type: string
+                        node:
+                          description: Node describes the recommended node for this
+                            VM.
+                          type: string
+                        pool:
+                          description: Pool describes the recommended resource pool
+                            for this VM.
+                          type: string
+                        zoneID:
+                          description: Zone describes the recommended zone for this
+                            VM.
+                          type: string
+                      required:
                       - name
-                      x-kubernetes-list-type: map
-                    name:
-                      description: Name is the name of VirtualMachine member of this
-                        group.
-                      type: string
-                    node:
-                      description: Node describes the recommended node for this VM.
-                      type: string
-                    pool:
-                      description: Pool describes the recommended resource pool for
-                        this VM.
-                      type: string
-                    zoneID:
-                      description: Zone describes the recommended zone for this VM.
-                      type: string
-                  required:
-                  - name
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - name
-                x-kubernetes-list-type: map
-              powerState:
-                description: |-
-                  PowerState describes the observed power state of all direct or indirect
-                  VirtualMachine members of this group.
-                items:
-                  properties:
-                    name:
-                      description: Name is the name of VirtualMachine member of this
-                        group.
-                      type: string
+                      type: object
                     powerState:
                       description: |-
-                        PowerState describes the observed power state of the VirtualMachine
-                        group member.
+                        PowerState describes the observed power state of this member.
+
+                        Please note this field is only set for VirtualMachine members.
                       enum:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
                       type: string
                   required:
+                  - kind
                   - name
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
                 - name
+                - kind
                 x-kubernetes-list-type: map
             type: object
         type: object

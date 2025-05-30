@@ -16,6 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
@@ -147,15 +148,15 @@ func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
 	return vm.ReferenceValue(), nil
 }
 
+var ErrSetPowerState = pkgerr.NoRequeueError{Message: "updated power state"}
+
 func (vm *VirtualMachine) SetPowerState(
 	ctx context.Context,
 	currentPowerState,
 	desiredPowerState vmopv1.VirtualMachinePowerState,
 	desiredPowerOpMode vmopv1.VirtualMachinePowerOpMode) error {
 
-	ctxop.MarkUpdate(ctx)
-
-	_, err := vmutil.SetAndWaitOnPowerState(
+	result, err := vmutil.SetAndWaitOnPowerState(
 		ctx,
 		vm.VcVM().Client(),
 		mo.VirtualMachine{
@@ -174,7 +175,16 @@ func (vm *VirtualMachine) SetPowerState(
 		vmutil.ParsePowerState(string(desiredPowerState)),
 		vmutil.ParsePowerOpMode(string(desiredPowerOpMode)))
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	if result.AnyChange() {
+		ctxop.MarkUpdate(ctx)
+		return ErrSetPowerState
+	}
+
+	return nil
 }
 
 // GetVirtualDevices returns the VMs VirtualDeviceList.

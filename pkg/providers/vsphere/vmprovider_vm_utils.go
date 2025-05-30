@@ -27,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -51,6 +52,7 @@ func GetVirtualMachineClass(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineClass, error) {
 
+	// TODO(akutz) Do we still need to check the second condition?
 	if vmopv1util.IsClasslessVM(*vmCtx.VM) &&
 		pkgcfg.FromContext(vmCtx).Features.VMImportNewNet {
 
@@ -715,4 +717,26 @@ func getSecretOrConfigMapObject(
 	secret.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
 
 	return secret, err
+}
+
+func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
+	byAdmin := paused.ByAdmin(vmCtx.MoVM)
+	byDevOps := paused.ByDevOps(vmCtx.VM)
+
+	if byAdmin || byDevOps {
+		if vmCtx.VM.Labels == nil {
+			vmCtx.VM.Labels = make(map[string]string)
+		}
+		switch {
+		case byAdmin && byDevOps:
+			vmCtx.VM.Labels[vmopv1.PausedVMLabelKey] = "both"
+		case byAdmin:
+			vmCtx.VM.Labels[vmopv1.PausedVMLabelKey] = "admin"
+		case byDevOps:
+			vmCtx.VM.Labels[vmopv1.PausedVMLabelKey] = "devops"
+		}
+		return true
+	}
+	delete(vmCtx.VM.Labels, vmopv1.PausedVMLabelKey)
+	return false
 }

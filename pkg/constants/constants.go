@@ -99,4 +99,12 @@ const (
 	// SkipValidationAnnotationKey is a privileged annotation that may be used
 	// to skip the validation webhooks for a given object.
 	SkipValidationAnnotationKey string = "vmoperator.vmware.com.protected/skip-validation"
+
+	// BootstrapHashConfigSpecAnnotationKey is the annotation used to track the
+	// config spec used to bootstrap a VM's guest information.
+	BootstrapHashConfigSpecAnnotationKey = "vmoperator.vmware.com/bootstrap-hash-configspec"
+
+	// BootstrapHashCustomSpecAnnotationKey is the annotation used to track the
+	// customization spec used to bootstrap a VM's guest information.
+	BootstrapHashCustomSpecAnnotationKey = "vmoperator.vmware.com/bootstrap-hash-customspec"
 )

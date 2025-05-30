@@ -6,7 +6,6 @@ package vmlifecycle_test
 
 import (
 	"slices"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,29 +31,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("UpdateVM selected MO Properties", func() {
-
-	It("Covers VM Status properties", func() {
-		for _, p := range vmlifecycle.VMStatusPropertiesSelector {
-			match := false
-			for _, pp := range vsphere.VMUpdatePropertiesSelector {
-				if p == pp || strings.HasPrefix(p, pp+".") {
-					match = true
-					break
-				}
-			}
-			Expect(match).To(BeTrue(), "Status prop %q not found in update props", p)
-		}
-	})
-})
-
 var _ = Describe("UpdateStatus", func() {
 
 	var (
 		ctx   *builder.TestContextForVCSim
 		vmCtx pkgctx.VirtualMachineContext
 		vcVM  *object.VirtualMachine
-		data  vmlifecycle.UpdateStatusData
+		data  vmlifecycle.ReconcileStatusData
 	)
 
 	BeforeEach(func() {
@@ -77,10 +60,10 @@ var _ = Describe("UpdateStatus", func() {
 		Expect(vcVM.Properties(
 			ctx,
 			vcVM.Reference(),
-			vmlifecycle.VMStatusPropertiesSelector,
+			vsphere.VMUpdatePropertiesSelector,
 			&vmCtx.MoVM)).To(Succeed())
 
-		data = vmlifecycle.UpdateStatusData{
+		data = vmlifecycle.ReconcileStatusData{
 			NetworkDeviceKeysToSpecIdx: map[int32]int{},
 		}
 	})
@@ -91,7 +74,7 @@ var _ = Describe("UpdateStatus", func() {
 	})
 
 	JustBeforeEach(func() {
-		err := vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, data)
+		err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -101,12 +84,12 @@ var _ = Describe("UpdateStatus", func() {
 			Expect(vcVM.Properties(
 				ctx,
 				vcVM.Reference(),
-				vmlifecycle.VMStatusPropertiesSelector,
+				vsphere.VMUpdatePropertiesSelector,
 				&vmCtx.MoVM)).To(Succeed())
 		})
 		Specify("the status is created from the properties fetched from vsphere", func() {
 			moVM := mo.VirtualMachine{}
-			Expect(vcVM.Properties(ctx, vcVM.Reference(), vmlifecycle.VMStatusPropertiesSelector, &moVM)).To(Succeed())
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &moVM)).To(Succeed())
 
 			Expect(vmCtx.VM.Status.BiosUUID).To(Equal(moVM.Summary.Config.Uuid))
 			Expect(vmCtx.VM.Status.InstanceUUID).To(Equal(moVM.Summary.Config.InstanceUuid))

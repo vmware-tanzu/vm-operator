@@ -49,7 +49,7 @@ func DeleteVirtualMachine(
 		//             that indicates this state.
 
 		return fmt.Errorf("failed to delete vm: %w", pkgerr.NoRequeueError{
-			Message: fmt.Sprintf("unsupported VM connection state: %s", cs),
+			Message: fmt.Sprintf("unsupported connection state: %s", cs),
 		})
 	}
 

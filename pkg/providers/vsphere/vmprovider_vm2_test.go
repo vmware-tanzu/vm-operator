@@ -458,12 +458,8 @@ func vmE2ETests() {
 						vm.Spec.Network.Interfaces[1].Network.Name = networkName1
 					})
 
-					// NOTE: network changes only checked during power on
-					By("power off and on VM", func() {
+					By("power off VM", func() {
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-
-						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
 						Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
@@ -471,9 +467,13 @@ func vmE2ETests() {
 
 					By("simulate successful network provider reconcile on added interface", func() {
 						np.simulateInterfaceReconcile(ctx, vm, networkName1, interfaceName1, 1)
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 					})
 
-					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					By("power on VM", func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					})
 
 					By("Added interface has expected NIC backing", func() {
 						devList, err := vcVM.Device(ctx)

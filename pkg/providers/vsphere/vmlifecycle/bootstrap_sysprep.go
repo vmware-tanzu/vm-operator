@@ -5,23 +5,32 @@
 package vmlifecycle
 
 import (
-	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 func BootstrapSysPrep(
-	_ context.Context,
+	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
 	sysPrepSpec *vmopv1.VirtualMachineBootstrapSysprepSpec,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
+
+	logger := logr.FromContextOrDiscard(vmCtx)
+	logger.V(4).Info("Reconciling Sysprep bootstrap state")
+
+	if !vmCtx.IsPoweringOn() {
+		vmCtx.Logger.V(4).Info("Skipping Sysprep since VM is not powering on")
+		return nil, nil, nil
+	}
 
 	var (
 		data     string

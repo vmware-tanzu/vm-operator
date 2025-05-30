@@ -34,7 +34,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000
-	github.com/vmware/govmomi v0.52.0-alpha.0.0.20250528190340-70c5ca6d1de6
+	github.com/vmware/govmomi v0.52.0-alpha.0.0.20250530184040-db3efb71ccd0
 	golang.org/x/exp v0.0.0-20230515195305-f3d0a9c9a5cc
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/24
 	golang.org/x/text v0.25.0

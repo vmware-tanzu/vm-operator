@@ -2249,6 +2249,7 @@ func autoConvert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha1_VirtualMachineV
 	// WARNING: in.Type requires manual conversion: does not exist in peer-type
 	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	// WARNING: in.Limit requires manual conversion: does not exist in peer-type
+	// WARNING: in.Requested requires manual conversion: does not exist in peer-type
 	// WARNING: in.Used requires manual conversion: does not exist in peer-type
 	out.Attached = in.Attached
 	// WARNING: in.DiskUUID requires manual conversion: does not exist in peer-type

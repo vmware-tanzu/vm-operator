@@ -602,11 +602,11 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type: vmopv1.VolumeTypeClassic,
 							Used: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 						},
 						{
-							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type: vmopv1.VolumeTypeManaged,
 							Used: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
 						},
 					}
@@ -651,11 +651,11 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type: vmopv1.VolumeTypeClassic,
 							Used: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 						},
 						{
-							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type: vmopv1.VolumeTypeManaged,
 							Used: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
 						},
 					}
@@ -974,7 +974,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-100",
 							DiskUUID: "100",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
@@ -986,7 +986,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-101",
 							DiskUUID: "101",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
@@ -994,7 +994,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-102",
 							DiskUUID: "102",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
@@ -1002,7 +1002,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-103",
 							DiskUUID: "103",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
@@ -1010,7 +1010,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-104",
 							DiskUUID: "104",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
@@ -1025,7 +1025,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-105",
 							DiskUUID: "105",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type:     vmopv1.VolumeTypeManaged,
 							Attached: false,
 							Limit:    vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
 						},
@@ -1036,7 +1036,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-100",
 							DiskUUID: "100",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
@@ -1048,7 +1048,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-101",
 							DiskUUID: "101",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
@@ -1056,7 +1056,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-102",
 							DiskUUID: "102",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
@@ -1064,7 +1064,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-103",
 							DiskUUID: "103",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
@@ -1072,7 +1072,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-104",
 							DiskUUID: "104",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
@@ -1080,7 +1080,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-105",
 							DiskUUID: "105",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type:     vmopv1.VolumeTypeManaged,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
@@ -1099,7 +1099,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-106",
 							DiskUUID: "106",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 						},
@@ -1110,7 +1110,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-100",
 							DiskUUID: "100",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								ProviderID: "my-provider-id",
 								KeyID:      "my-key-id",
@@ -1122,7 +1122,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-101",
 							DiskUUID: "101",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
@@ -1130,7 +1130,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-102",
 							DiskUUID: "102",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
@@ -1138,7 +1138,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-103",
 							DiskUUID: "103",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
@@ -1146,7 +1146,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-104",
 							DiskUUID: "104",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
@@ -1167,7 +1167,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-101",
 							DiskUUID: "101",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
@@ -1175,7 +1175,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-102",
 							DiskUUID: "102",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
@@ -1183,7 +1183,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-103",
 							DiskUUID: "103",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
@@ -1191,7 +1191,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-104",
 							DiskUUID: "104",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Attached: true,
 							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
 							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),

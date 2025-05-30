@@ -99,7 +99,6 @@ func ReconcileMinHardwareVersion(
 
 	// If the VM is not powered off, then there is nothing to do.
 	if mo.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOff {
-		log.Info("Skipping upgrade because VM is not powered off")
 		return ReconcileMinHardwareVersionResultNotPoweredOff, nil
 	}
 

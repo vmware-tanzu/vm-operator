@@ -37,6 +37,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
@@ -453,7 +454,8 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 	if controllerutil.ContainsFinalizer(ctx.VM, finalizerName) ||
 		controllerutil.ContainsFinalizer(ctx.VM, deprecatedFinalizerName) {
 		defer func() {
-			r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)
+			r.Recorder.EmitEvent(
+				ctx.VM, "Delete", filterNoRequeueErr(reterr), false)
 		}()
 
 		if err := r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM); err != nil {
@@ -563,30 +565,19 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 				// to do a create, i.e. createArgs.
 				err = r.handleBlockingCreateErr(ctx, err)
 			} else {
-				// Emit event once goroutine is complete.
-				go func(obj client.Object) {
-					failed := false
-					for err := range chanErr {
-						if err != nil {
-							failed = true
-							r.Recorder.EmitEvent(obj, "Create", err, false)
-						}
-					}
-					if !failed {
-						// If no error the channel is just closed.
-						r.Recorder.EmitEvent(obj, "Create", nil, false)
-					}
-				}(ctx.VM.DeepCopy())
+				go r.handleNonBlockingCreateErr(ctx.VM.DeepCopy(), chanErr)
 			}
 		}
 	case ctxop.IsUpdate(ctx):
 
-		r.Recorder.EmitEvent(ctx.VM, "Update", err, false)
+		r.Recorder.EmitEvent(
+			ctx.VM, "Update", filterNoRequeueErr(err), false)
 
 	case err != nil && !ignoredCreateErr(err):
 
 		// Catch all event for neither create nor update op.
-		r.Recorder.EmitEvent(ctx.VM, "ReconcileNormal", err, true)
+		r.Recorder.EmitEvent(
+			ctx.VM, "ReconcileNormal", filterNoRequeueErr(err), true)
 	}
 
 	if !pkgcfg.FromContext(ctx).AsyncSignalEnabled {
@@ -637,8 +628,28 @@ func (r *Reconciler) handleBlockingCreateErr(
 		}
 	}
 
-	r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
+	r.Recorder.EmitEvent(ctx.VM, "Create", filterNoRequeueErr(err), false)
 	return err
+}
+
+func (r *Reconciler) handleNonBlockingCreateErr(
+	obj *vmopv1.VirtualMachine, chanErr <-chan error) {
+
+	// Emit event once channel is closed.
+	failed := false
+	for err := range chanErr {
+		if err != nil &&
+			!errors.Is(err, vsphere.ErrCreate) &&
+			!pkgerr.IsNoRequeueError(err) {
+
+			failed = true
+			r.Recorder.EmitEvent(obj, "Create", err, false)
+		}
+	}
+	if !failed {
+		// If no error the channel is just closed.
+		r.Recorder.EmitEvent(obj, "Create", nil, false)
+	}
 }
 
 func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
@@ -715,4 +726,11 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 	delete(ctx.VM.Annotations, pkgconst.VMICacheLocationAnnotationKey)
 
 	return true
+}
+
+func filterNoRequeueErr(err error) error {
+	if pkgerr.IsNoRequeueError(err) {
+		return nil
+	}
+	return err
 }

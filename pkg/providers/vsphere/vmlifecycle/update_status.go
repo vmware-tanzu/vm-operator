@@ -40,34 +40,17 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
-var (
-	// VMStatusPropertiesSelector is the minimum properties needed to be
-	// retrieved in order to populate the Status. Callers may provide a MO with
-	// more. This often saves us a second round trip in the common steady state.
-	VMStatusPropertiesSelector = []string{
-		"config.changeTrackingEnabled",
-		"config.extraConfig",
-		"config.hardware.device",
-		"config.keyId",
-		"layoutEx",
-		"guest",
-		"resourcePool",
-		"runtime",
-		"summary",
-	}
-)
-
-type UpdateStatusData struct {
+type ReconcileStatusData struct {
 	// NetworkDeviceKeysToSpecIdx maps the network device's DeviceKey to its
 	// corresponding index in the VM's Spec.Network.Interfaces[].
 	NetworkDeviceKeysToSpecIdx map[int32]int
 }
 
-func UpdateStatus(
+func ReconcileStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	vcVM *object.VirtualMachine,
-	data UpdateStatusData) error {
+	data ReconcileStatusData) error {
 
 	vm := vmCtx.VM
 

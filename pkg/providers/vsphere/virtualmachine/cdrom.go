@@ -62,9 +62,19 @@ func UpdateCdromDeviceChanges(
 			// later with "Edit" operation.
 			curCdromBackingFileNameToSpec[bFileName] = specCdrom
 		} else {
+
+			var connected bool
+			if specCdrom.Connected != nil {
+				// A device can only be connected if the VM is powered on. See
+				// https://github.com/vmware/govmomi/blob/49947e5bbd7b83e91cf89dc2ba80daae72dddfff/simulator/virtual_machine.go#L1506-L1511
+				connected = *specCdrom.Connected &&
+					vmCtx.MoVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOn
+			}
+
 			// CD-ROM does not exist, create a new one with desired backing and
 			// connection, and update the device changes with "Add" operation.
-			cdrom = createNewCdrom(specCdrom, bFileName)
+			cdrom = createNewCdrom(specCdrom, bFileName, connected)
+
 			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 				Device:    cdrom,
 				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
@@ -111,6 +121,7 @@ func UpdateCdromDeviceChanges(
 	curCdromChanges := updateCurCdromsConnectionState(
 		curCdromBackingFileNameToSpec,
 		expectedBackingFileNameToCdrom,
+		vmCtx.MoVM.Runtime.PowerState,
 	)
 	deviceChanges = append(deviceChanges, curCdromChanges...)
 
@@ -161,6 +172,7 @@ func UpdateConfigSpecCdromDeviceConnection(
 	curCdromChanges := updateCurCdromsConnectionState(
 		backingFileNameToCdromSpec,
 		backingFileNameToCdromDevice,
+		vmCtx.MoVM.Runtime.PowerState,
 	)
 	configSpec.DeviceChange = append(configSpec.DeviceChange, curCdromChanges...)
 
@@ -205,7 +217,7 @@ func getBackingFileNameByImageRef(
 	// Subscribed content library item file may not always be stored in VC.
 	// Sync the item to ensure the file is available for CD-ROM connection.
 	if syncFile && (!itemStatus.Cached || itemStatus.SizeInBytes.IsZero()) {
-		vmCtx.Logger.Info("Syncing content library item", "libItemUUID", libItemUUID)
+		vmCtx.Logger.V(2).Info("Syncing content library item", "libItemUUID", libItemUUID)
 		libItem, err := libManager.GetLibraryItem(vmCtx, libItemUUID)
 		if err != nil {
 			return "", fmt.Errorf("error getting library item %s to sync: %w", libItemUUID, err)
@@ -302,7 +314,9 @@ func getCdromByBackingFileName(
 // and connection state as specified in the VirtualMachineCdromSpec.
 func createNewCdrom(
 	cdromSpec vmopv1.VirtualMachineCdromSpec,
-	backingFileName string) *vimtypes.VirtualCdrom {
+	backingFileName string,
+	connected bool) *vimtypes.VirtualCdrom {
+
 	backing := &vimtypes.VirtualCdromIsoBackingInfo{
 		VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 			FileName: backingFileName,
@@ -315,7 +329,7 @@ func createNewCdrom(
 			Connectable: &vimtypes.VirtualDeviceConnectInfo{
 				AllowGuestControl: ptr.Deref(cdromSpec.AllowGuestControl),
 				StartConnected:    ptr.Deref(cdromSpec.Connected),
-				Connected:         ptr.Deref(cdromSpec.Connected),
+				Connected:         connected,
 			},
 		},
 	}
@@ -418,22 +432,73 @@ func addNewSATAController(curDevices object.VirtualDeviceList) (
 // CD-ROM devices to match the desired connection state in the given spec.
 func updateCurCdromsConnectionState(
 	backingFileNameToCdromSpec map[string]vmopv1.VirtualMachineCdromSpec,
-	backingFileNameToCdrom map[string]vimtypes.BaseVirtualDevice) []vimtypes.BaseVirtualDeviceConfigSpec {
+	backingFileNameToCdrom map[string]vimtypes.BaseVirtualDevice,
+	currentPowerState vimtypes.VirtualMachinePowerState) []vimtypes.BaseVirtualDeviceConfigSpec {
 
 	if len(backingFileNameToCdromSpec) == 0 || len(backingFileNameToCdrom) == 0 {
 		return nil
 	}
 
-	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+	var (
+		deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+		poweredOn     = currentPowerState == vimtypes.VirtualMachinePowerStatePoweredOn
+	)
 
 	for b, spec := range backingFileNameToCdromSpec {
-		if cdrom, ok := backingFileNameToCdrom[b]; ok {
-			if c := cdrom.GetVirtualDevice().Connectable; c != nil &&
-				(c.Connected != ptr.Deref(spec.Connected) || c.AllowGuestControl != ptr.Deref(spec.AllowGuestControl)) {
-				c.StartConnected = ptr.Deref(spec.Connected)
-				c.Connected = ptr.Deref(spec.Connected)
-				c.AllowGuestControl = ptr.Deref(spec.AllowGuestControl)
+		var (
+			desiredConnected         bool
+			desiredAllowGuestControl bool
+			desiredStartConnected    bool
+		)
 
+		if spec.Connected != nil {
+			// A device can only be connected if the VM is powered on. See
+			// https://github.com/vmware/govmomi/blob/49947e5bbd7b83e91cf89dc2ba80daae72dddfff/simulator/virtual_machine.go#L1506-L1511
+			desiredConnected = poweredOn && *spec.Connected
+			desiredStartConnected = *spec.Connected
+		}
+		if spec.AllowGuestControl != nil {
+			desiredAllowGuestControl = *spec.AllowGuestControl
+		}
+
+		if dev, ok := backingFileNameToCdrom[b]; ok {
+
+			var (
+				hasChange          bool
+				cdrom              = dev.(*vimtypes.VirtualCdrom)
+				connectable        = cdrom.Connectable
+				isConnected        = connectable != nil && connectable.Connected
+				allowsGuestControl = connectable != nil && connectable.AllowGuestControl
+				startsConnected    = connectable != nil && connectable.StartConnected
+			)
+
+			if startsConnected != desiredStartConnected {
+				if connectable == nil {
+					connectable = &vimtypes.VirtualDeviceConnectInfo{}
+				}
+				hasChange = true
+				connectable.StartConnected = desiredStartConnected
+			}
+
+			if isConnected != desiredConnected {
+				if connectable == nil {
+					connectable = &vimtypes.VirtualDeviceConnectInfo{}
+				}
+				hasChange = true
+				connectable.Connected = desiredConnected
+			}
+
+			if allowsGuestControl != desiredAllowGuestControl {
+				if connectable == nil {
+					connectable = &vimtypes.VirtualDeviceConnectInfo{}
+				}
+				hasChange = true
+				connectable.AllowGuestControl = desiredAllowGuestControl
+			}
+
+			cdrom.Connectable = connectable
+
+			if hasChange {
 				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 					Device:    cdrom,
 					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,

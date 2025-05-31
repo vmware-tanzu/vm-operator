@@ -1615,6 +1615,21 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 	// Inherit the image's vAppConfig.
 	createArgs.ConfigSpec.VAppConfig = ovfConfigSpec.VAppConfig
 
+	// Merge the image's extra config.
+	if srcEC := ovfConfigSpec.ExtraConfig; len(srcEC) > 0 {
+		if dstEC := createArgs.ConfigSpec.ExtraConfig; len(dstEC) == 0 {
+			// The current config spec doesn't have any extra config, so just
+			// set it to use the extra config from the image.
+			createArgs.ConfigSpec.ExtraConfig = srcEC
+		} else {
+			// The current config spec already has extra config, so merge the
+			// extra config from the image, but do not overwrite any keys that
+			// already exist in the current config spec.
+			createArgs.ConfigSpec.ExtraConfig = object.OptionValueList(dstEC).
+				Join(srcEC...)
+		}
+	}
+
 	// Inherit the image's disks and their controllers.
 	pkgutil.CopyStorageControllersAndDisks(
 		&createArgs.ConfigSpec,

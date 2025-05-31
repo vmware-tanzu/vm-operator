@@ -1498,6 +1498,21 @@ func vmTests() {
 						BeforeEach(func() {
 							// Ensure the VM has a UID so the VM path is stable.
 							vm.UID = types.UID("123")
+
+							configSpec := vimtypes.VirtualMachineConfigSpec{
+								ExtraConfig: []vimtypes.BaseOptionValue{
+									&vimtypes.OptionValue{
+										Key:   "fu",
+										Value: "bar",
+									},
+								},
+							}
+
+							var w bytes.Buffer
+							enc := vimtypes.NewJSONEncoder(&w)
+							Expect(enc.Encode(configSpec)).To(Succeed())
+
+							vmClass.Spec.ConfigSpec = w.Bytes()
 						})
 
 						JustBeforeEach(func() {
@@ -1531,8 +1546,20 @@ func vmTests() {
 						})
 
 						It("should succeed", func() {
-							_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+							vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 							Expect(err).ToNot(HaveOccurred())
+
+							var moVM mo.VirtualMachine
+							Expect(vcVM.Properties(
+								ctx,
+								vcVM.Reference(),
+								[]string{"config.extraConfig"},
+								&moVM)).To(Succeed())
+							ec := object.OptionValueList(moVM.Config.ExtraConfig)
+							v1, _ := ec.GetString("hello")
+							Expect(v1).To(Equal("world"))
+							v2, _ := ec.GetString("fu")
+							Expect(v2).To(Equal("bar"))
 						})
 					})
 				})

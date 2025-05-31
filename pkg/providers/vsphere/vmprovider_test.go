@@ -473,6 +473,13 @@ virtualSystem:
     - key: tools.toolsUpgradePolicy
       required: false
       value: upgradeAtPowerCycle
+    extraConfig:
+    - key: hello
+      required: false
+      value: world
+    - key: fu
+      required: false
+      value: barred
     id: null
     info: Virtual hardware requirements
     item:

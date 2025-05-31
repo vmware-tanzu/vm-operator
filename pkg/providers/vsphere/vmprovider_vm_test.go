@@ -1526,7 +1526,7 @@ func vmTests() {
 									Files: []vmopv1.VirtualMachineImageCacheFileStatus{
 										{
 											ID:   ctx.ContentLibraryItemDiskPath,
-											Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+											Type: vmopv1.VolumeTypeClassic,
 										},
 									},
 									Conditions: []metav1.Condition{
@@ -2688,7 +2688,7 @@ func vmTests() {
 						if vm.Spec.Advanced == nil {
 							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
 						}
-						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThin
+						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThin
 					})
 
 					It("Succeeds", func() {
@@ -2705,7 +2705,7 @@ func vmTests() {
 
 				XContext("VM has thick provisioning", func() {
 					BeforeEach(func() {
-						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThick
+						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThick
 					})
 
 					It("Succeeds", func() {
@@ -2726,7 +2726,7 @@ func vmTests() {
 						if vm.Spec.Advanced == nil {
 							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
 						}
-						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero
+						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThickEagerZero
 					})
 
 					It("Succeeds", func() {
@@ -3091,13 +3091,15 @@ func vmTests() {
 				vm.Spec.Image.Kind = cvmiKind
 				vm.Spec.Image.Name = cvmiName
 				vm.Spec.StorageClass = ctx.StorageClassName
-				vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{{
-					Name: "cdrom0",
-					Image: vmopv1.VirtualMachineImageRef{
-						Name: cvmiName,
-						Kind: cvmiKind,
-					},
-				}}
+				vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					Cdrom: []vmopv1.VirtualMachineCdromSpec{{
+						Name: "cdrom0",
+						Image: vmopv1.VirtualMachineImageRef{
+							Name: cvmiName,
+							Kind: cvmiKind,
+						},
+					}},
+				}
 			})
 
 			Context("return config", func() {

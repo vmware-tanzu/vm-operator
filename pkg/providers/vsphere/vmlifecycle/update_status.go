@@ -785,8 +785,9 @@ func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine
 func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 
 	var (
-		other int64
-		disks int64
+		other     int64
+		disksUsed int64
+		disksReqd int64
 	)
 	// Get the storage consumed by non-disks.
 	if moVM.LayoutEx != nil {
@@ -812,35 +813,49 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		if v.Type == vmopv1.VirtualMachineStorageDiskTypeClassic {
 			if v.Used != nil {
 				i, _ := v.Used.AsInt64()
-				disks += i
+				disksUsed += i
+			}
+			if v.Requested != nil {
+				i, _ := v.Requested.AsInt64()
+				disksReqd += i
 			}
 		}
 	}
 
-	if disks == 0 && other == 0 {
+	if disksReqd == 0 && disksUsed == 0 && other == 0 {
 		return
 	}
 
 	if vm.Status.Storage == nil {
 		vm.Status.Storage = &vmopv1.VirtualMachineStorageStatus{}
 	}
-	if vm.Status.Storage.Usage == nil {
-		vm.Status.Storage.Usage = &vmopv1.VirtualMachineStorageStatusUsage{}
+
+	if disksReqd > 0 {
+		if vm.Status.Storage.Requested == nil {
+			vm.Status.Storage.Requested = &vmopv1.VirtualMachineStorageStatusRequested{}
+		}
+		vm.Status.Storage.Requested.Disks = nil
+	}
+	if disksUsed > 0 || other > 0 {
+		if vm.Status.Storage.Used == nil {
+			vm.Status.Storage.Used = &vmopv1.VirtualMachineStorageStatusUsed{}
+		}
+		vm.Status.Storage.Used.Disks = nil
+		vm.Status.Storage.Used.Other = nil
 	}
 
-	vm.Status.Storage.Usage.Disks = nil
-	vm.Status.Storage.Usage.Other = nil
-	vm.Status.Storage.Usage.Total = nil
-
-	if disks > 0 {
-		vm.Status.Storage.Usage.Disks = BytesToResourceGiB(disks)
+	if disksReqd > 0 {
+		vm.Status.Storage.Requested.Disks = BytesToResourceGiB(disksReqd)
+	}
+	if disksUsed > 0 {
+		vm.Status.Storage.Used.Disks = BytesToResourceGiB(disksUsed)
 	}
 
 	if other > 0 {
-		vm.Status.Storage.Usage.Other = BytesToResourceGiB(other)
+		vm.Status.Storage.Used.Other = BytesToResourceGiB(other)
 	}
 
-	vm.Status.Storage.Usage.Total = BytesToResourceGiB(disks + other)
+	vm.Status.Storage.Total = BytesToResourceGiB(disksReqd + other)
 }
 
 func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
@@ -918,12 +933,13 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
 			dp := diskPath.Path
 			volStatus := vmopv1.VirtualMachineVolumeStatus{
-				Name:     strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
-				Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-				Attached: true,
-				DiskUUID: diskUUID,
-				Limit:    BytesToResourceGiB(di.CapacityInBytes),
-				Used:     BytesToResourceGiB(di.UniqueSize),
+				Name:      strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
+				Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+				Attached:  true,
+				DiskUUID:  diskUUID,
+				Limit:     BytesToResourceGiB(di.CapacityInBytes),
+				Requested: BytesToResourceGiB(di.CapacityInBytes),
+				Used:      BytesToResourceGiB(di.UniqueSize),
 			}
 			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
 				volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{

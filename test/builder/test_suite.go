@@ -66,6 +66,7 @@ type InitEnvFn func(
 	client client.Client)
 
 func init() {
+	klog.InitFlags(nil)
 	klog.SetOutput(GinkgoWriter)
 	logf.SetLogger(klog.Background())
 }

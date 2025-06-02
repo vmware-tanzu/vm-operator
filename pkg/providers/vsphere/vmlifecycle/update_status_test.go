@@ -653,12 +653,16 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Used: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Requested: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Limit:     vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 						},
 						{
-							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
-							Used: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
+							Type:      vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Requested: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Limit:     vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
 						},
 					}
 					vmCtx.MoVM.LayoutEx = nil
@@ -669,10 +673,12 @@ var _ = Describe("UpdateStatus", func() {
 					})
 					Specify("status.storage to be initialized", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Total: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+								Disks: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							},
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-								Other: nil,
 							},
 						}))
 					})
@@ -680,19 +686,23 @@ var _ = Describe("UpdateStatus", func() {
 				When("status.storage is not nil", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: vmlifecycle.BytesToResourceGiB(1024 + (20 * oneGiBInBytes)),
+							Total: vmlifecycle.BytesToResourceGiB(1024 + (20 * oneGiBInBytes)),
+							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
 								Disks: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
+							},
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Other: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
 							},
 						}
 					})
 					Specify("status.storage to be updated", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Total: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+								Disks: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							},
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-								Other: nil,
 							},
 						}))
 					})
@@ -702,12 +712,16 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Used: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Requested: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Limit:     vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 						},
 						{
-							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
-							Used: vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
+							Type:      vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Requested: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Limit:     vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(20 * oneGiBInBytes),
 						},
 					}
 					vmCtx.MoVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
@@ -729,8 +743,11 @@ var _ = Describe("UpdateStatus", func() {
 					})
 					Specify("status.storage to be initialized", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: vmlifecycle.BytesToResourceGiB(11 * oneGiBInBytes),
+							Total: vmlifecycle.BytesToResourceGiB(51 * oneGiBInBytes),
+							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+								Disks: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							},
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 								Other: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
 							},
@@ -740,17 +757,22 @@ var _ = Describe("UpdateStatus", func() {
 				When("status.storage is not nil", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: vmlifecycle.BytesToResourceGiB(1024 + (5 * oneGiBInBytes)),
+							Total: vmlifecycle.BytesToResourceGiB(1024 + (5 * oneGiBInBytes)),
+							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
 								Disks: vmlifecycle.BytesToResourceGiB(5 * oneGiBInBytes),
+							},
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Other: vmlifecycle.BytesToResourceGiB(1024),
 							},
 						}
 					})
 					Specify("status.storage to be updated", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: vmlifecycle.BytesToResourceGiB(11 * oneGiBInBytes),
+							Total: vmlifecycle.BytesToResourceGiB(51 * oneGiBInBytes),
+							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+								Disks: vmlifecycle.BytesToResourceGiB(50 * oneGiBInBytes),
+							},
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 								Other: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
 							},
@@ -851,6 +873,7 @@ var _ = Describe("UpdateStatus", func() {
 									},
 									Key: 105,
 								},
+								CapacityInBytes: 5 * oneGiBInBytes,
 								VDiskId: &vimtypes.ID{
 									Id: "my-fcd-1",
 								},
@@ -1030,41 +1053,46 @@ var _ = Describe("UpdateStatus", func() {
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
 							},
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-101",
-							DiskUUID: "101",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
+							Name:      "my-disk-101",
+							DiskUUID:  "101",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-102",
-							DiskUUID: "102",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
+							Name:      "my-disk-102",
+							DiskUUID:  "102",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-103",
-							DiskUUID: "103",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+							Name:      "my-disk-103",
+							DiskUUID:  "103",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-104",
-							DiskUUID: "104",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
+							Name:      "my-disk-104",
+							DiskUUID:  "104",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
 						},
 					}))
 				})
@@ -1074,11 +1102,12 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-105",
-							DiskUUID: "105",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
-							Attached: false,
-							Limit:    vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
+							Name:      "my-disk-105",
+							DiskUUID:  "105",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Attached:  false,
+							Limit:     vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
 						},
 					}
 				})
@@ -1092,41 +1121,46 @@ var _ = Describe("UpdateStatus", func() {
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
 							},
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-101",
-							DiskUUID: "101",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
+							Name:      "my-disk-101",
+							DiskUUID:  "101",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-102",
-							DiskUUID: "102",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
+							Name:      "my-disk-102",
+							DiskUUID:  "102",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-103",
-							DiskUUID: "103",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+							Name:      "my-disk-103",
+							DiskUUID:  "103",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-104",
-							DiskUUID: "104",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
+							Name:      "my-disk-104",
+							DiskUUID:  "104",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
 						},
 						{
 							Name:     "my-disk-105",
@@ -1136,9 +1170,10 @@ var _ = Describe("UpdateStatus", func() {
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
 							},
-							Attached: false,
-							Limit:    vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (50 * oneGiBInBytes)),
+							Attached:  false,
+							Limit:     vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(100 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (50 * oneGiBInBytes)),
 						},
 					}))
 				})
@@ -1148,11 +1183,12 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-106",
-							DiskUUID: "106",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Name:      "my-disk-106",
+							DiskUUID:  "106",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
 						},
 					}
 				})
@@ -1166,41 +1202,46 @@ var _ = Describe("UpdateStatus", func() {
 								ProviderID: "my-provider-id",
 								KeyID:      "my-key-id",
 							},
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(10 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-101",
-							DiskUUID: "101",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
+							Name:      "my-disk-101",
+							DiskUUID:  "101",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-102",
-							DiskUUID: "102",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
+							Name:      "my-disk-102",
+							DiskUUID:  "102",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-103",
-							DiskUUID: "103",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+							Name:      "my-disk-103",
+							DiskUUID:  "103",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-104",
-							DiskUUID: "104",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
+							Name:      "my-disk-104",
+							DiskUUID:  "104",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
 						},
 					}))
 				})
@@ -1216,36 +1257,40 @@ var _ = Describe("UpdateStatus", func() {
 				Specify("status.volumes omits the classic disk w invalid path", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
-							Name:     "my-disk-101",
-							DiskUUID: "101",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
+							Name:      "my-disk-101",
+							DiskUUID:  "101",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(1 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (0.25 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-102",
-							DiskUUID: "102",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
+							Name:      "my-disk-102",
+							DiskUUID:  "102",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(2 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (0.5 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-103",
-							DiskUUID: "103",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
+							Name:      "my-disk-103",
+							DiskUUID:  "103",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(3 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (1 * oneGiBInBytes)),
 						},
 						{
-							Name:     "my-disk-104",
-							DiskUUID: "104",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
-							Attached: true,
-							Limit:    vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
-							Used:     vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
+							Name:      "my-disk-104",
+							DiskUUID:  "104",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Requested: vmlifecycle.BytesToResourceGiB(4 * oneGiBInBytes),
+							Used:      vmlifecycle.BytesToResourceGiB(500 + (2 * oneGiBInBytes)),
 						},
 					}))
 				})

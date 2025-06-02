@@ -8193,8 +8193,33 @@ spec:
                 description: Storage describes the observed state of the VirtualMachine's
                   storage.
                 properties:
+                  requested:
+                    description: |-
+                      Requested describes the observed amount of storage requested by a
+                      VirtualMachine.
+                    properties:
+                      disks:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          Disks describes the total storage space requested by a VirtualMachine's
+                          non-PVC disks.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    type: object
+                  total:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Total describes the total storage space used by a VirtualMachine that
+                      counts against the Namespace's storage quota.
+                      This value is a sum of requested.disks + used.other.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
                   usage:
-                    description: Usage describes the observed amount of storage used
+                    description: Used describes the observed amount of storage used
                       by a VirtualMachine.
                     properties:
                       disks:
@@ -8214,15 +8239,6 @@ spec:
                           Other describes the total storage space used by the VirtualMachine's
                           non disk files, ex. the configuration file, swap space, logs, snapshots,
                           etc.
-                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                        x-kubernetes-int-or-string: true
-                      total:
-                        anyOf:
-                        - type: integer
-                        - type: string
-                        description: |-
-                          Total describes the total storage space used by a VirtualMachine that
-                          counts against the Namespace's storage quota.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object
@@ -8281,12 +8297,24 @@ spec:
                       anyOf:
                       - type: integer
                       - type: string
-                      description: Limit describes the storage limit for the volume.
+                      description: Limit describes the maximum, requested capacity
+                        of the volume.
                       pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                       x-kubernetes-int-or-string: true
                     name:
                       description: Name is the name of the attached volume.
                       type: string
+                    requested:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: |-
+                        Requested describes the minimum, requested capacity of the volume.
+
+                        Please note, this value is used when calculating a VM's impact to a
+                        namespace's storage quota.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
                     type:
                       default: Managed
                       description: Type is the type of the attached volume.
@@ -8300,8 +8328,13 @@ spec:
                       - type: string
                       description: |-
                         Used describes the observed, non-shared size of the volume on disk.
+
                         For example, if this is a linked-clone's boot volume, this value
                         represents the space consumed by the linked clone, not the parent.
+
+                        Another example is when a volume is thin-provisioned. The volume's
+                        capacity may be 20Gi, but the actual usage on disk may only be a few
+                        hundred mebibytes.
                       pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                       x-kubernetes-int-or-string: true
                   required:

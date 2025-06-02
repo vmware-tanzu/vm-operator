@@ -119,14 +119,27 @@ type VirtualMachineVolumeStatus struct {
 
 	// +optional
 
-	// Limit describes the storage limit for the volume.
+	// Limit describes the maximum, requested capacity of the volume.
 	Limit *resource.Quantity `json:"limit,omitempty"`
 
 	// +optional
 
+	// Requested describes the minimum, requested capacity of the volume.
+	//
+	// Please note, this value is used when calculating a VM's impact to a
+	// namespace's storage quota.
+	Requested *resource.Quantity `json:"requested,omitempty"`
+
+	// +optional
+
 	// Used describes the observed, non-shared size of the volume on disk.
+	//
 	// For example, if this is a linked-clone's boot volume, this value
 	// represents the space consumed by the linked clone, not the parent.
+	//
+	// Another example is when a volume is thin-provisioned. The volume's
+	// capacity may be 20Gi, but the actual usage on disk may only be a few
+	// hundred mebibytes.
 	Used *resource.Quantity `json:"used,omitempty"`
 
 	// +optional
@@ -168,17 +181,24 @@ func SortVirtualMachineVolumeStatuses(s []VirtualMachineVolumeStatus) {
 type VirtualMachineStorageStatus struct {
 	// +optional
 
-	// Usage describes the observed amount of storage used by a VirtualMachine.
-	Usage *VirtualMachineStorageStatusUsage `json:"usage,omitempty"`
-}
-
-type VirtualMachineStorageStatusUsage struct {
-	// +optional
-
 	// Total describes the total storage space used by a VirtualMachine that
 	// counts against the Namespace's storage quota.
+	// This value is a sum of requested.disks + used.other.
 	Total *resource.Quantity `json:"total,omitempty"`
 
+	// +optional
+
+	// Requested describes the observed amount of storage requested by a
+	// VirtualMachine.
+	Requested *VirtualMachineStorageStatusRequested `json:"requested,omitempty"`
+
+	// +optional
+
+	// Used describes the observed amount of storage used by a VirtualMachine.
+	Used *VirtualMachineStorageStatusUsed `json:"usage,omitempty"`
+}
+
+type VirtualMachineStorageStatusUsed struct {
 	// +optional
 
 	// Disks describes the total storage space used by a VirtualMachine's
@@ -191,4 +211,12 @@ type VirtualMachineStorageStatusUsage struct {
 	// non disk files, ex. the configuration file, swap space, logs, snapshots,
 	// etc.
 	Other *resource.Quantity `json:"other,omitempty"`
+}
+
+type VirtualMachineStorageStatusRequested struct {
+	// +optional
+
+	// Disks describes the total storage space requested by a VirtualMachine's
+	// non-PVC disks.
+	Disks *resource.Quantity `json:"disks,omitempty"`
 }

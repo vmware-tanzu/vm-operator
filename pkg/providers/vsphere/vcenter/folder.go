@@ -62,8 +62,9 @@ func DoesChildFolderExist(
 	return childFolder != nil, nil
 }
 
-// CreateFolder creates the named child Folder under the parent Folder.
-func CreateFolder(
+// CreateOrGetFolder creates or gets the named child Folder under the parent
+// Folder.
+func CreateOrGetFolder(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	parentFolderMoID, childName string) (string, error) {

@@ -37,9 +37,12 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 
 	if folderName := resourcePolicy.Spec.Folder; folderName != "" {
 		if folderMoID != "" {
-			_, err = vcenter.CreateFolder(ctx, vimClient, folderMoID, folderName)
-			if err != nil {
+			if childFolderID, err := vcenter.CreateOrGetFolder(
+				ctx, vimClient, folderMoID, folderName); err != nil {
+
 				errs = append(errs, err)
+			} else {
+				resourcePolicy.Status.FolderID = childFolderID
 			}
 		} else {
 			errs = append(errs, fmt.Errorf("cannot create child folder because Namespace folder not found"))

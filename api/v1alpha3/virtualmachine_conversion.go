@@ -12,6 +12,71 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
+func Convert_v1alpha3_VirtualMachineStorageStatus_To_v1alpha4_VirtualMachineStorageStatus(
+	in *VirtualMachineStorageStatus, out *vmopv1.VirtualMachineStorageStatus, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha3_VirtualMachineStorageStatus_To_v1alpha4_VirtualMachineStorageStatus(in, out, s); err != nil {
+		return err
+	}
+
+	if in.Usage != nil {
+		out.Total = in.Usage.Total
+		if in.Usage.Other != nil {
+			if out.Used == nil {
+				out.Used = &vmopv1.VirtualMachineStorageStatusUsed{}
+			}
+			out.Used.Other = in.Usage.Other
+		}
+		if in.Usage.Disks != nil {
+			if out.Requested == nil {
+				out.Requested = &vmopv1.VirtualMachineStorageStatusRequested{}
+			}
+			out.Requested.Disks = in.Usage.Disks
+		}
+	}
+
+	return nil
+}
+
+func Convert_v1alpha4_VirtualMachineStorageStatus_To_v1alpha3_VirtualMachineStorageStatus(
+	in *vmopv1.VirtualMachineStorageStatus, out *VirtualMachineStorageStatus, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha4_VirtualMachineStorageStatus_To_v1alpha3_VirtualMachineStorageStatus(in, out, s); err != nil {
+		return err
+	}
+
+	if in.Total != nil {
+		if out.Usage == nil {
+			out.Usage = &VirtualMachineStorageStatusUsage{}
+		}
+		out.Usage.Total = in.Total
+	}
+	if in.Requested != nil {
+		if in.Requested.Disks != nil {
+			if out.Usage == nil {
+				out.Usage = &VirtualMachineStorageStatusUsage{}
+			}
+			out.Usage.Disks = in.Requested.Disks
+		}
+	}
+	if in.Used != nil {
+		if in.Used.Other != nil {
+			if out.Usage == nil {
+				out.Usage = &VirtualMachineStorageStatusUsage{}
+			}
+			out.Usage.Other = in.Used.Other
+		}
+	}
+
+	return nil
+}
+
+func Convert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(
+	in *vmopv1.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in, out, s)
+}
+
 func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(
 	in *vmopv1.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s apiconversion.Scope) error {
 
@@ -21,11 +86,7 @@ func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMa
 func Convert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(
 	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
 
-	if err := autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in, out, s); err != nil {
-		return err
-	}
-
-	return nil
+	return autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in, out, s)
 }
 
 func Convert_v1alpha4_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(

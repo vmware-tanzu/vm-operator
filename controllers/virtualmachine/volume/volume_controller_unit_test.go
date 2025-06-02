@@ -1219,6 +1219,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							When("The first PVC is an instance storage volume", func() {
 								assertIPVCHasLimit := func() {
 									ExpectWithOffset(1, vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("15Gi"))))
+									ExpectWithOffset(1, vm.Status.Volumes[3].Requested).To(Equal(ptr.To(resource.MustParse("15Gi"))))
 								}
 
 								BeforeEach(func() {

@@ -667,7 +667,7 @@ func (r *Reconciler) processAttachments(
 				volumeStatus := attachmentToVolumeStatus(volume.Name, attachment)
 				volumeStatus.Used = existingManagedVols[volume.Name].Used
 				volumeStatus.Crypto = existingManagedVols[volume.Name].Crypto
-				if err := updateVolumeStatusWithLimit(ctx, r.Client, *volume.PersistentVolumeClaim, &volumeStatus); err != nil {
+				if err := updateVolumeStatusWithLimitAndRequest(ctx, r.Client, *volume.PersistentVolumeClaim, &volumeStatus); err != nil {
 					ctx.Logger.Error(err, "failed to get volume status limit")
 				}
 				volumeStatuses = append(volumeStatuses, volumeStatus)
@@ -1022,7 +1022,7 @@ func attachmentToVolumeStatus(
 	}
 }
 
-func updateVolumeStatusWithLimit(
+func updateVolumeStatusWithLimitAndRequest(
 	ctx *pkgctx.VolumeContext,
 	c client.Reader,
 	pvcSpec vmopv1.PersistentVolumeClaimVolumeSource,
@@ -1034,6 +1034,7 @@ func updateVolumeStatusWithLimit(
 		// volumes already have the requested size and the PVC does
 		// not need to be fetched.
 		status.Limit = &pvcSpec.InstanceVolumeClaim.Size
+		status.Requested = &pvcSpec.InstanceVolumeClaim.Size
 		return nil
 	}
 
@@ -1049,12 +1050,17 @@ func updateVolumeStatusWithLimit(
 		return err
 	}
 
+	if v, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+		// Use the request if it exists.
+		status.Requested = &v
+	}
+
 	if v, ok := pvc.Spec.Resources.Limits[corev1.ResourceStorage]; ok {
 		// Use the limit if it exists.
 		status.Limit = &v
-	} else if v, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+	} else {
 		// Otherwise use the requested capacity.
-		status.Limit = &v
+		status.Limit = status.Requested
 	}
 
 	return nil

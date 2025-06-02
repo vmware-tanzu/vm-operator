@@ -135,9 +135,7 @@ func intgTestsReconcile() {
 							},
 						},
 						Storage: &vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: ptr.To(resource.MustParse("20Gi")),
-							},
+							Total: ptr.To(resource.MustParse("20Gi")),
 						},
 					},
 				},
@@ -161,9 +159,7 @@ func intgTestsReconcile() {
 							},
 						},
 						Storage: &vmopv1.VirtualMachineStorageStatus{
-							Usage: &vmopv1.VirtualMachineStorageStatusUsage{
-								Total: ptr.To(resource.MustParse("50Gi")),
-							},
+							Total: ptr.To(resource.MustParse("50Gi")),
 						},
 					},
 				},

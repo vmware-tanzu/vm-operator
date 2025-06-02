@@ -208,8 +208,8 @@ func reportUsed(
 	total *resource.Quantity) {
 
 	if s := vm.Status.Storage; s != nil {
-		if u := s.Usage; u != nil {
-			total.Add(*u.Total)
+		if s.Total != nil {
+			total.Add(*s.Total)
 		}
 	}
 }

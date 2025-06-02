@@ -216,7 +216,7 @@ _Appears in:_
 
 
 
-
+GroupMember describes a member of a VirtualMachineGroup.
 
 _Appears in:_
 - [VirtualMachineGroupSpec](#virtualmachinegroupspec)
@@ -228,6 +228,10 @@ _Appears in:_
 VirtualMachine or VirtualMachineGroup.
 
 If omitted, it defaults to VirtualMachine. |
+| `powerOnDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | PowerOnDelay is the amount of time to wait before powering on the member.
+
+If omitted, the member will be powered on immediately when the group's
+power state changes to PoweredOn. |
 
 ### GuestHeartbeatAction
 
@@ -1068,13 +1072,12 @@ Please note this field is only set for VirtualMachine members. |
 
 - The GroupLinked condition is True when the member exists and has its
   "Spec.GroupName" field set to the group's name.
-- The PowerStateSynced condition is True when the member kind is
-  VirtualMachine, and it has the power state that matches the group's
-  power state.
-- The PlacementReady condition is True when the member kind is
-  VirtualMachine, and it has a placement decision ready.
-- The ReadyType condition is True when the member kind is
-  VirtualMachineGroup, and all of its members' conditions are True. |
+- The PowerStateSynced condition is True for the VirtualMachine member
+  when the member's power state matches the group's power state.
+- The PlacementReady condition is True for the VirtualMachine member
+  when the member has a placement decision ready.
+- The ReadyType condition is True for the VirtualMachineGroup member
+  when all of its members' conditions are True. |
 
 ### VirtualMachineGroupPlacementDatastoreStatus
 
@@ -1095,27 +1098,6 @@ datastore. |
 | `diskKey` _integer_ | DiskKey describes the device key to which this recommendation applies.
 When omitted, this recommendation is for the VM's home directory. |
 
-### VirtualMachineGroupPowerOp
-
-
-
-
-
-_Appears in:_
-- [VirtualMachineGroupSpec](#virtualmachinegroupspec)
-
-| Field | Description |
-| --- | --- |
-| `name` _string_ | Name is the name of member of this group. |
-| `kind` _string_ | Kind is the kind of member of this group, which can be either
-VirtualMachine or VirtualMachineGroup.
-
-If omitted, it defaults to VirtualMachine. |
-| `delay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | Delay is the amount of time to wait before performing the power
-operation.
-
-If omitted, the power operation will be applied immediately. |
-
 ### VirtualMachineGroupSpec
 
 
@@ -1133,24 +1115,6 @@ If omitted, this group is not a member of any other group. |
 | `members` _[GroupMember](#groupmember) array_ | Members describes the names of VirtualMachine or VirtualMachineGroup
 objects that are members of this group. The VM or VM Group objects must
 be in the same namespace as this group. |
-| `powerOnOp` _[VirtualMachineGroupPowerOp](#virtualmachinegrouppowerop) array_ | PowerOnOp describes the order in which members of this group are
-powered on.
-
-If this field is empty, all members of the group will be powered on
-immediately when the group's power state changes to PoweredOn.
-
-If this field is not empty, only the listed members will be powered on,
-each after the delay specified for that member. Members not included in
-this list will not be powered on when the group's power state changes. |
-| `powerOffOp` _[VirtualMachineGroupPowerOp](#virtualmachinegrouppowerop) array_ | PowerOffOp describes the order in which members of this group are
-powered off.
-
-If this field is empty, all members of the group will be powered off
-immediately when the group's power state changes to PoweredOff.
-
-If this field is not empty, only the listed members will be powered off,
-each after the delay specified for that member. Members not included in
-this list will not be powered off when the group's power state changes. |
 | `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the desired power state of a VirtualMachineGroup.
 
 Please note this field may be omitted when creating a new VM group. This
@@ -1163,28 +1127,14 @@ set to an empty value. This means that if the group's power state is
 PoweredOn, and a VM whose power state is PoweredOff is added to the
 group, that VM will be powered on. |
 | `powerOffMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | PowerOffMode describes the desired behavior when powering off a VM Group.
-
-There are three, supported power off modes: Hard, Soft, and
-TrySoft. The first mode, Hard, is the equivalent of a physical
-system's power cord being ripped from the wall. The Soft mode
-requires the VM's guest to have VM Tools installed and attempts to
-gracefully shutdown the VM. Its variant, TrySoft, first attempts
-a graceful shutdown, and if that fails or the VM is not in a powered off
-state after five minutes, the VM is halted.
+Refer to the VirtualMachine.PowerOffMode field for more details.
 
 Please note this field is only propagated to the group's members when
 the group's power state is changed.
 
 If omitted, the mode defaults to TrySoft. |
 | `suspendMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | SuspendMode describes the desired behavior when suspending a VM Group.
-
-There are three, supported suspend modes: Hard, Soft, and
-TrySoft. The first mode, Hard, is where vSphere suspends the VM to
-disk without any interaction inside of the guest. The Soft mode
-requires the VM's guest to have VM Tools installed and attempts to
-gracefully suspend the VM. Its variant, TrySoft, first attempts
-a graceful suspend, and if that fails or the VM is not in a put into
-standby by the guest after five minutes, the VM is suspended.
+Refer to the VirtualMachine.SuspendMode field for more details.
 
 Please note this field is only propagated to the group's members when
 the group's power state is changed.

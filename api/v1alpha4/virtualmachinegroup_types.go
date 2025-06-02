@@ -16,8 +16,13 @@ const (
 	// VirtualMachineGroupMemberConditionPowerStateSynced indicates that the
 	// member has been updated to match the group's power state.
 	VirtualMachineGroupMemberConditionPowerStateSynced = "PowerStateSynced"
+
+	// VirtualMachineGroupMemberConditionPlacementReady indicates that the
+	// member has a placement decision ready.
+	VirtualMachineGroupMemberConditionPlacementReady = "PlacementReady"
 )
 
+// GroupMember describes a member of a VirtualMachineGroup.
 type GroupMember struct {
 	// Name is the name of member of this group.
 	Name string `json:"name"`
@@ -31,29 +36,14 @@ type GroupMember struct {
 	//
 	// If omitted, it defaults to VirtualMachine.
 	Kind string `json:"kind,omitempty"`
-}
-
-type VirtualMachineGroupPowerOp struct {
-	// Name is the name of member of this group.
-	Name string `json:"name"`
-
-	// +optional
-	// +kubebuilder:default=VirtualMachine
-	// +kubebuilder:validation:Enum=VirtualMachine;VirtualMachineGroup
-	//
-	// Kind is the kind of member of this group, which can be either
-	// VirtualMachine or VirtualMachineGroup.
-	//
-	// If omitted, it defaults to VirtualMachine.
-	Kind string `json:"kind,omitempty"`
 
 	// +optional
 
-	// Delay is the amount of time to wait before performing the power
-	// operation.
+	// PowerOnDelay is the amount of time to wait before powering on the member.
 	//
-	// If omitted, the power operation will be applied immediately.
-	Delay *metav1.Duration `json:"delay,omitempty"`
+	// If omitted, the member will be powered on immediately when the group's
+	// power state changes to PoweredOn.
+	PowerOnDelay *metav1.Duration `json:"powerOnDelay,omitempty"`
 }
 
 // VirtualMachineGroupSpec defines the desired state of VirtualMachineGroup.
@@ -76,38 +66,6 @@ type VirtualMachineGroupSpec struct {
 	Members []GroupMember `json:"members,omitempty"`
 
 	// +optional
-	// +listType=map
-	// +listMapKey=kind
-	// +listMapKey=name
-
-	// PowerOnOp describes the order in which members of this group are
-	// powered on.
-	//
-	// If this field is empty, all members of the group will be powered on
-	// immediately when the group's power state changes to PoweredOn.
-	//
-	// If this field is not empty, only the listed members will be powered on,
-	// each after the delay specified for that member. Members not included in
-	// this list will not be powered on when the group's power state changes.
-	PowerOnOp []VirtualMachineGroupPowerOp `json:"powerOnOp,omitempty"`
-
-	// +optional
-	// +listType=map
-	// +listMapKey=kind
-	// +listMapKey=name
-
-	// PowerOffOp describes the order in which members of this group are
-	// powered off.
-	//
-	// If this field is empty, all members of the group will be powered off
-	// immediately when the group's power state changes to PoweredOff.
-	//
-	// If this field is not empty, only the listed members will be powered off,
-	// each after the delay specified for that member. Members not included in
-	// this list will not be powered off when the group's power state changes.
-	PowerOffOp []VirtualMachineGroupPowerOp `json:"powerOffOp,omitempty"`
-
-	// +optional
 
 	// PowerState describes the desired power state of a VirtualMachineGroup.
 	//
@@ -126,14 +84,7 @@ type VirtualMachineGroupSpec struct {
 	// +kubebuilder:default=TrySoft
 
 	// PowerOffMode describes the desired behavior when powering off a VM Group.
-	//
-	// There are three, supported power off modes: Hard, Soft, and
-	// TrySoft. The first mode, Hard, is the equivalent of a physical
-	// system's power cord being ripped from the wall. The Soft mode
-	// requires the VM's guest to have VM Tools installed and attempts to
-	// gracefully shutdown the VM. Its variant, TrySoft, first attempts
-	// a graceful shutdown, and if that fails or the VM is not in a powered off
-	// state after five minutes, the VM is halted.
+	// Refer to the VirtualMachine.PowerOffMode field for more details.
 	//
 	// Please note this field is only propagated to the group's members when
 	// the group's power state is changed.
@@ -145,14 +96,7 @@ type VirtualMachineGroupSpec struct {
 	// +kubebuilder:default=TrySoft
 
 	// SuspendMode describes the desired behavior when suspending a VM Group.
-	//
-	// There are three, supported suspend modes: Hard, Soft, and
-	// TrySoft. The first mode, Hard, is where vSphere suspends the VM to
-	// disk without any interaction inside of the guest. The Soft mode
-	// requires the VM's guest to have VM Tools installed and attempts to
-	// gracefully suspend the VM. Its variant, TrySoft, first attempts
-	// a graceful suspend, and if that fails or the VM is not in a put into
-	// standby by the guest after five minutes, the VM is suspended.
+	// Refer to the VirtualMachine.SuspendMode field for more details.
 	//
 	// Please note this field is only propagated to the group's members when
 	// the group's power state is changed.
@@ -243,13 +187,12 @@ type VirtualMachineGroupMemberStatus struct {
 	//
 	// - The GroupLinked condition is True when the member exists and has its
 	//   "Spec.GroupName" field set to the group's name.
-	// - The PowerStateSynced condition is True when the member kind is
-	//   VirtualMachine, and it has the power state that matches the group's
-	//   power state.
-	// - The PlacementReady condition is True when the member kind is
-	//   VirtualMachine, and it has a placement decision ready.
-	// - The ReadyType condition is True when the member kind is
-	//   VirtualMachineGroup, and all of its members' conditions are True.
+	// - The PowerStateSynced condition is True for the VirtualMachine member
+	//   when the member's power state matches the group's power state.
+	// - The PlacementReady condition is True for the VirtualMachine member
+	//   when the member has a placement decision ready.
+	// - The ReadyType condition is True for the VirtualMachineGroup member
+	//   when all of its members' conditions are True.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 

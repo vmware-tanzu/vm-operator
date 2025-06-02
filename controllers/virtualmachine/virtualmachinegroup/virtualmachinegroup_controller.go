@@ -114,7 +114,6 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinegroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinegroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
 
 // Reconcile reconciles a VirtualMachineGroup object.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
@@ -321,9 +320,11 @@ func setReadyCondition(ctx *pkgctx.VirtualMachineGroupContext) {
 		return
 	}
 
-	var readyCount int
-	var totalCount = len(ctx.VMGroup.Status.Members)
-	var failureReasons []string
+	var (
+		readyCount     int
+		totalCount     = len(ctx.VMGroup.Status.Members)
+		failureReasons []string
+	)
 
 	for _, member := range ctx.VMGroup.Status.Members {
 		ready, reason := isMemberReady(member)

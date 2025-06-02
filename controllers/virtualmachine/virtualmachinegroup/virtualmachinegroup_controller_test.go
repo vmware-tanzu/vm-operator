@@ -5,8 +5,6 @@
 package virtualmachinegroup_test
 
 import (
-	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -15,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -161,157 +158,7 @@ var _ = Describe(
 		})
 
 		XContext("Members", func() {
-			When("group members are not found", func() {
-				BeforeEach(func() {
-					// Use Eventually to retry the update operation in case of conflicts
-					Eventually(func(g Gomega) {
-						vmGroup1 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-						vmGroup1.Spec.Members = []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: "vm-non-exist",
-							},
-							{
-								Kind: virtualMachineGroupKind,
-								Name: "non-non-exist",
-							},
-						}
-						g.Expect(ctx.Client.Update(ctx, vmGroup1)).To(Succeed())
-					}).Should(Succeed(), "updating VirtualMachineGroup with non-existent members should succeed after retries")
-				})
-
-				It("should set the VM Group condition MembersOwnerRefReady to False", func() {
-					Eventually(func(g Gomega) {
-						vmGroup1 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-						g.Expect(conditions.IsFalse(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
-						g.Expect(conditions.GetReason(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(Equal("ReconcileMembersError"))
-						msg := conditions.GetMessage(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-						g.Expect(msg).To(ContainSubstring(fmt.Sprintf("VirtualMachine.vmoperator.vmware.com %q not found", "vm-non-exist")))
-						g.Expect(msg).To(ContainSubstring(fmt.Sprintf("VirtualMachineGroup.vmoperator.vmware.com %q not found", "non-non-exist")))
-					}).Should(Succeed())
-				})
-			})
-
-			When("group members have Spec.GroupName set to different groups", func() {
-				BeforeEach(func() {
-					// Use Eventually to retry the update operations in case of conflicts
-					Eventually(func(g Gomega) {
-						vmGroup2 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-						vmGroup2.Spec.GroupName = "some-other-group"
-						g.Expect(ctx.Client.Update(ctx, vmGroup2)).To(Succeed())
-					}).Should(Succeed(), "updating vmGroup2 GroupName should succeed after retries")
-
-					Eventually(func(g Gomega) {
-						vmGroup1 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-						vmGroup1.Spec.Members = []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineGroupKind,
-								Name: vmGroup2Key.Name,
-							},
-						}
-						g.Expect(ctx.Client.Update(ctx, vmGroup1)).To(Succeed())
-					}).Should(Succeed(), "updating vmGroup1 Members should succeed after retries")
-				})
-
-				It("should set the VM Group condition MembersOwnerRefReady to False", func() {
-					Eventually(func(g Gomega) {
-						vmGroup1 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-						g.Expect(conditions.IsFalse(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
-						msg := conditions.GetMessage(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-						g.Expect(msg).To(ContainSubstring(fmt.Sprintf("group %s is not a member of group %s", vmGroup2Key.Name, vmGroup1Key.Name)))
-					}).Should(Succeed())
-				})
-			})
-
-			When("group members exist and Spec.GroupName is set to the current group", func() {
-				BeforeEach(func() {
-					// Use Eventually to retry the update operations in case of conflicts
-					Eventually(func(g Gomega) {
-						vmGroup2 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-						vmGroup2.Spec.GroupName = vmGroup1Key.Name
-						vmGroup2.Spec.Members = []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: vm2Key.Name,
-							},
-						}
-						g.Expect(ctx.Client.Update(ctx, vmGroup2)).To(Succeed())
-					}).Should(Succeed(), "updating vmGroup2 should succeed after retries")
-
-					Eventually(func(g Gomega) {
-						vmGroup3 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup3Key, vmGroup3)).To(Succeed())
-						vmGroup3.Spec.GroupName = vmGroup1Key.Name
-						vmGroup3.Spec.Members = []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: vm3Key.Name,
-							},
-						}
-						g.Expect(ctx.Client.Update(ctx, vmGroup3)).To(Succeed())
-					}).Should(Succeed(), "updating vmGroup3 should succeed after retries")
-
-					Eventually(func(g Gomega) {
-						vmGroup1 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-						vmGroup1.Spec.Members = []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: vm1Key.Name,
-							},
-							{
-								Kind: virtualMachineGroupKind,
-								Name: vmGroup2Key.Name,
-							},
-							{
-								Kind: virtualMachineGroupKind,
-								Name: vmGroup3Key.Name,
-							},
-						}
-						g.Expect(ctx.Client.Update(ctx, vmGroup1)).To(Succeed())
-					}).Should(Succeed(), "updating vmGroup1 should succeed after retries")
-				})
-
-				It("should set the VM Group condition MembersOwnerRefReady to True and update the owner references on the group members", func() {
-					Eventually(func(g Gomega) {
-						// vm1 is a direct member of vmGroup1.
-						vm1 := &vmopv1.VirtualMachine{}
-						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-						g.Expect(vm1.OwnerReferences).To(HaveLen(1))
-						g.Expect(vm1.OwnerReferences[0].Name).To(Equal(vmGroup1Key.Name))
-
-						// vmGroup2 is a direct member of vmGroup1.
-						vmGroup2 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-						g.Expect(vmGroup2.OwnerReferences).To(HaveLen(1))
-						g.Expect(vmGroup2.OwnerReferences[0].Name).To(Equal(vmGroup1Key.Name))
-
-						// vmGroup3 is a direct member of vmGroup1.
-						vmGroup3 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup3Key, vmGroup3)).To(Succeed())
-						g.Expect(vmGroup3.OwnerReferences).To(HaveLen(1))
-						g.Expect(vmGroup3.OwnerReferences[0].Name).To(Equal(vmGroup1Key.Name))
-
-						// vm2 is a direct member of vmGroup2.
-						vm2 := &vmopv1.VirtualMachine{}
-						g.Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
-						g.Expect(vm2.OwnerReferences).To(HaveLen(1))
-						g.Expect(vm2.OwnerReferences[0].Name).To(Equal(vmGroup2Key.Name))
-
-						// vm3 is a direct member of vmGroup3.
-						vm3 := &vmopv1.VirtualMachine{}
-						g.Expect(ctx.Client.Get(ctx, vm3Key, vm3)).To(Succeed())
-						g.Expect(vm3.OwnerReferences).To(HaveLen(1))
-						g.Expect(vm3.OwnerReferences[0].Name).To(Equal(vmGroup3Key.Name))
-					}).Should(Succeed(), "waiting for VirtualMachineGroup owner references to be set")
-				})
-			})
+			// TODO(sai): Add tests for ReconcileMembers.
 		})
 
 		Context("Placement", func() {

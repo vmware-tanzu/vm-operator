@@ -728,7 +728,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		vm.Namespace = "my-namespace"
 		vm.Spec.Network.Interfaces = nil
 		vm.Spec.Volumes = nil
-		vm.Spec.Cdrom = nil
+		vm.Spec.Hardware = nil
 	})
 
 	JustBeforeEach(func() {
@@ -1036,7 +1036,10 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
 						BootDiskCapacity: &q,
 					}
-					vm.Spec.Cdrom = nil
+					if vm.Spec.Hardware == nil {
+						vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+					}
+					vm.Spec.Hardware.Cdrom = nil
 				})
 				It("should power on the VM with the boot disk resized", func() {
 					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
@@ -1157,7 +1160,10 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				)
 
 				BeforeEach(func() {
-					vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					if vm.Spec.Hardware == nil {
+						vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+					}
+					vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{
 						{
 							Name: "cdrom1",
 							Image: vmopv1.VirtualMachineImageRef{

@@ -80,7 +80,7 @@ var _ = Describe(
 					Expect(os.Setenv("MAX_CONCURRENT_RECONCILES", "114")).To(Succeed())
 					Expect(os.Setenv("ASYNC_SIGNAL_ENABLED", "false")).To(Succeed())
 					Expect(os.Setenv("ASYNC_CREATE_ENABLED", "false")).To(Succeed())
-					Expect(os.Setenv("FAST_DEPLOY_MODE", pkgconst.FastDeployModeLinked)).To(Succeed())
+					Expect(os.Setenv("FAST_DEPLOY_MODE", pkgconst.FastDeployModeDirect)).To(Succeed())
 					Expect(os.Setenv("VC_CREDS_SECRET_NAME", pkgconst.VCCredsSecretName)).To(Succeed())
 					Expect(os.Setenv("LEADER_ELECTION_ID", "115")).To(Succeed())
 					Expect(os.Setenv("POD_NAME", "116")).To(Succeed())
@@ -133,7 +133,7 @@ var _ = Describe(
 						MaxConcurrentReconciles:      114,
 						AsyncSignalEnabled:           false,
 						AsyncCreateEnabled:           false,
-						FastDeployMode:               pkgconst.FastDeployModeLinked,
+						FastDeployMode:               pkgconst.FastDeployModeDirect,
 						VCCredsSecretName:            pkgconst.VCCredsSecretName,
 						LeaderElectionID:             "115",
 						PodName:                      "116",

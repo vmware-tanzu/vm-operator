@@ -141,6 +141,10 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 									Via:    "5.5.5.5",
 									Metric: 42,
 								},
+								{
+									To:  "default",
+									Via: "1.2.3.4",
+								},
 							},
 							SearchDomains: []string{"vmware.com"},
 						},
@@ -184,10 +188,13 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(result.MTU).To(BeEquivalentTo(9000))
 					Expect(result.Nameservers).To(HaveExactElements("9.9.9.9"))
 					Expect(result.SearchDomains).To(HaveExactElements("vmware.com"))
-					Expect(result.Routes).To(HaveLen(1))
+					Expect(result.Routes).To(HaveLen(2))
 					Expect(result.Routes[0].To).To(Equal("10.10.10.10"))
 					Expect(result.Routes[0].Via).To(Equal("5.5.5.5"))
 					Expect(result.Routes[0].Metric).To(BeEquivalentTo(42))
+					Expect(result.Routes[1].To).To(Equal("default"))
+					Expect(result.Routes[1].Via).To(Equal("1.2.3.4"))
+					Expect(result.Routes[1].Metric).To(BeEquivalentTo(0))
 				})
 
 				Context("Gateway4/6 are disabled", func() {

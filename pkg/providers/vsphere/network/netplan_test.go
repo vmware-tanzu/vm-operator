@@ -83,6 +83,14 @@ var _ = Describe("Netplan", func() {
 								To:  "134.23.5.3.0/24",
 								Via: "20.2.2.2",
 							},
+							{
+								To:  "default",
+								Via: "192.168.1.1",
+							},
+							{
+								To:  "default",
+								Via: "fe80::478:cbfd:455:c5fe",
+							},
 						},
 					},
 				}
@@ -111,7 +119,7 @@ var _ = Describe("Netplan", func() {
 				Expect(np.Nameservers.Addresses).To(Equal([]string{dnsServer1}))
 				Expect(np.Nameservers.Search).To(Equal([]string{searchDomain1}))
 
-				Expect(np.Routes).To(HaveLen(2))
+				Expect(np.Routes).To(HaveLen(4))
 				route0 := np.Routes[0]
 				Expect(route0.To).To(HaveValue(Equal("185.107.56.0/24")))
 				Expect(route0.Via).To(HaveValue(Equal("10.1.1.1")))
@@ -120,6 +128,14 @@ var _ = Describe("Netplan", func() {
 				Expect(route1.To).To(HaveValue(Equal("134.23.5.3.0/24")))
 				Expect(route1.Via).To(HaveValue(Equal("20.2.2.2")))
 				Expect(route1.Metric).To(BeNil())
+				route2 := np.Routes[2]
+				Expect(route2.To).To(HaveValue(Equal("default")))
+				Expect(route2.Via).To(HaveValue(Equal("192.168.1.1")))
+				Expect(route2.Metric).To(BeNil())
+				route3 := np.Routes[3]
+				Expect(route3.To).To(HaveValue(Equal("default")))
+				Expect(route3.Via).To(HaveValue(Equal("fe80::478:cbfd:455:c5fe")))
+				Expect(route3.Metric).To(BeNil())
 			})
 
 			Context("Gateway4/6 are disabled", func() {

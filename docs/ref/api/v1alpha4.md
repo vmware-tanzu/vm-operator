@@ -61,6 +61,24 @@ resource.
 | `spec` _[VirtualMachineClassSpec](#virtualmachineclassspec)_ |  |
 | `status` _[VirtualMachineClassStatus](#virtualmachineclassstatus)_ |  |
 
+### VirtualMachineGroup
+
+
+
+VirtualMachineGroup is the schema for the VirtualMachineGroup API and
+represents the desired state and observed status of a VirtualMachineGroup
+resource.
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
+| `kind` _string_ | `VirtualMachineGroup`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineGroupSpec](#virtualmachinegroupspec)_ |  |
+| `status` _[VirtualMachineGroupStatus](#virtualmachinegroupstatus)_ |  |
+
 ### VirtualMachineImage
 
 
@@ -193,6 +211,27 @@ _Appears in:_
 | `vendorID` _integer_ |  |
 | `deviceID` _integer_ |  |
 | `customLabel` _string_ |  |
+
+### GroupMember
+
+
+
+GroupMember describes a member of a VirtualMachineGroup.
+
+_Appears in:_
+- [VirtualMachineGroupSpec](#virtualmachinegroupspec)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name is the name of member of this group. |
+| `kind` _string_ | Kind is the kind of member of this group, which can be either
+VirtualMachine or VirtualMachineGroup.
+
+If omitted, it defaults to VirtualMachine. |
+| `powerOnDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | PowerOnDelay is the amount of time to wait before powering on the member.
+
+If omitted, the member will be powered on immediately when the group's
+power state changes to PoweredOn. |
 
 ### GuestHeartbeatAction
 
@@ -1007,6 +1046,119 @@ _Underlying type:_ `string`
 _Appears in:_
 - [VirtualMachineCryptoStatus](#virtualmachinecryptostatus)
 
+
+### VirtualMachineGroupMemberStatus
+
+
+
+VirtualMachineGroupMemberStatus describes the observed status of a group
+member.
+
+_Appears in:_
+- [VirtualMachineGroupStatus](#virtualmachinegroupstatus)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name is the name of this member. |
+| `kind` _string_ | Kind is the kind of this member, which can be either VirtualMachine or
+VirtualMachineGroup. |
+| `placement` _[VirtualMachinePlacementStatus](#virtualmachineplacementstatus)_ | Placement describes the placement results for this member.
+
+Please note this field is only set for VirtualMachine members. |
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the observed power state of this member.
+
+Please note this field is only set for VirtualMachine members. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this member.
+
+- The GroupLinked condition is True when the member exists and has its
+  "Spec.GroupName" field set to the group's name.
+- The PowerStateSynced condition is True for the VirtualMachine member
+  when the member's power state matches the group's power state.
+- The PlacementReady condition is True for the VirtualMachine member
+  when the member has a placement decision ready.
+- The ReadyType condition is True for the VirtualMachineGroup member
+  when all of its members' conditions are True. |
+
+### VirtualMachineGroupPlacementDatastoreStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachinePlacementStatus](#virtualmachineplacementstatus)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name describes the name of a datastore. |
+| `id` _string_ | ID describes the datastore ID. |
+| `url` _string_ | URL describes the datastore URL. |
+| `supportedDiskFormats` _string array_ | SupportedDiskFormat describes the list of disk formats supported by this
+datastore. |
+| `diskKey` _integer_ | DiskKey describes the device key to which this recommendation applies.
+When omitted, this recommendation is for the VM's home directory. |
+
+### VirtualMachineGroupSpec
+
+
+
+VirtualMachineGroupSpec defines the desired state of VirtualMachineGroup.
+
+_Appears in:_
+- [VirtualMachineGroup](#virtualmachinegroup)
+
+| Field | Description |
+| --- | --- |
+| `groupName` _string_ | GroupName describes the name of the group that this group belongs to.
+
+If omitted, this group is not a member of any other group. |
+| `members` _[GroupMember](#groupmember) array_ | Members describes the names of VirtualMachine or VirtualMachineGroup
+objects that are members of this group. The VM or VM Group objects must
+be in the same namespace as this group. |
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the desired power state of a VirtualMachineGroup.
+
+Please note this field may be omitted when creating a new VM group. This
+ensures that the power states of any existing VMs that are added to the
+group do not have their power states changed until the group's power
+state is explicitly altered.
+
+However, once the field is set to a non-empty value, it may no longer be
+set to an empty value. This means that if the group's power state is
+PoweredOn, and a VM whose power state is PoweredOff is added to the
+group, that VM will be powered on. |
+| `powerOffMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | PowerOffMode describes the desired behavior when powering off a VM Group.
+Refer to the VirtualMachine.PowerOffMode field for more details.
+
+Please note this field is only propagated to the group's members when
+the group's power state is changed.
+
+If omitted, the mode defaults to TrySoft. |
+| `suspendMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | SuspendMode describes the desired behavior when suspending a VM Group.
+Refer to the VirtualMachine.SuspendMode field for more details.
+
+Please note this field is only propagated to the group's members when
+the group's power state is changed.
+
+If omitted, the mode defaults to TrySoft. |
+
+### VirtualMachineGroupStatus
+
+
+
+VirtualMachineGroupStatus defines the observed state of VirtualMachineGroup.
+
+_Appears in:_
+- [VirtualMachineGroup](#virtualmachinegroup)
+
+| Field | Description |
+| --- | --- |
+| `members` _[VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus) array_ | Members describes the observed status of group members. |
+| `lastUpdatedPowerStateTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | LastUpdatedPowerStateTime describes the observed time when the power
+state of the group was last updated. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this VM Group.
+
+- The ReadyType condition is True when all of the group members have
+  all of their expected conditions set to True. |
 
 
 ### VirtualMachineImageCacheFileStatus
@@ -1856,6 +2008,23 @@ If the bootstrap provider is anything else then this field is set to the
 value of the infrastructure VM's "guest.ipAddress" field. Please see
 https://bit.ly/3Au0jM4 for more information. |
 
+### VirtualMachinePlacementStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name is the name of VirtualMachine member of this group. |
+| `zoneID` _string_ | Zone describes the recommended zone for this VM. |
+| `node` _string_ | Node describes the recommended node for this VM. |
+| `pool` _string_ | Pool describes the recommended resource pool for this VM. |
+| `datastores` _[VirtualMachineGroupPlacementDatastoreStatus](#virtualmachinegroupplacementdatastorestatus) array_ | Datastores describe the recommended datastores for this VM. |
+
 ### VirtualMachinePowerOpMode
 
 _Underlying type:_ `string`
@@ -1864,6 +2033,7 @@ VirtualMachinePowerOpMode represents the various power operation modes when
 powering off or suspending a VM.
 
 _Appears in:_
+- [VirtualMachineGroupSpec](#virtualmachinegroupspec)
 - [VirtualMachineSpec](#virtualmachinespec)
 
 
@@ -1874,6 +2044,8 @@ _Underlying type:_ `string`
 VirtualMachinePowerState defines a VM's desired and observed power states.
 
 _Appears in:_
+- [VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus)
+- [VirtualMachineGroupSpec](#virtualmachinegroupspec)
 - [VirtualMachineSpec](#virtualmachinespec)
 - [VirtualMachineStatus](#virtualmachinestatus)
 

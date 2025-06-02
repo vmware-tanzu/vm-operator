@@ -1303,7 +1303,7 @@ func dummyVMWithStatusVolumes() *vmopv1.VirtualMachine {
 	vm := builder.DummyVirtualMachine()
 	vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 		{
-			Type:  vmopv1.VirtualMachineStorageDiskTypeClassic,
+			Type:  vmopv1.VolumeTypeClassic,
 			Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 		},
 	}

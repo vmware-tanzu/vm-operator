@@ -12,9 +12,12 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
@@ -125,25 +128,101 @@ func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about st
 	return ret, nil
 }
 
-func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlclient.Client) ([]string, []string, error) {
-	vmopNamespace := pkgcfg.FromContext(ctx).PodNamespace
-
-	configMap := &corev1.ConfigMap{}
-	configMapKey := ctrlclient.ObjectKey{Name: NetworkConfigMapName, Namespace: vmopNamespace}
-	if err := client.Get(ctx, configMapKey, configMap); err != nil {
-		return nil, nil, err
-	}
+func GetDNSInformationFromConfigMap(
+	ctx context.Context,
+	client ctrlclient.Client) ([]string, []string, error) {
 
 	var (
 		nameservers    []string
 		searchSuffixes []string
+
+		kubeDNS corev1.Service
+
+		cfg = pkgcfg.FromContext(ctx)
+
+		useKubeDNS = true
+		kubeDNSKey = ctrlclient.ObjectKey{
+			Name:      cfg.KubeDNSLBServiceName,
+			Namespace: cfg.KubeSystemNamespace,
+		}
 	)
+
+	if err := client.Get(ctx, kubeDNSKey, &kubeDNS); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, nil, err
+		}
+		useKubeDNS = false
+	}
+
+	if useKubeDNS {
+		// Add the IP addresses for the kube DNS service.
+		for _, i := range kubeDNS.Status.LoadBalancer.Ingress {
+			if i.IP != "" {
+				nameservers = append(nameservers, i.IP)
+			}
+		}
+
+		if len(nameservers) > 0 {
+			// Get the search suffix from the kubeadm configmap.
+			var (
+				kubeadmConf    corev1.ConfigMap
+				kubeadmConfKey = ctrlclient.ObjectKey{
+					Name:      cfg.KubeadmConfigMapName,
+					Namespace: cfg.KubeSystemNamespace,
+				}
+				useKubeadmConf = true
+			)
+			if err := client.Get(ctx, kubeadmConfKey, &kubeadmConf); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return nil, nil, err
+				}
+				useKubeadmConf = false
+			}
+
+			if !useKubeadmConf {
+				searchSuffixes = append(searchSuffixes, cfg.DefaultClusterDomain)
+			} else {
+				if data, ok := kubeadmConf.Data[cfg.KubeadmClusterConfigKey]; ok {
+					obj := unstructured.Unstructured{Object: map[string]any{}}
+					if err := yaml.Unmarshal([]byte(data), &obj); err != nil {
+						return nil, nil, err
+					}
+					dnsDomain, ok, err := unstructured.NestedString(
+						obj.Object, "networking", "dnsDomain")
+					if err != nil {
+						return nil, nil, err
+					}
+					if ok {
+						searchSuffixes = append(searchSuffixes, dnsDomain)
+					}
+				}
+			}
+		}
+	}
+
+	if len(nameservers) > 0 {
+		// If there was DNS via Kube, use it only.
+		return nameservers, searchSuffixes, nil
+	}
+
+	var (
+		configMap    = &corev1.ConfigMap{}
+		configMapKey = ctrlclient.ObjectKey{
+			Name:      NetworkConfigMapName,
+			Namespace: cfg.PodNamespace,
+		}
+	)
+
+	if err := client.Get(ctx, configMapKey, configMap); err != nil {
+		return nil, nil, err
+	}
 
 	if nsStr, ok := configMap.Data[NameserversKey]; ok {
 		nameservers = strings.Fields(nsStr)
 
 		if len(nameservers) == 1 && nameservers[0] == "<worker_dns>" {
-			return nil, nil, fmt.Errorf("no valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
+			return nil, nil, fmt.Errorf(
+				"no valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
 		}
 	}
 

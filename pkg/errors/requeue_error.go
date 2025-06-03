@@ -42,6 +42,13 @@ func (e NoRequeueError) Error() string {
 	return e.Message
 }
 
+// IsNoRequeueError returns true if the error or a nested error is a
+// NoRequeueError.
+func IsNoRequeueError(err error) bool {
+	var noRequeue NoRequeueError
+	return errors.As(err, &noRequeue)
+}
+
 // ResultFromError returns a ReconcileResult based on the provided error. If
 // the error contains an embedded RequeueError or NoRequeueError, then it is
 // used to influence the result. An embedded RequeueError is favored in an
@@ -61,8 +68,7 @@ func ResultFromError(err error) (ctrl.Result, error) {
 		return ctrl.Result{RequeueAfter: requeue.After}, nil
 	}
 
-	var noRequeue NoRequeueError
-	if errors.As(err, &noRequeue) {
+	if IsNoRequeueError(err) {
 		// TerminalError is confusingly named: it won't cause an error retry to
 		// be enqueued but later events from like a watch will still be queued.
 		// Wrap the original error so any other wrapped errors are still there.

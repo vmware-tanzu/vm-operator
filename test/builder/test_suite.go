@@ -69,6 +69,10 @@ func init() {
 	klog.InitFlags(nil)
 	klog.SetOutput(GinkgoWriter)
 	logf.SetLogger(klog.Background())
+
+	// TODO(akutz) This is kind of handy, but ultimately it makes discerning
+	//             test-specific logs from regular log non-trivial.
+	// GinkgoLogr = klog.Background()
 }
 
 // TestSuite is used for unit and integration testing builder. Each TestSuite
@@ -142,7 +146,11 @@ func (s *TestSuite) GetEnvTestConfig() *rest.Config {
 }
 
 func (s *TestSuite) GetLogger() logr.Logger {
-	return logf.Log
+	logger, err := logr.FromContext(s.Context)
+	if err != nil {
+		return s.manager.GetLogger()
+	}
+	return logger
 }
 
 // NewTestSuite returns a new test suite used for unit and/or integration test.

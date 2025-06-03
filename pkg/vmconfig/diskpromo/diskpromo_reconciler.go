@@ -23,6 +23,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
 
+var ErrPromoteDisks = pkgerr.NoRequeueError{Message: "promoting disks"}
+
 type reconciler struct{}
 
 var _ vmconfig.Reconciler = reconciler{}
@@ -51,6 +53,18 @@ func (r reconciler) OnResult(
 	_ error) error {
 
 	return nil
+}
+
+// Reconcile configures the VM's disk promotion settings.
+func Reconcile(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vimClient *vim25.Client,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine,
+	_ *vimtypes.VirtualMachineConfigSpec) error {
+
+	return New().Reconcile(ctx, k8sClient, vimClient, vm, moVM, nil)
 }
 
 // Reconcile performs an online promotion of any of a VM's linked-clone disks to
@@ -140,7 +154,9 @@ func (r reconciler) Reconcile(
 		}
 	}
 
-	logger.Info("Promote disks", "mode", vm.Spec.PromoteDisksMode)
+	logger = logger.WithValues("mode", vm.Spec.PromoteDisksMode)
+
+	logger.V(4).Info("Finding candidates for disk promotion")
 
 	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
 		// Skip VMs that do not request promotion.
@@ -176,12 +192,17 @@ func (r reconciler) Reconcile(
 		}
 	}
 
-	logger.Info("Promote disks", "total", len(allDisks), "child", len(childDisks))
+	logger = logger.WithValues(
+		"totalDisks", len(allDisks),
+		"childDisks", len(childDisks))
 
 	if len(childDisks) == 0 {
-		// Skip VMs that do not have any child disks to promote.
+		logger.V(4).Info(
+			"Skipping disk promotion for VM with no disks to promote")
 		return nil
 	}
+
+	logger.V(4).Info("Checking if disks can be promoted")
 
 	switch vm.Spec.PromoteDisksMode {
 	case vmopv1.VirtualMachinePromoteDisksModeOnline:
@@ -192,6 +213,8 @@ func (r reconciler) Reconcile(
 				vmopv1.VirtualMachineDiskPromotionSynced,
 				ReasonPending,
 				"Cannot online promote disks when VM has snapshot")
+			logger.V(4).Info(
+				"Skipping disk promotion for VM with snapshot(s)")
 			return nil
 		}
 		if moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
@@ -200,6 +223,8 @@ func (r reconciler) Reconcile(
 				vmopv1.VirtualMachineDiskPromotionSynced,
 				ReasonPending,
 				"Pending VM powered on")
+			logger.V(4).Info(
+				"Skipping disk promotion for powered on VM")
 			return nil
 		}
 	case vmopv1.VirtualMachinePromoteDisksModeOffline:
@@ -210,9 +235,13 @@ func (r reconciler) Reconcile(
 				vmopv1.VirtualMachineDiskPromotionSynced,
 				ReasonPending,
 				"Pending VM powered off")
+			logger.V(4).Info(
+				"Skipping disk promotion for powered off VM")
 			return nil
 		}
 	}
+
+	logger.Info("Promoting disks")
 
 	obj := object.NewVirtualMachine(vimClient, moVM.Self)
 	task, err := obj.PromoteDisks(ctx, true, childDisks)
@@ -222,8 +251,8 @@ func (r reconciler) Reconcile(
 
 	// Track the task ID.
 	vm.Status.TaskID = task.Reference().Value
+	logger.V(4).Info("Disk promotion task created",
+		"taskID", task.Reference().Value)
 
-	return pkgerr.NoRequeueError{
-		Message: "doing online disk promotion",
-	}
+	return ErrPromoteDisks
 }

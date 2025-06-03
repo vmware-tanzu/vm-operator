@@ -670,6 +670,33 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							Expect(c.Reason).To(Equal(pkgcrypto.ReasonNoDefaultKeyProvider.String()))
 						})
 
+						When("vm has task", func() {
+							BeforeEach(func() {
+								moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+									&vimtypes.VirtualDisk{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+												KeyId: &vimtypes.CryptoKeyId{},
+											},
+										},
+									},
+								}
+								vm.Status.TaskID = "123"
+							})
+							It("should update the status without returning an error", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(vm.Status.Crypto).ToNot(BeNil())
+								Expect(vm.Status.Crypto).To(Equal(&vmopv1.VirtualMachineCryptoStatus{
+									Encrypted: []vmopv1.VirtualMachineEncryptionType{
+										vmopv1.VirtualMachineEncryptionTypeConfig,
+										vmopv1.VirtualMachineEncryptionTypeDisks,
+									},
+									ProviderID: provider1ID,
+									KeyID:      provider1Key1ID,
+								}))
+							})
+						})
+
 						When("vm is paused", func() {
 							Context("by admin", func() {
 								BeforeEach(func() {

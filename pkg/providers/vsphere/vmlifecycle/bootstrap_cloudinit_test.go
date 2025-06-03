@@ -385,7 +385,8 @@ var _ = Describe("CloudInit Bootstrap", func() {
 		)
 
 		JustBeforeEach(func() {
-			configSpec, err = vmlifecycle.GetCloudInitGuestInfoCustSpec(configInfo, metaData, userData)
+			configSpec, err = vmlifecycle.GetCloudInitGuestInfoCustSpec(
+				context.Background(), configInfo, metaData, userData)
 		})
 
 		Context("vAppConfig", func() {
@@ -494,7 +495,8 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 		JustBeforeEach(func() {
 			var err error
-			configSpec, custSpec, err = vmlifecycle.GetCloudInitPrepCustSpec(configInfo, metaData, userData)
+			configSpec, custSpec, err = vmlifecycle.GetCloudInitPrepCustSpec(
+				context.Background(), configInfo, metaData, userData)
 			Expect(err).ToNot(HaveOccurred())
 		})
 

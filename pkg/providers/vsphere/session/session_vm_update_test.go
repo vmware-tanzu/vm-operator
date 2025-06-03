@@ -7,13 +7,11 @@ package session_test
 import (
 	"context"
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,11 +27,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
-	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 var _ = Describe("Update ConfigSpec", func() {
@@ -708,18 +706,10 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		vm         *vmopv1.VirtualMachine
 		vcVM       *object.VirtualMachine
 		vmCtx      pkgctx.VirtualMachineContext
+		updateArgs *session.VMUpdateArgs
+		resizeArgs *session.VMResizeArgs
 		vmProps    = vsphere.VMUpdatePropertiesSelector
 	)
-
-	getLastRestartTime := func(moVM mo.VirtualMachine) string {
-		for i := range moVM.Config.ExtraConfig {
-			ov := moVM.Config.ExtraConfig[i].GetOptionValue()
-			if ov.Key == "vmservice.lastRestartTime" {
-				return ov.Value.(string)
-			}
-		}
-		return ""
-	}
 
 	BeforeEach(func() {
 		testConfig.NumFaultDomains = 1
@@ -729,7 +719,18 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		vm.Spec.Network.Interfaces = nil
 		vm.Spec.Volumes = nil
 		vm.Spec.Cdrom = nil
+		resizeArgs = nil
+		updateArgs = &session.VMUpdateArgs{
+			ResourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{},
+		}
 	})
+
+	getResizeArgs := func() (*session.VMResizeArgs, error) { //nolint:unparam
+		return resizeArgs, nil
+	}
+	getUpdateArgs := func() (*session.VMUpdateArgs, error) { //nolint:unparam
+		return updateArgs, nil
+	}
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig)
@@ -757,8 +758,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 			config.NetworkProviderType = pkgcfg.NetworkProviderTypeNamed
 		})
 
-		// Update the vSphere VM with the VM namespace/name/managedBy
-		t, err := vcVM.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+		configSpec := vimtypes.VirtualMachineConfigSpec{
+			Annotation: constants.VCVMAnnotation,
+			GuestId:    string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
 			ManagedBy: &vimtypes.ManagedByInfo{
 				ExtensionKey: vmopv1.ManagedByExtensionKey,
 				Type:         vmopv1.ManagedByExtensionType,
@@ -769,7 +771,35 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					Value: vmCtx.VM.NamespacedName(),
 				},
 			},
-		})
+		}
+
+		devList, err := vcVM.Device(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		if devs := devList.SelectByType(&vimtypes.VirtualCdrom{}); len(devs) > 0 {
+			for i := range devs {
+				configSpec.DeviceChange = append(configSpec.DeviceChange,
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+						Device:    devs[i],
+					},
+				)
+			}
+		}
+
+		if devs := devList.SelectByType(&vimtypes.VirtualEthernetCard{}); len(devs) > 0 {
+			for i := range devs {
+				configSpec.DeviceChange = append(configSpec.DeviceChange,
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+						Device:    devs[i],
+					},
+				)
+			}
+		}
+
+		// Update the vSphere VM with the VM namespace/name/managedBy
+		t, err := vcVM.Reconfigure(ctx, configSpec)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(t.Wait(ctx)).To(Succeed())
 
@@ -788,174 +818,12 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		ctx = nil
 	})
 
-	assertNoUpdate := func() {
-		ExpectWithOffset(1, ctxop.IsUpdate(vmCtx)).To(BeFalse())
-	}
-
 	assertUpdate := func() {
 		ExpectWithOffset(1, ctxop.IsUpdate(vmCtx)).To(BeTrue())
 	}
 
-	When("vcVM is powered on", func() {
+	When("VM is powered off", func() {
 		JustBeforeEach(func() {
-
-			// Ensure the VM is powered on.
-			switch vmCtx.MoVM.Summary.Runtime.PowerState {
-			case vimtypes.VirtualMachinePowerStatePoweredOff,
-				vimtypes.VirtualMachinePowerStateSuspended:
-				t, err := vcVM.PowerOn(ctx)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(t.Wait(ctx)).To(Succeed())
-				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-			}
-			Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-		})
-
-		When("power state is not changed", func() {
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-			})
-			It("should not return an error", func() {
-				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-				assertNoUpdate()
-			})
-		})
-
-		When("powering off the VM", func() {
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-			})
-			When("powerOffMode is hard", func() {
-				BeforeEach(func() {
-					vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
-				})
-				It("should power off the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
-					assertUpdate()
-				})
-			})
-			When("powerOffMode is soft", func() {
-				BeforeEach(func() {
-					vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
-				})
-				It("should power off the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
-					assertUpdate()
-				})
-			})
-			When("powerOffMode is trySoft", func() {
-				BeforeEach(func() {
-					vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
-				})
-				It("should power off the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
-					assertUpdate()
-				})
-			})
-		})
-
-		When("restarting the VM", func() {
-			var (
-				oldLastRestartTime string
-			)
-
-			BeforeEach(func() {
-				vm.Spec.NextRestartTime = time.Now().UTC().Format(time.RFC3339Nano)
-			})
-			JustBeforeEach(func() {
-				oldLastRestartTime = getLastRestartTime(vmCtx.MoVM)
-				vm.Spec.NextRestartTime = time.Now().UTC().Format(time.RFC3339Nano)
-			})
-
-			When("restartMode is hard", func() {
-				BeforeEach(func() {
-					vm.Spec.RestartMode = vmopv1.VirtualMachinePowerOpModeHard
-				})
-				It("should restart the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					newLastRestartTime := getLastRestartTime(vmCtx.MoVM)
-					Expect(newLastRestartTime).ToNot(BeEmpty())
-					Expect(newLastRestartTime).ToNot(Equal(oldLastRestartTime))
-					assertUpdate()
-				})
-			})
-			When("restartMode is soft", func() {
-				BeforeEach(func() {
-					vm.Spec.RestartMode = vmopv1.VirtualMachinePowerOpModeSoft
-				})
-				It("should return an error about lacking tools", func() {
-					Expect(testutil.ContainsError(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil), "failed to soft restart vm ServerFaultCode: ToolsUnavailable")).To(BeTrue())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					newLastRestartTime := getLastRestartTime(vmCtx.MoVM)
-					Expect(newLastRestartTime).To(Equal(oldLastRestartTime))
-					assertUpdate()
-				})
-			})
-			When("restartMode is trySoft", func() {
-				BeforeEach(func() {
-					vm.Spec.RestartMode = vmopv1.VirtualMachinePowerOpModeTrySoft
-				})
-				It("should restart the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					newLastRestartTime := getLastRestartTime(vmCtx.MoVM)
-					Expect(newLastRestartTime).ToNot(BeEmpty())
-					Expect(newLastRestartTime).ToNot(Equal(oldLastRestartTime))
-					assertUpdate()
-				})
-			})
-		})
-
-		When("suspending the VM", func() {
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
-			})
-			When("suspendMode is hard", func() {
-				BeforeEach(func() {
-					vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeHard
-				})
-				It("should suspend the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
-					assertUpdate()
-				})
-			})
-			When("suspendMode is soft", func() {
-				BeforeEach(func() {
-					vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeSoft
-				})
-				It("should suspend the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
-					assertUpdate()
-				})
-			})
-			When("suspendMode is trySoft", func() {
-				BeforeEach(func() {
-					vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeTrySoft
-				})
-				It("should suspend the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
-					assertUpdate()
-				})
-			})
-		})
-	})
-
-	When("vcVM is powered off", func() {
-		JustBeforeEach(func() {
-
 			// Ensure the VM is powered off.
 			switch vmCtx.MoVM.Summary.Runtime.PowerState {
 			case vimtypes.VirtualMachinePowerStatePoweredOn,
@@ -968,62 +836,230 @@ var _ = Describe("UpdateVirtualMachine", func() {
 			Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 		})
 
-		When("power state is not changed", func() {
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+		const (
+			oldDiskSizeBytes = int64(10 * 1024 * 1024 * 1024)
+			newDiskSizeGi    = 20
+			newDiskSizeBytes = int64(newDiskSizeGi * 1024 * 1024 * 1024)
+		)
+
+		When("the boot disk size is changed for non-ISO VMs", func() {
+			JustBeforeEach(func() {
+				vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+				disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+				Expect(disks).To(HaveLen(1))
+				Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+				diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+				Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+
+				q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: &q,
+				}
+				vm.Spec.Cdrom = nil
 			})
-			It("should not return an error", func() {
-				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-				assertNoUpdate()
+			It("should resize the boot disk", func() {
+				// Reconfigure
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(session.ErrReconfigure))
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+				// Customize
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+				// No-op
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+				vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+				disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+				Expect(disks).To(HaveLen(1))
+				Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+				diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+				Expect(diskCapacityBytes).To(Equal(newDiskSizeBytes))
+				assertUpdate()
 			})
 		})
 
-		When("powering on the VM", func() {
-
-			var (
-				updateArgs *session.VMUpdateArgs
-				resizeArgs *session.VMResizeArgs
-			)
-
+		When("there are no NICs", func() {
 			BeforeEach(func() {
-				resizeArgs = nil
-				updateArgs = &session.VMUpdateArgs{
-					ResourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{},
+				vm.Spec.Network.Interfaces = nil
+			})
+			It("should customize the VM", func() {
+				// Customize
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+				// No-op
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+				assertUpdate()
+			})
+		})
+
+		When("there is a single NIC", func() {
+			BeforeEach(func() {
+				vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &common.PartialObjectRef{
+							Name: "VM Network",
+						},
+					},
 				}
 			})
-
-			getResizeArgs := func() (*session.VMResizeArgs, error) { //nolint:unparam
-				return resizeArgs, nil
-			}
-			getUpdateArgs := func() (*session.VMUpdateArgs, error) { //nolint:unparam
-				return updateArgs, nil
-			}
-
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-			})
-
-			When("there is a power on check annotation", func() {
+			When("with networking disabled", func() {
 				BeforeEach(func() {
-					vm.Annotations = map[string]string{
-						vmopv1.CheckAnnotationPowerOn + "/app": "reason",
-					}
+					vm.Spec.Network.Disabled = true
 				})
-				It("should not power on the VM", func() {
+				It("should customize VM", func() {
+					// Customize
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					// No-op
 					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+					assertUpdate()
+				})
+			})
+		})
+
+		When("VM.Spec.GuestID is changed", func() {
+
+			When("the guest ID value is invalid", func() {
+
+				BeforeEach(func() {
+					vm.Spec.GuestID = "invalid-guest-id"
+				})
+
+				It("should return an error and set the VM's Guest ID condition false", func() {
+					errMsg := "reconfigure VM task failed"
+					err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(errMsg))
+					c := conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)
+					Expect(c).ToNot(BeNil())
+					expectedCondition := conditions.FalseCondition(
+						vmopv1.GuestIDReconfiguredCondition,
+						"Invalid",
+						"The specified guest ID value is not supported: invalid-guest-id",
+					)
+					Expect(*c).To(conditions.MatchCondition(*expectedCondition))
 					assertUpdate()
 				})
 			})
 
+			When("the guest ID value is valid", func() {
+
+				BeforeEach(func() {
+					vm.Spec.GuestID = "vmwarePhoton64Guest"
+				})
+
+				It("should update the VM with the specified guest ID", func() {
+					// Reconfigure
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(session.ErrReconfigure))
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					// Customize
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					// No-op
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					Expect(vmCtx.MoVM.Config.GuestId).To(Equal("vmwarePhoton64Guest"))
+					assertUpdate()
+				})
+			})
+
+			When("the guest ID spec is removed", func() {
+
+				BeforeEach(func() {
+					vm.Spec.GuestID = ""
+				})
+
+				It("should clear the VM guest ID condition if previously set", func() {
+					vm.Status.Conditions = []metav1.Condition{
+						{
+							Type:   vmopv1.GuestIDReconfiguredCondition,
+							Status: metav1.ConditionFalse,
+						},
+					}
+
+					// Customize
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					// No-op
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+					Expect(conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
+					assertUpdate()
+				})
+			})
+		})
+
+		When("VM has CD-ROM", func() {
+
 			const (
-				oldDiskSizeBytes = int64(10 * 1024 * 1024 * 1024)
-				newDiskSizeGi    = 20
-				newDiskSizeBytes = int64(newDiskSizeGi * 1024 * 1024 * 1024)
+				vmiName     = "vmi-iso"
+				vmiKind     = "VirtualMachineImage"
+				vmiFileName = "dummy.iso"
 			)
 
-			When("the boot disk size is changed for non-ISO VMs", func() {
+			BeforeEach(func() {
+				vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+					{
+						Name: "cdrom1",
+						Image: vmopv1.VirtualMachineImageRef{
+							Name: vmiName,
+							Kind: vmiKind,
+						},
+						AllowGuestControl: ptr.To(true),
+						Connected:         ptr.To(true),
+					},
+				}
+
+				testConfig.WithContentLibrary = true
+			})
+
+			JustBeforeEach(func() {
+				// Add required objects to get CD-ROM backing file name.
+				objs := builder.DummyImageAndItemObjectsForCdromBacking(
+					vmiName,
+					vmCtx.VM.Namespace,
+					vmiKind,
+					vmiFileName,
+					ctx.ContentLibraryIsoItemID,
+					true,
+					true,
+					resource.MustParse("100Mi"),
+					true,
+					true,
+					"ISO")
+				for _, obj := range objs {
+					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+				}
+			})
+
+			It("should reconfigure the VM with the expected CD-ROM device", func() {
+				// Reconfigure
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(session.ErrReconfigure))
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+				// No-op
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+				cdromDeviceList := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device).SelectByType(&vimtypes.VirtualCdrom{})
+				Expect(cdromDeviceList).To(HaveLen(1))
+				cdrom := cdromDeviceList[0].(*vimtypes.VirtualCdrom)
+				Expect(cdrom.Connectable.StartConnected).To(BeTrue())
+				Expect(cdrom.Connectable.Connected).To(BeFalse())
+				Expect(cdrom.Connectable.AllowGuestControl).To(BeTrue())
+				Expect(cdrom.ControllerKey).ToNot(BeZero())
+				Expect(cdrom.UnitNumber).ToNot(BeNil())
+				Expect(cdrom.Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualCdromIsoBackingInfo{}))
+				backing := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo)
+				Expect(backing.FileName).To(Equal(vmiFileName))
+				assertUpdate()
+			})
+
+			When("the boot disk size is changed for VM with CD-ROM", func() {
+
 				JustBeforeEach(func() {
 					vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
 					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
@@ -1036,346 +1072,23 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
 						BootDiskCapacity: &q,
 					}
-					vm.Spec.Cdrom = nil
 				})
-				It("should power on the VM with the boot disk resized", func() {
+
+				It("should reconfigure the VM without resizing the boot disk", func() {
+					// Reconfigure
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(session.ErrReconfigure))
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					// No-op
 					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+
 					vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
 					disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
 					Expect(disks).To(HaveLen(1))
 					Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
 					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-					Expect(diskCapacityBytes).To(Equal(newDiskSizeBytes))
-					assertUpdate()
-				})
-			})
-
-			When("there are no NICs", func() {
-				BeforeEach(func() {
-					vm.Spec.Network.Interfaces = nil
-				})
-				It("should power on the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-					assertUpdate()
-				})
-			})
-
-			When("there is a single NIC", func() {
-				BeforeEach(func() {
-					vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
-						{
-							Name: "eth0",
-							Network: &common.PartialObjectRef{
-								Name: "VM Network",
-							},
-						},
-					}
-				})
-				When("with networking disabled", func() {
-					BeforeEach(func() {
-						vm.Spec.Network.Disabled = true
-					})
-					It("should power on the VM", func() {
-						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-						Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-						assertUpdate()
-					})
-				})
-			})
-
-			When("VM.Spec.GuestID is changed", func() {
-
-				When("the guest ID value is invalid", func() {
-
-					BeforeEach(func() {
-						vm.Spec.GuestID = "invalid-guest-id"
-					})
-
-					It("should return an error and set the VM's Guest ID condition false", func() {
-						errMsg := "reconfigure VM task failed"
-						err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
-						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(errMsg))
-						c := conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)
-						Expect(c).ToNot(BeNil())
-						expectedCondition := conditions.FalseCondition(
-							vmopv1.GuestIDReconfiguredCondition,
-							"Invalid",
-							"The specified guest ID value is not supported: invalid-guest-id",
-						)
-						Expect(*c).To(conditions.MatchCondition(*expectedCondition))
-						assertUpdate()
-					})
-				})
-
-				When("the guest ID value is valid", func() {
-
-					BeforeEach(func() {
-						vm.Spec.GuestID = "vmwarePhoton64Guest"
-					})
-
-					It("should power on the VM with the specified guest ID", func() {
-						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-						Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-						Expect(vmCtx.MoVM.Config.GuestId).To(Equal("vmwarePhoton64Guest"))
-						assertUpdate()
-					})
-				})
-
-				When("the guest ID spec is removed", func() {
-
-					BeforeEach(func() {
-						vm.Spec.GuestID = ""
-					})
-
-					It("should clear the VM guest ID condition if previously set", func() {
-						vm.Status.Conditions = []metav1.Condition{
-							{
-								Type:   vmopv1.GuestIDReconfiguredCondition,
-								Status: metav1.ConditionFalse,
-							},
-						}
-						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-						Expect(conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
-						assertUpdate()
-					})
-				})
-			})
-
-			When("VM has CD-ROM", func() {
-
-				const (
-					vmiName     = "vmi-iso"
-					vmiKind     = "VirtualMachineImage"
-					vmiFileName = "dummy.iso"
-				)
-
-				BeforeEach(func() {
-					vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-						{
-							Name: "cdrom1",
-							Image: vmopv1.VirtualMachineImageRef{
-								Name: vmiName,
-								Kind: vmiKind,
-							},
-							AllowGuestControl: ptr.To(true),
-							Connected:         ptr.To(true),
-						},
-					}
-
-					testConfig.WithContentLibrary = true
-				})
-
-				JustBeforeEach(func() {
-					// Add required objects to get CD-ROM backing file name.
-					objs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, vmCtx.VM.Namespace, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, true, "ISO")
-					for _, obj := range objs {
-						Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
-					}
-				})
-
-				It("should power on the VM with expected CD-ROM device", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					cdromDeviceList := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device).SelectByType(&vimtypes.VirtualCdrom{})
-					Expect(cdromDeviceList).To(HaveLen(1))
-					cdrom := cdromDeviceList[0].(*vimtypes.VirtualCdrom)
-					Expect(cdrom.Connectable.StartConnected).To(BeTrue())
-					Expect(cdrom.Connectable.Connected).To(BeTrue())
-					Expect(cdrom.Connectable.AllowGuestControl).To(BeTrue())
-					Expect(cdrom.ControllerKey).ToNot(BeZero())
-					Expect(cdrom.UnitNumber).ToNot(BeNil())
-					Expect(cdrom.Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualCdromIsoBackingInfo{}))
-					backing := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo)
-					Expect(backing.FileName).To(Equal(vmiFileName))
-					assertUpdate()
-				})
-
-				When("the boot disk size is changed for VM with CD-ROM", func() {
-
-					JustBeforeEach(func() {
-						vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
-						disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
-						Expect(disks).To(HaveLen(1))
-						Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
-						diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-						Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
-
-						q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
-						vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
-							BootDiskCapacity: &q,
-						}
-					})
-
-					It("should power on the VM without the boot disk resized", func() {
-						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-						Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-						vmDevs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
-						disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
-						Expect(disks).To(HaveLen(1))
-						Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
-						diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
-						Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
-						// VM is powered on.
-						assertUpdate()
-					})
-				})
-			})
-		})
-
-		When("suspending the VM", func() {
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
-			})
-			When("suspendMode is hard", func() {
-				BeforeEach(func() {
-					vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeHard
-				})
-				It("should not suspend the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
-					assertNoUpdate()
-				})
-			})
-			When("suspendMode is soft", func() {
-				BeforeEach(func() {
-					vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeSoft
-				})
-				It("should not suspend the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
-					assertNoUpdate()
-				})
-			})
-			When("suspendMode is trySoft", func() {
-				BeforeEach(func() {
-					vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeTrySoft
-				})
-				It("should not suspend the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
-					assertNoUpdate()
-				})
-			})
-		})
-	})
-
-	When("vcVM is suspended", func() {
-		JustBeforeEach(func() {
-
-			// Ensure the VM is suspended.
-			switch vmCtx.MoVM.Summary.Runtime.PowerState {
-			case vimtypes.VirtualMachinePowerStatePoweredOn,
-				vimtypes.VirtualMachinePowerStatePoweredOff:
-				t, err := vcVM.Suspend(ctx)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(t.Wait(ctx)).To(Succeed())
-				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-			}
-			Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
-		})
-
-		When("power state is not changed", func() {
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
-			})
-			It("should not return an error", func() {
-				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-				assertNoUpdate()
-			})
-		})
-
-		When("powering on the VM", func() {
-
-			var (
-				updateArgs *session.VMUpdateArgs
-				resizeArgs *session.VMResizeArgs
-			)
-
-			BeforeEach(func() {
-				resizeArgs = nil
-				updateArgs = &session.VMUpdateArgs{
-					ResourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{},
-				}
-			})
-
-			getResizeArgs := func() (*session.VMResizeArgs, error) { //nolint:unparam
-				return resizeArgs, nil
-			}
-			getUpdateArgs := func() (*session.VMUpdateArgs, error) { //nolint:unparam
-				return updateArgs, nil
-			}
-
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-			})
-
-			It("should power on the VM", func() {
-				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-				Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
-				assertUpdate()
-			})
-
-			When("there is a power on check annotation", func() {
-				BeforeEach(func() {
-					vm.Annotations = map[string]string{
-						vmopv1.CheckAnnotationPowerOn + "/app": "reason",
-					}
-				})
-				It("should not power on the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
-					assertUpdate()
-				})
-			})
-		})
-
-		When("powering off the VM", func() {
-			BeforeEach(func() {
-				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-			})
-			When("powerOffMode is hard", func() {
-				BeforeEach(func() {
-					vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
-				})
-				It("should power off the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
-					assertUpdate()
-				})
-			})
-			When("powerOffMode is soft", func() {
-				BeforeEach(func() {
-					vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
-				})
-				It("should not power off the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
-					assertNoUpdate()
-				})
-			})
-			When("powerOffMode is trySoft", func() {
-				BeforeEach(func() {
-					vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
-				})
-				It("should power off the VM", func() {
-					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, nil, nil)).To(Succeed())
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-					Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+					Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+					// VM is powered on.
 					assertUpdate()
 				})
 			})

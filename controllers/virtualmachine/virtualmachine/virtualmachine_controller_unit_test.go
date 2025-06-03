@@ -22,8 +22,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -204,6 +206,20 @@ func unitTestsReconcile() {
 				expectEvents(ctx, "CreateSuccess")
 			})
 
+			It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation that returns a NoRequeueErr", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						ctxop.MarkCreate(ctx)
+						return pkgerr.NoRequeueError{}
+					},
+				)
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+				expectEvents(ctx, "CreateSuccess")
+			})
+
 			It("Should emit CreateFailure event if ReconcileNormal causes a failed VM create", func() {
 				providerfake.SetCreateOrUpdateFunction(
 					vmCtx,
@@ -236,6 +252,20 @@ func unitTestsReconcile() {
 					},
 				)
 				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				expectEvents(ctx, "CreateSuccess")
+			})
+
+			It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation that returns a NoRequeueErr", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						ctxop.MarkCreate(ctx)
+						return pkgerr.NoRequeueError{}
+					},
+				)
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
 				expectEvents(ctx, "CreateSuccess")
 			})
 
@@ -283,6 +313,31 @@ func unitTestsReconcile() {
 			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
 			expectEvents(ctx, "UpdateSuccess")
 		})
+
+		DescribeTable("Should emit UpdateSuccess event if ReconcileNormal causes a successful VM update that returns a NoRequeueErr",
+			func(noRequeueErr error) {
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						ctxop.MarkUpdate(ctx)
+						return noRequeueErr
+					},
+				)
+
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+				expectEvents(ctx, "UpdateSuccess")
+			},
+			Entry("pkgerr.NoRequeueErr", pkgerr.NoRequeueError{}),
+			Entry("vsphere.ErrBackup", vsphere.ErrBackup),
+			Entry("vsphere.ErrBootstrapCustomize", vsphere.ErrBootstrapCustomize),
+			Entry("vsphere.ErrBootstrapReconfigure", vsphere.ErrBootstrapReconfigure),
+			Entry("vsphere.ErrReconfigure", vsphere.ErrReconfigure),
+			Entry("vsphere.ErrRestart", vsphere.ErrRestart),
+			Entry("vsphere.ErrSetPowerState", vsphere.ErrSetPowerState),
+			Entry("vsphere.ErrUpgradeHardwareVersion", vsphere.ErrUpgradeHardwareVersion),
+		)
 
 		It("Should emit UpdateFailure event if ReconcileNormal causes a failed VM update", func() {
 			providerfake.SetCreateOrUpdateFunction(

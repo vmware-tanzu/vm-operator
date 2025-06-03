@@ -6,18 +6,16 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
@@ -26,6 +24,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -38,6 +37,13 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
+	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
+)
+
+var (
+	ErrReconfigure            = pkgerr.NoRequeueError{Message: "reconfigured vm"}
+	ErrUpgradeHardwareVersion = pkgerr.NoRequeueError{Message: "upgraded hardware version"}
 )
 
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
@@ -56,6 +62,357 @@ type VMResizeArgs struct {
 	VMClass *vmopv1.VirtualMachineClass
 	// ConfigSpec derived from the class and VM Spec.
 	ConfigSpec vimtypes.VirtualMachineConfigSpec
+
+	BootstrapData  vmlifecycle.BootstrapData
+	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
+	NetworkResults network.NetworkInterfaceResults
+}
+
+func (s *Session) UpdateVirtualMachine(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	getUpdateArgsFn func() (*VMUpdateArgs, error),
+	getResizeArgsFn func() (*VMResizeArgs, error)) error {
+
+	var (
+		updateErr  error
+		powerState = vmCtx.MoVM.Runtime.PowerState
+	)
+
+	switch {
+	case powerState == vimtypes.VirtualMachinePowerStateSuspended:
+		vmCtx.Logger.Info("Reconciling config for suspended vm")
+		updateErr = reconcileSuspendedVM(vmCtx, s.K8sClient, vcVM)
+
+	case vmCtx.VM.Status.TaskID != "":
+		vmCtx.Logger.Info("Reconciling config for VM with task")
+		updateErr = reconcileVMWithTask(vmCtx, s.K8sClient, vcVM)
+
+	case isVMPaused(vmCtx):
+		vmCtx.Logger.Info("Reconciling config for paused vm")
+		updateErr = reconcilePausedVM(vmCtx, s.K8sClient, vcVM)
+
+	case powerState == vimtypes.VirtualMachinePowerStatePoweredOn:
+		vmCtx.Logger.Info("Reconciling config for powered on vm")
+		updateErr = s.reconcilePoweredOffOrPoweredOnVM(
+			vmCtx,
+			vcVM,
+			getUpdateArgsFn,
+			getResizeArgsFn)
+
+	case powerState == vimtypes.VirtualMachinePowerStatePoweredOff:
+		vmCtx.Logger.Info("Reconciling config for powered off vm")
+		updateErr = s.reconcilePoweredOffOrPoweredOnVM(
+			vmCtx,
+			vcVM,
+			getUpdateArgsFn,
+			getResizeArgsFn)
+	}
+
+	if updateErr != nil && !pkgerr.IsNoRequeueError(updateErr) {
+		updateErr = fmt.Errorf("updating state failed with %w", updateErr)
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
+		for _, r := range vmconfig.FromContext(vmCtx) {
+			if err := r.OnResult(
+				vmCtx,
+				vmCtx.VM,
+				vmCtx.MoVM,
+				updateErr); err != nil {
+
+				err = fmt.Errorf("%s.OnResult failed with %w", r.Name(), err)
+				if updateErr == nil {
+					updateErr = err
+				} else {
+					updateErr = fmt.Errorf("%w, %w", updateErr, err)
+				}
+			}
+		}
+	}
+
+	return updateErr
+}
+
+func reconcilePausedVM(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	vcVM *object.VirtualMachine) error {
+
+	var configSpec vimtypes.VirtualMachineConfigSpec
+
+	if vmCtx.MoVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStateSuspended {
+		if err := verifyConfigInfo(vmCtx); err != nil {
+			return err
+		}
+
+		if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
+			vmCtx,
+			*vmCtx.VM,
+			*vmCtx.MoVM.Config,
+			&configSpec); err != nil {
+
+			return err
+		}
+	}
+
+	return doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("reconcilePausedVM"),
+		),
+		k8sClient,
+		vmCtx.VM,
+		vcVM,
+		vmCtx.MoVM,
+		configSpec)
+}
+
+func reconcileVMWithTask(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	vcVM *object.VirtualMachine) error {
+
+	var configSpec vimtypes.VirtualMachineConfigSpec
+
+	return doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("reconcileVMWithTask"),
+		),
+		k8sClient,
+		vmCtx.VM,
+		vcVM,
+		vmCtx.MoVM,
+		configSpec)
+}
+
+func reconcileSuspendedVM(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	vcVM *object.VirtualMachine) error {
+
+	var configSpec vimtypes.VirtualMachineConfigSpec
+
+	return doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("reconcileSuspendedVM"),
+		),
+		k8sClient,
+		vmCtx.VM,
+		vcVM,
+		vmCtx.MoVM,
+		configSpec)
+}
+
+func (s *Session) reconcilePoweredOffOrPoweredOnVM(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	getUpdateArgsFn func() (*VMUpdateArgs, error),
+	getResizeArgsFn func() (*VMResizeArgs, error)) error {
+
+	if err := verifyConfigInfo(vmCtx); err != nil {
+		return err
+	}
+
+	var (
+		updateArgs     *VMUpdateArgs
+		resizeArgs     *VMResizeArgs
+		resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
+		bootstrapData  vmlifecycle.BootstrapData
+	)
+
+	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize ||
+		f.VMResizeCPUMemory {
+
+		var err error
+		resizeArgs, err = getResizeArgsFn()
+		if err != nil {
+			return err
+		}
+		bootstrapData = resizeArgs.BootstrapData
+		resourcePolicy = resizeArgs.ResourcePolicy
+
+	} else {
+
+		var err error
+		updateArgs, err = getUpdateArgsFn()
+		if err != nil {
+			return err
+		}
+		bootstrapData = updateArgs.BootstrapData
+		resourcePolicy = updateArgs.ResourcePolicy
+	}
+
+	if err := s.reconcileClusterModule(vmCtx, resourcePolicy); err != nil {
+		return err
+	}
+
+	if err := s.reconcileHardwareVersion(vmCtx, vcVM); err != nil {
+		return err
+	}
+
+	if err := s.reconcileVolumes(vmCtx); err != nil {
+		return err
+	}
+
+	if vmCtx.VM.Spec.GuestID == "" {
+		// Assume the guest ID is valid until we know otherwise.
+		conditions.Delete(vmCtx.VM, vmopv1.GuestIDReconfiguredCondition)
+	}
+
+	networkResults, err := s.reconcileNetworkInterfaces(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	switch vmCtx.MoVM.Runtime.PowerState {
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
+
+		if err := s.poweredOnReconfigure(
+			vmCtx,
+			vcVM,
+			vmCtx.MoVM.Config); err != nil {
+
+			return err
+		}
+
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
+
+		if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize ||
+			f.VMResizeCPUMemory {
+
+			resizeArgs.NetworkResults = networkResults
+			if err := s.resizeVMWhenPoweredStateOff(
+				vmCtx,
+				vcVM,
+				vmCtx.MoVM,
+				resizeArgs); err != nil {
+
+				return err
+			}
+
+		} else {
+
+			updateArgs.NetworkResults = networkResults
+			if err := s.poweredOffReconfigure(
+				vmCtx,
+				vcVM,
+				vmCtx.MoVM.Config,
+				updateArgs); err != nil {
+
+				return err
+			}
+		}
+	}
+
+	return s.reconcileNetworkAndGuestCustomizationState(
+		vmCtx,
+		vcVM,
+		bootstrapData,
+		networkResults)
+}
+
+func (s *Session) poweredOnReconfigure(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	config *vimtypes.VirtualMachineConfigInfo) error {
+
+	configSpec := &vimtypes.VirtualMachineConfigSpec{}
+
+	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
+		vmCtx,
+		*vmCtx.VM,
+		*config,
+		configSpec); err != nil {
+
+		return err
+	}
+
+	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, vmCtx.VM, nil)
+	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, vmCtx.VM.Spec)
+
+	if err := virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
+		return fmt.Errorf("update CD-ROM device connection error: %w", err)
+	}
+
+	if err := doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("poweredOnReconfigure"),
+		),
+		s.K8sClient,
+		vmCtx.VM,
+		vcVM,
+		vmCtx.MoVM,
+		*configSpec); err != nil {
+
+		return err
+	}
+
+	if err := s.reconcileChangeTracking(vmCtx, configSpec); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Session) poweredOffReconfigure(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	config *vimtypes.VirtualMachineConfigInfo,
+	updateArgs *VMUpdateArgs) error {
+
+	var configSpec *vimtypes.VirtualMachineConfigSpec
+	var needsResize bool
+	var err error
+
+	if pkgcfg.FromContext(vmCtx).Features.VMResize {
+		configSpec, needsResize, err = s.getResizeConfigSpecForPoweredOffVM(
+			vmCtx, config, updateArgs)
+	} else {
+		configSpec, needsResize, err = s.getConfigSpecForPoweredOffVM(
+			vmCtx, config, updateArgs)
+	}
+	if err != nil {
+		return err
+	}
+
+	reconfigErr := doReconfigure(
+		logr.NewContext(
+			vmCtx,
+			vmCtx.Logger.WithName("poweredOffReconfigure"),
+		),
+		s.K8sClient,
+		vmCtx.VM,
+		vcVM,
+		vmCtx.MoVM,
+		*configSpec)
+
+	if needsResize &&
+		(reconfigErr == nil || errors.Is(reconfigErr, ErrReconfigure)) {
+
+		vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, updateArgs.VMClass)
+
+		vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
+			APIVersion: vmopv1.GroupVersion.String(),
+			Kind:       "VirtualMachineClass",
+			Name:       updateArgs.VMClass.Name,
+		}
+	}
+
+	return reconfigErr
+}
+
+func verifyConfigInfo(vmCtx pkgctx.VirtualMachineContext) error {
+	// See GoVmomi's VirtualMachine::Device() explanation for this check.
+	if vmCtx.MoVM.Config == nil {
+		return fmt.Errorf(
+			"VM config is not available, connectionState=%s",
+			vmCtx.MoVM.Runtime.ConnectionState)
+	}
+	return nil
 }
 
 func findMatchingEthCard(
@@ -292,7 +649,7 @@ func updateConfigSpec(
 	return configSpec, needsResize, nil
 }
 
-func (s *Session) prePowerOnVMConfigSpec(
+func (s *Session) getConfigSpecForPoweredOffVM(
 	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, bool, error) {
@@ -327,54 +684,10 @@ func (s *Session) prePowerOnVMConfigSpec(
 	return configSpec, needsResize, nil
 }
 
-func (s *Session) prePowerOnVMReconfigure(
-	vmCtx pkgctx.VirtualMachineContext,
-	resVM *res.VirtualMachine,
-	config *vimtypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) error {
-
-	var configSpec *vimtypes.VirtualMachineConfigSpec
-	var needsResize bool
-	var err error
-
-	if pkgcfg.FromContext(vmCtx).Features.VMResize {
-		configSpec, needsResize, err = s.prePowerOnVMResizeConfigSpec(vmCtx, config, updateArgs)
-	} else {
-		configSpec, needsResize, err = s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
-	}
-	if err != nil {
-		return err
-	}
-
-	if _, err := doReconfigure(
-		logr.NewContext(
-			vmCtx,
-			vmCtx.Logger.WithName("prePowerOnVMReconfigure"),
-		),
-		s.K8sClient,
-		vmCtx.VM,
-		resVM.VcVM(),
-		vmCtx.MoVM,
-		*configSpec); err != nil {
-
-		return err
-	}
-
-	if needsResize {
-		vmopv1util.MustSetLastResizedAnnotation(vmCtx.VM, updateArgs.VMClass)
-
-		vmCtx.VM.Status.Class = &vmopv1common.LocalObjectRef{
-			APIVersion: vmopv1.GroupVersion.String(),
-			Kind:       "VirtualMachineClass",
-			Name:       updateArgs.VMClass.Name,
-		}
-	}
-
-	return nil
-}
-
-func (s *Session) ensureNetworkInterfaces(
+func (s *Session) reconcileNetworkInterfaces(
 	vmCtx pkgctx.VirtualMachineContext) (network.NetworkInterfaceResults, error) {
+
+	vmCtx.Logger.V(4).Info("Reconciling network interfaces")
 
 	networkSpec := vmCtx.VM.Spec.Network
 	if networkSpec == nil || networkSpec.Disabled {
@@ -390,7 +703,8 @@ func (s *Session) ensureNetworkInterfaces(
 		&s.ClusterMoRef,
 		networkSpec)
 	if err != nil {
-		return network.NetworkInterfaceResults{}, err
+		return network.NetworkInterfaceResults{},
+			fmt.Errorf("failed to reconcile network interfaces: %w", err)
 	}
 
 	for idx := range results.Results {
@@ -398,7 +712,8 @@ func (s *Session) ensureNetworkInterfaces(
 
 		dev, err := network.CreateDefaultEthCard(vmCtx, result)
 		if err != nil {
-			return network.NetworkInterfaceResults{}, err
+			return network.NetworkInterfaceResults{},
+				fmt.Errorf("failed to create default ethernet card: %w", err)
 		}
 
 		result.Device = dev
@@ -406,14 +721,24 @@ func (s *Session) ensureNetworkInterfaces(
 
 	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
 		if err := network.ListOrphanedNetworkInterfaces(vmCtx, s.K8sClient, &results); err != nil {
-			return network.NetworkInterfaceResults{}, err
+			return network.NetworkInterfaceResults{},
+				fmt.Errorf("failed to list orphaned network interfaces: %w", err)
 		}
 	}
 
 	return results, nil
 }
 
-func (s *Session) ensureCNSVolumes(vmCtx pkgctx.VirtualMachineContext) error {
+func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling volumes")
+
+	if !vmCtx.IsPoweringOn() {
+		vmCtx.Logger.V(4).Info(
+			"Skipping volume reconciliation since VM is not powering on")
+		return nil
+	}
+
 	// If VM spec has a PVC, check if the volume is attached before powering on
 	for _, volume := range vmCtx.VM.Spec.Volumes {
 		if volume.PersistentVolumeClaim == nil {
@@ -443,16 +768,21 @@ func (s *Session) ensureCNSVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 
 func (s *Session) fixupMacAddresses(
 	vmCtx pkgctx.VirtualMachineContext,
-	resVM *res.VirtualMachine,
-	updateArgs *VMUpdateArgs) error {
+	vcVM *object.VirtualMachine,
+	networkResults network.NetworkInterfaceResults) error {
+
+	networkDevices, err := res.NewVMFromObject(vcVM).GetNetworkDevices(vmCtx)
+	if err != nil {
+		return err
+	}
 
 	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
-		return s.fixupMacAddressMutableNetworks(vmCtx, resVM, updateArgs)
+		return s.fixupMacAddressMutableNetworks(networkDevices, networkResults)
 	}
 
 	missingMAC := false
-	for i := range updateArgs.NetworkResults.Results {
-		if updateArgs.NetworkResults.Results[i].MacAddress == "" {
+	for i := range networkResults.Results {
+		if networkResults.Results[i].MacAddress == "" {
 			missingMAC = true
 			break
 		}
@@ -462,14 +792,9 @@ func (s *Session) fixupMacAddresses(
 		return nil
 	}
 
-	networkDevices, err := resVM.GetNetworkDevices(vmCtx)
-	if err != nil {
-		return err
-	}
-
 	// Just zip these together until we can do interface identification.
-	for i := 0; i < min(len(networkDevices), len(updateArgs.NetworkResults.Results)); i++ {
-		result := &updateArgs.NetworkResults.Results[i]
+	for i := 0; i < min(len(networkDevices), len(networkResults.Results)); i++ {
+		result := &networkResults.Results[i]
 
 		if result.MacAddress == "" {
 			ethCard := networkDevices[i].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
@@ -481,20 +806,14 @@ func (s *Session) fixupMacAddresses(
 }
 
 func (s *Session) fixupMacAddressMutableNetworks(
-	vmCtx pkgctx.VirtualMachineContext,
-	resVM *res.VirtualMachine,
-	updateArgs *VMUpdateArgs) error {
+	networkDevices object.VirtualDeviceList,
+	networkResults network.NetworkInterfaceResults) error {
 
-	if !updateArgs.NetworkResults.AddedEthernetCard {
+	if !networkResults.AddedEthernetCard {
 		return nil
 	}
 
-	networkDevices, err := resVM.GetNetworkDevices(vmCtx)
-	if err != nil {
-		return err
-	}
-
-	for idx, r := range updateArgs.NetworkResults.Results {
+	for idx, r := range networkResults.Results {
 		if r.DeviceKey != 0 {
 			matchingIdx := slices.IndexFunc(networkDevices,
 				func(d vimtypes.BaseVirtualDevice) bool { return d.GetVirtualDevice().Key == r.DeviceKey })
@@ -507,8 +826,8 @@ func (s *Session) fixupMacAddressMutableNetworks(
 		matchingIdx := findMatchingEthCard(networkDevices, r.Device.(vimtypes.BaseVirtualEthernetCard))
 		if matchingIdx >= 0 {
 			matchDev := networkDevices[matchingIdx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-			updateArgs.NetworkResults.Results[idx].DeviceKey = matchDev.Key
-			updateArgs.NetworkResults.Results[idx].MacAddress = matchDev.MacAddress
+			networkResults.Results[idx].DeviceKey = matchDev.Key
+			networkResults.Results[idx].MacAddress = matchDev.MacAddress
 
 			networkDevices = append(networkDevices[:matchingIdx], networkDevices[matchingIdx+1:]...)
 		}
@@ -517,122 +836,8 @@ func (s *Session) fixupMacAddressMutableNetworks(
 	return nil
 }
 
-func (s *Session) customize(
-	vmCtx pkgctx.VirtualMachineContext,
-	resVM *res.VirtualMachine,
-	cfg *vimtypes.VirtualMachineConfigInfo,
-	bootstrapArgs vmlifecycle.BootstrapArgs) error {
-
-	return vmlifecycle.DoBootstrap(vmCtx, resVM.VcVM(), cfg, bootstrapArgs)
-}
-
-func (s *Session) prepareVMForPowerOn(
-	vmCtx pkgctx.VirtualMachineContext,
-	resVM *res.VirtualMachine,
-	cfg *vimtypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) error {
-
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx)
-	if err != nil {
-		return err
-	}
-	updateArgs.NetworkResults = netIfList
-
-	if err := s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs); err != nil {
-		return err
-	}
-
-	for i := range updateArgs.NetworkResults.OrphanedNetworkInterfaces {
-		if err := s.K8sClient.Delete(vmCtx, updateArgs.NetworkResults.OrphanedNetworkInterfaces[i]); err != nil {
-			return err
-		}
-	}
-
-	if err := s.fixupMacAddresses(vmCtx, resVM, updateArgs); err != nil {
-		return err
-	}
-
-	// Get the information required to bootstrap/customize the VM. This is
-	// retrieved outside of the customize/DoBootstrap call path in order to use
-	// the information to update the VM object's status with the resolved,
-	// intended network configuration.
-	bootstrapArgs, err := vmlifecycle.GetBootstrapArgs(
-		vmCtx,
-		s.K8sClient,
-		updateArgs.NetworkResults,
-		updateArgs.BootstrapData)
-	if err != nil {
-		return err
-	}
-
-	// Update the Kubernetes VM object's status with the resolved, intended
-	// network configuration.
-	vmlifecycle.UpdateNetworkStatusConfig(vmCtx.VM, bootstrapArgs)
-
-	if err := s.customize(vmCtx, resVM, cfg, bootstrapArgs); err != nil {
-		return err
-	}
-
-	if err := s.ensureCNSVolumes(vmCtx); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Session) poweredOnVMReconfigure(
-	vmCtx pkgctx.VirtualMachineContext,
-	resVM *res.VirtualMachine,
-	config *vimtypes.VirtualMachineConfigInfo) (bool, error) {
-
-	configSpec := &vimtypes.VirtualMachineConfigSpec{}
-
-	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
-		vmCtx,
-		*vmCtx.VM,
-		*config,
-		configSpec); err != nil {
-
-		return false, err
-	}
-
-	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, vmCtx.VM, nil)
-	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, vmCtx.VM.Spec)
-
-	if err := virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
-		return false, fmt.Errorf("update CD-ROM device connection error: %w", err)
-	}
-
-	refetchProps, err := doReconfigure(
-		logr.NewContext(
-			vmCtx,
-			vmCtx.Logger.WithName("poweredOnVMReconfigure"),
-		),
-		s.K8sClient,
-		vmCtx.VM,
-		resVM.VcVM(),
-		vmCtx.MoVM,
-		*configSpec)
-
-	if err != nil {
-		return false, err
-	}
-
-	// Special case for CBT: in order for CBT change take effect for a powered
-	// on VM, a checkpoint save/restore is needed. The FSR call allows CBT to
-	// take effect for powered-on VMs.
-	if configSpec.ChangeTrackingEnabled != nil {
-		if err := s.invokeFsrVirtualMachine(vmCtx, resVM); err != nil {
-			return refetchProps, fmt.Errorf("failed to invoke FSR for CBT update")
-		}
-	}
-
-	return refetchProps, nil
-}
-
 func (s *Session) attachClusterModule(
 	vmCtx pkgctx.VirtualMachineContext,
-	resVM *res.VirtualMachine,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
 	// The clusterModule is required be able to enforce the vm-vm anti-affinity policy.
@@ -648,22 +853,20 @@ func (s *Session) attachClusterModule(
 	}
 
 	clusterModuleProvider := clustermodules.NewProvider(s.Client.RestClient())
-	return clusterModuleProvider.AddMoRefToModule(vmCtx, moduleUUID, resVM.MoRef())
+	return clusterModuleProvider.AddMoRefToModule(vmCtx, moduleUUID, vmCtx.MoVM.Self)
 }
 
 func (s *Session) resizeVMWhenPoweredStateOff(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	moVM mo.VirtualMachine,
-	getResizeArgsFn func() (*VMResizeArgs, error)) (bool, error) {
+	resizeArgs *VMResizeArgs) error {
 
-	resizeArgs, err := getResizeArgsFn()
-	if err != nil {
-		return false, err
-	}
-
-	var configSpec vimtypes.VirtualMachineConfigSpec
-	var needsResize bool
+	var (
+		err         error
+		needsResize bool
+		configSpec  vimtypes.VirtualMachineConfigSpec
+	)
 
 	if resizeArgs.VMClass != nil {
 		needsResize = vmopv1util.ResizeNeeded(*vmCtx.VM, *resizeArgs.VMClass)
@@ -674,7 +877,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 				configSpec, err = resize.CreateResizeCPUMemoryConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
 			}
 			if err != nil {
-				return false, err
+				return err
 			}
 		}
 	}
@@ -686,7 +889,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 			*moVM.Config,
 			&configSpec); err != nil {
 
-			return false, err
+			return err
 		}
 	} else if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
 		vmCtx,
@@ -694,10 +897,10 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		*moVM.Config,
 		&configSpec); err != nil {
 
-		return false, err
+		return err
 	}
 
-	refetchProps, err := doReconfigure(
+	reconfigErr := doReconfigure(
 		logr.NewContext(
 			vmCtx,
 			vmCtx.Logger.WithName("resizeVMWhenPoweredStateOff"),
@@ -708,8 +911,8 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		vmCtx.MoVM,
 		configSpec)
 
-	if err != nil {
-		return false, err
+	if reconfigErr != nil && !errors.Is(reconfigErr, ErrReconfigure) {
+		return err
 	}
 
 	if needsResize {
@@ -724,10 +927,10 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		}
 	}
 
-	return refetchProps, nil
+	return reconfigErr
 }
 
-func (s *Session) prePowerOnVMResizeConfigSpec(
+func (s *Session) getResizeConfigSpecForPoweredOffVM(
 	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, bool, error) {
@@ -751,359 +954,111 @@ func (s *Session) prePowerOnVMResizeConfigSpec(
 	return &configSpec, needsResize, nil
 }
 
-func (s *Session) updateVMDesiredPowerStateOff(
+func (s *Session) reconcileHardwareVersion(
 	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	getResizeArgsFn func() (*VMResizeArgs, error),
-	existingPowerState vmopv1.VirtualMachinePowerState) (bool, error) {
+	vcVM *object.VirtualMachine) error {
 
-	var (
-		powerOff     bool
-		refetchProps bool
-	)
-
-	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
-		powerOff = true
-	} else if existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
-		powerOff = vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeHard ||
-			vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeTrySoft
-	}
-	if powerOff {
-		if err := res.NewVMFromObject(vcVM).SetPowerState(
-			logr.NewContext(vmCtx, vmCtx.Logger),
-			existingPowerState,
-			vmCtx.VM.Spec.PowerState,
-			vmCtx.VM.Spec.PowerOffMode); err != nil {
-
-			return false, err
-		}
-
-		refetchProps = true
-	}
+	vmCtx.Logger.V(4).Info("Reconciling hardware version")
 
 	// A VM's hardware can only be upgraded if the VM is powered off.
 	opResult, err := vmutil.ReconcileMinHardwareVersion(
-		vmCtx,
+		logr.NewContext(vmCtx, vmCtx.Logger),
 		vcVM.Client(),
 		vmCtx.MoVM,
 		false,
 		vmCtx.VM.Spec.MinHardwareVersion)
 	if err != nil {
-		return refetchProps, err
-	}
-	if opResult == vmutil.ReconcileMinHardwareVersionResultUpgraded {
-		refetchProps = true
+		return err
 	}
 
-	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
-		refetch, err := s.resizeVMWhenPoweredStateOff(
+	const skipping = "Skipping hardware version reconciliation since "
+
+	switch opResult {
+	case vmutil.ReconcileMinHardwareVersionResultUpgraded:
+		vmCtx.Logger.V(4).Info("Upgraded hardware version")
+		return ErrUpgradeHardwareVersion
+	case vmutil.ReconcileMinHardwareVersionResultNotPoweredOff:
+		vmCtx.Logger.V(4).Info(skipping + "VM is not powered off")
+	case vmutil.ReconcileMinHardwareVersionResultAlreadyUpgraded:
+		vmCtx.Logger.V(4).Info("Hardware version already upgraded")
+	case vmutil.ReconcileMinHardwareVersionResultMinHardwareVersionZero:
+		vmCtx.Logger.V(4).Info(skipping + "minHardwareVersion is set to zero")
+	}
+
+	return nil
+}
+
+func (s *Session) reconcileClusterModule(
+	vmCtx pkgctx.VirtualMachineContext,
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling cluster module")
+
+	if !vmCtx.IsPoweringOn() {
+		// TODO(akutz) Only attach to cluster modules if the VM is transitioning
+		//             from not powered on to powered on. This is because
+		//             attaching to a cluster module is quite expensive since it
+		//             involves listing all modules.
+		vmCtx.Logger.V(4).Info(
+			"Skipping cluster module reconciliation since VM is not powering on")
+		return nil
+	}
+
+	if resourcePolicy == nil {
+		vmCtx.Logger.V(4).Info(
+			"Skipping cluster module reconciliation since resource policy is nil")
+		return nil
+	}
+
+	return s.attachClusterModule(vmCtx, resourcePolicy)
+}
+
+func (s *Session) reconcileNetworkAndGuestCustomizationState(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	bootstrapData vmlifecycle.BootstrapData,
+	networkResults network.NetworkInterfaceResults) error {
+
+	for i := range networkResults.OrphanedNetworkInterfaces {
+		if err := s.K8sClient.Delete(
 			vmCtx,
-			vcVM,
-			vmCtx.MoVM,
-			getResizeArgsFn)
-		if err != nil {
-			return refetchProps, err
-		}
-		if refetch {
-			refetchProps = true
-		}
-	} else {
-		refetch, err := defaultReconfigure(vmCtx, s.K8sClient, vcVM)
-		if err != nil {
-			return refetchProps, err
-		}
-		if refetch {
-			refetchProps = true
+			networkResults.OrphanedNetworkInterfaces[i],
+		); err != nil {
+
+			return err
 		}
 	}
 
-	return refetchProps, err
-}
-
-func (s *Session) updateVMDesiredPowerStateSuspended(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	existingPowerState vmopv1.VirtualMachinePowerState) (bool, error) {
-
-	var (
-		refetchProps bool
-	)
-
-	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
-		if err := res.NewVMFromObject(vcVM).SetPowerState(
-			logr.NewContext(vmCtx, vmCtx.Logger),
-			existingPowerState,
-			vmCtx.VM.Spec.PowerState,
-			vmCtx.VM.Spec.SuspendMode); err != nil {
-			return false, err
-		}
-
-		refetchProps = true
-	}
-
-	refetch, err := defaultReconfigure(vmCtx, s.K8sClient, vcVM)
-	if err != nil {
-		return refetchProps, err
-	}
-	if refetch {
-		refetchProps = true
-	}
-
-	return refetchProps, nil
-}
-
-func (s *Session) updateVMDesiredPowerStateOn(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	getUpdateArgsFn func() (*VMUpdateArgs, error),
-	existingPowerState vmopv1.VirtualMachinePowerState) (refetchProps bool, err error) {
-
-	config := vmCtx.MoVM.Config
-
-	// See GoVmomi's VirtualMachine::Device() explanation for this check.
-	if config == nil {
-		return refetchProps, fmt.Errorf(
-			"VM config is not available, connectionState=%s",
-			vmCtx.MoVM.Summary.Runtime.ConnectionState)
-	}
-
-	resVM := res.NewVMFromObject(vcVM)
-
-	if existingPowerState == vmopv1.VirtualMachinePowerStateOn {
-		// Check to see if a possible restart is required.
-		// Please note a VM may only be restarted if it is powered on.
-		if vmCtx.VM.Spec.NextRestartTime != "" {
-			// If non-empty, the value of spec.nextRestartTime is guaranteed
-			// to be a valid RFC3339Nano timestamp due to the webhooks,
-			// however, we still check for the error due to testing that may
-			// not involve webhooks.
-			nextRestartTime, err := time.Parse(time.RFC3339Nano, vmCtx.VM.Spec.NextRestartTime)
-			if err != nil {
-				return refetchProps, fmt.Errorf("spec.nextRestartTime %q cannot be parsed with %q %w",
-					vmCtx.VM.Spec.NextRestartTime, time.RFC3339Nano, err)
-			}
-
-			result, err := vmutil.RestartAndWait(
-				logr.NewContext(vmCtx, vmCtx.Logger),
-				vcVM.Client(),
-				vmutil.ManagedObjectFromObject(vcVM),
-				false,
-				nextRestartTime,
-				vmutil.ParsePowerOpMode(string(vmCtx.VM.Spec.RestartMode)))
-			if err != nil {
-				return refetchProps, err
-			}
-			if result.AnyChange() {
-				refetchProps = true
-				lastRestartTime := metav1.NewTime(nextRestartTime)
-				vmCtx.VM.Status.LastRestartTime = &lastRestartTime
-			}
-		}
-
-		// Do not pass classConfigSpec to poweredOnVMReconfigure when VM is already powered
-		// on since we do not have to get VM class at this point.
-		var reconfigured bool
-		reconfigured, err = s.poweredOnVMReconfigure(vmCtx, resVM, config)
-		if err != nil {
-			return refetchProps, err
-		}
-		refetchProps = refetchProps || reconfigured
-
-		return refetchProps, err
-	}
-
-	var skipPowerOn bool
-	for k, v := range vmCtx.VM.Annotations {
-		if strings.HasPrefix(k, vmopv1.CheckAnnotationPowerOn+"/") {
-			skipPowerOn = true
-			vmCtx.Logger.Info(
-				"Skipping poweron due to annotation",
-				"annotationKey", k, "annotationValue", v)
-		}
-	}
-
-	if !skipPowerOn && existingPowerState == vmopv1.VirtualMachinePowerStateSuspended {
-		// A suspended VM cannot be reconfigured.
-		err = resVM.SetPowerState(
-			logr.NewContext(vmCtx, vmCtx.Logger),
-			existingPowerState,
-			vmCtx.VM.Spec.PowerState,
-			vmopv1.VirtualMachinePowerOpModeHard)
-		return err == nil, err
-	}
-
-	updateArgs, err := getUpdateArgsFn()
-	if err != nil {
-		return refetchProps, err
-	}
-
-	// TODO: Find a better place for this?
-	err = s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy)
-	if err != nil {
-		return refetchProps, err
-	}
-
-	// A VM's hardware can only be upgraded if the VM is powered off.
-	_, err = vmutil.ReconcileMinHardwareVersion(
+	if err := s.fixupMacAddresses(
 		vmCtx,
-		vcVM.Client(),
-		vmCtx.MoVM,
-		false,
-		vmCtx.VM.Spec.MinHardwareVersion)
-	if err != nil {
-		return refetchProps, err
+		vcVM,
+		networkResults); err != nil {
+
+		return err
 	}
 
-	// Just assume something is going to change after this point - which is most likely true - until
-	// this code is refactored more.
-	refetchProps = true
-
-	err = s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs)
-	if err != nil {
-		return refetchProps, err
-	}
-
-	if !skipPowerOn {
-		err = resVM.SetPowerState(
-			logr.NewContext(vmCtx, vmCtx.Logger),
-			existingPowerState,
-			vmCtx.VM.Spec.PowerState,
-			vmopv1.VirtualMachinePowerOpModeHard)
-		if err != nil {
-			return refetchProps, err
-		}
-
-		if vmCtx.VM.Annotations == nil {
-			vmCtx.VM.Annotations = map[string]string{}
-		}
-		vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
-	}
-
-	return refetchProps, err
-}
-
-func (s *Session) UpdateVirtualMachine(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	getUpdateArgsFn func() (*VMUpdateArgs, error),
-	getResizeArgsFn func() (*VMResizeArgs, error)) error {
-
-	var (
-		refetchProps bool
-		updateErr    error
-		isPaused     = isVMPaused(vmCtx)
-		hasTask      = vmCtx.VM.Status.TaskID != ""
-	)
-
-	// Only update VM's power state when VM:
-	// - is not paused
-	// - does not have an outstanding task
-	if !isPaused && !hasTask {
-		// Translate the VM's current power state into the VM Op power state value.
-		var existingPowerState vmopv1.VirtualMachinePowerState
-		switch vmCtx.MoVM.Summary.Runtime.PowerState {
-		case vimtypes.VirtualMachinePowerStatePoweredOn:
-			existingPowerState = vmopv1.VirtualMachinePowerStateOn
-		case vimtypes.VirtualMachinePowerStatePoweredOff:
-			existingPowerState = vmopv1.VirtualMachinePowerStateOff
-		case vimtypes.VirtualMachinePowerStateSuspended:
-			existingPowerState = vmopv1.VirtualMachinePowerStateSuspended
-		}
-
-		switch vmCtx.VM.Spec.PowerState {
-		case vmopv1.VirtualMachinePowerStateOff:
-			refetchProps, updateErr = s.updateVMDesiredPowerStateOff(
-				vmCtx,
-				vcVM,
-				getResizeArgsFn,
-				existingPowerState)
-
-		case vmopv1.VirtualMachinePowerStateSuspended:
-			refetchProps, updateErr = s.updateVMDesiredPowerStateSuspended(
-				vmCtx,
-				vcVM,
-				existingPowerState)
-
-		case vmopv1.VirtualMachinePowerStateOn:
-			refetchProps, updateErr = s.updateVMDesiredPowerStateOn(
-				vmCtx,
-				vcVM,
-				getUpdateArgsFn,
-				existingPowerState)
-		}
-	} else {
-		vmCtx.Logger.Info("PowerState is not updated.",
-			"isPaused", isPaused, "hasTask", hasTask)
-		refetchProps, updateErr = defaultReconfigure(vmCtx, s.K8sClient, vcVM)
-	}
-
-	if updateErr != nil {
-		updateErr = fmt.Errorf("updating state failed with %w", updateErr)
-	}
-
-	if refetchProps {
-		vmCtx.Logger.V(8).Info(
-			"Refetching properties",
-			"refetchProps", refetchProps,
-			"powerState", vmCtx.VM.Spec.PowerState)
-
-		vmCtx.MoVM = mo.VirtualMachine{}
-
-		if err := vcVM.Properties(
-			vmCtx,
-			vcVM.Reference(),
-			vmlifecycle.VMStatusPropertiesSelector,
-			&vmCtx.MoVM); err != nil {
-
-			err = fmt.Errorf("refetching props failed with %w", err)
-			if updateErr == nil {
-				updateErr = err
-			} else {
-				updateErr = fmt.Errorf("%w, %w", updateErr, err)
-			}
-		}
-	}
-
-	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
-		for _, r := range vmconfig.FromContext(vmCtx) {
-			if err := r.OnResult(
-				vmCtx,
-				vmCtx.VM,
-				vmCtx.MoVM,
-				updateErr); err != nil {
-
-				err = fmt.Errorf("%s.OnResult failed with %w", r.Name(), err)
-				if updateErr == nil {
-					updateErr = err
-				} else {
-					updateErr = fmt.Errorf("%w, %w", updateErr, err)
-				}
-			}
-		}
-	}
-
-	var networkDeviceKeysToSpecIdx map[int32]int
-	if vmCtx.MoVM.Config != nil {
-		networkDeviceKeysToSpecIdx = network.MapEthernetDevicesToSpecIdx(vmCtx, s.K8sClient, vmCtx.MoVM)
-	}
-
-	err := vmlifecycle.UpdateStatus(
+	// Get the information required to bootstrap/customize the VM. This is
+	// retrieved outside of the customize/DoBootstrap call path in order to use
+	// the information to update the VM object's status with the resolved,
+	// intended network configuration.
+	bootstrapArgs, err := vmlifecycle.GetBootstrapArgs(
 		vmCtx,
 		s.K8sClient,
-		vcVM,
-		vmlifecycle.UpdateStatusData{
-			NetworkDeviceKeysToSpecIdx: networkDeviceKeysToSpecIdx,
-		})
+		networkResults,
+		bootstrapData)
 	if err != nil {
-		err = fmt.Errorf("updating status failed with %w", err)
-		if updateErr == nil {
-			updateErr = err
-		} else {
-			updateErr = fmt.Errorf("%w, %w", updateErr, err)
-		}
+		return err
 	}
 
-	return updateErr
+	// Update the Kubernetes VM object's status with the resolved, intended
+	// network configuration.
+	vmlifecycle.UpdateNetworkStatusConfig(vmCtx.VM, bootstrapArgs)
+
+	return vmlifecycle.DoBootstrap(
+		vmCtx,
+		vcVM,
+		vmCtx.MoVM.Config,
+		bootstrapArgs)
 }
 
 // Source of truth is EC and Annotation.
@@ -1129,36 +1084,72 @@ func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 	return false
 }
 
-func defaultReconfigure(
-	vmCtx pkgctx.VirtualMachineContext,
+func reconcileCrypto(
+	ctx context.Context,
 	k8sClient ctrlclient.Client,
-	vcVM *object.VirtualMachine) (bool, error) {
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
-	var configInfo vimtypes.VirtualMachineConfigInfo
-	if vmCtx.MoVM.Config != nil {
-		configInfo = *vmCtx.MoVM.Config
-	}
+	logr.FromContextOrDiscard(ctx).V(4).Info("Reconciling crypto")
 
-	var configSpec vimtypes.VirtualMachineConfigSpec
-	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
-		vmCtx,
-		*vmCtx.VM,
-		configInfo,
-		&configSpec); err != nil {
-
-		return false, err
-	}
-
-	return doReconfigure(
-		logr.NewContext(
-			vmCtx,
-			vmCtx.Logger.WithName("defaultReconfigure"),
-		),
+	return vmconfcrypto.Reconcile(
+		ctx,
 		k8sClient,
-		vmCtx.VM,
-		vcVM,
-		vmCtx.MoVM,
+		vcVM.Client(),
+		vm,
+		moVM,
 		configSpec)
+}
+
+func reconcileDiskPromo(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	logr.FromContextOrDiscard(ctx).V(4).Info("Reconciling disk promotion")
+
+	return vmconfdiskpromo.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
+func (s *Session) reconcileChangeTracking(
+	vmCtx pkgctx.VirtualMachineContext,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling change tracking")
+
+	if vmCtx.MoVM.Runtime.PowerState !=
+		vimtypes.VirtualMachinePowerStatePoweredOn {
+
+		vmCtx.Logger.V(4).Info("Skipping reconciliation of change tracking " +
+			"of vm that is not powered on")
+		return nil
+	}
+
+	if configSpec.ChangeTrackingEnabled == nil {
+		vmCtx.Logger.V(4).Info("Skipping reconciliation of change tracking " +
+			"of vm where feature is not enabled")
+		return nil
+	}
+
+	// Special case for CBT: in order for CBT change take effect for a powered
+	// on VM, a checkpoint save/restore is needed. The FSR call allows CBT to
+	// take effect for powered-on VMs.
+	if err := s.invokeFsrVirtualMachine(vmCtx); err != nil {
+		return fmt.Errorf("failed to invoke FSR for CBT update: %w", err)
+	}
+
+	return nil
 }
 
 func doReconfigure(
@@ -1167,29 +1158,37 @@ func doReconfigure(
 	vm *vmopv1.VirtualMachine,
 	vcVM *object.VirtualMachine,
 	moVM mo.VirtualMachine,
-	configSpec vimtypes.VirtualMachineConfigSpec) (bool, error) {
+	configSpec vimtypes.VirtualMachineConfigSpec) error {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		if err := reconcileDiskPromo(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+	}
+
 	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
-		for _, r := range vmconfig.FromContext(ctx) {
-			logger.Info("Reconciling vmconfig", "reconciler", r.Name())
+		if err := reconcileCrypto(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
 
-			if err := r.Reconcile(
-				ctx,
-				k8sClient,
-				vcVM.Client(),
-				vm,
-				moVM,
-				&configSpec); err != nil {
-
-				return false, err
-			}
+			return err
 		}
 	}
 
 	var defaultConfigSpec vimtypes.VirtualMachineConfigSpec
 	if apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
-		return false, nil
+		return nil
 	}
 
 	resVM := res.NewVMFromObject(vcVM)
@@ -1198,10 +1197,10 @@ func doReconfigure(
 	UpdateVMGuestIDReconfiguredCondition(vm, configSpec, taskInfo)
 
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	return true, err
+	return ErrReconfigure
 }
 
 // UpdateVMGuestIDReconfiguredCondition deletes the VM's GuestIDReconfigured

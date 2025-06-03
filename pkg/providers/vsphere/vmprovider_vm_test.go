@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -56,6 +57,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 const (
@@ -169,6 +171,8 @@ func vmTests() {
 			vm.Spec.Image.Kind = cvmiKind
 			vm.Spec.Image.Name = clusterVMImage.Name
 			vm.Spec.StorageClass = ctx.StorageClassName
+
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -1273,6 +1277,7 @@ func vmTests() {
 				zoneName = ctx.GetFirstZoneName()
 				// Explicitly place the VM into one of the zones that the test context will create.
 				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
 			It("Basic VM", func() {
@@ -1395,7 +1400,7 @@ func vmTests() {
 						var noRequeueErr pkgerr.NoRequeueError
 						Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 						Expect(noRequeueErr.Message).To(Equal(
-							fmt.Sprintf("unsupported VM connection state: %s", state)))
+							fmt.Sprintf("unsupported connection state: %s", state)))
 					}
 				},
 				Entry("empty", vimtypes.VirtualMachineConnectionState("")),
@@ -1617,6 +1622,7 @@ func vmTests() {
 								done.Add(1)
 								go func(copyOfVM *vmopv1.VirtualMachine) {
 									defer done.Done()
+									defer GinkgoRecover()
 									<-start
 									err := createOrUpdateVM(ctx, vmProvider, copyOfVM)
 									if err != nil {
@@ -1660,7 +1666,8 @@ func vmTests() {
 									createErrs = append(createErrs, e)
 								}
 							}
-							Expect(createErrs).Should(BeEmpty())
+							Expect(createErrs).Should(HaveLen(1))
+							Expect(createErrs[0]).To(MatchError(vsphere.ErrCreate))
 
 							Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 						})
@@ -1694,6 +1701,9 @@ func vmTests() {
 				vm.Labels[kubeutil.CAPVClusterRoleLabelKey] = ""
 				vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = ""
 
+				if vm.Annotations == nil {
+					vm.Annotations = make(map[string]string)
+				}
 				vm.Annotations[vmopv1.ForceEnableBackupAnnotation] = "true"
 
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
@@ -1776,6 +1786,7 @@ func vmTests() {
 				When("deploying an encrypted vm", func() {
 					JustBeforeEach(func() {
 						vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 					})
 
 					When("using a default provider", func() {
@@ -1949,9 +1960,6 @@ func vmTests() {
 
 							It("should succeed", func() {
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
@@ -1971,9 +1979,6 @@ func vmTests() {
 							})
 
 							It("should succeed", func() {
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
@@ -1996,9 +2001,6 @@ func vmTests() {
 
 						It("should succeed", func() {
 							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-							Expect(vm.Status.Crypto).To(BeNil())
-
-							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 							Expect(vm.Status.Crypto).ToNot(BeNil())
 
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
@@ -2013,6 +2015,7 @@ func vmTests() {
 						When("using a non-encryption storage class", func() {
 							JustBeforeEach(func() {
 								vm.Spec.StorageClass = ctx.StorageClassName
+								vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 							})
 
 							When("there is no vTPM", func() {
@@ -2032,9 +2035,6 @@ func vmTests() {
 									hasVTPM = true
 								})
 								It("should succeed", func() {
-									Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-									Expect(vm.Status.Crypto).To(BeNil())
-
 									Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 									Expect(vm.Status.Crypto).ToNot(BeNil())
 
@@ -2082,9 +2082,6 @@ func vmTests() {
 
 							It("should succeed", func() {
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
 								Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
@@ -2105,9 +2102,6 @@ func vmTests() {
 							})
 
 							It("should succeed", func() {
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
@@ -2131,9 +2125,6 @@ func vmTests() {
 
 						It("should succeed", func() {
 							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-							Expect(vm.Status.Crypto).To(BeNil())
-
-							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 							Expect(vm.Status.Crypto).ToNot(BeNil())
 
 							Expect(vm.Status.Crypto.Encrypted).To(HaveExactElements(
@@ -2155,9 +2146,6 @@ func vmTests() {
 							})
 
 							It("should succeed", func() {
-								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-								Expect(vm.Status.Crypto).To(BeNil())
-
 								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 								Expect(vm.Status.Crypto).ToNot(BeNil())
 
@@ -3007,7 +2995,7 @@ func vmTests() {
 						var noRequeueErr pkgerr.NoRequeueError
 						Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 						Expect(noRequeueErr.Message).To(Equal(
-							fmt.Sprintf("unsupported VM connection state: %s", state)))
+							fmt.Sprintf("unsupported connection state: %s", state)))
 						Expect(ctx.GetVMFromMoID(vm.Status.UniqueID)).ToNot(BeNil())
 					}
 				},
@@ -3065,7 +3053,7 @@ func vmTests() {
 
 			BeforeEach(func() {
 				vmClass = builder.DummyVirtualMachineClassGenName()
-				vm = builder.DummyBasicVirtualMachine("test-vm", "")
+				vm = builder.DummyBasicVirtualMachine("test-vm-iso", "")
 
 				// Reduce diff from old tests: by default don't create an NIC.
 				if vm.Spec.Network == nil {
@@ -3080,7 +3068,7 @@ func vmTests() {
 
 				// Add required objects to get CD-ROM backing file name.
 				cvmiName := "vmi-iso"
-				objs := builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, "test-file.iso", ctx.ContentLibraryIsoItemID, true, true, true, "ISO")
+				objs := builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, "test-file.iso", ctx.ContentLibraryIsoItemID, true, true, resource.MustParse("100Mi"), true, true, "ISO")
 				for _, obj := range objs {
 					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
 				}
@@ -3098,6 +3086,8 @@ func vmTests() {
 						Kind: cvmiKind,
 					},
 				}}
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 			})
 
 			Context("return config", func() {
@@ -3114,6 +3104,657 @@ func vmTests() {
 					Expect(path.Datastore).NotTo(BeEmpty())
 				})
 			})
+		})
+
+		Context("Power states", func() {
+
+			getLastRestartTime := func(moVM mo.VirtualMachine) string {
+				for i := range moVM.Config.ExtraConfig {
+					ov := moVM.Config.ExtraConfig[i].GetOptionValue()
+					if ov.Key == "vmservice.lastRestartTime" {
+						return ov.Value.(string)
+					}
+				}
+				return ""
+			}
+
+			var (
+				vcVM *object.VirtualMachine
+				moVM mo.VirtualMachine
+			)
+
+			JustBeforeEach(func() {
+				var err error
+				moVM = mo.VirtualMachine{}
+				vcVM, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+			})
+
+			When("vcVM is powered on", func() {
+				JustBeforeEach(func() {
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+				})
+
+				When("power state is not changed", func() {
+					BeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+					It("should not return an error", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					})
+				})
+
+				When("powering off the VM", func() {
+					JustBeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+
+					When("power state should not be updated", func() {
+						const expectedPowerState = vmopv1.VirtualMachinePowerStateOn
+						When("vm is paused by devops", func() {
+							JustBeforeEach(func() {
+								vm.Annotations = map[string]string{
+									vmopv1.PauseAnnotation: "true",
+								}
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrIsPaused)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+						When("vm is paused by admin", func() {
+							JustBeforeEach(func() {
+								vm.Annotations = map[string]string{
+									vmopv1.PauseAnnotation: "true",
+								}
+								t, err := vcVM.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   vmopv1.PauseVMExtraConfigKey,
+											Value: "true",
+										},
+									},
+								})
+								Expect(err).ToNot(HaveOccurred())
+								Expect(t.Wait(ctx)).To(Succeed())
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrIsPaused)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+						When("vm has task", func() {
+							JustBeforeEach(func() {
+								vm.Status.TaskID = "123"
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrHasTask)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+					})
+
+					When("powerOffMode is hard", func() {
+						JustBeforeEach(func() {
+							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+						})
+						It("should power off the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+					When("powerOffMode is soft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
+						})
+						It("should power off the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+					When("powerOffMode is trySoft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+						})
+						It("should power off the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+				})
+
+				When("restarting the VM", func() {
+					var (
+						oldLastRestartTime string
+					)
+
+					JustBeforeEach(func() {
+						oldLastRestartTime = getLastRestartTime(moVM)
+						vm.Spec.NextRestartTime = time.Now().UTC().Format(time.RFC3339Nano)
+					})
+
+					When("restartMode is hard", func() {
+						JustBeforeEach(func() {
+							vm.Spec.RestartMode = vmopv1.VirtualMachinePowerOpModeHard
+						})
+						It("should restart the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+							newLastRestartTime := getLastRestartTime(moVM)
+							Expect(newLastRestartTime).ToNot(BeEmpty())
+							Expect(newLastRestartTime).ToNot(Equal(oldLastRestartTime))
+						})
+					})
+					When("restartMode is soft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.RestartMode = vmopv1.VirtualMachinePowerOpModeSoft
+						})
+						It("should return an error about lacking tools", func() {
+							Expect(testutil.ContainsError(createOrUpdateVM(ctx, vmProvider, vm), "failed to soft restart vm ServerFaultCode: ToolsUnavailable")).To(BeTrue())
+							Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+							newLastRestartTime := getLastRestartTime(moVM)
+							Expect(newLastRestartTime).To(Equal(oldLastRestartTime))
+						})
+					})
+					When("restartMode is trySoft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.RestartMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+						})
+						It("should restart the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+							newLastRestartTime := getLastRestartTime(moVM)
+							Expect(newLastRestartTime).ToNot(BeEmpty())
+							Expect(newLastRestartTime).ToNot(Equal(oldLastRestartTime))
+						})
+					})
+				})
+
+				When("suspending the VM", func() {
+					JustBeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					})
+					When("power state should not be updated", func() {
+						const expectedPowerState = vmopv1.VirtualMachinePowerStateOn
+						When("vm is paused by devops", func() {
+							JustBeforeEach(func() {
+								vm.Annotations = map[string]string{
+									vmopv1.PauseAnnotation: "true",
+								}
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrIsPaused)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+						When("vm is paused by admin", func() {
+							JustBeforeEach(func() {
+								vm.Annotations = map[string]string{
+									vmopv1.PauseAnnotation: "true",
+								}
+								t, err := vcVM.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   vmopv1.PauseVMExtraConfigKey,
+											Value: "true",
+										},
+									},
+								})
+								Expect(err).ToNot(HaveOccurred())
+								Expect(t.Wait(ctx)).To(Succeed())
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrIsPaused)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+						When("vm has task", func() {
+							JustBeforeEach(func() {
+								vm.Status.TaskID = "123"
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrHasTask)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+					})
+					When("suspendMode is hard", func() {
+						JustBeforeEach(func() {
+							vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeHard
+						})
+						It("should suspend the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+						})
+					})
+					When("suspendMode is soft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeSoft
+						})
+						It("should suspend the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+						})
+					})
+					When("suspendMode is trySoft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+						})
+						It("should suspend the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+						})
+					})
+				})
+			})
+
+			When("vcVM is powered off", func() {
+				JustBeforeEach(func() {
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+				})
+
+				When("power state is not changed", func() {
+					It("should not return an error", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					})
+				})
+
+				When("powering on the VM", func() {
+
+					JustBeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					When("power state should not be updated", func() {
+						const expectedPowerState = vmopv1.VirtualMachinePowerStateOff
+						When("vm is paused by devops", func() {
+							JustBeforeEach(func() {
+								vm.Annotations = map[string]string{
+									vmopv1.PauseAnnotation: "true",
+								}
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrIsPaused)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+						When("vm is paused by admin", func() {
+							JustBeforeEach(func() {
+								vm.Annotations = map[string]string{
+									vmopv1.PauseAnnotation: "true",
+								}
+								t, err := vcVM.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   vmopv1.PauseVMExtraConfigKey,
+											Value: "true",
+										},
+									},
+								})
+								Expect(err).ToNot(HaveOccurred())
+								Expect(t.Wait(ctx)).To(Succeed())
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrIsPaused)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+						When("vm has task", func() {
+							JustBeforeEach(func() {
+								vm.Status.TaskID = "123"
+							})
+							It("should not change the power state", func() {
+								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrHasTask)).To(BeTrue())
+								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+							})
+						})
+					})
+
+					When("there is a power on check annotation", func() {
+						JustBeforeEach(func() {
+							vm.Annotations = map[string]string{
+								vmopv1.CheckAnnotationPowerOn + "/app": "reason",
+							}
+						})
+						It("should not power on the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+
+					const (
+						oldDiskSizeBytes = int64(31457280)
+						newDiskSizeGi    = 20
+						newDiskSizeBytes = int64(newDiskSizeGi * 1024 * 1024 * 1024)
+					)
+
+					When("the boot disk size is changed for non-ISO VMs", func() {
+						JustBeforeEach(func() {
+							vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+							disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+							Expect(disks).To(HaveLen(1))
+							Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+							diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+							Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+
+							q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
+							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+								BootDiskCapacity: &q,
+							}
+							vm.Spec.Cdrom = nil
+						})
+						It("should power on the VM with the boot disk resized", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+
+							Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+							vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+							disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+							Expect(disks).To(HaveLen(1))
+							Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+							diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+							Expect(diskCapacityBytes).To(Equal(newDiskSizeBytes))
+						})
+					})
+
+					When("there are no NICs", func() {
+						JustBeforeEach(func() {
+							vm.Spec.Network.Interfaces = nil
+						})
+						It("should power on the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						})
+					})
+
+					When("there is a single NIC", func() {
+						JustBeforeEach(func() {
+							vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: &common.PartialObjectRef{
+										Name: "VM Network",
+									},
+								},
+							}
+						})
+						When("with networking disabled", func() {
+							JustBeforeEach(func() {
+								vm.Spec.Network.Disabled = true
+							})
+							It("should power on the VM", func() {
+								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+								Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+							})
+						})
+					})
+
+					When("VM.Spec.GuestID is changed", func() {
+
+						When("the guest ID value is invalid", func() {
+
+							JustBeforeEach(func() {
+								vm.Spec.GuestID = "invalid-guest-id"
+							})
+
+							It("should return an error and set the VM's Guest ID condition false", func() {
+								err := createOrUpdateVM(ctx, vmProvider, vm)
+								Expect(err.Error()).To(ContainSubstring("reconfigure VM task failed"))
+
+								c := conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)
+								Expect(c).ToNot(BeNil())
+								expectedCondition := conditions.FalseCondition(
+									vmopv1.GuestIDReconfiguredCondition,
+									"Invalid",
+									"The specified guest ID value is not supported: invalid-guest-id",
+								)
+								Expect(*c).To(conditions.MatchCondition(*expectedCondition))
+							})
+						})
+
+						When("the guest ID value is valid", func() {
+
+							JustBeforeEach(func() {
+								vm.Spec.GuestID = "vmwarePhoton64Guest"
+							})
+
+							It("should power on the VM with the specified guest ID", func() {
+								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+								Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+
+								Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+								Expect(moVM.Config.GuestId).To(Equal("vmwarePhoton64Guest"))
+							})
+						})
+
+						When("the guest ID spec is removed", func() {
+
+							JustBeforeEach(func() {
+								vm.Spec.GuestID = ""
+							})
+
+							It("should clear the VM guest ID condition if previously set", func() {
+								vm.Status.Conditions = []metav1.Condition{
+									{
+										Type:   vmopv1.GuestIDReconfiguredCondition,
+										Status: metav1.ConditionFalse,
+									},
+								}
+
+								// Customize
+								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+								Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+
+								Expect(conditions.Get(vm, vmopv1.GuestIDReconfiguredCondition)).To(BeNil())
+							})
+						})
+					})
+
+					When("VM has CD-ROM", func() {
+
+						const (
+							vmiName     = "vmi-iso"
+							vmiKind     = "VirtualMachineImage"
+							vmiFileName = "dummy.iso"
+						)
+
+						JustBeforeEach(func() {
+							vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "cdrom1",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: vmiName,
+										Kind: vmiKind,
+									},
+									AllowGuestControl: ptr.To(true),
+									Connected:         ptr.To(true),
+								},
+							}
+
+							testConfig.WithContentLibrary = true
+						})
+
+						JustBeforeEach(func() {
+							// Add required objects to get CD-ROM backing file name.
+							objs := builder.DummyImageAndItemObjectsForCdromBacking(
+								vmiName,
+								vm.Namespace,
+								vmiKind,
+								vmiFileName,
+								ctx.ContentLibraryIsoItemID,
+								true,
+								true,
+								resource.MustParse("100Mi"),
+								true,
+								true,
+								"ISO")
+							for _, obj := range objs {
+								Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+							}
+						})
+
+						It("should power on the VM with expected CD-ROM device", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+
+							Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+							cdromDeviceList := object.VirtualDeviceList(moVM.Config.Hardware.Device).SelectByType(&vimtypes.VirtualCdrom{})
+							Expect(cdromDeviceList).To(HaveLen(1))
+							cdrom := cdromDeviceList[0].(*vimtypes.VirtualCdrom)
+							Expect(cdrom.Connectable.StartConnected).To(BeTrue())
+							Expect(cdrom.Connectable.Connected).To(BeTrue())
+							Expect(cdrom.Connectable.AllowGuestControl).To(BeTrue())
+							Expect(cdrom.ControllerKey).ToNot(BeZero())
+							Expect(cdrom.UnitNumber).ToNot(BeNil())
+							Expect(cdrom.Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualCdromIsoBackingInfo{}))
+							backing := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo)
+							Expect(backing.FileName).To(Equal(vmiFileName))
+						})
+
+						When("the boot disk size is changed for VM with CD-ROM", func() {
+
+							JustBeforeEach(func() {
+								vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+								disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+								Expect(disks).To(HaveLen(1))
+								Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+								diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+								Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+
+								q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
+								vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+									BootDiskCapacity: &q,
+								}
+							})
+
+							It("should power on the VM without the boot disk resized", func() {
+								Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+								Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+								Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+
+								vmDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+								disks := vmDevs.SelectByType(&vimtypes.VirtualDisk{})
+								Expect(disks).To(HaveLen(1))
+								Expect(disks[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualDisk{}))
+								diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
+								Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
+							})
+						})
+					})
+				})
+
+				When("suspending the VM", func() {
+					JustBeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					})
+					When("suspendMode is hard", func() {
+						JustBeforeEach(func() {
+							vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeHard
+						})
+						It("should not suspend the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+					When("suspendMode is soft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeSoft
+						})
+						It("should not suspend the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+					When("suspendMode is trySoft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+						})
+						It("should not suspend the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+				})
+			})
+
+			When("vcVM is suspended", func() {
+				JustBeforeEach(func() {
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+				})
+
+				When("power state is not changed", func() {
+					It("should not return an error", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					})
+				})
+
+				When("powering on the VM", func() {
+
+					JustBeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					It("should power on the VM", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+					})
+
+					When("there is a power on check annotation", func() {
+						JustBeforeEach(func() {
+							vm.Annotations = map[string]string{
+								vmopv1.CheckAnnotationPowerOn + "/app": "reason",
+							}
+						})
+						It("should not power on the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+						})
+					})
+				})
+
+				When("powering off the VM", func() {
+					JustBeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+					When("powerOffMode is hard", func() {
+						JustBeforeEach(func() {
+							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+						})
+						It("should power off the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+					When("powerOffMode is soft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
+						})
+						It("should not power off the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateSuspended))
+						})
+					})
+					When("powerOffMode is trySoft", func() {
+						JustBeforeEach(func() {
+							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+						})
+						It("should power off the VM", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						})
+					})
+				})
+			})
+
 		})
 	})
 }

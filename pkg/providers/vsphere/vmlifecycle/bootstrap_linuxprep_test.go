@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -77,12 +78,20 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 					Name:      "linux-prep-bootstrap-test",
 					Namespace: "test-ns",
 				},
+				Spec: vmopv1.VirtualMachineSpec{
+					PowerState: vmopv1.VirtualMachinePowerStateOn,
+				},
 			}
 
 			vmCtx = pkgctx.VirtualMachineContext{
 				Context: context.Background(),
 				Logger:  suite.GetLogger(),
 				VM:      vm,
+				MoVM: mo.VirtualMachine{
+					Runtime: vimtypes.VirtualMachineRuntimeInfo{
+						PowerState: vimtypes.VirtualMachinePowerStatePoweredOff,
+					},
+				},
 			}
 		})
 

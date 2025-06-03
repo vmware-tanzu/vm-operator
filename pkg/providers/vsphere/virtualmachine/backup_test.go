@@ -128,7 +128,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT1
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
@@ -188,7 +188,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT3
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
@@ -251,7 +251,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT3
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 						// getExpectedBackupObjectYaml empties the expected VM yaml's status
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
@@ -312,7 +312,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT3
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 						expectedVMYAML := getExpectedBackupObjectYAML(vmCtx.VM.DeepCopy())
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
 
@@ -452,7 +452,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT3
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 						resYAML := getExpectedBackupObjectYAML(secretRes)
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.AdditionalResourcesYAMLExtraConfigKey, resYAML, true)
 
@@ -515,7 +515,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT3
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 						newResYAML := getExpectedBackupObjectYAML(secretRes.DeepCopy())
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.AdditionalResourcesYAMLExtraConfigKey, newResYAML, true)
 
@@ -619,7 +619,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT1
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 						secretResYAML := getExpectedBackupObjectYAML(secretRes.DeepCopy())
 						cmResYAML := getExpectedBackupObjectYAML(cmRes.DeepCopy())
 						expectedYAML := secretResYAML + "\n---\n" + cmResYAML
@@ -643,7 +643,7 @@ func backupTests() {
 							VcVM:          vcVM,
 							DiskUUIDToPVC: nil,
 						}
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.PVCDiskDataExtraConfigKey, "", true)
 					})
 				})
@@ -695,7 +695,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT2
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 
 						diskData := []backupapi.PVCDiskData{
 							{
@@ -731,7 +731,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT2
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 
 						err := vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &backupOpts.VMCtx.MoVM)
 						Expect(err).NotTo(HaveOccurred())
@@ -742,7 +742,7 @@ func backupTests() {
 							backupOpts.BackupVersion = vT3
 						}
 
-						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 
 						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.PVCDiskDataExtraConfigKey, "", true)
 
@@ -795,8 +795,7 @@ func backupTests() {
 								BackupVersion: "1004",
 							}
 
-							err := virtualmachine.BackupVirtualMachine(backupOpts)
-							Expect(err).ToNot(HaveOccurred())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
 							// verify key doesn't get updated to "t4" and stays at "t1"
 							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT2, false)
@@ -818,8 +817,7 @@ func backupTests() {
 								BackupVersion: "1004",
 							}
 
-							err := virtualmachine.BackupVirtualMachine(backupOpts)
-							Expect(err).ToNot(HaveOccurred())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 
 							// verify key gets updated to "1004"
 							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, "1004", false)
@@ -874,7 +872,7 @@ func backupTests() {
 
 							// Update the generation to simulate a new spec update of the VM.
 							backupOpts.VMCtx.VM.ObjectMeta.Generation = 11
-							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT3, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT3))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
@@ -910,7 +908,7 @@ func backupTests() {
 								BackupVersion: vT2,
 							}
 
-							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT2, false)
 							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT2))
 							c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineBackupUpToDateCondition)
@@ -1019,7 +1017,7 @@ func backupTests() {
 								VcVM:             vcVM,
 								ClassicDiskUUIDs: nil,
 							}
-							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.ClassicDiskDataExtraConfigKey, "", false)
 						})
 					})
@@ -1033,7 +1031,7 @@ func backupTests() {
 								BackupVersion:    vT1,
 							}
 
-							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 							diskData := []backupapi.ClassicDiskData{
 								{
 									FileName: vcSimDiskFileName,
@@ -1056,7 +1054,7 @@ func backupTests() {
 								ClassicDiskUUIDs: map[string]struct{}{vcSimDiskUUID: {}},
 								BackupVersion:    vT1,
 							}
-							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 
 							err := vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
 							Expect(err).NotTo(HaveOccurred())
@@ -1085,7 +1083,7 @@ func backupTests() {
 								ClassicDiskUUIDs: map[string]struct{}{vcSimDiskUUID: {}},
 								BackupVersion:    vT1,
 							}
-							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 
 							err := vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
 							Expect(err).NotTo(HaveOccurred())
@@ -1098,7 +1096,7 @@ func backupTests() {
 								ClassicDiskUUIDs: nil,
 								BackupVersion:    vT2,
 							}
-							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+							Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
 
 							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.ClassicDiskDataExtraConfigKey, "", true)
 

@@ -1485,20 +1485,20 @@ func vmTests() {
 						Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
 					})
 
-					When("disks are not ready", func() {
+					When("files are not ready", func() {
 
 						It("should fail", func() {
 							_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 							assertVMICNotReady(
 								err,
-								"cached disks not ready",
+								"cached files not ready",
 								vmic.Name,
 								ctx.Datacenter.Reference().Value,
 								ctx.Datastore.Reference().Value)
 						})
 					})
 
-					When("disks are ready", func() {
+					When("files are ready", func() {
 
 						BeforeEach(func() {
 							// Ensure the VM has a UID so the VM path is stable.
@@ -1523,15 +1523,20 @@ func vmTests() {
 						JustBeforeEach(func() {
 							conditions.MarkTrue(
 								&vmic,
-								vmopv1.VirtualMachineImageCacheConditionDisksReady)
+								vmopv1.VirtualMachineImageCacheConditionFilesReady)
 							vmic.Status.Locations = []vmopv1.VirtualMachineImageCacheLocationStatus{
 								{
 									DatacenterID: ctx.Datacenter.Reference().Value,
 									DatastoreID:  ctx.Datastore.Reference().Value,
 									Files: []vmopv1.VirtualMachineImageCacheFileStatus{
 										{
-											ID:   ctx.ContentLibraryItemDiskPath,
-											Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+											ID:       ctx.ContentLibraryItemDiskPath,
+											Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+											DiskType: vmopv1.VirtualMachineStorageDiskTypeClassic,
+										},
+										{
+											ID:   ctx.ContentLibraryItemNVRAMPath,
+											Type: vmopv1.VirtualMachineImageCacheFileTypeOther,
 										},
 									},
 									Conditions: []metav1.Condition{

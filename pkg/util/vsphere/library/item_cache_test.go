@@ -9,8 +9,10 @@ import (
 	"os"
 	"sync/atomic"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/klog/v2"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/soap"
@@ -92,7 +94,7 @@ var _ = Describe("CacheStorageURIs", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = logr.NewContext(context.Background(), klog.Background())
 		client = &fakeCacheStorageURIsClient{}
 
 		Expect(ctx).ToNot(BeNil())
@@ -187,8 +189,6 @@ var _ = Describe("CacheStorageURIs", func() {
 		)
 
 		var (
-			ctx           context.Context
-			client        *fakeCacheStorageURIsClient
 			dstDatacenter *object.Datacenter
 			srcDatacenter *object.Datacenter
 			srcDiskURIs   []string
@@ -198,8 +198,6 @@ var _ = Describe("CacheStorageURIs", func() {
 		)
 
 		BeforeEach(func() {
-			ctx = context.Background()
-			client = &fakeCacheStorageURIsClient{}
 			dstDatacenter = object.NewDatacenter(
 				nil, vimtypes.ManagedObjectReference{
 					Type:  "Datacenter",

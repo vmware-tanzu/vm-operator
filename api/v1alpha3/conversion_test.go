@@ -134,6 +134,9 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineImageCache{},
 				Spoke:  &vmopv1a3.VirtualMachineImageCache{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineImageCacheFieldsFuncs,
+				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -277,6 +280,20 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			// Since only VMOP updates the CVMI/VMI's we didn't bother with conversion
 			// when adding this field.
 			vmiStatus.Disks = nil
+		},
+	}
+}
+
+func overrideVirtualMachineImageCacheFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
+	return []interface{}{
+		func(status *vmopv1.VirtualMachineImageCacheStatus, c fuzz.Continue) {
+			c.Fuzz(status)
+
+			for i := range status.Locations {
+				for j := range status.Locations[i].Files {
+					status.Locations[i].Files[j].Type = ""
+				}
+			}
 		},
 	}
 }

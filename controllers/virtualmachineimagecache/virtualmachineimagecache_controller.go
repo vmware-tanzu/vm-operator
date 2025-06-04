@@ -205,23 +205,23 @@ func (r *reconciler) ReconcileNormal(
 				vmopv1.VirtualMachineImageCacheConditionProviderReady)
 		}
 
-		// Reconcile the disks.
-		if err := r.reconcileDisks(ctx, c, clProv, obj); err != nil {
+		// Reconcile the files.
+		if err := r.reconcileFiles(ctx, c, clProv, obj); err != nil {
 			pkgcond.MarkError(
 				obj,
-				vmopv1.VirtualMachineImageCacheConditionDisksReady,
+				vmopv1.VirtualMachineImageCacheConditionFilesReady,
 				conditionReasonFailed,
 				err)
 		} else {
 			// Aggregate each location's Ready condition into the top-level
-			// VirtualMachineImageCacheConditionDisksReady condition.
+			// VirtualMachineImageCacheConditionFilesReady condition.
 			getters := make([]pkgcond.Getter, len(obj.Status.Locations))
 			for i := range obj.Status.Locations {
 				getters[i] = obj.Status.Locations[i]
 			}
 			pkgcond.SetAggregate(
 				obj,
-				vmopv1.VirtualMachineImageCacheConditionDisksReady,
+				vmopv1.VirtualMachineImageCacheConditionFilesReady,
 				getters,
 				pkgcond.WithStepCounter())
 		}
@@ -233,7 +233,7 @@ func (r *reconciler) ReconcileNormal(
 	return nil
 }
 
-func (r *reconciler) reconcileDisks(
+func (r *reconciler) reconcileFiles(
 	ctx context.Context,
 	vcClient *client.Client,
 	clProv clprov.Provider,
@@ -245,7 +245,7 @@ func (r *reconciler) reconcileDisks(
 	)
 
 	// Get the library item's storage paths.
-	srcDiskURIs, err := getSourceDiskPaths(
+	srcFileURIs, err := getSourceFilePaths(
 		ctx,
 		clProv,
 		srcDatacenter,
@@ -285,7 +285,7 @@ func (r *reconciler) reconcileDisks(
 		dstDatastores,
 		obj,
 		dstTopLevelDirs,
-		srcDiskURIs)
+		srcFileURIs)
 
 	return nil
 }
@@ -298,7 +298,7 @@ func (r *reconciler) reconcileLocations(
 	dstDatastores map[string]datastore,
 	obj *vmopv1.VirtualMachineImageCache,
 	dstTopLevelDirs map[string]string,
-	srcDiskURIs []string) {
+	srcFileURIs []string) {
 
 	obj.Status.Locations = make(
 		[]vmopv1.VirtualMachineImageCacheLocationStatus,
@@ -320,7 +320,7 @@ func (r *reconciler) reconcileLocations(
 			dstDatastores[spec.DatastoreID].mo.Info.
 				GetDatastoreInfo().SupportedVDiskFormats...)
 
-		cachedDisks, err := r.cacheDisks(
+		cachedFiles, err := r.cacheFiles(
 			ctx,
 			vimClient,
 			dstDatacenters[spec.DatacenterID],
@@ -329,14 +329,14 @@ func (r *reconciler) reconcileLocations(
 			obj.Spec.ProviderID,
 			obj.Spec.ProviderVersion,
 			dstDiskFormat,
-			srcDiskURIs)
+			srcFileURIs)
 		if err != nil {
 			conditions = conditions.MarkError(
 				vmopv1.ReadyConditionType,
 				conditionReasonFailed,
 				err)
 		} else {
-			status.Files = cachedDisks
+			status.Files = cachedFiles
 			conditions = conditions.MarkTrue(vmopv1.ReadyConditionType)
 		}
 
@@ -344,13 +344,13 @@ func (r *reconciler) reconcileLocations(
 	}
 }
 
-func (r *reconciler) cacheDisks(
+func (r *reconciler) cacheFiles(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	dstDatacenter, srcDatacenter *object.Datacenter,
 	tldPath, itemID, itemVersion string,
 	dstDiskFormat vimtypes.DatastoreSectorFormat,
-	srcDiskURIs []string) ([]vmopv1.VirtualMachineImageCacheFileStatus, error) {
+	srcFileURIs []string) ([]vmopv1.VirtualMachineImageCacheFileStatus, error) {
 
 	itemCacheDir := clsutil.GetCacheDirForLibraryItem(
 		tldPath,
@@ -360,39 +360,45 @@ func (r *reconciler) cacheDisks(
 	sriClient := r.newSRIClientFn(vimClient)
 
 	logger := logr.FromContextOrDiscard(ctx)
-	logger.Info("Caching disks",
+	logger.V(4).Info("Caching files",
 		"dstDatacenter", dstDatacenter.Reference().Value,
 		"srcDatacenter", srcDatacenter.Reference().Value,
 		"itemCacheDir", itemCacheDir,
 		"dstDiskFormat", dstDiskFormat,
-		"srcDiskPaths", srcDiskURIs)
+		"srcFileURIs", srcFileURIs)
 
-	cachedDisks, err := clsutil.CacheStorageURIs(
+	cachedFiles, err := clsutil.CacheStorageURIs(
 		ctx,
 		sriClient,
 		dstDatacenter,
 		srcDatacenter,
 		itemCacheDir,
 		dstDiskFormat,
-		srcDiskURIs...)
+		srcFileURIs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to cache storage items: %w", err)
 	}
 
-	cachedDiskStatuses := make(
-		[]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedDisks))
+	cachedFileStatuses := make(
+		[]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedFiles))
 
-	for i := range cachedDisks {
-		if v := cachedDisks[i].Path; v != "" {
-			cachedDiskStatuses[i].ID = v
-			cachedDiskStatuses[i].Type = vmopv1.VirtualMachineStorageDiskTypeClassic
+	for i := range cachedFiles {
+		if v := cachedFiles[i].Path; v != "" {
+			cachedFileStatuses[i].ID = v
+			if strings.EqualFold(".vmdk", path.Ext(v)) {
+				cachedFileStatuses[i].Type = vmopv1.VirtualMachineImageCacheFileTypeDisk
+				cachedFileStatuses[i].DiskType = vmopv1.VirtualMachineStorageDiskTypeClassic
+			} else {
+				cachedFileStatuses[i].Type = vmopv1.VirtualMachineImageCacheFileTypeOther
+			}
 		} else {
-			cachedDiskStatuses[i].ID = cachedDisks[i].VDiskID
-			cachedDiskStatuses[i].Type = vmopv1.VirtualMachineStorageDiskTypeManaged
+			cachedFileStatuses[i].ID = cachedFiles[i].VDiskID
+			cachedFileStatuses[i].Type = vmopv1.VirtualMachineImageCacheFileTypeDisk
+			cachedFileStatuses[i].DiskType = vmopv1.VirtualMachineStorageDiskTypeManaged
 		}
 	}
 
-	return cachedDiskStatuses, nil
+	return cachedFileStatuses, nil
 }
 
 const (
@@ -519,7 +525,7 @@ func includeItemFile(s string) bool {
 	}
 }
 
-func getSourceDiskPaths(
+func getSourceFilePaths(
 	ctx context.Context,
 	p clprov.Provider,
 	datacenter *object.Datacenter,
@@ -541,19 +547,19 @@ func getSourceDiskPaths(
 		return nil, fmt.Errorf("failed to resolve library item storage: %w", err)
 	}
 
-	// Get the storage URIs for just the files that are disks.
-	var srcDiskURIs []string
+	// Get the storage URIs for just vmdk and NVRAM files.
+	var srcFileURIs []string
 	for i := range itemStor {
 		is := itemStor[i]
 		for j := range is.StorageURIs {
 			s := is.StorageURIs[j]
 			if includeItemFile(s) {
-				srcDiskURIs = append(srcDiskURIs, s)
+				srcFileURIs = append(srcFileURIs, s)
 			}
 		}
 	}
 
-	return srcDiskURIs, nil
+	return srcFileURIs, nil
 }
 
 func getDatacenters(

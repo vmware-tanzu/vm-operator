@@ -54,7 +54,7 @@ var _ = Describe(
 			fakeString = "fake"
 
 			cndOVFReady = vmopv1.VirtualMachineImageCacheConditionOVFReady
-			cndDskReady = vmopv1.VirtualMachineImageCacheConditionDisksReady
+			cndFilReady = vmopv1.VirtualMachineImageCacheConditionFilesReady
 			cndPrvReady = vmopv1.VirtualMachineImageCacheConditionProviderReady
 			cndRdyReady = vmopv1.ReadyConditionType
 		)
@@ -159,9 +159,11 @@ var _ = Describe(
 
 			g.ExpectWithOffset(1, status.Files).To(HaveLen(2))
 			g.ExpectWithOffset(1, status.Files[0].ID).To(Equal(vmdkFilePath))
-			g.ExpectWithOffset(1, status.Files[0].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
+			g.ExpectWithOffset(1, status.Files[0].Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeDisk))
+			g.ExpectWithOffset(1, status.Files[0].DiskType).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
 			g.ExpectWithOffset(1, status.Files[1].ID).To(Equal(nvramFilePath))
-			g.ExpectWithOffset(1, status.Files[1].Type).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
+			g.ExpectWithOffset(1, status.Files[1].Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeOther))
+			g.ExpectWithOffset(1, status.Files[1].DiskType).To(BeEmpty())
 		}
 
 		Context("Ordered", Ordered, func() {
@@ -235,7 +237,7 @@ var _ = Describe(
 				fn func() vmopv1.VirtualMachineImageCache,
 				expOVFRdy bool, expOVFMsg string,
 				expPrvRdy bool, expPrvMsg string,
-				expDskRdy bool, expDskMsg, expLocMsg string,
+				expFilRdy bool, expDskMsg, expLocMsg string,
 				expRdyRdy bool, expRdyMsg string,
 			) {
 				obj := fn()
@@ -259,8 +261,8 @@ var _ = Describe(
 						ready: expPrvRdy,
 						msg:   expPrvMsg,
 					},
-					cndDskReady: {
-						ready: expDskRdy,
+					cndFilReady: {
+						ready: expFilRdy,
 						msg:   expDskMsg,
 					},
 					cndRdyReady: {
@@ -287,9 +289,9 @@ var _ = Describe(
 								// Verify the OVF is cached and ready.
 								assertOVFConfigMap(g, key)
 
-							case cndDskReady:
+							case cndFilReady:
 
-								// Verify the disks are cached and ready.
+								// Verify the files are cached and ready.
 								g.Expect(obj.Status.Locations).To(HaveLen(1))
 								assertCondTrue(g, obj.Status.Locations[0], cndRdyReady)
 								assertLocation(g, obj, 0)
@@ -298,11 +300,11 @@ var _ = Describe(
 
 						case v.msg == "",
 							len(obj.Spec.Locations) == 0 &&
-								(t == cndDskReady || t == cndPrvReady):
+								(t == cndFilReady || t == cndPrvReady):
 
 							// There will be no condition when the expected
 							// message is empty OR spec.locations is empty and
-							// the tested condition is DisksReady.
+							// the tested condition is FilesReady.
 							assertCondNil(g, obj, t)
 
 						case v.msg != "":
@@ -310,7 +312,7 @@ var _ = Describe(
 							// Expect a failure condition.
 							assertCondFalse(g, obj, t, "Failed", v.msg)
 
-							if t == cndDskReady && expLocMsg != "" {
+							if t == cndFilReady && expLocMsg != "" {
 								assertCondFalse(
 									g,
 									obj.Status.Locations[0],
@@ -337,7 +339,7 @@ var _ = Describe(
 					},
 					false, "", // OVFReady
 					false, "", // ProviderReady
-					false, "", "", // DisksReady
+					false, "", "", // FilesReady
 					false, "spec.providerID is empty", // Ready
 				),
 
@@ -351,7 +353,7 @@ var _ = Describe(
 					},
 					false, "", // OVFReady
 					false, "", // ProviderReady
-					false, "", "", // DisksReady
+					false, "", "", // FilesReady
 					false, "spec.providerVersion is empty", // Ready
 				),
 
@@ -368,7 +370,7 @@ var _ = Describe(
 					},
 					false, "", // OVFReady
 					false, "", // ProviderReady
-					false, "", "", // DisksReady
+					false, "", "", // FilesReady
 					false, "failed to get vSphere client: fubar", // Ready
 				),
 
@@ -382,7 +384,7 @@ var _ = Describe(
 					},
 					false, "failed to create or patch ovf configmap: failed to retrieve ovf envelope:", // OVFReady
 					false, "", // ProviderReady
-					false, "", "", // DisksReady
+					false, "", "", // FilesReady
 					false, "0 of 1 completed", // Ready
 				),
 
@@ -400,7 +402,7 @@ var _ = Describe(
 					},
 					true, "", // OVFReady
 					true, "", // ProviderReady
-					false, "invalid datacenter ID: "+fakeString, "", // DisksReady
+					false, "invalid datacenter ID: "+fakeString, "", // FilesReady
 					false, "2 of 3 completed", // Ready
 				),
 
@@ -418,7 +420,7 @@ var _ = Describe(
 					},
 					true, "", // OVFReady
 					true, "", // ProviderReady
-					false, "invalid datastore ID: "+fakeString, "", // DisksReady
+					false, "invalid datastore ID: "+fakeString, "", // FilesReady
 					false, "2 of 3 completed", // Ready
 				),
 
@@ -432,7 +434,7 @@ var _ = Describe(
 							string,
 							*object.Datacenter) error {
 
-							return errors.New("query disk error")
+							return errors.New("query file error")
 						}
 
 						return getVMICacheObj(
@@ -446,7 +448,7 @@ var _ = Describe(
 					},
 					true, "", // OVFReady
 					true, "", // ProviderReady
-					false, "0 of 1 completed", "failed to cache storage items: failed to query disk: query disk error", // DisksReady
+					false, "0 of 1 completed", "failed to cache storage items: failed to check if file exists: query file error", // FilesReady
 					false, "2 of 3 completed", // Ready
 				),
 			)
@@ -461,7 +463,7 @@ var _ = Describe(
 					},
 					true, "", // OVFReady
 					false, "", // ProviderReady
-					false, "", "", // DisksReady
+					false, "", "", // FilesReady
 					true, "", // Ready
 				),
 
@@ -479,7 +481,7 @@ var _ = Describe(
 					},
 					true, "", // OVFReady
 					true, "", // ProviderReady
-					true, "", "", // DisksReady
+					true, "", "", // FilesReady
 					true, "", // Ready
 				),
 			)

@@ -10,13 +10,13 @@ import (
 
 const (
 	// VirtualMachineImageCacheConditionProviderReady indicates the underlying
-	// provider is fully synced, including its disks being available locally on
+	// provider is fully synced, including its files being available locally on
 	// some datastore.
 	VirtualMachineImageCacheConditionProviderReady = "VirtualMachineImageCacheProviderReady"
 
-	// VirtualMachineImageCacheConditionDisksReady indicates the disks are
+	// VirtualMachineImageCacheConditionFilesReady indicates the files are
 	// cached in a given location.
-	VirtualMachineImageCacheConditionDisksReady = "VirtualMachineImageCacheDisksReady"
+	VirtualMachineImageCacheConditionFilesReady = "VirtualMachineImageCacheFilesReady"
 
 	// VirtualMachineImageCacheConditionOVFReady indicates the OVF is cached.
 	VirtualMachineImageCacheConditionOVFReady = "VirtualMachineImageCacheOVFReady"
@@ -77,17 +77,38 @@ func (i *VirtualMachineImageCache) AddLocation(
 		})
 }
 
+// +kubebuilder:validation:Enum=Disk;Other
+
+// VirtualMachineImageCacheFileType describes the types of files that may be
+// cached.
+type VirtualMachineImageCacheFileType string
+
+const (
+	VirtualMachineImageCacheFileTypeDisk  VirtualMachineImageCacheFileType = "Disk"
+	VirtualMachineImageCacheFileTypeOther VirtualMachineImageCacheFileType = "Other"
+)
+
 type VirtualMachineImageCacheFileStatus struct {
 
 	// ID describes the value used to locate the file.
-	// The value of this field depends on the type of file.
-	// For Type=Classic, the ID value describes a datastore path, ex.
-	// "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk".
-	// For Type=Managed, the ID value describes a First Class Disk (FCD).
+	// The value of this field depends on the type of file:
+	//
+	// - Type=Other                  -- The ID value describes a datastore path,
+	//                                  ex. "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk"
+	// - Type=Disk, DiskType=Classic -- The ID value describes a datastore
+	//                                  path.
+	// - Type=Disk, DiskType=Managed -- The ID value describes a First Class
+	//                                  Disk (FCD).
 	ID string `json:"id"`
 
-	// Type describes the type of disk.
-	Type VirtualMachineVolumeType `json:"type"`
+	// Type describes the type of file.
+	Type VirtualMachineImageCacheFileType `json:"type"`
+
+	// +optional
+
+	// DiskType describes the type of disk.
+	// This field is only non-empty when Type=Disk.
+	DiskType VirtualMachineVolumeType `json:"diskType,omitempty"`
 
 	// TODO(akutz) In the future there may be additional information about the
 	//             disk, such as its sector format (512 vs 4k), is encrypted,

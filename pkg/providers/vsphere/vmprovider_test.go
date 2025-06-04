@@ -445,6 +445,9 @@ references:
 - href: ttylinux-pc_i486-16.1-disk1.vmdk
   id: file1
   size: 10595840
+- href: ttylinux-pc_i486-16.1.nvram
+  id: file2
+  size: 8684
 virtualSystem:
   id: vm
   info: A virtual machine
@@ -480,6 +483,8 @@ virtualSystem:
     - key: fu
       required: false
       value: barred
+    - key: nvram
+      value: ovf:/file/file2
     id: null
     info: Virtual hardware requirements
     item:

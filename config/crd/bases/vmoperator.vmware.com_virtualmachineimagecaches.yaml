@@ -508,19 +508,31 @@ spec:
                         datastore.
                       items:
                         properties:
-                          id:
+                          diskType:
                             description: |-
-                              ID describes the value used to locate the file.
-                              The value of this field depends on the type of file.
-                              For Type=Classic, the ID value describes a datastore path, ex.
-                              "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk".
-                              For Type=Managed, the ID value describes a First Class Disk (FCD).
-                            type: string
-                          type:
-                            description: Type describes the type of disk.
+                              DiskType describes the type of disk.
+                              This field is only non-empty when Type=Disk.
                             enum:
                             - Classic
                             - Managed
+                            type: string
+                          id:
+                            description: |-
+                              ID describes the value used to locate the file.
+                              The value of this field depends on the type of file:
+
+                              - Type=Other                  -- The ID value describes a datastore path,
+                                                               ex. "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk"
+                              - Type=Disk, DiskType=Classic -- The ID value describes a datastore
+                                                               path.
+                              - Type=Disk, DiskType=Managed -- The ID value describes a First Class
+                                                               Disk (FCD).
+                            type: string
+                          type:
+                            description: Type describes the type of file.
+                            enum:
+                            - Disk
+                            - Other
                             type: string
                         required:
                         - id

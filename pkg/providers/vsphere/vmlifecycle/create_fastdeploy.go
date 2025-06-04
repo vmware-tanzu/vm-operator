@@ -38,6 +38,9 @@ func fastDeploy(
 	vmDir := path.Dir(createArgs.ConfigSpec.Files.VmPathName)
 	logger.Info("Got vm dir", "vmDir", vmDir)
 
+	srcFilePaths := createArgs.FilePaths
+	logger.Info("Got source file paths", "srcFilePaths", srcFilePaths)
+
 	srcDiskPaths := createArgs.DiskPaths
 	logger.Info("Got source disk paths", "srcDiskPaths", srcDiskPaths)
 
@@ -50,9 +53,6 @@ func fastDeploy(
 		dstDiskPaths[i] = fmt.Sprintf("%s/disk-%d.vmdk", vmDir, i)
 	}
 	logger.Info("Got destination disk paths", "dstDiskPaths", dstDiskPaths)
-
-	srcFilePaths := createArgs.FilePaths
-	logger.Info("Got source file paths", "srcFilePaths", srcFilePaths)
 
 	dstFilePaths := make([]string, len(srcFilePaths))
 	for i := 0; i < len(dstFilePaths); i++ {
@@ -109,13 +109,45 @@ func fastDeploy(
 		return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
 	}
 
+	// Copy any non-disk files to the target directory.
 	for i := range dstFilePaths {
-		task, err := fm.CopyDatastoreFile(vmCtx, srcFilePaths[i], datacenter, dstFilePaths[i], datacenter, false)
+		task, err := fm.CopyDatastoreFile(
+			vmCtx,
+			srcFilePaths[i],
+			datacenter,
+			dstFilePaths[i],
+			datacenter, false)
 		if err != nil {
 			return nil, err
 		}
 		if err = task.Wait(vmCtx); err != nil {
 			return nil, err
+		}
+	}
+
+	// Update the config spec to know about a potential NVRAM file.
+	for i := range createArgs.ConfigSpec.ExtraConfig {
+		ov := createArgs.ConfigSpec.ExtraConfig[i].GetOptionValue()
+
+		if ov != nil && ov.Key == "nvram" {
+
+			if v, ok := ov.Value.(string); ok {
+
+				oldNvramPath := v
+
+				for j := range dstFilePaths {
+					if strings.EqualFold(".nvram", path.Ext(dstFilePaths[j])) {
+						newNvramPath := path.Base(dstFilePaths[j])
+						logger.Info("Updated NVRAM in ExtraConfig",
+							"oldValue", oldNvramPath,
+							"newValue", newNvramPath)
+						createArgs.ConfigSpec.ExtraConfig[i] = &vimtypes.OptionValue{
+							Key:   ov.Key,
+							Value: newNvramPath,
+						}
+					}
+				}
+			}
 		}
 	}
 

@@ -566,7 +566,7 @@ func (vs *vSphereVMProvider) getCreateArgs(
 	}
 
 	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
-		if err := vs.vmCreateGetSourceDiskPaths(vmCtx, vcClient, createArgs); err != nil {
+		if err := vs.vmCreateGetSourceFilePaths(vmCtx, vcClient, createArgs); err != nil {
 			return nil, err
 		}
 		if err := vs.vmCreatePathNameFromDatastoreRecommendation(vmCtx, createArgs); err != nil {
@@ -1011,9 +1011,9 @@ func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
 	return nil
 }
 
-// vmCreateGetSourceDiskPaths gets paths to the source disk(s) used to create
+// vmCreateGetSourceFilePaths gets paths to the source file(s) used to create
 // the VM.
-func (vs *vSphereVMProvider) vmCreateGetSourceDiskPaths(
+func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
@@ -1050,7 +1050,7 @@ func (vs *vSphereVMProvider) vmCreateGetSourceDiskPaths(
 			"failed to createOrPatch image cache resource: %w", err)
 	}
 
-	// Check if the disks are cached.
+	// Check if the files are cached.
 	for i := range obj.Status.Locations {
 		l := obj.Status.Locations[i]
 		if l.DatacenterID == datacenterID && l.DatastoreID == datastoreID {
@@ -1058,26 +1058,27 @@ func (vs *vSphereVMProvider) vmCreateGetSourceDiskPaths(
 				switch c.Status {
 				case metav1.ConditionTrue:
 
-					// Verify the disks are still cached. If the disks are
+					// Verify the files are still cached. If the files are
 					// found to no longer exist, a reconcile request is enqueued
 					// for the VMI cache object.
-					if vs.vmCreateGetSourceDiskPathsVerify(
+					if vs.vmCreateGetSourceFilePathsVerify(
 						vmCtx,
 						vcClient,
 						obj,
 						l.Files) {
 
-						// The location has the cached disks.
-						vmCtx.Logger.Info("got source disks", "disks", l.Files)
+						// The location has the cached files.
+						vmCtx.Logger.Info("got source files", "files", l.Files)
 
 						// Update the createArgs.DiskPaths with the paths from
-						// the cached disks slice.
+						// the cached files slice.
 						for i := range l.Files {
-							switch path.Ext(l.Files[i].ID) {
-							case ".vmdk":
-								createArgs.DiskPaths = append(createArgs.DiskPaths, l.Files[i].ID)
+							id := l.Files[i].ID
+							switch {
+							case strings.EqualFold(".vmdk", path.Ext(id)):
+								createArgs.DiskPaths = append(createArgs.DiskPaths, id)
 							default:
-								createArgs.FilePaths = append(createArgs.FilePaths, l.Files[i].ID)
+								createArgs.FilePaths = append(createArgs.FilePaths, id)
 							}
 						}
 
@@ -1085,39 +1086,39 @@ func (vs *vSphereVMProvider) vmCreateGetSourceDiskPaths(
 					}
 
 				case metav1.ConditionFalse:
-					// The disks could not be cached at that location.
-					return fmt.Errorf("failed to cache disks: %s", c.Message)
+					// The files could not be cached at that location.
+					return fmt.Errorf("failed to cache files: %s", c.Message)
 				}
 			}
 		}
 	}
 
-	// The cached disks are not yet ready, so return the following error.
+	// The cached files are not yet ready, so return the following error.
 	return pkgerr.VMICacheNotReadyError{
-		Message:      "cached disks not ready",
+		Message:      "cached files not ready",
 		Name:         obj.Name,
 		DatacenterID: datacenterID,
 		DatastoreID:  datastoreID,
 	}
 }
 
-// vmCreateGetSourceDiskPathsVerify verifies the provided disks are still
+// vmCreateGetSourceFilePathsVerify verifies the provided file(s) are still
 // available. If not, a reconcile request is enqueued for the VMI cache object.
-func (vs *vSphereVMProvider) vmCreateGetSourceDiskPathsVerify(
+func (vs *vSphereVMProvider) vmCreateGetSourceFilePathsVerify(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	obj vmopv1.VirtualMachineImageCache,
-	srcDisks []vmopv1.VirtualMachineImageCacheFileStatus) bool {
+	srcFiles []vmopv1.VirtualMachineImageCacheFileStatus) bool {
 
-	for i := range srcDisks {
-		s := srcDisks[i]
+	for i := range srcFiles {
+		s := srcFiles[i]
 		if err := pkgutil.DatastoreFileExists(
 			vmCtx,
 			vcClient.VimClient(),
 			s.ID,
 			vcClient.Datacenter()); err != nil {
 
-			vmCtx.Logger.Error(err, "disk is invalid", "diskPath", s.ID)
+			vmCtx.Logger.Error(err, "file is invalid", "filePath", s.ID)
 
 			chanSource := cource.FromContextWithBuffer(
 				vmCtx, "VirtualMachineImageCache", 100)

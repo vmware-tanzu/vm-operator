@@ -704,7 +704,7 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 
 		ctx.Logger.V(4).Info(
 			"Skipping due to missing true condition",
-			"conditionType", vmopv1.VirtualMachineImageCacheConditionDisksReady,
+			"conditionType", vmopv1.VirtualMachineImageCacheConditionFilesReady,
 			"locationStatus", locStatus)
 		return false
 	}

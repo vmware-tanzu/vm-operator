@@ -163,12 +163,13 @@ type TestContextForVCSim struct {
 	workloadDomainIsolation bool
 
 	// When WithContentLibrary is true:
-	LocalContentLibraryID      string
-	ContentLibraryImageName    string
-	ContentLibraryID           string
-	ContentLibraryItemID       string
-	ContentLibraryItemVersion  string
-	ContentLibraryItemDiskPath string
+	LocalContentLibraryID       string
+	ContentLibraryImageName     string
+	ContentLibraryID            string
+	ContentLibraryItemID        string
+	ContentLibraryItemVersion   string
+	ContentLibraryItemDiskPath  string
+	ContentLibraryItemNVRAMPath string
 
 	ContentLibraryIsoImageName   string
 	ContentLibraryIsoItemID      string
@@ -793,7 +794,9 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	Expect(err).ToNot(HaveOccurred())
 	for _, s := range subLibItemOVAStor {
 		for _, p := range s.StorageURIs {
-			if strings.EqualFold(path.Ext(p), ".vmdk") {
+			ext := strings.ToLower(path.Ext(p))
+			switch ext {
+			case ".vmdk", ".nvram":
 				var moDS mo.Datastore
 				Expect(c.Datastore.Properties(
 					c,
@@ -801,7 +804,15 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 					[]string{"name", "info.url"}, &moDS)).To(Succeed())
 				p := strings.Replace(p, moDS.Info.GetDatastoreInfo().Url, "", 1)
 				p = strings.TrimPrefix(p, "/")
-				c.ContentLibraryItemDiskPath = fmt.Sprintf("[%s] %s", moDS.Name, p)
+				p = fmt.Sprintf("[%s] %s", moDS.Name, p)
+
+				switch ext {
+				case ".vmdk":
+					c.ContentLibraryItemDiskPath = p
+				case ".nvram":
+					c.ContentLibraryItemNVRAMPath = p
+				}
+
 			}
 		}
 	}

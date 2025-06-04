@@ -12,6 +12,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -87,7 +88,7 @@ func CacheStorageURIs(
 	var dstStorageURIs = make([]CachedDisk, len(srcDiskURIs))
 
 	for i := range srcDiskURIs {
-		dstFilePath, err := copyDisk(
+		dstFilePath, err := copyFile(
 			ctx,
 			client,
 			dstDir,
@@ -104,11 +105,11 @@ func CacheStorageURIs(
 	return dstStorageURIs, nil
 }
 
-func copyDisk(
+func copyFile(
 	ctx context.Context,
 	client CacheStorageURIsClient,
 	dstDir, srcFilePath string,
-	dstDisksFormat vimtypes.DatastoreSectorFormat,
+	dstDiskFormat vimtypes.DatastoreSectorFormat,
 	dstDatacenter, srcDatacenter *object.Datacenter) (string, error) {
 
 	var (
@@ -116,22 +117,38 @@ func copyDisk(
 		srcFileExt  = path.Ext(srcFilePath)
 		dstFileName = GetCachedFileNameForVMDK(srcFileName) + srcFileExt
 		dstFilePath = path.Join(dstDir, dstFileName)
+		isDisk      = strings.EqualFold(".vmdk", srcFileExt)
+		logger      = logr.FromContextOrDiscard(ctx)
 	)
 
+	logger = logger.WithValues(
+		"srcFilePath", srcFilePath,
+		"dstFilePath", dstFilePath,
+		"dstDatacenter", dstDatacenter.Reference().Value,
+		"srcDatacenter", srcDatacenter.Reference().Value)
+	if isDisk {
+		logger = logger.WithValues("dstDiskFormat", dstDiskFormat)
+	}
+
+	logger.V(4).Info("Checking if file is already cached")
+
 	// Check to see if the disk is already cached.
-	queryDiskErr := client.DatastoreFileExists(
+	fileExistsErr := client.DatastoreFileExists(
 		ctx,
 		dstFilePath,
 		dstDatacenter)
-	if queryDiskErr == nil {
-		// Disk exists, return the path to it.
+	if fileExistsErr == nil {
+		// File exists, return the path to it.
+		logger.V(4).Info("File is already cached")
 		return dstFilePath, nil
 	}
-	if !errors.Is(queryDiskErr, os.ErrNotExist) {
-		return "", fmt.Errorf("failed to query disk: %w", queryDiskErr)
+	if !errors.Is(fileExistsErr, os.ErrNotExist) {
+		return "", fmt.Errorf(
+			"failed to check if file exists: %w", fileExistsErr)
 	}
 
-	// Ensure the directory where the disks will be cached exists.
+	// Ensure the directory where the file will be cached exists.
+	logger.V(4).Info("Making cache directory")
 	if err := client.MakeDirectory(
 		ctx,
 		dstDir,
@@ -146,8 +163,8 @@ func copyDisk(
 		err      error
 	)
 
-	if srcFileExt == ".vmdk" {
-		// The base disk does not exist, create it.
+	if isDisk {
+		logger.Info("Caching disk")
 		copyTask, err = client.CopyVirtualDisk(
 			ctx,
 			srcFilePath,
@@ -159,10 +176,11 @@ func copyDisk(
 					AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
 					DiskType:    string(vimtypes.VirtualDiskTypeThin),
 				},
-				SectorFormat: string(dstDisksFormat),
+				SectorFormat: string(dstDiskFormat),
 			},
 			false)
 	} else {
+		logger.Info("Caching non-disk file")
 		copyTask, err = client.CopyDatastoreFile(
 			ctx,
 			srcFilePath,

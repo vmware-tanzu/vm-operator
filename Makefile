@@ -315,6 +315,10 @@ lint-shell: ## Lint the project's shell scripts
 fix: GOLANGCI_LINT_FLAGS = --fast=false --fix
 fix: lint-go ## Tries to fix errors reported by lint-go-full target
 
+.PHONY: unfocus
+unfocus: | $(GINKGO) ## Unfocuses all tests
+	$(GINKGO) unfocus .
+
 ## --------------------------------------
 ## Generate
 ## --------------------------------------
@@ -839,6 +843,10 @@ verify: prereqs ## Run static code analysis
 .PHONY: verify-codegen
 verify-codegen: ## Verify generated code
 	hack/verify-codegen.sh
+
+.PHONY: verify-unfocus
+verify-unfocus: ## Verify no tests have focus
+	hack/verify-unfocus.sh
 
 .PHONY: verify-local-manifests
 verify-local-manifests: ## Verify the local manifests

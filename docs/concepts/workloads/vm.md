@@ -801,13 +801,13 @@ Please note that there are supported power state transitions, and if a power sta
             <th style="text-align:center;"><code>PoweredOff</code></th>
             <td style="text-align:center;">✓</td>
             <td style="text-align:center;"><code>NA</code></td>
-            <td style="text-align:center;">✓<br /><em>if <code>spec.powerOffMode: Hard</code></em></td>
+            <td style="text-align:center;">❌</td>
             <td style="text-align:center;">❌</td>
         </tr>
         <tr>
             <th style="text-align:center;"><code>Suspended</code></th>
             <td style="text-align:center;">✓</td>
-            <td style="text-align:center;">❌</td>
+            <td style="text-align:center;">✓<br /><em>if <code>spec.powerOffMode: Hard</code></em></td>
             <td style="text-align:center;"><code>NA</code></td>
             <td style="text-align:center;">❌</td>
         </tr>

@@ -177,6 +177,22 @@ VirtualMachineSetResourcePolicy is the Schema for the virtualmachinesetresourcep
 | `spec` _[VirtualMachineSetResourcePolicySpec](#virtualmachinesetresourcepolicyspec)_ |  |
 | `status` _[VirtualMachineSetResourcePolicyStatus](#virtualmachinesetresourcepolicystatus)_ |  |
 
+### VirtualMachineSnapshot
+
+
+
+VirtualMachineSnapshot is the schema for the virtualmachinesnapshot API.
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
+| `kind` _string_ | `VirtualMachineSnapshot`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineSnapshotSpec](#virtualmachinesnapshotspec)_ |  |
+| `status` _[VirtualMachineSnapshotStatus](#virtualmachinesnapshotstatus)_ |  |
+
 ### VirtualMachineWebConsoleRequest
 
 
@@ -438,6 +454,22 @@ More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persis
 | `readOnly` _boolean_ | readOnly Will force the ReadOnly setting in VolumeMounts.
 Default false. |
 | `instanceVolumeClaim` _[InstanceVolumeClaimVolumeSource](#instancevolumeclaimvolumesource)_ | InstanceVolumeClaim is set if the PVC is backed by instance storage. |
+
+### QuiesceSpec
+
+
+
+QuiesceSpec represents specifications that will be used to quiesce
+the guest when taking a snapshot.
+
+_Appears in:_
+- [VirtualMachineSnapshotSpec](#virtualmachinesnapshotspec)
+
+| Field | Description |
+| --- | --- |
+| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | Timeout represents the maximum time in minutes for snapshot
+operation to be performed on the virtual machine. The timeout
+can not be less than 5 minutes or more than 240 minutes. |
 
 ### ResourcePoolSpec
 
@@ -2214,6 +2246,7 @@ VirtualMachinePowerState defines a VM's desired and observed power states.
 _Appears in:_
 - [VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus)
 - [VirtualMachineGroupSpec](#virtualmachinegroupspec)
+- [VirtualMachineSnapshotStatus](#virtualmachinesnapshotstatus)
 - [VirtualMachineSpec](#virtualmachinespec)
 - [VirtualMachineStatus](#virtualmachinestatus)
 
@@ -2664,6 +2697,61 @@ _Appears in:_
 | --- | --- |
 | `clustermodules` _[VSphereClusterModuleStatus](#vsphereclustermodulestatus) array_ |  |
 
+### VirtualMachineSnapshotSpec
+
+
+
+VirtualMachineSnapshotSpec defines the desired state of VirtualMachineSnapshot.
+
+_Appears in:_
+- [VirtualMachineSnapshot](#virtualmachinesnapshot)
+
+| Field | Description |
+| --- | --- |
+| `memory` _boolean_ | Memory represents whether the snapshot includes the VM's
+memory. If true, a dump of the internal state of the virtual
+machine (a memory dump) is included in the snapshot. Memory
+snapshots consume time and resources and thus, take longer to
+create.
+The virtual machine must support this capability.
+When set to false, the power state of the snapshot is set to
+false.
+For a VM in suspended state, memory is always included
+in the snashot. |
+| `quiesce` _[QuiesceSpec](#quiescespec)_ | Quiesce represents the spec used for granular control over
+quiesce details. If quiesceSpec is set and the virtual machine
+is powered on when the snapshot is taken, VMware Tools is used
+to quiesce the file system in the virtual machine. This assures
+that a disk snapshot represents a consistent state of the guest
+file systems. If the virtual machine is powered off or VMware
+Tools are not available, the quiesce spec is ignored. |
+| `description` _string_ | Description represents a description of the snapshot. |
+| `vmRef` _[LocalObjectRef](#localobjectref)_ | VMRef represents the name of the virtual machine for which the
+snapshot is requested. |
+
+### VirtualMachineSnapshotStatus
+
+
+
+VirtualMachineSnapshotStatus defines the observed state of VirtualMachineSnapshot.
+
+_Appears in:_
+- [VirtualMachineSnapshot](#virtualmachinesnapshot)
+
+| Field | Description |
+| --- | --- |
+| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState represents the observed power state of the virtual
+machine when the snapshot was taken. |
+| `quiesced` _boolean_ | Quiesced represents whether or not the snapshot was created
+with the quiesce option to ensure a snapshot with a consistent
+state of the guest file system. |
+| `uniqueID` _string_ | UniqueID describes a unique identifier provider by the backing
+infrastructure (e.g., vSphere) that can be used to distinguish
+this snapshot from other snapshots of this virtual machine. |
+| `children` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core) array_ | Children represents the snapshots for which this snapshot is
+the parent. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions of the VirtualMachine. |
+
 ### VirtualMachineSpec
 
 
@@ -2895,6 +2983,13 @@ Defaults to Online. |
 | `bootOptions` _[VirtualMachineBootOptions](#virtualmachinebootoptions)_ | BootOptions describes the settings that control the boot behavior of the
 virtual machine. These settings take effect during the next power-on of the
 virtual machine. |
+| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | 	If the virtual machine is currently powered off, but you revert to
+a snapshot that was taken while the VM was powered on, then the
+VM will be automatically powered on during the revert.
+Additionally, the VirtualMachineSpec will be updated to match
+the power state from the snapshot (i.e., powered on). This can
+be overridden by specifying the PowerState to PoweredOff in the
+VirtualMachineSpec. |
 
 ### VirtualMachineStatus
 
@@ -2942,6 +3037,10 @@ information on the topic of a VM's hardware version. |
 | `storage` _[VirtualMachineStorageStatus](#virtualmachinestoragestatus)_ | Storage describes the observed state of the VirtualMachine's storage. |
 | `taskID` _string_ | TaskID describes the observed ID of the task created by VM Operator to
 perform some long-running operation on the VM. |
+| `currentSnapshot` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine. |
+| `rootSnapshots` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core) array_ | RootSnapshots represents the observed list of root snapshots of
+a VM. These references can effectively be used to iterate over
+the entire snapshot chain of a virtual machine. |
 
 ### VirtualMachineStorageStatus
 

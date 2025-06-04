@@ -900,6 +900,38 @@ type VirtualMachineSpec struct {
 	// virtual machine. These settings take effect during the next power-on of the
 	// virtual machine.
 	BootOptions *VirtualMachineBootOptions `json:"bootOptions,omitempty"`
+
+	// +optional
+
+	// CurrentSnapshot represents the desired snapshot that the
+	// virtual machine should point to. This field can have three
+	// possible values:
+	//
+	// - The value of this field is nil when the working snapshot is at
+	//   the root of the snapshot tree.
+	//
+	// - When a new snapshot is requested by creating a new
+	//   VirtualMachineSnapshot, the value of this field is set to the
+	//   new snapshot resource's name.
+	//
+	// - If the value of this field is set to an existing snapshot that
+	//   is different from the status.currentSnapshot, the virtual machine is
+	//   reverted to the requested snapshot.
+	//
+	// Reverting a virtual machine to a snapshot rolls back the data
+	// and the configuration of the virtual machine to that of the
+	// specified snapshot. The VirtualMachineSpec of the
+	// VirtualMachine resource is replaced from the one stored with
+	// the snapshot.
+	//
+	// If the virtual machine is currently powered off, but you revert to
+	// a snapshot that was taken while the VM was powered on, then the
+	// VM will be automatically powered on during the revert.
+	// Additionally, the VirtualMachineSpec will be updated to match
+	// the power state from the snapshot (i.e., powered on). This can
+	// be overridden by specifying the PowerState to PoweredOff in the
+	// VirtualMachineSpec.
+	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options
@@ -1084,6 +1116,20 @@ type VirtualMachineStatus struct {
 	// TaskID describes the observed ID of the task created by VM Operator to
 	// perform some long-running operation on the VM.
 	TaskID string `json:"taskID,omitempty"`
+
+	// +optional
+
+	// CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
+	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
+
+	// +optional
+
+	// RootSnapshots represents the observed list of root snapshots of
+	// a VM. Since each snapshot includes the list of its child
+	// snapshots, these root snapshot references can effectively be
+	// used to construct the entire snapshot chain of a virtual
+	// machine.
+	RootSnapshots []vmopv1common.LocalObjectRef `json:"rootSnapshots,omitempty"`
 }
 
 // +kubebuilder:object:root=true

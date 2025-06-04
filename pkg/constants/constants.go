@@ -113,4 +113,13 @@ const (
 	// resource. For example, when applied to a VM, deleting the VirtualMachine
 	// object in Kubernetes will not result in the deletion of the vSphere VM.
 	SkipDeletePlatformResourceKey string = "vmoperator.vmware.com.protected/skip-delete-platform-resource"
+
+	// LastUpdatedPowerStateTimeAnnotation is the annotation key for the last
+	// updated time of the power state.
+	LastUpdatedPowerStateTimeAnnotation = "vmoperator.vmware.com.protected/last-updated-power-state-time"
+
+	// ApplyPowerStateTimeAnnotation is the annotation key for the time to apply
+	// a power state change to a VirtualMachine or a VirtualMachineGroup object
+	// scheduled from its parent group.
+	ApplyPowerStateTimeAnnotation = "vmoperator.vmware.com.protected/apply-power-state-time"
 )

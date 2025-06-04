@@ -948,6 +948,35 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 		return err
 	}
 
+	// Check if the VM's power state should be delayed.
+	// Currently, only power-on can be delayed by a parent group.
+	if pkgcfg.FromContext(vmCtx).Features.VMGroups &&
+		vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn {
+		if val := vmCtx.VM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation]; val != "" {
+			when, err := time.Parse(time.RFC3339Nano, val)
+			if err != nil {
+				vmCtx.Logger.Error(err,
+					"Failed to parse apply power state time from annotation",
+					"annotationKey", pkgconst.ApplyPowerStateTimeAnnotation,
+					"annotationValue", val)
+				return err
+			}
+			if when.After(time.Now().UTC()) {
+				// Apply power state time has not yet arrived.
+				// Requeue the request with a delay of the remaining time.
+				vmCtx.Logger.Info(
+					"Skipping power state as the time has not yet arrived",
+					"applyPowerStateTime", when)
+				return pkgerr.RequeueError{
+					After: time.Until(when),
+				}
+			}
+			// Apply power state time has arrived. Remove the stale annotation
+			// and continue the power state change.
+			delete(vmCtx.VM.Annotations, pkgconst.ApplyPowerStateTimeAnnotation)
+		}
+	}
+
 	if isVMPaused(vmCtx) {
 		return ErrIsPaused
 	}

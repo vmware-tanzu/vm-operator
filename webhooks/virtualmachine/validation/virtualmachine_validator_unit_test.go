@@ -158,6 +158,7 @@ func unitTestsValidateCreate() {
 		nextRestartTime            string
 		instanceUUID               string
 		biosUUID                   string
+		applyPowerStateChangeTime  string
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -185,6 +186,10 @@ func unitTestsValidateCreate() {
 		if args.withInstanceStorageVolumes {
 			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
+		}
+
+		if args.applyPowerStateChangeTime != "" {
+			ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = args.applyPowerStateChangeTime
 		}
 
 		ctx.vm.Spec.PowerState = args.powerState
@@ -254,6 +259,11 @@ func unitTestsValidateCreate() {
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
 		Entry("should allow creating VM with instanceUUID set by admin user", createArgs{instanceUUID: "uuid", isServiceUser: true}, true, nil, nil),
 		Entry("should allow creating VM with biosUUID set by admin user", createArgs{biosUUID: "uuid", isServiceUser: true}, true, nil, nil),
+		Entry("should allow creating VM with valid apply power state change time annotation by admin user",
+			createArgs{applyPowerStateChangeTime: time.Now().Format(time.RFC3339Nano), isServiceUser: true}, true, nil, nil),
+		Entry("should disallow creating VM with non-empty, invalid apply power state change time annotation",
+			createArgs{applyPowerStateChangeTime: "hello", isServiceUser: true}, false,
+			field.Invalid(field.NewPath("metadata").Child("annotations").Key(pkgconst.ApplyPowerStateTimeAnnotation), "hello", "must be formatted as RFC3339Nano").Error(), nil),
 	)
 
 	doTest := func(args testParams) {
@@ -1001,6 +1011,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
+						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -1008,7 +1019,9 @@ func unitTestsValidateCreate() {
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-						field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), "modifying this annotation is not allowed for non-admin users").Error()),
+						field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+					),
 				},
 			),
 			Entry("should allow creating VM with admin-only annotations set by service user",
@@ -1022,6 +1035,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
+						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 					},
 					expectAllowed: true,
 				},
@@ -1043,6 +1057,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
+						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 					},
 					expectAllowed: true,
 				},
@@ -2718,6 +2733,7 @@ func unitTestsValidateUpdate() {
 		newPowerStateEmptyAllowed   bool
 		nextRestartTime             string
 		lastRestartTime             string
+		applyPowerStateChangeTime   string
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -2792,6 +2808,10 @@ func unitTestsValidateUpdate() {
 		}
 		if args.newPowerState != "" || args.newPowerStateEmptyAllowed {
 			ctx.vm.Spec.PowerState = args.newPowerState
+		}
+
+		if args.applyPowerStateChangeTime != "" {
+			ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = args.applyPowerStateChangeTime
 		}
 
 		ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
@@ -2869,6 +2889,11 @@ func unitTestsValidateUpdate() {
 		Entry("should disallow updating VM with non-empty, invalid nextRestartTime value ",
 			updateArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "must be formatted as RFC3339Nano").Error(), nil),
+		Entry("should allow updating VM with non-empty, valid apply power state change time annotation",
+			updateArgs{applyPowerStateChangeTime: time.Now().UTC().Format(time.RFC3339Nano), isServiceUser: true}, true, nil, nil),
+		Entry("should disallow updating VM with non-empty, invalid apply power state change time annotation",
+			updateArgs{applyPowerStateChangeTime: "hello"}, false,
+			field.Invalid(field.NewPath("metadata").Child("annotations").Key(pkgconst.ApplyPowerStateTimeAnnotation), "hello", "must be formatted as RFC3339Nano").Error(), nil),
 	)
 
 	doTest := func(args testParams) {
@@ -2902,6 +2927,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
+						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
@@ -2910,6 +2936,7 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -2919,6 +2946,7 @@ func unitTestsValidateUpdate() {
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -2932,6 +2960,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
+						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -2941,6 +2970,7 @@ func unitTestsValidateUpdate() {
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -2956,7 +2986,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-
+						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -2964,6 +2994,7 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 					},
 					expectAllowed: true,
 				},
@@ -2981,6 +3012,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
+						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 					},
 					expectAllowed: true,
 				},
@@ -3005,7 +3037,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
-
+						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -3013,6 +3045,7 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
+						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
 					},
 					expectAllowed: true,
 				},
@@ -3037,6 +3070,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.RestoredVMAnnotation] = dummyRegisteredAnnVal
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
+						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 					},
 					expectAllowed: true,
 				},

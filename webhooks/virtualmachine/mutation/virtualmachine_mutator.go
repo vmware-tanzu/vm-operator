@@ -165,6 +165,12 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		if ok := SetDefaultCdromImgKindOnUpdate(ctx, modified, oldVM); ok {
 			wasMutated = true
 		}
+
+		if pkgcfg.FromContext(ctx).Features.VMGroups {
+			if ok := CleanupApplyPowerStateChangeTimeAnno(ctx, modified, oldVM); ok {
+				wasMutated = true
+			}
+		}
 	}
 
 	if !wasMutated {
@@ -675,5 +681,31 @@ func SetDefaultEncryptionClass(
 	vm.Spec.Crypto.EncryptionClassName = defaultEncClass.Name
 
 	return true, nil
+}
 
+func CleanupApplyPowerStateChangeTimeAnno(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) bool {
+
+	var (
+		oldAnnoTime = oldVM.Annotations[constants.ApplyPowerStateTimeAnnotation]
+		newAnnoTime = vm.Annotations[constants.ApplyPowerStateTimeAnnotation]
+	)
+
+	if oldAnnoTime != newAnnoTime {
+		// VM is updated with a new apply-power-state time from parent, no op.
+		return false
+	}
+
+	if oldVM.Spec.PowerState != vm.Spec.PowerState {
+		// VM's power state is updated directly without a new apply-power-state
+		// time set from a parent group, remove the stale annotation to apply
+		// the power state immediately.
+		if newAnnoTime != "" {
+			delete(vm.Annotations, constants.ApplyPowerStateTimeAnnotation)
+			return true
+		}
+	}
+
+	return false
 }

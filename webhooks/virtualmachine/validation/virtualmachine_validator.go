@@ -67,7 +67,7 @@ const (
 	invalidPowerStateOnUpdateFmt             = "cannot %s a VM that is %s"
 	invalidPowerStateOnUpdateEmptyString     = "cannot set power state to empty string"
 	invalidNextRestartTimeOnCreate           = "cannot restart VM on create"
-	invalidNextRestartTimeOnUpdate           = "must be formatted as RFC3339Nano"
+	invalidRFC3339NanoTimeFormat             = "must be formatted as RFC3339Nano"
 	invalidNextRestartTimeOnUpdateNow        = "mutation webhooks are required to restart VM"
 	modifyAnnotationNotAllowedForNonAdmin    = "modifying this annotation is not allowed for non-admin users"
 	modifyLabelNotAllowedForNonAdmin         = "modifying this label is not allowed for non-admin users"
@@ -156,6 +156,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, nil)...)
+	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -251,6 +252,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1093,7 +1095,7 @@ func (v validator) validateNextRestartTimeOnUpdate(
 			field.Invalid(
 				nextRestartTimePath,
 				vm.Spec.NextRestartTime,
-				invalidNextRestartTimeOnUpdate))
+				invalidRFC3339NanoTimeFormat))
 	}
 
 	return allErrs
@@ -1392,6 +1394,10 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
+	if vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] != oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
 	// The following annotations will be added by the mutation webhook upon VM creation.
 	if !reflect.DeepEqual(oldVM, &vmopv1.VirtualMachine{}) {
 		if vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] != oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] {
@@ -1663,6 +1669,26 @@ func (v validator) validateChecksAnnotation(
 					allErrs = append(allErrs, field.Forbidden(f, modRestrictedAnnotation))
 				}
 			}
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateNextPowerStateChangeTimeFormat(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if val, ok := vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation]; ok {
+		if _, err := time.Parse(time.RFC3339Nano, val); err != nil {
+			allErrs = append(
+				allErrs,
+				field.Invalid(
+					field.NewPath("metadata").Child("annotations").Key(pkgconst.ApplyPowerStateTimeAnnotation),
+					val,
+					invalidRFC3339NanoTimeFormat))
 		}
 	}
 

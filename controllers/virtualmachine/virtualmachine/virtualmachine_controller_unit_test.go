@@ -19,6 +19,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
@@ -429,6 +430,18 @@ func unitTestsReconcile() {
 			Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
 			Expect(fakeProbeManager.IsRemoveFromProberManagerCalled).Should(BeTrue())
 		})
+
+		When("VM has skip-platform-delete annotation", func() {
+			JustBeforeEach(func() {
+				vm.Annotations = map[string]string{
+					pkgconst.SkipDeletePlatformResourceKey: "",
+				}
+			})
+			It("will delete the created VM and will not emit corresponding event", func() {
+				Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+				doNotExpectEvent(ctx, "DeleteSuccess")
+			})
+		})
 	})
 }
 
@@ -440,4 +453,11 @@ func expectEvents(ctx *builder.UnitTestContextForController, eventStrs ...string
 		ExpectWithOffset(1, eventComponents[1]).To(Equal(s))
 	}
 	ConsistentlyWithOffset(1, ctx.Events).ShouldNot(Receive())
+}
+
+func doNotExpectEvent(ctx *builder.UnitTestContextForController, eventStr string) {
+	ConsistentlyWithOffset(1, func(g Gomega) {
+		var event string
+		ConsistentlyWithOffset(1, ctx.Events).ShouldNot(Receive(&event), "receive expected event: "+eventStr)
+	}).Should(Succeed())
 }

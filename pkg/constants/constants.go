@@ -107,4 +107,10 @@ const (
 	// BootstrapHashCustomSpecAnnotationKey is the annotation used to track the
 	// customization spec used to bootstrap a VM's guest information.
 	BootstrapHashCustomSpecAnnotationKey = "vmoperator.vmware.com/bootstrap-hash-customspec"
+
+	// SkipDeletePlatformResourceKey is a privileged annotation that may be used
+	// to skip the deletion of a Kubernetes object's underlying platform
+	// resource. For example, when applied to a VM, deleting the VirtualMachine
+	// object in Kubernetes will not result in the deletion of the vSphere VM.
+	SkipDeletePlatformResourceKey string = "vmoperator.vmware.com.protected/skip-delete-platform-resource"
 )

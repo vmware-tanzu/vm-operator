@@ -453,18 +453,26 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 	if controllerutil.ContainsFinalizer(ctx.VM, finalizerName) ||
 		controllerutil.ContainsFinalizer(ctx.VM, deprecatedFinalizerName) {
-		defer func() {
-			r.Recorder.EmitEvent(
-				ctx.VM, "Delete", filterNoRequeueErr(reterr), false)
-		}()
 
-		if err := r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM); err != nil {
-			return err
+		_, skip := ctx.VM.Annotations[pkgconst.SkipDeletePlatformResourceKey]
+		if skip {
+			ctx.Logger.Info("Skipping deletion of underlying VM",
+				"reason", pkgconst.SkipDeletePlatformResourceKey,
+				"managedObjectID", ctx.VM.Status.UniqueID,
+				"biosUUID", ctx.VM.Status.BiosUUID,
+				"instanceUUID", ctx.VM.Status.InstanceUUID)
+		} else {
+			defer func() {
+				r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)
+			}()
+
+			if err := r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM); err != nil {
+				return err
+			}
 		}
 
 		controllerutil.RemoveFinalizer(ctx.VM, finalizerName)
 		controllerutil.RemoveFinalizer(ctx.VM, deprecatedFinalizerName)
-		ctx.Logger.Info("Provider Completed deleting Virtual Machine", "time", time.Now().Format(time.RFC3339))
 	}
 
 	// BMV: Shouldn't these be in the ContainsFinalizer block?

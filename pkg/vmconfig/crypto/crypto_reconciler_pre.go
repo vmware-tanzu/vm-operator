@@ -140,8 +140,8 @@ func (r reconciler) Reconcile(
 		return err
 	}
 
-	if paused.ByAdmin(moVM) || paused.ByDevOps(vm) {
-		// If the VM is paused, just update the status.
+	if paused.ByAdmin(moVM) || paused.ByDevOps(vm) || vm.Status.TaskID != "" {
+		// If the VM is paused or has a task, just update the status.
 		return updateStatus(ctx, args, false)
 	}
 

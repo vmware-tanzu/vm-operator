@@ -5,10 +5,12 @@
 package vmlifecycle
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"sigs.k8s.io/yaml"
 
@@ -107,6 +109,9 @@ func BootStrapCloudInit(
 	cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
+	logger := logr.FromContextOrDiscard(vmCtx)
+	logger.V(4).Info("Reconciling Cloud-Init bootstrap state")
+
 	netPlan, err := network.NetPlanCustomization(bsArgs.NetworkResults)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create NetPlan customization: %w", err)
@@ -153,11 +158,11 @@ func BootStrapCloudInit(
 
 	switch vmCtx.VM.Annotations[constants.CloudInitTypeAnnotation] {
 	case constants.CloudInitTypeValueCloudInitPrep:
-		configSpec, customSpec, err = GetCloudInitPrepCustSpec(config, metadata, userdata)
+		configSpec, customSpec, err = GetCloudInitPrepCustSpec(vmCtx, config, metadata, userdata)
 	case constants.CloudInitTypeValueGuestInfo, "":
 		fallthrough
 	default:
-		configSpec, err = GetCloudInitGuestInfoCustSpec(config, metadata, userdata)
+		configSpec, err = GetCloudInitGuestInfoCustSpec(vmCtx, config, metadata, userdata)
 	}
 
 	if err != nil {
@@ -210,8 +215,12 @@ func GetCloudInitMetadata(
 }
 
 func GetCloudInitPrepCustSpec(
+	ctx context.Context,
 	config *vimtypes.VirtualMachineConfigInfo,
 	metadata, userdata string) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
+
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.V(4).Info("Reconciling Cloud-Init Prep bootstrap state")
 
 	if userdata != "" {
 		// Ensure the data is normalized first to plain-text.
@@ -249,8 +258,12 @@ func GetCloudInitPrepCustSpec(
 }
 
 func GetCloudInitGuestInfoCustSpec(
+	ctx context.Context,
 	config *vimtypes.VirtualMachineConfigInfo,
 	metadata, userdata string) (*vimtypes.VirtualMachineConfigSpec, error) {
+
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.V(4).Info("Reconciling Cloud-Init GuestInfo bootstrap state")
 
 	encodedMetadata, err := pkgutil.EncodeGzipBase64(metadata)
 	if err != nil {

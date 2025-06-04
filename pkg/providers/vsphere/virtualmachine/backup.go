@@ -6,6 +6,7 @@ package virtualmachine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"strconv"
@@ -26,6 +27,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
@@ -40,14 +42,18 @@ type BackupVirtualMachineOptions struct {
 	ClassicDiskUUIDs    map[string]struct{}
 }
 
+var ErrBackingUp = pkgerr.NoRequeueError{Message: "backed up vm"}
+
 // BackupVirtualMachine backs up the required data of a VM into its ExtraConfig.
 // Currently, the following data is backed up:
 // - VM Kubernetes resource in YAMl.
 // - Additional VM-relevant Kubernetes resources in YAML, separated by "---".
 // - PVC disk data in JSON format (if DiskUUIDToPVC is not empty).
+//
+//nolint:gocyclo
 func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 	defer func() {
-		if result != nil {
+		if result != nil && !errors.Is(result, ErrBackingUp) {
 			conditions.MarkFalse(
 				opts.VMCtx.VM,
 				vmopv1.VirtualMachineBackupUpToDateCondition,
@@ -229,6 +235,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 		}
 
 		opts.VMCtx.Logger.Info("Successfully updated VM ExtraConfig with latest backup data")
+		return ErrBackingUp
 	}
 
 	return nil

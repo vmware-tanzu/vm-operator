@@ -16,6 +16,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/pbm"
@@ -48,6 +49,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
+	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
@@ -58,7 +60,22 @@ import (
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
+	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
+	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
+)
+
+var (
+	ErrSetPowerState          = res.ErrSetPowerState
+	ErrBackup                 = virtualmachine.ErrBackingUp
+	ErrBootstrapReconfigure   = vmlifecycle.ErrBootstrapReconfigure
+	ErrBootstrapCustomize     = vmlifecycle.ErrBootstrapCustomize
+	ErrReconfigure            = session.ErrReconfigure
+	ErrRestart                = pkgerr.NoRequeueError{Message: "restarted vm"}
+	ErrUpgradeHardwareVersion = session.ErrUpgradeHardwareVersion
+	ErrIsPaused               = pkgerr.NoRequeueError{Message: "is paused"}
+	ErrHasTask                = pkgerr.NoRequeueError{Message: "has outstanding task"}
+	ErrPromoteDisks           = vmconfdiskpromo.ErrPromoteDisks
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -114,10 +131,15 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
 	return vs.createOrUpdateVirtualMachine(ctx, vm, true)
 }
 
+var ErrCreate = pkgerr.NoRequeueError{Message: "created vm"}
+
 func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	async bool) (chan error, error) {
+
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.V(4).Info("Entering createOrUpdateVirtualMachine")
 
 	vmNamespacedName := vm.NamespacedName()
 
@@ -133,7 +155,7 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 			vimtypes.ID{},
 			vs.getOpID(vm, "createOrUpdateVM"),
 		),
-		Logger: log.WithValues("vmName", vm.NamespacedName()),
+		Logger: logger.WithValues("vmName", vm.NamespacedName()),
 		VM:     vm,
 	}
 
@@ -154,6 +176,7 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	// Check to see if the VM can be found on the underlying platform.
 	foundVM, err := vs.getVM(vmCtx, client, false)
 	if err != nil {
+		vmCtx.Logger.Error(err, "failed to find vm")
 		return nil, err
 	}
 
@@ -161,7 +184,8 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		// Mark that this is an update operation.
 		ctxop.MarkUpdate(vmCtx)
 
-		return nil, vs.updateVirtualMachine(vmCtx, foundVM, client, nil)
+		vmCtx.Logger.V(4).Info("found VM and updating")
+		return nil, vs.updateVirtualMachine(vmCtx, foundVM, client)
 	}
 
 	// Mark that this is a create operation.
@@ -193,21 +217,21 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 			return nil, err
 		}
 
-		newVM, err := vs.createVirtualMachine(vmCtx, client, createArgs)
-		if err != nil {
+		if _, err := vs.createVirtualMachine(
+			vmCtx,
+			client,
+			createArgs); err != nil {
+
 			return nil, err
 		}
 
-		// If the create actually occurred, fall-through to an update
-		// post-reconfigure.
-		return nil, vs.createdVirtualMachineFallthroughUpdate(
-			vmCtx,
-			newVM,
-			client,
-			createArgs)
+		return nil, nil
 	}
 
-	if _, ok := currentlyReconciling.LoadOrStore(vmNamespacedName, struct{}{}); ok {
+	if _, ok := currentlyReconciling.LoadOrStore(
+		vmNamespacedName,
+		struct{}{}); ok {
+
 		// If the VM is already being created in a goroutine, then there is no
 		// need to create it again.
 		//
@@ -629,7 +653,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 		}
 	}
 
-	return object.NewVirtualMachine(vcClient.VimClient(), *moRef), nil
+	return object.NewVirtualMachine(vcClient.VimClient(), *moRef), ErrCreate
 }
 
 func (vs *vSphereVMProvider) createVirtualMachineAsync(
@@ -655,6 +679,8 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 	if vimErr != nil {
 		ctx.Logger.Error(vimErr, "CreateVirtualMachine failed")
 		chanErr <- vimErr
+	} else {
+		chanErr <- ErrCreate
 	}
 
 	_, k8sErr := controllerutil.CreateOrPatch(
@@ -703,23 +729,8 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 	}
 }
 
-func (vs *vSphereVMProvider) createdVirtualMachineFallthroughUpdate(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	vcClient *vcclient.Client,
-	createArgs *VMCreateArgs) error {
-
-	// TODO: In the common case, we'll call directly into update right after create succeeds, and
-	// can use the createArgs to avoid doing a bunch of lookup work again.
-
-	return vs.updateVirtualMachine(vmCtx, vcVM, vcClient, createArgs)
-}
-
 // VMUpdatePropertiesSelector is the set of VM properties fetched at the start
-// of UpdateVirtualMachine,
-// It must be a super set of vmlifecycle.VMStatusPropertiesSelector[] since we
-// may pass the properties collected here to vmlifecycle.UpdateStatus to avoid a
-// second fetch of the VM properties.
+// of updateVirtualMachine.
 var VMUpdatePropertiesSelector = []string{
 	"config",
 	"guest",
@@ -732,111 +743,347 @@ var VMUpdatePropertiesSelector = []string{
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	vcClient *vcclient.Client,
-	createArgs *VMCreateArgs) error {
+	vcClient *vcclient.Client) error {
 
 	vmCtx.Logger.V(4).Info("Updating VirtualMachine")
 
-	{
-		// Hack - create just enough of the Session that's needed for update
+	// Fetch the VM's properties.
+	if err := vcVM.Properties(
+		vmCtx,
+		vcVM.Reference(),
+		VMUpdatePropertiesSelector,
+		&vmCtx.MoVM); err != nil {
 
-		if err := vcVM.Properties(
+		return fmt.Errorf("failed to fetch vm properties: %w", err)
+	}
+
+	var reconcileErr error
+
+	getReconcileErr := func(msg string, err error) error {
+		if reconcileErr == nil {
+			return fmt.Errorf("failed to reconcile %s: %w", msg, err)
+		}
+		return fmt.Errorf("%w, failed to reconcile %s: %w",
+			reconcileErr, msg, err)
+	}
+
+	// Backup the VM if necessary. VKS nodes are excluded from backup.
+	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return err
+		}
+		reconcileErr = getReconcileErr("backup state", err)
+	}
+
+	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return err
+		}
+		reconcileErr = getReconcileErr("status", err)
+	}
+
+	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return err
+		}
+		return fmt.Errorf("failed to reconcile config: %w", err)
+	}
+
+	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return err
+		}
+		return fmt.Errorf("failed to reconcile power state: %w", err)
+	}
+
+	return reconcileErr
+}
+
+func (vs *vSphereVMProvider) reconcileStatus(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling status")
+
+	var networkDeviceKeysToSpecIdx map[int32]int
+	if vmCtx.MoVM.Config != nil {
+		networkDeviceKeysToSpecIdx = network.MapEthernetDevicesToSpecIdx(
+			vmCtx, vs.k8sClient, vmCtx.MoVM)
+	}
+
+	return vmlifecycle.ReconcileStatus(
+		vmCtx,
+		vs.k8sClient,
+		vcVM,
+		vmlifecycle.ReconcileStatusData{
+			NetworkDeviceKeysToSpecIdx: networkDeviceKeysToSpecIdx,
+		})
+}
+
+func (vs *vSphereVMProvider) reconcileConfig(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
+	vcClient *vcclient.Client) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling config")
+
+	if err := verifyConfigInfo(vmCtx); err != nil {
+		return err
+	}
+	if err := verifyConnectionState(vmCtx); err != nil {
+		return err
+	}
+	if err := verifyResourcePool(vmCtx); err != nil {
+		return err
+	}
+
+	clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(
+		vmCtx,
+		vcVM.Client(),
+		vmCtx.MoVM.ResourcePool.Value)
+	if err != nil {
+		return err
+	}
+
+	ses := &session.Session{
+		K8sClient:    vs.k8sClient,
+		Client:       vcClient.Client,
+		Finder:       vcClient.Finder(),
+		ClusterMoRef: clusterMoRef,
+	}
+
+	getUpdateArgsFn := func() (*vmUpdateArgs, error) {
+		return vs.vmUpdateGetArgs(vmCtx)
+	}
+
+	getResizeArgsFn := func() (*vmResizeArgs, error) {
+		return vs.vmResizeGetArgs(vmCtx)
+	}
+
+	return ses.UpdateVirtualMachine(
+		vmCtx,
+		vcVM,
+		getUpdateArgsFn,
+		getResizeArgsFn)
+}
+
+func (vs *vSphereVMProvider) reconcileBackupState(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling backup state")
+
+	if kubeutil.HasCAPILabels(vmCtx.VM.Labels) &&
+		!metav1.HasAnnotation(
+			vmCtx.VM.ObjectMeta,
+			vmopv1.ForceEnableBackupAnnotation,
+		) {
+
+		return nil
+	}
+
+	vmCtx.Logger.V(4).Info("Backing up VM Service managed VM")
+
+	diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to get disk uuid to PVC mapping for backup")
+		return err
+	}
+
+	additionalResources, err := GetAdditionalResourcesForBackup(vmCtx, vs.k8sClient)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to get additional resources for backup")
+		return err
+	}
+
+	backupOpts := virtualmachine.BackupVirtualMachineOptions{
+		VMCtx:               vmCtx,
+		VcVM:                vcVM,
+		DiskUUIDToPVC:       diskUUIDToPVC,
+		AdditionalResources: additionalResources,
+		BackupVersion:       fmt.Sprint(time.Now().UnixMilli()),
+		ClassicDiskUUIDs:    GetAttachedClassicDiskUUIDs(vmCtx),
+	}
+
+	return virtualmachine.BackupVirtualMachine(backupOpts)
+}
+
+func (vs *vSphereVMProvider) reconcilePowerState(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling power state")
+
+	if err := verifyConnectionState(vmCtx); err != nil {
+		return err
+	}
+	if err := verifyResourcePool(vmCtx); err != nil {
+		return err
+	}
+
+	if isVMPaused(vmCtx) {
+		return ErrIsPaused
+	}
+	if vmCtx.VM.Status.TaskID != "" {
+		return ErrHasTask
+	}
+
+	const (
+		hard    = vmopv1.VirtualMachinePowerOpModeHard
+		soft    = vmopv1.VirtualMachinePowerOpModeSoft
+		trySoft = vmopv1.VirtualMachinePowerOpModeTrySoft
+	)
+
+	var (
+		setPowerState     bool
+		powerOpMode       vmopv1.VirtualMachinePowerOpMode
+		currentPowerState vmopv1.VirtualMachinePowerState
+		desiredPowerState = vmCtx.VM.Spec.PowerState
+	)
+
+	// Translate the VM's current power state into the VM Op power state
+	// value.
+	switch vmCtx.MoVM.Summary.Runtime.PowerState {
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
+		currentPowerState = vmopv1.VirtualMachinePowerStateOn
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
+		currentPowerState = vmopv1.VirtualMachinePowerStateOff
+	case vimtypes.VirtualMachinePowerStateSuspended:
+		currentPowerState = vmopv1.VirtualMachinePowerStateSuspended
+	}
+
+	switch desiredPowerState {
+
+	case vmopv1.VirtualMachinePowerStateOn:
+
+		if currentPowerState == vmopv1.VirtualMachinePowerStateOn {
+			// Check to see if a possible restart is required.
+			// Please note a VM may only be restarted if it is powered on.
+			if vmCtx.VM.Spec.NextRestartTime == "" {
+				return nil
+			}
+
+			// If non-empty, the value of spec.nextRestartTime is guaranteed
+			// to be a valid RFC3339Nano timestamp due to the webhooks,
+			// however, we still check for the error due to testing that may
+			// not involve webhooks.
+			nextRestartTime, err := time.Parse(
+				time.RFC3339Nano, vmCtx.VM.Spec.NextRestartTime)
+			if err != nil {
+				return fmt.Errorf(
+					"spec.nextRestartTime %q cannot be parsed with %q %w",
+					vmCtx.VM.Spec.NextRestartTime, time.RFC3339Nano, err)
+			}
+
+			result, err := vmutil.RestartAndWait(
+				logr.NewContext(vmCtx, vmCtx.Logger),
+				vcVM.Client(),
+				vmutil.ManagedObjectFromObject(vcVM),
+				false,
+				nextRestartTime,
+				vmutil.ParsePowerOpMode(string(vmCtx.VM.Spec.RestartMode)))
+			if err != nil {
+				return err
+			}
+			if result.AnyChange() {
+				lastRestartTime := metav1.NewTime(nextRestartTime)
+				vmCtx.VM.Status.LastRestartTime = &lastRestartTime
+
+				return ErrRestart
+			}
+
+			return nil
+		}
+
+		powerOpMode = hard
+
+		for k, v := range vmCtx.VM.Annotations {
+			if strings.HasPrefix(k, vmopv1.CheckAnnotationPowerOn+"/") {
+				vmCtx.Logger.Info(
+					"Skipping poweron due to annotation",
+					"annotationKey", k, "annotationValue", v)
+				return nil
+			}
+		}
+
+		setPowerState = true
+
+	case vmopv1.VirtualMachinePowerStateOff:
+		powerOpMode = vmCtx.VM.Spec.PowerOffMode
+		switch currentPowerState {
+		case vmopv1.VirtualMachinePowerStateOn:
+			setPowerState = true
+		case vmopv1.VirtualMachinePowerStateSuspended:
+			setPowerState = vmCtx.VM.Spec.PowerOffMode == hard ||
+				vmCtx.VM.Spec.PowerOffMode == trySoft
+		}
+
+	case vmopv1.VirtualMachinePowerStateSuspended:
+		powerOpMode = vmCtx.VM.Spec.SuspendMode
+		setPowerState = currentPowerState == vmopv1.VirtualMachinePowerStateOn
+
+	}
+
+	if setPowerState {
+		err := res.NewVMFromObject(vcVM).SetPowerState(
 			vmCtx,
-			vcVM.Reference(),
-			VMUpdatePropertiesSelector,
-			&vmCtx.MoVM); err != nil {
+			currentPowerState,
+			vmCtx.VM.Spec.PowerState,
+			powerOpMode)
 
-			return err
+		if errors.Is(err, ErrSetPowerState) &&
+			desiredPowerState == vmopv1.VirtualMachinePowerStateOn {
+
+			if vmCtx.VM.Annotations == nil {
+				vmCtx.VM.Annotations = map[string]string{}
+			}
+			vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
 		}
 
-		// Only reconcile connected VMs or if the connection state is empty.
-		if cs := vmCtx.MoVM.Summary.Runtime.ConnectionState; cs != "" && cs !=
-			vimtypes.VirtualMachineConnectionStateConnected {
+		return err
+	}
 
-			// Return a NoRequeueError so the VM is not requeued for
-			// reconciliation.
-			//
-			// The watcher service ensures that VMs will be reconciled
-			// immediately upon their summary.runtime.connectionState value
-			// changing.
-			//
-			// TODO(akutz) Determine if we should surface some type of condition
-			//             that indicates this state.
-			return fmt.Errorf("failed to update VM: %w", pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("unsupported VM connection state: %s", cs),
-			})
+	return nil
+}
+
+func verifyConfigInfo(vmCtx pkgctx.VirtualMachineContext) error {
+	if vmCtx.MoVM.Config == nil {
+		return pkgerr.NoRequeueError{
+			Message: "nil config info",
 		}
+	}
+	return nil
+}
 
-		if vmCtx.MoVM.ResourcePool == nil {
-			// Same error as govmomi VirtualMachine::ResourcePool().
-			return fmt.Errorf("VM doesn't have a resourcePool")
-		}
+func verifyConnectionState(vmCtx pkgctx.VirtualMachineContext) error {
+	// Only reconcile connected VMs or if the connection state is empty.
+	if cs := vmCtx.MoVM.Summary.Runtime.ConnectionState; cs != "" && cs !=
+		vimtypes.VirtualMachineConnectionStateConnected {
 
-		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(
-			vmCtx,
-			vcVM.Client(),
-			vmCtx.MoVM.ResourcePool.Value)
-		if err != nil {
-			return err
-		}
-
-		ses := &session.Session{
-			K8sClient:    vs.k8sClient,
-			Client:       vcClient.Client,
-			Finder:       vcClient.Finder(),
-			ClusterMoRef: clusterMoRef,
-		}
-
-		getUpdateArgsFn := func() (*vmUpdateArgs, error) {
-			// TODO: Use createArgs if we already got them, except for:
-			//       - createArgs.ConfigSpec.Crypto
-			_ = createArgs
-			return vs.vmUpdateGetArgs(vmCtx)
-		}
-
-		getResizeArgsFn := func() (*vmResizeArgs, error) {
-			return vs.vmResizeGetArgs(vmCtx)
-		}
-
-		err = ses.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgsFn, getResizeArgsFn)
-		if err != nil {
-			return err
+		// Return a NoRequeueError so the VM is not requeued for
+		// reconciliation.
+		//
+		// The watcher service ensures that VMs will be reconciled
+		// immediately upon their summary.runtime.connectionState value
+		// changing.
+		//
+		// TODO(akutz) Determine if we should surface some type of condition
+		//             that indicates this state.
+		return pkgerr.NoRequeueError{
+			Message: fmt.Sprintf("unsupported connection state: %s", cs),
 		}
 	}
 
-	// Back up the VM at the end after a successful update.  TKG nodes are skipped
-	// from backup unless they specify the annotation to opt into backup.
-	if !kubeutil.HasCAPILabels(vmCtx.VM.Labels) ||
-		metav1.HasAnnotation(vmCtx.VM.ObjectMeta, vmopv1.ForceEnableBackupAnnotation) {
+	return nil
+}
 
-		vmCtx.Logger.V(4).Info("Backing up VM Service managed VM")
-
-		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
-		if err != nil {
-			vmCtx.Logger.Error(err, "failed to get disk uuid to PVC mapping for backup")
-			return err
-		}
-
-		additionalResources, err := GetAdditionalResourcesForBackup(vmCtx, vs.k8sClient)
-		if err != nil {
-			vmCtx.Logger.Error(err, "failed to get additional resources for backup")
-			return err
-		}
-
-		backupOpts := virtualmachine.BackupVirtualMachineOptions{
-			VMCtx:               vmCtx,
-			VcVM:                vcVM,
-			DiskUUIDToPVC:       diskUUIDToPVC,
-			AdditionalResources: additionalResources,
-			BackupVersion:       fmt.Sprint(time.Now().UnixMilli()),
-			ClassicDiskUUIDs:    GetAttachedClassicDiskUUIDs(vmCtx),
-		}
-		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
-			vmCtx.Logger.Error(err, "failed to backup VM")
-			return err
+func verifyResourcePool(vmCtx pkgctx.VirtualMachineContext) error {
+	if vmCtx.MoVM.ResourcePool == nil {
+		// Same error as govmomi VirtualMachine::ResourcePool().
+		return pkgerr.NoRequeueError{
+			Message: "VM does not belong to a resource pool",
 		}
 	}
-
 	return nil
 }
 
@@ -1490,17 +1737,15 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	// Get the encryption class details for the VM.
 	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
-		for _, r := range vmconfig.FromContext(vmCtx) {
-			if err := r.Reconcile(
-				vmCtx,
-				vs.k8sClient,
-				vs.vcClient.VimClient(),
-				vmCtx.VM,
-				vmCtx.MoVM,
-				&createArgs.ConfigSpec); err != nil {
+		if err := vmconfcrypto.Reconcile(
+			vmCtx,
+			vs.k8sClient,
+			vs.vcClient.VimClient(),
+			vmCtx.VM,
+			vmCtx.MoVM,
+			&createArgs.ConfigSpec); err != nil {
 
-				return err
-			}
+			return err
 		}
 	}
 
@@ -1768,13 +2013,17 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	vmCtx pkgctx.VirtualMachineContext) (*vmUpdateArgs, error) {
 
+	updateArgs := &vmUpdateArgs{}
+
 	vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
 	if err != nil {
 		return nil, err
 	}
+	updateArgs.VMClass = vmClass
 
 	var resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 	if vmCtx.VM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] != "" {
+		var err error
 		// Post create the resource policy is only needed to set the cluster module.
 		resourcePolicy, err = GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
 		if err != nil {
@@ -1784,17 +2033,13 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 			return nil, fmt.Errorf("cannot set cluster module without resource policy")
 		}
 	}
+	updateArgs.ResourcePolicy = resourcePolicy
 
 	bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
 	if err != nil {
 		return nil, err
 	}
-
-	updateArgs := &vmUpdateArgs{
-		VMClass:        vmClass,
-		ResourcePolicy: resourcePolicy,
-		BootstrapData:  bsData,
-	}
+	updateArgs.BootstrapData = bsData
 
 	ecMap := maps.Clone(vs.globalExtraConfig)
 	maps.DeleteFunc(ecMap, func(k string, v string) bool {
@@ -1803,7 +2048,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	})
 	updateArgs.ExtraConfig = ecMap
 
-	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+	if res := updateArgs.VMClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
 		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
 		if err != nil {
 			return nil, err
@@ -1845,6 +2090,26 @@ func (vs *vSphereVMProvider) vmResizeGetArgs(
 			resizeArgs.VMClass = &vmClass
 		}
 	}
+
+	var resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
+	if vmCtx.VM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] != "" {
+		var err error
+		// Post create the resource policy is only needed to set the cluster module.
+		resourcePolicy, err = GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
+		if err != nil {
+			return nil, err
+		}
+		if resourcePolicy == nil {
+			return nil, fmt.Errorf("cannot set cluster module without resource policy")
+		}
+	}
+	resizeArgs.ResourcePolicy = resourcePolicy
+
+	bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
+	if err != nil {
+		return nil, err
+	}
+	resizeArgs.BootstrapData = bsData
 
 	if resizeArgs.VMClass != nil {
 		var minCPUFreq uint64

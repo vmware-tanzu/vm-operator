@@ -9,6 +9,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/bitmask"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -20,6 +24,18 @@ import (
 type reconciler struct{}
 
 var _ vmconfig.Reconciler = reconciler{}
+
+// Reconcile configures the VM's crypto settings.
+func Reconcile(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vimClient *vim25.Client,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec ptrCfgSpec) error {
+
+	return New().Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+}
 
 // New returns a new Reconciler for a VM's crypto state.
 func New() vmconfig.ReconcilerWithContext {

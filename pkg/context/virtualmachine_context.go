@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
@@ -22,6 +23,17 @@ type VirtualMachineContext struct {
 	MoVM   mo.VirtualMachine
 }
 
-func (v *VirtualMachineContext) String() string {
+func (v VirtualMachineContext) String() string {
+	if v.VM == nil {
+		return ""
+	}
 	return fmt.Sprintf("%s %s/%s", v.VM.GroupVersionKind(), v.VM.Namespace, v.VM.Name)
+}
+
+func (v VirtualMachineContext) IsPoweringOn() bool {
+	if v.VM == nil {
+		return false
+	}
+	return v.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn &&
+		v.MoVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn
 }

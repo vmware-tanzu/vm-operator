@@ -5,10 +5,12 @@
 package vmlifecycle
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
+	xxhash "github.com/cespare/xxhash/v2"
 	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -17,7 +19,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
@@ -59,11 +63,19 @@ type BootstrapArgs struct {
 	SearchSuffixes   []string
 }
 
+var (
+	ErrBootstrapReconfigure = pkgerr.NoRequeueError{Message: "bootstrap reconfigured vm"}
+	ErrBootstrapCustomize   = pkgerr.NoRequeueError{Message: "bootstrap customized vm"}
+	ErrSkipPoweredOn        = pkgerr.NoRequeueError{Message: "skip powered on vm"}
+)
+
 func DoBootstrap(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	config *vimtypes.VirtualMachineConfigInfo,
 	bootstrapArgs BootstrapArgs) error {
+
+	vmCtx.Logger.V(4).Info("Reconciling bootstrap state")
 
 	bootstrap := vmCtx.VM.Spec.Bootstrap
 	if bootstrap == nil {
@@ -83,18 +95,22 @@ func DoBootstrap(
 		}
 	}
 
-	cloudInit := bootstrap.CloudInit
-	linuxPrep := bootstrap.LinuxPrep
-	sysPrep := bootstrap.Sysprep
-	vAppConfig := bootstrap.VAppConfig
+	var (
+		cloudInit  = bootstrap.CloudInit
+		linuxPrep  = bootstrap.LinuxPrep
+		sysPrep    = bootstrap.Sysprep
+		vAppConfig = bootstrap.VAppConfig
+	)
 
 	if sysPrep != nil || vAppConfig != nil {
 		bootstrapArgs.TemplateRenderFn = GetTemplateRenderFunc(vmCtx, &bootstrapArgs)
 	}
 
-	var err error
-	var configSpec *vimtypes.VirtualMachineConfigSpec
-	var customSpec *vimtypes.CustomizationSpec
+	var (
+		err        error
+		configSpec *vimtypes.VirtualMachineConfigSpec
+		customSpec *vimtypes.CustomizationSpec
+	)
 
 	switch {
 	case cloudInit != nil:
@@ -112,16 +128,52 @@ func DoBootstrap(
 	}
 
 	if configSpec != nil {
-		err := doReconfigure(vmCtx, vcVM, configSpec)
+		newHash, err := getVimTypeHash(configSpec)
 		if err != nil {
-			return fmt.Errorf("bootstrap reconfigure failed: %w", err)
+			return err
+		}
+		hashKey := pkgconst.BootstrapHashConfigSpecAnnotationKey
+		curHash := vmCtx.VM.Annotations[hashKey]
+		if newHash == curHash {
+			vmCtx.Logger.V(4).Info(
+				"Skipping bootstrap reconfigure as nothing has changed")
+		} else {
+			vmCtx.Logger.V(4).Info("Doing bootstrap reconfigure")
+			if err := doReconfigure(vmCtx, vcVM, configSpec); err != nil {
+				return fmt.Errorf("bootstrap reconfigure failed: %w", err)
+			}
+			if vmCtx.VM.Annotations == nil {
+				vmCtx.VM.Annotations = map[string]string{}
+			}
+			vmCtx.Logger.V(4).Info(
+				"Updating bootstrap reconfigure hash", hashKey, newHash)
+			vmCtx.VM.Annotations[pkgconst.BootstrapHashConfigSpecAnnotationKey] = newHash
+			return ErrBootstrapReconfigure
 		}
 	}
 
 	if customSpec != nil {
-		err := doCustomize(vmCtx, vcVM, config, customSpec)
+		newHash, err := getVimTypeHash(customSpec)
 		if err != nil {
-			return fmt.Errorf("bootstrap customize failed: %w", err)
+			return err
+		}
+		hashKey := pkgconst.BootstrapHashCustomSpecAnnotationKey
+		curHash := vmCtx.VM.Annotations[hashKey]
+		if newHash == curHash {
+			vmCtx.Logger.V(4).Info(
+				"Skipping bootstrap customize as nothing has changed")
+		} else {
+			vmCtx.Logger.V(4).Info("Doing bootstrap customize")
+			if err := doCustomize(vmCtx, vcVM, config, customSpec); err != nil {
+				return fmt.Errorf("bootstrap customize failed: %w", err)
+			}
+			if vmCtx.VM.Annotations == nil {
+				vmCtx.VM.Annotations = map[string]string{}
+			}
+			vmCtx.Logger.V(4).Info(
+				"Updating bootstrap customize hash", hashKey, newHash)
+			vmCtx.VM.Annotations[pkgconst.BootstrapHashCustomSpecAnnotationKey] = newHash
+			return ErrBootstrapCustomize
 		}
 	}
 
@@ -255,16 +307,19 @@ func doCustomize(
 	config *vimtypes.VirtualMachineConfigInfo,
 	customSpec *vimtypes.CustomizationSpec) error {
 
+	var skipReason string
+
 	if vmCtx.VM.Annotations[constants.VSphereCustomizationBypassKey] == constants.VSphereCustomizationBypassDisable {
-		vmCtx.Logger.Info("Skipping vsphere customization because of vsphere-customization bypass annotation")
-		return nil
+		skipReason = "bypass annotation"
+	} else if IsCustomizationPendingExtraConfig(config.ExtraConfig) {
+		// TODO: We should really determine if the pending customization is
+		//       stale, clear it if so, and then re-customize. Otherwise, the
+		//       Customize call could perpetually fail preventing power on.
+		skipReason = "already pending"
 	}
 
-	if IsCustomizationPendingExtraConfig(config.ExtraConfig) {
-		vmCtx.Logger.Info("Skipping customization because it is already pending")
-		// TODO: We should really determine if the pending customization is stale, clear it
-		// if so, and then re-customize. Otherwise, the Customize call could perpetually fail
-		// preventing power on.
+	if skipReason != "" {
+		vmCtx.Logger.Info("Skipping customization", "reason", skipReason)
 		return nil
 	}
 
@@ -416,4 +471,17 @@ func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.Customiza
 	}
 
 	return cs
+}
+
+func getVimTypeHash(obj vimtypes.AnyType) (string, error) {
+	data, err := json.Marshal(obj)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal vim type to json: %w", err)
+	}
+	h := xxhash.New()
+	if _, err := h.Write(data); err != nil {
+		return "", fmt.Errorf("failed to write vim type to hash: %w", err)
+	}
+	out := h.Sum(nil)
+	return fmt.Sprintf("%x", out), nil
 }

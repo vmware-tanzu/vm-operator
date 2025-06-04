@@ -129,7 +129,7 @@ func deleteTests() {
 				var noRequeueErr pkgerr.NoRequeueError
 				Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 				Expect(noRequeueErr.Message).To(Equal(
-					fmt.Sprintf("unsupported VM connection state: %s", state)))
+					fmt.Sprintf("unsupported connection state: %s", state)))
 				Expect(ctx.GetVMFromMoID(moVM.Reference().Value)).ToNot(BeNil())
 			}
 		},

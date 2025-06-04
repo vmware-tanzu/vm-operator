@@ -24,7 +24,6 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
-	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -54,7 +53,6 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 		withObjs   []ctrlclient.Object
 		withFuncs  interceptor.Funcs
 		configSpec *vimtypes.VirtualMachineConfigSpec
-		noRequeue  = pkgerr.NoRequeueError{Message: "doing online disk promotion"}
 
 		// Used for testing that only tasks with promoteDisksTaskKey are reconciled
 		createDiskTask string
@@ -238,7 +236,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 
 					It("should promote disks", func() {
 						Expect(err).To(HaveOccurred())
-						Expect(err).To(Equal(noRequeue))
+						Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
 						Expect(vm.Status.TaskID).ToNot(BeEmpty())
 
 						// simulator promoteDisks will delay the task based on disk capacity,
@@ -335,7 +333,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 
 					It("should fail the task", func() {
 						Expect(err).To(HaveOccurred())
-						Expect(err).To(Equal(noRequeue))
+						Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
 						Expect(vm.Status.TaskID).ToNot(BeEmpty())
 
 						err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)

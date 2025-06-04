@@ -5,19 +5,23 @@
 package vmlifecycle
 
 import (
-	"context"
 	"errors"
 
+	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 func BootstrapVAppConfig(
-	_ context.Context,
+	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
+
+	logger := logr.FromContextOrDiscard(vmCtx)
+	logger.V(4).Info("Reconciling vApp bootstrap state")
 
 	var (
 		err        error

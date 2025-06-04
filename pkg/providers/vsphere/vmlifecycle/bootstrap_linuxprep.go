@@ -5,21 +5,30 @@
 package vmlifecycle
 
 import (
-	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 )
 
 func BootStrapLinuxPrep(
-	ctx context.Context,
+	vmCtx pkgctx.VirtualMachineContext,
 	config *vimtypes.VirtualMachineConfigInfo,
 	linuxPrepSpec *vmopv1.VirtualMachineBootstrapLinuxPrepSpec,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
+
+	logger := logr.FromContextOrDiscard(vmCtx)
+	logger.V(4).Info("Reconciling LinuxPrep bootstrap state")
+
+	if !vmCtx.IsPoweringOn() {
+		vmCtx.Logger.V(4).Info("Skipping LinuxPrep since VM is not powering on")
+		return nil, nil, nil
+	}
 
 	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)
 	if err != nil {

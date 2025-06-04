@@ -1388,6 +1388,10 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
+	if vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] != oldVM.Annotations[pkgconst.SkipDeletePlatformResourceKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
 	// The following annotations will be added by the mutation webhook upon VM creation.
 	if !reflect.DeepEqual(oldVM, &vmopv1.VirtualMachine{}) {
 		if vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] != oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] {

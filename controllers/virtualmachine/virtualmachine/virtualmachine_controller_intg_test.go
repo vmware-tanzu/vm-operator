@@ -28,6 +28,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
@@ -549,12 +550,15 @@ var _ = Describe(
 			initEnvFn              builder.InitVCSimEnvFn
 			vm                     *object.VirtualMachine
 			numCreateOrUpdateCalls int32
+			obj                    *vmopv1.VirtualMachine
+			objKey                 client.ObjectKey
 		)
 
 		BeforeEach(func() {
 			numCreateOrUpdateCalls = 0
 			ctx = context.Background()
 			ctx = logr.NewContext(ctx, testutil.GinkgoLogr(4))
+			obj = &vmopv1.VirtualMachine{}
 		})
 
 		JustBeforeEach(func() {
@@ -608,6 +612,11 @@ var _ = Describe(
 
 			vcSimCtx.BeforeEach()
 
+			objKey = client.ObjectKey{
+				Namespace: vcSimCtx.NSInfo.Namespace,
+				Name:      vmName,
+			}
+
 			ctx = vcSimCtx
 		})
 
@@ -619,7 +628,7 @@ var _ = Describe(
 				vm = vmList[0]
 
 				By("creating vm in k8s", func() {
-					obj := builder.DummyBasicVirtualMachine(
+					obj = builder.DummyBasicVirtualMachine(
 						vmName,
 						ctx.NSInfo.Namespace)
 					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
@@ -656,17 +665,10 @@ var _ = Describe(
 			vcSimCtx.AfterEach()
 		})
 
-		Specify("vm should be reconciled when change happens on vSphere", func() {
+		JustBeforeEach(func() {
 			By("wait for VM to have finalizer", func() {
 				Eventually(func(g Gomega) {
-					var (
-						obj vmopv1.VirtualMachine
-						key = client.ObjectKey{
-							Namespace: vcSimCtx.NSInfo.Namespace,
-							Name:      vmName,
-						}
-					)
-					g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+					g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
 					g.Expect(obj.Finalizers).To(HaveLen(1))
 				}).Should(Succeed())
 			})
@@ -679,7 +681,9 @@ var _ = Describe(
 					return atomic.LoadInt32(&numCreateOrUpdateCalls)
 				}).Should(Equal(int32(1)))
 			})
+		})
 
+		Specify("vm should be reconciled when change happens on vSphere", func() {
 			By("update the vm's extraConfig", func() {
 				t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
 					ExtraConfig: []vimtypes.BaseOptionValue{
@@ -701,6 +705,42 @@ var _ = Describe(
 				Consistently(func() int32 {
 					return atomic.LoadInt32(&numCreateOrUpdateCalls)
 				}).Should(Equal(int32(2)))
+			})
+		})
+
+		When("VM has skip-platform-delete annotation", func() {
+			JustBeforeEach(func() {
+				By("add the skip-platform-delete annotation", func() {
+					Eventually(func(g Gomega) {
+						g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
+						if obj.Annotations == nil {
+							obj.Annotations = map[string]string{}
+						}
+						obj.Annotations[pkgconst.SkipDeletePlatformResourceKey] = ""
+						g.Expect(vcSimCtx.Client.Update(ctx, obj)).To(Succeed())
+					}).Should(Succeed())
+				})
+				By("delete the VM", func() {
+					Eventually(func(g Gomega) {
+						g.Expect(vcSimCtx.Client.Delete(ctx, obj)).To(Succeed())
+					}).Should(Succeed())
+				})
+			})
+			It("will delete the Kube VirtualMachine object but not the vSphere VM", func() {
+				By("kube vm should be deleted", func() {
+					Eventually(func(g Gomega) {
+						err := vcSimCtx.Client.Get(ctx, objKey, obj)
+						g.Expect(err).To(HaveOccurred())
+						g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					}).Should(Succeed())
+				})
+				By("vsphere vm should not be deleted", func() {
+					Consistently(func(g Gomega) {
+						name, err := vm.ObjectName(vcSimCtx)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(name).ToNot(BeEmpty())
+					}).Should(Succeed())
+				})
 			})
 		})
 	})

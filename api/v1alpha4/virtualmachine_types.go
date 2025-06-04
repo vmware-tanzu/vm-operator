@@ -480,8 +480,69 @@ const (
 	VirtualMachineBootOptionsNetworkBootProtocolIP6 VirtualMachineBootOptionsNetworkBootProtocol = "IP6"
 )
 
+// +kubebuilder:validation:Enum=BIOS;EFI
+
+// VirtualMachineBootOptionsFirmwareType represents the firmware to use.
+type VirtualMachineBootOptionsFirmwareType string
+
+const (
+	VirtualMachineBootOptionsFirmwareTypeBIOS VirtualMachineBootOptionsFirmwareType = "BIOS"
+	VirtualMachineBootOptionsFirmwareTypeEFI  VirtualMachineBootOptionsFirmwareType = "EFI"
+)
+
+// +kubebuilder:validation:Enum=Enabled;Disabled
+
+// VirtualMachineBootOptionsForceBootEntry represents whether to force the virtual machine
+// to enter BIOS/EFI setup the next time the virtual machine boots.
+type VirtualMachineBootOptionsForceBootEntry string
+
+const (
+	VirtualMachineBootOptionsForceBootEntryEnabled  VirtualMachineBootOptionsForceBootEntry = "Enabled"
+	VirtualMachineBootOptionsForceBootEntryDisabled VirtualMachineBootOptionsForceBootEntry = "Disabled"
+)
+
+// +kubebuilder:validation:Enum=Enabled;Disabled
+
+// VirtualMachineBootOptionsEFISecureBoot represents whether the virtual machine will
+// perform EFI Secure Boot.
+type VirtualMachineBootOptionsEFISecureBoot string
+
+const (
+	VirtualMachineBootOptionsEFISecureBootEnabled  VirtualMachineBootOptionsEFISecureBoot = "Enabled"
+	VirtualMachineBootOptionsEFISecureBootDisabled VirtualMachineBootOptionsEFISecureBoot = "Disabled"
+)
+
+// VirtualMachineBootOptionsBootRetry represents whether a virtual machine that fails to boot
+// will automatically try again.
+type VirtualMachineBootOptionsBootRetry string
+
+const (
+	VirtualMachineBootOptionsBootRetryEnabled  VirtualMachineBootOptionsBootRetry = "Enabled"
+	VirtualMachineBootOptionsBootRetryDisabled VirtualMachineBootOptionsBootRetry = "Disabled"
+)
+
 // VirtualMachineBootOptions defines the boot-time behavior of a virtual machine.
 type VirtualMachineBootOptions struct {
+	// +optional
+
+	// Firmware represents the firmware for the virtual machine to use. Any update
+	// to this value after the virtual machine has already been created will be
+	// ignored. Setting will happen in the following manner:
+	//
+	// 1. If this value is specified, it will be used to set the VM firmware. If this
+	//    value is unset, then
+	// 2. the virtual machine image will be checked. If that value is set, then it will
+	//    be used to set the VM firmware. If that value is unset, then
+	// 3. the virtual machine class will be checked. If that value is set, then it will
+	//    be used to set the VM firmware. If that value is unset, then
+	// 4. the VM firmware will be set, by default, to BIOS.
+	//
+	// The available values of this field are:
+	//
+	// - BIOS
+	// - EFI
+	Firmware VirtualMachineBootOptionsFirmwareType `json:"firmware,omitempty"`
+
 	// +optional
 
 	// BootDelay is the delay before starting the boot sequence. The boot delay
@@ -508,39 +569,54 @@ type VirtualMachineBootOptions struct {
 	BootOrder []VirtualMachineBootOptionsBootableDevice `json:"bootOrder,omitempty"`
 
 	// +optional
+	// +kubebuilder:default=Disabled
 
-	// BootRetryEnabled specifies whether a virtual machine that fails to boot
-	// will try again. If set to true, a virtual machine that fails to boot will
-	// try again after BootRetryDelay time period has expired. If set to false, the
-	// virtual machine waits indefinitely for you to initiate boot retry.
-	BootRetryEnabled bool `json:"bootRetryEnabled,omitempty"`
+	// BootRetry specifies whether a virtual machine that fails to boot
+	// will try again. The available values are:
+	//
+	// - Enabled -- A virtual machine that fails to boot will try again
+	//              after BootRetryDelay time period has expired.
+	// - Disabled -- The virtual machine waits indefinitely for you to
+	//               initiate boot retry.
+	BootRetry VirtualMachineBootOptionsBootRetry `json:"bootRetry,omitempty"`
 
 	// +optional
 
 	// BootRetryDelay specifies a time interval between virtual machine boot failure
 	// and the subsequent attempt to boot again. The virtual machine uses this value
-	// only if BootRetryEnabled is true.
+	// only if BootRetry is Enabled.
 	BootRetryDelay *metav1.Duration `json:"bootRetryDelay,omitempty"`
 
 	// +optional
+	// +kubebuilder:default=Disabled
 
-	// EnterBIOSSetup specifies whether to automatically enter BIOS setup the next
+	// EnterBootSetup specifies whether to automatically enter BIOS/EFI setup the next
 	// time the virtual machine boots. The virtual machine resets this flag to false
-	// so that subsequent boots proceed normally.
-	EnterBIOSSetup bool `json:"enterBIOSSetup,omitempty"`
+	// so that subsequent boots proceed normally. The available values are:
+	//
+	// - Enabled -- The virtual machine will automatically enter BIOS/EFI setup the next
+	//              time the virtual machine boots.
+	// - Disabled -- The virtual machine will boot normaally.
+	EnterBootSetup VirtualMachineBootOptionsForceBootEntry `json:"enterBootSetup,omitempty"`
 
 	// +optional
+	// +kubebuilder:default=Disabled
 
-	// EFISecureBootEnabled specifies whether the virtual machine's firmware will
+	// EFISecureBoot specifies whether the virtual machine's firmware will
 	// perform signature checks of any EFI images loaded during startup. If set to
 	// true, signature checks will be performed and the virtual machine's firmware
 	// will refuse to start any images which do not pass those signature checks.
 	//
-	// Please note, this field will not be honored unless the value of spec.firmware
-	// is "EFI".
-	EFISecureBootEnabled bool `json:"efiSecureBootEnabled,omitempty"`
+	// Please note, this field will not be honored unless the value of
+	// spec.bootOptions.firmware is "EFI". The available values are:
+	//
+	// - Enabled -- Signature checks will be performed and the virtual machine's firmware
+	//              will refuse to start any images which do not pass those signature checks.
+	// - Disabled -- No signature checks will be performed.
+	EFISecureBoot VirtualMachineBootOptionsEFISecureBoot `json:"efiSecureBoot,omitempty"`
 
 	// +optional
+	// +kubebuilder:default=IP4
 
 	// NetworkBootProtocol is the protocol to attempt during PXE network boot or NetBoot.
 	// The available protocols are:

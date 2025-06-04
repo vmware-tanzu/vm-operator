@@ -157,6 +157,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -253,6 +254,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1689,6 +1691,29 @@ func (v validator) validateNextPowerStateChangeTimeFormat(
 					field.NewPath("metadata").Child("annotations").Key(pkgconst.ApplyPowerStateTimeAnnotation),
 					val,
 					invalidRFC3339NanoTimeFormat))
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateBootOptions(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if vm.Spec.BootOptions != nil {
+		fieldPath := field.NewPath("spec", "bootOptions")
+
+		if vm.Spec.BootOptions.BootRetryDelay != nil && vm.Spec.BootOptions.BootRetry != vmopv1.VirtualMachineBootOptionsBootRetryEnabled {
+			allErrs = append(allErrs, field.Required(fieldPath.Child("bootRetry"), "when setting bootRetryDelay"))
+		}
+
+		if vm.Spec.BootOptions.EFISecureBoot == vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled &&
+			vm.Spec.BootOptions.Firmware != vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI {
+
+			allErrs = append(allErrs, field.Forbidden(fieldPath.Child("efiSecureBoot"), "when image firmware is not EFI"))
 		}
 	}
 

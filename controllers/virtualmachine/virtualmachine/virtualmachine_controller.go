@@ -45,6 +45,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 )
@@ -298,6 +299,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
 		ctx = vmconfig.Register(ctx, diskpromo.New())
 	}
+	ctx = vmconfig.Register(ctx, bootoptions.New())
 
 	ctx = ctxop.WithContext(ctx)
 	ctx = ovfcache.JoinContext(ctx, r.Context)

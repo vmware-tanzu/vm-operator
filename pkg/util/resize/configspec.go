@@ -572,6 +572,41 @@ func compareVirtualNuma(
 	}
 }
 
+// CompareBootOptions compares the virtual machine's BootOptions.
+func CompareBootOptions(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs vimtypes.VirtualMachineConfigSpec,
+	outCS *vimtypes.VirtualMachineConfigSpec) {
+
+	if cs.BootOptions == nil {
+		return
+	}
+
+	if ci.BootOptions == nil {
+		outCS.BootOptions = &vimtypes.VirtualMachineBootOptions{
+			BootDelay:            cs.BootOptions.BootDelay,
+			BootRetryEnabled:     cs.BootOptions.BootRetryEnabled,
+			BootRetryDelay:       cs.BootOptions.BootRetryDelay,
+			EnterBIOSSetup:       cs.BootOptions.EnterBIOSSetup,
+			EfiSecureBootEnabled: cs.BootOptions.EfiSecureBootEnabled,
+			NetworkBootProtocol:  cs.BootOptions.NetworkBootProtocol,
+		}
+	} else {
+		outCS.BootOptions = &vimtypes.VirtualMachineBootOptions{}
+		cmp(ci.BootOptions.BootDelay, cs.BootOptions.BootDelay, &outCS.BootOptions.BootDelay)
+		cmpPtr(ci.BootOptions.BootRetryEnabled, cs.BootOptions.BootRetryEnabled, &outCS.BootOptions.BootRetryEnabled)
+		cmp(ci.BootOptions.BootRetryDelay, cs.BootOptions.BootRetryDelay, &outCS.BootOptions.BootRetryDelay)
+		cmpPtr(ci.BootOptions.EnterBIOSSetup, cs.BootOptions.EnterBIOSSetup, &outCS.BootOptions.EnterBIOSSetup)
+		cmpPtr(ci.BootOptions.EfiSecureBootEnabled, cs.BootOptions.EfiSecureBootEnabled, &outCS.BootOptions.EfiSecureBootEnabled)
+		cmp(ci.BootOptions.NetworkBootProtocol, cs.BootOptions.NetworkBootProtocol, &outCS.BootOptions.NetworkBootProtocol)
+	}
+
+	// At this point, if desired has all nil (ie) there was no change, nil out boot options to prevent unwanted reconfigures.
+	if reflect.DeepEqual(outCS.BootOptions, &vimtypes.VirtualMachineBootOptions{}) {
+		outCS.BootOptions = nil
+	}
+}
+
 func cmp[T comparable](a, b T, c *T) {
 	if a != b {
 		*c = b

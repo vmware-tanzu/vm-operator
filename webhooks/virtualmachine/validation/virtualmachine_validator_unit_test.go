@@ -2647,6 +2647,91 @@ func unitTestsValidateCreate() {
 		)
 	})
 
+	Context("BootOptions", func() {
+		DescribeTable("BootOptions create", doTest,
+
+			Entry("allow empty bootOptions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = nil
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting bootRetryDelay when bootRetry is unset",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow setting bootRetryDelay when bootRetry is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
+							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow setting bootRetryDelay when bootRetry is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryEnabled,
+							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting efiSecureBoot when firmware is unset",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow setting efiSecureBoot when firmware is BIOS",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeBIOS,
+							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow setting efiSecureBoot when firmware is EFI",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
+							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
 	Context("check.vmoperator.vmware.com", func() {
 
 		DescribeTable("poweron.check.vmoperator.vmware.com", doTest,
@@ -3983,6 +4068,91 @@ func unitTestsValidateUpdate() {
 						`spec.cdrom[1].image.name: Duplicate value: "vmi-0123456789"`,
 					),
 					expectAllowed: false,
+				},
+			),
+		)
+	})
+
+	Context("BootOptions", func() {
+		DescribeTable("BootOptions create", doTest,
+
+			Entry("allow empty bootOptions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = nil
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting bootRetryDelay when bootRetry is unset",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow setting bootRetryDelay when bootRetry is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
+							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow setting bootRetryDelay when bootRetry is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryEnabled,
+							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting efiSecureBoot when firmware is unset",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow setting efiSecureBoot when firmware is BIOS",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeBIOS,
+							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow setting efiSecureBoot when firmware is EFI",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
+							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+						}
+					},
+					expectAllowed: true,
 				},
 			),
 		)

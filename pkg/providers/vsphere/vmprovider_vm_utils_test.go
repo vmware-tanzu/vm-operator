@@ -6,6 +6,7 @@ package vsphere_test
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1355,6 +1356,66 @@ func vmUtilTests() {
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-raw-vapp-config-config-map"))
 				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("ConfigMap")))
+			})
+		})
+	})
+
+	Context("PatchSnapshotStatus", func() {
+		var (
+			vmSnapshot *vmopv1.VirtualMachineSnapshot
+			snapMoRef  *vimtypes.ManagedObjectReference
+		)
+
+		BeforeEach(func() {
+			timeout, _ := time.ParseDuration("1h35m")
+			vmSnapshot = &vmopv1.VirtualMachineSnapshot{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "vmoperator.vmware.com/v1alpha4",
+					Kind:       "VirtualMachineSnapshot",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "snap-1",
+					Namespace: vmCtx.VM.Namespace,
+				},
+				Spec: vmopv1.VirtualMachineSnapshotSpec{
+					VMRef: &common.LocalObjectRef{
+						APIVersion: vmCtx.VM.APIVersion,
+						Kind:       vmCtx.VM.Kind,
+						Name:       vmCtx.VM.Name,
+					},
+					Quiesce: &vmopv1.QuiesceSpec{
+						Timeout: &metav1.Duration{Duration: timeout},
+					},
+				},
+			}
+		})
+
+		When("snapshot patched with vm info and ready condition", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Status = vmopv1.VirtualMachineStatus{
+					UniqueID:   "dummyID",
+					PowerState: vmopv1.VirtualMachinePowerStateOn,
+				}
+
+				snapMoRef = &vimtypes.ManagedObjectReference{
+					Value: "snap-103",
+				}
+
+				initObjects = append(initObjects, vmSnapshot)
+			})
+
+			It("succeeds", func() {
+				err := vsphere.PatchSnapshotStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef)
+				Expect(err).ToNot(HaveOccurred())
+
+				snapObj := &vmopv1.VirtualMachineSnapshot{}
+				err = k8sClient.Get(vmCtx, client.ObjectKey{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, snapObj)
+				Expect(err).To(BeNil())
+				Expect(snapObj.Status.UniqueID).To(Equal(snapMoRef.Value))
+				Expect(snapObj.Status.Quiesced).To(BeTrue())
+				Expect(snapObj.Status.Conditions).To(HaveLen(1))
+				Expect(snapObj.Status.Conditions[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReadyCondition))
+				Expect(snapObj.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
 			})
 		})
 	})

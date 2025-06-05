@@ -74,38 +74,38 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
-	vmSnapShot := &vmopv1.VirtualMachineSnapshot{}
-	if err := r.Get(ctx, req.NamespacedName, vmSnapShot); err != nil {
+	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
+	if err := r.Get(ctx, req.NamespacedName, vmSnapshot); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	vmSnapShotCtx := &pkgctx.VirtualMachineSnapshotContext{
+	vmSnapshotCtx := &pkgctx.VirtualMachineSnapshotContext{
 		Context:                ctx,
 		Logger:                 ctrl.Log.WithName("VirtualMachineSnapShot").WithValues("name", req.Name),
-		VirtualMachineSnapshot: vmSnapShot,
+		VirtualMachineSnapshot: vmSnapshot,
 	}
 
-	patchHelper, err := patch.NewHelper(vmSnapShot, r.Client)
+	patchHelper, err := patch.NewHelper(vmSnapshot, r.Client)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", vmSnapShotCtx, err)
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", vmSnapshotCtx, err)
 	}
 	defer func() {
-		vmSnapShotCtx.Logger.Info("Patching VirtualMachineSnapShot", "snap", vmSnapShot)
-		if err := patchHelper.Patch(ctx, vmSnapShot); err != nil {
+		vmSnapshotCtx.Logger.Info("Patching VirtualMachineSnapShot", "snap", vmSnapshot)
+		if err := patchHelper.Patch(ctx, vmSnapshot); err != nil {
 			if reterr == nil {
 				reterr = err
 			}
-			vmSnapShotCtx.Logger.Error(err, "patch failed")
+			vmSnapshotCtx.Logger.Error(err, "patch failed")
 		}
 	}()
 
-	if !vmSnapShot.DeletionTimestamp.IsZero() {
-		// Noop.
+	if !vmSnapshot.DeletionTimestamp.IsZero() {
+		// TODO: Handle snapshot deletion here.
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.ReconcileNormal(vmSnapShotCtx); err != nil {
-		vmSnapShotCtx.Logger.Error(err, "Failed to reconcile VirtualMachineSnapShot")
+	if err := r.ReconcileNormal(vmSnapshotCtx); err != nil {
+		vmSnapshotCtx.Logger.Error(err, "Failed to reconcile VirtualMachineSnapShot")
 		return ctrl.Result{}, err
 	}
 
@@ -114,43 +114,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) error {
 	ctx.Logger.Info("Reconciling VirtualMachineSnapshot")
-	vmSnapShot := ctx.VirtualMachineSnapshot
+	vmSnapshot := ctx.VirtualMachineSnapshot
 
 	// return early if snapshot is ready; nothing to do
 	if conditions.IsTrue(ctx.VirtualMachineSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
 		return nil
 	}
 
-	ctx.Logger.Info("Fetching VirtualMachine from snapshot object", "vmSnapshot", vmSnapShot.Name)
+	ctx.Logger.Info("Fetching VirtualMachine from snapshot object", "vmSnapshot", vmSnapshot.Name)
 	vm := &vmopv1.VirtualMachine{}
-	objKey := client.ObjectKey{Name: vmSnapShot.Spec.VMRef.Name, Namespace: vmSnapShot.Namespace}
-	err := r.Get(ctx, objKey, vm)
-	if err != nil {
+	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
+	if err := r.Get(ctx, objKey, vm); err != nil {
 		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
 		return err
 	}
-	ctx.VM = vm
 
+	ctx.VM = vm
 	if vm.Status.UniqueID == "" {
-		err = errors.New("VM hasn't been created and has no uniqueID")
-		return err
+		return errors.New("VM hasn't been created and has no uniqueID")
 	}
 
 	// vm object already set with snapshot reference
 	if vm.Spec.CurrentSnapshot != nil && vm.Spec.CurrentSnapshot.Name == ctx.VirtualMachineSnapshot.Name {
+		ctx.Logger.Info("VirtualMachine current snapshot already up to date", "spec.currentSnapshot", vm.Spec.CurrentSnapshot.Name)
 		return nil
 	}
 
-	// get VM again to ensure it's up-to-date.
-	err = r.Get(ctx, objKey, vm)
-	if err != nil {
-		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
-		return err
-	}
-
 	objRef := &vmopv1common.LocalObjectRef{
-		APIVersion: vmSnapShot.APIVersion,
-		Kind:       vmSnapShot.Kind,
+		APIVersion: vmSnapshot.APIVersion,
+		Kind:       vmSnapshot.Kind,
 		Name:       ctx.VirtualMachineSnapshot.Name,
 	}
 
@@ -163,5 +155,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 			ctx.VirtualMachineSnapshot.Name, err)
 	}
 
+	ctx.Logger.Info("Successfully patched VirtualMachine's current snapshot reference", "vm.Name", vm.Name, "spec.currentSnapshot", vm.Spec.CurrentSnapshot.Name)
 	return nil
 }

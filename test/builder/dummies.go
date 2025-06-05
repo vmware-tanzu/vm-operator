@@ -547,6 +547,25 @@ func DummyVirtualMachineWebConsoleRequest(namespace, wcrName, vmName, pubKey str
 	}
 }
 
+func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.VirtualMachineSnapshot {
+	return &vmopv1.VirtualMachineSnapshot{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "virtualmachinesnapshots",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vmopv1.VirtualMachineSnapshotSpec{
+			VMRef: &vmopv1common.LocalObjectRef{
+				APIVersion: "vmoperator.vmware.com/v1alpha4",
+				Kind:       "VirtualMachine",
+				Name:       vmName,
+			},
+		},
+	}
+}
+
 func DummyImageAndItemObjectsForCdromBacking(
 	name, ns, kind, storageURI, libItemUUID string,
 	imgReady, imgCached bool, imgSize resource.Quantity, imgHasProviderRef, itemObjExists bool,

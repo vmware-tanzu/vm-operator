@@ -224,6 +224,7 @@ rules:
   - virtualmachines
   - virtualmachineservices
   - virtualmachinesetresourcepolicies
+  - virtualmachinesnapshots
   - virtualmachinewebconsolerequests
   - webconsolerequests
   verbs:
@@ -256,6 +257,7 @@ rules:
   - virtualmachines/status
   - virtualmachineservices/status
   - virtualmachinesetresourcepolicies/status
+  - virtualmachinesnapshots/status
   - virtualmachinewebconsolerequests/status
   - webconsolerequests/status
   verbs:

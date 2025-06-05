@@ -3604,23 +3604,49 @@ func vmTests() {
 							}
 						})
 
-						It("should power on the VM with expected CD-ROM device", func() {
-							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						assertPowerOnVMWithCDROM := func() {
+							ExpectWithOffset(1, createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							ExpectWithOffset(1, vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
-							Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+							ExpectWithOffset(1, vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
 
 							cdromDeviceList := object.VirtualDeviceList(moVM.Config.Hardware.Device).SelectByType(&vimtypes.VirtualCdrom{})
-							Expect(cdromDeviceList).To(HaveLen(1))
+							ExpectWithOffset(1, cdromDeviceList).To(HaveLen(1))
 							cdrom := cdromDeviceList[0].(*vimtypes.VirtualCdrom)
-							Expect(cdrom.Connectable.StartConnected).To(BeTrue())
-							Expect(cdrom.Connectable.Connected).To(BeTrue())
-							Expect(cdrom.Connectable.AllowGuestControl).To(BeTrue())
-							Expect(cdrom.ControllerKey).ToNot(BeZero())
-							Expect(cdrom.UnitNumber).ToNot(BeNil())
-							Expect(cdrom.Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualCdromIsoBackingInfo{}))
+							ExpectWithOffset(1, cdrom.Connectable.StartConnected).To(BeTrue())
+							ExpectWithOffset(1, cdrom.Connectable.Connected).To(BeTrue())
+							ExpectWithOffset(1, cdrom.Connectable.AllowGuestControl).To(BeTrue())
+							ExpectWithOffset(1, cdrom.ControllerKey).ToNot(BeZero())
+							ExpectWithOffset(1, cdrom.UnitNumber).ToNot(BeNil())
+							ExpectWithOffset(1, cdrom.Backing).To(BeAssignableToTypeOf(&vimtypes.VirtualCdromIsoBackingInfo{}))
 							backing := cdrom.Backing.(*vimtypes.VirtualCdromIsoBackingInfo)
-							Expect(backing.FileName).To(Equal(vmiFileName))
+							ExpectWithOffset(1, backing.FileName).To(Equal(vmiFileName))
+						}
+
+						assertNotPowerOnVMWithCDROM := func() {
+							err := createOrUpdateVM(ctx, vmProvider, vm)
+							ExpectWithOffset(1, err).To(HaveOccurred())
+							ExpectWithOffset(1, err.Error()).To(ContainSubstring("no CD-ROM is found for image ref"))
+						}
+
+						It("should power on the VM with expected CD-ROM device", assertPowerOnVMWithCDROM)
+
+						When("FSS Resize is enabled", func() {
+							JustBeforeEach(func() {
+								pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+									config.Features.VMResize = true
+								})
+							})
+							It("should not power on the VM with expected CD-ROM device", assertNotPowerOnVMWithCDROM)
+						})
+
+						When("FSS Resize CPU & Memory is enabled", func() {
+							JustBeforeEach(func() {
+								pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+									config.Features.VMResizeCPUMemory = true
+								})
+							})
+							It("should power on the VM with expected CD-ROM device", assertPowerOnVMWithCDROM)
 						})
 
 						When("the boot disk size is changed for VM with CD-ROM", func() {

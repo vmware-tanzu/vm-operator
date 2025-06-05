@@ -115,6 +115,18 @@ type VirtualMachineSnapshot struct {
 	Status VirtualMachineSnapshotStatus `json:"status,omitempty"`
 }
 
+func (vmSnapshot *VirtualMachineSnapshot) NamespacedName() string {
+	return vmSnapshot.Namespace + "/" + vmSnapshot.Name
+}
+
+func (vmSnapshot *VirtualMachineSnapshot) GetConditions() []metav1.Condition {
+	return vmSnapshot.Status.Conditions
+}
+
+func (vmSnapshot *VirtualMachineSnapshot) SetConditions(conditions []metav1.Condition) {
+	vmSnapshot.Status.Conditions = conditions
+}
+
 // +kubebuilder:object:root=true
 
 // VirtualMachineSnapshotList contains a list of VirtualMachineSnapshot.

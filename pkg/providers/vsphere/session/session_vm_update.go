@@ -217,15 +217,30 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 	}
 
 	var (
-		updateArgs     *VMUpdateArgs
-		resizeArgs     *VMResizeArgs
-		resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
-		bootstrapData  vmlifecycle.BootstrapData
+		updateArgs        *VMUpdateArgs
+		resizeArgs        *VMResizeArgs
+		resourcePolicy    *vmopv1.VirtualMachineSetResourcePolicy
+		bootstrapData     vmlifecycle.BootstrapData
+		useResizeArgs     bool
+		currentPowerState = vmCtx.MoVM.Runtime.PowerState
+		isOff             = currentPowerState == vimtypes.VirtualMachinePowerStatePoweredOff
+		isOffToOn         = isOff && vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn
+		features          = pkgcfg.FromContext(vmCtx).Features
 	)
 
-	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize ||
-		f.VMResizeCPUMemory {
+	vmCtx.Logger.V(4).Info("Choosing between resize and update",
+		"currentPowerState", currentPowerState,
+		"isOff", isOff,
+		"isOffToOn", isOffToOn,
+		"features.vmResize", features.VMResize,
+		"features.vmResizeCPUMemory", features.VMResizeCPUMemory)
 
+	if isOff && !isOffToOn {
+		useResizeArgs = features.VMResize || features.VMResizeCPUMemory
+	}
+
+	if useResizeArgs {
+		vmCtx.Logger.V(4).Info("Using resize")
 		var err error
 		resizeArgs, err = getResizeArgsFn()
 		if err != nil {
@@ -235,7 +250,7 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 		resourcePolicy = resizeArgs.ResourcePolicy
 
 	} else {
-
+		vmCtx.Logger.V(4).Info("Using update")
 		var err error
 		updateArgs, err = getUpdateArgsFn()
 		if err != nil {
@@ -280,8 +295,7 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 
 	case vimtypes.VirtualMachinePowerStatePoweredOff:
 
-		if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize ||
-			f.VMResizeCPUMemory {
+		if useResizeArgs {
 
 			resizeArgs.NetworkResults = networkResults
 			if err := s.resizeVMWhenPoweredStateOff(

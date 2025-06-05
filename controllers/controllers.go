@@ -20,6 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinereplicaset"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -71,6 +72,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		if err := virtualmachineimagecache.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VMI controllers: %w", err)
 		}
+	}
+
+	if err := virtualmachinesnapshot.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to initialize VirtualMachineSnapshot controller: %w", err)
 	}
 
 	return nil

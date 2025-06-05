@@ -51,6 +51,8 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
+require k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect
+
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect

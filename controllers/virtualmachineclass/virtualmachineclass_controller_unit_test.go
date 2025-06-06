@@ -49,6 +49,7 @@ func unitTestsReconcile() {
 				Name: "dummy-vmclass",
 			},
 		}
+		setConfigSpec(vmClass)
 	})
 
 	JustBeforeEach(func() {

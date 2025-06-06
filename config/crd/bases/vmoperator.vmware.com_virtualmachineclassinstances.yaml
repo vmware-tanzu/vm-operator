@@ -23,6 +23,9 @@ spec:
     - jsonPath: .spec.hardware.memory
       name: Memory
       type: string
+    - jsonPath: .metadata.labels.vmoperator\.vmware\.com/vmclass-state
+      name: State
+      type: string
     name: v1alpha4
     schema:
       openAPIV3Schema:

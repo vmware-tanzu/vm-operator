@@ -122,4 +122,23 @@ const (
 	// a power state change to a VirtualMachine or a VirtualMachineGroup object
 	// scheduled from its parent group.
 	ApplyPowerStateTimeAnnotation = "vmoperator.vmware.com.protected/apply-power-state-time"
+
+	// VirtualMachineClassHashAnnotationKey is the annotation key for the VM Class hash
+	// used to generate VirtualMachineClassInstances.
+	VirtualMachineClassHashAnnotationKey = "vmoperator.vmware.com/vmclass-hash"
+
+	// VirtualMachineClassNameLabelKey is the VM Class name of a Class Instance.
+	VirtualMachineClassNameLabelKey = "vmoperator.vmware.com/vmclass-name"
+
+	// VirtualMachineClassStateLabelKey is the VM Class Instance State,
+	// where value is "active" or "inactive".
+	VirtualMachineClassStateLabelKey = "vmoperator.vmware.com/vmclass-state"
+
+	// VirtualMachineClassStateActive is a VirtualMachineClassStateLabelKey value
+	// indicating the Class Instance corresponds to the current VM Class configuration.
+	VirtualMachineClassStateActive = "active"
+
+	// VirtualMachineClassStateInactive is a VirtualMachineClassStateLabelKey value
+	// indicating the Class Instance corresponds to a previous VM Class configuration.
+	VirtualMachineClassStateInactive = "inactive"
 )

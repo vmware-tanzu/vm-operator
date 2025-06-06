@@ -24,6 +24,7 @@ type VirtualMachineClassInstanceStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".spec.hardware.cpus"
 // +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".spec.hardware.memory"
+// +kubebuilder:printcolumn:name="State",type="string",JSONPath=".metadata.labels.vmoperator\\.vmware\\.com/vmclass-state"
 
 // VirtualMachineClassInstance is the schema for the virtualmachineclassinstances API and
 // represents the desired state and observed status of a virtualmachineclassinstance

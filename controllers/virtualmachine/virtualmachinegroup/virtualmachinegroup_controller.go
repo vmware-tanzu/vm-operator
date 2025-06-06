@@ -59,7 +59,8 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		For(controlledType).
 		Watches(&vmopv1.VirtualMachineGroup{},
 			handler.EnqueueRequestsFromMapFunc(vmGroupToParentGroupMapperFn())).
-		// TODO(sai): Add a mapper function to enqueue requests for VM.Spec.GroupName changes.
+		Watches(&vmopv1.VirtualMachine{},
+			handler.EnqueueRequestsFromMapFunc(vmToParentGroupMapperFn())).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
 		}).
@@ -83,6 +84,31 @@ func vmGroupToParentGroupMapperFn() handler.MapFunc {
 				NamespacedName: client.ObjectKey{
 					Namespace: vmGroup.Namespace,
 					Name:      vmGroup.Spec.GroupName,
+				},
+			})
+		}
+
+		return requests
+	}
+}
+
+// vmToParentGroupMapperFn returns a mapper function that enqueues reconcile
+// requests for VirtualMachineGroup when a VirtualMachine's Spec.GroupName
+// pointing to it changes.
+func vmToParentGroupMapperFn() handler.MapFunc {
+	return func(_ context.Context, o client.Object) []reconcile.Request {
+		vm, ok := o.(*vmopv1.VirtualMachine)
+		if !ok {
+			panic(fmt.Sprintf("Expected a VirtualMachine, but got a %T", o))
+		}
+
+		var requests []reconcile.Request
+
+		if vm.Spec.GroupName != "" {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      vm.Spec.GroupName,
 				},
 			})
 		}

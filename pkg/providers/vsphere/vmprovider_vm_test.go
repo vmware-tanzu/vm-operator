@@ -1281,6 +1281,71 @@ func vmTests() {
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
+			Context("VirtualMachineGroup", func() {
+				var vmg vmopv1.VirtualMachineGroup
+				JustBeforeEach(func() {
+					vmg = vmopv1.VirtualMachineGroup{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "vmg",
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, &vmg)).To(Succeed())
+				})
+				When("spec.groupName is set to a non-existent group", func() {
+					JustBeforeEach(func() {
+						vm.Spec.GroupName = "vmg-invalid"
+					})
+					Specify("vm should have expected condition", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal("NotFound"))
+					})
+				})
+				When("spec.groupName is set to a group to which the VM does not belong", func() {
+					JustBeforeEach(func() {
+						vm.Spec.GroupName = vmg.Name
+					})
+					Specify("vm should have expected condition", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal("NotMember"))
+					})
+				})
+
+				When("spec.groupName is set to a group to which the VM does belong", func() {
+					JustBeforeEach(func() {
+						vm.Spec.GroupName = vmg.Name
+						vmg.Spec.Members = []vmopv1.GroupMember{
+							{
+								Name: vm.Name,
+								Kind: "VirtualMachine",
+							},
+						}
+						Expect(ctx.Client.Update(ctx, &vmg)).To(Succeed())
+					})
+					Specify("vm should have expected condition", func() {
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+					})
+
+					When("spec.groupName no longer points to that group", func() {
+						Specify("vm should no longer have expected condition", func() {
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+							vm.Spec.GroupName = ""
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+							c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+							Expect(c).To(BeNil())
+						})
+					})
+				})
+			})
+
 			It("Basic VM", func() {
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())

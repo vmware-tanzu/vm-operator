@@ -3104,6 +3104,11 @@ Additionally, the VirtualMachineSpec will be updated to match
 the power state from the snapshot (i.e., powered on). This can
 be overridden by specifying the PowerState to PoweredOff in the
 VirtualMachineSpec. |
+| `groupName` _string_ | GroupName indicates the name of the VirtualMachineGroup to which this
+VM belongs.
+
+VMs that belong to a group do not drive their own placement, rather that
+is handled by the group. |
 
 ### VirtualMachineStatus
 

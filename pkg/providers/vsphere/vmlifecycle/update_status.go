@@ -81,6 +81,8 @@ func ReconcileStatus(
 		summary     = vmCtx.MoVM.Summary
 	)
 
+	reconcileGroup(vmCtx)
+
 	if config := vmCtx.MoVM.Config; config != nil {
 		extraConfig = object.OptionValueList(config.ExtraConfig).StringMap()
 	}
@@ -142,6 +144,12 @@ func ReconcileStatus(
 	}
 
 	return apierrorsutil.NewAggregate(errs)
+}
+
+func reconcileGroup(vmCtx pkgctx.VirtualMachineContext) {
+	if vmCtx.VM.Spec.GroupName == "" {
+		conditions.Delete(vmCtx.VM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+	}
 }
 
 func getRuntimeHostHostname(

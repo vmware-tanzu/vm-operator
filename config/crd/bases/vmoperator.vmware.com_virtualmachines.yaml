@@ -7641,6 +7641,14 @@ spec:
                 - kind
                 - name
                 type: object
+              groupName:
+                description: |-
+                  GroupName indicates the name of the VirtualMachineGroup to which this
+                  VM belongs.
+
+                  VMs that belong to a group do not drive their own placement, rather that
+                  is handled by the group.
+                type: string
               guestID:
                 description: |-
                   GuestID describes the desired guest operating system identifier for a VM.

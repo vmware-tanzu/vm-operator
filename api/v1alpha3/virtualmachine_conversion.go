@@ -113,6 +113,10 @@ func Convert_v1alpha3_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	return nil
 }
 
+func restore_v1alpha4_VirtualMachineGroupName(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.GroupName = src.Spec.GroupName
+}
+
 func restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
 }
@@ -144,6 +148,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha4_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha4_VirtualMachineBootOptions(dst, restored)
 	restore_v1alpha4_VirtualMachineAffinitySpec(dst, restored)
+	restore_v1alpha4_VirtualMachineGroupName(dst, restored)
 
 	// END RESTORE
 

@@ -932,6 +932,15 @@ type VirtualMachineSpec struct {
 	// be overridden by specifying the PowerState to PoweredOff in the
 	// VirtualMachineSpec.
 	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
+
+	// +optional
+
+	// GroupName indicates the name of the VirtualMachineGroup to which this
+	// VM belongs.
+	//
+	// VMs that belong to a group do not drive their own placement, rather that
+	// is handled by the group.
+	GroupName string `json:"groupName,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options

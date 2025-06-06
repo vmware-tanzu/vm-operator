@@ -20,6 +20,7 @@ func vcSimTests() {
 	Describe("Backup", Label(testlabels.VCSim), backupTests)
 	Describe("GuestInfo", Label(testlabels.VCSim), guestInfoTests)
 	Describe("CD-ROM", Label(testlabels.VCSim), cdromTests)
+	Describe("Snapshot", Label(testlabels.VCSim), snapShotTests)
 }
 
 var suite = builder.NewTestSuite()

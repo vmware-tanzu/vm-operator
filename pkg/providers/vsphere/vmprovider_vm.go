@@ -11,6 +11,7 @@ import (
 	"maps"
 	"math/rand"
 	"path"
+	"reflect"
 	"strings"
 	"sync"
 	"text/template"
@@ -823,6 +824,14 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		reconcileErr = getReconcileErr("power state", reconcileErr, err)
 	}
 
+	// create snapshots of VM if necessary
+	if err := vs.reconcileSnapshot(vmCtx, vcVM); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return err
+		}
+		return fmt.Errorf("failed to reconcile snapshots: %w", err)
+	}
+
 	return reconcileErr
 }
 
@@ -1069,6 +1078,47 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 
 		return err
 	}
+
+	return nil
+}
+
+func (vs *vSphereVMProvider) reconcileSnapshot(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine) error {
+	// no need for snapshot or current snapshot is up-to-date
+	if vmCtx.VM.Spec.CurrentSnapshot == nil || reflect.DeepEqual(vmCtx.VM.Spec.CurrentSnapshot, vmCtx.VM.Status.CurrentSnapshot) {
+		return nil
+	}
+
+	// get VirtualMachineSnapshot object
+	vmSnapshot, err := getVirtualMachineSnapShotObject(vmCtx, vs.k8sClient)
+	if err != nil {
+		return err
+	}
+
+	snapArgs := virtualmachine.SnapshotArgs{
+		VMCtx:      vmCtx,
+		VcVM:       vcVM,
+		VMSnapshot: vmSnapshot,
+	}
+
+	vmCtx.Logger.Info("Taking a snapshot of VM Service managed VM")
+	snapMoRef, err := virtualmachine.SnapshotVirtualMachine(snapArgs)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to snapshot virtual machine")
+		return err
+	}
+
+	if err = PatchSnapshotStatus(snapArgs.VMCtx, vs.k8sClient,
+		snapArgs.VMSnapshot.Name, snapArgs.VMSnapshot.Namespace, snapMoRef); err != nil {
+		return err
+	}
+
+	/* TODO:
+	 * - Signal CSI to sync their volume snapshot quota
+	 * - Update our storage quota usage
+	 * - Update the VM storage quota usage
+	 */
 
 	return nil
 }

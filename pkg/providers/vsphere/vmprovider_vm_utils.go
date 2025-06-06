@@ -492,6 +492,25 @@ func GetVMSetResourcePolicy(
 	return resourcePolicy, nil
 }
 
+func getVirtualMachineSnapShotObject(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineSnapshot, error) {
+
+	var (
+		obj vmopv1.VirtualMachineSnapshot
+		key = ctrlclient.ObjectKey{
+			Name:      vmCtx.VM.Spec.CurrentSnapshot.Name,
+			Namespace: vmCtx.VM.Namespace,
+		}
+	)
+
+	if err := k8sClient.Get(vmCtx, key, &obj); err != nil {
+		return vmopv1.VirtualMachineSnapshot{}, err
+	}
+
+	return obj, nil
+}
+
 // AddInstanceStorageVolumes checks if VM class is configured with instance storage volumes and appends the
 // volumes to the VM's Spec if not already done. Return true if the VM had or now has instance storage volumes.
 func AddInstanceStorageVolumes(
@@ -739,4 +758,31 @@ func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 	}
 	delete(vmCtx.VM.Labels, vmopv1.PausedVMLabelKey)
 	return false
+}
+
+func PatchSnapshotStatus(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client,
+	objName string, objNs string, snapMoRef *vimtypes.ManagedObjectReference) error {
+	snapShot := &vmopv1.VirtualMachineSnapshot{}
+	objKey := ctrlclient.ObjectKey{Name: objName, Namespace: objNs}
+	// get snapshot again to ensure it's up-to-date.
+	err := k8sClient.Get(vmCtx, objKey, snapShot)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to get snapshot resource", "snapshot", objKey)
+		return err
+	}
+
+	snapPatch := ctrlclient.MergeFrom(snapShot.DeepCopy())
+	snapShot.Status = vmopv1.VirtualMachineSnapshotStatus{
+		UniqueID: snapMoRef.Reference().Value,
+		Quiesced: snapShot.Spec.Quiesce != nil,
+		// TODO: populate children and powerState
+	}
+	conditions.MarkTrue(snapShot, vmopv1.VirtualMachineSnapshotReadyCondition)
+
+	if err := k8sClient.Status().Patch(vmCtx, snapShot, snapPatch); err != nil {
+		return fmt.Errorf(
+			"failed to patch snapshot status resource %s: err: %s", objKey, err.Error())
+	}
+
+	return nil
 }

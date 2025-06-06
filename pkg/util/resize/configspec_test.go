@@ -6,10 +6,9 @@ package resize_test
 
 import (
 	"context"
-	"reflect"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"reflect"
 
 	"github.com/google/go-cmp/cmp"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -877,6 +876,103 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 			ConfigInfo{NumaInfo: &vimtypes.VirtualMachineVirtualNumaInfo{AutoCoresPerNumaNode: falsePtr, CoresPerNumaNode: ptr.To(int32(1))}},
 			ConfigSpec{VirtualNuma: &vimtypes.VirtualMachineVirtualNuma{CoresPerNumaNode: ptr.To(int32(1))}},
 			ConfigSpec{}),
+	)
+})
+
+var _ = Describe("CompareBootOptions", func() {
+	truePtr, falsePtr := vimtypes.NewBool(true), vimtypes.NewBool(false)
+
+	DescribeTable("ConfigInfo",
+		func(
+			ci vimtypes.VirtualMachineConfigInfo,
+			cs, expectedCS vimtypes.VirtualMachineConfigSpec) {
+
+			outCS := vimtypes.VirtualMachineConfigSpec{}
+
+			resize.CompareBootOptions(ci, cs, &outCS)
+			Expect(reflect.DeepEqual(outCS, expectedCS)).To(BeTrue(), cmp.Diff(expectedCS, outCS))
+		},
+
+		Entry("BootOptions needs updating -- ConfigInfo bootOptions is empty",
+			ConfigInfo{},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+		),
+
+		Entry("BootOptions needs updating -- ConfigInfo bootOptions and ConfigSpec bootOptions differ",
+			ConfigInfo{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       falsePtr,
+					EfiSecureBootEnabled: falsePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(0),
+					BootRetryEnabled:     nil,
+					BootRetryDelay:       int64(0),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  "",
+				},
+			},
+		),
+
+		Entry("BootOptions does not need updating",
+			ConfigInfo{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       falsePtr,
+					EfiSecureBootEnabled: falsePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       falsePtr,
+					EfiSecureBootEnabled: falsePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{},
+		),
 	)
 })
 

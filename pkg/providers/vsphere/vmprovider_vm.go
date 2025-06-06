@@ -71,10 +71,10 @@ var (
 	ErrBootstrapReconfigure   = vmlifecycle.ErrBootstrapReconfigure
 	ErrBootstrapCustomize     = vmlifecycle.ErrBootstrapCustomize
 	ErrReconfigure            = session.ErrReconfigure
-	ErrRestart                = pkgerr.NoRequeueError{Message: "restarted vm"}
+	ErrRestart                = pkgerr.NoRequeueNoErr("restarted vm")
 	ErrUpgradeHardwareVersion = session.ErrUpgradeHardwareVersion
-	ErrIsPaused               = pkgerr.NoRequeueError{Message: "is paused"}
-	ErrHasTask                = pkgerr.NoRequeueError{Message: "has outstanding task"}
+	ErrIsPaused               = pkgerr.NoRequeueNoErr("is paused")
+	ErrHasTask                = pkgerr.NoRequeueNoErr("has outstanding task")
 	ErrPromoteDisks           = vmconfdiskpromo.ErrPromoteDisks
 )
 
@@ -131,7 +131,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineAsync(
 	return vs.createOrUpdateVirtualMachine(ctx, vm, true)
 }
 
-var ErrCreate = pkgerr.NoRequeueError{Message: "created vm"}
+var ErrCreate = pkgerr.NoRequeueNoErr("created vm")
 
 func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	ctx context.Context,
@@ -740,6 +740,21 @@ var VMUpdatePropertiesSelector = []string{
 	"summary",
 }
 
+func getReconcileErr(msg string, reconcileErr, err error) error {
+	err = fmt.Errorf("failed to reconcile %s: %w", msg, err)
+	if reconcileErr == nil {
+		return err
+	}
+	return fmt.Errorf("%w, %w", err, reconcileErr)
+}
+
+func errOrReconcileErr(reconcileErr, err error) error {
+	if reconcileErr != nil {
+		return reconcileErr
+	}
+	return err
+}
+
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -747,7 +762,11 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 	vmCtx.Logger.V(4).Info("Updating VirtualMachine")
 
-	// Fetch the VM's properties.
+	var reconcileErr error
+
+	//
+	// Fetch properties
+	//
 	if err := vcVM.Properties(
 		vmCtx,
 		vcVM.Reference(),
@@ -757,43 +776,51 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		return fmt.Errorf("failed to fetch vm properties: %w", err)
 	}
 
-	var reconcileErr error
-
-	getReconcileErr := func(msg string, err error) error {
-		if reconcileErr == nil {
-			return fmt.Errorf("failed to reconcile %s: %w", msg, err)
-		}
-		return fmt.Errorf("%w, failed to reconcile %s: %w",
-			reconcileErr, msg, err)
-	}
-
-	// Backup the VM if necessary. VKS nodes are excluded from backup.
+	//
+	// Reconcile backup state (VKS nodes excluded)
+	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
-			return err
+			return errOrReconcileErr(reconcileErr, err)
 		}
-		reconcileErr = getReconcileErr("backup state", err)
+		reconcileErr = getReconcileErr("backup state", reconcileErr, err)
 	}
 
+	//
+	// Reconcile status
+	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
-			return err
+			return errOrReconcileErr(reconcileErr, err)
 		}
-		reconcileErr = getReconcileErr("status", err)
+		reconcileErr = getReconcileErr("status", reconcileErr, err)
 	}
 
+	//
+	// Reconcile config
+	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
-			return err
+			return errOrReconcileErr(reconcileErr, err)
 		}
-		return fmt.Errorf("failed to reconcile config: %w", err)
+		reconcileErr = getReconcileErr("config", reconcileErr, err)
+
+		// Only return the error if the VM is *not* going from powered on to
+		// off. This allows a VM to be powered off even if there is a reconfig
+		// error.
+		if !vmCtx.IsOnToOff() {
+			return reconcileErr
+		}
 	}
 
+	//
+	// Reconcile power state
+	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
-			return err
+			return errOrReconcileErr(reconcileErr, err)
 		}
-		return fmt.Errorf("failed to reconcile power state: %w", err)
+		reconcileErr = getReconcileErr("power state", reconcileErr, err)
 	}
 
 	return reconcileErr

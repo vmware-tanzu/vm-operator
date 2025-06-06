@@ -42,8 +42,8 @@ import (
 )
 
 var (
-	ErrReconfigure            = pkgerr.NoRequeueError{Message: "reconfigured vm"}
-	ErrUpgradeHardwareVersion = pkgerr.NoRequeueError{Message: "upgraded hardware version"}
+	ErrReconfigure            = pkgerr.NoRequeueNoErr("reconfigured vm")
+	ErrUpgradeHardwareVersion = pkgerr.NoRequeueNoErr("upgraded hardware version")
 )
 
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
@@ -747,7 +747,7 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 
 	vmCtx.Logger.V(4).Info("Reconciling volumes")
 
-	if !vmCtx.IsPoweringOn() {
+	if !vmCtx.IsOffToOn() {
 		vmCtx.Logger.V(4).Info(
 			"Skipping volume reconciliation since VM is not powering on")
 		return nil
@@ -1008,7 +1008,7 @@ func (s *Session) reconcileClusterModule(
 
 	vmCtx.Logger.V(4).Info("Reconciling cluster module")
 
-	if !vmCtx.IsPoweringOn() {
+	if !vmCtx.IsOffToOn() {
 		// TODO(akutz) Only attach to cluster modules if the VM is transitioning
 		//             from not powered on to powered on. This is because
 		//             attaching to a cluster module is quite expensive since it

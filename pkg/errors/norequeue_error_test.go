@@ -5,15 +5,13 @@
 package errors_test
 
 import (
-	"time"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 )
 
-var _ = Describe("RequeueError", func() {
+var _ = Describe("NoRequeueError", func() {
 
 	DescribeTable("Error",
 		func(e error, expErr string) {
@@ -21,15 +19,15 @@ var _ = Describe("RequeueError", func() {
 		},
 
 		Entry(
-			"after is 0",
-			pkgerr.RequeueError{},
-			"requeue immediately",
+			"no message",
+			pkgerr.NoRequeueError{},
+			"no requeue",
 		),
 
 		Entry(
-			"after is 1s",
-			pkgerr.RequeueError{After: time.Second * 1},
-			"requeue after 1s",
+			"with message",
+			pkgerr.NoRequeueError{Message: "hi"},
+			"hi",
 		),
 	)
 })

@@ -371,11 +371,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	if err := r.ReconcileNormal(vmCtx); err != nil && !ignoredCreateErr(err) {
-		if result, err := pkgerr.ResultFromError(err); err == nil {
-			return result, nil
-		}
-		vmCtx.Logger.Error(err, "Failed to reconcile VirtualMachine")
-		return ctrl.Result{}, err
+		return pkgerr.ResultFromError(err)
 	}
 
 	// Requeue after N amount of time according to the state of the VM.
@@ -508,6 +504,11 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	ctx.Logger.Info("Reconciling VirtualMachine")
 
 	defer func(beforeVMStatus *vmopv1.VirtualMachineStatus) {
+		if pkgerr.IsNoRequeueError(reterr) {
+			ctx.Logger.V(4).Info(
+				"vm will be re-reconciled by async watcher",
+				"result", reterr.Error())
+		}
 		// Log the reconcile time using the CR creation time and the time the VM reached the desired state
 		if reterr == nil && !apiequality.Semantic.DeepEqual(beforeVMStatus, &ctx.VM.Status) {
 			ctx.Logger.Info("Finished Reconciling VirtualMachine with updates to the CR",

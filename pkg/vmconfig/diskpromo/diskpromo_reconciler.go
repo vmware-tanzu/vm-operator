@@ -23,7 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
 
-var ErrPromoteDisks = pkgerr.NoRequeueError{Message: "promoting disks"}
+var ErrPromoteDisks = pkgerr.NoRequeueNoErr("promoting disks")
 
 type reconciler struct{}
 

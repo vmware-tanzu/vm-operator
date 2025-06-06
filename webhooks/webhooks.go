@@ -16,6 +16,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/unifiedstoragequota"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinereplicaset"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineservice"
@@ -58,6 +59,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 
 	if err := unifiedstoragequota.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize UnifiedStorageQuota webhooks: %w", err)
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMGroups {
+		if err := virtualmachinegroup.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VirtualMachineGroup webhooks: %w", err)
+		}
 	}
 
 	return nil

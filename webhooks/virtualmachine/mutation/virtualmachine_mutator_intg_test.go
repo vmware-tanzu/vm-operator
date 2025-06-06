@@ -736,4 +736,27 @@ func intgTestsMutating() {
 			})
 		})
 	})
+
+	Context("CleanupApplyPowerStateChangeTimeAnno", func() {
+
+		When("VM has a apply power state change time annotation set", func() {
+			BeforeEach(func() {
+				timestamp := time.Now().UTC().Format(time.RFC3339Nano)
+				ctx.vm.Annotations[constants.ApplyPowerStateTimeAnnotation] = timestamp
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			})
+
+			It("should remove the annotation if the VM's power state is changed", func() {
+				vm := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				Expect(vm.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+				vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				updated := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), updated)).To(Succeed())
+				Expect(updated.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+			})
+		})
+	})
 }

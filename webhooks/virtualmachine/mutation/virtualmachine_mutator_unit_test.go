@@ -1518,4 +1518,58 @@ func unitTestsMutating() {
 			Expect(ctx.vm.Spec.ImageName).To(Equal("vmi-new"))
 		})
 	})
+
+	Describe("CleanupApplyPowerStateChangeTimeAnno", func() {
+		var oldVM *vmopv1.VirtualMachine
+
+		BeforeEach(func() {
+			oldVM = ctx.vm.DeepCopy()
+		})
+
+		When("VM's apply power state change time annotation is changed", func() {
+			BeforeEach(func() {
+				now := time.Now().UTC()
+				oldVM.Annotations[constants.ApplyPowerStateTimeAnnotation] = now.Format(time.RFC3339Nano)
+				ctx.vm.Annotations[constants.ApplyPowerStateTimeAnnotation] = now.Add(time.Minute).Format(time.RFC3339Nano)
+			})
+
+			It("should be a no-op", func() {
+				mutated := mutation.CleanupApplyPowerStateChangeTimeAnno(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+				Expect(mutated).To(BeFalse())
+				Expect(ctx.vm.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+			})
+		})
+
+		When("VM's power state is not changed with a pre-existing apply power state change time annotation", func() {
+			BeforeEach(func() {
+				now := time.Now().UTC()
+				oldVM.Annotations[constants.ApplyPowerStateTimeAnnotation] = now.Format(time.RFC3339Nano)
+				ctx.vm.Annotations[constants.ApplyPowerStateTimeAnnotation] = now.Format(time.RFC3339Nano)
+				oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			})
+
+			It("should be a no-op", func() {
+				mutated := mutation.CleanupApplyPowerStateChangeTimeAnno(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+				Expect(mutated).To(BeFalse())
+				Expect(ctx.vm.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+			})
+		})
+
+		When("VM's power state is changed with a pre-existing apply power state change time annotation", func() {
+			BeforeEach(func() {
+				now := time.Now().UTC()
+				oldVM.Annotations[constants.ApplyPowerStateTimeAnnotation] = now.Format(time.RFC3339Nano)
+				ctx.vm.Annotations[constants.ApplyPowerStateTimeAnnotation] = now.Format(time.RFC3339Nano)
+				oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			})
+
+			It("should remove the apply power state change time annotation", func() {
+				mutated := mutation.CleanupApplyPowerStateChangeTimeAnno(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+				Expect(mutated).To(BeTrue())
+				Expect(ctx.vm.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+			})
+		})
+	})
 }

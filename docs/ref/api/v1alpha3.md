@@ -1622,7 +1622,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `to` _string_ | To is an IP4 or IP6 address. |
+| `to` _string_ | To is either "default", or an IP4 or IP6 address. |
 | `via` _string_ | Via is an IP4 or IP6 address. |
 | `metric` _integer_ | Metric is the weight/priority of the route. |
 

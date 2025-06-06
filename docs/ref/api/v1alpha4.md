@@ -61,6 +61,24 @@ resource.
 | `spec` _[VirtualMachineClassSpec](#virtualmachineclassspec)_ |  |
 | `status` _[VirtualMachineClassStatus](#virtualmachineclassstatus)_ |  |
 
+### VirtualMachineClassInstance
+
+
+
+VirtualMachineClassInstance is the schema for the virtualmachineclassinstances API and
+represents the desired state and observed status of a virtualmachineclassinstance
+resource.
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
+| `kind` _string_ | `VirtualMachineClassInstance`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineClassInstanceSpec](#virtualmachineclassinstancespec)_ |  |
+| `status` _[VirtualMachineClassInstanceStatus](#virtualmachineclassinstancestatus)_ |  |
+
 ### VirtualMachineGroup
 
 
@@ -1054,6 +1072,7 @@ VirtualMachineClassHardware describes a virtual hardware resource
 specification.
 
 _Appears in:_
+- [VirtualMachineClassInstanceSpec](#virtualmachineclassinstancespec)
 - [VirtualMachineClassSpec](#virtualmachineclassspec)
 
 | Field | Description |
@@ -1063,6 +1082,61 @@ _Appears in:_
 | `devices` _[VirtualDevices](#virtualdevices)_ |  |
 | `instanceStorage` _[InstanceStorage](#instancestorage)_ |  |
 
+### VirtualMachineClassInstanceSpec
+
+
+
+VirtualMachineClassInstanceSpec defines the desired state of VirtualMachineClassInstance.
+It is a composite of VirtualMachineClassSpec.
+
+_Appears in:_
+- [VirtualMachineClassInstance](#virtualmachineclassinstance)
+
+| Field | Description |
+| --- | --- |
+| `controllerName` _string_ | ControllerName describes the name of the controller responsible for
+reconciling VirtualMachine resources that are realized from this
+VirtualMachineClass.
+
+When omitted, controllers reconciling VirtualMachine resources determine
+the default controller name from the environment variable
+DEFAULT_VM_CLASS_CONTROLLER_NAME. If this environment variable is not
+defined or empty, it defaults to vmoperator.vmware.com/vsphere.
+
+Once a non-empty value is assigned to this field, attempts to set this
+field to an empty value will be silently ignored. |
+| `hardware` _[VirtualMachineClassHardware](#virtualmachineclasshardware)_ | Hardware describes the configuration of the VirtualMachineClass
+attributes related to virtual hardware. The configuration specified in
+this field is used to customize the virtual hardware characteristics of
+any VirtualMachine associated with this VirtualMachineClass. |
+| `policies` _[VirtualMachineClassPolicies](#virtualmachineclasspolicies)_ | Policies describes the configuration of the VirtualMachineClass
+attributes related to virtual infrastructure policy. The configuration
+specified in this field is used to customize various policies related to
+infrastructure resource consumption. |
+| `description` _string_ | Description describes the configuration of the VirtualMachineClass which
+is not related to virtual hardware or infrastructure policy. This field
+is used to address remaining specs about this VirtualMachineClass. |
+| `configSpec` _[RawMessage](#rawmessage)_ | ConfigSpec describes additional configuration information for a
+VirtualMachine.
+The contents of this field are the VirtualMachineConfigSpec data object
+(https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator
+field "_typeName" to preserve type information. |
+| `reservedProfileID` _string_ | ReservedProfileID describes the reservation profile associated with
+the namespace-scoped VirtualMachineClass object. |
+| `reservedSlots` _integer_ | ReservedSlots describes the number of slots reserved for VMs that use
+this VirtualMachineClass.
+This field is only valid in conjunction with reservedProfileID. |
+
+### VirtualMachineClassInstanceStatus
+
+
+
+VirtualMachineClassInstanceStatus defines the observed state of VirtualMachineClassInstance.
+
+_Appears in:_
+- [VirtualMachineClassInstance](#virtualmachineclassinstance)
+
+
 ### VirtualMachineClassPolicies
 
 
@@ -1071,6 +1145,7 @@ VirtualMachineClassPolicies describes the policy configuration to be used by
 a VirtualMachineClass.
 
 _Appears in:_
+- [VirtualMachineClassInstanceSpec](#virtualmachineclassinstancespec)
 - [VirtualMachineClassSpec](#virtualmachineclassspec)
 
 | Field | Description |
@@ -1100,6 +1175,7 @@ VirtualMachineClassSpec defines the desired state of VirtualMachineClass.
 
 _Appears in:_
 - [VirtualMachineClass](#virtualmachineclass)
+- [VirtualMachineClassInstanceSpec](#virtualmachineclassinstancespec)
 
 | Field | Description |
 | --- | --- |
@@ -1373,11 +1449,28 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `id` _string_ | ID describes the value used to locate the file.
-The value of this field depends on the type of file.
-For Type=Classic, the ID value describes a datastore path, ex.
-"[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk".
-For Type=Managed, the ID value describes a First Class Disk (FCD). |
-| `type` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | Type describes the type of disk. |
+The value of this field depends on the type of file:
+
+- Type=Other                  -- The ID value describes a datastore path,
+                                 ex. "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk"
+- Type=Disk, DiskType=Classic -- The ID value describes a datastore
+                                 path.
+- Type=Disk, DiskType=Managed -- The ID value describes a First Class
+                                 Disk (FCD). |
+| `type` _[VirtualMachineImageCacheFileType](#virtualmachineimagecachefiletype)_ | Type describes the type of file. |
+| `diskType` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | DiskType describes the type of disk.
+This field is only non-empty when Type=Disk. |
+
+### VirtualMachineImageCacheFileType
+
+_Underlying type:_ `string`
+
+VirtualMachineImageCacheFileType describes the types of files that may be
+cached.
+
+_Appears in:_
+- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
+
 
 ### VirtualMachineImageCacheLocationSpec
 
@@ -2058,7 +2151,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `to` _string_ | To is an IP4 or IP6 address. |
+| `to` _string_ | To is either "default", or an IP4 or IP6 address. |
 | `via` _string_ | Via is an IP4 or IP6 address. |
 | `metric` _integer_ | Metric is the weight/priority of the route. |
 
@@ -2748,7 +2841,7 @@ state of the guest file system. |
 | `uniqueID` _string_ | UniqueID describes a unique identifier provider by the backing
 infrastructure (e.g., vSphere) that can be used to distinguish
 this snapshot from other snapshots of this virtual machine. |
-| `children` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core) array_ | Children represents the snapshots for which this snapshot is
+| `children` _LocalObjectRef array_ | Children represents the snapshots for which this snapshot is
 the parent. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions of the VirtualMachine. |
 
@@ -2983,7 +3076,28 @@ Defaults to Online. |
 | `bootOptions` _[VirtualMachineBootOptions](#virtualmachinebootoptions)_ | BootOptions describes the settings that control the boot behavior of the
 virtual machine. These settings take effect during the next power-on of the
 virtual machine. |
-| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | 	If the virtual machine is currently powered off, but you revert to
+| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot represents the desired snapshot that the
+virtual machine should point to. This field can have three
+possible values:
+
+- The value of this field is nil when the working snapshot is at
+  the root of the snapshot tree.
+
+- When a new snapshot is requested by creating a new
+  VirtualMachineSnapshot, the value of this field is set to the
+  new snapshot resource's name.
+
+- If the value of this field is set to an existing snapshot that
+  is different from the status.currentSnapshot, the virtual machine is
+  reverted to the requested snapshot.
+
+Reverting a virtual machine to a snapshot rolls back the data
+and the configuration of the virtual machine to that of the
+specified snapshot. The VirtualMachineSpec of the
+VirtualMachine resource is replaced from the one stored with
+the snapshot.
+
+If the virtual machine is currently powered off, but you revert to
 a snapshot that was taken while the VM was powered on, then the
 VM will be automatically powered on during the revert.
 Additionally, the VirtualMachineSpec will be updated to match
@@ -3037,10 +3151,12 @@ information on the topic of a VM's hardware version. |
 | `storage` _[VirtualMachineStorageStatus](#virtualmachinestoragestatus)_ | Storage describes the observed state of the VirtualMachine's storage. |
 | `taskID` _string_ | TaskID describes the observed ID of the task created by VM Operator to
 perform some long-running operation on the VM. |
-| `currentSnapshot` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine. |
-| `rootSnapshots` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core) array_ | RootSnapshots represents the observed list of root snapshots of
-a VM. These references can effectively be used to iterate over
-the entire snapshot chain of a virtual machine. |
+| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine. |
+| `rootSnapshots` _LocalObjectRef array_ | RootSnapshots represents the observed list of root snapshots of
+a VM. Since each snapshot includes the list of its child
+snapshots, these root snapshot references can effectively be
+used to construct the entire snapshot chain of a virtual
+machine. |
 
 ### VirtualMachineStorageStatus
 
@@ -3054,9 +3170,14 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `usage` _[VirtualMachineStorageStatusUsage](#virtualmachinestoragestatususage)_ | Usage describes the observed amount of storage used by a VirtualMachine. |
+| `total` _[Quantity](#quantity)_ | Total describes the total storage space used by a VirtualMachine that
+counts against the Namespace's storage quota.
+This value is a sum of requested.disks + used.other. |
+| `requested` _[VirtualMachineStorageStatusRequested](#virtualmachinestoragestatusrequested)_ | Requested describes the observed amount of storage requested by a
+VirtualMachine. |
+| `usage` _[VirtualMachineStorageStatusUsed](#virtualmachinestoragestatusused)_ | Used describes the observed amount of storage used by a VirtualMachine. |
 
-### VirtualMachineStorageStatusUsage
+### VirtualMachineStorageStatusRequested
 
 
 
@@ -3067,8 +3188,20 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `total` _[Quantity](#quantity)_ | Total describes the total storage space used by a VirtualMachine that
-counts against the Namespace's storage quota. |
+| `disks` _[Quantity](#quantity)_ | Disks describes the total storage space requested by a VirtualMachine's
+non-PVC disks. |
+
+### VirtualMachineStorageStatusUsed
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineStorageStatus](#virtualmachinestoragestatus)
+
+| Field | Description |
+| --- | --- |
 | `disks` _[Quantity](#quantity)_ | Disks describes the total storage space used by a VirtualMachine's
 non-PVC disks. |
 | `other` _[Quantity](#quantity)_ | Other describes the total storage space used by the VirtualMachine's
@@ -3172,10 +3305,19 @@ _Appears in:_
 | `name` _string_ | Name is the name of the attached volume. |
 | `type` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | Type is the type of the attached volume. |
 | `crypto` _[VirtualMachineVolumeCryptoStatus](#virtualmachinevolumecryptostatus)_ | Crypto describes the volume's encryption status. |
-| `limit` _[Quantity](#quantity)_ | Limit describes the storage limit for the volume. |
+| `limit` _[Quantity](#quantity)_ | Limit describes the maximum, requested capacity of the volume. |
+| `requested` _[Quantity](#quantity)_ | Requested describes the minimum, requested capacity of the volume.
+
+Please note, this value is used when calculating a VM's impact to a
+namespace's storage quota. |
 | `used` _[Quantity](#quantity)_ | Used describes the observed, non-shared size of the volume on disk.
+
 For example, if this is a linked-clone's boot volume, this value
-represents the space consumed by the linked clone, not the parent. |
+represents the space consumed by the linked clone, not the parent.
+
+Another example is when a volume is thin-provisioned. The volume's
+capacity may be 20Gi, but the actual usage on disk may only be a few
+hundred mebibytes. |
 | `attached` _boolean_ | Attached represents whether a volume has been successfully attached to
 the VirtualMachine or not. |
 | `diskUUID` _string_ | DiskUUID represents the underlying virtual disk UUID and is present when

@@ -4620,6 +4620,9 @@ spec:
                                         snapshots do not support online promotion.
                           - Offline  -- Promote disks while the VM is powered off.
 
+                          Please note, this field is ignored for encrypted VMs since they do not
+                          use delta disks.
+
                           Defaults to Online.
                         enum:
                         - Online

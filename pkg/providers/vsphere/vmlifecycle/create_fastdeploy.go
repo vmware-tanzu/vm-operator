@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -178,11 +179,13 @@ func fastDeploy(
 
 		// Wait for the delete call to return.
 		if err := t.Wait(ctx); err != nil {
-			err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
-			if retErr == nil {
-				retErr = err
-			} else {
-				retErr = fmt.Errorf("%w,%w", err, retErr)
+			if !fault.Is(err, &vimtypes.FileNotFound{}) {
+				err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
+				if retErr == nil {
+					retErr = err
+				} else {
+					retErr = fmt.Errorf("%w,%w", err, retErr)
+				}
 			}
 		}
 	}()
@@ -200,9 +203,15 @@ func fastDeploy(
 	logger.Info("Got pool", "pool", pool.Reference())
 
 	// Determine the type of fast deploy operation.
-	fastDeployMode := vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
-	if fastDeployMode == "" {
-		fastDeployMode = pkgcfg.FromContext(vmCtx).FastDeployMode
+	var fastDeployMode string
+
+	if createArgs.IsEncryptedStorageProfile {
+		fastDeployMode = pkgconst.FastDeployModeDirect
+	} else {
+		fastDeployMode = vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
+		if fastDeployMode == "" {
+			fastDeployMode = pkgcfg.FromContext(vmCtx).FastDeployMode
+		}
 	}
 	logger.Info(
 		"Deploying OVF Library Item with Fast Deploy",
@@ -244,12 +253,10 @@ func fastDeployLinked(
 
 	logger := logr.FromContextOrDiscard(ctx).WithName("fastDeployLinked")
 
-	// Linked clones do not fully support encryption, so remove the profile
-	// and any possible crypto information.
-	configSpec.VmProfile = nil
+	// Linked clones do not fully support encryption, so remove the possible
+	// crypto information from the VM's disks.
 	for i := range diskSpecs {
 		ds := diskSpecs[i]
-		ds.Profile = nil
 		if ds.Backing != nil {
 			ds.Backing.Crypto = nil
 		}

@@ -1673,8 +1673,15 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		return err
 	}
 
-	vmStorageProfileID := vmStorage.StorageClassToPolicyID[vmStorageClass]
-	provisioningType, err := virtualmachine.GetDefaultDiskProvisioningType(vmCtx, vcClient, vmStorageProfileID)
+	storageProfileID := vmStorage.StorageClassToPolicyID[vmStorageClass]
+	isEnc, _, err := kubeutil.IsEncryptedStorageClass(
+		vmCtx, vs.k8sClient, vmCtx.VM.Spec.StorageClass)
+	if err != nil {
+		return err
+	}
+
+	provisioningType, err := virtualmachine.GetDefaultDiskProvisioningType(
+		vmCtx, vcClient, storageProfileID)
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
 		pkgcnd.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, reason, "%s", msg)
@@ -1683,7 +1690,8 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 
 	createArgs.Storage = vmStorage
 	createArgs.StorageProvisioning = provisioningType
-	createArgs.StorageProfileID = vmStorageProfileID
+	createArgs.StorageProfileID = storageProfileID
+	createArgs.IsEncryptedStorageProfile = isEnc
 	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady)
 
 	return nil

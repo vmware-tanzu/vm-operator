@@ -19,18 +19,19 @@ type CreateArgs struct {
 	UseContentLibrary bool
 	ProviderItemID    string
 
-	ConfigSpec          vimtypes.VirtualMachineConfigSpec
-	StorageProvisioning string
-	DatacenterMoID      string
-	FolderMoID          string
-	ResourcePoolMoID    string
-	HostMoID            string
-	StorageProfileID    string
-	DatastoreMoID       string // gce2e only: used only if StorageProfileID is unset
-	Datastores          []DatastoreRef
-	DiskPaths           []string
-	FilePaths           []string
-	ZoneName            string
+	ConfigSpec                vimtypes.VirtualMachineConfigSpec
+	StorageProvisioning       string
+	DatacenterMoID            string
+	FolderMoID                string
+	ResourcePoolMoID          string
+	HostMoID                  string
+	StorageProfileID          string
+	IsEncryptedStorageProfile bool
+	DatastoreMoID             string // gce2e only: used only if StorageProfileID is unset
+	Datastores                []DatastoreRef
+	DiskPaths                 []string
+	FilePaths                 []string
+	ZoneName                  string
 }
 
 type DatastoreRef struct {

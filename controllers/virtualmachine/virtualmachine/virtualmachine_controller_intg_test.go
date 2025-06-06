@@ -31,6 +31,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -249,6 +250,64 @@ func intgTestsReconcile() {
 					g.Expect(vm.Status.Network).ToNot(BeNil())
 					g.Expect(vm.Status.Network.PrimaryIP4).To(Equal(dummyIPAddress))
 				}, "4s").Should(Succeed(), "waiting for IP address")
+			})
+
+			// Used with "gingko -v . -- -v 5" to verify that controller.go is
+			// logging:
+			//
+			//     "Reconciler error" err="terminal error: helloworld"
+			By("Reconciler returns a NoRequeue error with DoNotErr=false", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						conditions.MarkTrue(vm, "HelloWorld")
+						return pkgerr.NoRequeueError{
+							Message:  "helloworld",
+							DoNotErr: false,
+						}
+					},
+				)
+				vm := getVirtualMachine(ctx, vmKey)
+				if vm.Annotations == nil {
+					vm.Annotations = map[string]string{}
+				}
+				vm.Annotations["hello"] = "world"
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(conditions.IsTrue(vm, "HelloWorld")).To(BeTrue())
+				}, "4s").Should(Succeed(), "waiting for HelloWorld condition")
+			})
+
+			// Used with "gingko -v . -- -v 5" to verify that controller.go is
+			// not logging:
+			//
+			//     "Reconciler error" err="terminal error: fubar"
+			By("Reconciler returns a NoRequeue error with DoNotErr=true", func() {
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						conditions.MarkTrue(vm, "Fubar")
+						return pkgerr.NoRequeueError{
+							Message:  "fubar",
+							DoNotErr: true,
+						}
+					},
+				)
+				vm := getVirtualMachine(ctx, vmKey)
+				if vm.Annotations == nil {
+					vm.Annotations = map[string]string{}
+				}
+				vm.Annotations["fu"] = "bar"
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				Eventually(func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(conditions.IsTrue(vm, "Fubar")).To(BeTrue())
+				}, "4s").Should(Succeed(), "waiting for Fubar condition")
 			})
 
 			By("VirtualMachine should not be updated in steady-state", func() {

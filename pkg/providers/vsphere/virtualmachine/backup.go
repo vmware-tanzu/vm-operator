@@ -42,7 +42,7 @@ type BackupVirtualMachineOptions struct {
 	ClassicDiskUUIDs    map[string]struct{}
 }
 
-var ErrBackingUp = pkgerr.NoRequeueError{Message: "backed up vm"}
+var ErrBackingUp = pkgerr.NoRequeueNoErr("backed up vm")
 
 // BackupVirtualMachine backs up the required data of a VM into its ExtraConfig.
 // Currently, the following data is backed up:

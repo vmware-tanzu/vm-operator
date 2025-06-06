@@ -64,9 +64,9 @@ type BootstrapArgs struct {
 }
 
 var (
-	ErrBootstrapReconfigure = pkgerr.NoRequeueError{Message: "bootstrap reconfigured vm"}
-	ErrBootstrapCustomize   = pkgerr.NoRequeueError{Message: "bootstrap customized vm"}
-	ErrSkipPoweredOn        = pkgerr.NoRequeueError{Message: "skip powered on vm"}
+	ErrBootstrapReconfigure = pkgerr.NoRequeueNoErr("bootstrap reconfigured vm")
+	ErrBootstrapCustomize   = pkgerr.NoRequeueNoErr("bootstrap customized vm")
+	ErrSkipPoweredOn        = pkgerr.NoRequeueNoErr("skip powered on vm")
 )
 
 func DoBootstrap(

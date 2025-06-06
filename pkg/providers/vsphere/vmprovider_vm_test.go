@@ -35,6 +35,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -3202,30 +3203,35 @@ func vmTests() {
 						})
 					})
 
-					When("powerOffMode is hard", func() {
-						JustBeforeEach(func() {
-							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
-						})
-						It("should power off the VM", func() {
+					DescribeTable("powerOffModes",
+						func(mode vmopv1.VirtualMachinePowerOpMode) {
+							vm.Spec.PowerOffMode = mode
 							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
-						})
-					})
-					When("powerOffMode is soft", func() {
+						},
+						Entry("hard", vmopv1.VirtualMachinePowerOpModeHard),
+						Entry("soft", vmopv1.VirtualMachinePowerOpModeSoft),
+						Entry("trySoft", vmopv1.VirtualMachinePowerOpModeTrySoft),
+					)
+
+					When("there is a config error", func() {
 						JustBeforeEach(func() {
-							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
+							vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+								CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+									CloudConfig: &cloudinit.CloudConfig{
+										RunCmd: json.RawMessage([]byte("invalid")),
+									},
+								},
+							}
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 						})
-						It("should power off the VM", func() {
-							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
-						})
-					})
-					When("powerOffMode is trySoft", func() {
-						JustBeforeEach(func() {
-							vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
-						})
-						It("should power off the VM", func() {
-							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						It("should still power off the VM", func() {
+							err := createOrUpdateVM(ctx, vmProvider, vm)
+							Expect(err).To(HaveOccurred())
+							Expect(err.Error()).To(ContainSubstring("failed to reconcile config: updating state failed with failed to create bootstrap data"))
+
+							// Do it again to update status.
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).ToNot(Succeed())
 							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 						})
 					})
@@ -3711,6 +3717,28 @@ func vmTests() {
 							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 						})
+					})
+				})
+
+				When("there is a config error", func() {
+					JustBeforeEach(func() {
+						vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+								CloudConfig: &cloudinit.CloudConfig{
+									RunCmd: json.RawMessage([]byte("invalid")),
+								},
+							},
+						}
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					})
+					It("should not power on the VM", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("failed to reconcile config: updating state failed with failed to create bootstrap data"))
+
+						// Do it again to update status.
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).ToNot(Succeed())
+						Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 					})
 				})
 			})

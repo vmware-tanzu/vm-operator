@@ -25,7 +25,7 @@ func BootStrapLinuxPrep(
 	logger := logr.FromContextOrDiscard(vmCtx)
 	logger.V(4).Info("Reconciling LinuxPrep bootstrap state")
 
-	if !vmCtx.IsPoweringOn() {
+	if !vmCtx.IsOffToOn() {
 		vmCtx.Logger.V(4).Info("Skipping LinuxPrep since VM is not powering on")
 		return nil, nil, nil
 	}

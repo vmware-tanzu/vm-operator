@@ -148,7 +148,7 @@ func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
 	return vm.ReferenceValue(), nil
 }
 
-var ErrSetPowerState = pkgerr.NoRequeueError{Message: "updated power state"}
+var ErrSetPowerState = pkgerr.NoRequeueNoErr("updated power state")
 
 func (vm *VirtualMachine) SetPowerState(
 	ctx context.Context,

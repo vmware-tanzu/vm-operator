@@ -27,7 +27,7 @@ func BootstrapSysPrep(
 	logger := logr.FromContextOrDiscard(vmCtx)
 	logger.V(4).Info("Reconciling Sysprep bootstrap state")
 
-	if !vmCtx.IsPoweringOn() {
+	if !vmCtx.IsOffToOn() {
 		vmCtx.Logger.V(4).Info("Skipping Sysprep since VM is not powering on")
 		return nil, nil, nil
 	}

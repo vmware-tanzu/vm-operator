@@ -30,10 +30,18 @@ func (v VirtualMachineContext) String() string {
 	return fmt.Sprintf("%s %s/%s", v.VM.GroupVersionKind(), v.VM.Namespace, v.VM.Name)
 }
 
-func (v VirtualMachineContext) IsPoweringOn() bool {
+func (v VirtualMachineContext) IsOffToOn() bool {
 	if v.VM == nil {
 		return false
 	}
-	return v.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn &&
-		v.MoVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn
+	return v.MoVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn &&
+		v.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn
+}
+
+func (v VirtualMachineContext) IsOnToOff() bool {
+	if v.VM == nil {
+		return false
+	}
+	return v.MoVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOn &&
+		v.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff
 }

@@ -82,6 +82,12 @@ type Config struct {
 	PodServiceAccountName string
 	DeploymentName        string
 
+	KubeadmConfigMapName    string
+	KubeDNSLBServiceName    string
+	KubeSystemNamespace     string
+	KubeadmClusterConfigKey string
+	DefaultClusterDomain    string
+
 	// SIGUSR2RestartEnabled allows SIGUSR2 to cause the pod to restart.
 	SIGUSR2RestartEnabled bool
 

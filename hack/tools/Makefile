@@ -77,7 +77,7 @@ $(SETUP_ENVTEST): go.mod
 golangci-lint: $(GOLANGCI_LINT) ## Install golangci-lint
 $(GOLANGCI_LINT): go.mod
 	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
-	go build -tags=vmop_tools -o $(@) github.com/golangci/golangci-lint/cmd/golangci-lint
+	go build -tags=vmop_tools -o $(@) github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 
 kustomize: $(KUSTOMIZE) ## Install kustomize
 $(KUSTOMIZE): go.mod

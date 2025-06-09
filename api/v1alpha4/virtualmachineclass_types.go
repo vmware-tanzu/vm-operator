@@ -80,7 +80,7 @@ type VirtualMachineClassHardware struct {
 // VirtualMachineResourceSpec describes a virtual hardware policy specification.
 type VirtualMachineResourceSpec struct {
 	// +optional
-	Cpu resource.Quantity `json:"cpu,omitempty"` //nolint:stylecheck,revive
+	Cpu resource.Quantity `json:"cpu,omitempty"` //nolint:revive
 
 	// +optional
 	Memory resource.Quantity `json:"memory,omitempty"`

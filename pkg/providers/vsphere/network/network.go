@@ -885,7 +885,7 @@ func ApplyInterfaceResultToVirtualEthCard(
 		// Otherwise, IMO a foot gun and will break on setups that enforce MAC filtering.
 		ethCard.MacAddress = result.MacAddress
 		ethCard.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
-	} else { //nolint
+	} else { //nolint:staticcheck
 		// BMV: IMO this must be Generated/TypeAssigned to avoid major foot gun, but we have tests assuming
 		// this is left as-is.
 		// We should have a MAC address field to the VM.Spec if we want this to be specified by the user.

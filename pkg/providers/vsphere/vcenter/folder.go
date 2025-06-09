@@ -132,7 +132,7 @@ func findChildFolder(
 
 	folder, ok := objRef.(*object.Folder)
 	if !ok {
-		return nil, fmt.Errorf("Folder child %q is not Folder but a %T", childName, objRef) //nolint
+		return nil, fmt.Errorf("Folder child %q is not Folder but a %T", childName, objRef) //nolint:staticcheck
 	}
 
 	return folder, nil

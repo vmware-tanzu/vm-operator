@@ -1,268 +1,319 @@
+version: "2"
+
 run:
   timeout: 5m
 
-# override defaults
-linters-settings:
-  # gocyclo:
-  #   min-complexity: 18
-  goimports:
-    # put imports beginning with prefix after 3rd-party packages;
-    # it's a comma-separated list of prefixes
-    local-prefixes: github.com/vmware-tanzu
-  importas:
-    alias:
-      - alias: context
-        pkg: context
-
-      - alias: corev1
-        pkg: k8s.io/api/core/v1
-      - alias: metav1
-        pkg: k8s.io/apimachinery/pkg/apis/meta/v1
-      - alias: apiconversion
-        pkg: k8s.io/apimachinery/pkg/conversion
-      - alias: apierrors
-        pkg: k8s.io/apimachinery/pkg/api/errors
-      - alias: apierrorsutil
-        pkg: k8s.io/apimachinery/pkg/util/errors
-
-      - alias: ctrl
-        pkg: sigs.k8s.io/controller-runtime
-      - alias: ctrlcache
-        pkg: sigs.k8s.io/controller-runtime/pkg/cache
-      - alias: ctrlconversion
-        pkg: sigs.k8s.io/controller-runtime/pkg/conversion
-      - alias: ctrlclient
-        pkg: sigs.k8s.io/controller-runtime/pkg/client
-      - alias: ctrlmgr
-        pkg: sigs.k8s.io/controller-runtime/pkg/manager
-
-      - alias: vim25
-        pkg: github.com/vmware/govmomi/vim25
-      - alias: mo
-        pkg: github.com/vmware/govmomi/vim25/mo
-      - alias: pbmtypes
-        pkg: github.com/vmware/govmomi/pbm/types
-      - alias: vimtypes
-        pkg: github.com/vmware/govmomi/vim25/types
-
-      - alias: backupapi
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/backup/api
-
-      - alias: vmopapi
-        pkg: github.com/vmware-tanzu/vm-operator/api
-
-      - alias: vmopv1a1
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha1
-
-      - alias: vmopv1a2
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2
-      - alias: vmopv1a2cloudinit
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit
-      - alias: vmopv1a2common
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2/common
-      - alias: vmopv1a2sysprep
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep
-
-      - alias: vmopv1a3
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3
-      - alias: vmopv1a3cloudinit
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit
-      - alias: vmopv1a3common
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/common
-      - alias: vmopv1a3sysprep
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep
-
-      - alias: vmopv1
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4
-      - alias: vmopv1cloudinit
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit
-      - alias: vmopv1common
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/common
-      - alias: vmopv1sysprep
-        pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep
-
-      - alias: vmopv1util
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1
-
-      - alias: byokv1
-        pkg: github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1
-      - alias: capv1
-        pkg: github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1
-      - alias: appv1a1
-        pkg: github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1
-      - alias: proxyaddr
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr
-
-      - alias: pkgcfg
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/config
-      - alias: pkgctx
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/context
-      - alias: pkgerr
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/errors
-      - alias: pkgexit
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/exit
-      - alias: ctxop
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/context/operation
-      - alias: pkgmgr
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/manager
-      - alias: pkgutil
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/util
-      - alias: proberctx
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/prober/context
-      - alias: clsutil
-        pkg: github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/library
-
-  depguard:
-    rules:
-      main:
-        list-mode: lax # allow unless explicitly denied
-        files:
-        - $all
-        - "!$test"
-        - "!**/test/builder/*.go"
-        - "!**/matcher.go"
-        deny:
-        - pkg: io/ioutil
-          desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
-        - pkg: github.com/pkg/errors
-          desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
-        - pkg: k8s.io/utils
-          desc: "replaced by internal packages like pkg/util/ptr"
-        - pkg: testing
-          desc: "do not import testing packages in non-test sources"
-        - pkg: github.com/onsi/ginkgo$
-          desc: "do not import testing packages in non-test sources"
-        - pkg: github.com/onsi/ginkgo/v2
-          desc: "do not import testing packages in non-test sources"
-        - pkg: github.com/onsi/gomega
-          desc: "do not import testing packages in non-test sources"
-      test:
-        list-mode: lax # allow unless explicitly denied
-        files:
-        - $test
-        deny:
-        - pkg: io/ioutil
-          desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
-        - pkg: github.com/pkg/errors
-          desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
-        - pkg: k8s.io/utils
-          desc: "replaced by internal packages like pkg/util/ptr"
-        - pkg: github.com/onsi/ginkgo$
-          desc: "replaced by github.com/onsi/ginkgo/v2"
-      test-builder:
-        list-mode: lax # allow unless explicitly denied
-        files:
-        - "**/test/builder/*.go"
-        - "**/matcher.go"
-        - "!$test"
-        deny:
-        - pkg: io/ioutil
-          desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
-        - pkg: github.com/pkg/errors
-          desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
-        - pkg: k8s.io/utils
-          desc: "replaced by internal packages like pkg/util/ptr"
-        - pkg: github.com/onsi/ginkgo$
-          desc: "replaced by github.com/onsi/ginkgo/v2"
+formatters:
+  settings:
+     goimports:
+      # Put VMware imports beginning with the following prefixes after any
+      # third-party packages.
+      local-prefixes:
+      - github.com/vmware
+      - github.com/vmware-tanzu
+      - github.com/vmware-tanzu/vm-operator
 
 linters:
-  disable-all: true
-  enable:
-  - asciicheck
-  - bodyclose
-  - copyloopvar
-  - depguard
-  - dogsled
-  - errcheck
-  - errorlint
-  - goconst
-  - gocritic
-  - gocyclo
-  - godot
-  - gofmt
-  - goimports
-  - goprintffuncname
-  - gosec
-  - gosimple
-  - govet
-  - importas
-  - ineffassign
-  - misspell
-  - nakedret
-  - nilerr
-  - nolintlint
-  - prealloc
-  - revive
-  - rowserrcheck
-  - staticcheck
-  - stylecheck
-  - typecheck
-  - unconvert
-  - unparam
-  - unused
+  default: all
+  disable:
+  - asasalint         # 2
+  - containedctx      # 3
+  - contextcheck      # 50
+  - cyclop            # 5
+  - dupl              # 50
+  - dupword           # 11
+  - err113            # 50
+  - errname           # 6
+  - exhaustive        # 29
+  - exhaustruct       # 50
+  - exptostd          # 2
+  - fatcontext        # 3
+  - forbidigo         # 1
+  - forcetypeassert   # 6
+  - funcorder         # 50
+  - funlen            # 50
+  - ginkgolinter      # 38
+  - gochecknoglobals  # 50
+  - gochecknoinits    # 3
+  - gocognit          # 43
+  - godox             # 50
+  - gomoddirectives   # 9
+  - inamedparam       # 11
+  - interfacebloat    # 2
+  - intrange          # 4
+  - ireturn           # 50
+  - lll               # 50
+  - loggercheck       # 2
+  - maintidx          # 26
+  - mirror            # 2
+  - mnd               # 50
+  - musttag           # 3
+  - nestif            # 50
+  - nilnil            # 3
+  - nlreturn          # 9
+  - noctx             # 4
+  - nolintlint        # 5
+  - nonamedreturns    # 23
+  - nosprintfhostport # 3
+  - paralleltest      # 50
+  - perfsprint        # 7
+  - recvcheck         # 5
+  - tagalign          # 33
+  - tagliatelle       # 8
+  - testpackage       # 17
+  - thelper           # 1
+  - usestdlibvars     # 1
+  - varnamelen        # 50
+  - whitespace        # 6
+  - wrapcheck         # 50
+  - wsl               # 50
 
-issues:
-  max-same-issues: 0
-  max-issues-per-linter: 0
-  # Disable the default golangci exclusions so no issues are skipped. This helps
-  # reviewers focus on reviewing the most relevant changes in the PRs and avoid
-  # nitpicking.
-  exclude-use-default: false
-  exclude-dirs:
-  - external
-  - pkg/util/cloudinit/schema
-  - pkg/util/netplan/schema
-  exclude-files:
-  - ".*generated.*\\.go"
-  exclude:
-  # TODO: Remove the following exclusions over time once we have fixed those.
-  - "ST1000: at least one file in a package should have a package comment"
-  # List of regexps of issue texts to exclude, empty list by default.
-  exclude-rules:
-  - linters:
-    - staticcheck
-    text: "^SA1019: [^.]+.Wait is deprecated: Please use WaitEx instead."
-  - linters:
-    - staticcheck
-    text: "^SA1019: [^.]+.WaitForResult is deprecated: Please use WaitForResultEx instead."
-  - linters:
-    - staticcheck
-    text: "^SA1019: .*TCPSocket is deprecated"
-  - linters:
-    - revive
-    text: ".*should have (a package )?comment.*"
-  - linters:
-    - revive
-    text: "^exported: comment on exported const"
-  - linters:
-    - revive
-    text: "unused-parameter: parameter"
-  - linters:
-    - govet
-    text: "printf: non-constant format string in call"
-  # Dot imports for gomega or ginkgo are allowed within test files.
-  - path: test/builder/intg_test_context.go
-    text: should not use dot imports
-  - path: test/builder/test_suite.go
-    text: should not use dot imports
-  - path: test/builder/vcsim_test_context.go
-    text: should not use dot imports
-  - path: _test.go
-    text: should not use dot imports
-  # All of our webhooks follow the pattern of passing the webhook context which
-  # contains fields like the Client. Ignore the linter warnings for now.
-  - path: webhooks/
-    text: ".* `ctx` is unused"
-  - path: _test.go
-    linters:
-    - gosec
-    - depguard
-  # Ignore underscores in conversion function names as required by K8s API.
-  - path: "_conversion.go"
-    text: ".*use underscores in Go names"
-  # Ignore unsafe.Pointer() calls used in conversion functions.
-  - path: "_conversion.go"
-    text: "G103: Use of unsafe calls should be audited"
-  # Ignore different receiver names in conversion functions (e.g. src vs dst).
-  - path: "_conversion.go"
-    text: ".*receiver name"
+  settings:
+
+    importas:
+      alias:
+        - alias: context
+          pkg: context
+
+        - alias: corev1
+          pkg: k8s.io/api/core/v1
+        - alias: metav1
+          pkg: k8s.io/apimachinery/pkg/apis/meta/v1
+        - alias: apiconversion
+          pkg: k8s.io/apimachinery/pkg/conversion
+        - alias: apierrors
+          pkg: k8s.io/apimachinery/pkg/api/errors
+        - alias: apierrorsutil
+          pkg: k8s.io/apimachinery/pkg/util/errors
+
+        - alias: ctrl
+          pkg: sigs.k8s.io/controller-runtime
+        - alias: ctrlcache
+          pkg: sigs.k8s.io/controller-runtime/pkg/cache
+        - alias: ctrlconversion
+          pkg: sigs.k8s.io/controller-runtime/pkg/conversion
+        - alias: ctrlclient
+          pkg: sigs.k8s.io/controller-runtime/pkg/client
+        - alias: ctrlmgr
+          pkg: sigs.k8s.io/controller-runtime/pkg/manager
+
+        - alias: vim25
+          pkg: github.com/vmware/govmomi/vim25
+        - alias: mo
+          pkg: github.com/vmware/govmomi/vim25/mo
+        - alias: pbmtypes
+          pkg: github.com/vmware/govmomi/pbm/types
+        - alias: vimtypes
+          pkg: github.com/vmware/govmomi/vim25/types
+
+        - alias: backupapi
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/backup/api
+
+        - alias: vmopapi
+          pkg: github.com/vmware-tanzu/vm-operator/api
+
+        - alias: vmopv1a1
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha1
+
+        - alias: vmopv1a2
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2
+        - alias: vmopv1a2cloudinit
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit
+        - alias: vmopv1a2common
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2/common
+        - alias: vmopv1a2sysprep
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep
+
+        - alias: vmopv1a3
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3
+        - alias: vmopv1a3cloudinit
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/cloudinit
+        - alias: vmopv1a3common
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/common
+        - alias: vmopv1a3sysprep
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha3/sysprep
+
+        - alias: vmopv1
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4
+        - alias: vmopv1cloudinit
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit
+        - alias: vmopv1common
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/common
+        - alias: vmopv1sysprep
+          pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep
+
+        - alias: vmopv1util
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1
+
+        - alias: byokv1
+          pkg: github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1
+        - alias: capv1
+          pkg: github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1
+        - alias: appv1a1
+          pkg: github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1
+        - alias: proxyaddr
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr
+
+        - alias: pkgcfg
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/config
+        - alias: pkgctx
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/context
+        - alias: pkgerr
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/errors
+        - alias: pkgexit
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/exit
+        - alias: ctxop
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/context/operation
+        - alias: pkgmgr
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/manager
+        - alias: pkgutil
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/util
+        - alias: proberctx
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/prober/context
+        - alias: clsutil
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/library
+
+    depguard:
+      rules:
+        main:
+          list-mode: lax # allow unless explicitly denied
+          files:
+          - $all
+          - "!$test"
+          - "!**/test/builder/*.go"
+          - "!**/matcher.go"
+          allow:
+          - $gostd
+          - github.com/go-logr/logr
+          - sigs.k8s.io/controller-runtime
+          deny:
+          - pkg: io/ioutil
+            desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+          - pkg: github.com/pkg/errors
+            desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
+          - pkg: k8s.io/utils
+            desc: "replaced by internal packages like pkg/util/ptr"
+          - pkg: testing
+            desc: "do not import testing packages in non-test sources"
+          - pkg: github.com/onsi/ginkgo$
+            desc: "do not import testing packages in non-test sources"
+          - pkg: github.com/onsi/ginkgo/v2
+            desc: "do not import testing packages in non-test sources"
+          - pkg: github.com/onsi/gomega
+            desc: "do not import testing packages in non-test sources"
+        test:
+          list-mode: lax # allow unless explicitly denied
+          files:
+          - $test
+          deny:
+          - pkg: io/ioutil
+            desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+          - pkg: github.com/pkg/errors
+            desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
+          - pkg: k8s.io/utils
+            desc: "replaced by internal packages like pkg/util/ptr"
+          - pkg: github.com/onsi/ginkgo$
+            desc: "replaced by github.com/onsi/ginkgo/v2"
+        test-builder:
+          list-mode: lax # allow unless explicitly denied
+          files:
+          - "**/test/builder/*.go"
+          - "**/matcher.go"
+          - "!$test"
+          deny:
+          - pkg: io/ioutil
+            desc: "replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil"
+          - pkg: github.com/pkg/errors
+            desc: "replaced by stdlib errors package since Go.13: https://go.dev/blog/go1.13-errors"
+          - pkg: k8s.io/utils
+            desc: "replaced by internal packages like pkg/util/ptr"
+          - pkg: github.com/onsi/ginkgo$
+            desc: "replaced by github.com/onsi/ginkgo/v2"
+
+  exclusions:
+    generated: lax
+    warn-unused: true
+
+    paths:
+    - external
+    - pkg/util/cloudinit/schema
+    - pkg/util/netplan/schema
+    - ".*generated.*\\.go"
+
+    rules:
+
+    # TODO: Stop excluding ST1000 once the issue has been resolved.
+    - linters:
+      - golint
+      text: "ST1000: at least one file in a package should have a package comment"
+
+    - linters:
+      - staticcheck
+      text: "^SA1019: [^.]+.Wait is deprecated: Please use WaitEx instead."
+    - linters:
+      - staticcheck
+      text: "^SA1019: [^.]+.WaitForResult is deprecated: Please use WaitForResultEx instead."
+    - linters:
+      - staticcheck
+      text: "^SA1019: .*TCPSocket is deprecated"
+    - linters:
+      - staticcheck
+      text: "QF1008: could remove embedded field"
+    - linters:
+      - staticcheck
+      text: "QF1003: could use tagged switch"
+
+    - linters:
+      - revive
+      text: ".*should have (a package )?comment.*"
+    - linters:
+      - revive
+      text: "^exported: comment on exported const"
+
+    - linters:
+      - revive
+      text: "unused-parameter: parameter"
+
+    - linters:
+      - govet
+      text: "printf: non-constant format string in call"
+
+    # Dot imports for gomega or ginkgo are allowed within test files.
+    - path: test/builder/intg_test_context.go
+      text: should not use dot imports
+    - path: test/builder/test_suite.go
+      text: should not use dot imports
+    - path: test/builder/vcsim_test_context.go
+      text: should not use dot imports
+    - path: _test.go
+      text: should not use dot imports
+
+    # All of our webhooks follow the pattern of passing the webhook context
+    # which contains fields like the Client. Ignore the linter warnings for now.
+    - path: webhooks/
+      text: ".* ctx is unused"
+      linters:
+      - unparam
+    - path: _test.go
+      linters:
+      - depguard
+      - gosec
+
+    - path: pkg/config/env/env.go
+      linters:
+      - gocyclo
+    - path: pkg/providers/vsphere/vmlifecycle/update_status.go
+      linters:
+      - gocyclo
+
+    # Ignore underscores in conversion function names as required by K8s API.
+    - path: "_conversion.go"
+      text: ".*use underscores in Go names"
+
+    # Ignore unsafe.Pointer() calls used in conversion functions.
+    - path: "_conversion.go"
+      text: "G103: Use of unsafe calls should be audited"
+
+    # Ignore different receiver names in conversion functions (e.g. src vs dst).
+    - path: "_conversion.go"
+      text: ".*receiver name"

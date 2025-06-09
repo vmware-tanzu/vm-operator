@@ -107,10 +107,10 @@ type VirtualMachineImageSpec struct {
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage.
 type VirtualMachineImageStatus struct {
 	// Deprecated
-	Uuid string `json:"uuid,omitempty"` //nolint:revive,stylecheck
+	Uuid string `json:"uuid,omitempty"` //nolint:revive
 
 	// Deprecated
-	InternalId string `json:"internalId,omitempty"` //nolint:revive,stylecheck
+	InternalId string `json:"internalId,omitempty"` //nolint:revive
 
 	// Deprecated
 	PowerState string `json:"powerState,omitempty"`

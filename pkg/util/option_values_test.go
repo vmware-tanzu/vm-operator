@@ -28,14 +28,14 @@ var _ = Describe("OptionValues", func() {
 		u64_2 = uint64(2)
 		f32_3 = float32(3)
 		f64_4 = float64(4)
-		b_5   = byte(5) //nolint:revive,stylecheck
+		b_5   = byte(5) //nolint:revive
 	)
 
 	var (
 		psz1   = &[]string{sz1}[0]
 		pu64_2 = &[]uint64{u64_2}[0]
 		pf32_3 = &[]float32{f32_3}[0]
-		pb_5   = &[]byte{b_5}[0] //nolint:revive,stylecheck
+		pb_5   = &[]byte{b_5}[0] //nolint:revive
 	)
 
 	Context("OptionValuesFromMap", func() {

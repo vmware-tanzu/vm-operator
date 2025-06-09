@@ -46,7 +46,7 @@ type VirtualMachineSetResourcePolicyStatus struct {
 // cluster module.
 type VSphereClusterModuleStatus struct {
 	GroupName   string `json:"groupName"`
-	ModuleUuid  string `json:"moduleUUID"` //nolint:revive,stylecheck
+	ModuleUuid  string `json:"moduleUUID"` //nolint:revive
 	ClusterMoID string `json:"clusterMoID"`
 }
 

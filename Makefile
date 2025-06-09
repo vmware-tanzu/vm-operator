@@ -283,7 +283,7 @@ lint: ## Run all the lint targets
 	$(MAKE) lint-markdown
 	$(MAKE) lint-shell
 
-GOLANGCI_LINT_FLAGS ?= --fast=true
+GOLANGCI_LINT_FLAGS ?= --fast-only=true
 GOLANGCI_LINT_ABS_PATH := $(abspath $(GOLANGCI_LINT))
 
 GO_MOD_DIRS_TO_LINT := $(GO_MOD_DIRS)
@@ -293,6 +293,11 @@ GO_LINT_DIR_TARGETS := $(addprefix lint-,$(GO_MOD_DIRS_TO_LINT))
 
 .PHONY: $(GO_LINT_DIR_TARGETS)
 $(GO_LINT_DIR_TARGETS): | $(GOLANGCI_LINT)
+	@echo
+	@echo "####################################################################"
+	@echo "## Linting $(subst lint-,,$@)"
+	@echo "####################################################################"
+	@echo
 	cd $(subst lint-,,$@) && $(GOLANGCI_LINT_ABS_PATH) run -v $(GOLANGCI_LINT_FLAGS)
 
 .PHONY: lint-go
@@ -300,7 +305,7 @@ lint-go: $(GO_LINT_DIR_TARGETS)
 lint-go: ## Lint codebase
 
 .PHONY: lint-go-full
-lint-go-full: GOLANGCI_LINT_FLAGS = --fast=false
+lint-go-full: GOLANGCI_LINT_FLAGS = --fast-only=false
 lint-go-full: lint-go ## Run slower linters to detect possible issues
 
 .PHONY: lint-markdown
@@ -312,7 +317,7 @@ lint-shell: ## Lint the project's shell scripts
 	$(CRI_BIN) run --rm -t -v "$$(pwd)":/build:ro gcr.io/cluster-api-provider-vsphere/extra/shellcheck
 
 .PHONY: fix
-fix: GOLANGCI_LINT_FLAGS = --fast=false --fix
+fix: GOLANGCI_LINT_FLAGS = --fast-only=false --fix
 fix: lint-go ## Tries to fix errors reported by lint-go-full target
 
 .PHONY: unfocus

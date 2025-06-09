@@ -105,8 +105,8 @@ func CreateOrUpdateChildResourcePool(
 		}
 
 		childRP = rp
-	} else { //nolint
-		// TODO: 		//       Finish this clause
+	} else { //nolint:revive,staticcheck
+		// TODO: Finish this clause
 	}
 
 	return childRP.Reference().Value, nil

@@ -37,14 +37,19 @@ func UpdateCdromDeviceChanges(
 	k8sClient ctrlclient.Client,
 	curDevices object.VirtualDeviceList) ([]vimtypes.BaseVirtualDeviceConfigSpec, error) {
 
+	hw := vmCtx.VM.Spec.Hardware
+	if hw == nil {
+		return nil, nil
+	}
+
 	var (
 		deviceChanges                  = make([]vimtypes.BaseVirtualDeviceConfigSpec, 0)
 		curCdromBackingFileNameToSpec  = make(map[string]vmopv1.VirtualMachineCdromSpec)
-		expectedBackingFileNameToCdrom = make(map[string]vimtypes.BaseVirtualDevice, len(vmCtx.VM.Spec.Cdrom))
+		expectedBackingFileNameToCdrom = make(map[string]vimtypes.BaseVirtualDevice, len(hw.Cdrom))
 		libManager                     = library.NewManager(restClient)
 	)
 
-	for _, specCdrom := range vmCtx.VM.Spec.Cdrom {
+	for _, specCdrom := range hw.Cdrom {
 		imageRef := specCdrom.Image
 		// Sync the content library file if needed to connect the CD-ROM device.
 		syncFile := ptr.Deref(specCdrom.Connected)
@@ -137,8 +142,13 @@ func UpdateConfigSpecCdromDeviceConnection(
 	config *vimtypes.VirtualMachineConfigInfo,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
+	hw := vmCtx.VM.Spec.Hardware
+	if hw == nil {
+		return nil
+	}
+
 	var (
-		cdromSpec                    = vmCtx.VM.Spec.Cdrom
+		cdromSpec                    = hw.Cdrom
 		curDevices                   = object.VirtualDeviceList(config.Hardware.Device)
 		backingFileNameToCdromSpec   = make(map[string]vmopv1.VirtualMachineCdromSpec, len(cdromSpec))
 		backingFileNameToCdromDevice = make(map[string]vimtypes.BaseVirtualDevice, len(cdromSpec))

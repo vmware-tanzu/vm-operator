@@ -801,7 +801,7 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 	// Get the storage consumed by disks.
 	for i := range vm.Status.Volumes {
 		v := vm.Status.Volumes[i]
-		if v.Type == vmopv1.VirtualMachineStorageDiskTypeClassic {
+		if v.Type == vmopv1.VolumeTypeClassic {
 			if v.Used != nil {
 				i, _ := v.Used.AsInt64()
 				disksUsed += i
@@ -925,7 +925,7 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 			dp := diskPath.Path
 			volStatus := vmopv1.VirtualMachineVolumeStatus{
 				Name:      strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
-				Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+				Type:      vmopv1.VolumeTypeClassic,
 				Attached:  true,
 				DiskUUID:  diskUUID,
 				Limit:     BytesToResourceGiB(di.CapacityInBytes),
@@ -947,7 +947,7 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 	vm.Status.Volumes = slices.DeleteFunc(vm.Status.Volumes,
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
 			switch e.Type {
-			case vmopv1.VirtualMachineStorageDiskTypeClassic:
+			case vmopv1.VolumeTypeClassic:
 				_, keep := existingDisksInConfig[e.DiskUUID]
 				return !keep
 			default:

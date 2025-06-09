@@ -716,9 +716,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		vm = builder.DummyVirtualMachine()
 		vm.Name = "my-vm"
 		vm.Namespace = "my-namespace"
+		vm.Spec.Hardware = nil
 		vm.Spec.Network.Interfaces = nil
 		vm.Spec.Volumes = nil
-		vm.Spec.Cdrom = nil
 		resizeArgs = nil
 		updateArgs = &session.VMUpdateArgs{
 			ResourcePolicy: &vmopv1.VirtualMachineSetResourcePolicy{},
@@ -855,7 +855,10 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
 					BootDiskCapacity: &q,
 				}
-				vm.Spec.Cdrom = nil
+				if vm.Spec.Hardware == nil {
+					vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+				}
+				vm.Spec.Hardware.Cdrom = nil
 			})
 			It("should resize the boot disk", func() {
 				// Reconfigure
@@ -1002,15 +1005,17 @@ var _ = Describe("UpdateVirtualMachine", func() {
 			)
 
 			BeforeEach(func() {
-				vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-					{
-						Name: "cdrom1",
-						Image: vmopv1.VirtualMachineImageRef{
-							Name: vmiName,
-							Kind: vmiKind,
+				vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					Cdrom: []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: "cdrom1",
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: vmiName,
+								Kind: vmiKind,
+							},
+							AllowGuestControl: ptr.To(true),
+							Connected:         ptr.To(true),
 						},
-						AllowGuestControl: ptr.To(true),
-						Connected:         ptr.To(true),
 					},
 				}
 

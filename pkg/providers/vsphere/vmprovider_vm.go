@@ -492,7 +492,7 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
-	if len(vmCtx.VM.Spec.Cdrom) == 0 {
+	if hw := vmCtx.VM.Spec.Hardware; hw == nil || len(hw.Cdrom) == 0 {
 		return nil // only needed when deploying ISO library items
 	}
 

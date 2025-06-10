@@ -195,5 +195,41 @@ func intgTestsMutating() {
 				Expect(newTimestamp).To(Equal(originalTimestamp))
 			})
 		})
+
+		When("Updating VirtualMachineGroup with nextForcePowerStateSyncTime set to 'now'", func() {
+			BeforeEach(func() {
+				ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				Expect(ctx.Client.Create(ctx, ctx.vmGroup)).To(Succeed())
+			})
+
+			It("Should update last-updated-power-state annotation", func() {
+				modified := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vmGroup), modified)).To(Succeed())
+
+				// Record the original timestamp
+				originalTimestamp := modified.Annotations[constants.LastUpdatedPowerStateTimeAnnotation]
+				Expect(originalTimestamp).ToNot(BeEmpty())
+
+				// Update with nextForcePowerStateSyncTime set to 'now'
+				modified.Spec.NextForcePowerStateSyncTime = "now"
+				Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
+
+				// Get the updated object
+				updated := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vmGroup), updated)).To(Succeed())
+
+				// Check that the nextForcePowerStateSyncTime is set to a timestamp
+				Expect(updated.Spec.NextForcePowerStateSyncTime).ToNot(BeEmpty())
+				nextSyncTimestamp, err := time.Parse(time.RFC3339Nano, updated.Spec.NextForcePowerStateSyncTime)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nextSyncTimestamp).NotTo(Equal(originalTimestamp))
+
+				// Check that the annotation was updated to the same timestamp as the nextForcePowerStateSyncTime
+				Expect(updated.Annotations).To(HaveKey(constants.LastUpdatedPowerStateTimeAnnotation))
+				lastUpdatedAnnoTimestamp, err := time.Parse(time.RFC3339Nano, updated.Annotations[constants.LastUpdatedPowerStateTimeAnnotation])
+				Expect(err).ToNot(HaveOccurred())
+				Expect(lastUpdatedAnnoTimestamp).To(Equal(nextSyncTimestamp))
+			})
+		})
 	})
 }

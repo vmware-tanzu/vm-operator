@@ -81,27 +81,31 @@ type VirtualMachineGroupSpec struct {
 	PowerState VirtualMachinePowerState `json:"powerState,omitempty"`
 
 	// +optional
-	// +kubebuilder:default=TrySoft
+
+	// NextForcePowerStateSyncTime may be used to force sync the power state of
+	// the group to all of its members, by setting the value of this field to
+	// "now" (case-insensitive).
+	//
+	// Please note it is not possible to schedule future syncs using this field.
+	// The only value that users may set is the string "now" (case-insensitive).
+	NextForcePowerStateSyncTime string `json:"nextForcePowerStateSyncTime,omitempty"`
+
+	// +optional
 
 	// PowerOffMode describes the desired behavior when powering off a VM Group.
 	// Refer to the VirtualMachine.PowerOffMode field for more details.
 	//
 	// Please note this field is only propagated to the group's members when
 	// the group's power state is changed.
-	//
-	// If omitted, the mode defaults to TrySoft.
 	PowerOffMode VirtualMachinePowerOpMode `json:"powerOffMode,omitempty"`
 
 	// +optional
-	// +kubebuilder:default=TrySoft
 
 	// SuspendMode describes the desired behavior when suspending a VM Group.
 	// Refer to the VirtualMachine.SuspendMode field for more details.
 	//
 	// Please note this field is only propagated to the group's members when
 	// the group's power state is changed.
-	//
-	// If omitted, the mode defaults to TrySoft.
 	SuspendMode VirtualMachinePowerOpMode `json:"suspendMode,omitempty"`
 }
 

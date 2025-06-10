@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -69,7 +71,11 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 
 	switch ctx.Op {
 	case admissionv1.Create:
-		if ok := ProcessPowerState(ctx, modified, nil); ok {
+		ok, err := ProcessPowerState(ctx, modified, nil)
+		if err != nil {
+			return admission.Denied(err.Error())
+		}
+		if ok {
 			wasMutated = true
 		}
 	case admissionv1.Update:
@@ -78,7 +84,11 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
 
-		if ok := ProcessPowerState(ctx, modified, oldVMGroup); ok {
+		ok, err := ProcessPowerState(ctx, modified, oldVMGroup)
+		if err != nil {
+			return admission.Denied(err.Error())
+		}
+		if ok {
 			wasMutated = true
 		}
 	}
@@ -109,57 +119,80 @@ func (m mutator) vmGroupFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virt
 
 // ProcessPowerState updates the last updated power state time annotation to the
 // current UTC time in RFC3339Nano format for the following cases:
-// 1. The group is created with non-empty power state.
-// 2. The power state has changed.
-// 3. The group members are updated with different order or delay.
-// It also removes the apply power state change time annotation if the group
-// is being updated directly (not inherited from a parent).
+// 1. The group is created with a non-empty spec.powerState value.
+// 2. The spec.powerState is updated.
+// 3. The spec.nextForcePowerStateSyncTime is set to "now".
+// It also removes the apply power state change time annotation if the group is
+// being updated directly (not inherited from a parent).
 func ProcessPowerState(
 	ctx *pkgctx.WebhookRequestContext,
-	vmGroup, oldVMGroup *vmopv1.VirtualMachineGroup) bool {
+	new, old *vmopv1.VirtualMachineGroup) (bool, error) {
 	// If the old VMGroup is nil, this is a creation request.
-	if oldVMGroup == nil {
-		oldVMGroup = &vmopv1.VirtualMachineGroup{
+	if old == nil {
+		old = &vmopv1.VirtualMachineGroup{
 			Spec: vmopv1.VirtualMachineGroupSpec{
-				PowerState: "",
-				Members:    []vmopv1.GroupMember{},
+				PowerState:                  "",
+				NextForcePowerStateSyncTime: "",
 			},
 		}
 	}
 
-	var wasMutated bool
+	var (
+		wasMutated             bool
+		shouldForceSync        bool
+		shouldUpdateAnnotation bool
+		oldForceSyncVal        = old.Spec.NextForcePowerStateSyncTime
+		newForceSyncVal        = new.Spec.NextForcePowerStateSyncTime
+		now                    = time.Now().UTC().Format(time.RFC3339Nano)
+	)
 
-	// Set the last updated power state time annotation.
-	if vmGroup.Spec.PowerState != oldVMGroup.Spec.PowerState ||
-		!reflect.DeepEqual(vmGroup.Spec.Members, oldVMGroup.Spec.Members) {
-		if vmGroup.Annotations == nil {
-			vmGroup.Annotations = make(map[string]string)
+	if newForceSyncVal == "" {
+		// Field is deleted, reset it to the previous value.
+		new.Spec.NextForcePowerStateSyncTime = oldForceSyncVal
+		wasMutated = oldForceSyncVal != ""
+	} else if strings.EqualFold("now", newForceSyncVal) {
+		new.Spec.NextForcePowerStateSyncTime = now
+		wasMutated = true
+		shouldForceSync = true
+	} else if newForceSyncVal != oldForceSyncVal {
+		// Field is being updated to a value other than "now".
+		return false, field.Invalid(
+			field.NewPath("spec", "nextForcePowerStateSyncTime"),
+			new.Spec.NextForcePowerStateSyncTime,
+			`may only be set to "now"`)
+	}
+
+	shouldUpdateAnnotation = shouldForceSync ||
+		new.Spec.PowerState != old.Spec.PowerState
+
+	if shouldUpdateAnnotation {
+		// Set the last updated power state time annotation.
+		if new.Annotations == nil {
+			new.Annotations = make(map[string]string)
 		}
-		now := time.Now().UTC().Format(time.RFC3339Nano)
-		vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] = now
+		new.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] = now
 		wasMutated = true
 	}
 
 	// Check if we should remove the apply-power-state time annotation.
 	var (
-		oldAnnoTime = oldVMGroup.Annotations[constants.ApplyPowerStateTimeAnnotation]
-		newAnnoTime = vmGroup.Annotations[constants.ApplyPowerStateTimeAnnotation]
+		oldAnnoTime = old.Annotations[constants.ApplyPowerStateTimeAnnotation]
+		newAnnoTime = new.Annotations[constants.ApplyPowerStateTimeAnnotation]
 	)
 
 	if oldAnnoTime != newAnnoTime {
 		// VM Group is being updated from its parent group, no op.
-		return wasMutated
+		return wasMutated, nil
 	}
 
-	if oldVMGroup.Spec.PowerState != vmGroup.Spec.PowerState ||
-		!reflect.DeepEqual(vmGroup.Spec.Members, oldVMGroup.Spec.Members) {
+	if shouldUpdateAnnotation {
 		// VM Group's power state is being updated directly, remove the stale
 		// annotation to apply the power state immediately.
 		if newAnnoTime != "" {
-			delete(vmGroup.Annotations, constants.ApplyPowerStateTimeAnnotation)
+			delete(new.Annotations, constants.ApplyPowerStateTimeAnnotation)
 			wasMutated = true
 		}
 	}
 
-	return wasMutated
+	return wasMutated, nil
 }

@@ -273,6 +273,16 @@ tools: $(TOOLING_BINARIES) ## Build tooling binaries
 $(TOOLING_BINARIES):
 	make -C $(TOOLS_DIR) $(@F)
 
+ifneq (,$(strip $(wildcard $(GOPATH))))
+.PHONY: tools-install
+tools-install: $(TOOLING_BINARIES)
+tools-install: ## Install the tooling binaries to $GOPATH/bin
+ifeq (,$(strip $(wildcard $(GOPATH)/bin)))
+	mkdir -p "$(GOPATH)/bin"
+endif # (,$(strip $(wildcard $(GOPATH)/bin)))
+	cp -f $(TOOLS_BIN_DIR)/* "$(GOPATH)/bin"
+endif # (,$(strip $(wildcard $(GOPATH))))
+
 ## --------------------------------------
 ## Linting and fixing linter errors
 ## --------------------------------------

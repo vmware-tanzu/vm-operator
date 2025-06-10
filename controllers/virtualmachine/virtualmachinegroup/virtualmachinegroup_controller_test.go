@@ -153,7 +153,8 @@ var _ = Describe(
 					vmGroup3 := &vmopv1.VirtualMachineGroup{}
 					g.Expect(ctx.Client.Get(ctx, vmGroup3Key, vmGroup3)).To(Succeed())
 					g.Expect(vmGroup3.GetFinalizers()).To(ContainElement(finalizer))
-				}).Should(Succeed(), "waiting for VirtualMachineGroup finalizer")
+					// Using a longer timeout to ensure all VM Groups above are reconciled.
+				}, "5s", "100ms").Should(Succeed(), "waiting for VirtualMachineGroup finalizer")
 			})
 		})
 

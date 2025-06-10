@@ -55,7 +55,7 @@ spec:
                   When powering off, all members are stopped immediately without delays.
                 items:
                   description: |-
-                    VirtualMachineGroupBootOrderGroup describes a boot order group of a
+                    VirtualMachineGroupBootOrderGroup describes a boot order group within a
                     VirtualMachineGroup.
                   properties:
                     members:

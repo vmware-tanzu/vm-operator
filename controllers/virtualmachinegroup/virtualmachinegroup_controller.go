@@ -351,7 +351,7 @@ func (r *Reconciler) reconcileVMMember(
 		conditions.MarkError(
 			ms,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-			"GetError",
+			"Error",
 			err,
 		)
 		return err
@@ -481,7 +481,7 @@ func (r *Reconciler) reconcileVMGMember(
 		conditions.MarkError(
 			ms,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-			"GetError",
+			"Error",
 			err,
 		)
 		return err

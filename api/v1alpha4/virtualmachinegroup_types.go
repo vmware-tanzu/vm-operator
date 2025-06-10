@@ -38,7 +38,7 @@ type GroupMember struct {
 	Kind string `json:"kind,omitempty"`
 }
 
-// VirtualMachineGroupBootOrderGroup describes a boot order group of a
+// VirtualMachineGroupBootOrderGroup describes a boot order group within a
 // VirtualMachineGroup.
 type VirtualMachineGroupBootOrderGroup struct {
 	// +optional

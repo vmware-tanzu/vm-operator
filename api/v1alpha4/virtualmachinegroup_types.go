@@ -36,12 +36,27 @@ type GroupMember struct {
 	//
 	// If omitted, it defaults to VirtualMachine.
 	Kind string `json:"kind,omitempty"`
+}
+
+// VirtualMachineGroupBootOrderGroup describes a boot order group of a
+// VirtualMachineGroup.
+type VirtualMachineGroupBootOrderGroup struct {
+	// +optional
+	// +listType=map
+	// +listMapKey=kind
+	// +listMapKey=name
+
+	// Members describes the names of VirtualMachine or VirtualMachineGroup
+	// objects that are members of this boot order group. The VM or VM Group
+	// objects must be in the same namespace as this group.
+	Members []GroupMember `json:"members,omitempty"`
 
 	// +optional
 
-	// PowerOnDelay is the amount of time to wait before powering on the member.
+	// PowerOnDelay is the amount of time to wait before powering on all the
+	// members of this boot order group.
 	//
-	// If omitted, the member will be powered on immediately when the group's
+	// If omitted, the members will be powered on immediately when the group's
 	// power state changes to PoweredOn.
 	PowerOnDelay *metav1.Duration `json:"powerOnDelay,omitempty"`
 }
@@ -56,14 +71,15 @@ type VirtualMachineGroupSpec struct {
 	GroupName string `json:"groupName,omitempty"`
 
 	// +optional
-	// +listType=map
-	// +listMapKey=kind
-	// +listMapKey=name
 
-	// Members describes the names of VirtualMachine or VirtualMachineGroup
-	// objects that are members of this group. The VM or VM Group objects must
-	// be in the same namespace as this group.
-	Members []GroupMember `json:"members,omitempty"`
+	// BootOrders describes the boot sequence for this group members. Each boot
+	// order contains a set of members that will be powered on simultaneously,
+	// with an optional delay before powering on. The orders are processed
+	// sequentially in the order they appear in this list, with delays being
+	// cumulative across orders.
+	//
+	// When powering off, all members are stopped immediately without delays.
+	BootOrders []VirtualMachineGroupBootOrderGroup `json:"bootOrders,omitempty"`
 
 	// +optional
 

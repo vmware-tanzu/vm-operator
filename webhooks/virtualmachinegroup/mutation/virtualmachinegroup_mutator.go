@@ -126,10 +126,10 @@ func (m mutator) vmGroupFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virt
 // being updated directly (not inherited from a parent).
 func ProcessPowerState(
 	ctx *pkgctx.WebhookRequestContext,
-	new, old *vmopv1.VirtualMachineGroup) (bool, error) {
+	newVMG, oldVMG *vmopv1.VirtualMachineGroup) (bool, error) {
 	// If the old VMGroup is nil, this is a creation request.
-	if old == nil {
-		old = &vmopv1.VirtualMachineGroup{
+	if oldVMG == nil {
+		oldVMG = &vmopv1.VirtualMachineGroup{
 			Spec: vmopv1.VirtualMachineGroupSpec{
 				PowerState:                  "",
 				NextForcePowerStateSyncTime: "",
@@ -141,43 +141,43 @@ func ProcessPowerState(
 		wasMutated             bool
 		shouldForceSync        bool
 		shouldUpdateAnnotation bool
-		oldForceSyncVal        = old.Spec.NextForcePowerStateSyncTime
-		newForceSyncVal        = new.Spec.NextForcePowerStateSyncTime
+		oldForceSyncVal        = oldVMG.Spec.NextForcePowerStateSyncTime
+		newForceSyncVal        = newVMG.Spec.NextForcePowerStateSyncTime
 		now                    = time.Now().UTC().Format(time.RFC3339Nano)
 	)
 
-	if newForceSyncVal == "" {
-		// Field is deleted, reset it to the previous value.
-		new.Spec.NextForcePowerStateSyncTime = oldForceSyncVal
+	switch {
+	case newForceSyncVal == "":
+		// Field is either not set or deleted, reset it to the previous value.
+		newVMG.Spec.NextForcePowerStateSyncTime = oldForceSyncVal
 		wasMutated = oldForceSyncVal != ""
-	} else if strings.EqualFold("now", newForceSyncVal) {
-		new.Spec.NextForcePowerStateSyncTime = now
+	case strings.EqualFold("now", newForceSyncVal):
+		newVMG.Spec.NextForcePowerStateSyncTime = now
 		wasMutated = true
 		shouldForceSync = true
-	} else if newForceSyncVal != oldForceSyncVal {
-		// Field is being updated to a value other than "now".
+	case newForceSyncVal != oldForceSyncVal:
 		return false, field.Invalid(
 			field.NewPath("spec", "nextForcePowerStateSyncTime"),
-			new.Spec.NextForcePowerStateSyncTime,
+			newVMG.Spec.NextForcePowerStateSyncTime,
 			`may only be set to "now"`)
 	}
 
 	shouldUpdateAnnotation = shouldForceSync ||
-		new.Spec.PowerState != old.Spec.PowerState
+		newVMG.Spec.PowerState != oldVMG.Spec.PowerState
 
 	if shouldUpdateAnnotation {
 		// Set the last updated power state time annotation.
-		if new.Annotations == nil {
-			new.Annotations = make(map[string]string)
+		if newVMG.Annotations == nil {
+			newVMG.Annotations = make(map[string]string)
 		}
-		new.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] = now
+		newVMG.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] = now
 		wasMutated = true
 	}
 
 	// Check if we should remove the apply-power-state time annotation.
 	var (
-		oldAnnoTime = old.Annotations[constants.ApplyPowerStateTimeAnnotation]
-		newAnnoTime = new.Annotations[constants.ApplyPowerStateTimeAnnotation]
+		oldAnnoTime = oldVMG.Annotations[constants.ApplyPowerStateTimeAnnotation]
+		newAnnoTime = newVMG.Annotations[constants.ApplyPowerStateTimeAnnotation]
 	)
 
 	if oldAnnoTime != newAnnoTime {
@@ -189,7 +189,7 @@ func ProcessPowerState(
 		// VM Group's power state is being updated directly, remove the stale
 		// annotation to apply the power state immediately.
 		if newAnnoTime != "" {
-			delete(new.Annotations, constants.ApplyPowerStateTimeAnnotation)
+			delete(newVMG.Annotations, constants.ApplyPowerStateTimeAnnotation)
 			wasMutated = true
 		}
 	}

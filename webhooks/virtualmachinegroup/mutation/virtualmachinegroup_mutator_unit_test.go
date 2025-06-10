@@ -19,6 +19,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinegroup/mutation"
 )
 
+const (
+	nextForcePowerStateSyncTimeNow = "now"
+)
+
 func uniTests() {
 	Describe(
 		"Mutate",
@@ -89,7 +93,7 @@ func unitTestsMutating() {
 
 			When("Spec.NextForcePowerStateSyncTime is set to 'now'", func() {
 				It("Should add the last-updated-power-state annotation", func() {
-					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = "now"
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = nextForcePowerStateSyncTimeNow
 
 					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, nil)
 					Expect(err).ToNot(HaveOccurred())
@@ -135,7 +139,7 @@ func unitTestsMutating() {
 			When("Spec.NextForcePowerStateSyncTime is set to 'now'", func() {
 				It("Should add the last-updated-power-state annotation", func() {
 					oldVMGroup := ctx.vmGroup.DeepCopy()
-					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = "now"
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = nextForcePowerStateSyncTimeNow
 
 					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
 					Expect(err).ToNot(HaveOccurred())
@@ -199,7 +203,7 @@ func unitTestsMutating() {
 						oldVMGroup.Annotations = make(map[string]string)
 					}
 					oldVMGroup.Annotations[constants.ApplyPowerStateTimeAnnotation] = time.Now().UTC().Format(time.RFC3339Nano)
-					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = "now"
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = nextForcePowerStateSyncTimeNow
 
 					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
 					Expect(err).ToNot(HaveOccurred())

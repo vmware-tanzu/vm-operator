@@ -406,13 +406,19 @@ func (r *Reconciler) reconcileVMMember(
 			ms,
 			vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
 		)
-	} else if vm.Status.PowerState == ctx.VMGroup.Spec.PowerState {
+		goto patchVM
+	}
+
+	if vm.Status.PowerState == ctx.VMGroup.Spec.PowerState {
 		// VM is already synced with the group's power state.
 		conditions.MarkTrue(
 			ms,
 			vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
 		)
-	} else if updatePowerState {
+		goto patchVM
+	}
+
+	if updatePowerState {
 		// VM is not synced with the group's power state that is being updated.
 		// Mark the power state synced status condition as false. After it's
 		// updated, it will trigger a new reconciliation of the parent group to
@@ -424,16 +430,18 @@ func (r *Reconciler) reconcileVMMember(
 			"",
 		)
 		updateMemberPowerState(*ctx.VMGroup, vm, applyPowerOnTime)
-	} else {
-		// VM's power state has been updated outside the group.
-		conditions.MarkFalse(
-			ms,
-			vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
-			"NotSynced",
-			"",
-		)
+		goto patchVM
 	}
 
+	// VM's power state has been updated outside the group.
+	conditions.MarkFalse(
+		ms,
+		vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
+		"NotSynced",
+		"",
+	)
+
+patchVM:
 	if err := r.Patch(ctx, vm, patch); err != nil {
 		conditions.MarkError(
 			ms,

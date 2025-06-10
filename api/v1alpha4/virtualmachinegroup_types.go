@@ -102,6 +102,10 @@ type VirtualMachineGroupSpec struct {
 	// the group to all of its members, by setting the value of this field to
 	// "now" (case-insensitive).
 	//
+	// A mutating webhook changes this value to the current time (UTC), which
+	// the VM Group controller then uses to trigger a sync of the group's power
+	// state to its members.
+	//
 	// Please note it is not possible to schedule future syncs using this field.
 	// The only value that users may set is the string "now" (case-insensitive).
 	NextForcePowerStateSyncTime string `json:"nextForcePowerStateSyncTime,omitempty"`
@@ -112,7 +116,8 @@ type VirtualMachineGroupSpec struct {
 	// Refer to the VirtualMachine.PowerOffMode field for more details.
 	//
 	// Please note this field is only propagated to the group's members when
-	// the group's power state is changed.
+	// the group's power state is changed or the nextForcePowerStateSyncTime
+	// field is set to "now".
 	PowerOffMode VirtualMachinePowerOpMode `json:"powerOffMode,omitempty"`
 
 	// +optional
@@ -121,7 +126,8 @@ type VirtualMachineGroupSpec struct {
 	// Refer to the VirtualMachine.SuspendMode field for more details.
 	//
 	// Please note this field is only propagated to the group's members when
-	// the group's power state is changed.
+	// the group's power state is changed or the nextForcePowerStateSyncTime
+	// field is set to "now".
 	SuspendMode VirtualMachinePowerOpMode `json:"suspendMode,omitempty"`
 }
 

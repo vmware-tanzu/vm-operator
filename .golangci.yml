@@ -249,6 +249,9 @@ linters:
 
     - linters:
       - staticcheck
+      text: "^SA1019: corev1.(Endpoints|EndpointSubset) is deprecated: This API is deprecated in v1.33+.*"
+    - linters:
+      - staticcheck
       text: "^SA1019: [^.]+.Wait is deprecated: Please use WaitEx instead."
     - linters:
       - staticcheck

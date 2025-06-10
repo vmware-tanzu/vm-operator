@@ -1539,7 +1539,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		prereqErrs = append(prereqErrs, err)
 	}
 
-	if err := vs.vmCreateGetGroup(vmCtx); err != nil {
+	if err := vmlifecycle.UpdateGroupLinkedCondition(vmCtx, vs.k8sClient); err != nil {
 		prereqErrs = append(prereqErrs, err)
 	}
 
@@ -1647,59 +1647,6 @@ func (vs *vSphereVMProvider) vmCreateGetBootstrap(
 	}
 
 	createArgs.BootstrapData = bsData
-
-	return nil
-}
-
-func (vs *vSphereVMProvider) vmCreateGetGroup(
-	vmCtx pkgctx.VirtualMachineContext) error {
-
-	if vmCtx.VM.Spec.GroupName == "" {
-		pkgcnd.Delete(
-			vmCtx.VM,
-			vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-		return nil
-	}
-
-	var (
-		obj vmopv1.VirtualMachineGroup
-		key = ctrlclient.ObjectKey{
-			Name:      vmCtx.VM.Spec.GroupName,
-			Namespace: vmCtx.VM.Namespace,
-		}
-	)
-
-	if err := vs.k8sClient.Get(vmCtx, key, &obj); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-
-		pkgcnd.MarkFalse(
-			vmCtx.VM,
-			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-			"NotFound",
-			"")
-
-		return nil
-	}
-
-	for i := range obj.Spec.Members {
-		m := obj.Spec.Members[i]
-		if m.Kind == "VirtualMachine" {
-			if m.Name == vmCtx.VM.Name {
-				pkgcnd.MarkTrue(
-					vmCtx.VM,
-					vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-				return nil
-			}
-		}
-	}
-
-	pkgcnd.MarkFalse(
-		vmCtx.VM,
-		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-		"NotMember",
-		"")
 
 	return nil
 }

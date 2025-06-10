@@ -2220,3 +2220,104 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 		})
 	})
 })
+
+var _ = Describe("UpdateGroupLinkedCondition", func() {
+	var (
+		ctx   *builder.IntegrationTestContext
+		vmCtx pkgctx.VirtualMachineContext
+		vm    *vmopv1.VirtualMachine
+		vmg   *vmopv1.VirtualMachineGroup
+	)
+
+	BeforeEach(func() {
+		ctx = suite.NewIntegrationTestContext()
+
+		vm = builder.DummyVirtualMachine()
+		vm.Namespace = ctx.Namespace
+		Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: pkgcfg.NewContextWithDefaultConfig(),
+			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
+			VM:      vm,
+		}
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	When("VM has no group name specified", func() {
+		BeforeEach(func() {
+			vm.Spec.GroupName = ""
+			conditions.MarkTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+			Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+		})
+
+		It("should delete the GroupLinked condition", func() {
+			Expect(vmlifecycle.UpdateGroupLinkedCondition(vmCtx, ctx.Client)).To(Succeed())
+			Expect(conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeNil())
+		})
+	})
+
+	When("VM group name is set to a non-existent group", func() {
+		BeforeEach(func() {
+			vm.Spec.GroupName = "non-existent-group"
+			Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+		})
+
+		It("should set GroupLinked condition to False with NotFound reason", func() {
+			Expect(vmlifecycle.UpdateGroupLinkedCondition(vmCtx, ctx.Client)).To(Succeed())
+			c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+			Expect(c).ToNot(BeNil())
+			Expect(c.Status).To(Equal(metav1.ConditionFalse))
+			Expect(c.Reason).To(Equal("NotFound"))
+		})
+	})
+
+	When("VM group name is set to an existing group", func() {
+		BeforeEach(func() {
+			vmg = &vmopv1.VirtualMachineGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-group",
+					Namespace: vm.Namespace,
+				},
+				Spec: vmopv1.VirtualMachineGroupSpec{
+					Members: []vmopv1.GroupMember{},
+				},
+			}
+			Expect(ctx.Client.Create(ctx, vmg)).To(Succeed())
+
+			vm.Spec.GroupName = vmg.Name
+			Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+		})
+
+		When("VM is not a member of the group", func() {
+			It("should set GroupLinked condition to False with NotMember reason", func() {
+				Expect(vmlifecycle.UpdateGroupLinkedCondition(vmCtx, ctx.Client)).To(Succeed())
+				c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+				Expect(c).ToNot(BeNil())
+				Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				Expect(c.Reason).To(Equal("NotMember"))
+			})
+		})
+
+		When("VM is a member of the group", func() {
+			BeforeEach(func() {
+				vmg.Spec.Members = []vmopv1.GroupMember{
+					{
+						Name: vm.Name,
+						Kind: "VirtualMachine",
+					},
+				}
+				Expect(ctx.Client.Update(ctx, vmg)).To(Succeed())
+			})
+
+			It("should set GroupLinked condition to True", func() {
+				Expect(vmlifecycle.UpdateGroupLinkedCondition(vmCtx, ctx.Client)).To(Succeed())
+				Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+			})
+		})
+	})
+})

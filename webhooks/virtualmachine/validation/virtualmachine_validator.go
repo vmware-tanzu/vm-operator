@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -80,6 +81,7 @@ const (
 	addRestrictedAnnotation                  = "adding this annotation is restricted to privileged users"
 	delRestrictedAnnotation                  = "removing this annotation is restricted to privileged users"
 	modRestrictedAnnotation                  = "modifying this annotation is restricted to privileged users"
+	notUpgraded                              = "modifying this VM is not allowed until it is upgraded"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha4-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha4,name=default.validating.virtualmachine.v1alpha4.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -227,6 +229,9 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	var fieldErrs field.ErrorList
+
+	// Check if the VM has been upgraded.
+	fieldErrs = append(fieldErrs, v.validateSchemaUpgrade(ctx, vm, oldVM)...)
 
 	// Check if an immutable field has been modified.
 	fieldErrs = append(fieldErrs, v.validateImmutableFields(ctx, vm, oldVM)...)
@@ -1207,6 +1212,72 @@ func (v validator) validateUpdatesWhenPoweredOn(
 	allErrs = append(allErrs, validateCdromWhenPoweredOn(vm.Spec.Cdrom, oldVM.Spec.Cdrom)...)
 
 	// TODO: More checks.
+
+	return allErrs
+}
+
+func (v validator) validateSchemaUpgrade(
+	ctx *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	logr.FromContextOrDiscard(ctx).Info("ValidateSchemaUpgrade", "userInfo", ctx.UserInfo)
+	if builder.IsVMOperatorServiceAccount(ctx.WebhookContext, ctx.UserInfo) ||
+		builder.IsSystemMasters(ctx.WebhookContext, ctx.UserInfo) {
+
+		// The VM Operator service account and cluster-admin may bypass this
+		// check.
+		return nil
+	}
+
+	var allErrs field.ErrorList
+	fieldPath := field.NewPath("metadata", "annotations")
+
+	var (
+		newUpBuildVer = newVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
+		newUpSchemVer = newVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+
+		oldUpBuildVer = oldVM.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey]
+		oldUpSchemVer = oldVM.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey]
+	)
+
+	switch {
+	case newUpBuildVer != "" && newUpBuildVer != oldUpBuildVer:
+		// Prevent most users from modifying these annotations.
+		allErrs = append(allErrs, field.Forbidden(
+			fieldPath.Key(pkgconst.UpgradedToBuildVersionAnnotationKey),
+			modRestrictedAnnotation))
+
+	case oldUpBuildVer != "" && newUpBuildVer == "":
+		ctx.Logger.V(4).Info("Deleted annotation",
+			"key", pkgconst.UpgradedToBuildVersionAnnotationKey)
+
+	case oldUpBuildVer == "" || oldUpBuildVer != pkgcfg.FromContext(ctx).BuildVersion:
+		// If the annotations' values do not match the expected values, then the
+		// VM may not be modified.
+		allErrs = append(allErrs, field.Forbidden(
+			fieldPath.Key(pkgconst.UpgradedToBuildVersionAnnotationKey),
+			notUpgraded))
+	}
+
+	switch {
+	case newUpSchemVer != "" && newUpSchemVer != oldUpSchemVer:
+		// Prevent most users from modifying these annotations.
+		allErrs = append(allErrs, field.Forbidden(
+			fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
+			modRestrictedAnnotation))
+
+	case oldUpSchemVer != "" && newUpSchemVer == "":
+		// Allow anyone to delete the annotation.
+		ctx.Logger.V(4).Info("Deleted annotation",
+			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
+
+	case oldUpSchemVer == "" || oldUpSchemVer != vmopv1.GroupVersion.Version:
+		// If the annotations' values do not match the expected values, then the
+		// VM may not be modified.
+		allErrs = append(allErrs, field.Forbidden(
+			fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
+			notUpgraded))
+	}
 
 	return allErrs
 }

@@ -21,6 +21,12 @@ var _ = DescribeTable("IsPrivilegedAccount",
 		Ω(builder.IsPrivilegedAccount(ctx, userInfo)).To(Equal(expected))
 	},
 	Entry(
+		"nil context",
+		(*pkgctx.WebhookContext)(nil),
+		authv1.UserInfo{},
+		false,
+	),
+	Entry(
 		"empty inputs",
 		&pkgctx.WebhookContext{Context: pkgcfg.NewContext()},
 		authv1.UserInfo{},
@@ -55,7 +61,7 @@ var _ = DescribeTable("IsPrivilegedAccount",
 		true,
 	),
 	Entry(
-		"is service account",
+		"is vm op service account",
 		&pkgctx.WebhookContext{
 			Context:            pkgcfg.NewContext(),
 			Namespace:          "my-ns",

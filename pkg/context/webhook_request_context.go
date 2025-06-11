@@ -31,8 +31,11 @@ type WebhookRequestContext struct {
 	// Operation is the operation.
 	Op admissionv1.Operation
 
-	// IsPrivilegedAccount is if this request is from a privileged account (currently
-	// that's either kube-admin or the pod's system account).
+	// IsPrivilegedAccount is if this request is from a privileged account, ex.
+	// - kube-admin
+	// - system:masters
+	// - VM Op service account
+	// - in the privileged account env var
 	IsPrivilegedAccount bool
 
 	// UserInfo is the user information associated with the webhook request.

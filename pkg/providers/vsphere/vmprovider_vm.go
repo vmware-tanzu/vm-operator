@@ -53,6 +53,7 @@ import (
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"
+	upgradevm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/upgrade/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
@@ -68,6 +69,7 @@ import (
 
 var (
 	ErrSetPowerState          = res.ErrSetPowerState
+	ErrUpgradeSchema          = upgradevm.ErrUpgradeSchema
 	ErrBackup                 = virtualmachine.ErrBackingUp
 	ErrBootstrapReconfigure   = vmlifecycle.ErrBootstrapReconfigure
 	ErrBootstrapCustomize     = vmlifecycle.ErrBootstrapCustomize
@@ -778,13 +780,13 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// Reconcile backup state (VKS nodes excluded)
+	// Reconcile schema upgrade
 	//
-	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
+	if err := vs.reconcileSchemaUpgrade(vmCtx); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
 			return errOrReconcileErr(reconcileErr, err)
 		}
-		reconcileErr = getReconcileErr("backup state", reconcileErr, err)
+		reconcileErr = getReconcileErr("schema upgrade", reconcileErr, err)
 	}
 
 	//
@@ -795,6 +797,16 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			return errOrReconcileErr(reconcileErr, err)
 		}
 		reconcileErr = getReconcileErr("status", reconcileErr, err)
+	}
+
+	//
+	// Reconcile backup state (VKS nodes excluded)
+	//
+	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("backup state", reconcileErr, err)
 	}
 
 	//
@@ -854,6 +866,16 @@ func (vs *vSphereVMProvider) reconcileStatus(
 		vmlifecycle.ReconcileStatusData{
 			NetworkDeviceKeysToSpecIdx: networkDeviceKeysToSpecIdx,
 		})
+}
+
+func (vs *vSphereVMProvider) reconcileSchemaUpgrade(
+	vmCtx pkgctx.VirtualMachineContext) error {
+
+	return upgradevm.ReconcileSchemaUpgrade(
+		vmCtx,
+		vs.k8sClient,
+		vmCtx.VM,
+		vmCtx.MoVM)
 }
 
 func (vs *vSphereVMProvider) reconcileConfig(

@@ -441,60 +441,6 @@ func intgTestsReconcile() {
 
 		})
 
-		When("VM schema needs upgrade", func() {
-			instanceUUID := uuid.NewString()
-			biosUUID := uuid.NewString()
-
-			BeforeEach(func() {
-				providerfake.SetCreateOrUpdateFunction(
-					ctx,
-					intgFakeVMProvider,
-					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-						vm.Status.InstanceUUID = instanceUUID
-						vm.Status.BiosUUID = biosUUID
-						return nil
-					},
-				)
-			})
-
-			// NOTE: mutating webhook sets the default spec.instanceUUID, but is not run in this test -
-			// leaving spec.instanceUUID empty as it would be for a pre-v1alpha3 VM
-			It("will set spec.instanceUUID", func() {
-				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-
-				Eventually(func(g Gomega) {
-					vm := getVirtualMachine(ctx, vmKey)
-					g.Expect(vm).ToNot(BeNil())
-					g.Expect(vm.Spec.InstanceUUID).To(Equal(instanceUUID))
-				}).Should(Succeed(), "waiting for expected instanceUUID")
-			})
-
-			// NOTE: mutating webhook sets the default spec.biosUUID, but is not run in this test -
-			// leaving spec.biosUUID empty as it would be for a pre-v1alpha3 VM
-			It("will set spec.biosUUID", func() {
-				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-
-				Eventually(func(g Gomega) {
-					vm := getVirtualMachine(ctx, vmKey)
-					g.Expect(vm).ToNot(BeNil())
-					g.Expect(vm.Spec.BiosUUID).To(Equal(biosUUID))
-				}).Should(Succeed(), "waiting for expected biosUUID")
-			})
-
-			It("will set cloudInit.instanceID", func() {
-				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
-				}
-				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-
-				Eventually(func(g Gomega) {
-					vm := getVirtualMachine(ctx, vmKey)
-					g.Expect(vm).ToNot(BeNil())
-					g.Expect(vm.Spec.Bootstrap.CloudInit.InstanceID).To(BeEquivalentTo(vm.UID))
-				}).Should(Succeed(), "waiting for expected instanceID")
-			})
-		})
-
 		It("Reconciles after VirtualMachineClass change", func() {
 			providerfake.SetCreateOrUpdateFunction(
 				ctx,

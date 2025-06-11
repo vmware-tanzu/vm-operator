@@ -2667,6 +2667,9 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+					),
 				},
 			),
 
@@ -2679,6 +2682,9 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+					),
 				},
 			),
 
@@ -2702,6 +2708,9 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+					),
 				},
 			),
 
@@ -2714,6 +2723,9 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+					),
 				},
 			),
 
@@ -4093,6 +4105,9 @@ func unitTestsValidateUpdate() {
 						}
 					},
 					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+					),
 				},
 			),
 
@@ -4105,6 +4120,9 @@ func unitTestsValidateUpdate() {
 						}
 					},
 					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+					),
 				},
 			),
 
@@ -4128,6 +4146,9 @@ func unitTestsValidateUpdate() {
 						}
 					},
 					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+					),
 				},
 			),
 
@@ -4140,6 +4161,9 @@ func unitTestsValidateUpdate() {
 						}
 					},
 					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+					),
 				},
 			),
 

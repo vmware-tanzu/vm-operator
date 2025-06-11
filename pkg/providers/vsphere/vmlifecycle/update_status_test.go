@@ -2284,7 +2284,7 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 					Namespace: vm.Namespace,
 				},
 				Spec: vmopv1.VirtualMachineGroupSpec{
-					BootOrders: []vmopv1.VirtualMachineGroupBootOrderGroup{
+					BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
 						{
 							Members: []vmopv1.GroupMember{},
 						},
@@ -2309,7 +2309,7 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 
 		When("VM is a member of the group", func() {
 			BeforeEach(func() {
-				vmg.Spec.BootOrders = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				vmg.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
 					{
 						Members: []vmopv1.GroupMember{
 							{

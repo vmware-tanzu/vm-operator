@@ -65,7 +65,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 			Namespace: dummyNamespaceName,
 		},
 		Spec: vmopv1.VirtualMachineGroupSpec{
-			BootOrders: []vmopv1.VirtualMachineGroupBootOrderGroup{
+			BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
 				{
 					Members: []vmopv1.GroupMember{
 						{

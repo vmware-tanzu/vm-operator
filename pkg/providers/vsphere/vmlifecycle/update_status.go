@@ -189,7 +189,7 @@ func UpdateGroupLinkedCondition(
 		return nil
 	}
 
-	for _, bo := range obj.Spec.BootOrders {
+	for _, bo := range obj.Spec.BootOrder {
 		for _, m := range bo.Members {
 			if m.Kind == "VirtualMachine" {
 				if m.Name == vmCtx.VM.Name {

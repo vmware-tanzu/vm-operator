@@ -1320,7 +1320,7 @@ func vmTests() {
 				When("spec.groupName is set to a group to which the VM does belong", func() {
 					JustBeforeEach(func() {
 						vm.Spec.GroupName = vmg.Name
-						vmg.Spec.BootOrders = []vmopv1.VirtualMachineGroupBootOrderGroup{
+						vmg.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
 							{
 								Members: []vmopv1.GroupMember{
 									{

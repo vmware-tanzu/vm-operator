@@ -284,7 +284,7 @@ func (r *Reconciler) reconcileMembers(
 		memberErrs     = []error{}
 	)
 
-	for _, bootOrder := range ctx.VMGroup.Spec.BootOrders {
+	for _, bootOrder := range ctx.VMGroup.Spec.BootOrder {
 		if ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn &&
 			bootOrder.PowerOnDelay != nil {
 			applyPowerOnTime = applyPowerOnTime.Add(bootOrder.PowerOnDelay.Duration)

@@ -72,14 +72,14 @@ type VirtualMachineGroupSpec struct {
 
 	// +optional
 
-	// BootOrders describes the boot sequence for this group members. Each boot
+	// BootOrder describes the boot sequence for this group members. Each boot
 	// order contains a set of members that will be powered on simultaneously,
 	// with an optional delay before powering on. The orders are processed
 	// sequentially in the order they appear in this list, with delays being
 	// cumulative across orders.
 	//
 	// When powering off, all members are stopped immediately without delays.
-	BootOrders []VirtualMachineGroupBootOrderGroup `json:"bootOrders,omitempty"`
+	BootOrder []VirtualMachineGroupBootOrderGroup `json:"bootOrder,omitempty"`
 
 	// +optional
 

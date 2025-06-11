@@ -79,7 +79,7 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 			Namespace:    ctx.Namespace,
 		},
 		Spec: vmopv1.VirtualMachineGroupSpec{
-			BootOrders: []vmopv1.VirtualMachineGroupBootOrderGroup{
+			BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
 				{
 					Members: []vmopv1.GroupMember{
 						{

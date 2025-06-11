@@ -44,9 +44,9 @@ spec:
           spec:
             description: VirtualMachineGroupSpec defines the desired state of VirtualMachineGroup.
             properties:
-              bootOrders:
+              bootOrder:
                 description: |-
-                  BootOrders describes the boot sequence for this group members. Each boot
+                  BootOrder describes the boot sequence for this group members. Each boot
                   order contains a set of members that will be powered on simultaneously,
                   with an optional delay before powering on. The orders are processed
                   sequentially in the order they appear in this list, with delays being

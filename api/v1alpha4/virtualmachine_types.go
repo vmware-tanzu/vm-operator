@@ -647,11 +647,45 @@ type VirtualMachineSpec struct {
 	// ClassName describes the name of the VirtualMachineClass resource used to
 	// deploy this VM.
 	//
+	// When creating a virtual machine, if this field is empty and a
+	// VirtualMachineClassInstance is specified in spec.class, then
+	// this field is populated with the VirtualMachineClass object's
+	// name.
+	//
+	// Please also note, when creating a new VirtualMachine, if this field and
+	// spec.class are both non-empty, then they must refer to the same
+	// VirtualMachineClass or an error is returned.
+	//
 	// Please note, this field *may* be empty if the VM was imported instead of
 	// deployed by VM Operator. An imported VirtualMachine resource references
 	// an existing VM on the underlying platform that was not deployed from a
 	// VM class.
+	//
+	// If a VM is using a class, a different value in spec.className
+	// leads to the VM being resized.
 	ClassName string `json:"className,omitempty"`
+
+	// +optional
+
+	// Class describes the VirtualMachineClassInsance resource that is
+	// referenced by this virtual machine. This can be the
+	// VirtualMachineClassInstance that the virtual machine was
+	// created, or later resized with.
+	//
+	// The value of spec.class.Name must be the Kubernetes object name
+	// of a valid VirtualMachineClassInstance resource.
+	//
+	// Please also note, if this field and spec.className are both
+	// non-empty, then they must refer to the same VirtualMachineClass
+	// or an error is returned.
+	//
+	// If a className is specified, but this field is omitted, VM operator
+	// picks the latest instance for the VM class to create the VM.
+	//
+	// If a VM class has been modified and thus, the newly available
+	// VirtualMachineClassInstance can be specified in spec.class to
+	// trigger a resize operation.
+	Class *vmopv1common.LocalObjectRef `json:"class,omitempty"`
 
 	// +optional
 

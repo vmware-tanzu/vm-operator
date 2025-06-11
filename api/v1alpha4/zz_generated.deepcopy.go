@@ -2944,6 +2944,11 @@ func (in *VirtualMachineSpec) DeepCopyInto(out *VirtualMachineSpec) {
 		*out = new(VirtualMachineImageRef)
 		**out = **in
 	}
+	if in.Class != nil {
+		in, out := &in.Class, &out.Class
+		*out = new(common.LocalObjectRef)
+		**out = **in
+	}
 	if in.Affinity != nil {
 		in, out := &in.Affinity, &out.Affinity
 		*out = new(VirtualMachineAffinitySpec)

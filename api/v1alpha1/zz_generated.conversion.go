@@ -2062,6 +2062,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
+	// WARNING: in.Class requires manual conversion: does not exist in peer-type
 	// WARNING: in.Affinity requires manual conversion: does not exist in peer-type
 	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	out.StorageClass = in.StorageClass

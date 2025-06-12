@@ -2,7 +2,7 @@ module github.com/vmware-tanzu/vm-operator/hack/tools
 
 go 1.23.0
 
-toolchain go1.24.2
+toolchain go1.24.4
 
 require (
 	github.com/AlekSi/gocov-xml v1.1.0

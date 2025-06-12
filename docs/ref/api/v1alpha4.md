@@ -253,7 +253,7 @@ _Appears in:_
 GroupMember describes a member of a VirtualMachineGroup.
 
 _Appears in:_
-- [VirtualMachineGroupSpec](#virtualmachinegroupspec)
+- [VirtualMachineGroupBootOrderGroup](#virtualmachinegroupbootordergroup)
 
 | Field | Description |
 | --- | --- |
@@ -262,10 +262,6 @@ _Appears in:_
 VirtualMachine or VirtualMachineGroup.
 
 If omitted, it defaults to VirtualMachine. |
-| `powerOnDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | PowerOnDelay is the amount of time to wait before powering on the member.
-
-If omitted, the member will be powered on immediately when the group's
-power state changes to PoweredOn. |
 
 ### GuestHeartbeatAction
 
@@ -1323,6 +1319,27 @@ _Appears in:_
 - [VirtualMachineCryptoStatus](#virtualmachinecryptostatus)
 
 
+### VirtualMachineGroupBootOrderGroup
+
+
+
+VirtualMachineGroupBootOrderGroup describes a boot order group within a
+VirtualMachineGroup.
+
+_Appears in:_
+- [VirtualMachineGroupSpec](#virtualmachinegroupspec)
+
+| Field | Description |
+| --- | --- |
+| `members` _[GroupMember](#groupmember) array_ | Members describes the names of VirtualMachine or VirtualMachineGroup
+objects that are members of this boot order group. The VM or VM Group
+objects must be in the same namespace as this group. |
+| `powerOnDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | PowerOnDelay is the amount of time to wait before powering on all the
+members of this boot order group.
+
+If omitted, the members will be powered on immediately when the group's
+power state changes to PoweredOn. |
+
 ### VirtualMachineGroupMemberStatus
 
 
@@ -1388,9 +1405,13 @@ _Appears in:_
 | `groupName` _string_ | GroupName describes the name of the group that this group belongs to.
 
 If omitted, this group is not a member of any other group. |
-| `members` _[GroupMember](#groupmember) array_ | Members describes the names of VirtualMachine or VirtualMachineGroup
-objects that are members of this group. The VM or VM Group objects must
-be in the same namespace as this group. |
+| `bootOrder` _[VirtualMachineGroupBootOrderGroup](#virtualmachinegroupbootordergroup) array_ | BootOrder describes the boot sequence for this group members. Each boot
+order contains a set of members that will be powered on simultaneously,
+with an optional delay before powering on. The orders are processed
+sequentially in the order they appear in this list, with delays being
+cumulative across orders.
+
+When powering off, all members are stopped immediately without delays. |
 | `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the desired power state of a VirtualMachineGroup.
 
 Please note this field may be omitted when creating a new VM group. This
@@ -1402,20 +1423,28 @@ However, once the field is set to a non-empty value, it may no longer be
 set to an empty value. This means that if the group's power state is
 PoweredOn, and a VM whose power state is PoweredOff is added to the
 group, that VM will be powered on. |
+| `nextForcePowerStateSyncTime` _string_ | NextForcePowerStateSyncTime may be used to force sync the power state of
+the group to all of its members, by setting the value of this field to
+"now" (case-insensitive).
+
+A mutating webhook changes this value to the current time (UTC), which
+the VM Group controller then uses to trigger a sync of the group's power
+state to its members.
+
+Please note it is not possible to schedule future syncs using this field.
+The only value that users may set is the string "now" (case-insensitive). |
 | `powerOffMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | PowerOffMode describes the desired behavior when powering off a VM Group.
 Refer to the VirtualMachine.PowerOffMode field for more details.
 
 Please note this field is only propagated to the group's members when
-the group's power state is changed.
-
-If omitted, the mode defaults to TrySoft. |
+the group's power state is changed or the nextForcePowerStateSyncTime
+field is set to "now". |
 | `suspendMode` _[VirtualMachinePowerOpMode](#virtualmachinepoweropmode)_ | SuspendMode describes the desired behavior when suspending a VM Group.
 Refer to the VirtualMachine.SuspendMode field for more details.
 
 Please note this field is only propagated to the group's members when
-the group's power state is changed.
-
-If omitted, the mode defaults to TrySoft. |
+the group's power state is changed or the nextForcePowerStateSyncTime
+field is set to "now". |
 
 ### VirtualMachineGroupStatus
 
@@ -2913,10 +2942,40 @@ VM image. |
 | `className` _string_ | ClassName describes the name of the VirtualMachineClass resource used to
 deploy this VM.
 
+When creating a virtual machine, if this field is empty and a
+VirtualMachineClassInstance is specified in spec.class, then
+this field is populated with the VirtualMachineClass object's
+name.
+
+Please also note, when creating a new VirtualMachine, if this field and
+spec.class are both non-empty, then they must refer to the same
+VirtualMachineClass or an error is returned.
+
 Please note, this field *may* be empty if the VM was imported instead of
 deployed by VM Operator. An imported VirtualMachine resource references
 an existing VM on the underlying platform that was not deployed from a
-VM class. |
+VM class.
+
+If a VM is using a class, a different value in spec.className
+leads to the VM being resized. |
+| `class` _[LocalObjectRef](#localobjectref)_ | Class describes the VirtualMachineClassInsance resource that is
+referenced by this virtual machine. This can be the
+VirtualMachineClassInstance that the virtual machine was
+created, or later resized with.
+
+The value of spec.class.Name must be the Kubernetes object name
+of a valid VirtualMachineClassInstance resource.
+
+Please also note, if this field and spec.className are both
+non-empty, then they must refer to the same VirtualMachineClass
+or an error is returned.
+
+If a className is specified, but this field is omitted, VM operator
+picks the latest instance for the VM class to create the VM.
+
+If a VM class has been modified and thus, the newly available
+VirtualMachineClassInstance can be specified in spec.class to
+trigger a resize operation. |
 | `affinity` _[VirtualMachineAffinitySpec](#virtualmachineaffinityspec)_ | Affinity describes the VM's scheduling constraints. |
 | `crypto` _[VirtualMachineCryptoSpec](#virtualmachinecryptospec)_ | Crypto describes the desired encryption state of the VirtualMachine. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
@@ -3071,6 +3130,9 @@ full disks. The available modes are:
 - Online   -- Promote disks while the VM is powered on. VMs with
               snapshots do not support online promotion.
 - Offline  -- Promote disks while the VM is powered off.
+
+Please note, this field is ignored for encrypted VMs since they do not
+use delta disks.
 
 Defaults to Online. |
 | `bootOptions` _[VirtualMachineBootOptions](#virtualmachinebootoptions)_ | BootOptions describes the settings that control the boot behavior of the

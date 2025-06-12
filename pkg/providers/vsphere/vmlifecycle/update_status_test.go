@@ -1924,7 +1924,7 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 	})
 })
 
-var _ = Describe("VirtualMachineRecocileReady Status to VM Status Condition", func() {
+var _ = Describe("VirtualMachineReconcileReady Status to VM Status Condition", func() {
 	Context("MarkReconciliationCondition", func() {
 		var (
 			vm *vmopv1.VirtualMachine
@@ -2284,7 +2284,11 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 					Namespace: vm.Namespace,
 				},
 				Spec: vmopv1.VirtualMachineGroupSpec{
-					Members: []vmopv1.GroupMember{},
+					BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
+						{
+							Members: []vmopv1.GroupMember{},
+						},
+					},
 				},
 			}
 			Expect(ctx.Client.Create(ctx, vmg)).To(Succeed())
@@ -2305,10 +2309,14 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 
 		When("VM is a member of the group", func() {
 			BeforeEach(func() {
-				vmg.Spec.Members = []vmopv1.GroupMember{
+				vmg.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
 					{
-						Name: vm.Name,
-						Kind: "VirtualMachine",
+						Members: []vmopv1.GroupMember{
+							{
+								Name: vm.Name,
+								Kind: "VirtualMachine",
+							},
+						},
 					},
 				}
 				Expect(ctx.Client.Update(ctx, vmg)).To(Succeed())

@@ -79,18 +79,22 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 			Namespace:    ctx.Namespace,
 		},
 		Spec: vmopv1.VirtualMachineGroupSpec{
-			Members: []vmopv1.GroupMember{
+			BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
 				{
-					Kind: "VirtualMachine",
-					Name: "vm-1",
-				},
-				{
-					Kind: "VirtualMachine",
-					Name: "vm-2",
-				},
-				{
-					Kind: "VirtualMachineGroup",
-					Name: "vmgroup-1",
+					Members: []vmopv1.GroupMember{
+						{
+							Kind: "VirtualMachine",
+							Name: "vm-1",
+						},
+						{
+							Kind: "VirtualMachine",
+							Name: "vm-2",
+						},
+						{
+							Kind: "VirtualMachineGroup",
+							Name: "vmgroup-1",
+						},
+					},
 				},
 			},
 		},

@@ -189,14 +189,16 @@ func UpdateGroupLinkedCondition(
 		return nil
 	}
 
-	for _, m := range obj.Spec.Members {
-		if m.Kind == "VirtualMachine" {
-			if m.Name == vmCtx.VM.Name {
-				conditions.MarkTrue(
-					vmCtx.VM,
-					vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+	for _, bo := range obj.Spec.BootOrder {
+		for _, m := range bo.Members {
+			if m.Kind == "VirtualMachine" {
+				if m.Name == vmCtx.VM.Name {
+					conditions.MarkTrue(
+						vmCtx.VM,
+						vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
 
-				return nil
+					return nil
+				}
 			}
 		}
 	}

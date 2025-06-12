@@ -44,59 +44,87 @@ spec:
           spec:
             description: VirtualMachineGroupSpec defines the desired state of VirtualMachineGroup.
             properties:
+              bootOrder:
+                description: |-
+                  BootOrder describes the boot sequence for this group members. Each boot
+                  order contains a set of members that will be powered on simultaneously,
+                  with an optional delay before powering on. The orders are processed
+                  sequentially in the order they appear in this list, with delays being
+                  cumulative across orders.
+
+                  When powering off, all members are stopped immediately without delays.
+                items:
+                  description: |-
+                    VirtualMachineGroupBootOrderGroup describes a boot order group within a
+                    VirtualMachineGroup.
+                  properties:
+                    members:
+                      description: |-
+                        Members describes the names of VirtualMachine or VirtualMachineGroup
+                        objects that are members of this boot order group. The VM or VM Group
+                        objects must be in the same namespace as this group.
+                      items:
+                        description: GroupMember describes a member of a VirtualMachineGroup.
+                        properties:
+                          kind:
+                            default: VirtualMachine
+                            description: |-
+                              Kind is the kind of member of this group, which can be either
+                              VirtualMachine or VirtualMachineGroup.
+
+                              If omitted, it defaults to VirtualMachine.
+                            enum:
+                            - VirtualMachine
+                            - VirtualMachineGroup
+                            type: string
+                          name:
+                            description: Name is the name of member of this group.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - kind
+                      - name
+                      x-kubernetes-list-type: map
+                    powerOnDelay:
+                      description: |-
+                        PowerOnDelay is the amount of time to wait before powering on all the
+                        members of this boot order group.
+
+                        If omitted, the members will be powered on immediately when the group's
+                        power state changes to PoweredOn.
+                      type: string
+                  type: object
+                type: array
               groupName:
                 description: |-
                   GroupName describes the name of the group that this group belongs to.
 
                   If omitted, this group is not a member of any other group.
                 type: string
-              members:
+              nextForcePowerStateSyncTime:
                 description: |-
-                  Members describes the names of VirtualMachine or VirtualMachineGroup
-                  objects that are members of this group. The VM or VM Group objects must
-                  be in the same namespace as this group.
-                items:
-                  description: GroupMember describes a member of a VirtualMachineGroup.
-                  properties:
-                    kind:
-                      default: VirtualMachine
-                      description: |-
-                        Kind is the kind of member of this group, which can be either
-                        VirtualMachine or VirtualMachineGroup.
+                  NextForcePowerStateSyncTime may be used to force sync the power state of
+                  the group to all of its members, by setting the value of this field to
+                  "now" (case-insensitive).
 
-                        If omitted, it defaults to VirtualMachine.
-                      enum:
-                      - VirtualMachine
-                      - VirtualMachineGroup
-                      type: string
-                    name:
-                      description: Name is the name of member of this group.
-                      type: string
-                    powerOnDelay:
-                      description: |-
-                        PowerOnDelay is the amount of time to wait before powering on the member.
+                  A mutating webhook changes this value to the current time (UTC), which
+                  the VM Group controller then uses to trigger a sync of the group's power
+                  state to its members.
 
-                        If omitted, the member will be powered on immediately when the group's
-                        power state changes to PoweredOn.
-                      type: string
-                  required:
-                  - name
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - kind
-                - name
-                x-kubernetes-list-type: map
+                  Please note it is not possible to schedule future syncs using this field.
+                  The only value that users may set is the string "now" (case-insensitive).
+                type: string
               powerOffMode:
-                default: TrySoft
                 description: |-
                   PowerOffMode describes the desired behavior when powering off a VM Group.
                   Refer to the VirtualMachine.PowerOffMode field for more details.
 
                   Please note this field is only propagated to the group's members when
-                  the group's power state is changed.
-
-                  If omitted, the mode defaults to TrySoft.
+                  the group's power state is changed or the nextForcePowerStateSyncTime
+                  field is set to "now".
                 enum:
                 - Hard
                 - Soft
@@ -121,15 +149,13 @@ spec:
                 - Suspended
                 type: string
               suspendMode:
-                default: TrySoft
                 description: |-
                   SuspendMode describes the desired behavior when suspending a VM Group.
                   Refer to the VirtualMachine.SuspendMode field for more details.
 
                   Please note this field is only propagated to the group's members when
-                  the group's power state is changed.
-
-                  If omitted, the mode defaults to TrySoft.
+                  the group's power state is changed or the nextForcePowerStateSyncTime
+                  field is set to "now".
                 enum:
                 - Hard
                 - Soft

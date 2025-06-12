@@ -36,12 +36,27 @@ type GroupMember struct {
 	//
 	// If omitted, it defaults to VirtualMachine.
 	Kind string `json:"kind,omitempty"`
+}
+
+// VirtualMachineGroupBootOrderGroup describes a boot order group within a
+// VirtualMachineGroup.
+type VirtualMachineGroupBootOrderGroup struct {
+	// +optional
+	// +listType=map
+	// +listMapKey=kind
+	// +listMapKey=name
+
+	// Members describes the names of VirtualMachine or VirtualMachineGroup
+	// objects that are members of this boot order group. The VM or VM Group
+	// objects must be in the same namespace as this group.
+	Members []GroupMember `json:"members,omitempty"`
 
 	// +optional
 
-	// PowerOnDelay is the amount of time to wait before powering on the member.
+	// PowerOnDelay is the amount of time to wait before powering on all the
+	// members of this boot order group.
 	//
-	// If omitted, the member will be powered on immediately when the group's
+	// If omitted, the members will be powered on immediately when the group's
 	// power state changes to PoweredOn.
 	PowerOnDelay *metav1.Duration `json:"powerOnDelay,omitempty"`
 }
@@ -56,14 +71,15 @@ type VirtualMachineGroupSpec struct {
 	GroupName string `json:"groupName,omitempty"`
 
 	// +optional
-	// +listType=map
-	// +listMapKey=kind
-	// +listMapKey=name
 
-	// Members describes the names of VirtualMachine or VirtualMachineGroup
-	// objects that are members of this group. The VM or VM Group objects must
-	// be in the same namespace as this group.
-	Members []GroupMember `json:"members,omitempty"`
+	// BootOrder describes the boot sequence for this group members. Each boot
+	// order contains a set of members that will be powered on simultaneously,
+	// with an optional delay before powering on. The orders are processed
+	// sequentially in the order they appear in this list, with delays being
+	// cumulative across orders.
+	//
+	// When powering off, all members are stopped immediately without delays.
+	BootOrder []VirtualMachineGroupBootOrderGroup `json:"bootOrder,omitempty"`
 
 	// +optional
 
@@ -81,27 +97,37 @@ type VirtualMachineGroupSpec struct {
 	PowerState VirtualMachinePowerState `json:"powerState,omitempty"`
 
 	// +optional
-	// +kubebuilder:default=TrySoft
+
+	// NextForcePowerStateSyncTime may be used to force sync the power state of
+	// the group to all of its members, by setting the value of this field to
+	// "now" (case-insensitive).
+	//
+	// A mutating webhook changes this value to the current time (UTC), which
+	// the VM Group controller then uses to trigger a sync of the group's power
+	// state to its members.
+	//
+	// Please note it is not possible to schedule future syncs using this field.
+	// The only value that users may set is the string "now" (case-insensitive).
+	NextForcePowerStateSyncTime string `json:"nextForcePowerStateSyncTime,omitempty"`
+
+	// +optional
 
 	// PowerOffMode describes the desired behavior when powering off a VM Group.
 	// Refer to the VirtualMachine.PowerOffMode field for more details.
 	//
 	// Please note this field is only propagated to the group's members when
-	// the group's power state is changed.
-	//
-	// If omitted, the mode defaults to TrySoft.
+	// the group's power state is changed or the nextForcePowerStateSyncTime
+	// field is set to "now".
 	PowerOffMode VirtualMachinePowerOpMode `json:"powerOffMode,omitempty"`
 
 	// +optional
-	// +kubebuilder:default=TrySoft
 
 	// SuspendMode describes the desired behavior when suspending a VM Group.
 	// Refer to the VirtualMachine.SuspendMode field for more details.
 	//
 	// Please note this field is only propagated to the group's members when
-	// the group's power state is changed.
-	//
-	// If omitted, the mode defaults to TrySoft.
+	// the group's power state is changed or the nextForcePowerStateSyncTime
+	// field is set to "now".
 	SuspendMode VirtualMachinePowerOpMode `json:"suspendMode,omitempty"`
 }
 

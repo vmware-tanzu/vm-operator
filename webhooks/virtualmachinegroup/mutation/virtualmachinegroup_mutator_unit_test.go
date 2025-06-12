@@ -19,6 +19,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinegroup/mutation"
 )
 
+const (
+	nextForcePowerStateSyncTimeNow = "now"
+)
+
 func uniTests() {
 	Describe(
 		"Mutate",
@@ -72,101 +76,139 @@ func unitTestsMutating() {
 
 	Describe("ProcessPowerState", func() {
 		Context("Creation", func() {
-			When("PowerState is set", func() {
+			When("Spec.PowerState is set", func() {
 				It("Should add the last-updated-power-state annotation", func() {
 					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 
-					result := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, nil)
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, nil)
+					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(BeTrue())
 					Expect(ctx.vmGroup.Annotations).To(HaveKey(constants.LastUpdatedPowerStateTimeAnnotation))
 					timestamp := ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation]
-					_, err := time.Parse(time.RFC3339, timestamp)
+					updatedTime, err := time.Parse(time.RFC3339, timestamp)
 					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedTime).To(BeTemporally("~", time.Now(), time.Second))
 				})
 			})
 
-			When("PowerState is not set and no members are present", func() {
-				It("Should not add the last-updated-power-state annotation", func() {
-					ctx.vmGroup.Spec.Members = []vmopv1.GroupMember{}
-					result := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, nil)
+			When("Spec.NextForcePowerStateSyncTime is set to 'now'", func() {
+				It("Should add the last-updated-power-state annotation", func() {
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = nextForcePowerStateSyncTimeNow
+
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, nil)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(BeTrue())
+					Expect(ctx.vmGroup.Annotations).To(HaveKey(constants.LastUpdatedPowerStateTimeAnnotation))
+					timestamp := ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation]
+					updatedTime, err := time.Parse(time.RFC3339, timestamp)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedTime).To(BeTemporally("~", time.Now(), time.Second))
+				})
+			})
+
+			When("Spec.NextForcePowerStateSyncTime is set to something other than 'now'", func() {
+				It("Should deny the request", func() {
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = "not-now"
+
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, nil)
 					Expect(result).To(BeFalse())
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("may only be set to \"now\""))
 				})
 			})
 		})
 
 		Context("Update", func() {
-			When("PowerState changes", func() {
+			When("Spec.PowerState is updated", func() {
 				It("Should add the last-updated-power-state annotation", func() {
 					oldVMGroup := ctx.vmGroup.DeepCopy()
 					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 
-					result := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(BeTrue())
 					Expect(ctx.vmGroup.Annotations).To(HaveKey(constants.LastUpdatedPowerStateTimeAnnotation))
 					timestamp := ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation]
-					_, err := time.Parse(time.RFC3339Nano, timestamp)
+					updatedTime, err := time.Parse(time.RFC3339, timestamp)
 					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedTime).To(BeTemporally("~", time.Now(), time.Second))
 				})
 			})
 
-			When("PowerState is not changed but members are updated", func() {
+			When("Spec.NextForcePowerStateSyncTime is set to 'now'", func() {
 				It("Should add the last-updated-power-state annotation", func() {
 					oldVMGroup := ctx.vmGroup.DeepCopy()
-					oldVMGroup.Spec.Members = []vmopv1.GroupMember{}
-					ctx.vmGroup.Spec.Members = []vmopv1.GroupMember{
-						{
-							Kind: "VirtualMachine",
-							Name: "vm1",
-						},
-					}
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = nextForcePowerStateSyncTimeNow
 
-					result := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(BeTrue())
 					Expect(ctx.vmGroup.Annotations).To(HaveKey(constants.LastUpdatedPowerStateTimeAnnotation))
 					timestamp := ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation]
-					_, err := time.Parse(time.RFC3339Nano, timestamp)
+					updatedTime, err := time.Parse(time.RFC3339, timestamp)
 					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedTime).To(BeTemporally("~", time.Now(), time.Second))
 				})
 			})
 
-			When("PowerState changes with a pre-existing apply-power-state time annotation", func() {
+			When("Spec.NextForcePowerStateSyncTime is set to something other than 'now'", func() {
+				It("Should deny the request", func() {
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = "not-now"
+
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, nil)
+					Expect(result).To(BeFalse())
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("may only be set to \"now\""))
+				})
+			})
+
+			When("Spec.NextForcePowerStateSyncTime is removed", func() {
+
+				var now = time.Now().UTC().Format(time.RFC3339Nano)
+
+				It("Should set it to the previous value", func() {
+					oldVMGroup := ctx.vmGroup.DeepCopy()
+					oldVMGroup.Spec.NextForcePowerStateSyncTime = now
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = ""
+
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(BeTrue())
+					Expect(ctx.vmGroup.Spec.NextForcePowerStateSyncTime).To(Equal(now))
+				})
+			})
+
+			When("Spec.PowerState is updated with a pre-existing apply-power-state time annotation", func() {
 				It("Should remove the apply-power-state time annotation", func() {
 					oldVMGroup := ctx.vmGroup.DeepCopy()
-					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 					if oldVMGroup.Annotations == nil {
 						oldVMGroup.Annotations = make(map[string]string)
 					}
 					oldVMGroup.Annotations[constants.ApplyPowerStateTimeAnnotation] = time.Now().UTC().Format(time.RFC3339Nano)
-					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 
-					result := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).ToNot(HaveOccurred())
 					Expect(result).To(BeTrue())
 					Expect(ctx.vmGroup.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
 				})
 			})
 
-			When("Neither PowerState nor members change", func() {
-				It("Should not modify annotations", func() {
+			When("Spec.NextForcePowerStateSyncTime is set to 'now' with a pre-existing apply-power-state time annotation", func() {
+				It("Should remove the apply-power-state time annotation", func() {
 					oldVMGroup := ctx.vmGroup.DeepCopy()
-					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-					oldVMGroup.Spec.Members = []vmopv1.GroupMember{
-						{
-							Kind: "VirtualMachine",
-							Name: "vm1",
-						},
+					if oldVMGroup.Annotations == nil {
+						oldVMGroup.Annotations = make(map[string]string)
 					}
-					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-					ctx.vmGroup.Spec.Members = []vmopv1.GroupMember{
-						{
-							Kind: "VirtualMachine",
-							Name: "vm1",
-						},
-					}
+					oldVMGroup.Annotations[constants.ApplyPowerStateTimeAnnotation] = time.Now().UTC().Format(time.RFC3339Nano)
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = nextForcePowerStateSyncTimeNow
 
-					result := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
-					Expect(result).To(BeFalse())
-					Expect(ctx.vmGroup.Annotations).To(Equal(oldVMGroup.Annotations))
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(BeTrue())
+					Expect(ctx.vmGroup.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
 				})
 			})
 		})

@@ -37,6 +37,12 @@ type VirtualMachineSetResourcePolicySpec struct {
 // VirtualMachineSetResourcePolicy.
 type VirtualMachineSetResourcePolicyStatus struct {
 	ClusterModules []VSphereClusterModuleStatus `json:"clustermodules,omitempty"`
+
+	// +optional
+
+	// FolderID describes the information used to identify the folder created
+	// for the resource policy.
+	FolderID string `json:"folderID,omitempty"`
 }
 
 // VSphereClusterModuleStatus describes the observed state of a vSphere

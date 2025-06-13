@@ -125,6 +125,11 @@ spec:
                   - moduleUUID
                   type: object
                 type: array
+              folderID:
+                description: |-
+                  FolderID describes the information used to identify the folder created
+                  for the resource policy.
+                type: string
             type: object
         type: object
     served: true
@@ -233,6 +238,11 @@ spec:
                   - moduleUUID
                   type: object
                 type: array
+              folderID:
+                description: |-
+                  FolderID describes the information used to identify the folder created
+                  for the resource policy.
+                type: string
             type: object
         type: object
     served: true
@@ -341,6 +351,11 @@ spec:
                   - moduleUUID
                   type: object
                 type: array
+              folderID:
+                description: |-
+                  FolderID describes the information used to identify the folder created
+                  for the resource policy.
+                type: string
             type: object
         type: object
     served: true
@@ -449,6 +464,11 @@ spec:
                   - moduleUUID
                   type: object
                 type: array
+              folderID:
+                description: |-
+                  FolderID describes the information used to identify the folder created
+                  for the resource policy.
+                type: string
             type: object
         type: object
     served: true

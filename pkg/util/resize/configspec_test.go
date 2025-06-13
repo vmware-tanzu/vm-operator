@@ -880,6 +880,103 @@ var _ = Describe("CreateResizeConfigSpec", func() {
 	)
 })
 
+var _ = Describe("CompareBootOptions", func() {
+	truePtr, falsePtr := vimtypes.NewBool(true), vimtypes.NewBool(false)
+
+	DescribeTable("ConfigInfo",
+		func(
+			ci vimtypes.VirtualMachineConfigInfo,
+			cs, expectedCS vimtypes.VirtualMachineConfigSpec) {
+
+			outCS := vimtypes.VirtualMachineConfigSpec{}
+
+			resize.CompareBootOptions(ci, cs, &outCS)
+			Expect(reflect.DeepEqual(outCS, expectedCS)).To(BeTrue(), cmp.Diff(expectedCS, outCS))
+		},
+
+		Entry("BootOptions needs updating -- ConfigInfo bootOptions is empty",
+			ConfigInfo{},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+		),
+
+		Entry("BootOptions needs updating -- ConfigInfo bootOptions and ConfigSpec bootOptions differ",
+			ConfigInfo{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       falsePtr,
+					EfiSecureBootEnabled: falsePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(0),
+					BootRetryEnabled:     nil,
+					BootRetryDelay:       int64(0),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  "",
+				},
+			},
+		),
+
+		Entry("BootOptions does not need updating",
+			ConfigInfo{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       falsePtr,
+					EfiSecureBootEnabled: falsePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       falsePtr,
+					EfiSecureBootEnabled: falsePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+				},
+			},
+			ConfigSpec{},
+		),
+	)
+})
+
 var _ = Describe("CreateResizeCPUMemoryConfigSpec", func() {
 
 	ctx := context.Background()

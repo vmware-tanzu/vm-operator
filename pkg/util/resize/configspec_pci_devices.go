@@ -38,6 +38,8 @@ func ComparePCIDevices(
 				backingMatch = MatchVirtualPCIPassthroughVmiopBackingInfo(a, curBacking)
 			case *vimtypes.VirtualPCIPassthroughDynamicBackingInfo:
 				backingMatch = MatchVirtualPCIPassthroughDynamicBackingInfo(a, curBacking)
+			case *vimtypes.VirtualPCIPassthroughDvxBackingInfo:
+				backingMatch = MatchVirtualPCIPassthroughDVXBackingInfo(a, curBacking)
 			}
 
 			if backingMatch {

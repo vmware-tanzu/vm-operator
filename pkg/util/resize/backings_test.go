@@ -779,4 +779,80 @@ var _ = Describe("Backings", func() {
 			true,
 		),
 	)
+
+	DescribeTable("MatchVirtualPCIPassthroughDVXBackingInfo",
+		func(expected *vimtypes.VirtualPCIPassthroughDvxBackingInfo, current vimtypes.BaseVirtualDeviceBackingInfo, match bool) {
+			m := resize.MatchVirtualPCIPassthroughDVXBackingInfo(expected, current)
+			Expect(m).To(Equal(match), cmp.Diff(current, expected))
+		},
+
+		Entry("#1",
+			&vimtypes.VirtualPCIPassthroughDvxBackingInfo{},
+			&vimtypes.VirtualNVDIMMBackingInfo{},
+			false,
+		),
+		Entry("#2",
+			&vimtypes.VirtualPCIPassthroughDvxBackingInfo{
+				DeviceClass: "hello",
+			},
+			&vimtypes.VirtualPCIPassthroughDvxBackingInfo{
+				DeviceClass: "hello",
+			},
+			true,
+		),
+		Entry("#3",
+			&vimtypes.VirtualPCIPassthroughDvxBackingInfo{
+				DeviceClass: "hello",
+				ConfigParams: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
+						Key:   "hello-key1",
+						Value: "hello-val1",
+					},
+					&vimtypes.OptionValue{
+						Key:   "hello-key2",
+						Value: "hello-val2",
+					},
+				},
+			},
+			&vimtypes.VirtualPCIPassthroughDvxBackingInfo{
+				DeviceClass: "hello",
+				ConfigParams: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
+						Key:   "hello-key1",
+						Value: "hello-val1",
+					},
+				},
+			},
+			false,
+		),
+		Entry("#4",
+			&vimtypes.VirtualPCIPassthroughDvxBackingInfo{
+				DeviceClass: "hello",
+				ConfigParams: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
+						Key:   "hello-key1",
+						Value: "hello-val1",
+					},
+					&vimtypes.OptionValue{
+						Key:   "hello-key2",
+						Value: "hello-val2",
+					},
+				},
+			},
+			&vimtypes.VirtualPCIPassthroughDvxBackingInfo{
+				DeviceClass: "hello",
+				ConfigParams: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{
+						Key:   "hello-key1",
+						Value: "hello-val1",
+					},
+					&vimtypes.OptionValue{
+						Key:   "hello-key2",
+						Value: "hello-val2",
+					},
+				},
+			},
+			true,
+		),
+	)
 })

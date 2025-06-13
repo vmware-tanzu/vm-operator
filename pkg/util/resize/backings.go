@@ -6,6 +6,7 @@ package resize
 
 import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 )
 
 func MatchVirtualDeviceDeviceBackingInfo(
@@ -304,6 +305,32 @@ func MatchVirtualPCIPassthroughDynamicBackingInfo(
 			if x.DeviceId == y.DeviceId && x.VendorId == y.VendorId {
 				return true
 			}
+		}
+	}
+
+	return false
+}
+
+func MatchVirtualPCIPassthroughDVXBackingInfo(
+	b *vimtypes.VirtualPCIPassthroughDvxBackingInfo,
+	baseBacking vimtypes.BaseVirtualDeviceBackingInfo) bool {
+
+	a, ok := baseBacking.(*vimtypes.VirtualPCIPassthroughDvxBackingInfo)
+	if !ok {
+		return false
+	}
+
+	if a.DeviceClass == b.DeviceClass {
+		if len(a.ConfigParams) == len(b.ConfigParams) {
+			am := make(map[string]any, len(a.ConfigParams))
+			bm := make(map[string]any, len(b.ConfigParams))
+			for i := 0; i < len(a.ConfigParams); i++ {
+				aov := a.ConfigParams[i].GetOptionValue()
+				bov := b.ConfigParams[i].GetOptionValue()
+				am[aov.Key] = aov.Value
+				bm[bov.Key] = bov.Value
+			}
+			return apiequality.Semantic.DeepEqual(am, bm)
 		}
 	}
 

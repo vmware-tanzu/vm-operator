@@ -27,6 +27,30 @@ const (
 	// at which an object was first created.
 	CreatedAtSchemaVersionAnnotationKey = createdAtPrefix + "schema-version"
 
+	upgradedToPrefix = "vmoperator.vmware.com/upgraded-to-"
+
+	// UpgradedToBuildVersionAnnotationKey is set on VirtualMachine
+	// objects when the function "ReconcileSchemaUpgrade" from
+	// pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go is
+	// executed.
+	//
+	// Please note, a validation webhook will deny any patch/update operations
+	// on VirtualMachine objects from unprivileged users until such time the
+	// object has this annotation with a value that matches the current build
+	// version.
+	UpgradedToBuildVersionAnnotationKey = upgradedToPrefix + "build-version"
+
+	// UpgradedToSchemaVersionAnnotationKey is set on VirtualMachine
+	// objects when the function "ReconcileSchemaUpgrade" from
+	// pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go is
+	// executed.
+	//
+	// Please note, a validation webhook will deny any patch/update operations
+	// on VirtualMachine objects from unprivileged users until such time the
+	// object has this annotation with a value that matches the current build
+	// version.
+	UpgradedToSchemaVersionAnnotationKey = upgradedToPrefix + "schema-version"
+
 	// MinSupportedHWVersionForPVC is the supported virtual hardware version for
 	// persistent volumes.
 	MinSupportedHWVersionForPVC = vimtypes.VMX15

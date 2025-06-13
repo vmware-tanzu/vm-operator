@@ -44,7 +44,7 @@ type WaitOnNetwork struct {
 var CloudInitUserDataSecretKeys = []string{"user-data", "value"}
 
 func BootStrapCloudInitInstanceID(
-	vmCtx pkgctx.VirtualMachineContext,
+	vm *vmopv1.VirtualMachine,
 	cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec) string {
 
 	// The Cloud-Init instance ID is from spec.bootstrap.cloudInit.instanceID.
@@ -61,10 +61,10 @@ func BootStrapCloudInitInstanceID(
 		// spec.bootstrap.cloudInit.instanceID, use the VM resource's object
 		// UID as the Cloud-Init instance ID if the value of
 		// spec.bootstrap.cloudInit.instanceID is empty.
-		iid = string(vmCtx.VM.UID)
+		iid = string(vm.UID)
 	}
 
-	if v := vmCtx.VM.Annotations[vmopv1.InstanceIDAnnotation]; v != "" && v != iid {
+	if v := vm.Annotations[vmopv1.InstanceIDAnnotation]; v != "" && v != iid {
 		// Before the introduction of spec.bootstrap.cloudInit.instanceID,
 		// the Cloud-Init instance ID was set to the value of the VM object's
 		// metadata.uid field.
@@ -90,7 +90,7 @@ func BootStrapCloudInitInstanceID(
 		// spec.bootstrap.cloudInit.instanceID or metadata.uid), go ahead and
 		// use the value from the annotation.
 		iid = v
-		delete(vmCtx.VM.Annotations, vmopv1.InstanceIDAnnotation)
+		delete(vm.Annotations, vmopv1.InstanceIDAnnotation)
 	}
 
 	// If the value of the Cloud-Init instance ID is different than the
@@ -122,7 +122,7 @@ func BootStrapCloudInit(
 		sshPublicKeys = strings.Join(cloudInitSpec.SSHAuthorizedKeys, "\n")
 	}
 
-	iid := BootStrapCloudInitInstanceID(vmCtx, cloudInitSpec)
+	iid := BootStrapCloudInitInstanceID(vmCtx.VM, cloudInitSpec)
 
 	metadata, err := GetCloudInitMetadata(
 		iid, bsArgs.HostName, bsArgs.DomainName, netPlan, sshPublicKeys,

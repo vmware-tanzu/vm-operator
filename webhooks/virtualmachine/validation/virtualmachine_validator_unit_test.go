@@ -5,6 +5,7 @@
 package validation_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -61,9 +62,26 @@ const (
 )
 
 type testParams struct {
-	setup         func(ctx *unitValidatingWebhookContext)
-	validate      func(response admission.Response)
-	expectAllowed bool
+	setup                  func(ctx *unitValidatingWebhookContext)
+	validate               func(response admission.Response)
+	expectAllowed          bool
+	skipBypassUpgradeCheck bool
+}
+
+func bypassUpgradeCheck(ctx *context.Context, objects ...metav1.Object) {
+	pkgcfg.SetContext(*ctx, func(config *pkgcfg.Config) {
+		config.BuildVersion = fake
+	})
+
+	for _, obj := range objects {
+		if obj.GetAnnotations() == nil {
+			obj.SetAnnotations(map[string]string{})
+		}
+		a := obj.GetAnnotations()
+		a[pkgconst.UpgradedToBuildVersionAnnotationKey] = fake
+		a[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		obj.SetAnnotations(a)
+	}
 }
 
 func doValidateWithMsg(msgs ...string) func(admission.Response) {
@@ -2737,6 +2755,9 @@ func unitTestsValidateUpdate() {
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
+
+		bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+
 		// Init immutable fields that aren't set in the dummy VM.
 		if ctx.oldVM.Spec.Reserved == nil {
 			ctx.oldVM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
@@ -2897,7 +2918,12 @@ func unitTestsValidateUpdate() {
 	)
 
 	doTest := func(args testParams) {
+
 		args.setup(ctx)
+
+		if !args.skipBypassUpgradeCheck {
+			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+		}
 
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -2920,6 +2946,8 @@ func unitTestsValidateUpdate() {
 			Entry("should disallow updating admin-only annotations by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+
 						ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 						ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 						ctx.oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
@@ -3614,6 +3642,10 @@ func unitTestsValidateUpdate() {
 
 	When("the update is performed while object deletion", func() {
 		It("should allow the request", func() {
+			bypassUpgradeCheck(
+				&ctx.WebhookRequestContext.Context,
+				ctx.WebhookRequestContext.Obj,
+				ctx.WebhookRequestContext.OldObj)
 			t := metav1.Now()
 			ctx.WebhookRequestContext.Obj.SetDeletionTimestamp(&t)
 			response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
@@ -4625,6 +4657,213 @@ func unitTestsValidateUpdate() {
 			),
 		)
 	})
+
+	DescribeTable("Schema upgrade", doTest,
+
+		Entry("disallow adding upgradedToBuildVersion annotation for non VM Op service account / system:masters",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.PrivilegedUsers = fake
+					})
+					ctx.UserInfo.Username = fake
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				validate: doValidateWithMsg(
+					`metadata.annotations[vmoperator.vmware.com/upgraded-to-build-version]: Forbidden: modifying this annotation is restricted to privileged users`,
+				),
+			},
+		),
+
+		Entry("disallow adding upgradedToSchemaVersion annotation for non VM Op service account / system:masters",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.PrivilegedUsers = fake
+					})
+					ctx.UserInfo.Username = fake
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				validate: doValidateWithMsg(
+					`metadata.annotations[vmoperator.vmware.com/upgraded-to-schema-version]: Forbidden: modifying this annotation is restricted to privileged users`,
+				),
+			},
+		),
+
+		Entry("allow adding upgradedToBuildVersion annotation for VM Op service account",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					ctx.UserInfo.Username = strings.Join(
+						[]string{
+							"system",
+							"serviceaccount",
+							ctx.Namespace,
+							ctx.ServiceAccountName,
+						}, ":")
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow adding upgradedToSchemaVersion annotation for VM Op service account",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					ctx.UserInfo.Username = strings.Join(
+						[]string{
+							"system",
+							"serviceaccount",
+							ctx.Namespace,
+							ctx.ServiceAccountName,
+						}, ":")
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow adding upgradedToBuildVersion annotation for system:masters",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					ctx.UserInfo.Groups = []string{"system:masters"}
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow adding upgradedToSchemaVersion annotation for system:masters",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					ctx.UserInfo.Groups = []string{"system:masters"}
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("disallow change when upgradedToBuildVersion is missing",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.BuildVersion = fake
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+				},
+				skipBypassUpgradeCheck: true,
+				validate: doValidateWithMsg(
+					`metadata.annotations[vmoperator.vmware.com/upgraded-to-build-version]: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
+			},
+		),
+
+		Entry("disallow change when upgradedToSchemaVersion is missing",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+				},
+				skipBypassUpgradeCheck: true,
+				validate: doValidateWithMsg(
+					`metadata.annotations[vmoperator.vmware.com/upgraded-to-schema-version]: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
+			},
+		),
+
+		Entry("allow change when both annotations are present",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.BuildVersion = fake
+					})
+					ctx.oldVM.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey:  fake,
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: vmopv1.GroupVersion.Version,
+					}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey:  fake,
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: vmopv1.GroupVersion.Version,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow anyone to delete upgradedToBuildVersion",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.BuildVersion = fake
+					})
+					ctx.oldVM.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey:  fake,
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: vmopv1.GroupVersion.Version,
+					}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: vmopv1.GroupVersion.Version,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow anyone to delete upgradedToSchemaVersion",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.BuildVersion = fake
+					})
+					ctx.oldVM.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey:  fake,
+						pkgconst.UpgradedToSchemaVersionAnnotationKey: vmopv1.GroupVersion.Version,
+					}
+					ctx.vm.Annotations = map[string]string{
+						pkgconst.UpgradedToBuildVersionAnnotationKey: fake,
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+	)
 }
 
 func unitTestsValidateDelete() {

@@ -10,7 +10,18 @@ import (
 )
 
 func IsPrivilegedAccount(
-	ctx *pkgctx.WebhookContext, userInfo authv1.UserInfo) bool {
+	ctx *pkgctx.WebhookContext,
+	userInfo authv1.UserInfo) bool {
+
+	return IsVMOperatorServiceAccount(ctx, userInfo) ||
+		IsSystemMasters(ctx, userInfo) ||
+		IsKubeAdmin(ctx, userInfo) ||
+		InPrivilegedUsersList(ctx, userInfo)
+}
+
+func IsSystemMasters(
+	ctx *pkgctx.WebhookContext,
+	userInfo authv1.UserInfo) bool {
 
 	// Per https://kubernetes.io/docs/reference/access-authn-authz/rbac/#user-facing-roles,
 	// any user that belongs to the group "system:masters" is a cluster-admin.
@@ -20,20 +31,22 @@ func IsPrivilegedAccount(
 		}
 	}
 
-	username := userInfo.Username
-	if strings.EqualFold(username, kubeAdminUser) {
-		return true
-	}
+	return false
+}
+
+func IsKubeAdmin(
+	ctx *pkgctx.WebhookContext,
+	userInfo authv1.UserInfo) bool {
+
+	return strings.EqualFold(userInfo.Username, kubeAdminUser)
+}
+
+func IsVMOperatorServiceAccount(
+	ctx *pkgctx.WebhookContext,
+	userInfo authv1.UserInfo) bool {
 
 	if ctx == nil {
 		return false
-	}
-
-	// Users specified by Pod's environment variable "PRIVILEGED_USERS" are
-	// considered privileged.
-	c := pkgcfg.FromContext(ctx)
-	if _, ok := pkgcfg.StringToSet(c.PrivilegedUsers)[username]; ok {
-		return true
 	}
 
 	serviceAccount := strings.Join(
@@ -43,5 +56,20 @@ func IsPrivilegedAccount(
 			ctx.Namespace,
 			ctx.ServiceAccountName,
 		}, ":")
-	return strings.EqualFold(username, serviceAccount)
+	return strings.EqualFold(userInfo.Username, serviceAccount)
+}
+
+func InPrivilegedUsersList(
+	ctx *pkgctx.WebhookContext,
+	userInfo authv1.UserInfo) bool {
+
+	if ctx == nil {
+		return false
+	}
+
+	// Users specified by Pod's environment variable "PRIVILEGED_USERS" are
+	// considered privileged.
+	c := pkgcfg.FromContext(ctx)
+	_, ok := pkgcfg.StringToSet(c.PrivilegedUsers)[userInfo.Username]
+	return ok
 }

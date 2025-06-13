@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
-
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -38,7 +37,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -212,33 +210,6 @@ func classToVMMapperFn(
 			logger.V(4).Info("Returning VM reconcile requests due to VirtualMachineClass watch", "requests", reconcileRequests)
 		}
 		return reconcileRequests
-	}
-}
-
-func upgradeSchema(ctx *pkgctx.VirtualMachineContext) {
-	// If empty, this VM was created before v1alpha3 added the spec.instanceUUID field.
-	if ctx.VM.Spec.InstanceUUID == "" && ctx.VM.Status.InstanceUUID != "" {
-		ctx.VM.Spec.InstanceUUID = ctx.VM.Status.InstanceUUID
-		ctx.Logger.Info("Upgrade VirtualMachine spec",
-			"instanceUUID", ctx.VM.Spec.InstanceUUID)
-	}
-
-	// If empty, this VM was created before v1alpha3 added the spec.biosUUID field.
-	if ctx.VM.Spec.BiosUUID == "" && ctx.VM.Status.BiosUUID != "" {
-		ctx.VM.Spec.BiosUUID = ctx.VM.Status.BiosUUID
-		ctx.Logger.Info("Upgrade VirtualMachine spec",
-			"biosUUID", ctx.VM.Spec.BiosUUID)
-	}
-
-	// If empty, this VM was created before v1alpha3 added the instanceID field
-	if bs := ctx.VM.Spec.Bootstrap; bs != nil {
-		if ci := bs.CloudInit; ci != nil {
-			if ci.InstanceID == "" {
-				iid := vmlifecycle.BootStrapCloudInitInstanceID(*ctx, ci)
-				ctx.Logger.Info("Upgrade VirtualMachine spec",
-					"bootstrap.cloudInit.instanceID", iid)
-			}
-		}
 	}
 }
 
@@ -528,9 +499,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	defer func() {
 		r.vmMetrics.RegisterVMCreateOrUpdateMetrics(ctx)
 	}()
-
-	// Upgrade schema fields where needed
-	upgradeSchema(ctx)
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
 		// Do not proceed unless the VMI cache this VM needs is ready.

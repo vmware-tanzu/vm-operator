@@ -8,6 +8,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// VMClassInstanceActiveLabelKey represents if a
+	// VirtualMachineClassInstance can be used to deploy a new virtual
+	// machine, or resize an existing one. The presence of this label
+	// on a VirtualMachineClassInstance marks the instance as active.
+	// The value of this key does not matter.
+	VMClassInstanceActiveLabelKey = GroupName + "/active"
+)
+
 // VirtualMachineClassInstanceSpec defines the desired state of VirtualMachineClassInstance.
 // It is a composite of VirtualMachineClassSpec.
 type VirtualMachineClassInstanceSpec struct {
@@ -24,6 +33,7 @@ type VirtualMachineClassInstanceStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".spec.hardware.cpus"
 // +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".spec.hardware.memory"
+// +kubebuilder:printcolumn:name="Active",type="string",JSONPath=".metadata.labels['vmoperator\\.vmware\\.com/active']"
 
 // VirtualMachineClassInstance is the schema for the virtualmachineclassinstances API and
 // represents the desired state and observed status of a virtualmachineclassinstance

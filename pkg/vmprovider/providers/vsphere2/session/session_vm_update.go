@@ -192,6 +192,22 @@ func UpdatePCIDeviceChanges(
 							expectedAllowedDev.VendorId == currAllowedDevs[i].VendorId
 					}
 				}
+
+			case *vimTypes.VirtualPCIPassthroughDvxBackingInfo:
+				b := expectedBacking.(*vimTypes.VirtualPCIPassthroughDvxBackingInfo)
+				if a.DeviceClass == b.DeviceClass {
+					if len(a.ConfigParams) == len(b.ConfigParams) {
+						am := make(map[string]any, len(a.ConfigParams))
+						bm := make(map[string]any, len(b.ConfigParams))
+						for i := 0; i < len(a.ConfigParams); i++ {
+							aov := a.ConfigParams[i].GetOptionValue()
+							bov := b.ConfigParams[i].GetOptionValue()
+							am[aov.Key] = aov.Value
+							bm[bov.Key] = bov.Value
+						}
+						backingMatch = apiEquality.Semantic.DeepEqual(am, bm)
+					}
+				}
 			}
 
 			if backingMatch {

@@ -1049,6 +1049,11 @@ var _ = Describe("Update ConfigSpec", func() {
 			backingInfo3, backingInfo4                       *vimTypes.VirtualPCIPassthroughDynamicBackingInfo
 			deviceKey3, deviceKey4                           int32
 			dynamicDirectPathIODev1, dynamicDirectPathIODev2 vimTypes.BaseVirtualDevice
+
+			// Variables related to DVX devices.
+			backingInfo5, backingInfo6 *vimTypes.VirtualPCIPassthroughDvxBackingInfo
+			deviceKey5, deviceKey6     int32
+			dvxDevice1, dvxDevice2     vimTypes.BaseVirtualDevice
 		)
 
 		BeforeEach(func() {
@@ -1079,6 +1084,37 @@ var _ = Describe("Update ConfigSpec", func() {
 			deviceKey4 = int32(-203)
 			dynamicDirectPathIODev1 = virtualmachine.CreatePCIPassThroughDevice(deviceKey3, backingInfo3)
 			dynamicDirectPathIODev2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey4, backingInfo4)
+
+			deviceKey5 = int32(-204)
+			deviceKey6 = int32(-205)
+			backingInfo5 = &vimTypes.VirtualPCIPassthroughDvxBackingInfo{
+				DeviceClass: "hello",
+				ConfigParams: []vimTypes.BaseOptionValue{
+					&vimTypes.OptionValue{
+						Key:   "hello-key1",
+						Value: "hello-val1",
+					},
+					&vimTypes.OptionValue{
+						Key:   "hello-key2",
+						Value: "hello-val2",
+					},
+				},
+			}
+			backingInfo6 = &vimTypes.VirtualPCIPassthroughDvxBackingInfo{
+				DeviceClass: "world",
+				ConfigParams: []vimTypes.BaseOptionValue{
+					&vimTypes.OptionValue{
+						Key:   "world-key1",
+						Value: "world-val1",
+					},
+					&vimTypes.OptionValue{
+						Key:   "world-key2",
+						Value: "world-val2",
+					},
+				},
+			}
+			dvxDevice1 = virtualmachine.CreatePCIPassThroughDevice(deviceKey5, backingInfo5)
+			dvxDevice2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey6, backingInfo6)
 		})
 
 		JustBeforeEach(func() {
@@ -1097,12 +1133,14 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("Adding vGPU and dynamicDirectPathIO devices with different backing info", func() {
+		Context("Adding vGPU, dynamicDirectPathIO, and DVX devices with different backing info", func() {
 			BeforeEach(func() {
 				expectedList = append(expectedList, vGPUDevice1)
 				expectedList = append(expectedList, vGPUDevice2)
 				expectedList = append(expectedList, dynamicDirectPathIODev1)
 				expectedList = append(expectedList, dynamicDirectPathIODev2)
+				expectedList = append(expectedList, dvxDevice1)
+				expectedList = append(expectedList, dvxDevice2)
 			})
 
 			It("Should return add device changes", func() {
@@ -1117,7 +1155,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("Adding vGPU and dynamicDirectPathIO devices with same backing info", func() {
+		Context("Adding vGPU, dynamicDirectPathIO, and DVXD devices with same backing info", func() {
 			BeforeEach(func() {
 				expectedList = append(expectedList, vGPUDevice1)
 				// Creating a vGPUDevice with same backingInfo1 but different deviceKey.
@@ -1127,6 +1165,9 @@ var _ = Describe("Update ConfigSpec", func() {
 				// Creating a dynamicDirectPathIO device with same backingInfo3 but different deviceKey.
 				dynamicDirectPathIODev2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey4, backingInfo3)
 				expectedList = append(expectedList, dynamicDirectPathIODev2)
+				// Creating a DVX device with same backingInfo5 but different deviceKey.
+				dvxDevice1 = virtualmachine.CreatePCIPassThroughDevice(-1000, backingInfo5)
+				expectedList = append(expectedList, dvxDevice1)
 			})
 
 			It("Should return add device changes", func() {
@@ -1167,27 +1208,93 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
+		Context("When the expected and current lists have DVX devices with different device classes", func() {
+			BeforeEach(func() {
+				expectedList = []vimTypes.BaseVirtualDevice{dvxDevice1}
+				backingInfo := &vimTypes.VirtualPCIPassthroughDvxBackingInfo{
+					DeviceClass: "fubar",
+					ConfigParams: []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "hello-key1",
+							Value: "hello-val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   "hello-key2",
+							Value: "hello-val2",
+						},
+					},
+				}
+				newDevice := virtualmachine.CreatePCIPassThroughDevice(deviceKey5, backingInfo)
+				currentList = []vimTypes.BaseVirtualDevice{newDevice}
+			})
+
+			It("should return add and remove device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(deviceChanges)).To(Equal(2))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+
+				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[0].GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+			})
+		})
+
+		Context("When the expected and current lists have DVX devices with different config params", func() {
+			BeforeEach(func() {
+				expectedList = []vimTypes.BaseVirtualDevice{dvxDevice1}
+				backingInfo := &vimTypes.VirtualPCIPassthroughDvxBackingInfo{
+					DeviceClass: "hello",
+					ConfigParams: []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "hello-key1",
+							Value: "hello-val1",
+						},
+					},
+				}
+				newDevice := virtualmachine.CreatePCIPassThroughDevice(deviceKey5, backingInfo)
+				currentList = []vimTypes.BaseVirtualDevice{newDevice}
+			})
+
+			It("should return add and remove device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(deviceChanges)).To(Equal(2))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+
+				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[0].GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+			})
+		})
+
 		Context("When the expected and current list of pciDevices have different Devices", func() {
 			BeforeEach(func() {
 				currentList = append(currentList, vGPUDevice1)
 				expectedList = append(expectedList, vGPUDevice2)
 				currentList = append(currentList, dynamicDirectPathIODev1)
 				expectedList = append(expectedList, dynamicDirectPathIODev2)
+				currentList = append(currentList, dvxDevice1)
+				expectedList = append(expectedList, dvxDevice2)
 			})
 
 			It("Should return add and remove device changes", func() {
 				Expect(err).ToNot(HaveOccurred())
-				Expect(len(deviceChanges)).To(Equal(4))
+				Expect(len(deviceChanges)).To(Equal(6))
 
-				for i := 0; i < 2; i++ {
+				for i := 0; i < 3; i++ {
 					configSpec := deviceChanges[i].GetVirtualDeviceConfigSpec()
 					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[i].GetVirtualDevice().Key))
 					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
 				}
 
-				for i := 2; i < 4; i++ {
+				for i := 3; i < 6; i++ {
 					configSpec := deviceChanges[i].GetVirtualDeviceConfigSpec()
-					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[i-2].GetVirtualDevice().Key))
+					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[i-3].GetVirtualDevice().Key))
 					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
 				}
 			})
@@ -1199,6 +1306,8 @@ var _ = Describe("Update ConfigSpec", func() {
 				expectedList = append(expectedList, vGPUDevice1)
 				currentList = append(currentList, dynamicDirectPathIODev1)
 				expectedList = append(expectedList, dynamicDirectPathIODev1)
+				currentList = append(currentList, dvxDevice1)
+				expectedList = append(expectedList, dvxDevice1)
 			})
 
 			It("returns empty list", func() {

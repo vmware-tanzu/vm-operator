@@ -116,6 +116,7 @@ func unitTestsValidateCreate() {
 		isServiceUser         bool
 		powerState            vmopv1.VirtualMachinePowerState
 		lastUpdatedPowerState string
+		nextForceSyncTime     string
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
@@ -132,6 +133,10 @@ func unitTestsValidateCreate() {
 				ctx.vmGroup.Annotations = make(map[string]string)
 			}
 			ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] = args.lastUpdatedPowerState
+		}
+
+		if args.nextForceSyncTime != "" {
+			ctx.vmGroup.Spec.NextForcePowerStateSyncTime = args.nextForceSyncTime
 		}
 
 		var err error
@@ -153,8 +158,12 @@ func unitTestsValidateCreate() {
 			createArgs{isServiceUser: true, lastUpdatedPowerState: invalidTime}, false, invalidTimeFormatMsg),
 		Entry("should work with valid time format in last-updated-power-state annotation",
 			createArgs{isServiceUser: true, lastUpdatedPowerState: time.Now().Format(time.RFC3339Nano)}, true, ""),
-		Entry("should not work with non-admin modifying last-updated-power-state annotation",
+		Entry("should not work with non-admin setting last-updated-power-state annotation directly",
 			createArgs{isServiceUser: false, lastUpdatedPowerState: time.Now().Format(time.RFC3339Nano)}, false, modifyAnnotationNotAllowedForNonAdminMsg),
+		Entry("should work with non-admin setting last-updated-power-state annotation with power state",
+			createArgs{isServiceUser: false, powerState: vmopv1.VirtualMachinePowerStateOn, lastUpdatedPowerState: time.Now().Format(time.RFC3339Nano)}, true, ""),
+		Entry("should work with non-admin setting last-updated-power-state annotation with next force sync time",
+			createArgs{isServiceUser: false, nextForceSyncTime: time.Now().Format(time.RFC3339Nano), lastUpdatedPowerState: time.Now().Format(time.RFC3339Nano)}, true, ""),
 	)
 }
 
@@ -169,6 +178,7 @@ func unitTestsValidateUpdate() {
 		newPowerState                vmopv1.VirtualMachinePowerState
 		modifyLastUpdatedPowerState  bool
 		invalidLastUpdatedPowerState bool
+		nextForceSyncTime            string
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string) {
@@ -199,6 +209,10 @@ func unitTestsValidateUpdate() {
 			} else {
 				ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
 			}
+
+			if args.nextForceSyncTime != "" {
+				ctx.vmGroup.Spec.NextForcePowerStateSyncTime = args.nextForceSyncTime
+			}
 		}
 
 		var err error
@@ -222,12 +236,16 @@ func unitTestsValidateUpdate() {
 			updateArgs{oldPowerState: vmopv1.VirtualMachinePowerStateOn, newPowerState: vmopv1.VirtualMachinePowerStateOff}, true, ""),
 		Entry("should not work with empty power state after it's been set",
 			updateArgs{oldPowerState: vmopv1.VirtualMachinePowerStateOn, newPowerState: ""}, false, emptyPowerStateNotAllowedAfterSetMsg),
-		Entry("should not work with non-admin modifying last-updated-power-state annotation",
+		Entry("should not work with non-admin modifying last-updated-power-state annotation directly",
 			updateArgs{modifyLastUpdatedPowerState: true, isServiceUser: false}, false, modifyAnnotationNotAllowedForNonAdminMsg),
 		Entry("should work with admin modifying last-updated-power-state annotation",
 			updateArgs{modifyLastUpdatedPowerState: true, isServiceUser: true}, true, ""),
 		Entry("should not work with invalid time format in last-updated-power-state annotation",
 			updateArgs{modifyLastUpdatedPowerState: true, isServiceUser: true, invalidLastUpdatedPowerState: true}, false, invalidTimeFormatMsg),
+		Entry("should work with non-admin updating last-updated-power-state annotation with power state change",
+			updateArgs{modifyLastUpdatedPowerState: true, isServiceUser: false, oldPowerState: vmopv1.VirtualMachinePowerStateOn, newPowerState: vmopv1.VirtualMachinePowerStateOff}, true, ""),
+		Entry("should work with non-admin updating last-updated-power-state annotation with next force sync time change",
+			updateArgs{modifyLastUpdatedPowerState: true, isServiceUser: false, oldPowerState: vmopv1.VirtualMachinePowerStateOn, newPowerState: vmopv1.VirtualMachinePowerStateOff, nextForceSyncTime: time.Now().Format(time.RFC3339Nano)}, true, ""),
 	)
 }
 

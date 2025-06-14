@@ -146,4 +146,8 @@ const (
 	// a power state change to a VirtualMachine or a VirtualMachineGroup object
 	// scheduled from its parent group.
 	ApplyPowerStateTimeAnnotation = "vmoperator.vmware.com.protected/apply-power-state-time"
+
+	// VirtualMachineClassHashAnnotationKey is the annotation key for the VM Class hash
+	// used to generate VirtualMachineClassInstances.
+	VirtualMachineClassHashAnnotationKey = "vmoperator.vmware.com/vmclass-hash"
 )

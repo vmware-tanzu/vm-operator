@@ -107,12 +107,7 @@ func unitTestsReconcile() {
 		ctx = suite.NewUnitTestContextForController(withObjects...)
 
 		reconciler = storagepolicyquota.NewReconciler(
-			pkgcfg.UpdateContext(
-				ctx,
-				func(config *pkgcfg.Config) {
-					config.Features.PodVMOnStretchedSupervisor = true
-				},
-			),
+			pkgcfg.NewContextWithDefaultConfig(),
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,

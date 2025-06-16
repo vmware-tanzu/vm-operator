@@ -11,8 +11,11 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -62,6 +65,12 @@ func intgTestsReconcile() {
 				},
 			},
 		}
+
+		setConfigSpec(vmClass)
+
+		pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
+			config.Features.ImmutableClasses = true
+		})
 	})
 
 	AfterEach(func() {
@@ -78,7 +87,61 @@ func intgTestsReconcile() {
 			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
-		It("noop", func() {
+		It("Should reconcile VirtualMachineClassInstance", func() {
+			By("validating that the instance was created")
+			Eventually(func(g Gomega) {
+				var list vmopv1.VirtualMachineClassInstanceList
+				g.Expect(ctx.Client.List(ctx, &list, client.InNamespace(vmClass.Namespace))).To(Succeed())
+				g.Expect(list.Items).To(HaveLen(1))
+
+				instance := list.Items[0]
+
+				g.Expect(instance.Annotations).ToNot(BeEmpty())
+				g.Expect(instance.Annotations[pkgconst.VirtualMachineClassHashAnnotationKey]).ToNot(BeEmpty())
+
+				g.Expect(instance.Labels).ToNot(BeEmpty())
+				g.Expect(instance.Labels[vmopv1.VMClassInstanceActiveLabelKey]).To(Equal(""))
+
+				// Ensure owner reference is set
+				g.Expect(instance.OwnerReferences).To(HaveLen(1))
+				g.Expect(instance.OwnerReferences[0].Name).To(Equal(vmClass.Name))
+			}).Should(Succeed())
+		})
+
+		When("class config is updated", func() {
+			It("Should create new VirtualMachineClassInstance", func() {
+				Eventually(func(g Gomega) {
+					var list vmopv1.VirtualMachineClassInstanceList
+					g.Expect(ctx.Client.List(ctx, &list, client.InNamespace(vmClass.Namespace))).To(Succeed())
+					g.Expect(list.Items).To(HaveLen(1))
+				}).Should(Succeed())
+
+				By("Modify the class config")
+				vmClass.Spec.Hardware.Cpus++
+				setConfigSpec(vmClass)
+
+				Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
+
+				By("Validating that only one instance is active")
+				Eventually(func(g Gomega) {
+					var list vmopv1.VirtualMachineClassInstanceList
+					g.Expect(ctx.Client.List(ctx, &list, client.InNamespace(vmClass.Namespace))).To(Succeed())
+					g.Expect(list.Items).To(HaveLen(2))
+
+					activeCount := 0
+					inactiveCount := 0
+					for _, item := range list.Items {
+						if _, hasActiveLabel := item.Labels[vmopv1.VMClassInstanceActiveLabelKey]; hasActiveLabel {
+							activeCount++
+						} else {
+							inactiveCount++
+						}
+					}
+
+					g.Expect(activeCount).To(Equal(1))
+					g.Expect(inactiveCount).To(Equal(1))
+				}).Should(Succeed())
+			})
 		})
 	})
 }

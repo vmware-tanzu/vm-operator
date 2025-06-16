@@ -1253,12 +1253,14 @@ func (v validator) validateSchemaUpgrade(
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToBuildVersionAnnotationKey)
 
-	case oldUpBuildVer == "" || oldUpBuildVer != pkgcfg.FromContext(ctx).BuildVersion:
-		// If the annotations' values do not match the expected values, then the
-		// VM may not be modified.
-		allErrs = append(allErrs, field.Forbidden(
-			fieldPath.Key(pkgconst.UpgradedToBuildVersionAnnotationKey),
-			notUpgraded))
+		/*
+			case oldUpBuildVer == "" || oldUpBuildVer != pkgcfg.FromContext(ctx).BuildVersion:
+				// If the annotations' values do not match the expected values, then the
+				// VM may not be modified.
+				allErrs = append(allErrs, field.Forbidden(
+					fieldPath.Key(pkgconst.UpgradedToBuildVersionAnnotationKey),
+					notUpgraded))
+		*/
 	}
 
 	switch {
@@ -1273,12 +1275,15 @@ func (v validator) validateSchemaUpgrade(
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
 
-	case oldUpSchemVer == "" || oldUpSchemVer != vmopv1.GroupVersion.Version:
-		// If the annotations' values do not match the expected values, then the
-		// VM may not be modified.
-		allErrs = append(allErrs, field.Forbidden(
-			fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
-			notUpgraded))
+		/*
+			case oldUpSchemVer == "" || oldUpSchemVer != vmopv1.GroupVersion.Version:
+				// If the annotations' values do not match the expected values, then the
+				// VM may not be modified.
+				allErrs = append(allErrs, field.Forbidden(
+					fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
+					notUpgraded))
+
+		*/
 	}
 
 	return allErrs

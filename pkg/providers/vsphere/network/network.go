@@ -41,7 +41,7 @@ import (
 
 type NetworkInterfaceResults struct {
 	Results                   []NetworkInterfaceResult
-	AddedEthernetCard         bool
+	UpdatedEthCards           bool
 	OrphanedNetworkInterfaces []ctrlclient.Object
 }
 
@@ -59,7 +59,9 @@ type NetworkInterfaceResult struct {
 	// Fields from the InterfaceSpec used later during customization.
 	Name            string
 	GuestDeviceName string
+	NoIPv4          bool
 	DHCP4           bool
+	NoIPv6          bool
 	DHCP6           bool
 	MTU             int64
 	Nameservers     []string

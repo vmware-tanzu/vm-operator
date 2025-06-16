@@ -323,7 +323,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("returns empty list", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(deviceChanges).To(BeEmpty())
-				Expect(results.AddedEthernetCard).To(BeFalse())
+				Expect(results.UpdatedEthCards).To(BeFalse())
 			})
 		})
 
@@ -348,7 +348,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("returns no device changes", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(deviceChanges).To(BeEmpty())
-				Expect(results.AddedEthernetCard).To(BeFalse())
+				Expect(results.UpdatedEthCards).To(BeFalse())
 			})
 		})
 
@@ -366,7 +366,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("returns add device change", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(deviceChanges).To(HaveLen(1))
-				Expect(results.AddedEthernetCard).To(BeTrue())
+				Expect(results.UpdatedEthCards).To(BeTrue())
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
@@ -391,7 +391,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("returns remove and add device changes", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(deviceChanges).To(HaveLen(2))
-				Expect(results.AddedEthernetCard).To(BeTrue())
+				Expect(results.UpdatedEthCards).To(BeTrue())
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
@@ -428,7 +428,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("returns remove and add device changes", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(deviceChanges).To(HaveLen(2))
-				Expect(results.AddedEthernetCard).To(BeTrue())
+				Expect(results.UpdatedEthCards).To(BeTrue())
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
@@ -495,7 +495,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("returns remove and add device changes", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(deviceChanges).To(HaveLen(2))
-				Expect(results.AddedEthernetCard).To(BeTrue())
+				Expect(results.UpdatedEthCards).To(BeTrue())
 
 				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
@@ -517,7 +517,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
 				Expect(err).ToNot(HaveOccurred())
 				card1.GetVirtualDevice().Key = key1
-				Expect(results.AddedEthernetCard).To(BeFalse())
+				Expect(results.UpdatedEthCards).To(BeFalse())
 				expectedList = append(expectedList, card1)
 
 				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
@@ -529,7 +529,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("returns empty list", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(deviceChanges).To(BeEmpty())
-				Expect(results.AddedEthernetCard).To(BeFalse())
+				Expect(results.UpdatedEthCards).To(BeFalse())
 			})
 		})
 	})

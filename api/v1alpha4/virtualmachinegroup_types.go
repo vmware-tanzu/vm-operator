@@ -24,6 +24,9 @@ const (
 )
 
 // +kubebuilder:object:generate=false
+
+// VirtualMachineOrGroup is an internal interface that represents a
+// VirtualMachine or VirtualMachineGroup object.
 type VirtualMachineOrGroup interface {
 	metav1.Object
 	runtime.Object
@@ -285,7 +288,7 @@ func (vmg *VirtualMachineGroup) SetGroupName(value string) {
 }
 
 func (vmg *VirtualMachineGroup) GetPowerState() VirtualMachinePowerState {
-	// VirtualMachineGroup does not have a power state in its status.
+	// VirtualMachineGroup does not have a power state recorded in its status.
 	return ""
 }
 

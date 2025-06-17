@@ -1286,6 +1286,22 @@ func (vm *VirtualMachine) SetConditions(conditions []metav1.Condition) {
 	vm.Status.Conditions = conditions
 }
 
+func (vm *VirtualMachine) GetGroupName() string {
+	return vm.Spec.GroupName
+}
+
+func (vm *VirtualMachine) SetGroupName(value string) {
+	vm.Spec.GroupName = value
+}
+
+func (vm *VirtualMachine) GetPowerState() VirtualMachinePowerState {
+	return vm.Status.PowerState
+}
+
+func (vm *VirtualMachine) SetPowerState(value VirtualMachinePowerState) {
+	vm.Spec.PowerState = value
+}
+
 // +kubebuilder:object:root=true
 
 // VirtualMachineList contains a list of VirtualMachine.

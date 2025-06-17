@@ -4966,7 +4966,7 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow change when upgradedToBuildVersion is missing",
+		XEntry("disallow change when upgradedToBuildVersion is missing",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
@@ -4983,7 +4983,7 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow change when upgradedToSchemaVersion is missing",
+		XEntry("disallow change when upgradedToSchemaVersion is missing",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false

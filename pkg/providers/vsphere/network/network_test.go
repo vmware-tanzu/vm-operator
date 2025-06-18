@@ -301,6 +301,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
 				Expect(results.Results).To(BeEmpty())
 
+				var externalID string
 				By("simulate successful NetOP reconcile", func() {
 					netInterface := &netopv1alpha1.NetworkInterface{
 						ObjectMeta: metav1.ObjectMeta{
@@ -313,6 +314,10 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
 					Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
+					externalID = netInterface.Spec.ExternalID
+					Expect(externalID).ToNot(BeEmpty())
+
+					netInterface.Status.ExternalID = externalID
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
 					netInterface.Status.MacAddress = "" // NetOP doesn't set this.
 					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
@@ -350,7 +355,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(results.Results).To(HaveLen(1))
 				result := results.Results[0]
 				Expect(result.MacAddress).To(BeEmpty())
-				Expect(result.ExternalID).To(BeEmpty())
+				Expect(result.ExternalID).To(Equal(externalID))
 				Expect(result.NetworkID).To(Equal(ctx.NetworkRef.Reference().Value))
 				Expect(result.Backing).ToNot(BeNil())
 				Expect(result.Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))

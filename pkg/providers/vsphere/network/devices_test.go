@@ -122,6 +122,7 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 			Context("Matches", func() {
 				const networkName1, networkName2 = "network-1", "network-2"
 				const backing1, backing2 = "dvpg-1", "dvpg-2"
+				const externalID = "extid-1"
 
 				BeforeEach(func() {
 					dev1 := &vimtypes.VirtualVmxnet3{}
@@ -133,12 +134,20 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 					}
 					dev2 := &vimtypes.VirtualE1000e{}
 					dev2.Key = 4001
+					dev2.ExternalId = externalID
 					dev2.Backing = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
 						Port: vimtypes.DistributedVirtualSwitchPortConnection{
 							PortgroupKey: backing2,
 						},
 					}
-					devices = append(devices, dev1, dev2)
+					dev3 := &vimtypes.VirtualVmxnet2{}
+					dev3.Key = 4002
+					dev3.Backing = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+						Port: vimtypes.DistributedVirtualSwitchPortConnection{
+							PortgroupKey: backing2,
+						},
+					}
+					devices = append(devices, dev1, dev2, dev3)
 
 					netIf1 := &netopv1alpha1.NetworkInterface{
 						ObjectMeta: metav1.ObjectMeta{
@@ -158,7 +167,17 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 							NetworkID: backing2,
 						},
 					}
-					initObjs = append(initObjs, netIf1, netIf2)
+					netIf3 := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vmCtx.VM.Name, networkName2, "eth2", false),
+							Namespace: vmCtx.VM.Namespace,
+						},
+						Status: netopv1alpha1.NetworkInterfaceStatus{
+							ExternalID: externalID,
+							NetworkID:  backing2,
+						},
+					}
+					initObjs = append(initObjs, netIf1, netIf2, netIf3)
 
 					vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
@@ -173,13 +192,20 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 								Name: networkName1,
 							},
 						},
+						{
+							Name: "eth2",
+							Network: &vmopv1common.PartialObjectRef{
+								Name: networkName2,
+							},
+						},
 					}
 				})
 
 				It("returns expected mapping", func() {
-					Expect(devKeyToIdx).To(HaveLen(2))
+					Expect(devKeyToIdx).To(HaveLen(3))
 					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4000), 1))
-					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4001), 0))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4001), 2))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4002), 0))
 				})
 			})
 		})

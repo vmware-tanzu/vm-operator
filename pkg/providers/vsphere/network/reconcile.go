@@ -39,6 +39,9 @@ func ReconcileNetworkInterfaces(
 		} else {
 			existingIdx := findExistingEthCardForOrphanedCR(ctx, r.Name, results.OrphanedNetworkInterfaces, currentEthCards)
 			if existingIdx >= 0 {
+				// As best we can, we determined that one of the VM's current ethernet card corresponds to a now
+				// unreferenced (orphaned) network interface CR for the same interface name. To keep the device
+				// type the same, do an edit on the existing device.
 				editDev := currentEthCards[existingIdx]
 
 				ethDev := editDev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
@@ -78,21 +81,15 @@ func ReconcileNetworkInterfaces(
 }
 
 // findExistingEthCardForOrphanedCR trys to an orphaned interface and if it has
-// a matching current ethernet card, so the current card can be edited.
+// a matching current ethernet card, so the existing device can be edited as to
+// keep the device type (ie, E1000) the same.
 func findExistingEthCardForOrphanedCR(
 	_ context.Context,
 	interfaceName string,
 	orphanedObjects []ctrlclient.Object,
 	currentEthCards object.VirtualDeviceList) int {
 
-	// TODO: Not perfect but until we annotate the interface CR with its interface spec name.
-	suffix := "-" + interfaceName
-
-	for _, obj := range orphanedObjects {
-		if !strings.HasSuffix(obj.GetName(), suffix) {
-			continue
-		}
-
+	findMatchFn := func(obj ctrlclient.Object) int {
 		switch netIf := obj.(type) {
 		case *netopv1alpha1.NetworkInterface:
 			return findMatchingEthCardNetOpNetIf(netIf, currentEthCards)
@@ -100,6 +97,35 @@ func findExistingEthCardForOrphanedCR(
 			return findMatchingEthCardNCPNetIf(netIf, currentEthCards)
 		case *vpcv1alpha1.SubnetPort:
 			return findMatchingEthCardVPCSubnetPort(netIf, currentEthCards)
+		}
+		return -1
+	}
+
+	var objIdxWithoutLabel []int
+	suffix := "-" + interfaceName
+
+	for idx, obj := range orphanedObjects {
+		if v, ok := obj.GetLabels()[VMInterfaceNameLabel]; !ok {
+			// Favor interfaces that we had labeled with the interface spec name first. Otherwise,
+			// fallback to just trying to match by the name suffix which isn't perfect.
+			if strings.HasSuffix(obj.GetName(), suffix) {
+				objIdxWithoutLabel = append(objIdxWithoutLabel, idx)
+			}
+			continue
+		} else if v != interfaceName {
+			continue
+		}
+
+		if matchingIdx := findMatchFn(obj); matchingIdx >= 0 {
+			return matchingIdx
+		}
+	}
+
+	for idx := range objIdxWithoutLabel {
+		obj := orphanedObjects[idx]
+
+		if matchingIdx := findMatchFn(obj); matchingIdx >= 0 {
+			return matchingIdx
 		}
 	}
 

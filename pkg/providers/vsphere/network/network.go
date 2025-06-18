@@ -88,6 +88,9 @@ const (
 
 	// VMNameLabel is the label put on a network interface CR that identifies its VM by name.
 	VMNameLabel = pkg.VMOperatorKey + "/vm-name"
+	// VMInterfaceNameLabel is the label put on the network interface CR identifies its name
+	// in the VM network interface spec.
+	VMInterfaceNameLabel = pkg.VMOperatorKey + "/vm-interface-name"
 )
 
 var (
@@ -371,6 +374,7 @@ func createNetOPNetworkInterface(
 			netIf.Labels = map[string]string{}
 		}
 		netIf.Labels[VMNameLabel] = vmCtx.VM.Name
+		netIf.Labels[VMInterfaceNameLabel] = interfaceSpec.Name
 
 		netIf.Spec.NetworkName = networkRefName
 		// NetOP only defines a VMXNet3 type, but it doesn't really matter for our purposes.
@@ -539,6 +543,7 @@ func createNCPNetworkInterface(
 			vnetIf.Labels = map[string]string{}
 		}
 		vnetIf.Labels[VMNameLabel] = vmCtx.VM.Name
+		vnetIf.Labels[VMInterfaceNameLabel] = interfaceSpec.Name
 
 		vnetIf.Spec.VirtualNetwork = networkRefName
 		return nil
@@ -664,6 +669,8 @@ func createVPCNetworkInterface(
 			vpcSubnetPort.Labels = map[string]string{}
 		}
 		vpcSubnetPort.Labels[VMNameLabel] = vmCtx.VM.Name
+		vpcSubnetPort.Labels[VMInterfaceNameLabel] = interfaceSpec.Name
+
 		if vpcSubnetPort.Annotations == nil {
 			vpcSubnetPort.Annotations = make(map[string]string)
 		}

@@ -6,6 +6,7 @@ package v1alpha4
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -21,6 +22,21 @@ const (
 	// member has a placement decision ready.
 	VirtualMachineGroupMemberConditionPlacementReady = "PlacementReady"
 )
+
+// +kubebuilder:object:generate=false
+
+// VirtualMachineOrGroup is an internal interface that represents a
+// VirtualMachine or VirtualMachineGroup object.
+type VirtualMachineOrGroup interface {
+	metav1.Object
+	runtime.Object
+	DeepCopyObject() runtime.Object
+	GetGroupName() string
+	SetGroupName(value string)
+	GetPowerState() VirtualMachinePowerState
+	SetPowerState(value VirtualMachinePowerState)
+	GetConditions() []metav1.Condition
+}
 
 // GroupMember describes a member of a VirtualMachineGroup.
 type GroupMember struct {
@@ -261,6 +277,23 @@ type VirtualMachineGroup struct {
 
 	Spec   VirtualMachineGroupSpec   `json:"spec,omitempty"`
 	Status VirtualMachineGroupStatus `json:"status,omitempty"`
+}
+
+func (vmg *VirtualMachineGroup) GetGroupName() string {
+	return vmg.Spec.GroupName
+}
+
+func (vmg *VirtualMachineGroup) SetGroupName(value string) {
+	vmg.Spec.GroupName = value
+}
+
+func (vmg *VirtualMachineGroup) GetPowerState() VirtualMachinePowerState {
+	// VirtualMachineGroup does not have a power state recorded in its status.
+	return ""
+}
+
+func (vmg *VirtualMachineGroup) SetPowerState(value VirtualMachinePowerState) {
+	vmg.Spec.PowerState = value
 }
 
 func (vmg *VirtualMachineGroup) GetConditions() []metav1.Condition {

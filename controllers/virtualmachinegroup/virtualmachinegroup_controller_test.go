@@ -5,14 +5,18 @@
 package virtualmachinegroup_test
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -37,8 +41,8 @@ var _ = Describe(
 		var (
 			ctx *builder.IntegrationTestContext
 
-			vm1Key, vm2Key, vm3Key                types.NamespacedName
-			vmGroup1Key, vmGroup2Key, vmGroup3Key types.NamespacedName
+			vm1Key, vm2Key           types.NamespacedName
+			vmGroup1Key, vmGroup2Key types.NamespacedName
 		)
 
 		BeforeEach(func() {
@@ -52,20 +56,13 @@ var _ = Describe(
 				Name:      "vmgroup-2",
 				Namespace: ctx.Namespace,
 			}
-			vmGroup3Key = types.NamespacedName{
-				Name:      "vmgroup-3",
-				Namespace: ctx.Namespace,
-			}
+
 			vm1Key = types.NamespacedName{
 				Name:      "vm-1",
 				Namespace: ctx.Namespace,
 			}
 			vm2Key = types.NamespacedName{
 				Name:      "vm-2",
-				Namespace: ctx.Namespace,
-			}
-			vm3Key = types.NamespacedName{
-				Name:      "vm-3",
 				Namespace: ctx.Namespace,
 			}
 
@@ -104,19 +101,6 @@ var _ = Describe(
 			}
 			Expect(ctx.Client.Create(ctx, vm2)).To(Succeed())
 
-			vm3 := &vmopv1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: vm3Key.Namespace,
-					Name:      vm3Key.Name,
-				},
-				Spec: vmopv1.VirtualMachineSpec{
-					ImageName:    dummyImage,
-					ClassName:    dummyClass,
-					StorageClass: storageClass,
-				},
-			}
-			Expect(ctx.Client.Create(ctx, vm3)).To(Succeed())
-
 			vmGroup2 := &vmopv1.VirtualMachineGroup{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: vmGroup2Key.Namespace,
@@ -124,14 +108,6 @@ var _ = Describe(
 				},
 			}
 			Expect(ctx.Client.Create(ctx, vmGroup2)).To(Succeed())
-
-			vmGroup3 := &vmopv1.VirtualMachineGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: vmGroup3Key.Namespace,
-					Name:      vmGroup3Key.Name,
-				},
-			}
-			Expect(ctx.Client.Create(ctx, vmGroup3)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -149,17 +125,150 @@ var _ = Describe(
 					vmGroup2 := &vmopv1.VirtualMachineGroup{}
 					g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
 					g.Expect(vmGroup2.GetFinalizers()).To(ContainElement(finalizer))
-
-					vmGroup3 := &vmopv1.VirtualMachineGroup{}
-					g.Expect(ctx.Client.Get(ctx, vmGroup3Key, vmGroup3)).To(Succeed())
-					g.Expect(vmGroup3.GetFinalizers()).To(ContainElement(finalizer))
 					// Using a longer timeout to ensure all VM Groups above are reconciled.
 				}, "5s", "100ms").Should(Succeed(), "waiting for VirtualMachineGroup finalizer")
 			})
 		})
 
-		XContext("Members", func() {
-			// TODO(sai): Add tests for ReconcileMembers.
+		Context("Members", func() {
+			BeforeEach(func() {
+				vmGroup1 := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+				vmGroup1Copy := vmGroup1.DeepCopy()
+				vmGroup1Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Kind: virtualMachineKind,
+								Name: vm1Key.Name,
+							},
+							{
+								Kind: virtualMachineGroupKind,
+								Name: vmGroup2Key.Name,
+							},
+						},
+					},
+				}
+				Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+			})
+
+			When("members are not found", func() {
+				BeforeEach(func() {
+					vm1 := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+					Expect(ctx.Client.Delete(ctx, vm1)).To(Succeed())
+
+					vmGroup2 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+					Expect(ctx.Client.Delete(ctx, vmGroup2)).To(Succeed())
+				})
+
+				It("should mark the group not ready and the member condition as false", func() {
+					Eventually(func(g Gomega) {
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Conditions[0].Type).To(Equal(vmopv1.ReadyConditionType))
+						g.Expect(vmGroup1.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(vmGroup1.Status.Conditions[0].Reason).To(Equal("MembersNotReady"))
+
+						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+						g.Expect(vmGroup1.Status.Members[0].Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Type).To(Equal(vmopv1.VirtualMachineGroupMemberConditionGroupLinked))
+						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Reason).To(Equal("NotFound"))
+						g.Expect(vmGroup1.Status.Members[1].Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Type).To(Equal(vmopv1.VirtualMachineGroupMemberConditionGroupLinked))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Reason).To(Equal("NotFound"))
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
+
+			When("members do not have the correct group name", func() {
+				BeforeEach(func() {
+					vm1 := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+					vm1Copy := vm1.DeepCopy()
+					vm1Copy.Spec.GroupName = "vmgroup-invalid"
+					Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
+					vmGroup2 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+					vmGroup2Copy := vmGroup2.DeepCopy()
+					vmGroup2Copy.Spec.GroupName = "vmgroup-invalid"
+					Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+				})
+
+				It("should mark the group not ready and the member condition as false", func() {
+					Eventually(func(g Gomega) {
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Conditions[0].Type).To(Equal(vmopv1.ReadyConditionType))
+						g.Expect(vmGroup1.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(vmGroup1.Status.Conditions[0].Reason).To(Equal("MembersNotReady"))
+
+						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+						g.Expect(vmGroup1.Status.Members[0].Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Type).To(Equal(vmopv1.VirtualMachineGroupMemberConditionGroupLinked))
+						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Reason).To(Equal("NotMember"))
+						g.Expect(vmGroup1.Status.Members[1].Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Type).To(Equal(vmopv1.VirtualMachineGroupMemberConditionGroupLinked))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Reason).To(Equal("NotMember"))
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
+
+			When("members are found and have the correct group name", func() {
+				BeforeEach(func() {
+					vm1 := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+					vm1Copy := vm1.DeepCopy()
+					vm1Copy.Spec.GroupName = vmGroup1Key.Name
+					Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
+					vmGroup2 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+					vmGroup2Copy := vmGroup2.DeepCopy()
+					vmGroup2Copy.Spec.GroupName = vmGroup1Key.Name
+					Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+				})
+
+				It("should mark the group ready, member condition as true, and owner reference set to the group", func() {
+					Eventually(func(g Gomega) {
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Conditions[0].Type).To(Equal(vmopv1.ReadyConditionType))
+						g.Expect(vmGroup1.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+
+						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+						g.Expect(vmGroup1.Status.Members[0].Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Type).To(Equal(vmopv1.VirtualMachineGroupMemberConditionGroupLinked))
+						g.Expect(vmGroup1.Status.Members[0].Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+						g.Expect(vmGroup1.Status.Members[1].Conditions).To(HaveLen(2))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Type).To(Equal(vmopv1.ReadyConditionType))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[1].Type).To(Equal(vmopv1.VirtualMachineGroupMemberConditionGroupLinked))
+						g.Expect(vmGroup1.Status.Members[1].Conditions[1].Status).To(Equal(metav1.ConditionTrue))
+
+						vm1 := &vmopv1.VirtualMachine{}
+						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+						g.Expect(vm1.OwnerReferences).To(HaveLen(1))
+						g.Expect(vm1.OwnerReferences[0].Kind).To(Equal(virtualMachineGroupKind))
+						g.Expect(vm1.OwnerReferences[0].Name).To(Equal(vmGroup1Key.Name))
+
+						vmGroup2 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+						g.Expect(vmGroup2.OwnerReferences).To(HaveLen(1))
+						g.Expect(vmGroup2.OwnerReferences[0].Kind).To(Equal(virtualMachineGroupKind))
+						g.Expect(vmGroup2.OwnerReferences[0].Name).To(Equal(vmGroup1Key.Name))
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
 		})
 
 		Context("Placement", func() {
@@ -167,7 +276,145 @@ var _ = Describe(
 		})
 
 		Context("PowerState", func() {
-			// TODO(sai): Add tests for ReconcilePowerState.
+			BeforeEach(func() {
+				By("setting up group-1 with members vm-1 and vmgroup-2")
+				vmGroup1 := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+				vmGroup1Copy := vmGroup1.DeepCopy()
+				vmGroup1Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Kind: virtualMachineKind,
+								Name: vm1Key.Name,
+							},
+						},
+					},
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Kind: virtualMachineGroupKind,
+								Name: vmGroup2Key.Name,
+							},
+						},
+					},
+				}
+				Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+
+				By("setting up group-2 with members vm-2")
+				vmGroup2 := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+				vmGroup2Copy := vmGroup2.DeepCopy()
+				vmGroup2Copy.Spec.GroupName = vmGroup1Key.Name
+				vmGroup2Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Kind: virtualMachineKind,
+								Name: vm2Key.Name,
+							},
+						},
+					},
+				}
+				Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+
+				By("setting up group name for vm-1")
+				vm1 := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+				vm1Copy := vm1.DeepCopy()
+				vm1Copy.Spec.GroupName = vmGroup1Key.Name
+				Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
+				By("setting up group name for vm-2")
+				vm2 := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
+				vm2Copy := vm2.DeepCopy()
+				vm2Copy.Spec.GroupName = vmGroup2Key.Name
+				Expect(ctx.Client.Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
+			})
+
+			When("power off the group with try soft power off mode", func() {
+				BeforeEach(func() {
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					vmGroup1Copy := vmGroup1.DeepCopy()
+					vmGroup1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					vmGroup1Copy.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+				})
+
+				It("should power off all members with try soft power off mode", func() {
+					Eventually(func(g Gomega) {
+						By("all group members should have expected power state and power off mode")
+						vm1 := &vmopv1.VirtualMachine{}
+						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+						g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						g.Expect(vm1.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
+
+						vmGroup2 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+						g.Expect(vmGroup2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						g.Expect(vmGroup2.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
+
+						vm2 := &vmopv1.VirtualMachine{}
+						g.Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
+						g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						g.Expect(vm2.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
+
+			When("power on the group with delay", func() {
+				var (
+					bootOrder1Delay  = 1 * time.Minute
+					bootOrder2Delay  = 2 * time.Minute
+					updatedPowerTime = time.Now()
+				)
+
+				BeforeEach(func() {
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					vmGroup1Copy := vmGroup1.DeepCopy()
+					vmGroup1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					vmGroup1Copy.Spec.BootOrder[0].PowerOnDelay = &metav1.Duration{Duration: bootOrder1Delay}
+					vmGroup1Copy.Spec.BootOrder[1].PowerOnDelay = &metav1.Duration{Duration: bootOrder2Delay}
+					// Mimic mutating webhook to set last updated power state time annotation.
+					// This is used to verify the power on delay is applied correctly.
+					vmGroup1Copy.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: updatedPowerTime.Format(time.RFC3339),
+					}
+					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+				})
+
+				It("should power on all members with the expected delay", func() {
+					Eventually(func(g Gomega) {
+						vm1 := &vmopv1.VirtualMachine{}
+						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+						g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						g.Expect(vm1.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+						vm1ApplyPowerStateTime, err := time.Parse(time.RFC3339, vm1.Annotations[constants.ApplyPowerStateTimeAnnotation])
+						g.Expect(err).To(Not(HaveOccurred()))
+						g.Expect(vm1ApplyPowerStateTime).To(BeTemporally("~", updatedPowerTime.Add(bootOrder1Delay), 5*time.Second))
+
+						vmGroup2 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+						g.Expect(vmGroup2.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+						vmGroup2ApplyPowerStateTime, err := time.Parse(time.RFC3339, vmGroup2.Annotations[constants.ApplyPowerStateTimeAnnotation])
+						g.Expect(err).To(Not(HaveOccurred()))
+						// Boot order delay is cumulative.
+						bootOrder2Delay := bootOrder1Delay + bootOrder2Delay
+						g.Expect(vmGroup2ApplyPowerStateTime).To(BeTemporally("~", updatedPowerTime.Add(bootOrder2Delay), 5*time.Second))
+
+						vm2 := &vmopv1.VirtualMachine{}
+						g.Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
+						g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						g.Expect(vm2.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+						vm2ApplyPowerStateTime, err := time.Parse(time.RFC3339, vm2.Annotations[constants.ApplyPowerStateTimeAnnotation])
+						g.Expect(err).To(Not(HaveOccurred()))
+						g.Expect(vm2ApplyPowerStateTime).To(BeTemporally("~", updatedPowerTime.Add(bootOrder2Delay), 5*time.Second))
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
 		})
 
 		Context("Deletion", func() {

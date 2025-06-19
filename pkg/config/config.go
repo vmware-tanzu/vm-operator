@@ -184,6 +184,7 @@ type FeatureStates struct {
 	VMGroups                   bool
 	ImmutableClasses           bool
 	VMSnapshots                bool
+	InventoryContentLibrary    bool
 }
 
 type InstanceStorage struct {

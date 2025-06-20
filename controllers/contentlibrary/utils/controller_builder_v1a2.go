@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
@@ -74,7 +74,7 @@ func AddToManagerV1A2(
 					ctx,
 					r.Logger.WithName("VirtualMachineImageCacheToItemMapper"),
 					r.Client,
-					imgregv1a1.GroupVersion,
+					imgregv1.GroupVersion,
 					controlledItemTypeName),
 			))
 	}
@@ -124,18 +124,18 @@ func (r *ReconcilerV1A2) Reconcile(
 
 	var (
 		obj    client.Object
-		spec   *imgregv1a1.ContentLibraryItemSpec
-		status *imgregv1a1.ContentLibraryItemStatus
+		spec   *imgregv1.ContentLibraryItemSpec
+		status *imgregv1.ContentLibraryItemStatus
 	)
 
 	if req.Namespace != "" {
-		var o imgregv1a1.ContentLibraryItem
+		var o imgregv1.ContentLibraryItem
 		if err := r.Get(ctx, req.NamespacedName, &o); err != nil {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 		obj, spec, status = &o, &o.Spec, &o.Status
 	} else {
-		var o imgregv1a1.ClusterContentLibraryItem
+		var o imgregv1.ClusterContentLibraryItem
 		if err := r.Get(ctx, req.NamespacedName, &o); err != nil {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
@@ -204,8 +204,8 @@ func (r *ReconcilerV1A2) ReconcileNormal(
 	ctx context.Context,
 	logger logr.Logger,
 	cliObj client.Object,
-	cliSpec *imgregv1a1.ContentLibraryItemSpec,
-	cliStatus *imgregv1a1.ContentLibraryItemStatus,
+	cliSpec *imgregv1.ContentLibraryItemSpec,
+	cliStatus *imgregv1.ContentLibraryItemStatus,
 	vmiName string) error {
 
 	finalizer, depFinalizer := GetAppropriateFinalizers(cliObj)
@@ -303,7 +303,7 @@ func (r *ReconcilerV1A2) ReconcileNormal(
 
 			// Check if the item is ready and skip the image content sync if
 			// not.
-			if !IsItemReady(cliStatus.Conditions) {
+			if !IsV1A2ItemReady(cliStatus.Conditions) {
 				pkgcnd.MarkFalse(
 					vmiStatus,
 					vmopv1.ReadyConditionType,
@@ -381,8 +381,8 @@ func (r *ReconcilerV1A2) ReconcileNormal(
 func (r *ReconcilerV1A2) setUpVMIFromCLItem(
 	ctx context.Context,
 	cliObj client.Object,
-	cliSpec imgregv1a1.ContentLibraryItemSpec,
-	cliStatus imgregv1a1.ContentLibraryItemStatus,
+	cliSpec imgregv1.ContentLibraryItemSpec,
+	cliStatus imgregv1.ContentLibraryItemStatus,
 	vmiObj client.Object,
 	vmiSpec *vmopv1.VirtualMachineImageSpec,
 	vmiStatus *vmopv1.VirtualMachineImageStatus) error {
@@ -439,11 +439,11 @@ func (r *ReconcilerV1A2) setUpVMIFromCLItem(
 	}
 
 	vmiStatus.Name = cliStatus.Name
-	vmiStatus.ProviderItemID = string(cliSpec.UUID)
+	vmiStatus.ProviderItemID = cliSpec.ID
 	vmiStatus.Type = string(cliStatus.Type)
 
-	return AddContentLibraryRefToAnnotation(
-		vmiObj, cliStatus.ContentLibraryRef)
+	return AddV1A2ContentLibraryRefToAnnotation(
+		vmiObj, vmiSpec.ProviderRef)
 }
 
 // syncImageContent syncs the VirtualMachineImage content from the provider.
@@ -451,7 +451,7 @@ func (r *ReconcilerV1A2) setUpVMIFromCLItem(
 func (r *ReconcilerV1A2) syncImageContent(
 	ctx context.Context,
 	cliObj client.Object,
-	cliStatus imgregv1a1.ContentLibraryItemStatus,
+	cliStatus imgregv1.ContentLibraryItemStatus,
 	vmiObj client.Object,
 	vmiStatus *vmopv1.VirtualMachineImageStatus) error {
 

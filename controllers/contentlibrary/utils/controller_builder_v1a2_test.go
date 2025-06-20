@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -55,7 +55,7 @@ var _ = Describe("AddToManagerV1A2",
 				parentCtx,
 				builder.VCSimTestConfig{},
 				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-					return utils.AddToManager(ctx, mgr, &imgregv1a1.ContentLibraryItem{})
+					return utils.AddToManagerV1A2(ctx, mgr, &imgregv1.ContentLibraryItem{})
 				},
 				func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 					return nil
@@ -96,8 +96,8 @@ var _ = Describe("Reconcile",
 			fakeVMProvider *providerfake.VMProvider
 
 			cliObj    client.Object
-			cliSpec   *imgregv1a1.ContentLibraryItemSpec
-			cliStatus *imgregv1a1.ContentLibraryItemStatus
+			cliSpec   *imgregv1.ContentLibraryItemSpec
+			cliStatus *imgregv1.ContentLibraryItemStatus
 			req       ctrl.Request
 
 			vmiName  string
@@ -117,7 +117,7 @@ var _ = Describe("Reconcile",
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(ctx.Client.Create(ctx, cliObj)).To(Succeed())
-			cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+			cliObj, cliSpec, cliStatus = getV1A2CLI(ctx, req.Namespace, req.Name)
 		})
 
 		AfterEach(func() {
@@ -151,11 +151,11 @@ var _ = Describe("Reconcile",
 					return nil
 				}
 
-				o := utils.DummyContentLibraryItem(
+				o := utils.DummyV1A2ContentLibraryItem(
 					utils.ItemFieldNamePrefix+"-dummy", "dummy-ns")
 				cliObj, cliSpec, cliStatus = o, &o.Spec, &o.Status
 				finalizer, _ = utils.GetAppropriateFinalizers(cliObj)
-				vmicName = pkgutil.VMIName(string(cliSpec.UUID))
+				vmicName = pkgutil.VMIName(cliSpec.ID)
 
 				// Add the finalizer so Reconcile does not return early.
 				cliObj.SetFinalizers([]string{finalizer})
@@ -183,10 +183,10 @@ var _ = Describe("Reconcile",
 
 				When("Library item resource is Not Ready", func() {
 					BeforeEach(func() {
-						cliStatus.Conditions = []imgregv1a1.Condition{
+						cliStatus.Conditions = []metav1.Condition{
 							{
-								Type:   imgregv1a1.ReadyCondition,
-								Status: corev1.ConditionFalse,
+								Type:   imgregv1.ReadyCondition,
+								Status: metav1.ConditionFalse,
 							},
 						}
 					})
@@ -356,9 +356,9 @@ var _ = Describe("Reconcile",
 
 					JustBeforeEach(func() {
 						// The dummy library item should meet these requirements.
-						var readyCond *imgregv1a1.Condition
+						var readyCond *metav1.Condition
 						for _, c := range cliStatus.Conditions {
-							if c.Type == imgregv1a1.ReadyCondition {
+							if c.Type == imgregv1.ReadyCondition {
 								c := c
 								readyCond = &c
 								break
@@ -375,10 +375,10 @@ var _ = Describe("Reconcile",
 						It("should create a new image resource syncing up with the library item resource", func() {
 							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
-							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+							cliObj, cliSpec, cliStatus = getV1A2CLI(ctx, req.Namespace, req.Name)
 
 							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							assertVMImageFromV1A2CLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
 							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
 						})
 					})
@@ -400,10 +400,10 @@ var _ = Describe("Reconcile",
 							cliStatus.ContentVersion += "-updated"
 							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
-							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+							cliObj, cliSpec, cliStatus = getV1A2CLI(ctx, req.Namespace, req.Name)
 
 							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							assertVMImageFromV1A2CLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
 							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
 						})
 					})
@@ -424,10 +424,10 @@ var _ = Describe("Reconcile",
 						It("should still update the image resource status from the library item resource", func() {
 							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
-							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+							cliObj, cliSpec, cliStatus = getV1A2CLI(ctx, req.Namespace, req.Name)
 
 							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							assertVMImageFromV1A2CLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
 							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
 						})
 					})
@@ -459,10 +459,10 @@ var _ = Describe("Reconcile",
 					It("should skip updating the ClusterVirtualMachineImage with library item", func() {
 						_, err := reconciler.Reconcile(context.Background(), req)
 						Expect(err).ToNot(HaveOccurred())
-						cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+						cliObj, cliSpec, cliStatus = getV1A2CLI(ctx, req.Namespace, req.Name)
 
 						vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-						assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+						assertVMImageFromV1A2CLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
 						Expect(vmiStatus.Firmware).To(Equal("should-not-be-updated"))
 					})
 				})
@@ -502,7 +502,7 @@ var _ = Describe("Reconcile",
 					return nil
 				}
 
-				o := utils.DummyClusterContentLibraryItem(
+				o := utils.DummyV1A2ClusterContentLibraryItem(
 					utils.ItemFieldNamePrefix + "-dummy")
 				cliObj, cliSpec, cliStatus = o, &o.Spec, &o.Status
 				finalizer, _ = utils.GetAppropriateFinalizers(cliObj)
@@ -624,9 +624,9 @@ var _ = Describe("Reconcile",
 				When("Library item resource is ready and security complaint", func() {
 					JustBeforeEach(func() {
 						// The dummy library item should meet these requirements.
-						var readyCond *imgregv1a1.Condition
+						var readyCond *metav1.Condition
 						for _, c := range cliStatus.Conditions {
-							if c.Type == imgregv1a1.ReadyCondition {
+							if c.Type == imgregv1.ReadyCondition {
 								c := c
 								readyCond = &c
 								break
@@ -642,10 +642,10 @@ var _ = Describe("Reconcile",
 						It("should create a new image resource syncing up with the library item resource", func() {
 							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
-							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+							cliObj, cliSpec, cliStatus = getV1A2CLI(ctx, req.Namespace, req.Name)
 
 							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							assertVMImageFromV1A2CLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
 							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
 						})
 					})
@@ -665,10 +665,10 @@ var _ = Describe("Reconcile",
 							cliStatus.ContentVersion += "-updated"
 							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
-							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
+							cliObj, cliSpec, cliStatus = getV1A2CLI(ctx, req.Namespace, req.Name)
 
 							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
-							assertVMImageFromCLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
+							assertVMImageFromV1A2CLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
 							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
 						})
 					})
@@ -689,12 +689,12 @@ var _ = Describe("Reconcile",
 
 func getV1A2CLI(
 	ctx *builder.UnitTestContextForController,
-	namespace, name string) (client.Object, *imgregv1a1.ContentLibraryItemSpec, *imgregv1a1.ContentLibraryItemStatus) {
+	namespace, name string) (client.Object, *imgregv1.ContentLibraryItemSpec, *imgregv1.ContentLibraryItemStatus) {
 
 	var (
 		obj    client.Object
-		spec   *imgregv1a1.ContentLibraryItemSpec
-		status *imgregv1a1.ContentLibraryItemStatus
+		spec   *imgregv1.ContentLibraryItemSpec
+		status *imgregv1.ContentLibraryItemStatus
 		key    = client.ObjectKey{
 			Namespace: namespace,
 			Name:      name,
@@ -702,11 +702,11 @@ func getV1A2CLI(
 	)
 
 	if namespace != "" {
-		var o imgregv1a1.ContentLibraryItem
+		var o imgregv1.ContentLibraryItem
 		ExpectWithOffset(1, ctx.Client.Get(ctx, key, &o)).To(Succeed())
 		obj, spec, status = &o, &o.Spec, &o.Status
 	} else {
-		var o imgregv1a1.ClusterContentLibraryItem
+		var o imgregv1.ClusterContentLibraryItem
 		ExpectWithOffset(1, ctx.Client.Get(ctx, key, &o)).To(Succeed())
 		obj, spec, status = &o, &o.Spec, &o.Status
 	}
@@ -716,8 +716,8 @@ func getV1A2CLI(
 
 func assertVMImageFromV1A2CLItem(
 	cliObj client.Object,
-	cliSpec imgregv1a1.ContentLibraryItemSpec,
-	cliStatus imgregv1a1.ContentLibraryItemStatus,
+	cliSpec imgregv1.ContentLibraryItemSpec,
+	cliStatus imgregv1.ContentLibraryItemStatus,
 	vmiObj client.Object,
 	vmiSpec vmopv1.VirtualMachineImageSpec,
 	vmiStatus vmopv1.VirtualMachineImageStatus) {
@@ -733,7 +733,7 @@ func assertVMImageFromV1A2CLItem(
 
 	By("Expected VMImage Status", func() {
 		Expect(vmiStatus.Name).To(Equal(cliStatus.Name))
-		Expect(vmiStatus.ProviderItemID).To(BeEquivalentTo(cliSpec.UUID))
+		Expect(vmiStatus.ProviderItemID).To(BeEquivalentTo(cliSpec.ID))
 		Expect(vmiStatus.ProviderContentVersion).To(Equal(cliStatus.ContentVersion))
 		Expect(vmiStatus.Type).To(BeEquivalentTo(cliStatus.Type))
 		Expect(pkgcnd.IsTrue(vmiStatus, vmopv1.ReadyConditionType)).To(BeTrue())

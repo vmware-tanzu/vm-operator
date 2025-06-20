@@ -1579,6 +1579,26 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+			Entry("disallow inline Sysprep without FullName or OrgName",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									UserData: sysprep.UserData{
+										FullName: "",
+										OrgName:  "",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.sysprep.userData.fullName: Required value`,
+						`spec.bootstrap.sysprep.sysprep.userData.orgName: Required value`,
+					),
+				},
+			),
 			Entry("disallow vAppConfig mixing inline Properties and RawProperties",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -3704,7 +3724,12 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Spec.Network.HostName = strings.Repeat("a", 16)
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
-								Sysprep: &sysprep.Sysprep{},
+								Sysprep: &sysprep.Sysprep{
+									UserData: sysprep.UserData{
+										FullName: "Foo",
+										OrgName:  "Bar",
+									},
+								},
 							},
 						}
 					},
@@ -3727,7 +3752,12 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Spec.Network.HostName = strings.Repeat("a", 16)
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
-								Sysprep: &sysprep.Sysprep{},
+								Sysprep: &sysprep.Sysprep{
+									UserData: sysprep.UserData{
+										FullName: "Foo",
+										OrgName:  "Bar",
+									},
+								},
 							},
 						}
 					},

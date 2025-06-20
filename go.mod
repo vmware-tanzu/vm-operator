@@ -23,7 +23,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.22.0
 	github.com/onsi/gomega v1.36.1
 	github.com/prometheus/client_golang v1.22.0
-	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20240509202721-f6552612433a
+	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250513220855-7e450cba845f
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20241112044858-9da8637c1b0d
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
@@ -69,6 +69,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
+	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect

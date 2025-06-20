@@ -54,6 +54,10 @@ const (
 	// CapabilityKeyImmutableClasses is the name of capability key defined in the
 	// Supervisor capabilities CRD.
 	CapabilityKeyImmutableClasses = "supports_VM_service_immutable_VM_classes"
+
+	// CapabilityKeyInventoryContentLibrary is the name of the key defined in the
+	// Supervisor capabilities CRD.
+	CapabilityKeyInventoryContentLibrary = "supports_inventory_content_library"
 )
 
 var (
@@ -198,6 +202,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMGroups = capStatus.Activated
 		case CapabilityKeyImmutableClasses:
 			fs.ImmutableClasses = capStatus.Activated
+		case CapabilityKeyInventoryContentLibrary:
+			fs.InventoryContentLibrary = capStatus.Activated
 		}
 	}
 	return fs

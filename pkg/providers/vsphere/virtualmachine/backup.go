@@ -176,10 +176,12 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 			// Use a copy of the VM object since the actual VM obj will be annotated if and once reconfigure succeeds.
 			copyVM := opts.VMCtx.VM.DeepCopy()
 			setBackupVersionAnnotation(copyVM, opts.BackupVersion)
-			// Remove the BackupUpToDateCondition from previous VM backup to remove ambiguity with newer backup version annotation.
-			conditions.Delete(copyVM, vmopv1.VirtualMachineBackupUpToDateCondition)
-			// Backup the updated VM's YAML with encoding and compression.
+
+			// Trim certain fields such as last applied configuration,
+			// managed fields and Status subresource from the payload.
 			trimBackupFields(copyVM)
+			copyVM.Status = vmopv1.VirtualMachineStatus{}
+
 			encodedVMYaml, err := getEncodedVMYaml(copyVM)
 			if err != nil {
 				opts.VMCtx.Logger.Error(err, "failed to get VM resource yaml for backup")
@@ -287,6 +289,9 @@ func getDesiredVMResourceYAMLForBackup(
 	// Use a copy to avoid modifying the VM object at the end of reconciliation.
 	copyVM := vm.DeepCopy()
 	trimBackupFields(copyVM)
+
+	// Do not include the status of the VM in the backup.
+	copyVM.Status = vmopv1.VirtualMachineStatus{}
 
 	// Backup the updated VM's YAML with encoding and compression.
 	return getEncodedVMYaml(copyVM)

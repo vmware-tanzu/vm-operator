@@ -35,6 +35,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+const (
+	UpdatedSuffix = "-updated"
+)
+
 var _ = Describe("AddToManager",
 	Label(
 		testlabels.Controller,
@@ -398,7 +402,7 @@ var _ = Describe("Reconcile",
 						})
 
 						It("should update the existing image resource with the library item resource", func() {
-							cliStatus.ContentVersion += "-updated"
+							cliStatus.ContentVersion += UpdatedSuffix
 							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
 							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)
@@ -663,7 +667,7 @@ var _ = Describe("Reconcile",
 								})
 						})
 						It("should update the existing image resource with the library item resource", func() {
-							cliStatus.ContentVersion += "-updated"
+							cliStatus.ContentVersion += UpdatedSuffix
 							_, err := reconciler.Reconcile(context.Background(), req)
 							Expect(err).ToNot(HaveOccurred())
 							cliObj, cliSpec, cliStatus = getCLI(ctx, req.Namespace, req.Name)

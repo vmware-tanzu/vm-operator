@@ -58,7 +58,13 @@ const (
 	vmiKind                        = "VirtualMachineImage"
 	cvmiKind                       = "Cluster" + vmiKind
 	invalidKind                    = "InvalidKind"
+	newVMClass                     = "new-class"
+	oldVMClass                     = "old-class"
 	invalidImageKindMsg            = "supported: " + vmiKind + "; " + cvmiKind
+
+	invalidClassInstanceReference              = "must specify a valid reference to a VirtualMachineClassInstance object"
+	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
+	invalidClassInstanceReferenceOwnerMismatch = "VirtualMachineClassInstance must be an instance of the VM Class specified by spec.class"
 )
 
 type testParams struct {
@@ -511,6 +517,161 @@ func unitTestsValidateCreate() {
 				validate: doValidateWithMsg(
 					field.Forbidden(field.NewPath("spec", "className"), "restricted to privileged users").Error(),
 				),
+			},
+		),
+	)
+
+	DescribeTable(
+		"spec.class and spec.className",
+		doTest,
+
+		Entry("should return error if class instance does not exist",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = newVMClass
+					ctx.vm.Spec.Class = &common.LocalObjectRef{
+						Name: "new-class-instance",
+					}
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "class").Child("name"), "new-class-instance", invalidClassInstanceReference).Error(),
+				),
+			},
+		),
+		Entry("should error out if instance is not active",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = newVMClass
+					ctx.vm.Spec.Class = &common.LocalObjectRef{
+						Name: "new-class-instance",
+					}
+
+					// Create the class
+					class := &vmopv1.VirtualMachineClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      newVMClass,
+							Namespace: ctx.vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+					// Fetch the class so we can set an ownerref.
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+
+					// Create the instance with the correct OnwerRef that points to the correct VM class
+					classInstance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "new-class-instance",
+							Namespace: ctx.vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
+
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "class").Child("name"), "new-class-instance", invalidClassInstanceReferenceNotActive).Error(),
+				),
+			},
+		),
+		Entry("should return error if instance points to a different class than spec.className",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = newVMClass
+					ctx.vm.Spec.Class = &common.LocalObjectRef{
+						Name: "new-class-instance",
+					}
+
+					// Create the class
+					class := &vmopv1.VirtualMachineClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      newVMClass,
+							Namespace: ctx.vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+					// Fetch the class so we can set an ownerref.
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+
+					// Create the instance without an OnwerRef that points to some other VM class
+					classInstance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "new-class-instance",
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: "random-vm-class",
+								},
+							},
+							// Set the label to mark the instance as active
+							Labels: map[string]string{
+								vmopv1.VMClassInstanceActiveLabelKey: "",
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
+
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "class").Child("name"), "new-class-instance", invalidClassInstanceReferenceOwnerMismatch).Error(),
+				),
+			},
+		),
+		Entry("should succeed if instance is valid, and is active",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.ClassName = newVMClass
+					ctx.vm.Spec.Class = &common.LocalObjectRef{
+						Name: "new-class-instance",
+					}
+
+					// Create the class
+					class := &vmopv1.VirtualMachineClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      newVMClass,
+							Namespace: ctx.vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+					// Fetch the class so we can set an ownerref.
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+
+					// Create the instance with the correct OnwerRef that points to the correct VM class
+					classInstance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "new-class-instance",
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: "vmoperator.vmware.com/v1alpha4",
+									Name:       newVMClass,
+									Kind:       "VirtualMachineClass",
+								},
+							},
+							// Set the label to mark the instance as active
+							Labels: map[string]string{
+								vmopv1.VMClassInstanceActiveLabelKey: "",
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
+
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = true
+					})
+				},
+				expectAllowed: true,
 			},
 		),
 	)
@@ -3036,6 +3197,241 @@ func unitTestsValidateUpdate() {
 		}
 	}
 
+	DescribeTable(
+		"spec.class and spec.className update",
+		doTest,
+
+		Entry("should deny className change when resize features are disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = newVMClass
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = false
+						config.Features.VMResizeCPUMemory = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "className"), newVMClass, apivalidation.FieldImmutableErrorMsg).Error(),
+				),
+			},
+		),
+		Entry("should allow className change when VMResize feature is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = newVMClass
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = false
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("should allow className change when VMResizeCPUMemory feature is enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = newVMClass
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = false
+						config.Features.VMResizeCPUMemory = true
+						config.Features.ImmutableClasses = false
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("should require className when changing to empty for unprivileged user with VMImportNewNet disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.VMImportNewNet = false
+						config.Features.ImmutableClasses = false
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Required(field.NewPath("spec", "className"), "").Error(),
+				),
+			},
+		),
+		Entry("should allow changing to empty className for privileged user with VMImportNewNet enabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = ""
+					ctx.IsPrivilegedAccount = true
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.VMImportNewNet = true
+						config.Features.ImmutableClasses = false
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("should return error if class instance does not exist",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = newVMClass
+					ctx.vm.Spec.Class = &common.LocalObjectRef{
+						Name: "new-class-instance",
+					}
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "class").Child("name"), "new-class-instance", invalidClassInstanceReference).Error(),
+				),
+			},
+		),
+
+		Entry("should error out if instance is not active",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = newVMClass
+					ctx.vm.Spec.Class = &common.LocalObjectRef{
+						Name: "new-class-instance",
+					}
+
+					// Create the class
+					class := &vmopv1.VirtualMachineClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      newVMClass,
+							Namespace: ctx.vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+					// Fetch the class so we can set an ownerref.
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+
+					// Create the instance with the correct OnwerRef that points to the correct VM class
+					classInstance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "new-class-instance",
+							Namespace: ctx.vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
+
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "class").Child("name"), "new-class-instance", invalidClassInstanceReferenceNotActive).Error(),
+				),
+			},
+		),
+
+		Entry("should return error if instance points to a different class than spec.className",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = newVMClass
+					ctx.vm.Spec.Class = &common.LocalObjectRef{
+						Name: "new-class-instance",
+					}
+
+					// Create the class
+					class := &vmopv1.VirtualMachineClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      newVMClass,
+							Namespace: ctx.vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+					// Fetch the class so we can set an ownerref.
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+
+					// Create the instance without an OnwerRef that points to some other VM class
+					classInstance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "new-class-instance",
+							Namespace: ctx.vm.Namespace,
+							// Set the label to mark the instance as active
+							Labels: map[string]string{
+								vmopv1.VMClassInstanceActiveLabelKey: "",
+							},
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: "random-vm-class",
+								},
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
+
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = true
+					})
+				},
+				validate: doValidateWithMsg(
+					field.Invalid(field.NewPath("spec", "class").Child("name"), "new-class-instance", invalidClassInstanceReferenceOwnerMismatch).Error(),
+				),
+			},
+		),
+		Entry("should succeed if instance is valid, and is active",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.ClassName = oldVMClass
+					ctx.vm.Spec.ClassName = newVMClass
+					ctx.vm.Spec.Class = &common.LocalObjectRef{
+						Name: "new-class-instance",
+					}
+
+					// Create the class
+					class := &vmopv1.VirtualMachineClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      newVMClass,
+							Namespace: ctx.vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+					// Fetch the class so we can set an ownerref.
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(class), class)).To(Succeed())
+
+					// Create the instance with the correct OnwerRef that points to the correct VM class
+					classInstance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "new-class-instance",
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: "vmoperator.vmware.com/v1alpha4",
+									Name:       newVMClass,
+									Kind:       "VirtualMachineClass",
+								},
+							},
+							// Set the label to mark the instance as active
+							Labels: map[string]string{
+								vmopv1.VMClassInstanceActiveLabelKey: "",
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, classInstance)).To(Succeed())
+
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMResize = true
+						config.Features.ImmutableClasses = true
+					})
+				},
+				expectAllowed: true,
+			},
+		),
+	)
+
 	Context("Annotations", func() {
 		annotationPath := field.NewPath("metadata", "annotations")
 
@@ -3478,7 +3874,7 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Spec.ClassName = "class"
 
 						ctx.vm = ctx.oldVM.DeepCopy()
-						ctx.vm.Spec.ClassName = "new-class"
+						ctx.vm.Spec.ClassName = newVMClass
 					},
 					validate: doValidateWithMsg(
 						`spec.className: Invalid value: "new-class": field is immutable`),

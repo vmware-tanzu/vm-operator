@@ -53,35 +53,39 @@ const (
 	isRestrictedNetworkKey               = "IsRestrictedNetwork"
 	allowedRestrictedNetworkTCPProbePort = 6443
 
-	vmiKind  = "VirtualMachineImage"
-	cvmiKind = "ClusterVirtualMachineImage"
+	vmiKind     = "VirtualMachineImage"
+	cvmiKind    = "ClusterVirtualMachineImage"
+	vmclassKind = "VirtualMachineClass"
 
-	readinessProbeOnlyOneAction              = "only one action can be specified"
-	tcpReadinessProbeNotAllowedVPC           = "VPC networking doesn't allow TCP readiness probe to be specified"
-	updatesNotAllowedWhenPowerOn             = "updates to this field is not allowed when VM power is on"
-	storageClassNotFoundFmt                  = "Storage policy %s does not exist"
-	storageClassNotAssignedFmt               = "Storage policy is not associated with the namespace %s"
-	vSphereVolumeSizeNotMBMultiple           = "value must be a multiple of MB"
-	addingModifyingInstanceVolumesNotAllowed = "adding or modifying instance storage volume claim(s) is not allowed"
-	featureNotEnabled                        = "the %s feature is not enabled"
-	invalidPowerStateOnCreateFmt             = "cannot set a new VM's power state to %s"
-	invalidPowerStateOnUpdateFmt             = "cannot %s a VM that is %s"
-	invalidPowerStateOnUpdateEmptyString     = "cannot set power state to empty string"
-	invalidNextRestartTimeOnCreate           = "cannot restart VM on create"
-	invalidRFC3339NanoTimeFormat             = "must be formatted as RFC3339Nano"
-	invalidNextRestartTimeOnUpdateNow        = "mutation webhooks are required to restart VM"
-	modifyAnnotationNotAllowedForNonAdmin    = "modifying this annotation is not allowed for non-admin users"
-	modifyLabelNotAllowedForNonAdmin         = "modifying this label is not allowed for non-admin users"
-	invalidMinHardwareVersionNotSupported    = "should be less than or equal to %d"
-	invalidMinHardwareVersionDowngrade       = "cannot downgrade hardware version"
-	invalidMinHardwareVersionPowerState      = "cannot upgrade hardware version unless powered off"
-	invalidImageKind                         = "supported: " + vmiKind + "; " + cvmiKind
-	invalidZone                              = "cannot use zone that is being deleted"
-	restrictedToPrivUsers                    = "restricted to privileged users"
-	addRestrictedAnnotation                  = "adding this annotation is restricted to privileged users"
-	delRestrictedAnnotation                  = "removing this annotation is restricted to privileged users"
-	modRestrictedAnnotation                  = "modifying this annotation is restricted to privileged users"
-	notUpgraded                              = "modifying this VM is not allowed until it is upgraded"
+	readinessProbeOnlyOneAction                = "only one action can be specified"
+	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
+	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
+	storageClassNotFoundFmt                    = "Storage policy %s does not exist"
+	storageClassNotAssignedFmt                 = "Storage policy is not associated with the namespace %s"
+	vSphereVolumeSizeNotMBMultiple             = "value must be a multiple of MB"
+	addingModifyingInstanceVolumesNotAllowed   = "adding or modifying instance storage volume claim(s) is not allowed"
+	featureNotEnabled                          = "the %s feature is not enabled"
+	invalidPowerStateOnCreateFmt               = "cannot set a new VM's power state to %s"
+	invalidPowerStateOnUpdateFmt               = "cannot %s a VM that is %s"
+	invalidPowerStateOnUpdateEmptyString       = "cannot set power state to empty string"
+	invalidNextRestartTimeOnCreate             = "cannot restart VM on create"
+	invalidRFC3339NanoTimeFormat               = "must be formatted as RFC3339Nano"
+	invalidNextRestartTimeOnUpdateNow          = "mutation webhooks are required to restart VM"
+	modifyAnnotationNotAllowedForNonAdmin      = "modifying this annotation is not allowed for non-admin users"
+	modifyLabelNotAllowedForNonAdmin           = "modifying this label is not allowed for non-admin users"
+	invalidMinHardwareVersionNotSupported      = "should be less than or equal to %d"
+	invalidMinHardwareVersionDowngrade         = "cannot downgrade hardware version"
+	invalidMinHardwareVersionPowerState        = "cannot upgrade hardware version unless powered off"
+	invalidImageKind                           = "supported: " + vmiKind + "; " + cvmiKind
+	invalidZone                                = "cannot use zone that is being deleted"
+	restrictedToPrivUsers                      = "restricted to privileged users"
+	addRestrictedAnnotation                    = "adding this annotation is restricted to privileged users"
+	delRestrictedAnnotation                    = "removing this annotation is restricted to privileged users"
+	modRestrictedAnnotation                    = "modifying this annotation is restricted to privileged users"
+	notUpgraded                                = "modifying this VM is not allowed until it is upgraded"
+	invalidClassInstanceReference              = "must specify a valid reference to a VirtualMachineClassInstance object"
+	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
+	invalidClassInstanceReferenceOwnerMismatch = "VirtualMachineClassInstance must be an instance of the VM Class specified by spec.class"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha4-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha4,name=default.validating.virtualmachine.v1alpha4.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -480,7 +484,56 @@ func (v validator) validateClassOnCreate(
 		}
 	}
 
+	if pkgcfg.FromContext(ctx).Features.ImmutableClasses {
+		allErrs = append(allErrs, v.validateClassInstance(ctx, vm)...)
+	}
+
 	return allErrs
+}
+
+func (v validator) validateClassInstance(ctx *pkgctx.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	// The mutating webhook ensures that the spec.className and
+	// spec.class are both set. Verify if they are valid. However, for
+	// pre-v1a4 versions, the class instance will be unset. Return
+	// early in that case.
+
+	if vm.Spec.Class == nil {
+		return allErrs
+	}
+
+	f := field.NewPath("spec", "class")
+	classInstance := &vmopv1.VirtualMachineClassInstance{}
+	if err := v.client.Get(
+		ctx,
+		ctrlclient.ObjectKey{Name: vm.Spec.Class.Name, Namespace: vm.Namespace},
+		classInstance); err != nil {
+		return append(
+			allErrs,
+			field.Invalid(f.Child("name"), vm.Spec.Class.Name, invalidClassInstanceReference),
+		)
+	}
+
+	// Specifying an inactive instance is disallowed.
+	if _, ok := classInstance.Labels[vmopv1.VMClassInstanceActiveLabelKey]; !ok {
+		return append(
+			allErrs,
+			field.Invalid(f.Child("name"), vm.Spec.Class.Name, invalidClassInstanceReferenceNotActive),
+		)
+	}
+
+	for _, owner := range classInstance.OwnerReferences {
+		if owner.Kind == vmclassKind && owner.Name == vm.Spec.ClassName {
+			// The instance is owned by the class specified in spec.className.
+			return allErrs
+		}
+	}
+
+	// The instance does not have an OwnerReference that points to spec.className.
+	return append(
+		allErrs,
+		field.Invalid(f.Child("name"), vm.Spec.Class.Name, invalidClassInstanceReferenceOwnerMismatch))
 }
 
 func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
@@ -508,6 +561,10 @@ func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 				allErrs,
 				field.Required(field.NewPath("spec", "className"), ""))
 		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.ImmutableClasses {
+		allErrs = append(allErrs, v.validateClassInstance(ctx, vm)...)
 	}
 
 	return allErrs

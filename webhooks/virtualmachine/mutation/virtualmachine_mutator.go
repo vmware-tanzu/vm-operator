@@ -46,6 +46,8 @@ const (
 	defaultInterfaceName   = "eth0"
 	defaultNamedNetwork    = "VM Network"
 	defaultCdromNamePrefix = "cdrom"
+
+	vmclassKind = "VirtualMachineClass"
 )
 
 // +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha4-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha4,name=default.mutating.virtualmachine.v1alpha4.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -103,6 +105,106 @@ type mutator struct {
 	converter runtime.UnstructuredConverter
 }
 
+// ResolveClassAndClassName resolves the spec.class and
+// spec.className of a VM.
+//   - If spec.className is specified, but spec.class is empty, then
+//     spec.class is set to the active instance of the class.
+//   - If a VM class instance is specified in spec.class but
+//     spec.className is empty, spec.className is set to the class
+//     that is the owner of the class instance.
+//   - If both spec.class and spec.className both are specified, then we
+//     ensure that both point to the same class.
+func ResolveClassAndClassName(
+	ctx *pkgctx.WebhookRequestContext,
+	c ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) (bool, error) {
+
+	className := vm.Spec.ClassName
+	classInstance := vm.Spec.Class
+
+	// Return early if both spec.class and spec.className are unset.
+	// This can be the case for classless / imported VMs.
+	if className == "" && classInstance == nil {
+		return false, nil
+	}
+
+	// If class instance is set, but the name is empty, it is invalid.
+	if classInstance != nil && classInstance.Name == "" {
+		return false, fmt.Errorf("empty class instance name")
+	}
+
+	// If class and class instance both are set, then pass through to the
+	// validation webhook. Nothing to mutate.
+	if className != "" && classInstance != nil {
+		return false, nil
+	}
+
+	if className != "" {
+		// If a class is specified, but no instance has been
+		// specified, pick the active instance.
+		if classInstance == nil {
+
+			// TODO: AKP: This is inefficient. Each instance should
+			// have a link to its parent class.
+			// Fetch all the instances and filter the one owned by this class
+			instanceList := &vmopv1.VirtualMachineClassInstanceList{}
+			if err := c.List(ctx,
+				instanceList,
+				ctrlclient.InNamespace(vm.Namespace),
+				ctrlclient.MatchingLabels{vmopv1.VMClassInstanceActiveLabelKey: ""},
+			); err != nil {
+				return false, err
+			}
+
+			// From all the active class instances, filter the ones
+			// owned by the class specified in spec.className.
+			for _, instance := range instanceList.Items {
+				for _, owner := range instance.OwnerReferences {
+					if owner.Name == className && owner.Kind == vmclassKind {
+						if vm.Spec.Class == nil {
+							vm.Spec.Class = &common.LocalObjectRef{}
+						}
+						vm.Spec.Class.APIVersion = instance.APIVersion
+						vm.Spec.Class.Name = instance.Name
+						vm.Spec.Class.Kind = instance.Kind
+
+						return true, nil
+					}
+				}
+			}
+		}
+	} else {
+		// If an instance is specified in spec.class, but className is
+		// omitted, fetch the VM class pointed by the instance and
+		// populate spec.className.
+		if vm.Spec.Class != nil {
+			classInstance := &vmopv1.VirtualMachineClassInstance{}
+			if err := c.Get(
+				ctx,
+				ctrlclient.ObjectKey{Name: vm.Spec.Class.Name, Namespace: vm.Namespace},
+				classInstance); err != nil {
+				return false, err
+			}
+
+			// Specifying an inactive instance is disallowed.
+			if _, ok := classInstance.Labels[vmopv1.VMClassInstanceActiveLabelKey]; !ok {
+				return false, fmt.Errorf("must specify a VirtualMachineClassInstance that is active")
+			}
+
+			// Set the spec.className to the class that owns the instance.
+			for _, ownerClass := range classInstance.OwnerReferences {
+				if ownerClass.Kind == vmclassKind {
+					vm.Spec.ClassName = ownerClass.Name
+
+					return true, nil
+				}
+			}
+		}
+	}
+
+	return false, nil
+}
+
 func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	if ctx.Op == admissionv1.Delete {
 		return admission.Allowed("")
@@ -138,13 +240,28 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 				return admission.Denied(err.Error())
 			}
 		}
+		if pkgcfg.FromContext(ctx).Features.ImmutableClasses {
+			if _, err := ResolveClassAndClassName(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			}
+		}
 	case admissionv1.Update:
 		oldVM, err := m.vmFromUnstructured(ctx.OldObj)
 		if err != nil {
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
 
-		if ok, err := SetLastResizeAnnotation(ctx, modified, oldVM); err != nil {
+		if pkgcfg.FromContext(ctx).Features.ImmutableClasses {
+			if _, err := ResolveClassAndClassName(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			}
+		}
+
+		// When a VM is resized, the last resize instances are set to
+		// the class and the instance. The VM controller uses these
+		// annotations to figure out if a VM is indeed being resized
+		// (and in some cases, the type of resize).
+		if ok, err := SetLastResizeAnnotations(ctx, modified, oldVM); err != nil {
 			return admission.Denied(err.Error())
 		} else if ok {
 			wasMutated = true
@@ -541,19 +658,28 @@ func SetCreatedAtAnnotations(ctx context.Context, vm *vmopv1.VirtualMachine) {
 	vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
 }
 
-// SetLastResizeAnnotation sets the last resize annotation as needed when the class name changes.
-func SetLastResizeAnnotation(
+// SetLastResizeAnnotations sets the last resize annotation as needed when the class name changes.
+func SetLastResizeAnnotations(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) (bool, error) {
 
-	if f := pkgcfg.FromContext(ctx).Features; !f.VMResize && !f.VMResizeCPUMemory {
+	f := pkgcfg.FromContext(ctx).Features
+	if !f.VMResize && !f.VMResizeCPUMemory {
 		return false, nil
 	}
 
 	if vm.Spec.ClassName == oldVM.Spec.ClassName {
-		return false, nil
+		if !f.ImmutableClasses {
+			return false, nil
+		}
+
+		if vm.Spec.Class != nil && oldVM.Spec.Class != nil &&
+			vm.Spec.Class.Name == oldVM.Spec.Class.Name {
+			return false, nil
+		}
 	}
 
+	modified := false
 	if _, _, _, ok := vmopv1util.GetLastResizedAnnotation(*vm); !ok {
 		// This is an existing VM - since it does not have the last-resized annotation - that is
 		// now being resized. Save off the prior class name so we know the class has changed and
@@ -561,10 +687,23 @@ func SetLastResizeAnnotation(
 		if err := vmopv1util.SetLastResizedAnnotationClassName(vm, oldVM.Spec.ClassName); err != nil {
 			return false, err
 		}
-		return true, nil
+
+		modified = true
 	}
 
-	return false, nil
+	if f.ImmutableClasses {
+		if _, _, _, ok := vmopv1util.GetLastResizedInstanceAnnotation(*vm); !ok {
+			instanceName := ""
+			if oldVM.Spec.Class != nil {
+				instanceName = oldVM.Spec.Class.Name
+			}
+			if err := vmopv1util.SetLastResizedAnnotationClassInstanceName(vm, instanceName); err != nil {
+				return false, err
+			}
+		}
+	}
+
+	return modified, nil
 }
 
 func SetDefaultCdromImgKindOnCreate(

@@ -183,6 +183,7 @@ type FeatureStates struct {
 	MutableNetworks            bool
 	VMGroups                   bool
 	ImmutableClasses           bool
+	VMSnapshots                bool
 }
 
 type InstanceStorage struct {

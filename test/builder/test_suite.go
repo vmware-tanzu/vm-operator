@@ -532,6 +532,29 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 		Expect(s.config).ToNot(BeNil())
 	})
 
+	By("updating image registry CRD storage version", func() {
+		// Update storage version of ContentLibraryItems if necessary
+		cliCrd := s.GetInstalledCRD("contentlibraryitems.imageregistry.vmware.com")
+		Expect(cliCrd).ToNot(BeNil())
+		s.UpdateCRDStorage(cliCrd)
+		// Update storage version of ClusterContentLibraryItems if necessary
+		ccliCrd := s.GetInstalledCRD("clustercontentlibraryitems.imageregistry.vmware.com")
+		Expect(ccliCrd).ToNot(BeNil())
+		s.UpdateCRDStorage(ccliCrd)
+		// Update storage version of ContentLibraries if necessary
+		clCrd := s.GetInstalledCRD("contentlibraries.imageregistry.vmware.com")
+		Expect(clCrd).ToNot(BeNil())
+		s.UpdateCRDStorage(clCrd)
+		// Update storage version of ClusterContentLibraries if necessary
+		cclCrd := s.GetInstalledCRD("clustercontentlibraries.imageregistry.vmware.com")
+		Expect(cclCrd).ToNot(BeNil())
+		s.UpdateCRDStorage(cclCrd)
+		// Update storage version of ContentLibraryItemImportRequests if necessary
+		cliImportReqCrd := s.GetInstalledCRD("contentlibraryitemimportrequests.imageregistry.vmware.com")
+		Expect(cliImportReqCrd).ToNot(BeNil())
+		s.UpdateCRDStorage(cliImportReqCrd)
+	})
+
 	// If one or more webhooks are being tested then go ahead and generate a
 	// PKI toolchain to use with the webhook server.
 	if s.isWebhookTest() {
@@ -629,6 +652,32 @@ func (s *TestSuite) GetInstalledCRD(crdName string) *apiextensionsv1.CustomResou
 	}
 
 	return nil
+}
+
+func (s *TestSuite) UpdateCRDStorage(oldCrd *apiextensionsv1.CustomResourceDefinition) {
+
+	err := envtest.UninstallCRDs(s.envTest.Config, envtest.CRDInstallOptions{
+		CRDs: []*apiextensionsv1.CustomResourceDefinition{oldCrd},
+	})
+	Expect(err).ToNot(HaveOccurred())
+
+	crds := make([]*apiextensionsv1.CustomResourceDefinition, 0)
+	updatedCrd := updateImgRegStorageVersion(s.Context, *oldCrd)
+
+	Eventually(func() error {
+		newCrd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        updatedCrd.Name,
+				Annotations: updatedCrd.Annotations,
+			},
+			Spec: updatedCrd.Spec,
+		}
+		crds, err = envtest.InstallCRDs(s.envTest.Config, envtest.CRDInstallOptions{
+			CRDs: []*apiextensionsv1.CustomResourceDefinition{newCrd},
+		})
+		return err
+	}).ShouldNot(HaveOccurred())
+	s.envTest.CRDs = append(s.envTest.CRDs, crds...)
 }
 
 func (s *TestSuite) UpdateCRDScope(oldCrd *apiextensionsv1.CustomResourceDefinition, newScope string) {

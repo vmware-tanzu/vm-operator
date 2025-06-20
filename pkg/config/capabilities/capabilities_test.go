@@ -661,7 +661,6 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
 				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMSnapshots=true,WorkloadDomainIsolation=true"))
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())

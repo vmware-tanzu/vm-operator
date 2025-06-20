@@ -135,7 +135,9 @@ func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrar
 			Namespace: namespace,
 		},
 		Spec: imgregv1a1.ContentLibrarySpec{
-			UUID:     types.UID(uuid),
+			BaseContentLibrarySpec: imgregv1a1.BaseContentLibrarySpec{
+				UUID: types.UID(uuid),
+			},
 			Writable: true,
 		},
 		Status: imgregv1a1.ContentLibraryStatus{
@@ -156,7 +158,9 @@ func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLib
 			Name: name,
 		},
 		Spec: imgregv1a1.ClusterContentLibrarySpec{
-			UUID: types.UID(uuid),
+			BaseContentLibrarySpec: imgregv1a1.BaseContentLibrarySpec{
+				UUID: types.UID(uuid),
+			},
 		},
 	}
 }

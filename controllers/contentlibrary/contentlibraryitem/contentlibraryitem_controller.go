@@ -20,5 +20,9 @@ import (
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
+	// TODO: (abaruni) Enable this once sync image work is completed
+	//	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
+	//		return utils.AddToManagerV1A2(ctx, mgr, &imgregv1.ContentLibraryItem{})
+	//	}
 	return utils.AddToManager(ctx, mgr, &imgregv1a1.ContentLibraryItem{})
 }

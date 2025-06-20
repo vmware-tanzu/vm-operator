@@ -54,6 +54,11 @@ const (
 	// CapabilityKeyImmutableClasses is the name of capability key defined in the
 	// Supervisor capabilities CRD.
 	CapabilityKeyImmutableClasses = "supports_VM_service_immutable_VM_classes"
+
+	// CapabilityKeyVMSnapshots is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the VM snapshots
+	// capability.
+	CapabilityKeyVMSnapshots = "supports_VM_service_VM_snapshots"
 )
 
 var (
@@ -198,7 +203,10 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMGroups = capStatus.Activated
 		case CapabilityKeyImmutableClasses:
 			fs.ImmutableClasses = capStatus.Activated
+		case CapabilityKeyVMSnapshots:
+			fs.VMSnapshots = capStatus.Activated
 		}
+
 	}
 	return fs
 }

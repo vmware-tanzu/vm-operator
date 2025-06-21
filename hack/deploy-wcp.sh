@@ -5,7 +5,7 @@ set -o nounset
 set -o pipefail
 
 USAGE="
-Usage: ${0} [[-s SV_IP,SV_IP,SV_IP [-S SV_PASSWORD]] | [-v VC_IP [-V VC_SSH_PASSWORD]] | [-T testbedInfo.json]] [-c cluster] image.tar
+Usage: ${0} [[-s SV_IP,SV_IP,SV_IP [-S SV_PASSWORD]] | [-v VC_IP [-V VC_SSH_PASSWORD]] | [-T testbedInfo.json]] [-c cluster] [-t build version] image.tar
 
 Loads the VM Operator container image to the Supervisor control plane VMs,
 and restarts the deployments. The Supervisor control plane VM credential
@@ -27,12 +27,16 @@ public key authentication has already been configured.
 With either the -T or -v arguments, the first Supervisor cluster is selected
 by default. To select a specific cluster, use the -c argument.
 
+If you know the build version, it can be specified with the -t argument to
+override the default 'latest' image tag.
+
 FLAGS:
   -s Supervisor CP IPs
   -S Supervisor CP ssh password
   -v vCenter IP
   -V vCenter ssh password
   -T testbedInfo.json file or URL
+  -t build version, eg '1.2.3+abcdefg+4.5.6+hijklmn'
   -c Supervisor cluster, eg 'domain-c8'
 "
 
@@ -40,10 +44,6 @@ FLAGS:
 
 # VIP host key will change as Supervisor leader migrates
 COMMON_SSH_OPTS=("-o StrictHostKeyChecking=no" "-o UserKnownHostsFile=/dev/null")
-
-# Easiest tag to just assume. Maybe revist if we combine "podman build", "podman save",
-# and this script into one.
-IMAGE_REF=${IMAGE_REF:-"localhost/vmoperator-controller:latest"}
 
 SV_VIP=
 SV_USERNAME="root"
@@ -177,7 +177,7 @@ function sv_copy_and_load_image() {
     local svip=$1 image=$2
 
     sv_cp_scp_cmd "$svip" "$image"
-    sv_cp_ssh_cmd "$svip" "ctr -n=k8s.io images import '$image'"
+    sv_cp_ssh_cmd "$svip" "ctr -n=k8s.io images import ${image##*/}"
     #sv_cp_ssh_cmd "$svip" "ctr -n k8s.io images ls | grep vmop"
 
     log "$svip: copied and loaded image"
@@ -205,7 +205,7 @@ function sv_restart_vmop_deployment() {
 
 #########################################
 
-while getopts ":hc:s:S:v:V:T:" opt ; do
+while getopts ":hc:s:S:v:V:T:t:" opt ; do
     case $opt in
         h)
             echo "$USAGE"
@@ -229,6 +229,9 @@ while getopts ":hc:s:S:v:V:T:" opt ; do
         T)
             TESTBED_INFO=$OPTARG
             ;;
+        t)
+            BUILD_VERSION=$OPTARG
+            ;;
         *)
             fatal "$USAGE"
             ;;
@@ -240,6 +243,11 @@ shift $((OPTIND-1))
 if [[ $# -ne 1 ]] ; then
     fatal "$USAGE"
 fi
+
+# Easiest tag to just assume. Maybe revist if we combine "podman build", "podman save",
+# and this script into one.
+BUILD_VERSION="${BUILD_VERSION:-latest}"
+IMAGE_REF=${IMAGE_REF:-"localhost/vmoperator-controller:${BUILD_VERSION}"}
 
 IMAGE=$1
 
@@ -276,6 +284,7 @@ for ip in "${SV_IPS[@]}" ; do
 done
 wait "${pids[@]}"
 
+log "Updating deployment image to $IMAGE_REF"
 sv_update_deployment_image "$IMAGE_REF"
 sv_restart_vmop_deployment
 

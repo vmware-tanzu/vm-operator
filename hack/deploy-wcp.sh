@@ -176,8 +176,9 @@ function sv_get_cp_ips() {
 function sv_copy_and_load_image() {
     local svip=$1 image=$2
 
+    remote_image_path="/root/$(basename $image)"
     sv_cp_scp_cmd "$svip" "$image"
-    sv_cp_ssh_cmd "$svip" "ctr -n=k8s.io images import '$image'"
+    sv_cp_ssh_cmd "$svip" "ctr -n=k8s.io images import $remote_image_path"
     #sv_cp_ssh_cmd "$svip" "ctr -n k8s.io images ls | grep vmop"
 
     log "$svip: copied and loaded image"

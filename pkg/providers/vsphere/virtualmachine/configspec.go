@@ -160,6 +160,7 @@ func CreateConfigSpecForPlacement(
 	storageClassesToIDs map[string]string) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	pciDevKey := pciDevicesStartDeviceKey - 28000
+	hasVirtualDisk := false
 
 	deviceChangeCopy := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(configSpec.DeviceChange))
 	for _, devChange := range configSpec.DeviceChange {
@@ -176,15 +177,20 @@ func CreateConfigSpecForPlacement(
 					pciDevKey--
 				}
 			}
+
+			if !hasVirtualDisk {
+				_, hasVirtualDisk = spec.Device.(*vimtypes.VirtualDisk)
+			}
 		}
 		deviceChangeCopy = append(deviceChangeCopy, devChange)
 	}
 
 	configSpec.DeviceChange = deviceChangeCopy
 
-	if !pkgcfg.FromContext(vmCtx).Features.FastDeploy {
-		// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
-		// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.
+	if !hasVirtualDisk {
+		// PlaceVmsXCluster expects there to always be at least one disk so add a dummy disk. Typically
+		// because of fast deploy, the image's disks will be present, but for like ISO there is no image
+		// and since we aren't adding the PVCs yet, add the dummy disk.
 		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 			Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
 			FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
@@ -231,7 +237,6 @@ func CreateConfigSpecForPlacement(
 	}
 
 	// TODO: Add more devices and fields
-	//  - boot disks from OVA
 	//  - storage profile/class
 	//  - PVC volumes
 	//  - anything in ExtraConfig matter here?

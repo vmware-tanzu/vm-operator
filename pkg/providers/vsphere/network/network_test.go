@@ -312,6 +312,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 					Expect(metav1.IsControlledBy(netInterface, vm)).To(BeTrue())
 					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
+					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMInterfaceNameLabel, interfaceName))
 					Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
 					externalID = netInterface.Spec.ExternalID
@@ -407,6 +408,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 						Expect(metav1.IsControlledBy(netInterface, vm)).To(BeTrue())
 						Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
+						Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMInterfaceNameLabel, interfaceName))
 						Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
 						netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
@@ -510,6 +512,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 					Expect(metav1.IsControlledBy(netInterface, vm)).To(BeTrue())
 					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
+					Expect(netInterface.Labels).To(HaveKeyWithValue(network.VMInterfaceNameLabel, interfaceName))
 					Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
 
 					netInterface.Status.InterfaceID = interfaceID
@@ -747,9 +750,12 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
 					Expect(metav1.IsControlledBy(subnetPort, vm)).To(BeTrue())
+					Expect(subnetPort.Labels).To(HaveKeyWithValue(network.VMNameLabel, vm.Name))
+					Expect(subnetPort.Labels).To(HaveKeyWithValue(network.VMInterfaceNameLabel, interfaceName))
 					annotationVal := "virtualmachine/" + vm.Name + "/" + interfaceName
 					Expect(subnetPort.Annotations).To(HaveKeyWithValue(constants.VPCAttachmentRef, annotationVal))
 					Expect(subnetPort.Spec.SubnetSet).To(Equal(networkName))
+					Expect(subnetPort.Spec.Subnet).To(BeEmpty())
 
 					subnetPort.Status.Attachment.ID = interfaceID
 					subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress

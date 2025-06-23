@@ -549,8 +549,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			dSpec2 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
 			disk, ok := dSpec2.Device.(*vimtypes.VirtualDisk)
 			Expect(ok).To(BeTrue())
-			Expect(disk.UnitNumber).ToNot(BeNil())
-			Expect(*disk.UnitNumber).To(Equal(int32(0)))
+			Expect(disk.CapacityInBytes).To(BeEquivalentTo(1024 * 1024)) // Dummy disk size
+			Expect(disk.UnitNumber).To(HaveValue(BeEquivalentTo(0)))
 
 			dSpec3 := configSpec.DeviceChange[2].GetVirtualDeviceConfigSpec()
 			_, ok = dSpec3.Device.(*vimtypes.VirtualPCIController)
@@ -559,6 +559,51 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			dSpec4 := configSpec.DeviceChange[3].GetVirtualDeviceConfigSpec()
 			_, ok = dSpec4.Device.(*vimtypes.ParaVirtualSCSIController)
 			Expect(ok).To(BeTrue())
+		})
+
+		Context("VirtualDisk is already present", func() {
+			BeforeEach(func() {
+				baseConfigSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualDisk{
+							CapacityInBytes: 42,
+						},
+					},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "SampleProfile2",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("Returns expected ConfigSpec.DeviceChanges", func() {
+				Expect(configSpec.DeviceChange).To(HaveLen(4))
+
+				dSpec0 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+				disk, ok := dSpec0.Device.(*vimtypes.VirtualDisk)
+				Expect(ok).To(BeTrue())
+				Expect(disk.CapacityInBytes).To(BeEquivalentTo(42))
+				Expect(disk.UnitNumber).To(HaveValue(BeEquivalentTo(0)))
+
+				dSpec1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
+				_, ok = dSpec1.Device.(*vimtypes.VirtualPCIPassthrough)
+				Expect(ok).To(BeTrue())
+
+				dSpec2 := configSpec.DeviceChange[2].GetVirtualDeviceConfigSpec()
+				_, ok = dSpec2.Device.(*vimtypes.VirtualPCIController)
+				Expect(ok).To(BeTrue())
+
+				dSpec3 := configSpec.DeviceChange[3].GetVirtualDeviceConfigSpec()
+				_, ok = dSpec3.Device.(*vimtypes.ParaVirtualSCSIController)
+				Expect(ok).To(BeTrue())
+			})
 		})
 	})
 

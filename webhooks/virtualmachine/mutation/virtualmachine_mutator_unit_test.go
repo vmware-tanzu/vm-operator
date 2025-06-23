@@ -1357,7 +1357,7 @@ func unitTestsMutating() {
 
 				When("vm ClassName does not change", func() {
 					It("does not set last-resize annotation", func() {
-						updated, err := mutation.SetLastResizeAnnotation(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+						updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(updated).To(BeFalse())
 
@@ -1370,7 +1370,7 @@ func unitTestsMutating() {
 					It("set last-resize annotation", func() {
 						ctx.vm.Spec.ClassName = newClassName
 
-						updated, err := mutation.SetLastResizeAnnotation(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+						updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(updated).To(BeTrue())
 
@@ -1385,7 +1385,7 @@ func unitTestsMutating() {
 						oldVM.Spec.ClassName = ""
 						ctx.vm.Spec.ClassName = newClassName
 
-						updated, err := mutation.SetLastResizeAnnotation(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+						updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(updated).To(BeTrue())
 
@@ -1402,7 +1402,7 @@ func unitTestsMutating() {
 						vmClass := builder.DummyVirtualMachineClass("my-class")
 						vmopv1util.MustSetLastResizedAnnotation(ctx.vm, *vmClass)
 
-						updated, err := mutation.SetLastResizeAnnotation(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+						updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(updated).To(BeFalse())
 
@@ -1569,6 +1569,270 @@ func unitTestsMutating() {
 				mutated := mutation.CleanupApplyPowerStateChangeTimeAnno(&ctx.WebhookRequestContext, ctx.vm, oldVM)
 				Expect(mutated).To(BeTrue())
 				Expect(ctx.vm.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+			})
+		})
+	})
+
+	Describe("ResolveClassAndClassName", func() {
+		const (
+			testClassName        = "test-class"
+			testInstanceName     = "test-instance"
+			activeInstanceName   = "active-instance"
+			inactiveInstanceName = "inactive-instance"
+		)
+
+		var (
+			wasMutated bool
+			err        error
+		)
+
+		JustBeforeEach(func() {
+			wasMutated, err = mutation.ResolveClassAndClassName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+		})
+
+		Context("when both spec.className and spec.class are unset", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.ClassName = ""
+				ctx.vm.Spec.Class = nil
+			})
+
+			It("should return early without mutation", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+				Expect(ctx.vm.Spec.ClassName).To(BeEmpty())
+				Expect(ctx.vm.Spec.Class).To(BeNil())
+			})
+		})
+
+		Context("when spec.class has empty name", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.ClassName = ""
+				ctx.vm.Spec.Class = &common.LocalObjectRef{
+					Name: "",
+				}
+			})
+
+			It("should return error for empty class instance name", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("empty class instance name"))
+				Expect(wasMutated).To(BeFalse())
+			})
+		})
+
+		Context("when both spec.className and spec.class are set", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.ClassName = testClassName
+				ctx.vm.Spec.Class = &common.LocalObjectRef{
+					Name: testInstanceName,
+				}
+			})
+
+			It("should return early without mutation", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+				Expect(ctx.vm.Spec.ClassName).To(Equal(testClassName))
+				Expect(ctx.vm.Spec.Class.Name).To(Equal(testInstanceName))
+			})
+		})
+
+		Context("when spec.className is set but spec.class is nil", func() {
+			var activeInstance *vmopv1.VirtualMachineClassInstance
+			BeforeEach(func() {
+				ctx.vm.Spec.ClassName = testClassName
+				ctx.vm.Spec.Class = nil
+			})
+
+			Context("when no instances exist for the class", func() {
+				It("should not mutate when no instances found", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.ClassName).To(Equal(testClassName))
+					Expect(ctx.vm.Spec.Class).To(BeNil())
+				})
+			})
+
+			Context("when an instance exists, but is not active", func() {
+				BeforeEach(func() {
+					inactiveInstance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      inactiveInstanceName,
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: testClassName,
+									Kind: "VirtualMachineClass",
+								},
+							},
+						},
+						Spec: vmopv1.VirtualMachineClassInstanceSpec{},
+					}
+					Expect(ctx.Client.Create(ctx, inactiveInstance)).To(Succeed())
+				})
+
+				It("should not mutate when no active instance found", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.ClassName).To(Equal(testClassName))
+					Expect(ctx.vm.Spec.Class).To(BeNil())
+				})
+			})
+
+			Context("when an active vmclassinstance exists, but it is not owned by VM class", func() {
+				BeforeEach(func() {
+					instance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      testInstanceName,
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: "some-other-resource",
+									Kind: "SomeOtherKind",
+								},
+							},
+							Labels: map[string]string{
+								vmopv1.VMClassInstanceActiveLabelKey: "",
+							},
+						},
+						Spec: vmopv1.VirtualMachineClassInstanceSpec{},
+					}
+					Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+				})
+
+				It("should not mutate when no VirtualMachineClass owner found", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.ClassName).To(Equal(testClassName))
+					Expect(ctx.vm.Spec.Class).To(BeNil())
+				})
+			})
+
+			Context("when a valid and active instance exists", func() {
+				BeforeEach(func() {
+					activeInstance = &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      activeInstanceName,
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: testClassName,
+									Kind: "VirtualMachineClass",
+								},
+							},
+							Labels: map[string]string{
+								vmopv1.VMClassInstanceActiveLabelKey: "",
+							},
+						},
+						Spec: vmopv1.VirtualMachineClassInstanceSpec{},
+					}
+					Expect(ctx.Client.Create(ctx, activeInstance)).To(Succeed())
+				})
+
+				It("should populate spec.class with active instance", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.ClassName).To(Equal(testClassName))
+					Expect(ctx.vm.Spec.Class.Name).To(Equal(activeInstance.Name))
+					Expect(ctx.vm.Spec.Class.Kind).To(Equal(activeInstance.Kind))
+				})
+			})
+		})
+
+		Context("when spec.class is set but spec.className is empty", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.ClassName = ""
+				ctx.vm.Spec.Class = &common.LocalObjectRef{
+					Name: testInstanceName,
+				}
+			})
+
+			Context("when the instance does not exist", func() {
+				It("should return error when instance not found", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+				})
+			})
+
+			Context("when the instance exists but is inactive", func() {
+				BeforeEach(func() {
+					instance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      testInstanceName,
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: testClassName,
+									Kind: "VirtualMachineClass",
+								},
+							},
+						},
+						Spec: vmopv1.VirtualMachineClassInstanceSpec{},
+					}
+					Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+				})
+
+				It("should return error for inactive instance", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(Equal("must specify a VirtualMachineClassInstance that is active"))
+					Expect(wasMutated).To(BeFalse())
+				})
+			})
+
+			Context("when an active vmclassinstance exists, but it is not owned by VM class", func() {
+				BeforeEach(func() {
+					instance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      testInstanceName,
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: "some-other-resource",
+									Kind: "SomeOtherKind",
+								},
+							},
+							Labels: map[string]string{
+								vmopv1.VMClassInstanceActiveLabelKey: "",
+							},
+						},
+						Spec: vmopv1.VirtualMachineClassInstanceSpec{},
+					}
+					Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+				})
+
+				It("should not mutate when no VirtualMachineClass owner found", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeFalse())
+					Expect(ctx.vm.Spec.ClassName).To(BeEmpty())
+					Expect(ctx.vm.Spec.Class.Name).To(Equal(testInstanceName))
+				})
+			})
+
+			Context("when the instance exists and is active", func() {
+				BeforeEach(func() {
+					instance := &vmopv1.VirtualMachineClassInstance{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      testInstanceName,
+							Namespace: ctx.vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									Name: testClassName,
+									Kind: "VirtualMachineClass",
+								},
+							},
+							Labels: map[string]string{
+								vmopv1.VMClassInstanceActiveLabelKey: "",
+							},
+						},
+						Spec: vmopv1.VirtualMachineClassInstanceSpec{},
+					}
+					Expect(ctx.Client.Create(ctx, instance)).To(Succeed())
+				})
+
+				It("should populate spec.className from instance owner", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(wasMutated).To(BeTrue())
+					Expect(ctx.vm.Spec.ClassName).To(Equal(testClassName))
+					Expect(ctx.vm.Spec.Class.Name).To(Equal(testInstanceName))
+				})
 			})
 		})
 	})

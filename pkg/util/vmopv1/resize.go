@@ -15,9 +15,19 @@ import (
 const (
 	// LastResizedAnnotationKey denotes the VM Class that the VM was last resized from.
 	LastResizedAnnotationKey = vmopv1.GroupName + "/last-resized-vm-class"
+
+	// LastResizedAnnotationKey denotes the
+	// VirtualMachineClassInstance that the VM was last resized from.
+	LastResizedInstanceAnnotationKey = vmopv1.GroupName + "/last-resized-vm-class-instance"
 )
 
 type lastResizedAnnotation struct {
+	Name       string    `json:"name"`
+	UID        types.UID `json:"uid,omitempty"`
+	Generation int64     `json:"generation,omitempty"`
+}
+
+type lastResizedInstanceAnnotation struct {
 	Name       string    `json:"name"`
 	UID        types.UID `json:"uid,omitempty"`
 	Generation int64     `json:"generation,omitempty"`
@@ -80,6 +90,31 @@ func SetLastResizedAnnotationClassName(
 	return nil
 }
 
+// SetLastResizedAnnotationClassInstanceName sets the resize VM class
+// instance annotation to the name of the VM class instance. This is
+// only called from the VM mutation webhook to record the prior class
+// instance name of a VM that does not already have the annotation (so
+// that ResizeNeeded() will return true). Note instance name may be
+// empty if the VM was classless.
+func SetLastResizedAnnotationClassInstanceName(
+	vm *vmopv1.VirtualMachine,
+	classInstanceName string) error {
+
+	b, err := json.Marshal(lastResizedInstanceAnnotation{
+		Name: classInstanceName,
+	})
+	if err != nil {
+		return err
+	}
+
+	if vm.Annotations == nil {
+		vm.Annotations = make(map[string]string)
+	}
+	vm.Annotations[LastResizedInstanceAnnotationKey] = string(b)
+
+	return nil
+}
+
 // GetLastResizedAnnotation returns the VM Class Name, UID, Generation, and true from the
 // last resize annotation if present. Otherwise returns false.
 func GetLastResizedAnnotation(vm vmopv1.VirtualMachine) (string, string, int64, bool) {
@@ -100,6 +135,32 @@ func getLastResizeAnnotation(vm vmopv1.VirtualMachine) (lastResizedAnnotation, b
 	var lra lastResizedAnnotation
 	if err := json.Unmarshal([]byte(val), &lra); err != nil {
 		return lastResizedAnnotation{}, false
+	}
+
+	return lra, true
+}
+
+// GetLastResizedInstanceAnnotation returns the VM Class Instance's
+// Name, UID, Generation, and true from the last resize annotation if
+// present. Otherwise returns false.
+func GetLastResizedInstanceAnnotation(vm vmopv1.VirtualMachine) (string, string, int64, bool) {
+	lra, ok := getLastResizeInstanceAnnotation(vm)
+	if !ok {
+		return "", "", 0, false
+	}
+
+	return lra.Name, string(lra.UID), lra.Generation, true
+}
+
+func getLastResizeInstanceAnnotation(vm vmopv1.VirtualMachine) (lastResizedInstanceAnnotation, bool) {
+	val, ok := vm.Annotations[LastResizedInstanceAnnotationKey]
+	if !ok {
+		return lastResizedInstanceAnnotation{}, false
+	}
+
+	var lra lastResizedInstanceAnnotation
+	if err := json.Unmarshal([]byte(val), &lra); err != nil {
+		return lastResizedInstanceAnnotation{}, false
 	}
 
 	return lra, true

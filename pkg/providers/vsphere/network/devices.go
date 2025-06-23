@@ -129,9 +129,25 @@ func findMatchingEthCardNetOpNetIf(
 	netIf *netopv1alpha1.NetworkInterface,
 	ethCards object.VirtualDeviceList) int {
 
-	// For NetOP until we start to set the ExternalID we just zip interfaces by backing.
 	for i, dev := range ethCards {
-		dvpg, ok := dev.GetVirtualDevice().Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+		bEthCard, ok := dev.(vimtypes.BaseVirtualEthernetCard)
+		if !ok {
+			continue
+		}
+
+		ethCard := bEthCard.GetVirtualEthernetCard()
+		if id := netIf.Status.ExternalID; id != "" {
+			if ethCard.ExternalId != id {
+				continue
+			}
+		} else if ethCard.ExternalId != "" {
+			// This ethernet device has an external ID but the network interface CR does
+			// not. In VDS, the external ID is only set on newly created interface CRs so
+			// don't fallback to matching by just the backing.
+			continue
+		}
+
+		dvpg, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 		if ok && dvpg.Port.PortgroupKey == netIf.Status.NetworkID {
 			return i
 		}

@@ -11,6 +11,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
@@ -19,7 +20,12 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+)
+
+const (
+	Finalizer = "vmoperator.vmware.com/virtualmachinesnapshot"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -37,6 +43,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		ctx.VMProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -49,21 +56,24 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
-	recorder record.Recorder) *Reconciler {
+	recorder record.Recorder,
+	VMProvider providers.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
-		Context:  ctx,
-		Client:   client,
-		Logger:   logger,
-		Recorder: recorder,
+		Context:    ctx,
+		Client:     client,
+		Logger:     logger,
+		VMProvider: VMProvider,
+		Recorder:   recorder,
 	}
 }
 
 // Reconciler reconciles a VirtualMachineSnapShot object.
 type Reconciler struct {
 	client.Client
-	Context  context.Context
-	Logger   logr.Logger
-	Recorder record.Recorder
+	Context    context.Context
+	Logger     logr.Logger
+	Recorder   record.Recorder
+	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;update;patch;delete
@@ -100,7 +110,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}()
 
 	if !vmSnapshot.DeletionTimestamp.IsZero() {
-		// TODO: Handle snapshot deletion here.
+		if err := r.ReconcileDelete(vmSnapshotCtx); err != nil {
+			vmSnapshotCtx.Logger.Error(err, "Failed to delete VirtualMachineSnapshot")
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -114,8 +127,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) error {
 	ctx.Logger.Info("Reconciling VirtualMachineSnapshot")
-	vmSnapshot := ctx.VirtualMachineSnapshot
 
+	vmSnapshot := ctx.VirtualMachineSnapshot
+	if !controllerutil.ContainsFinalizer(ctx.VirtualMachineSnapshot, Finalizer) {
+		// Set the finalizer and return so the object is patched immediately.
+		controllerutil.AddFinalizer(ctx.VirtualMachineSnapshot, Finalizer)
+		return nil
+	}
 	// return early if snapshot is ready; nothing to do
 	if conditions.IsTrue(ctx.VirtualMachineSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
 		return nil
@@ -157,4 +175,79 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 
 	ctx.Logger.Info("Successfully patched VirtualMachine's current snapshot reference", "vm.Name", vm.Name, "spec.currentSnapshot", vm.Spec.CurrentSnapshot.Name)
 	return nil
+}
+
+func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) error {
+	ctx.Logger.Info("Reconciling VirtualMachineSnapshot deletion")
+
+	snapshot := ctx.VirtualMachineSnapshot
+	if controllerutil.ContainsFinalizer(snapshot, Finalizer) {
+		// delete snapshot from vsphere
+		if err := r.deleteSnapshotFromVSphere(ctx); err != nil {
+			return err
+		}
+		if err := r.updateParentSnapshot(ctx); err != nil {
+			return err
+		}
+
+		controllerutil.RemoveFinalizer(snapshot, Finalizer)
+	}
+
+	return nil
+}
+
+func (r *Reconciler) deleteSnapshotFromVSphere(ctx *pkgctx.VirtualMachineSnapshotContext) error {
+	snapshot := ctx.VirtualMachineSnapshot
+	vm := &vmopv1.VirtualMachine{}
+	objKey := client.ObjectKey{Name: snapshot.Spec.VMRef.Name, Namespace: snapshot.Namespace}
+	if err := r.Get(ctx, objKey, vm); err != nil {
+		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
+		return err
+	}
+	// TODO: set removeChildren and consolidate to false by default for now.
+	if err := r.VMProvider.DeleteSnapshot(ctx, snapshot, vm, false, nil); err != nil {
+		return fmt.Errorf("failed to delete snapshot: %w", err)
+	}
+	return nil
+}
+
+func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext) error {
+	snapshot := ctx.VirtualMachineSnapshot
+	if snapshot.Status.Children != nil {
+		ctx.Logger.V(5).Info("Add children snapshots of current snapshot to parent's children")
+		children := snapshot.Status.Children
+		parent, err := r.getParentSnapshot(ctx, snapshot)
+		if err != nil {
+			return fmt.Errorf("failed to get parent snapshot: %w", err)
+		}
+		if parent == nil {
+			ctx.Logger.V(5).Info("parent snapshot not found for ", "name", snapshot.Name, "namespace", snapshot.Namespace, "assuming no parent")
+			return nil
+		}
+		ctx.Logger.V(5).Info("patching parent snapshot with children", "children", children)
+		// merge current's children to parent's children.
+		// no duplicates check here since we assume each snapshot can only have one parent.
+		parent.Status.Children = append(parent.Status.Children, children...)
+		parentPatch := client.MergeFrom(parent.DeepCopy())
+		if err := r.Patch(ctx, parent, parentPatch); err != nil {
+			return fmt.Errorf("failed to patch parent snapshot %s with children: %w", parent.Name, err)
+		}
+	}
+	return nil
+}
+
+func (r *Reconciler) getParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext, snapshot *vmopv1.VirtualMachineSnapshot) (*vmopv1.VirtualMachineSnapshot, error) {
+	allSnapshots := &vmopv1.VirtualMachineSnapshotList{}
+	if err := r.List(ctx, allSnapshots, &client.ListOptions{
+		Namespace: snapshot.Namespace,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to list all snapshots under namespace %s: %w", snapshot.Namespace, err)
+	}
+
+	for _, s := range allSnapshots.Items {
+		if s.Name == snapshot.Name {
+			return &s, nil
+		}
+	}
+	return nil, nil
 }

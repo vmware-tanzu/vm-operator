@@ -5,6 +5,8 @@
 package virtualmachinesnapshot_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,6 +18,7 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -35,9 +38,10 @@ func unitTestsReconcile() {
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
-		reconciler *virtualmachinesnapshot.Reconciler
-		vmSnapshot *vmopv1.VirtualMachineSnapshot
-		vm         *vmopv1.VirtualMachine
+		reconciler     *virtualmachinesnapshot.Reconciler
+		vmSnapshot     *vmopv1.VirtualMachineSnapshot
+		vm             *vmopv1.VirtualMachine
+		fakeVMProvider *providerfake.VMProvider
 	)
 
 	BeforeEach(func() {
@@ -58,8 +62,9 @@ func unitTestsReconcile() {
 				Kind: "VirtualMachineSnapshot",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "snap-1",
-				Namespace: "test-namespace",
+				Name:       "snap-1",
+				Namespace:  "test-namespace",
+				Finalizers: []string{virtualmachinesnapshot.Finalizer},
 			},
 			Spec: vmopv1.VirtualMachineSnapshotSpec{
 				VMRef: &vmopv1common.LocalObjectRef{
@@ -78,7 +83,9 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
+			ctx.VMProvider,
 		)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 	})
 
 	AfterEach(func() {
@@ -185,6 +192,70 @@ func unitTestsReconcile() {
 			})
 
 			It("returns success", func() {
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
+		When("object does not have finalizer set", func() {
+			BeforeEach(func() {
+				vmSnapshot.Finalizers = nil
+			})
+
+			It("will set finalizer", func() {
+				Expect(err).NotTo(HaveOccurred())
+				vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, vmSnapshotObj)).To(Succeed())
+				Expect(vmSnapshotObj.GetFinalizers()).To(ContainElement(virtualmachinesnapshot.Finalizer))
+			})
+		})
+	})
+	Context("ReconcileDelete", func() {
+		var (
+			err error
+		)
+
+		BeforeEach(func() {
+			err = nil
+			initObjects = append(initObjects, vmSnapshot)
+		})
+
+		JustBeforeEach(func() {
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: vmSnapshot.Namespace,
+					Name:      vmSnapshot.Name,
+				}})
+		})
+		When("A Snapshot is marked for deletion", func() {
+			BeforeEach(func() {
+				now := metav1.Now()
+				vmSnapshot.DeletionTimestamp = &now
+				initObjects = append(initObjects, vm)
+			})
+
+			It("returns success", func() {
+				fakeVMProvider.Lock()
+				fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+					return nil
+				}
+				fakeVMProvider.Unlock()
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
+		When("Nested Snapshot, and internal (non root and non leaf) snapshot is marked for deletion", func() {
+			BeforeEach(func() {
+				now := metav1.Now()
+				vmSnapshot.DeletionTimestamp = &now
+				initObjects = append(initObjects, vm)
+			})
+
+			It("returns success", func() {
+				fakeVMProvider.Lock()
+				fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+					return nil
+				}
+				fakeVMProvider.Unlock()
 				Expect(err).ToNot(HaveOccurred())
 			})
 		})

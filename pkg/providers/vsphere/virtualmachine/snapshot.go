@@ -32,6 +32,7 @@ func SnapshotVirtualMachine(args SnapshotArgs) (*types.ManagedObjectReference, e
 		// TODO: Handle revert to snapshot. Need a way to compare currentSnapshot's moID
 		// 	with spec.currentSnap
 		//
+		args.VMCtx.Logger.Info("Snapshot already exists", "snapshot name", obj.Name)
 		// Update vm.status with currentSnapshot
 		updateVMStatusCurrentSnapshot(args.VMCtx, obj)
 		// Return early, snapshot found

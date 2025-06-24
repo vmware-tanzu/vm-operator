@@ -18,6 +18,7 @@ import (
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vim25/types"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -524,4 +525,48 @@ func (vs *vSphereVMProvider) VSphereClient(
 		return nil, err
 	}
 	return c.Client, nil
+}
+
+func (vs *vSphereVMProvider) DeleteSnapshot(
+	ctx context.Context,
+	snapshot *vmopv1.VirtualMachineSnapshot,
+	vm *vmopv1.VirtualMachine,
+	removeChildren bool,
+	consolidate *bool) error {
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteSnapshot")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName(), "snapshotName", snapshot.Name),
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
+	if err != nil {
+		return fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
+	}
+
+	t, err := vcVM.RemoveSnapshot(vmCtx, snapshot.Name, removeChildren, consolidate)
+	if err != nil {
+		return err
+	}
+
+	// Wait for task to finish
+	taskInfo, err := t.WaitForResult(vmCtx)
+	if err != nil {
+		vmCtx.Logger.V(5).Error(err, "delete snapshot task failed", "taskInfo", taskInfo)
+		return err
+	}
+
+	_, ok := taskInfo.Result.(types.ManagedObjectReference)
+	if !ok {
+		return fmt.Errorf("delete snapshot VM task failed: %w", err)
+	}
+
+	return nil
+
 }

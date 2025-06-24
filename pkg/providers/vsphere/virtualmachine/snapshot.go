@@ -5,7 +5,9 @@
 package virtualmachine
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/vmware/govmomi/object"
@@ -18,10 +20,14 @@ import (
 
 // SnapshotArgs contains the options for createSnapshot.
 type SnapshotArgs struct {
-	VMCtx      pkgctx.VirtualMachineContext
-	VcVM       *object.VirtualMachine
-	VMSnapshot vmopv1.VirtualMachineSnapshot
+	VMCtx          pkgctx.VirtualMachineContext
+	VcVM           *object.VirtualMachine
+	VMSnapshot     vmopv1.VirtualMachineSnapshot
+	RemoveChildren bool
+	Consolidate    *bool
 }
+
+var ErrVMSnapshotNotFound = errors.New("snapshot not found")
 
 func SnapshotVirtualMachine(args SnapshotArgs) (*types.ManagedObjectReference, error) {
 	obj := args.VMSnapshot
@@ -32,6 +38,7 @@ func SnapshotVirtualMachine(args SnapshotArgs) (*types.ManagedObjectReference, e
 		// TODO: Handle revert to snapshot. Need a way to compare currentSnapshot's moID
 		// 	with spec.currentSnap
 		//
+		args.VMCtx.Logger.Info("Snapshot already exists", "snapshot name", obj.Name)
 		// Update vm.status with currentSnapshot
 		updateVMStatusCurrentSnapshot(args.VMCtx, obj)
 		// Return early, snapshot found
@@ -74,10 +81,32 @@ func CreateSnapshot(args SnapshotArgs) (*types.ManagedObjectReference, error) {
 
 	snapMoRef, ok := taskInfo.Result.(types.ManagedObjectReference)
 	if !ok {
-		return nil, fmt.Errorf("create snapshot VM task failed: %w", err)
+		return nil, fmt.Errorf("create vmSnapshot task failed: %v", taskInfo.Result)
 	}
 
 	return &snapMoRef, nil
+}
+
+func DeleteSnapshot(args SnapshotArgs) error {
+	t, err := args.VcVM.RemoveSnapshot(args.VMCtx, args.VMSnapshot.Name, args.RemoveChildren, args.Consolidate)
+	if err != nil {
+		// Catch the not found error from govmomi:
+		// https://github.com/vmware/govmomi/blob/v0.52.0-alpha.0/object/virtual_machine.go#L784
+		// https://github.com/vmware/govmomi/blob/v0.52.0-alpha.0/object/virtual_machine.go#L775
+		if strings.Contains(err.Error(), fmt.Sprintf("snapshot %q not found", args.VMSnapshot.Name)) ||
+			strings.Contains(err.Error(), "no snapshots for this VM") {
+			return ErrVMSnapshotNotFound
+		}
+		return err
+	}
+
+	// Wait for task to finish
+	if err := t.Wait(args.VMCtx); err != nil {
+		args.VMCtx.Logger.V(5).Error(err, "delete snapshot task failed")
+		return err
+	}
+
+	return nil
 }
 
 func updateVMStatusCurrentSnapshot(vmCtx pkgctx.VirtualMachineContext, vmSnapshot vmopv1.VirtualMachineSnapshot) {

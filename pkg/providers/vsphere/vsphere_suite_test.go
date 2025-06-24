@@ -33,6 +33,7 @@ func vcSimTests() {
 	Describe("VirtualMachineE2E", vmE2ETests)
 	Describe("VirtualMachineResize", vmResizeTests)
 	Describe("VirtualMachineUtilsTest", vmUtilTests)
+	Describe("VirtualMachineSnapshot", vmSnapshotTests)
 }
 
 func TestVSphereProvider(t *testing.T) {

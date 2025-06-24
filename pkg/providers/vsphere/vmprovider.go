@@ -7,6 +7,7 @@ package vsphere
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -41,6 +42,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
 	vccreds "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -388,7 +390,7 @@ func (vs *vSphereVMProvider) getVM(
 	}
 
 	if vcVM == nil && notFoundReturnErr {
-		return nil, fmt.Errorf("VirtualMachine %q was not found on VC", vmCtx.VM.Name)
+		return nil, fmt.Errorf("VirtualMachine %q was not found on VC: %w", vmCtx.VM.Name, vcenter.ErrVMNotFound)
 	}
 
 	return vcVM, nil
@@ -524,4 +526,49 @@ func (vs *vSphereVMProvider) VSphereClient(
 		return nil, err
 	}
 	return c.Client, nil
+}
+
+// DeleteSnapshot deletes the snapshot from the VM.
+// The boolean indicating if the VM associated is deleted.
+func (vs *vSphereVMProvider) DeleteSnapshot(
+	ctx context.Context,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot,
+	vm *vmopv1.VirtualMachine,
+	removeChildren bool,
+	consolidate *bool) (bool, error) {
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteSnapshot")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName(), "snapshotName", vmSnapshot.Name),
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
+	if err != nil {
+		if errors.Is(err, vcenter.ErrVMNotFound) {
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
+	}
+
+	if err := virtualmachine.DeleteSnapshot(virtualmachine.SnapshotArgs{
+		VMSnapshot:     *vmSnapshot,
+		VcVM:           vcVM,
+		VMCtx:          vmCtx,
+		RemoveChildren: removeChildren,
+		Consolidate:    consolidate,
+	}); err != nil {
+		if errors.Is(err, virtualmachine.ErrVMSnapshotNotFound) {
+			log.V(5).Info("snapshot not found")
+			return false, nil
+		}
+		return false, err
+	}
+
+	return false, nil
 }

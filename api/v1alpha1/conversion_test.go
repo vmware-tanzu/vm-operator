@@ -8,11 +8,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	fuzz "github.com/google/gofuzz"
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
+	"sigs.k8s.io/randfill"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion/fuzztests"
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
@@ -193,8 +193,8 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(vmSpec *vmopv1a1.VirtualMachineSpec, c fuzz.Continue) {
-			c.Fuzz(vmSpec)
+		func(vmSpec *vmopv1a1.VirtualMachineSpec, c randfill.Continue) {
+			c.Fill(vmSpec)
 
 			var volumes []vmopv1a1.VirtualMachineVolume
 			for _, vol := range vmSpec.Volumes {
@@ -221,18 +221,18 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			// This is effectively deprecated.
 			vmSpec.Ports = nil
 		},
-		func(vmSpec *vmopv1.VirtualMachineSpec, c fuzz.Continue) {
-			c.Fuzz(vmSpec)
+		func(vmSpec *vmopv1.VirtualMachineSpec, c randfill.Continue) {
+			c.Fill(vmSpec)
 		},
-		func(vmStatus *vmopv1a1.VirtualMachineStatus, c fuzz.Continue) {
-			c.Fuzz(vmStatus)
+		func(vmStatus *vmopv1a1.VirtualMachineStatus, c randfill.Continue) {
+			c.Fill(vmStatus)
 			overrideConditionsSeverity(vmStatus.Conditions)
 
 			// Do not exist in nextver.
 			vmStatus.Phase = vmopv1a1.Unknown
 		},
-		func(vmStatus *vmopv1.VirtualMachineStatus, c fuzz.Continue) {
-			c.Fuzz(vmStatus)
+		func(vmStatus *vmopv1.VirtualMachineStatus, c randfill.Continue) {
+			c.Fill(vmStatus)
 			overrideConditionsObservedGeneration(vmStatus.Conditions)
 
 			vmStatus.Class = nil
@@ -243,15 +243,15 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 
 func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(classSpec *vmopv1.VirtualMachineClassSpec, c fuzz.Continue) {
-			c.Fuzz(classSpec)
+		func(classSpec *vmopv1.VirtualMachineClassSpec, c randfill.Continue) {
+			c.Fill(classSpec)
 
 			// Since all random byte arrays are not valid JSON
 			// Passing an empty string as a valid input
 			classSpec.ConfigSpec = []byte("")
 		},
-		func(classSpec *vmopv1a1.VirtualMachineClassSpec, c fuzz.Continue) {
-			c.Fuzz(classSpec)
+		func(classSpec *vmopv1a1.VirtualMachineClassSpec, c randfill.Continue) {
+			c.Fill(classSpec)
 
 			// Since all random byte arrays are not valid JSON
 			// Passing an empty string as a valid input
@@ -262,8 +262,8 @@ func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactor
 
 func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(imageSpec *vmopv1a1.VirtualMachineImageSpec, c fuzz.Continue) {
-			c.Fuzz(imageSpec)
+		func(imageSpec *vmopv1a1.VirtualMachineImageSpec, c randfill.Continue) {
+			c.Fill(imageSpec)
 
 			if imageSpec.OVFEnv != nil {
 				m := make(map[string]vmopv1a1.OvfProperty, len(imageSpec.OVFEnv))
@@ -284,8 +284,8 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageSpec.ImageSourceType = ""
 			imageSpec.ProviderRef.Namespace = ""
 		},
-		func(imageStatus *vmopv1a1.VirtualMachineImageStatus, c fuzz.Continue) {
-			c.Fuzz(imageStatus)
+		func(imageStatus *vmopv1a1.VirtualMachineImageStatus, c randfill.Continue) {
+			c.Fill(imageStatus)
 			overrideConditionsSeverity(imageStatus.Conditions)
 
 			// Do not exist in nextver.
@@ -296,19 +296,19 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageStatus.InternalId = ""
 			imageStatus.PowerState = ""
 		},
-		func(osInfo *vmopv1.VirtualMachineImageOSInfo, c fuzz.Continue) {
-			c.Fuzz(osInfo)
+		func(osInfo *vmopv1.VirtualMachineImageOSInfo, c randfill.Continue) {
+			c.Fill(osInfo)
 			// TODO: Need to save serialized object to support lossless conversions.
 			osInfo.ID = ""
 		},
-		func(imageStatus *vmopv1.VirtualMachineImageStatus, c fuzz.Continue) {
-			c.Fuzz(imageStatus)
+		func(imageStatus *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
+			c.Fill(imageStatus)
 			overrideConditionsObservedGeneration(imageStatus.Conditions)
 			// TODO: Need to save serialized object to support lossless conversions.
 			imageStatus.Capabilities = nil
 		},
-		func(imageSpec *vmopv1.VirtualMachineImageSpec, c fuzz.Continue) {
-			c.Fuzz(imageSpec)
+		func(imageSpec *vmopv1.VirtualMachineImageSpec, c randfill.Continue) {
+			c.Fill(imageSpec)
 			if pr := imageSpec.ProviderRef; pr != nil {
 				if pr.APIVersion == "" && pr.Kind == "" && pr.Name == "" {
 					imageSpec.ProviderRef = nil
@@ -320,12 +320,12 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 
 func overrideVirtualMachinePublishRequestFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(publishStatus *vmopv1a1.VirtualMachinePublishRequestStatus, c fuzz.Continue) {
-			c.Fuzz(publishStatus)
+		func(publishStatus *vmopv1a1.VirtualMachinePublishRequestStatus, c randfill.Continue) {
+			c.Fill(publishStatus)
 			overrideConditionsSeverity(publishStatus.Conditions)
 		},
-		func(publishStatus *vmopv1.VirtualMachinePublishRequestStatus, c fuzz.Continue) {
-			c.Fuzz(publishStatus)
+		func(publishStatus *vmopv1.VirtualMachinePublishRequestStatus, c randfill.Continue) {
+			c.Fill(publishStatus)
 			overrideConditionsObservedGeneration(publishStatus.Conditions)
 		},
 	}

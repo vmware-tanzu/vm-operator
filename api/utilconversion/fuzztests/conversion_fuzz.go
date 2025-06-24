@@ -20,7 +20,6 @@ import (
 	"github.com/onsi/gomega"
 
 	"github.com/google/go-cmp/cmp"
-	fuzz "github.com/google/gofuzz"
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metafuzzer "k8s.io/apimachinery/pkg/apis/meta/fuzzer"
@@ -28,12 +27,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
+	"sigs.k8s.io/randfill"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 )
 
 // GetFuzzer returns a new fuzzer to be used for testing.
-func GetFuzzer(scheme *runtime.Scheme, funcs ...fuzzer.FuzzerFuncs) *fuzz.Fuzzer {
+func GetFuzzer(scheme *runtime.Scheme, funcs ...fuzzer.FuzzerFuncs) *randfill.Filler {
 	funcs = append([]fuzzer.FuzzerFuncs{
 		metafuzzer.Funcs,
 		func(_ runtimeserializer.CodecFactory) []interface{} {
@@ -42,11 +42,11 @@ func GetFuzzer(scheme *runtime.Scheme, funcs ...fuzzer.FuzzerFuncs) *fuzz.Fuzzer
 				// fuzzed and always resulted in `nil` values.
 				// This implementation is somewhat similar to the one provided
 				// in the metafuzzer.Funcs.
-				func(input *metav1.Time, c fuzz.Continue) {
+				func(input *metav1.Time, c randfill.Continue) {
 					if input != nil {
 						var sec, nsec uint32
-						c.Fuzz(&sec)
-						c.Fuzz(&nsec)
+						c.Fill(&sec)
+						c.Fill(&nsec)
 						fuzzed := metav1.Unix(int64(sec), int64(nsec)).Rfc3339Copy()
 						input.Time = fuzzed.Time
 					}
@@ -82,7 +82,7 @@ func SpokeHubSpoke(input FuzzTestFuncInput) {
 	for i := 0; i < 10000; i++ {
 		// Create the spoke and fuzz it
 		spokeBefore := input.Spoke.DeepCopyObject().(ctrlconversion.Convertible)
-		fuzzer.Fuzz(spokeBefore)
+		fuzzer.Fill(spokeBefore)
 
 		// First convert spoke to hub
 		hubCopy := input.Hub.DeepCopyObject().(ctrlconversion.Hub)
@@ -113,7 +113,7 @@ func HubSpokeHub(input FuzzTestFuncInput) {
 	for i := 0; i < 10000; i++ {
 		// Create the hub and fuzz it
 		hubBefore := input.Hub.DeepCopyObject().(ctrlconversion.Hub)
-		fuzzer.Fuzz(hubBefore)
+		fuzzer.Fill(hubBefore)
 
 		// First convert hub to spoke
 		dstCopy := input.Spoke.DeepCopyObject().(ctrlconversion.Convertible)

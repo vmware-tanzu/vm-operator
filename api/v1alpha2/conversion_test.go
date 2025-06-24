@@ -11,10 +11,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	fuzz "github.com/google/gofuzz"
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
+	"sigs.k8s.io/randfill"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion/fuzztests"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -211,8 +211,8 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(vmSpec *vmopv1a2.VirtualMachineSpec, c fuzz.Continue) {
-			c.Fuzz(vmSpec)
+		func(vmSpec *vmopv1a2.VirtualMachineSpec, c randfill.Continue) {
+			c.Fill(vmSpec)
 
 			if bs := vmSpec.Bootstrap; bs != nil {
 				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
@@ -226,8 +226,8 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 				}
 			}
 		},
-		func(vmSpec *vmopv1.VirtualMachineSpec, c fuzz.Continue) {
-			c.Fuzz(vmSpec)
+		func(vmSpec *vmopv1.VirtualMachineSpec, c randfill.Continue) {
+			c.Fill(vmSpec)
 
 			if bs := vmSpec.Bootstrap; bs != nil {
 				if bs.Sysprep != nil && bs.Sysprep.Sysprep != nil {
@@ -240,13 +240,13 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 				}
 			}
 		},
-		func(vmStatus *vmopv1a2.VirtualMachineStatus, c fuzz.Continue) {
-			c.Fuzz(vmStatus)
+		func(vmStatus *vmopv1a2.VirtualMachineStatus, c randfill.Continue) {
+			c.Fill(vmStatus)
 
 			// This field was removed in v1a3.
 			vmStatus.Image = nil
 		},
-		func(msg *json.RawMessage, c fuzz.Continue) {
+		func(msg *json.RawMessage, c randfill.Continue) {
 			*msg = []byte(`{"foo": "bar"}`)
 		},
 	}
@@ -254,8 +254,8 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 
 func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(vmiStatus *vmopv1.VirtualMachineImageStatus, c fuzz.Continue) {
-			c.Fuzz(vmiStatus)
+		func(vmiStatus *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
+			c.Fill(vmiStatus)
 
 			// Since only VMOP updates the CVMI/VMI's we didn't bother with conversion
 			// when adding this field.

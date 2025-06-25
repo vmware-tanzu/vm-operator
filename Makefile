@@ -19,7 +19,7 @@ else # (,$(strip $(shell command -v go 2>/dev/null || true)))
 # Active module mode, as we use go modules to manage dependencies.
 export GO111MODULE := on
 
-# Get the information about the platform on which the tools are built/run.
+# Get the information about the platform on which the tools are built/run.q
 GOHOSTOS := $(shell go env GOHOSTOS)
 GOHOSTARCH := $(shell go env GOHOSTARCH)
 GOHOSTOSARCH := $(GOHOSTOS)_$(GOHOSTARCH)
@@ -417,7 +417,7 @@ generate-external-manifests: $(CONTROLLER_GEN)
 generate-external-manifests: ## Generate manifests for the external types for testing
 	API_MOD_DIR=$(shell go mod download -json $(IMG_REGISTRY_OP_API_SLUG) | grep '"Dir":' | awk '{print $$2}' | tr -d '",') && \
 	$(CONTROLLER_GEN) \
-		paths=$${API_MOD_DIR}/api/v1alpha1/... \
+		paths={$${API_MOD_DIR}/api/v1alpha1/...,$${API_MOD_DIR}/api/v1alpha2/...} \
 		crd:crdVersions=v1 \
 		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
 		output:none

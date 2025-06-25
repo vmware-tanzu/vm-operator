@@ -7,17 +7,17 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 )
 
 // GetImageFieldNameFromItem returns the Image field name in format of "vmi-<uuid>"

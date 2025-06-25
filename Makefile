@@ -19,7 +19,7 @@ else # (,$(strip $(shell command -v go 2>/dev/null || true)))
 # Active module mode, as we use go modules to manage dependencies.
 export GO111MODULE := on
 
-# Get the information about the platform on which the tools are built/run.q
+# Get the information about the platform on which the tools are built/run.
 GOHOSTOS := $(shell go env GOHOSTOS)
 GOHOSTARCH := $(shell go env GOHOSTARCH)
 GOHOSTOSARCH := $(GOHOSTOS)_$(GOHOSTARCH)

@@ -7,6 +7,7 @@ package virtualmachine
 import (
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -27,7 +28,12 @@ type SnapshotArgs struct {
 	Consolidate    *bool
 }
 
-var ErrVMSnapshotNotFound = errors.New("snapshot not found")
+// Snapshot related errors.
+var (
+	ErrNoSnapshots       = errors.New("no snapshots for this VM")
+	ErrSnapshotNotFound  = errors.New("snapshot not found")
+	ErrMultipleSnapshots = errors.New("multiple snapshots found")
+)
 
 func SnapshotVirtualMachine(args SnapshotArgs) (*types.ManagedObjectReference, error) {
 	obj := args.VMSnapshot
@@ -95,7 +101,7 @@ func DeleteSnapshot(args SnapshotArgs) error {
 		// https://github.com/vmware/govmomi/blob/v0.52.0-alpha.0/object/virtual_machine.go#L775
 		if strings.Contains(err.Error(), fmt.Sprintf("snapshot %q not found", args.VMSnapshot.Name)) ||
 			strings.Contains(err.Error(), "no snapshots for this VM") {
-			return ErrVMSnapshotNotFound
+			return ErrSnapshotNotFound
 		}
 		return err
 	}
@@ -114,5 +120,55 @@ func updateVMStatusCurrentSnapshot(vmCtx pkgctx.VirtualMachineContext, vmSnapsho
 		APIVersion: vmSnapshot.APIVersion,
 		Kind:       vmSnapshot.Kind,
 		Name:       vmSnapshot.Name,
+	}
+}
+
+// FindSnapshot returns the snapshot matching a given name from the
+// snapshots present on a VM. Much of this is taken from Govmomi, but
+// we maintain our version because we don't want to make another
+// property collector round trip to fetch those properties again.
+func FindSnapshot(
+	vmCtx pkgctx.VirtualMachineContext,
+	snapshotName string) (*types.ManagedObjectReference, error) {
+
+	o := vmCtx.MoVM
+	if o.Snapshot == nil || len(o.Snapshot.RootSnapshotList) == 0 {
+		return nil, ErrNoSnapshots
+	}
+
+	m := make(snapshotMap)
+	m.add("", o.Snapshot.RootSnapshotList)
+
+	s := m[snapshotName]
+	switch len(s) {
+	case 0:
+		return nil, fmt.Errorf("snapshot %q not found: %w", snapshotName, ErrSnapshotNotFound)
+	case 1:
+		return &s[0], nil
+	default:
+		return nil, fmt.Errorf("%q resolves to %d snapshots: %w", snapshotName, len(s), ErrMultipleSnapshots)
+	}
+}
+
+// snapshotMap is a custom type that traverses over the entire snapshot tree.
+type snapshotMap map[string][]types.ManagedObjectReference
+
+func (m snapshotMap) add(parent string, tree []types.VirtualMachineSnapshotTree) {
+	for i, st := range tree {
+		sname := st.Name
+		names := []string{sname, st.Snapshot.Value}
+
+		if parent != "" {
+			sname = path.Join(parent, sname)
+			// Add full path as an option to resolve duplicate names
+			names = append(names, sname)
+		}
+
+		for _, name := range names {
+			m[name] = append(m[name], tree[i].Snapshot)
+		}
+
+		m.add(sname, st.ChildSnapshotList)
+
 	}
 }

@@ -563,7 +563,7 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 		RemoveChildren: removeChildren,
 		Consolidate:    consolidate,
 	}); err != nil {
-		if errors.Is(err, virtualmachine.ErrVMSnapshotNotFound) {
+		if errors.Is(err, virtualmachine.ErrSnapshotNotFound) {
 			log.V(5).Info("snapshot not found")
 			return false, nil
 		}

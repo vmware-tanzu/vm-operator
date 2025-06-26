@@ -109,6 +109,12 @@ var _ = Describe(
 					Expect(os.Setenv("SYNC_IMAGE_REQUEUE_DELAY", "128h")).To(Succeed())
 					Expect(os.Setenv("DEPLOYMENT_NAME", "129")).To(Succeed())
 					Expect(os.Setenv("SIGUSR2_RESTART_ENABLED", "true")).To(Succeed())
+					Expect(os.Setenv("KUBEADM_CONFIGMAP_NAME", "130")).To(Succeed())
+					Expect(os.Setenv("KUBE_DNS_LB_SERVICE_NAME", "131")).To(Succeed())
+					Expect(os.Setenv("KUBE_SYSTEM_NAMESPACE", "132")).To(Succeed())
+					Expect(os.Setenv("KUBEADM_CLUSTER_CONFIG_KEY", "133")).To(Succeed())
+					Expect(os.Setenv("DEFAULT_CLUSTER_DOMAIN", "134")).To(Succeed())
+
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
@@ -164,6 +170,11 @@ var _ = Describe(
 						SyncImageRequeueDelay:        128 * time.Hour,
 						DeploymentName:               "129",
 						SIGUSR2RestartEnabled:        true,
+						KubeadmConfigMapName:         "130",
+						KubeDNSLBServiceName:         "131",
+						KubeSystemNamespace:          "132",
+						KubeadmClusterConfigKey:      "133",
+						DefaultClusterDomain:         "134",
 					}))
 				})
 			})

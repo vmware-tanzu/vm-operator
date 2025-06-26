@@ -150,4 +150,9 @@ const (
 	// VirtualMachineClassHashAnnotationKey is the annotation key for the VM Class hash
 	// used to generate VirtualMachineClassInstances.
 	VirtualMachineClassHashAnnotationKey = "vmoperator.vmware.com/vmclass-hash"
+
+	// VirtualMachineSnapshotRevertInProgressAnnotationKey is the
+	// annotation key to indicate that a VM snapshot revert is in
+	// progress.
+	VirtualMachineSnapshotRevertInProgressAnnotationKey = "vmoperator.vmware.com/snapshot-revert-in-progress"
 )

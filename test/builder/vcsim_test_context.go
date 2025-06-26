@@ -111,6 +111,9 @@ type VCSimTestConfig struct {
 	// WithVMIncrementalRestore enables the FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE FSS.
 	WithVMIncrementalRestore bool
 
+	// WithVMSnapshots enables the FSS_WCP_VMSERVICE_VM_SNAPSHOTS FSS.
+	WithVMSnapshots bool
+
 	// WithoutStorageClass disables the storage class required, meaning that the
 	// Datastore will be used instead. In WCP production the storage class is
 	// always required; the Datastore is only needed for gce2e.
@@ -564,6 +567,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.Features.VMResizeCPUMemory = config.WithVMResizeCPUMemory
 		cc.Features.WorkloadDomainIsolation = !config.WithoutWorkloadDomainIsolation
 		cc.Features.VMIncrementalRestore = config.WithVMIncrementalRestore
+		cc.Features.VMSnapshots = config.WithVMSnapshots
 	})
 }
 

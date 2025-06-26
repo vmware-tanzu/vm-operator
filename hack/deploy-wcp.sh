@@ -41,10 +41,6 @@ FLAGS:
 # VIP host key will change as Supervisor leader migrates
 COMMON_SSH_OPTS=("-o StrictHostKeyChecking=no" "-o UserKnownHostsFile=/dev/null")
 
-# Easiest tag to just assume. Maybe revist if we combine "podman build", "podman save",
-# and this script into one.
-IMAGE_REF=${IMAGE_REF:-"localhost/vmoperator-controller:latest"}
-
 SV_VIP=
 SV_USERNAME="root"
 SV_PASSWORD=
@@ -177,7 +173,7 @@ function sv_copy_and_load_image() {
     local svip=$1 image=$2
 
     sv_cp_scp_cmd "$svip" "$image"
-    sv_cp_ssh_cmd "$svip" "ctr -n=k8s.io images import '$image'"
+    sv_cp_ssh_cmd "$svip" "ctr -n=k8s.io images import '${image##*/}'"
     #sv_cp_ssh_cmd "$svip" "ctr -n k8s.io images ls | grep vmop"
 
     log "$svip: copied and loaded image"
@@ -245,6 +241,11 @@ IMAGE=$1
 
 if [[ ! -r $IMAGE ]] ; then
     fatal "Container image $IMAGE does not exist"
+fi
+
+IMAGE_REF=$(tar -O -xf $IMAGE manifest.json | jq -r '.[0].RepoTags[0]')
+if [[ -z $IMAGE_REF ]] ; then
+    fatal "cannot extract image tag from container image $IMAGE"
 fi
 
 if [[ -z $SV_IPS_CSL ]] ; then

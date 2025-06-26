@@ -21,12 +21,20 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 const (
 	Finalizer = "vmoperator.vmware.com/virtualmachinesnapshot"
 )
+
+// SkipNameValidation is used for testing to allow multiple controllers with the
+// same name since Controller-Runtime has a global singleton registry to
+// prevent controllers with the same name, even if attached to different
+// managers.
+var SkipNameValidation *bool
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
@@ -48,7 +56,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 1,
+			SkipNameValidation:      SkipNameValidation,
+		}).
 		Complete(r)
 }
 
@@ -57,12 +68,12 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	VMProvider providers.VirtualMachineProviderInterface) *Reconciler {
+	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
 		Context:    ctx,
 		Client:     client,
 		Logger:     logger,
-		VMProvider: VMProvider,
+		VMProvider: vmProvider,
 		Recorder:   recorder,
 	}
 }
@@ -83,7 +94,6 @@ type Reconciler struct {
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
-
 	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
 	if err := r.Get(ctx, req.NamespacedName, vmSnapshot); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -175,17 +185,27 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) error {
 	ctx.Logger.Info("Reconciling VirtualMachineSnapshot deletion")
-
 	snapshot := ctx.VirtualMachineSnapshot
 	if controllerutil.ContainsFinalizer(snapshot, Finalizer) {
 		vm := &vmopv1.VirtualMachine{}
 		objKey := client.ObjectKey{Name: snapshot.Spec.VMRef.Name, Namespace: snapshot.Namespace}
 		if err := r.Get(ctx, objKey, vm); err != nil {
+			if apierrors.IsNotFound(err) {
+				ctx.Logger.Info("VirtualMachine not found, assuming the VM is deleted, remove finalizer")
+				controllerutil.RemoveFinalizer(snapshot, Finalizer)
+				return nil
+			}
 			ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
 			return err
 		}
+
 		ctx.VM = vm
 		if err := r.deleteSnapshotFromVSphere(ctx); err != nil {
+			if strings.Contains(err.Error(), fmt.Sprintf(vsphere.VirtualMachineNotFoundErrorf, vm.Name)) {
+				ctx.Logger.Info("VirtualMachine not found in VC, assuming the VM is deleted, remove finalizer")
+				controllerutil.RemoveFinalizer(snapshot, Finalizer)
+				return nil
+			}
 			return err
 		}
 		parent, err := r.updateParentSnapshot(ctx)
@@ -212,6 +232,7 @@ func (r *Reconciler) deleteSnapshotFromVSphere(ctx *pkgctx.VirtualMachineSnapsho
 }
 
 func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext) (*vmopv1.VirtualMachineSnapshot, error) {
+	ctx.Logger.V(5).Info("Updating parent snapshot")
 	vmSnapshot := ctx.VirtualMachineSnapshot
 	parent, err := r.getParentSnapshot(ctx, vmSnapshot)
 	if err != nil {

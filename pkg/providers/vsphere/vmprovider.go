@@ -18,7 +18,6 @@ import (
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vim25/types"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,6 +53,9 @@ const (
 
 	// taskHistoryCollectorPageSize represents the max count to read from task manager in one iteration.
 	taskHistoryCollectorPageSize = 10
+
+	// error message for VirtualMachine not found on VC
+	VirtualMachineNotFoundErrorf = "VirtualMachine %q was not found on VC"
 )
 
 var log = logf.Log.WithName(VsphereVMProviderName)
@@ -389,7 +391,7 @@ func (vs *vSphereVMProvider) getVM(
 	}
 
 	if vcVM == nil && notFoundReturnErr {
-		return nil, fmt.Errorf("VirtualMachine %q was not found on VC", vmCtx.VM.Name)
+		return nil, fmt.Errorf(VirtualMachineNotFoundErrorf, vmCtx.VM.Name)
 	}
 
 	return vcVM, nil
@@ -562,7 +564,7 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 		return err
 	}
 
-	_, ok := taskInfo.Result.(types.ManagedObjectReference)
+	_, ok := taskInfo.Result.(vimtypes.ManagedObjectReference)
 	if !ok {
 		return fmt.Errorf("delete snapshot VM task failed: %w", err)
 	}

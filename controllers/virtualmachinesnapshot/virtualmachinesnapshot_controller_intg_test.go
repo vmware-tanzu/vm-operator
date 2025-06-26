@@ -5,16 +5,30 @@
 package virtualmachinesnapshot_test
 
 import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2/textlogger"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -27,6 +41,16 @@ func intgTests() {
 			testlabels.API,
 		),
 		intgTestsReconcile,
+	)
+
+	Describe(
+		"ReconcileDelete",
+		Label(
+			testlabels.Controller,
+			testlabels.EnvTest,
+			testlabels.API,
+		),
+		intgTestsReconcileDelete,
 	)
 }
 
@@ -48,38 +72,8 @@ func intgTestsReconcile() {
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
-		vm = &vmopv1.VirtualMachine{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "vmoperator.vmware.com/v1alpha4",
-				Kind:       "VirtualMachine",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vm",
-				Namespace: ctx.Namespace,
-			},
-			Spec: vmopv1.VirtualMachineSpec{
-				ImageName:  "dummy-image",
-				PowerState: vmopv1.VirtualMachinePowerStateOn,
-			},
-		}
-
-		vmSnapshot = &vmopv1.VirtualMachineSnapshot{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "vmoperator.vmware.com/v1alpha4",
-				Kind:       "VirtualMachineSnapshot",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "snap-1",
-				Namespace: ctx.Namespace,
-			},
-			Spec: vmopv1.VirtualMachineSnapshotSpec{
-				VMRef: &vmopv1common.LocalObjectRef{
-					APIVersion: vm.APIVersion,
-					Kind:       vm.Kind,
-					Name:       vm.Name,
-				},
-			},
-		}
+		vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.Namespace)
+		vmSnapshot = createVMSnapshot("snap-1", vm)
 	})
 
 	AfterEach(func() {
@@ -115,4 +109,371 @@ func intgTestsReconcile() {
 			}).Should(Succeed(), "waiting current snapshot to be set on virtualmachine")
 		})
 	})
+}
+
+func intgTestsReconcileDelete() {
+	var (
+		ctx        context.Context
+		vcSimCtx   *builder.IntegrationTestContextForVCSim
+		provider   *providerfake.VMProvider
+		initEnvFn  builder.InitVCSimEnvFn
+		vmSnapshot *vmopv1.VirtualMachineSnapshot
+		vm         *vmopv1.VirtualMachine
+	)
+
+	getVirtualMachine := func(ctx *builder.IntegrationTestContextForVCSim, objKey types.NamespacedName) *vmopv1.VirtualMachine {
+		vm := &vmopv1.VirtualMachine{}
+		if err := ctx.Client.Get(ctx, objKey, vm); err != nil {
+			return nil
+		}
+		return vm
+	}
+
+	JustBeforeEach(func() {
+		ctx = logr.NewContext(
+			context.Background(),
+			textlogger.NewLogger(textlogger.NewConfig(
+				textlogger.Verbosity(5),
+				textlogger.Output(GinkgoWriter),
+			)))
+
+		ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
+		provider = providerfake.NewVMProvider()
+		vcSimCtx = builder.NewIntegrationTestContextForVCSim(
+			ctx,
+			builder.VCSimTestConfig{},
+			virtualmachinesnapshot.AddToManager,
+			func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
+				ctx.VMProvider = provider
+				return nil
+			},
+			initEnvFn)
+		Expect(vcSimCtx).ToNot(BeNil())
+
+		vcSimCtx.BeforeEach()
+	})
+
+	AfterEach(func() {
+		vcSimCtx.AfterEach()
+	})
+
+	When("delete snapshot", func() {
+		When("snapshot is not nested", func() {
+			JustBeforeEach(func() {
+				vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
+				vmSnapshot = createVMSnapshot("snap-1", vm)
+				Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
+				Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+				vm.Status.UniqueID = "unique-vm-id"
+				Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+				vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+				Eventually(func(g Gomega) {
+					vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+					g.Expect(vmObj).ToNot(BeNil())
+					g.Expect(vmObj.Spec.CurrentSnapshot).ToNot(BeNil())
+				}).Should(Succeed(), "waiting current snapshot to be set on virtualmachine")
+				Expect(vcSimCtx.Client.Delete(ctx, vmSnapshot)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				err := vcSimCtx.Client.Delete(ctx, vmSnapshot)
+				Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
+				err = vcSimCtx.Client.Delete(ctx, vm)
+				Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
+			})
+
+			It("set current snapshot to nil", func() {
+				vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+				Expect(vcSimCtx.Client.Delete(ctx, vmSnapshot)).To(Succeed())
+				Eventually(func(g Gomega) {
+					vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+					g.Expect(vmObj).ToNot(BeNil())
+					g.Expect(vmObj.Spec.CurrentSnapshot).To(BeNil())
+					snapshot := getVirtualMachineSnapshot(vcSimCtx, vmObjKey)
+					g.Expect(snapshot).To(BeNil())
+				}).Should(Succeed(), "waiting current snapshot to be deleted")
+			})
+
+			When("VC returns VirtualMachineNotFound error", func() {
+				JustBeforeEach(func() {
+					provider.Lock()
+					provider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+						return fmt.Errorf("failed to get VirtualMachine"+vsphere.VirtualMachineNotFoundErrorf, vm.Name)
+					}
+					provider.Unlock()
+				})
+				It("snapshot is deleted", func() {
+					vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+					Eventually(func(g Gomega) {
+						snapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+						g.Expect(snapshot).To(Not(BeNil()))
+					}).Should(Succeed())
+				})
+			})
+			When("there is error from VC when finding VM other than VirtualMachineNotFound", func() {
+				JustBeforeEach(func() {
+					provider.Lock()
+					provider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+						return errors.New("fubar")
+					}
+					provider.Unlock()
+				})
+				It("snapshot is not deleted and VM is not updated", func() {
+					vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+					Consistently(func(g Gomega) {
+						snapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+						g.Expect(snapshot).To(Not(BeNil()))
+					}).Should(Succeed())
+					vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+					Consistently(func(g Gomega) {
+						vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+						g.Expect(vmObj).ToNot(BeNil())
+						g.Expect(*vmObj.Spec.CurrentSnapshot).To(Equal(*vmSnapshotCRToLocalObjectRef(vmSnapshot)))
+					}).Should(Succeed())
+				})
+			})
+			When("VirtualMachine CR is not present", func() {
+				JustBeforeEach(func() {
+					Expect(vcSimCtx.Client.Delete(ctx, vm)).To(Succeed())
+					vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+					Eventually(func(g Gomega) {
+						vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+						g.Expect(vmObj).To(BeNil())
+					}).Should(Succeed())
+				})
+				It("snapshot is deleted", func() {
+					vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+					Eventually(func(g Gomega) {
+						snapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+						g.Expect(snapshot).To(Not(BeNil()))
+					}).Should(Succeed())
+				})
+			})
+		})
+
+		When("Nested Snapshot, one of them is marked for deletion", func() {
+			var (
+				vmSnapshotL1          *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL2          *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL3Node1     *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL3Node2     *vmopv1.VirtualMachineSnapshot
+				parent                *vmopv1.VirtualMachineSnapshot
+				vmSnapshotToBeDeleted *vmopv1.VirtualMachineSnapshot
+				currentSnapshot       *vmopv1common.LocalObjectRef
+				now                   metav1.Time
+			)
+			BeforeEach(func() {
+				//        L1
+				//         |
+				//        L2
+				//       /   \
+				//   L3-n1    L3-n2
+				// Create the object here so that it can be customized in each BeforeEach
+				vm = builder.DummyBasicVirtualMachine("dummy-vm", "placeholder-namespace")
+				vmSnapshotL1 = createVMSnapshot("snap-l1", vm)
+				vmSnapshotL2 = createVMSnapshot("snap-l2", vm)
+				vmSnapshotL3Node1 = createVMSnapshot("snap-l3-node1", vm)
+				vmSnapshotL3Node2 = createVMSnapshot("snap-l3-node2", vm)
+				now = metav1.Now()
+			})
+
+			updateVMSnapshotCondition := func(ctx *builder.IntegrationTestContextForVCSim, vmSnapshot *vmopv1.VirtualMachineSnapshot, conditionType string) {
+				objKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+				Expect(ctx.Client.Get(ctx, objKey, vmSnapshot)).To(Succeed())
+				patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
+				conditions.MarkTrue(vmSnapshot, conditionType)
+				Expect(ctx.Client.Status().Patch(ctx, vmSnapshot, patch)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, objKey, vmSnapshot)).To(Succeed())
+			}
+			addSnapshotToChildren := func(ctx *builder.IntegrationTestContextForVCSim, snapshot *vmopv1.VirtualMachineSnapshot, children ...*vmopv1.VirtualMachineSnapshot) {
+				for _, child := range children {
+					snapshot.Status.Children = append(snapshot.Status.Children, *vmSnapshotCRToLocalObjectRef(child))
+				}
+				Expect(ctx.Client.Status().Update(ctx, snapshot)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: snapshot.Name, Namespace: snapshot.Namespace}, snapshot)).To(Succeed())
+			}
+
+			JustBeforeEach(func() {
+				// Update the namespace to the one in current context
+				vm.Namespace, vmSnapshotL1.Namespace, vmSnapshotL2.Namespace,
+					vmSnapshotL3Node1.Namespace, vmSnapshotL3Node2.Namespace =
+					vcSimCtx.NSInfo.Namespace, vcSimCtx.NSInfo.Namespace,
+					vcSimCtx.NSInfo.Namespace, vcSimCtx.NSInfo.Namespace, vcSimCtx.NSInfo.Namespace
+
+				Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+				// Update the current snapshot after creation. Otherwise will run into "failed to get informer from cache"
+				vm.Status.UniqueID = "unique-vm-id"
+				Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+
+				// // Create the object here so that it can be customized in each BeforeEach
+				Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL1)).To(Succeed())
+				Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL2)).To(Succeed())
+				Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL3Node1.DeepCopy())).To(Succeed())
+				Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL3Node2.DeepCopy())).To(Succeed())
+				// Mark the snapshot as ready so that they won't update CurrentSnapshot
+				updateVMSnapshotCondition(vcSimCtx, vmSnapshotL1, vmopv1.VirtualMachineSnapshotReadyCondition)
+				updateVMSnapshotCondition(vcSimCtx, vmSnapshotL2, vmopv1.VirtualMachineSnapshotReadyCondition)
+				updateVMSnapshotCondition(vcSimCtx, vmSnapshotL3Node1, vmopv1.VirtualMachineSnapshotReadyCondition)
+				updateVMSnapshotCondition(vcSimCtx, vmSnapshotL3Node2, vmopv1.VirtualMachineSnapshotReadyCondition)
+				// Fetch newest vmSnapshotL1 and vmSnapshotL2 to update children
+				addSnapshotToChildren(vcSimCtx, vmSnapshotL1, vmSnapshotL2)
+				addSnapshotToChildren(vcSimCtx, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
+				if parent != nil {
+					parentSSObjKey := types.NamespacedName{Name: parent.Name, Namespace: parent.Namespace}
+					Expect(vcSimCtx.Client.Get(ctx, parentSSObjKey, parent)).To(Succeed())
+				}
+
+				By("update vm current snapshot to the snapshot to be deleted")
+				vm.Spec.CurrentSnapshot = currentSnapshot
+				Expect(vcSimCtx.Client.Update(ctx, vm)).To(Succeed())
+				vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+				Eventually(func(g Gomega) {
+					vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+					g.Expect(vmObj).ToNot(BeNil())
+					g.Expect(vmObj.Spec.CurrentSnapshot).ToNot(BeNil())
+					g.Expect(vmObj.Spec.CurrentSnapshot.Name).To(Equal(currentSnapshot.Name))
+				}).Should(Succeed(), "waiting current snapshot to be set on virtualmachine")
+
+				By("delete the snapshot")
+				Expect(vcSimCtx.Client.Delete(ctx, vmSnapshotToBeDeleted)).To(Succeed())
+
+			})
+			AfterEach(func() {
+				err := vcSimCtx.Client.Delete(ctx, vmSnapshotL1)
+				Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
+				err = vcSimCtx.Client.Delete(ctx, vmSnapshotL2)
+				Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
+				err = vcSimCtx.Client.Delete(ctx, vmSnapshotL3Node1)
+				Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
+				err = vcSimCtx.Client.Delete(ctx, vmSnapshotL3Node2)
+				Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
+				err = vcSimCtx.Client.Delete(ctx, vm)
+				Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
+			})
+
+			When("internal snapshot is deleted", func() {
+				BeforeEach(func() {
+					vmSnapshotL2.DeletionTimestamp = &now
+					vmSnapshotL2.APIVersion = "vmoperator.vmware.com/v1alpha4"
+					vmSnapshotL2.Kind = "VirtualMachineSnapshot"
+					currentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL2)
+					// assign before the reconcile
+					vmSnapshotToBeDeleted = vmSnapshotL2
+					parent = vmSnapshotL1
+				})
+				When("it's the current snapshot", func() {
+					It("returns success, vm current snapshot is updated to root", func() {
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						By("check vm current snapshot is updated to root")
+						Eventually(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(vmObj.Spec.CurrentSnapshot).ToNot(BeNil())
+							g.Expect(vmObj.Spec.CurrentSnapshot.Name).To(Equal(vmSnapshotL1.Name))
+						}).Should(Succeed(), "waiting current snapshot to be updated to root")
+
+						By("check parent snapshot's children should be updated")
+						parentSSObjKey := types.NamespacedName{Name: parent.Name, Namespace: parent.Namespace}
+						Eventually(func(g Gomega) {
+							g.Expect(vcSimCtx.Client.Get(ctx, parentSSObjKey, parent)).To(Succeed())
+							g.Expect(parent).To(Not(BeNil()))
+							g.Expect(parent.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)))
+							g.Expect(parent.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node2)))
+							g.Expect(parent.Status.Children).ToNot(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL2)))
+						}).Should(Succeed(), "waiting parent snapshot's children to be updated")
+					})
+				})
+				When("it's not the current snapshot", func() {
+					BeforeEach(func() {
+						vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL1)
+					})
+					It("returns success, vm current snapshot is not changed", func() {
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						Eventually(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(vmObj.Spec.CurrentSnapshot.Name).To(Equal(vmSnapshotL1.Name))
+						}).Should(Succeed())
+					})
+				})
+			})
+			When("root snapshot is deleted", func() {
+				BeforeEach(func() {
+					vmSnapshotL1.DeletionTimestamp = &now
+					currentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL1)
+					vmSnapshotToBeDeleted = vmSnapshotL1
+					parent = nil
+				})
+				When("it's the current snapshot", func() {
+					It("returns success, vm current snapshot is updated to nil", func() {
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						Eventually(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(vmObj.Spec.CurrentSnapshot).To(BeNil())
+						}).Should(Succeed())
+					})
+				})
+				When("it's not the current snapshot", func() {
+					BeforeEach(func() {
+						currentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL2)
+					})
+					It("returns success, vm current snapshot is not changed", func() {
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						Eventually(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(vmObj.Spec.CurrentSnapshot.Name).To(Equal(vmSnapshotL2.Name))
+						}).Should(Succeed())
+					})
+				})
+			})
+			When("leaf snapshot is deleted", func() {
+				BeforeEach(func() {
+					vmSnapshotL3Node1.DeletionTimestamp = &now
+					currentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)
+					vmSnapshotToBeDeleted = vmSnapshotL3Node1
+					parent = vmSnapshotL2
+				})
+				When("it's the current snapshot", func() {
+					It("returns success, vm current snapshot is updated to parent", func() {
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						Eventually(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(vmObj.Spec.CurrentSnapshot.Name).To(Equal(vmSnapshotL2.Name))
+						}).Should(Succeed())
+						By("check parent snapshot's children should be updated")
+						parentSSObjKey := types.NamespacedName{Name: parent.Name, Namespace: parent.Namespace}
+						Eventually(func(g Gomega) {
+							g.Expect(vcSimCtx.Client.Get(ctx, parentSSObjKey, parent)).To(Succeed())
+							g.Expect(parent).To(Not(BeNil()))
+							g.Expect(parent.Status.Children).ToNot(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)))
+						}).Should(Succeed())
+					})
+				})
+				When("it's not the current snapshot", func() {
+					BeforeEach(func() {
+						vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL2)
+					})
+					It("returns success, vm current snapshot is not changed", func() {
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						Eventually(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(vmObj.Spec.CurrentSnapshot.Name).To(Equal(vmSnapshotL2.Name))
+						}).Should(Succeed())
+					})
+				})
+			})
+		})
+	})
+}
+
+func getVirtualMachineSnapshot(ctx *builder.IntegrationTestContextForVCSim, objKey types.NamespacedName) *vmopv1.VirtualMachineSnapshot {
+	snapshot := &vmopv1.VirtualMachineSnapshot{}
+	if err := ctx.Client.Get(ctx, objKey, snapshot); err != nil {
+		return nil
+	}
+	return snapshot
 }

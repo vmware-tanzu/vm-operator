@@ -6,6 +6,8 @@ package virtualmachinesnapshot_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -19,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -50,22 +53,14 @@ func unitTestsReconcile() {
 
 	BeforeEach(func() {
 		initObjects = nil
-		vm = &vmopv1.VirtualMachine{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vm",
-				Namespace: "test-namespace",
-			},
-			Spec: vmopv1.VirtualMachineSpec{
-				ImageName:  "dummy-image",
-				PowerState: vmopv1.VirtualMachinePowerStateOn,
-			},
-		}
+		vm = builder.DummyBasicVirtualMachine("dummy-vm", "test-namespace")
 
-		vmSnapshot = createVMSnapshot("snap-1", "test-namespace", vm)
+		vmSnapshot = createVMSnapshot("snap-1", vm)
 	})
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		reconciler = virtualmachinesnapshot.NewReconciler(
 			ctx,
 			ctx.Client,
@@ -73,7 +68,6 @@ func unitTestsReconcile() {
 			ctx.Recorder,
 			ctx.VMProvider,
 		)
-		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 	})
 
 	AfterEach(func() {
@@ -185,48 +179,82 @@ func unitTestsReconcile() {
 			})
 		})
 	})
+
 	Context("ReconcileDelete", func() {
 		var (
-			err error
-			now metav1.Time
+			err                   error
+			now                   metav1.Time
+			snapshotNamespacedKey types.NamespacedName
 		)
 
 		BeforeEach(func() {
+			snapshotNamespacedKey = types.NamespacedName{
+				Namespace: vmSnapshot.Namespace,
+				Name:      vmSnapshot.Name,
+			}
 			err = nil
-		})
-
-		JustBeforeEach(func() {
-			_, err = reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Namespace: vmSnapshot.Namespace,
-					Name:      vmSnapshot.Name,
-				}})
 		})
 
 		When("A Snapshot is marked for deletion", func() {
 			BeforeEach(func() {
 				now = metav1.Now()
 				vmSnapshot.DeletionTimestamp = &now
-				initObjects = append(initObjects, vm)
+				initObjects = append(initObjects, vmSnapshot, vm)
 			})
 
 			It("returns success", func() {
-				fakeVMProvider.Lock()
-				fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
-					return nil
-				}
-				fakeVMProvider.Unlock()
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: snapshotNamespacedKey})
 				Expect(err).ToNot(HaveOccurred())
+			})
+
+			When("VC returns VirtualMachineNotFound error", func() {
+				JustBeforeEach(func() {
+					fakeVMProvider.Lock()
+					fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+						return fmt.Errorf("failed to get VirtualMachine"+vsphere.VirtualMachineNotFoundErrorf, vm.Name)
+					}
+					fakeVMProvider.Unlock()
+				})
+				It("returns success", func() {
+					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: snapshotNamespacedKey})
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+
+			When("VC returns other error", func() {
+				JustBeforeEach(func() {
+					fakeVMProvider.Lock()
+					fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+						return errors.New("fubar")
+					}
+					fakeVMProvider.Unlock()
+				})
+				It("returns error", func() {
+					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: snapshotNamespacedKey})
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("fubar"))
+				})
+			})
+
+			When("VirtualMachine CR is not present", func() {
+				BeforeEach(func() {
+					initObjects = initObjects[:len(initObjects)-1]
+				})
+				It("returns success", func() {
+					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: snapshotNamespacedKey})
+					Expect(err).ToNot(HaveOccurred())
+				})
 			})
 		})
 
 		When("Nested Snapshot, one of them is marked for deletion", func() {
 			var (
-				vmSnapshotL1      *vmopv1.VirtualMachineSnapshot
-				vmSnapshotL2      *vmopv1.VirtualMachineSnapshot
-				vmSnapshotL3Node1 *vmopv1.VirtualMachineSnapshot
-				vmSnapshotL3Node2 *vmopv1.VirtualMachineSnapshot
-				parent            *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL1        *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL2        *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL3Node1   *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL3Node2   *vmopv1.VirtualMachineSnapshot
+				parent              *vmopv1.VirtualMachineSnapshot
+				snapshotToReconcile *vmopv1.VirtualMachineSnapshot
 			)
 			BeforeEach(func() {
 				//        L1
@@ -234,25 +262,26 @@ func unitTestsReconcile() {
 				//        L2
 				//       /   \
 				//   L3-n1    L3-n2
-				vmSnapshotL1 = createVMSnapshot("snap-l1", "test-namespace", vm)
-				vmSnapshotL2 = createVMSnapshot("snap-l2", "test-namespace", vm)
-				vmSnapshotL3Node1 = createVMSnapshot("snap-l3-node1", "test-namespace", vm)
-				vmSnapshotL3Node2 = createVMSnapshot("snap-l3-node2", "test-namespace", vm)
+				vmSnapshotL1 = createVMSnapshot("snap-l1", vm)
+				vmSnapshotL2 = createVMSnapshot("snap-l2", vm)
+				vmSnapshotL3Node1 = createVMSnapshot("snap-l3-node1", vm)
+				vmSnapshotL3Node2 = createVMSnapshot("snap-l3-node2", vm)
 
 				addSnapshotToChildren(vmSnapshotL1, vmSnapshotL2)
 				addSnapshotToChildren(vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 
 				now = metav1.Now()
 
-				fakeVMProvider.Lock()
-				fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
-					return nil
-				}
-				fakeVMProvider.Unlock()
 				vm.Status.UniqueID = dummyVMUUID
 			})
 
 			JustBeforeEach(func() {
+				// constructing the new key since vmSnapshot is updated in each test
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: snapshotToReconcile.Namespace,
+						Name:      snapshotToReconcile.Name,
+					}})
 				// get newest vm object
 				objKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
 				Expect(ctx.Client.Get(ctx, objKey, vm)).To(Succeed())
@@ -267,7 +296,7 @@ func unitTestsReconcile() {
 					vmSnapshotL2.DeletionTimestamp = &now
 					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL2)
 					// assign before the reconcile
-					vmSnapshot = vmSnapshotL2
+					snapshotToReconcile = vmSnapshotL2
 					parent = vmSnapshotL1
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 				})
@@ -296,7 +325,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vmSnapshotL1.DeletionTimestamp = &now
 					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL1)
-					vmSnapshot = vmSnapshotL1
+					snapshotToReconcile = vmSnapshotL1
 					parent = nil
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 				})
@@ -320,7 +349,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vmSnapshotL3Node1.DeletionTimestamp = &now
 					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)
-					vmSnapshot = vmSnapshotL3Node1
+					snapshotToReconcile = vmSnapshotL3Node1
 					parent = vmSnapshotL2
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 				})
@@ -345,17 +374,17 @@ func unitTestsReconcile() {
 			})
 		})
 	})
-
 }
 
-func createVMSnapshot(name string, namespace string, vm *vmopv1.VirtualMachine) *vmopv1.VirtualMachineSnapshot {
+func createVMSnapshot(name string, vm *vmopv1.VirtualMachine) *vmopv1.VirtualMachineSnapshot {
 	return &vmopv1.VirtualMachineSnapshot{
 		TypeMeta: metav1.TypeMeta{
-			Kind: "VirtualMachineSnapshot",
+			APIVersion: "vmoperator.vmware.com/v1alpha4",
+			Kind:       "VirtualMachineSnapshot",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
-			Namespace:  namespace,
+			Namespace:  vm.Namespace,
 			Finalizers: []string{virtualmachinesnapshot.Finalizer},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{

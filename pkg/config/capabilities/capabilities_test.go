@@ -150,6 +150,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyImmutableClasses: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyVMSnapshots: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -162,6 +165,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.MutableNetworks = true
 							config.Features.VMGroups = true
 							config.Features.ImmutableClasses = true
+							config.Features.VMSnapshots = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -184,6 +188,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyImmutableClasses, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVMSnapshots, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeTrue())
 					})
 				})
 
@@ -208,6 +215,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyImmutableClasses, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVMSnapshots, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeTrue())
 					})
 				})
 			})
@@ -241,6 +251,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyImmutableClasses: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyVMSnapshots: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -265,6 +278,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyImmutableClasses, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVMSnapshots, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeFalse())
 					})
 				})
 
@@ -298,6 +314,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyImmutableClasses, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVMSnapshots, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeFalse())
 					})
 				})
 			})
@@ -489,6 +508,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyVMSnapshots, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVMSnapshots] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VMSnapshots=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -523,6 +555,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyImmutableClasses: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVMSnapshots: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -542,6 +577,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.MutableNetworks = true
 					config.Features.VMGroups = true
 					config.Features.ImmutableClasses = true
+					config.Features.VMSnapshots = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -566,6 +602,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyImmutableClasses, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVMSnapshots, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -580,7 +619,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMSnapshots=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -599,6 +638,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyImmutableClasses, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ImmutableClasses).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVMSnapshots, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeFalse())
 			})
 		})
 	})

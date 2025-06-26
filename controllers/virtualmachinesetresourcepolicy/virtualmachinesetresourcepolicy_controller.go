@@ -6,10 +6,12 @@ package virtualmachinesetresourcepolicy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 
 	"github.com/go-logr/logr"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -23,11 +25,14 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 )
 
 const (
 	finalizerName           = "vmoperator.vmware.com/virtualmachinesetresourcepolicy"
 	deprecatedFinalizerName = "virtualmachinesetresourcepolicy.vmoperator.vmware.com"
+
+	Finalizer = finalizerName
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -120,6 +125,25 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSetResourcePolicy
 		return err
 	}
 
+	if val := ctx.ResourcePolicy.Status.FolderID; val != "" {
+		if err := watcher.Add(
+			ctx,
+			vimtypes.ManagedObjectReference{
+				Type:  "Folder",
+				Value: val,
+			},
+			fmt.Sprintf(
+				"%s:%s/%s",
+				"VirtualMachineSetResourcePolicy",
+				ctx.ResourcePolicy.Namespace,
+				ctx.ResourcePolicy.Name)); err != nil {
+
+			if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -157,6 +181,30 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSetResourcePolicy
 		ctx.Logger.Info("Finished Reconciling VirtualMachineSetResourcePolicy Deletion")
 	}()
 
+	if val := ctx.ResourcePolicy.Status.FolderID; val != "" {
+		if err := watcher.Remove(
+			ctx,
+			vimtypes.ManagedObjectReference{
+				Type:  "Folder",
+				Value: val,
+			},
+			fmt.Sprintf(
+				"%s:%s/%s",
+				"VirtualMachineSetResourcePolicy",
+				ctx.ResourcePolicy.Namespace,
+				ctx.ResourcePolicy.Name)); err != nil {
+
+			if !errors.Is(err, watcher.ErrAsyncSignalDisabled) {
+				// Do not ignore watcher.ErrNoWatcher here to interlock with
+				// the VM watcher service when it is restarting the watcher.
+				//
+				// This means if the watcher cannot start, ex. invalid vC creds,
+				// the finalizer will not be removed.
+				return err
+			}
+		}
+	}
+
 	if controllerutil.ContainsFinalizer(ctx.ResourcePolicy, finalizerName) ||
 		controllerutil.ContainsFinalizer(ctx.ResourcePolicy, deprecatedFinalizerName) {
 		if err := r.deleteResourcePolicy(ctx); err != nil {
@@ -175,6 +223,7 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSetResourcePolicy
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+	ctx = watcher.JoinContext(ctx, r.Context)
 
 	rp := &vmopv1.VirtualMachineSetResourcePolicy{}
 	if err := r.Get(ctx, req.NamespacedName, rp); err != nil {

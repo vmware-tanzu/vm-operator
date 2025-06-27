@@ -659,9 +659,14 @@ func (s *Session) reconcileNetworkInterfaces(
 	}
 
 	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
-		if err := network.ListOrphanedNetworkInterfaces(vmCtx, s.K8sClient, &results); err != nil {
-			return network.NetworkInterfaceResults{},
-				fmt.Errorf("failed to list orphaned network interfaces: %w", err)
+		// TODO: Until we are reconfiguring (hot-plug) a powered on VM for network device
+		// changes, don't list orphan interfaces because they need to hang around until
+		// the device is actually removed from the VM.
+		if vmCtx.MoVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff {
+			if err := network.ListOrphanedNetworkInterfaces(vmCtx, s.K8sClient, &results); err != nil {
+				return network.NetworkInterfaceResults{},
+					fmt.Errorf("failed to list orphaned network interfaces: %w", err)
+			}
 		}
 	}
 
@@ -708,15 +713,10 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 func (s *Session) fixupMacAddresses(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	networkResults network.NetworkInterfaceResults) error {
-
-	networkDevices, err := res.NewVMFromObject(vcVM).GetNetworkDevices(vmCtx)
-	if err != nil {
-		return err
-	}
+	networkResults *network.NetworkInterfaceResults) error {
 
 	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
-		return s.fixupMacAddressMutableNetworks(networkDevices, networkResults)
+		return s.fixupMacAddressMutableNetworks(vmCtx, vcVM, networkResults)
 	}
 
 	missingMAC := false
@@ -729,6 +729,11 @@ func (s *Session) fixupMacAddresses(
 	if !missingMAC {
 		// Expected path in NSX-T since it always provides the MAC address.
 		return nil
+	}
+
+	networkDevices, err := res.NewVMFromObject(vcVM).GetNetworkDevices(vmCtx)
+	if err != nil {
+		return err
 	}
 
 	// Just zip these together until we can do interface identification.
@@ -745,11 +750,28 @@ func (s *Session) fixupMacAddresses(
 }
 
 func (s *Session) fixupMacAddressMutableNetworks(
-	networkDevices object.VirtualDeviceList,
-	networkResults network.NetworkInterfaceResults) error {
+	ctx context.Context,
+	vcVM *object.VirtualMachine,
+	networkResults *network.NetworkInterfaceResults) error {
 
 	if !networkResults.UpdatedEthCards {
-		return nil
+		// Even if there were no network changes, for VDS we still may have fix up the MAC address
+		// because we can VC assign it since NetOP does not in the interface CR.
+		missingMAC := false
+		for idx := range networkResults.Results {
+			if networkResults.Results[idx].MacAddress == "" {
+				missingMAC = true
+				break
+			}
+		}
+		if !missingMAC {
+			return nil
+		}
+	}
+
+	networkDevices, err := res.NewVMFromObject(vcVM).GetNetworkDevices(ctx)
+	if err != nil {
+		return err
 	}
 
 	for idx, r := range networkResults.Results {
@@ -757,7 +779,9 @@ func (s *Session) fixupMacAddressMutableNetworks(
 			matchingIdx := slices.IndexFunc(networkDevices,
 				func(d vimtypes.BaseVirtualDevice) bool { return d.GetVirtualDevice().Key == r.DeviceKey })
 			if matchingIdx >= 0 {
-				networkDevices = append(networkDevices[:matchingIdx], networkDevices[matchingIdx+1:]...)
+				matchDev := networkDevices[matchingIdx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+				networkResults.Results[idx].MacAddress = matchDev.MacAddress
+				networkDevices = slices.Delete(networkDevices, matchingIdx, matchingIdx+1)
 			}
 			continue
 		}
@@ -768,7 +792,7 @@ func (s *Session) fixupMacAddressMutableNetworks(
 			networkResults.Results[idx].DeviceKey = matchDev.Key
 			networkResults.Results[idx].MacAddress = matchDev.MacAddress
 
-			networkDevices = append(networkDevices[:matchingIdx], networkDevices[matchingIdx+1:]...)
+			networkDevices = slices.Delete(networkDevices, matchingIdx, matchingIdx+1)
 		}
 	}
 
@@ -972,16 +996,15 @@ func (s *Session) reconcileNetworkAndGuestCustomizationState(
 		if err := s.K8sClient.Delete(
 			vmCtx,
 			networkResults.OrphanedNetworkInterfaces[i],
-		); err != nil {
-
-			return err
+		); ctrlclient.IgnoreNotFound(err) != nil {
+			vmCtx.Logger.Error(err, "failed to delete orphaned network interface")
 		}
 	}
 
 	if err := s.fixupMacAddresses(
 		vmCtx,
 		vcVM,
-		networkResults); err != nil {
+		&networkResults); err != nil {
 
 		return err
 	}

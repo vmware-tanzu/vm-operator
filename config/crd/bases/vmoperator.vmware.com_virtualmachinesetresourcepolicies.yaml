@@ -449,6 +449,21 @@ spec:
                   - moduleUUID
                   type: object
                 type: array
+              resourcepools:
+                items:
+                  description: |-
+                    ResourcePoolStatus describes the observed state of a vSphere child
+                    resource pool created for the Spec.ResourcePool.Name.
+                  properties:
+                    childResourcePoolMoID:
+                      type: string
+                    clusterMoID:
+                      type: string
+                  required:
+                  - childResourcePoolMoID
+                  - clusterMoID
+                  type: object
+                type: array
             type: object
         type: object
     served: true

@@ -46,20 +46,31 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 		}
 	}
 
+	resourcePolicy.Status.ResourcePools = nil
+	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
+
 	for _, rpMoID := range rpMoIDs {
+		clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
 		if rpSpec := &resourcePolicy.Spec.ResourcePool; rpSpec.Name != "" {
-			_, err := vcenter.CreateOrUpdateChildResourcePool(ctx, vimClient, rpMoID, rpSpec)
-			if err != nil {
+			childRPMoID, err := vcenter.CreateOrUpdateChildResourcePool(ctx, vimClient, rpMoID, rpSpec)
+			if err == nil {
+				resourcePolicy.Status.ResourcePools = append(resourcePolicy.Status.ResourcePools,
+					vmopv1.ResourcePoolStatus{
+						ClusterMoID:           clusterRef.Value,
+						ChildResourcePoolMoID: childRPMoID,
+					})
+			} else {
 				errs = append(errs, err)
 			}
 		}
 
 		if len(resourcePolicy.Spec.ClusterModuleGroups) > 0 {
-			clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
-			if err == nil {
-				clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
-				err = vs.createClusterModules(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
-			}
+			err := vs.createClusterModules(ctx, clusterModuleProvider, clusterRef.Reference(), resourcePolicy)
 			if err != nil {
 				errs = append(errs, err)
 			}

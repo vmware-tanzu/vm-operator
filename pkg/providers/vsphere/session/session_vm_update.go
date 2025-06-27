@@ -821,6 +821,16 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		}
 	}
 
+	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
+		virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+		currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+		ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, &resizeArgs.NetworkResults, currentEthCards)
+		if err != nil {
+			return err
+		}
+		configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
+	}
+
 	if pkgcfg.FromContext(vmCtx).Features.VMResize {
 		if err := vmopv1util.OverwriteResizeConfigSpec(
 			vmCtx,

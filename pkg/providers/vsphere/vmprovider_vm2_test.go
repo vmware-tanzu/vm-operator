@@ -6,6 +6,8 @@ package vsphere_test
 
 import (
 	"fmt"
+	"regexp"
+	"sort"
 	"strconv"
 	"time"
 
@@ -35,9 +37,22 @@ import (
 )
 
 type fakeNetworkProvider interface {
-	simulateInterfaceReconcile(ctx *builder.TestContextForVCSim, vm *vmopv1.VirtualMachine, networkName, interfaceName string, idx int)
-	assertEthernetCard(ctx *builder.TestContextForVCSim, dev vimtypes.BaseVirtualDevice, idx int)
+	simulateInterfaceReconcile(ctx *builder.TestContextForVCSim, vm *vmopv1.VirtualMachine, interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec, networkIdx int)
+	assertEthernetCard(ctx *builder.TestContextForVCSim, dev vimtypes.BaseVirtualDevice, interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec, networkIdx int)
 	assertNetworkInterfacesDNE(ctx *builder.TestContextForVCSim, vm *vmopv1.VirtualMachine, networkName, interfaceName string)
+}
+
+func extID(networkName, interfaceName string) string {
+	return networkName + "-" + interfaceName
+}
+
+var ifaceIdxRegex = regexp.MustCompile(`(\d+)$`)
+
+func idxFromInterfaceName(s string) int {
+	m := ifaceIdxRegex.FindStringSubmatch(s)
+	Expect(m).To(HaveLen(2))
+	i, _ := strconv.ParseInt(m[1], 10, 32)
+	return int(i)
 }
 
 type vdsNetworkProvider struct{}
@@ -45,8 +60,11 @@ type vdsNetworkProvider struct{}
 func (v vdsNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
 	vm *vmopv1.VirtualMachine,
-	networkName, interfaceName string,
-	idx int) {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	networkIdx int) {
+
+	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	ifaceIdx := idxFromInterfaceName(interfaceName)
 
 	netInterface := &netopv1alpha1.NetworkInterface{
 		ObjectMeta: metav1.ObjectMeta{
@@ -57,11 +75,12 @@ func (v vdsNetworkProvider) simulateInterfaceReconcile(
 	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 	Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
-	netInterface.Status.NetworkID = ctx.NetworkRefs[idx].Reference().Value
+	netInterface.Status.NetworkID = ctx.NetworkRefs[networkIdx].Reference().Value
+	netInterface.Status.ExternalID = extID(networkName, interfaceName)
 	netInterface.Status.MacAddress = "" // NetOP doesn't set this.
 	netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
 		{
-			IP:         fmt.Sprintf("192.168.1.2%d", idx),
+			IP:         fmt.Sprintf("192.168.1.2%d", ifaceIdx),
 			IPFamily:   corev1.IPv4Protocol,
 			Gateway:    "192.168.1.1",
 			SubnetMask: "255.255.255.0",
@@ -79,12 +98,18 @@ func (v vdsNetworkProvider) simulateInterfaceReconcile(
 func (v vdsNetworkProvider) assertEthernetCard(
 	ctx *builder.TestContextForVCSim,
 	dev vimtypes.BaseVirtualDevice,
-	idx int) {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	networkIdx int) {
 
-	backing := dev.GetVirtualDevice().Backing
-	backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+
+	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+	backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 	Expect(ok).Should(BeTrue())
-	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[idx].Reference().Value))
+	ExpectWithOffset(1, backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[networkIdx].Reference().Value))
+	Expect(ethCard.MacAddress).ToNot(BeEmpty())
+	Expect(ethCard.ExternalId).To(Equal(extID(networkName, interfaceName)))
+
 }
 
 func (v vdsNetworkProvider) assertNetworkInterfacesDNE(
@@ -108,8 +133,11 @@ type nsxtNetworkProvider struct{}
 func (n nsxtNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
 	vm *vmopv1.VirtualMachine,
-	networkName, interfaceName string,
-	idx int) {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	networkIdx int) {
+
+	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	ifaceIdx := idxFromInterfaceName(interfaceName)
 
 	netInterface := &ncpv1alpha1.VirtualNetworkInterface{
 		ObjectMeta: metav1.ObjectMeta{
@@ -120,14 +148,14 @@ func (n nsxtNetworkProvider) simulateInterfaceReconcile(
 	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
 	Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
 
-	netInterface.Status.InterfaceID = strconv.Itoa(idx)
-	netInterface.Status.MacAddress = fmt.Sprintf("01-23-45-67-89-AB-CD-%X", idx)
+	netInterface.Status.InterfaceID = extID(networkName, interfaceName)
+	netInterface.Status.MacAddress = fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)
 	netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-		NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(idx),
+		NsxLogicalSwitchID: builder.GetNsxTLogicalSwitchUUID(networkIdx),
 	}
 	netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
 		{
-			IP:         fmt.Sprintf("192.168.1.2%d", idx),
+			IP:         fmt.Sprintf("192.168.1.2%d", ifaceIdx),
 			Gateway:    "192.168.1.1",
 			SubnetMask: "255.255.255.0",
 		},
@@ -144,16 +172,18 @@ func (n nsxtNetworkProvider) simulateInterfaceReconcile(
 func (n nsxtNetworkProvider) assertEthernetCard(
 	ctx *builder.TestContextForVCSim,
 	dev vimtypes.BaseVirtualDevice,
-	idx int) {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	networkIdx int) {
 
-	backing := dev.GetVirtualDevice().Backing
-	backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-	Expect(ok).Should(BeTrue())
-	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[idx].Reference().Value))
+	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	ifaceIdx := idxFromInterfaceName(interfaceName)
 
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-	Expect(ethCard.MacAddress).To(Equal(fmt.Sprintf("01-23-45-67-89-AB-CD-%X", idx)))
-	Expect(ethCard.ExternalId).To(Equal(strconv.Itoa(idx)))
+	backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+	Expect(ok).Should(BeTrue())
+	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[networkIdx].Reference().Value))
+	Expect(ethCard.MacAddress).To(Equal(fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)))
+	Expect(ethCard.ExternalId).To(Equal(extID(networkName, interfaceName)))
 }
 
 func (n nsxtNetworkProvider) assertNetworkInterfacesDNE(
@@ -177,8 +207,11 @@ type vpcNetworkProvider struct{}
 func (v vpcNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
 	vm *vmopv1.VirtualMachine,
-	networkName, interfaceName string,
-	idx int) {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	networkIdx int) {
+
+	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	ifaceIdx := idxFromInterfaceName(interfaceName)
 
 	subnetPort := &vpcv1alpha1.SubnetPort{
 		ObjectMeta: metav1.ObjectMeta{
@@ -189,12 +222,12 @@ func (v vpcNetworkProvider) simulateInterfaceReconcile(
 	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
 	Expect(subnetPort.Spec.Subnet).To(Equal(networkName))
 
-	subnetPort.Status.Attachment.ID = strconv.Itoa(idx)
-	subnetPort.Status.NetworkInterfaceConfig.MACAddress = fmt.Sprintf("01-23-45-67-89-AB-CD-%X", idx)
-	subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(idx)
+	subnetPort.Status.Attachment.ID = extID(networkName, interfaceName)
+	subnetPort.Status.NetworkInterfaceConfig.MACAddress = fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)
+	subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(networkIdx)
 	subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
 		{
-			IPAddress: fmt.Sprintf("192.168.1.11%d/24", idx),
+			IPAddress: fmt.Sprintf("192.168.1.11%d/24", ifaceIdx),
 			Gateway:   "192.168.1.1",
 		},
 	}
@@ -210,16 +243,18 @@ func (v vpcNetworkProvider) simulateInterfaceReconcile(
 func (v vpcNetworkProvider) assertEthernetCard(
 	ctx *builder.TestContextForVCSim,
 	dev vimtypes.BaseVirtualDevice,
-	idx int) {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	networkIdx int) {
 
-	backing := dev.GetVirtualDevice().Backing
-	backingInfo, ok := backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-	Expect(ok).Should(BeTrue())
-	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[idx].Reference().Value))
+	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	ifaceIdx := idxFromInterfaceName(interfaceName)
 
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-	Expect(ethCard.MacAddress).To(Equal(fmt.Sprintf("01-23-45-67-89-AB-CD-%X", idx)))
-	Expect(ethCard.ExternalId).To(Equal(strconv.Itoa(idx)))
+	backingInfo, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+	Expect(ok).Should(BeTrue())
+	Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRefs[networkIdx].Reference().Value))
+	Expect(ethCard.MacAddress).To(Equal(fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)))
+	Expect(ethCard.ExternalId).To(Equal(extID(networkName, interfaceName)))
 }
 
 func (v vpcNetworkProvider) assertNetworkInterfacesDNE(
@@ -437,7 +472,7 @@ func vmE2ETests() {
 					Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
 
 					By("simulate successful network provider reconcile", func() {
-						np.simulateInterfaceReconcile(ctx, vm, networkName0, interfaceName0, 0)
+						np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[0], 0)
 					})
 
 					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
@@ -466,7 +501,7 @@ func vmE2ETests() {
 						Expect(l).To(HaveLen(1))
 
 						dev0 := l[0]
-						np.assertEthernetCard(ctx, dev0, 0)
+						np.assertEthernetCard(ctx, dev0, vm.Spec.Network.Interfaces[0], 0)
 					})
 
 					By("add network interface", func() {
@@ -485,7 +520,7 @@ func vmE2ETests() {
 					})
 
 					By("simulate successful network provider reconcile on added interface", func() {
-						np.simulateInterfaceReconcile(ctx, vm, networkName1, interfaceName1, 1)
+						np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[1], 1)
 						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 					})
 
@@ -502,7 +537,7 @@ func vmE2ETests() {
 						Expect(l).To(HaveLen(2))
 
 						dev1 := l[1]
-						np.assertEthernetCard(ctx, dev1, 1)
+						np.assertEthernetCard(ctx, dev1, vm.Spec.Network.Interfaces[1], 1)
 					})
 
 					By("remove just added network interface", func() {
@@ -526,7 +561,7 @@ func vmE2ETests() {
 						Expect(l).To(HaveLen(1))
 
 						dev0 := l[0]
-						np.assertEthernetCard(ctx, dev0, 0)
+						np.assertEthernetCard(ctx, dev0, vm.Spec.Network.Interfaces[0], 0)
 
 						By("network interface has been deleted", func() {
 							np.assertNetworkInterfacesDNE(ctx, vm, networkName1, interfaceName1)
@@ -633,7 +668,7 @@ func vmE2ETests() {
 					Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
 
 					By("simulate successful network provider reconcile", func() {
-						np.simulateInterfaceReconcile(ctx, vm, networkName0, interfaceName0, 0)
+						np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[0], 0)
 					})
 
 					{
@@ -645,7 +680,7 @@ func vmE2ETests() {
 					}
 
 					By("simulate successful network provider reconcile", func() {
-						np.simulateInterfaceReconcile(ctx, vm, networkName1, interfaceName1, 1)
+						np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[1], 1)
 					})
 
 					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
@@ -667,7 +702,7 @@ func vmE2ETests() {
 					Expect(vm.Status.UniqueID).ToNot(BeEmpty())
 					vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
 
-					By("has expected NIC device types and backings", func() {
+					By("created with expected NIC device types and backings", func() {
 						devList, err := vcVM.Device(ctx)
 						Expect(err).ToNot(HaveOccurred())
 						l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
@@ -676,15 +711,15 @@ func vmE2ETests() {
 						dev0 := l[0]
 						_, ok := dev0.(*vimtypes.VirtualE1000e)
 						Expect(ok).To(BeTrue())
-						np.assertEthernetCard(ctx, dev0, 0)
+						np.assertEthernetCard(ctx, dev0, vm.Spec.Network.Interfaces[0], 0)
 
 						dev1 := l[1]
 						_, ok = dev1.(*vimtypes.VirtualVmxnet2)
 						Expect(ok).To(BeTrue())
-						np.assertEthernetCard(ctx, dev1, 1)
+						np.assertEthernetCard(ctx, dev1, vm.Spec.Network.Interfaces[1], 1)
 					})
 
-					By("update network interface", func() {
+					By("edit second network interface to use different network", func() {
 						vm.Spec.Network.Interfaces[1].Network.Name = networkName2
 					})
 
@@ -696,9 +731,8 @@ func vmE2ETests() {
 						Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 					})
 
-					By("simulate successful network provider reconcile on added interface", func() {
-						np.simulateInterfaceReconcile(ctx, vm, networkName2, interfaceName1, 2)
-						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+					By("simulate successful network provider reconcile on updated interface", func() {
+						np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[1], 2)
 					})
 
 					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
@@ -707,9 +741,80 @@ func vmE2ETests() {
 						np.assertNetworkInterfacesDNE(ctx, vm, networkName1, interfaceName1)
 					})
 
+					By("powered off VM has expected NIC device types and backings", func() {
+						devList, err := vcVM.Device(ctx)
+						Expect(err).ToNot(HaveOccurred())
+						l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
+						Expect(l).To(HaveLen(2))
+
+						// Sometimes even an edit operation will vcsim to reorder the devices.
+						sort.Slice(l, func(i, j int) bool {
+							return l[i].GetVirtualDevice().Key < l[j].GetVirtualDevice().Key
+						})
+
+						dev0 := l[0]
+						_, ok := dev0.(*vimtypes.VirtualE1000e)
+						Expect(ok).To(BeTrue())
+						np.assertEthernetCard(ctx, dev0, vm.Spec.Network.Interfaces[0], 0)
+
+						dev1 := l[1]
+						_, ok = dev1.(*vimtypes.VirtualVmxnet2)
+						Expect(ok).To(BeTrue())
+						np.assertEthernetCard(ctx, dev1, vm.Spec.Network.Interfaces[1], 2)
+					})
+
 					By("power on VM", func() {
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+					})
+
+					By("still has expected NIC device types and backings", func() {
+						devList, err := vcVM.Device(ctx)
+						Expect(err).ToNot(HaveOccurred())
+						l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
+						Expect(l).To(HaveLen(2))
+
+						sort.Slice(l, func(i, j int) bool {
+							return l[i].GetVirtualDevice().Key < l[j].GetVirtualDevice().Key
+						})
+
+						dev0 := l[0]
+						_, ok := dev0.(*vimtypes.VirtualE1000e)
+						Expect(ok).To(BeTrue())
+						np.assertEthernetCard(ctx, dev0, vm.Spec.Network.Interfaces[0], 0)
+
+						dev1 := l[1]
+						_, ok = dev1.(*vimtypes.VirtualVmxnet2)
+						Expect(ok).To(BeTrue())
+						np.assertEthernetCard(ctx, dev1, vm.Spec.Network.Interfaces[1], 2)
+					})
+
+					By("power off VM", func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+					})
+
+					By("update first network interface to use different network", func() {
+						vm.Spec.Network.Interfaces[0].Network.Name = networkName2
+					})
+
+					By("try to power on VM", func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						err = createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+						Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+					})
+
+					By("simulate successful network provider reconcile on updated interface", func() {
+						np.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[0], 2)
+					})
+
+					By("power on VM", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
 						Expect(vcVM.PowerState(ctx)).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 					})
 
@@ -719,15 +824,19 @@ func vmE2ETests() {
 						l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
 						Expect(l).To(HaveLen(2))
 
+						sort.Slice(l, func(i, j int) bool {
+							return l[i].GetVirtualDevice().Key < l[j].GetVirtualDevice().Key
+						})
+
 						dev0 := l[0]
 						_, ok := dev0.(*vimtypes.VirtualE1000e)
 						Expect(ok).To(BeTrue())
-						np.assertEthernetCard(ctx, dev0, 0)
+						np.assertEthernetCard(ctx, dev0, vm.Spec.Network.Interfaces[0], 2)
 
 						dev1 := l[1]
 						_, ok = dev1.(*vimtypes.VirtualVmxnet2)
 						Expect(ok).To(BeTrue())
-						np.assertEthernetCard(ctx, dev1, 2)
+						np.assertEthernetCard(ctx, dev1, vm.Spec.Network.Interfaces[1], 2)
 					})
 				})
 			},

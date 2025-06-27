@@ -10,6 +10,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
@@ -20,5 +21,8 @@ import (
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
+	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
+		return utils.AddToManagerV1A2(ctx, mgr, &imgregv1a1.ClusterContentLibraryItem{})
+	}
 	return utils.AddToManager(ctx, mgr, &imgregv1a1.ClusterContentLibraryItem{})
 }

@@ -76,13 +76,33 @@ func resourcePolicyTests() {
 			}
 
 			if rpName := rp.Spec.ResourcePool.Name; rpName != "" {
+				if expectedExists {
+					expectedCnt := ctx.ClustersPerZone * ctx.ZoneCount
+					Expect(rp.Status.ResourcePools).To(HaveLen(expectedCnt))
+				}
+
 				for _, zoneName := range ctx.ZoneNames {
 					nsRP := ctx.GetResourcePoolForNamespace(rp.Namespace, zoneName, "")
 
-					exists, err := vcenter.DoesChildResourcePoolExist(ctx, ctx.VCClient.Client, nsRP.Reference().Value, rpName)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(exists).To(Equal(expectedExists))
+					childRP, err := vcenter.GetChildResourcePool(ctx, nsRP, rpName)
+					if expectedExists {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(childRP).ToNot(BeNil())
+
+						ccr, err := nsRP.Owner(ctx)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(rp.Status.ResourcePools).To(ContainElement(vmopv1.ResourcePoolStatus{
+							ClusterMoID:           ccr.Reference().Value,
+							ChildResourcePoolMoID: childRP.Reference().Value,
+						}))
+					} else {
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("not found under parent ResourcePool"))
+					}
 				}
+			} else {
+				Expect(rp.Status.ResourcePools).To(BeEmpty())
 			}
 
 			clusterModules, err := cluster.NewManager(ctx.RestClient).ListModules(ctx)

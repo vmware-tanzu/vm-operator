@@ -96,6 +96,19 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			)
 		})
 
+		Context("Pending network changes because VM is powered on", func() {
+			BeforeEach(func() {
+				bsArgs.NetworkResults.UpdatedEthCards = true
+				vmCtx.MoVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+			})
+
+			It("returns no error", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec).To(BeNil())
+				Expect(custSpec).To(BeNil())
+			})
+		})
+
 		Context("Inlined CloudConfig", func() {
 			BeforeEach(func() {
 				bsArgs.CloudConfig = &cloudinit.CloudConfigSecretData{

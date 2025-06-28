@@ -7,7 +7,6 @@ package virtualmachinesnapshot_test
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -61,6 +60,10 @@ func intgTestsReconcile() {
 		vm         *vmopv1.VirtualMachine
 	)
 
+	const (
+		uniqueVMID = "unique-vm-id"
+	)
+
 	getVirtualMachine := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1.VirtualMachine {
 		vm := &vmopv1.VirtualMachine{}
 		if err := ctx.Client.Get(ctx, objKey, vm); err != nil {
@@ -73,7 +76,7 @@ func intgTestsReconcile() {
 		ctx = suite.NewIntegrationTestContext()
 
 		vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.Namespace)
-		vmSnapshot = createVMSnapshot("snap-1", vm)
+		vmSnapshot = builder.DummyVirtualMachineSnapshot("snap-1", ctx.Namespace, vm.Name)
 	})
 
 	AfterEach(func() {
@@ -85,7 +88,7 @@ func intgTestsReconcile() {
 		BeforeEach(func() {
 			Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-			vm.Status.UniqueID = "unique-vm-id"
+			vm.Status.UniqueID = uniqueVMID
 			Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 		})
 
@@ -119,6 +122,10 @@ func intgTestsReconcileDelete() {
 		initEnvFn  builder.InitVCSimEnvFn
 		vmSnapshot *vmopv1.VirtualMachineSnapshot
 		vm         *vmopv1.VirtualMachine
+	)
+
+	const (
+		uniqueVMID = "unique-vm-id"
 	)
 
 	getVirtualMachine := func(ctx *builder.IntegrationTestContextForVCSim, objKey types.NamespacedName) *vmopv1.VirtualMachine {
@@ -161,10 +168,10 @@ func intgTestsReconcileDelete() {
 		When("snapshot is not nested", func() {
 			JustBeforeEach(func() {
 				vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
-				vmSnapshot = createVMSnapshot("snap-1", vm)
+				vmSnapshot = builder.DummyVirtualMachineSnapshot("snap-1", vcSimCtx.NSInfo.Namespace, vm.Name)
 				Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
 				Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
-				vm.Status.UniqueID = "unique-vm-id"
+				vm.Status.UniqueID = uniqueVMID
 				Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
 				vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
 				Eventually(func(g Gomega) {
@@ -198,7 +205,7 @@ func intgTestsReconcileDelete() {
 				JustBeforeEach(func() {
 					provider.Lock()
 					provider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
-						return fmt.Errorf("failed to get VirtualMachine"+vsphere.VirtualMachineNotFoundErrorf, vm.Name)
+						return vcenter.ErrVMNotFound
 					}
 					provider.Unlock()
 				})
@@ -262,26 +269,12 @@ func intgTestsReconcileDelete() {
 				currentSnapshot       *vmopv1common.LocalObjectRef
 				now                   metav1.Time
 			)
-			BeforeEach(func() {
-				//        L1
-				//         |
-				//        L2
-				//       /   \
-				//   L3-n1    L3-n2
-				// Create the object here so that it can be customized in each BeforeEach
-				vm = builder.DummyBasicVirtualMachine("dummy-vm", "placeholder-namespace")
-				vmSnapshotL1 = createVMSnapshot("snap-l1", vm)
-				vmSnapshotL2 = createVMSnapshot("snap-l2", vm)
-				vmSnapshotL3Node1 = createVMSnapshot("snap-l3-node1", vm)
-				vmSnapshotL3Node2 = createVMSnapshot("snap-l3-node2", vm)
-				now = metav1.Now()
-			})
 
-			updateVMSnapshotCondition := func(ctx *builder.IntegrationTestContextForVCSim, vmSnapshot *vmopv1.VirtualMachineSnapshot, conditionType string) {
+			markVMSnapshotReady := func(ctx *builder.IntegrationTestContextForVCSim, vmSnapshot *vmopv1.VirtualMachineSnapshot) {
 				objKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
 				Expect(ctx.Client.Get(ctx, objKey, vmSnapshot)).To(Succeed())
 				patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
-				conditions.MarkTrue(vmSnapshot, conditionType)
+				conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 				Expect(ctx.Client.Status().Patch(ctx, vmSnapshot, patch)).To(Succeed())
 				Expect(ctx.Client.Get(ctx, objKey, vmSnapshot)).To(Succeed())
 			}
@@ -293,6 +286,21 @@ func intgTestsReconcileDelete() {
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: snapshot.Name, Namespace: snapshot.Namespace}, snapshot)).To(Succeed())
 			}
 
+			BeforeEach(func() {
+				//        L1
+				//         |
+				//        L2
+				//       /   \
+				//   L3-n1    L3-n2
+				// Create the object here so that it can be customized in each BeforeEach
+				vm = builder.DummyBasicVirtualMachine("dummy-vm", "placeholder-namespace")
+				vmSnapshotL1 = builder.DummyVirtualMachineSnapshot("snap-l1", vcSimCtx.NSInfo.Namespace, vm.Name)
+				vmSnapshotL2 = builder.DummyVirtualMachineSnapshot("snap-l2", vcSimCtx.NSInfo.Namespace, vm.Name)
+				vmSnapshotL3Node1 = builder.DummyVirtualMachineSnapshot("snap-l3-node1", vcSimCtx.NSInfo.Namespace, vm.Name)
+				vmSnapshotL3Node2 = builder.DummyVirtualMachineSnapshot("snap-l3-node2", vcSimCtx.NSInfo.Namespace, vm.Name)
+				now = metav1.Now()
+			})
+
 			JustBeforeEach(func() {
 				// Update the namespace to the one in current context
 				vm.Namespace, vmSnapshotL1.Namespace, vmSnapshotL2.Namespace,
@@ -302,7 +310,7 @@ func intgTestsReconcileDelete() {
 
 				Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
 				// Update the current snapshot after creation. Otherwise will run into "failed to get informer from cache"
-				vm.Status.UniqueID = "unique-vm-id"
+				vm.Status.UniqueID = uniqueVMID
 				Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
 
 				// // Create the object here so that it can be customized in each BeforeEach
@@ -311,10 +319,10 @@ func intgTestsReconcileDelete() {
 				Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL3Node1.DeepCopy())).To(Succeed())
 				Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL3Node2.DeepCopy())).To(Succeed())
 				// Mark the snapshot as ready so that they won't update CurrentSnapshot
-				updateVMSnapshotCondition(vcSimCtx, vmSnapshotL1, vmopv1.VirtualMachineSnapshotReadyCondition)
-				updateVMSnapshotCondition(vcSimCtx, vmSnapshotL2, vmopv1.VirtualMachineSnapshotReadyCondition)
-				updateVMSnapshotCondition(vcSimCtx, vmSnapshotL3Node1, vmopv1.VirtualMachineSnapshotReadyCondition)
-				updateVMSnapshotCondition(vcSimCtx, vmSnapshotL3Node2, vmopv1.VirtualMachineSnapshotReadyCondition)
+				markVMSnapshotReady(vcSimCtx, vmSnapshotL1)
+				markVMSnapshotReady(vcSimCtx, vmSnapshotL2)
+				markVMSnapshotReady(vcSimCtx, vmSnapshotL3Node1)
+				markVMSnapshotReady(vcSimCtx, vmSnapshotL3Node2)
 				// Fetch newest vmSnapshotL1 and vmSnapshotL2 to update children
 				addSnapshotToChildren(vcSimCtx, vmSnapshotL1, vmSnapshotL2)
 				addSnapshotToChildren(vcSimCtx, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)

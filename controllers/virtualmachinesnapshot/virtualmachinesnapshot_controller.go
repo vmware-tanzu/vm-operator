@@ -21,7 +21,8 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -201,12 +202,13 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 
 		ctx.VM = vm
 		if err := r.deleteSnapshotFromVSphere(ctx); err != nil {
-			if strings.Contains(err.Error(), fmt.Sprintf(vsphere.VirtualMachineNotFoundErrorf, vm.Name)) {
+			if errors.Is(err, vcenter.ErrVMNotFound) {
 				ctx.Logger.Info("VirtualMachine not found in VC, assuming the VM is deleted, remove finalizer")
 				controllerutil.RemoveFinalizer(snapshot, Finalizer)
 				return nil
+			} else if !errors.Is(err, virtualmachine.ErrVMSnapshotNotFound) {
+				return err
 			}
-			return err
 		}
 		parent, err := r.updateParentSnapshot(ctx)
 		if err != nil {

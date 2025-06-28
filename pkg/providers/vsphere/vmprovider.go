@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
 	vccreds "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/credentials"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -53,9 +54,6 @@ const (
 
 	// taskHistoryCollectorPageSize represents the max count to read from task manager in one iteration.
 	taskHistoryCollectorPageSize = 10
-
-	// error message for VirtualMachine not found on VC
-	VirtualMachineNotFoundErrorf = "VirtualMachine %q was not found on VC"
 )
 
 var log = logf.Log.WithName(VsphereVMProviderName)
@@ -391,7 +389,7 @@ func (vs *vSphereVMProvider) getVM(
 	}
 
 	if vcVM == nil && notFoundReturnErr {
-		return nil, fmt.Errorf(VirtualMachineNotFoundErrorf, vmCtx.VM.Name)
+		return nil, fmt.Errorf("VirtualMachine %q was not found on VC: %w", vmCtx.VM.Name, vcenter.ErrVMNotFound)
 	}
 
 	return vcVM, nil
@@ -542,7 +540,7 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 		VM:      vm,
 	}
 
-	client, err := vs.getVcClient(vmCtx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -552,23 +550,11 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 		return fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
 	}
 
-	t, err := vcVM.RemoveSnapshot(vmCtx, snapshot.Name, removeChildren, consolidate)
-	if err != nil {
-		return err
-	}
-
-	// Wait for task to finish
-	taskInfo, err := t.WaitForResult(vmCtx)
-	if err != nil {
-		vmCtx.Logger.V(5).Error(err, "delete snapshot task failed", "taskInfo", taskInfo)
-		return err
-	}
-
-	_, ok := taskInfo.Result.(vimtypes.ManagedObjectReference)
-	if !ok {
-		return fmt.Errorf("delete snapshot VM task failed: %w", err)
-	}
-
-	return nil
-
+	return virtualmachine.DeleteSnapshot(virtualmachine.SnapshotArgs{
+		VMSnapshot:     *snapshot,
+		VcVM:           vcVM,
+		VMCtx:          vmCtx,
+		RemoveChildren: removeChildren,
+		Consolidate:    consolidate,
+	})
 }

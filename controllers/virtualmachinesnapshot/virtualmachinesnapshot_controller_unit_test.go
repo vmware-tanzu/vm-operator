@@ -7,7 +7,6 @@ package virtualmachinesnapshot_test
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -21,7 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -49,13 +48,14 @@ func unitTestsReconcile() {
 
 	const (
 		dummyVMUUID = "unique-vm-id"
+		namespace   = "test-namespace"
 	)
 
 	BeforeEach(func() {
 		initObjects = nil
-		vm = builder.DummyBasicVirtualMachine("dummy-vm", "test-namespace")
+		vm = builder.DummyBasicVirtualMachine("dummy-vm", namespace)
 
-		vmSnapshot = createVMSnapshot("snap-1", vm)
+		vmSnapshot = builder.DummyVirtualMachineSnapshot("snap-1", namespace, vm.Name)
 	})
 
 	JustBeforeEach(func() {
@@ -211,7 +211,7 @@ func unitTestsReconcile() {
 				JustBeforeEach(func() {
 					fakeVMProvider.Lock()
 					fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
-						return fmt.Errorf("failed to get VirtualMachine"+vsphere.VirtualMachineNotFoundErrorf, vm.Name)
+						return vcenter.ErrVMNotFound
 					}
 					fakeVMProvider.Unlock()
 				})
@@ -262,10 +262,10 @@ func unitTestsReconcile() {
 				//        L2
 				//       /   \
 				//   L3-n1    L3-n2
-				vmSnapshotL1 = createVMSnapshot("snap-l1", vm)
-				vmSnapshotL2 = createVMSnapshot("snap-l2", vm)
-				vmSnapshotL3Node1 = createVMSnapshot("snap-l3-node1", vm)
-				vmSnapshotL3Node2 = createVMSnapshot("snap-l3-node2", vm)
+				vmSnapshotL1 = builder.DummyVirtualMachineSnapshot("snap-l1", namespace, vm.Name)
+				vmSnapshotL2 = builder.DummyVirtualMachineSnapshot("snap-l2", namespace, vm.Name)
+				vmSnapshotL3Node1 = builder.DummyVirtualMachineSnapshot("snap-l3-node1", namespace, vm.Name)
+				vmSnapshotL3Node2 = builder.DummyVirtualMachineSnapshot("snap-l3-node2", namespace, vm.Name)
 
 				addSnapshotToChildren(vmSnapshotL1, vmSnapshotL2)
 				addSnapshotToChildren(vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
@@ -374,27 +374,6 @@ func unitTestsReconcile() {
 			})
 		})
 	})
-}
-
-func createVMSnapshot(name string, vm *vmopv1.VirtualMachine) *vmopv1.VirtualMachineSnapshot {
-	return &vmopv1.VirtualMachineSnapshot{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "vmoperator.vmware.com/v1alpha4",
-			Kind:       "VirtualMachineSnapshot",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:       name,
-			Namespace:  vm.Namespace,
-			Finalizers: []string{virtualmachinesnapshot.Finalizer},
-		},
-		Spec: vmopv1.VirtualMachineSnapshotSpec{
-			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: vm.APIVersion,
-				Kind:       vm.Kind,
-				Name:       vm.Name,
-			},
-		},
-	}
 }
 
 func vmSnapshotCRToLocalObjectRef(snapshot *vmopv1.VirtualMachineSnapshot) *vmopv1common.LocalObjectRef {

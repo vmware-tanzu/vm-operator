@@ -18,7 +18,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
-var errVMNotFound = errors.New("vm not found")
+var ErrVMNotFound = errors.New("vm not found")
 
 // GetVirtualMachine gets the VM from VC, either by the Instance UUID, BIOS UUID, or MoID.
 func GetVirtualMachine(
@@ -30,7 +30,7 @@ func GetVirtualMachine(
 	if id := vmCtx.VM.UID; id != "" {
 		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, string(id), true); err == nil {
 			return vm, nil
-		} else if !errors.Is(err, errVMNotFound) {
+		} else if !errors.Is(err, ErrVMNotFound) {
 			return nil, err
 		}
 	}
@@ -39,7 +39,7 @@ func GetVirtualMachine(
 	if id := vmCtx.VM.Spec.BiosUUID; id != "" {
 		if vm, err := findVMByUUID(vmCtx, vimClient, datacenter, id, false); err == nil {
 			return vm, nil
-		} else if !errors.Is(err, errVMNotFound) {
+		} else if !errors.Is(err, ErrVMNotFound) {
 			return nil, err
 		}
 	}
@@ -48,7 +48,7 @@ func GetVirtualMachine(
 	if id := vmCtx.VM.Status.UniqueID; id != "" {
 		if vm, err := findVMByMoID(vmCtx, vimClient, id); err == nil {
 			return vm, nil
-		} else if !errors.Is(err, errVMNotFound) {
+		} else if !errors.Is(err, ErrVMNotFound) {
 			return nil, err
 		}
 	}
@@ -70,7 +70,7 @@ func findVMByMoID(
 	if err := property.DefaultCollector(vimClient).RetrieveOne(vmCtx, moRef, []string{"name"}, &vm); err != nil {
 		var f *vimtypes.ManagedObjectNotFound
 		if _, ok := fault.As(err, &f); ok {
-			return nil, errVMNotFound
+			return nil, ErrVMNotFound
 		}
 		return nil, fmt.Errorf("error retreiving VM via MoID: %w", err)
 	}
@@ -90,7 +90,7 @@ func findVMByUUID(
 	if err != nil {
 		return nil, fmt.Errorf("error finding VM by UUID %q: %w", uuid, err)
 	} else if ref == nil {
-		return nil, errVMNotFound
+		return nil, ErrVMNotFound
 	}
 
 	vm, ok := ref.(*object.VirtualMachine)

@@ -3928,7 +3928,7 @@ func vmTests() {
 			)
 
 			BeforeEach(func() {
-				vmSnapshot = builder.DummyVirtualMachineSnapshot("", "test-snap", vm.Name)
+				vmSnapshot = builder.DummyVirtualMachineSnapshot("test-snap", "", vm.Name)
 			})
 
 			JustBeforeEach(func() {

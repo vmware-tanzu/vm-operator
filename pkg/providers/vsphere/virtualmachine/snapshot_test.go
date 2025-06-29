@@ -30,6 +30,7 @@ func snapShotTests() {
 		vmCtx      pkgctx.VirtualMachineContext
 		vmSnapshot vmopv1.VirtualMachineSnapshot
 		testConfig builder.VCSimTestConfig
+		vm         *vmopv1.VirtualMachine
 		err        error
 	)
 
@@ -42,27 +43,15 @@ func snapShotTests() {
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).NotTo(HaveOccurred())
 
-		vm := builder.DummyVirtualMachine()
+		vm = builder.DummyVirtualMachine()
 		timeout, err := time.ParseDuration("1h35m")
 		Expect(err).To(BeNil())
-		vmSnapshot = vmopv1.VirtualMachineSnapshot{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "snap-1",
-				Namespace: vm.Namespace,
-			},
-			Spec: vmopv1.VirtualMachineSnapshotSpec{
-				VMRef: &vmopv1common.LocalObjectRef{
-					APIVersion: vm.APIVersion,
-					Kind:       vm.Kind,
-					Name:       vm.Name,
-				},
-				Quiesce: &vmopv1.QuiesceSpec{
-					Timeout: &metav1.Duration{Duration: timeout},
-				},
-				Memory:      true,
-				Description: "This is a dummy-snap",
-			},
+		vmSnapshot = *builder.DummyVirtualMachineSnapshot("snap-1", vm.Namespace, vm.Name)
+		vmSnapshot.Spec.Quiesce = &vmopv1.QuiesceSpec{
+			Timeout: &metav1.Duration{Duration: timeout},
 		}
+		vmSnapshot.Spec.Memory = true
+		vmSnapshot.Spec.Description = "This is a dummy-snap"
 
 		vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
 			APIVersion: vmSnapshot.APIVersion,
@@ -77,15 +66,14 @@ func snapShotTests() {
 			VM:      vm,
 		}
 
-		err = vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)
-		Expect(err).NotTo(HaveOccurred())
-
+		Expect(vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)).To(Succeed())
 	})
 
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
 		vcVM = nil
+		vm = nil
 	})
 
 	Context("SnapshotVirtualMachine", func() {
@@ -174,6 +162,97 @@ func snapShotTests() {
 			Expect(moVM.Snapshot.CurrentSnapshot.Value).To(Equal(snapMo.Value))
 			Expect(moVM.Snapshot.RootSnapshotList).To(HaveLen(1))
 			Expect(moVM.Snapshot.RootSnapshotList[0].Name).To(Equal("snap-1"))
+		})
+	})
+
+	Context("DeleteSnapshot", func() {
+		JustBeforeEach(func() {
+			args := virtualmachine.SnapshotArgs{
+				VMCtx:      vmCtx,
+				VMSnapshot: vmSnapshot,
+				VcVM:       vcVM,
+			}
+			snapMo, err := virtualmachine.CreateSnapshot(args)
+			Expect(err).To(BeNil())
+			Expect(snapMo).ToNot(BeNil())
+			moVM := mo.VirtualMachine{}
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
+			Expect(moVM.Snapshot).ToNot(BeNil())
+
+		})
+
+		It("succeeds", func() {
+			deleteArgs := virtualmachine.SnapshotArgs{
+				VMCtx:      vmCtx,
+				VMSnapshot: vmSnapshot,
+				VcVM:       vcVM,
+			}
+
+			Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(Succeed())
+			moVM := mo.VirtualMachine{}
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
+			Expect(moVM.Snapshot).To(BeNil())
+		})
+
+		When("no snapshot for the VM", func() {
+			JustBeforeEach(func() {
+				deleteArgs := virtualmachine.SnapshotArgs{
+					VMCtx:      vmCtx,
+					VMSnapshot: vmSnapshot,
+					VcVM:       vcVM,
+				}
+				Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(Succeed())
+			})
+
+			It("returns error", func() {
+				deleteArgs := virtualmachine.SnapshotArgs{
+					VMCtx:      vmCtx,
+					VMSnapshot: vmSnapshot,
+					VcVM:       vcVM,
+				}
+				Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(MatchError(virtualmachine.ErrVMSnapshotNotFound))
+			})
+		})
+
+		When("snapshot not found", func() {
+			JustBeforeEach(func() {
+				By("create a new snapshot on the VM")
+				vmSnapshot2 := *builder.DummyVirtualMachineSnapshot("snap-2", vm.Namespace, vm.Name)
+				args := virtualmachine.SnapshotArgs{
+					VMCtx:      vmCtx,
+					VMSnapshot: vmSnapshot2,
+					VcVM:       vcVM,
+				}
+				snapMo, err := virtualmachine.CreateSnapshot(args)
+				Expect(err).To(BeNil())
+				Expect(snapMo).ToNot(BeNil())
+				moVM := mo.VirtualMachine{}
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
+				Expect(moVM.Snapshot).ToNot(BeNil())
+				Expect(moVM.Snapshot.RootSnapshotList).To(HaveLen(1))
+				Expect(moVM.Snapshot.RootSnapshotList[0].ChildSnapshotList).To(HaveLen(1))
+
+				vmSnapshot = *builder.DummyVirtualMachineSnapshot("snap-1", vm.Namespace, vm.Name)
+				deleteArgs := virtualmachine.SnapshotArgs{
+					VMCtx:      vmCtx,
+					VMSnapshot: vmSnapshot,
+					VcVM:       vcVM,
+				}
+				Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(Succeed())
+				moVM = mo.VirtualMachine{}
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
+				Expect(moVM.Snapshot).NotTo(BeNil())
+			})
+
+			It("returns error", func() {
+				vmSnapshot = *builder.DummyVirtualMachineSnapshot("snap-1", vm.Namespace, vm.Name)
+				deleteArgs := virtualmachine.SnapshotArgs{
+					VMCtx:      vmCtx,
+					VMSnapshot: vmSnapshot,
+					VcVM:       vcVM,
+				}
+				Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(MatchError(virtualmachine.ErrVMSnapshotNotFound))
+			})
 		})
 	})
 }

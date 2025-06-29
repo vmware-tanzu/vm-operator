@@ -63,4 +63,12 @@ type VirtualMachineProviderInterface interface {
 
 	// VSphereClient returns the provider's vSphere client.
 	VSphereClient(context.Context) (*client.Client, error)
+
+	// DeleteSnapshot deletes a snapshot from a virtual machine.
+	DeleteSnapshot(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot,
+		vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) error
+
+	// GetParentSnapshot returns the parent snapshot of a snapshot.
+	GetParentSnapshot(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot,
+		vm *vmopv1.VirtualMachine) (string, error)
 }

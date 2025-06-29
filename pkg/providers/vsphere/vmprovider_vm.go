@@ -1147,6 +1147,12 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 		return err
 	}
 
+	// If it's being deleted, skip snapshot creation.
+	if !vmSnapshot.DeletionTimestamp.IsZero() {
+		vmCtx.Logger.Info("Skipping snapshot creation because the VirtualMachineSnapshot is being deleted")
+		return nil
+	}
+
 	snapArgs := virtualmachine.SnapshotArgs{
 		VMCtx:      vmCtx,
 		VcVM:       vcVM,

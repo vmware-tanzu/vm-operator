@@ -529,14 +529,14 @@ func (vs *vSphereVMProvider) VSphereClient(
 
 func (vs *vSphereVMProvider) DeleteSnapshot(
 	ctx context.Context,
-	snapshot *vmopv1.VirtualMachineSnapshot,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot,
 	vm *vmopv1.VirtualMachine,
 	removeChildren bool,
 	consolidate *bool) error {
 
 	vmCtx := pkgctx.VirtualMachineContext{
 		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteSnapshot")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName(), "snapshotName", snapshot.Name),
+		Logger:  log.WithValues("vmName", vm.NamespacedName(), "snapshotName", vmSnapshot.Name),
 		VM:      vm,
 	}
 
@@ -551,10 +551,45 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 	}
 
 	return virtualmachine.DeleteSnapshot(virtualmachine.SnapshotArgs{
-		VMSnapshot:     *snapshot,
+		VMSnapshot:     *vmSnapshot,
 		VcVM:           vcVM,
 		VMCtx:          vmCtx,
 		RemoveChildren: removeChildren,
 		Consolidate:    consolidate,
 	})
+}
+
+func (vs *vSphereVMProvider) GetParentSnapshot(
+	ctx context.Context,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot,
+	vm *vmopv1.VirtualMachine) (string, error) {
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteSnapshot")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName(), "snapshotName", vmSnapshot.Name),
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = vs.getVM(vmCtx, client, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
+	}
+
+	// TODO:
+	// Implement the logic in govmomi api
+	// parent, err := vcVM.FindParentSnapshot(virtualmachine.SnapshotArgs{
+	// 	VMSnapshot: *vmSnapshot,
+	// 	VcVM:       vcVM,
+	// 	VMCtx:      vmCtx,
+	// })
+	// if err != nil {
+	// 	return "", fmt.Errorf("failed to find parent snapshot: %w", err)
+	// }
+
+	return "", nil
 }

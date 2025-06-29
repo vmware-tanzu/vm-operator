@@ -21,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -182,13 +183,13 @@ func unitTestsReconcile() {
 
 	Context("ReconcileDelete", func() {
 		var (
-			err                   error
-			now                   metav1.Time
-			snapshotNamespacedKey types.NamespacedName
+			err                     error
+			now                     metav1.Time
+			vmSnapshotNamespacedKey types.NamespacedName
 		)
 
 		BeforeEach(func() {
-			snapshotNamespacedKey = types.NamespacedName{
+			vmSnapshotNamespacedKey = types.NamespacedName{
 				Namespace: vmSnapshot.Namespace,
 				Name:      vmSnapshot.Name,
 			}
@@ -203,36 +204,73 @@ func unitTestsReconcile() {
 			})
 
 			It("returns success", func() {
-				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: snapshotNamespacedKey})
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
-			When("VC returns VirtualMachineNotFound error", func() {
-				JustBeforeEach(func() {
-					fakeVMProvider.Lock()
-					fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
-						return vcenter.ErrVMNotFound
-					}
-					fakeVMProvider.Unlock()
+			When("Calling DeleteSnapshot to VC", func() {
+				When("VC returns VirtualMachineNotFound error", func() {
+					JustBeforeEach(func() {
+						fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+							return vcenter.ErrVMNotFound
+						}
+					})
+					It("returns success", func() {
+						_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
+						Expect(err).ToNot(HaveOccurred())
+					})
 				})
-				It("returns success", func() {
-					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: snapshotNamespacedKey})
-					Expect(err).ToNot(HaveOccurred())
+
+				When("VC returns other error", func() {
+					JustBeforeEach(func() {
+						fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+							return errors.New("fubar")
+						}
+					})
+					It("returns error", func() {
+						_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("fubar"))
+					})
 				})
 			})
 
-			When("VC returns other error", func() {
-				JustBeforeEach(func() {
-					fakeVMProvider.Lock()
-					fakeVMProvider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
-						return errors.New("fubar")
-					}
-					fakeVMProvider.Unlock()
+			When("Calling GetParentSnapshot to VC", func() {
+				When("VC returns parent snapshot not found error", func() {
+					JustBeforeEach(func() {
+						fakeVMProvider.GetParentSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine) (string, error) {
+							return "", virtualmachine.ErrVMSnapshotNotFound
+						}
+					})
+					It("returns success", func() {
+						_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
+						Expect(err).ToNot(HaveOccurred())
+					})
 				})
-				It("returns error", func() {
-					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: snapshotNamespacedKey})
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("fubar"))
+
+				When("VC returns vm not found error", func() {
+					JustBeforeEach(func() {
+						fakeVMProvider.GetParentSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine) (string, error) {
+							return "", vcenter.ErrVMNotFound
+						}
+					})
+					It("returns success", func() {
+						_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
+						Expect(err).ToNot(HaveOccurred())
+					})
+				})
+
+				When("VC returns other error", func() {
+					JustBeforeEach(func() {
+						fakeVMProvider.GetParentSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine) (string, error) {
+							return "", errors.New("fubar")
+						}
+					})
+					It("returns error", func() {
+						_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("fubar"))
+					})
 				})
 			})
 
@@ -241,7 +279,7 @@ func unitTestsReconcile() {
 					initObjects = initObjects[:len(initObjects)-1]
 				})
 				It("returns success", func() {
-					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: snapshotNamespacedKey})
+					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
 					Expect(err).ToNot(HaveOccurred())
 				})
 			})
@@ -249,12 +287,12 @@ func unitTestsReconcile() {
 
 		When("Nested Snapshot, one of them is marked for deletion", func() {
 			var (
-				vmSnapshotL1        *vmopv1.VirtualMachineSnapshot
-				vmSnapshotL2        *vmopv1.VirtualMachineSnapshot
-				vmSnapshotL3Node1   *vmopv1.VirtualMachineSnapshot
-				vmSnapshotL3Node2   *vmopv1.VirtualMachineSnapshot
-				parent              *vmopv1.VirtualMachineSnapshot
-				snapshotToReconcile *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL1          *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL2          *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL3Node1     *vmopv1.VirtualMachineSnapshot
+				vmSnapshotL3Node2     *vmopv1.VirtualMachineSnapshot
+				parent                *vmopv1.VirtualMachineSnapshot
+				vmSnapshotToReconcile *vmopv1.VirtualMachineSnapshot
 			)
 			BeforeEach(func() {
 				//        L1
@@ -279,8 +317,8 @@ func unitTestsReconcile() {
 				// constructing the new key since vmSnapshot is updated in each test
 				_, err = reconciler.Reconcile(ctx, reconcile.Request{
 					NamespacedName: types.NamespacedName{
-						Namespace: snapshotToReconcile.Namespace,
-						Name:      snapshotToReconcile.Name,
+						Namespace: vmSnapshotToReconcile.Namespace,
+						Name:      vmSnapshotToReconcile.Name,
 					}})
 				// get newest vm object
 				objKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
@@ -296,7 +334,7 @@ func unitTestsReconcile() {
 					vmSnapshotL2.DeletionTimestamp = &now
 					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL2)
 					// assign before the reconcile
-					snapshotToReconcile = vmSnapshotL2
+					vmSnapshotToReconcile = vmSnapshotL2
 					parent = vmSnapshotL1
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 				})
@@ -306,6 +344,7 @@ func unitTestsReconcile() {
 						Expect(vm.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRef(vmSnapshotL1)))
 						By("check parent snapshot's children should be updated")
 						Expect(parent).To(Not(BeNil()))
+						Expect(parent.Status.Children).To(HaveLen(2))
 						Expect(parent.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)))
 						Expect(parent.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node2)))
 						Expect(parent.Status.Children).ToNot(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL2)))
@@ -325,7 +364,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vmSnapshotL1.DeletionTimestamp = &now
 					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL1)
-					snapshotToReconcile = vmSnapshotL1
+					vmSnapshotToReconcile = vmSnapshotL1
 					parent = nil
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 				})
@@ -349,7 +388,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vmSnapshotL3Node1.DeletionTimestamp = &now
 					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)
-					snapshotToReconcile = vmSnapshotL3Node1
+					vmSnapshotToReconcile = vmSnapshotL3Node1
 					parent = vmSnapshotL2
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 				})
@@ -359,6 +398,7 @@ func unitTestsReconcile() {
 						Expect(vm.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRef(vmSnapshotL2)))
 						By("check parent snapshot's children should be updated")
 						Expect(parent).To(Not(BeNil()))
+						Expect(parent.Status.Children).To(HaveLen(1))
 						Expect(parent.Status.Children).ToNot(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)))
 					})
 				})
@@ -376,16 +416,16 @@ func unitTestsReconcile() {
 	})
 }
 
-func vmSnapshotCRToLocalObjectRef(snapshot *vmopv1.VirtualMachineSnapshot) *vmopv1common.LocalObjectRef {
+func vmSnapshotCRToLocalObjectRef(vmSnapshot *vmopv1.VirtualMachineSnapshot) *vmopv1common.LocalObjectRef {
 	return &vmopv1common.LocalObjectRef{
-		APIVersion: snapshot.APIVersion,
-		Kind:       snapshot.Kind,
-		Name:       snapshot.Name,
+		APIVersion: vmSnapshot.APIVersion,
+		Kind:       vmSnapshot.Kind,
+		Name:       vmSnapshot.Name,
 	}
 }
 
-func addSnapshotToChildren(snapshot *vmopv1.VirtualMachineSnapshot, children ...*vmopv1.VirtualMachineSnapshot) {
+func addSnapshotToChildren(vmSnapshot *vmopv1.VirtualMachineSnapshot, children ...*vmopv1.VirtualMachineSnapshot) {
 	for _, child := range children {
-		snapshot.Status.Children = append(snapshot.Status.Children, *vmSnapshotCRToLocalObjectRef(child))
+		vmSnapshot.Status.Children = append(vmSnapshot.Status.Children, *vmSnapshotCRToLocalObjectRef(child))
 	}
 }

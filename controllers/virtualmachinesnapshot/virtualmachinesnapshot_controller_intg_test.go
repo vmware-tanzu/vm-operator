@@ -28,6 +28,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -196,47 +197,96 @@ func intgTestsReconcileDelete() {
 					vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
 					g.Expect(vmObj).ToNot(BeNil())
 					g.Expect(vmObj.Spec.CurrentSnapshot).To(BeNil())
-					snapshot := getVirtualMachineSnapshot(vcSimCtx, vmObjKey)
-					g.Expect(snapshot).To(BeNil())
+					vmSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmObjKey)
+					g.Expect(vmSnapshot).To(BeNil())
 				}).Should(Succeed(), "waiting current snapshot to be deleted")
 			})
 
-			When("VC returns VirtualMachineNotFound error", func() {
-				JustBeforeEach(func() {
-					provider.Lock()
-					provider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
-						return vcenter.ErrVMNotFound
-					}
-					provider.Unlock()
+			When("Calling DeleteSnapshot to VC", func() {
+				When("VC returns VirtualMachineNotFound error", func() {
+					JustBeforeEach(func() {
+						provider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+							return vcenter.ErrVMNotFound
+						}
+					})
+					It("snapshot is deleted", func() {
+						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+						Eventually(func(g Gomega) {
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
+						}).Should(Succeed())
+					})
 				})
-				It("snapshot is deleted", func() {
-					vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
-					Eventually(func(g Gomega) {
-						snapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
-						g.Expect(snapshot).To(Not(BeNil()))
-					}).Should(Succeed())
+				When("there is error from VC when finding VM other than VirtualMachineNotFound", func() {
+					JustBeforeEach(func() {
+						provider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
+							return errors.New("fubar")
+						}
+					})
+					It("snapshot is not deleted and VM is not updated", func() {
+						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+						Consistently(func(g Gomega) {
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
+						}).Should(Succeed())
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						Consistently(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(*vmObj.Spec.CurrentSnapshot).To(Equal(*vmSnapshotCRToLocalObjectRef(vmSnapshot)))
+						}).Should(Succeed())
+					})
 				})
 			})
-			When("there is error from VC when finding VM other than VirtualMachineNotFound", func() {
-				JustBeforeEach(func() {
-					provider.Lock()
-					provider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) error {
-						return errors.New("fubar")
-					}
-					provider.Unlock()
+			When("Calling GetParentSnapshot to VC", func() {
+				When("VC returns parent snapshot not found error", func() {
+					JustBeforeEach(func() {
+						provider.GetParentSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine) (string, error) {
+							return "", virtualmachine.ErrVMSnapshotNotFound
+						}
+					})
+					It("snapshot is deleted", func() {
+						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+						Eventually(func(g Gomega) {
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
+						}).Should(Succeed())
+					})
 				})
-				It("snapshot is not deleted and VM is not updated", func() {
-					vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
-					Consistently(func(g Gomega) {
-						snapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
-						g.Expect(snapshot).To(Not(BeNil()))
-					}).Should(Succeed())
-					vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
-					Consistently(func(g Gomega) {
-						vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
-						g.Expect(vmObj).ToNot(BeNil())
-						g.Expect(*vmObj.Spec.CurrentSnapshot).To(Equal(*vmSnapshotCRToLocalObjectRef(vmSnapshot)))
-					}).Should(Succeed())
+
+				When("VC returns VirtualMachineNotFound error", func() {
+					JustBeforeEach(func() {
+						provider.GetParentSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine) (string, error) {
+							return "", vcenter.ErrVMNotFound
+						}
+					})
+					It("snapshot is deleted", func() {
+						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+						Eventually(func(g Gomega) {
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
+						}).Should(Succeed())
+					})
+				})
+				When("VC returns other error", func() {
+					JustBeforeEach(func() {
+						provider.GetParentSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine) (string, error) {
+							return "", errors.New("fubar")
+						}
+					})
+					It("snapshot is not deleted and VM is not updated", func() {
+						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+						Consistently(func(g Gomega) {
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
+						}).Should(Succeed())
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						Consistently(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(*vmObj.Spec.CurrentSnapshot).To(Equal(*vmSnapshotCRToLocalObjectRef(vmSnapshot)))
+						}).Should(Succeed())
+					})
 				})
 			})
 			When("VirtualMachine CR is not present", func() {
@@ -251,8 +301,8 @@ func intgTestsReconcileDelete() {
 				It("snapshot is deleted", func() {
 					vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
 					Eventually(func(g Gomega) {
-						snapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
-						g.Expect(snapshot).To(Not(BeNil()))
+						tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+						g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
 					}).Should(Succeed())
 				})
 			})
@@ -278,12 +328,12 @@ func intgTestsReconcileDelete() {
 				Expect(ctx.Client.Status().Patch(ctx, vmSnapshot, patch)).To(Succeed())
 				Expect(ctx.Client.Get(ctx, objKey, vmSnapshot)).To(Succeed())
 			}
-			addSnapshotToChildren := func(ctx *builder.IntegrationTestContextForVCSim, snapshot *vmopv1.VirtualMachineSnapshot, children ...*vmopv1.VirtualMachineSnapshot) {
+			addSnapshotToChildren := func(ctx *builder.IntegrationTestContextForVCSim, vmSnapshot *vmopv1.VirtualMachineSnapshot, children ...*vmopv1.VirtualMachineSnapshot) {
 				for _, child := range children {
-					snapshot.Status.Children = append(snapshot.Status.Children, *vmSnapshotCRToLocalObjectRef(child))
+					vmSnapshot.Status.Children = append(vmSnapshot.Status.Children, *vmSnapshotCRToLocalObjectRef(child))
 				}
-				Expect(ctx.Client.Status().Update(ctx, snapshot)).To(Succeed())
-				Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: snapshot.Name, Namespace: snapshot.Namespace}, snapshot)).To(Succeed())
+				Expect(ctx.Client.Status().Update(ctx, vmSnapshot)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, vmSnapshot)).To(Succeed())
 			}
 
 			BeforeEach(func() {
@@ -479,9 +529,9 @@ func intgTestsReconcileDelete() {
 }
 
 func getVirtualMachineSnapshot(ctx *builder.IntegrationTestContextForVCSim, objKey types.NamespacedName) *vmopv1.VirtualMachineSnapshot {
-	snapshot := &vmopv1.VirtualMachineSnapshot{}
-	if err := ctx.Client.Get(ctx, objKey, snapshot); err != nil {
+	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
+	if err := ctx.Client.Get(ctx, objKey, vmSnapshot); err != nil {
 		return nil
 	}
-	return snapshot
+	return vmSnapshot
 }

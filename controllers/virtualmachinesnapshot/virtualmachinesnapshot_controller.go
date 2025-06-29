@@ -219,7 +219,7 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 			return err
 		}
 
-		if err := r.updateVMCurrentSnapshot(ctx, parent); err != nil {
+		if err := r.updateVMStatus(ctx, parent); err != nil {
 			return err
 		}
 
@@ -292,6 +292,17 @@ func (r *Reconciler) getParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext
 	return parentVMSnapshot, nil
 }
 
+func (r *Reconciler) updateVMStatus(ctx *pkgctx.VirtualMachineSnapshotContext, vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
+	if err := r.updateVMCurrentSnapshot(ctx, vmSnapshot); err != nil {
+		return err
+	}
+	if err := r.updateVMRootSnapshots(ctx, vmSnapshot); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (r *Reconciler) updateVMCurrentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext, vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
 	vm := ctx.VM
 	if vm.Spec.CurrentSnapshot != nil && vm.Spec.CurrentSnapshot.Name != ctx.VirtualMachineSnapshot.Name {
@@ -310,6 +321,23 @@ func (r *Reconciler) updateVMCurrentSnapshot(ctx *pkgctx.VirtualMachineSnapshotC
 		return fmt.Errorf("failed to patch VM %s with current snapshot: %w", vm.Name, err)
 	}
 
+	return nil
+}
+
+func (r *Reconciler) updateVMRootSnapshots(ctx *pkgctx.VirtualMachineSnapshotContext, vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
+	vm := ctx.VM
+	if vm.Status.RootSnapshots != nil && !slices.Contains(vm.Status.RootSnapshots, *vmSnapshotCRToLocalObjectRef(vmSnapshot)) {
+		ctx.Logger.Info("Deleted snapshot is not a root snapshot, skipping update")
+		return nil
+	}
+
+	vmPatch := client.MergeFrom(vm.DeepCopy())
+	vm.Status.RootSnapshots = slices.DeleteFunc(vm.Status.RootSnapshots, func(e vmopv1common.LocalObjectRef) bool {
+		return e.Name == vmSnapshot.Name
+	})
+	if err := r.Status().Patch(ctx, vm, vmPatch); err != nil {
+		return fmt.Errorf("failed to patch VM %s with root snapshots: %w", vm.Name, err)
+	}
 	return nil
 }
 

@@ -400,6 +400,7 @@ func unitTestsReconcile() {
 						Expect(parent).To(Not(BeNil()))
 						Expect(parent.Status.Children).To(HaveLen(1))
 						Expect(parent.Status.Children).ToNot(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)))
+						Expect(parent.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node2)))
 					})
 				})
 				When("it's not the current snapshot", func() {

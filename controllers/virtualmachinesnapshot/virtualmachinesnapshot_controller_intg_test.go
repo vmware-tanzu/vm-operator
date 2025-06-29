@@ -435,6 +435,7 @@ func intgTestsReconcileDelete() {
 						Eventually(func(g Gomega) {
 							g.Expect(vcSimCtx.Client.Get(ctx, parentSSObjKey, parent)).To(Succeed())
 							g.Expect(parent).To(Not(BeNil()))
+							g.Expect(parent.Status.Children).To(HaveLen(2))
 							g.Expect(parent.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)))
 							g.Expect(parent.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node2)))
 							g.Expect(parent.Status.Children).ToNot(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL2)))
@@ -506,7 +507,9 @@ func intgTestsReconcileDelete() {
 						Eventually(func(g Gomega) {
 							g.Expect(vcSimCtx.Client.Get(ctx, parentSSObjKey, parent)).To(Succeed())
 							g.Expect(parent).To(Not(BeNil()))
+							g.Expect(parent.Status.Children).To(HaveLen(1))
 							g.Expect(parent.Status.Children).ToNot(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node1)))
+							g.Expect(parent.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRef(vmSnapshotL3Node2)))
 						}).Should(Succeed())
 					})
 				})

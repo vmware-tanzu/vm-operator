@@ -949,21 +949,12 @@ func restore_v1alpha4_VirtualMachineNetworkSpec(
 		return
 	}
 
-	// In nextver we made the network interfaces immutable. In v1a1 one could, in theory, add, remove,
-	// reorder network interfaces, but it hardly would have "worked". The exceedingly common case is
-	// just one interface and the list will never change post-create. Here, we overlay the saved
-	// source on to the destination, and restore the network Name and Kind. If those were changed in
-	// v1a1, then we expect the VM validation webhook to fail.
-	// For truly mutable network interfaces, we'll have to get a little creative on how to line the
-	// src and dst network interfaces together in the face of changes.
-	for i := range dstNetwork.Interfaces {
-		if i >= len(srcNetwork.Interfaces) {
-			break
-		}
-		savedDstNetRef := dstNetwork.Interfaces[i].Network
-		dstNetwork.Interfaces[i] = srcNetwork.Interfaces[i]
-		dstNetwork.Interfaces[i].Network = savedDstNetRef
-	}
+	// Supporting network mutability in v1a1 is difficult because the network interfaces did not have
+	// a name to identify them. The only field we have to try to match interfaces is the network field.
+	// With v1a1 being deprecated, and during the time of v1a1 network interfaces were basically immutable
+	// - they could be changed but it really wouldn't have worked - just always restore the saved interfaces.
+	// Note that the VM mutation webhook will default the Interfaces[].Network field in both creates and updates.
+	dstNetwork.Interfaces = srcNetwork.Interfaces
 }
 
 func restore_v1alpha4_VirtualMachineReadinessProbeSpec(

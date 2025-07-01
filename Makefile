@@ -417,7 +417,7 @@ generate-external-manifests: $(CONTROLLER_GEN)
 generate-external-manifests: ## Generate manifests for the external types for testing
 	API_MOD_DIR=$(shell go mod download -json $(IMG_REGISTRY_OP_API_SLUG) | grep '"Dir":' | awk '{print $$2}' | tr -d '",') && \
 	$(CONTROLLER_GEN) \
-		paths=$${API_MOD_DIR}/api/v1alpha1/... \
+		paths={$${API_MOD_DIR}/api/v1alpha1/...,$${API_MOD_DIR}/api/v1alpha2/...} \
 		crd:crdVersions=v1 \
 		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
 		output:none

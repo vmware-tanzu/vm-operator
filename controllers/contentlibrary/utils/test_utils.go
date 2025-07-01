@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 )
 
 // ContentLibraryServiceTypeLabelKey is used to differentiate a TKG resource from a VM service resource.
@@ -79,6 +80,78 @@ func DummyContentLibraryItem(name, namespace string) *imgregv1a1.ContentLibraryI
 				{
 					Type:               imgregv1a1.ReadyCondition,
 					Status:             corev1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
+				},
+			},
+			SecurityCompliance: &[]bool{true}[0],
+		},
+	}
+
+	clItem.SetName(clItem.Name)
+	clItem.SetNamespace(clItem.Namespace)
+
+	return clItem
+}
+
+func DummyV1A2ClusterContentLibraryItem(name string) *imgregv1.ClusterContentLibraryItem {
+	cclItem := &imgregv1.ClusterContentLibraryItem{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       ClusterContentLibraryItemKind,
+			APIVersion: imgregv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				ContentLibraryServiceTypeLabelKey: "",
+				"dummy-not-service-label":         "",
+			},
+		},
+		Spec: imgregv1.ContentLibraryItemSpec{
+			ID:          "dummy-ccl-item-uuid",
+			LibraryName: "dummy-ccl-name",
+		},
+		Status: imgregv1.ContentLibraryItemStatus{
+			Type:           imgregv1.ContentLibraryItemTypeOvf,
+			Name:           "dummy-image-name",
+			ContentVersion: "dummy-content-version",
+			Conditions: []metav1.Condition{
+				{
+					Type:               imgregv1.ReadyCondition,
+					Status:             metav1.ConditionTrue,
+					Reason:             string(metav1.ConditionTrue),
+					LastTransitionTime: metav1.Now(),
+				},
+			},
+			SecurityCompliance: &[]bool{true}[0],
+		},
+	}
+
+	return cclItem
+}
+
+func DummyV1A2ContentLibraryItem(name, namespace string) *imgregv1.ContentLibraryItem {
+	clItem := &imgregv1.ContentLibraryItem{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       ContentLibraryItemKind,
+			APIVersion: imgregv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: imgregv1.ContentLibraryItemSpec{
+			ID:          "dummy-cl-item-uuid",
+			LibraryName: "cl-name",
+		},
+		Status: imgregv1.ContentLibraryItemStatus{
+			Type:           imgregv1.ContentLibraryItemTypeOvf,
+			Name:           "dummy-image-name",
+			ContentVersion: "dummy-content-version",
+			Conditions: []metav1.Condition{
+				{
+					Type:               imgregv1.ReadyCondition,
+					Status:             metav1.ConditionTrue,
+					Reason:             string(metav1.ConditionTrue),
 					LastTransitionTime: metav1.Now(),
 				},
 			},

@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 //go:generate go -C ../.. run ./pkg/gen/guestosid/guestosid.go v1alpha3 ./api/v1alpha3/zz_virtualmachine_guestosid_generated.go

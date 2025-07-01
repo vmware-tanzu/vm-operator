@@ -2,7 +2,7 @@
 // +build vmop_tools
 
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 // Package tools manages the version of tooling used to build this project.

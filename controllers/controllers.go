@@ -75,9 +75,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 	}
 
-	// TODO: guard with a capability
-	if err := virtualmachinesnapshot.AddToManager(ctx, mgr); err != nil {
-		return fmt.Errorf("failed to initialize VirtualMachineSnapshot controller: %w", err)
+	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
+		if err := virtualmachinesnapshot.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VirtualMachineSnapshot controller: %w", err)
+		}
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VMGroups {

@@ -21,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinereplicaset"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinewebconsolerequest"
 )
 
@@ -64,6 +65,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 	if pkgcfg.FromContext(ctx).Features.VMGroups {
 		if err := virtualmachinegroup.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineGroup webhooks: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
+		if err := virtualmachinesnapshot.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VirtualMachineSnapshot webhooks: %w", err)
 		}
 	}
 

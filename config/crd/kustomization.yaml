@@ -23,6 +23,7 @@ resources:
 - bases/vmoperator.vmware.com_virtualmachinereplicasets.yaml
 - bases/vmoperator.vmware.com_virtualmachinegroups.yaml
 - bases/vmoperator.vmware.com_virtualmachinesnapshots.yaml
+- bases/vmoperator.vmware.com_virtualmachinegrouppublishrequests.yaml
 
 patches:
 - path: patches/crd_preserveUnknownFields.yaml

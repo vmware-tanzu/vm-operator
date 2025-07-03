@@ -457,7 +457,7 @@ func vmSnapshotTests() {
 		Expect(vcVM).ToNot(BeNil())
 		vm = builder.DummyBasicVirtualMachine(dummySnapshot, nsInfo.Namespace)
 		vm.Status.UniqueID = vcVM.Reference().Value
-		vmSnapshot = builder.DummyVirtualMachineSnapshot(dummySnapshot, nsInfo.Namespace, vcVM.Name())
+		vmSnapshot = builder.DummyVirtualMachineSnapshot(nsInfo.Namespace, dummySnapshot, vcVM.Name())
 
 		By("Creating snapshot")
 		logger := testutil.GinkgoLogr(5)

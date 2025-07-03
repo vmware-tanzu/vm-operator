@@ -53,8 +53,7 @@ func unitTestsReconcile() {
 	BeforeEach(func() {
 		initObjects = nil
 		vm = builder.DummyBasicVirtualMachine("dummy-vm", namespace)
-
-		vmSnapshot = builder.DummyVirtualMachineSnapshot("snap-1", namespace, vm.Name)
+		vmSnapshot = builder.DummyVirtualMachineSnapshot(namespace, "snap-1", vm.Name)
 	})
 
 	JustBeforeEach(func() {
@@ -235,11 +234,26 @@ func unitTestsReconcile() {
 
 			When("VirtualMachine CR is not present", func() {
 				BeforeEach(func() {
-					initObjects = initObjects[:len(initObjects)-1]
+					// Remove vm from initObjects
+					initObjects = nil
+					initObjects = append(initObjects, vmSnapshot)
 				})
 				It("returns success", func() {
 					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
 					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+
+			When("VirtualMachineSnapshot VMRef is nil", func() {
+				BeforeEach(func() {
+					vmSnapshot.Spec.VMRef = nil
+					initObjects = nil
+					initObjects = append(initObjects, vmSnapshot, vm)
+				})
+				It("returns error", func() {
+					_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("VirtualMachineSnapshot VMRef is nil"))
 				})
 			})
 		})
@@ -259,10 +273,10 @@ func unitTestsReconcile() {
 				//        L2
 				//       /   \
 				//   L3-n1    L3-n2
-				vmSnapshotL1 = builder.DummyVirtualMachineSnapshot("snap-l1", namespace, vm.Name)
-				vmSnapshotL2 = builder.DummyVirtualMachineSnapshot("snap-l2", namespace, vm.Name)
-				vmSnapshotL3Node1 = builder.DummyVirtualMachineSnapshot("snap-l3-node1", namespace, vm.Name)
-				vmSnapshotL3Node2 = builder.DummyVirtualMachineSnapshot("snap-l3-node2", namespace, vm.Name)
+				vmSnapshotL1 = builder.DummyVirtualMachineSnapshot(namespace, "snap-l1", vm.Name)
+				vmSnapshotL2 = builder.DummyVirtualMachineSnapshot(namespace, "snap-l2", vm.Name)
+				vmSnapshotL3Node1 = builder.DummyVirtualMachineSnapshot(namespace, "snap-l3-node1", vm.Name)
+				vmSnapshotL3Node2 = builder.DummyVirtualMachineSnapshot(namespace, "snap-l3-node2", vm.Name)
 
 				addSnapshotToChildren(vmSnapshotL1, vmSnapshotL2)
 				addSnapshotToChildren(vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)

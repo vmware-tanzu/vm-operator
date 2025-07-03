@@ -46,7 +46,7 @@ func snapShotTests() {
 		vm = builder.DummyVirtualMachine()
 		timeout, err := time.ParseDuration("1h35m")
 		Expect(err).To(BeNil())
-		vmSnapshot = *builder.DummyVirtualMachineSnapshot("snap-1", vm.Namespace, vm.Name)
+		vmSnapshot = *builder.DummyVirtualMachineSnapshot(vm.Namespace, "snap-1", vm.Name)
 		vmSnapshot.Spec.Quiesce = &vmopv1.QuiesceSpec{
 			Timeout: &metav1.Duration{Duration: timeout},
 		}
@@ -217,7 +217,7 @@ func snapShotTests() {
 		When("snapshot not found", func() {
 			JustBeforeEach(func() {
 				By("create a new snapshot on the VM")
-				vmSnapshot2 := *builder.DummyVirtualMachineSnapshot("snap-2", vm.Namespace, vm.Name)
+				vmSnapshot2 := *builder.DummyVirtualMachineSnapshot(vm.Namespace, "snap-2", vm.Name)
 				args := virtualmachine.SnapshotArgs{
 					VMCtx:      vmCtx,
 					VMSnapshot: vmSnapshot2,
@@ -232,7 +232,7 @@ func snapShotTests() {
 				Expect(moVM.Snapshot.RootSnapshotList).To(HaveLen(1))
 				Expect(moVM.Snapshot.RootSnapshotList[0].ChildSnapshotList).To(HaveLen(1))
 
-				vmSnapshot = *builder.DummyVirtualMachineSnapshot("snap-1", vm.Namespace, vm.Name)
+				vmSnapshot = *builder.DummyVirtualMachineSnapshot(vm.Namespace, "snap-1", vm.Name)
 				deleteArgs := virtualmachine.SnapshotArgs{
 					VMCtx:      vmCtx,
 					VMSnapshot: vmSnapshot,
@@ -245,7 +245,7 @@ func snapShotTests() {
 			})
 
 			It("returns error", func() {
-				vmSnapshot = *builder.DummyVirtualMachineSnapshot("snap-1", vm.Namespace, vm.Name)
+				vmSnapshot = *builder.DummyVirtualMachineSnapshot(vm.Namespace, "snap-1", vm.Name)
 				deleteArgs := virtualmachine.SnapshotArgs{
 					VMCtx:      vmCtx,
 					VMSnapshot: vmSnapshot,

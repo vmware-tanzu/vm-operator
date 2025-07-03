@@ -547,7 +547,7 @@ func DummyVirtualMachineWebConsoleRequest(namespace, wcrName, vmName, pubKey str
 	}
 }
 
-func DummyVirtualMachineSnapshot(name, namespace, vmName string) *vmopv1.VirtualMachineSnapshot {
+func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.VirtualMachineSnapshot {
 	return &vmopv1.VirtualMachineSnapshot{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "VirtualMachineSnapshot",

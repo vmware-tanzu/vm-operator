@@ -30,7 +30,10 @@ const (
 	Finalizer = "vmoperator.vmware.com/virtualmachinesnapshot"
 )
 
-var errParentVMSnapshotNotFound = errors.New("parent snapshot not found")
+var (
+	errParentVMSnapshotNotFound = errors.New("parent snapshot not found")
+	errVMRefNil                 = errors.New("VirtualMachineSnapshot VMRef is nil")
+)
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
 // same name since Controller-Runtime has a global singleton registry to
@@ -152,6 +155,9 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 
 	vmSnapshot := ctx.VirtualMachineSnapshot
 	ctx.Logger.Info("Fetching VirtualMachine from snapshot object", "vmSnapshot", vmSnapshot.Name)
+	if vmSnapshot.Spec.VMRef == nil {
+		return errVMRefNil
+	}
 	vm := &vmopv1.VirtualMachine{}
 	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
@@ -188,42 +194,49 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) error {
 	ctx.Logger.Info("Reconciling VirtualMachineSnapshot deletion")
 	vmSnapshot := ctx.VirtualMachineSnapshot
-	if controllerutil.ContainsFinalizer(vmSnapshot, Finalizer) {
-		vm := &vmopv1.VirtualMachine{}
-		objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
-		if err := r.Get(ctx, objKey, vm); err != nil {
-			if apierrors.IsNotFound(err) {
-				ctx.Logger.Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
-				controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
-				return nil
-			}
-			ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
-			return err
-		}
 
-		ctx.VM = vm
-		vmNotFound, err := r.deleteSnapshot(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to delete snapshot: %w", err)
-		}
-		if vmNotFound {
-			ctx.Logger.Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer", "error", err)
+	if !controllerutil.ContainsFinalizer(vmSnapshot, Finalizer) {
+		ctx.Logger.V(4).Info("VirtualMachineSnapshot finalizer not found, skipping deletion")
+		return nil
+	}
+
+	if vmSnapshot.Spec.VMRef == nil {
+		return errVMRefNil
+	}
+
+	vm := &vmopv1.VirtualMachine{}
+	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
+	if err := r.Get(ctx, objKey, vm); err != nil {
+		if apierrors.IsNotFound(err) {
+			ctx.Logger.V(4).Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
 			controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
 			return nil
 		}
-
-		parent, err := r.updateParentSnapshot(ctx)
-		if err != nil {
-			return err
-		}
-
-		if err := r.updateVMStatus(ctx, parent); err != nil {
-			return err
-		}
-
-		controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
+		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
+		return err
 	}
 
+	ctx.VM = vm
+	vmNotFound, err := r.deleteSnapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to delete snapshot: %w", err)
+	}
+	if vmNotFound {
+		ctx.Logger.V(4).Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
+		controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
+		return nil
+	}
+
+	parent, err := r.updateParentSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := r.updateVMStatus(ctx, parent); err != nil {
+		return err
+	}
+
+	controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
 	return nil
 }
 
@@ -241,7 +254,7 @@ func (r *Reconciler) deleteSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext) (
 }
 
 func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext) (*vmopv1.VirtualMachineSnapshot, error) {
-	ctx.Logger.V(5).Info("Updating parent snapshot")
+	ctx.Logger.V(3).Info("Updating parent snapshot")
 	vmSnapshot := ctx.VirtualMachineSnapshot
 	parent, err := r.getParentSnapshot(ctx, vmSnapshot)
 	if err != nil {
@@ -278,6 +291,9 @@ func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotCont
 	return parent, nil
 }
 
+// TODO: use a func in vmprovider to find the parent snapshot.
+// So that we could recursively check VirtualMachineSnapshotTree
+// to avoid the overhead of recursively requesting the apiserver.
 // getParentSnapshotName returns the parent snapshot name of the given snapshot.
 // It first checks if the snapshot is a root snapshot, if not, it will traverse the root snapshots to find the parent snapshot.
 // The upper limit of snapshot count of a VM is 128. The overhead here could be considered acceptable.
@@ -341,9 +357,10 @@ func (r *Reconciler) updateVMStatus(ctx *pkgctx.VirtualMachineSnapshotContext, p
 
 // Set current snapshot of VM to the parent snapshot or to nil.
 func (r *Reconciler) updateVMCurrentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext, parentVMSnapshot *vmopv1.VirtualMachineSnapshot) error {
+	ctx.Logger.Info("Updating VM current snapshot")
 	vm := ctx.VM
 	if vm.Spec.CurrentSnapshot != nil && vm.Spec.CurrentSnapshot.Name != ctx.VirtualMachineSnapshot.Name {
-		ctx.Logger.V(5).Info("VM current snapshot is not the same as the snapshot being deleted, skipping update")
+		ctx.Logger.Info("VM current snapshot is not the same as the snapshot being deleted, skipping update")
 		return nil
 	}
 	vmPatch := client.MergeFrom(vm.DeepCopy())
@@ -369,7 +386,11 @@ func (r *Reconciler) updateVMRootSnapshots(ctx *pkgctx.VirtualMachineSnapshotCon
 		ctx.Logger.V(5).Info("No root snapshots found for VM, skipping update")
 		return nil
 	}
-	if !slices.Contains(vm.Status.RootSnapshots, *vmSnapshotCRToLocalObjectRef(vmSnapshot)) {
+	// Check if the deleted snapshot is a root snapshot by only comparing the name,
+	// in case we bump the new api version
+	if !slices.ContainsFunc(vm.Status.RootSnapshots, func(e vmopv1common.LocalObjectRef) bool {
+		return e.Name == vmSnapshot.Name
+	}) {
 		ctx.Logger.V(5).Info("Deleted snapshot is not a root snapshot, skipping update")
 		return nil
 	}

@@ -55,6 +55,7 @@ type funcs struct {
 
 	DoesProfileSupportEncryptionFn func(ctx context.Context, profileID string) (bool, error)
 	VSphereClientFn                func(context.Context) (*vsclient.Client, error)
+	DeleteSnapshotFn               func(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot, vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
 }
 
 type VMProvider struct {
@@ -358,6 +359,22 @@ func (s *VMProvider) VSphereClient(ctx context.Context) (*vsclient.Client, error
 		return fn(ctx)
 	}
 	return nil, nil
+}
+
+func (s *VMProvider) DeleteSnapshot(
+	ctx context.Context,
+	snapshot *vmopv1.VirtualMachineSnapshot,
+	vm *vmopv1.VirtualMachine,
+	removeChildren bool,
+	consolidate *bool) (bool, error) {
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if s.DeleteSnapshotFn != nil {
+		return s.DeleteSnapshotFn(ctx, snapshot, vm, removeChildren, consolidate)
+	}
+	return false, nil
 }
 
 func NewVMProvider() *VMProvider {

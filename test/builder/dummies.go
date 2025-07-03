@@ -550,11 +550,15 @@ func DummyVirtualMachineWebConsoleRequest(namespace, wcrName, vmName, pubKey str
 func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.VirtualMachineSnapshot {
 	return &vmopv1.VirtualMachineSnapshot{
 		TypeMeta: metav1.TypeMeta{
-			Kind: "virtualmachinesnapshots",
+			Kind:       "VirtualMachineSnapshot",
+			APIVersion: "vmoperator.vmware.com/v1alpha4",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Finalizers: []string{
+				"vmoperator.vmware.com/virtualmachinesnapshot",
+			},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
 			VMRef: &vmopv1common.LocalObjectRef{

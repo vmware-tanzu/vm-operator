@@ -464,18 +464,12 @@ func MarkBootstrapCondition(
 	vm *vmopv1.VirtualMachine,
 	extraConfig map[string]string) {
 
-	if len(extraConfig) == 0 {
-		conditions.MarkUnknown(
-			vm, vmopv1.GuestBootstrapCondition, "NoExtraConfig", "")
+	status, reason, msg, ok := util.GetBootstrapConditionValues(extraConfig)
+	if !ok {
+		conditions.Delete(vm, vmopv1.GuestBootstrapCondition)
 		return
 	}
 
-	status, reason, msg, ok := util.GetBootstrapConditionValues(extraConfig)
-	if !ok {
-		conditions.MarkUnknown(
-			vm, vmopv1.GuestBootstrapCondition, "NoBootstrapStatus", "")
-		return
-	}
 	if status {
 		c := conditions.TrueCondition(vmopv1.GuestBootstrapCondition)
 		if reason != "" {

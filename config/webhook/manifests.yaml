@@ -248,6 +248,27 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha4-virtualmachinesnapshot
+  failurePolicy: Fail
+  name: default.validating.virtualmachinesnapshot.v1alpha4.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha4
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachinesnapshots
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha1-webconsolerequest
   failurePolicy: Fail
   name: default.validating.webconsolerequest.v1alpha1.vmoperator.vmware.com

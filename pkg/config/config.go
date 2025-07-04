@@ -185,6 +185,7 @@ type FeatureStates struct {
 	ImmutableClasses           bool
 	VMSnapshots                bool
 	InventoryContentLibrary    bool
+	VMPlacementPolicies        bool
 }
 
 type InstanceStorage struct {

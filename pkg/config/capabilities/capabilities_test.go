@@ -156,6 +156,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyInventoryContentLibrary: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyVMPlacementPolicies: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -170,6 +173,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.ImmutableClasses = true
 							config.Features.VMSnapshots = true
 							config.Features.InventoryContentLibrary = true
+							config.Features.VMPlacementPolicies = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -198,6 +202,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyInventoryContentLibrary, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.InventoryContentLibrary).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeTrue())
 					})
 				})
 
@@ -228,6 +235,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyInventoryContentLibrary, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.InventoryContentLibrary).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeTrue())
 					})
 				})
 			})
@@ -267,6 +277,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyInventoryContentLibrary: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyVMPlacementPolicies: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -297,6 +310,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyInventoryContentLibrary, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.InventoryContentLibrary).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeFalse())
 					})
 				})
 
@@ -336,6 +352,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyInventoryContentLibrary, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.InventoryContentLibrary).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeFalse())
 					})
 				})
 			})
@@ -553,6 +572,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.InventoryContentLibrary).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyVMPlacementPolicies, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVMPlacementPolicies] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VMPlacementPolicies=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -593,6 +625,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyInventoryContentLibrary: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVMPlacementPolicies: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -614,6 +649,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.ImmutableClasses = true
 					config.Features.VMSnapshots = true
 					config.Features.InventoryContentLibrary = true
+					config.Features.VMPlacementPolicies = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -644,6 +680,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyInventoryContentLibrary, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.InventoryContentLibrary).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -660,7 +699,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMSnapshots=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMPlacementPolicies=true,VMSnapshots=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -685,6 +724,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyInventoryContentLibrary, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.InventoryContentLibrary).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeFalse())
 			})
 		})
 	})

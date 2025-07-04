@@ -63,6 +63,10 @@ const (
 	// CapabilityKeyInventoryContentLibrary is the name of the key defined in the
 	// Supervisor capabilities CRD.
 	CapabilityKeyInventoryContentLibrary = "supports_inventory_content_library"
+	// CapabilityKeyVMPlacementPolicies is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the VM placement policy
+	// capability.
+	CapabilityKeyVMPlacementPolicies = "supports_VM_service_VM_placement_policies"
 )
 
 var (
@@ -211,6 +215,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMSnapshots = capStatus.Activated
 		case CapabilityKeyInventoryContentLibrary:
 			fs.InventoryContentLibrary = capStatus.Activated
+		case CapabilityKeyVMPlacementPolicies:
+			fs.VMPlacementPolicies = capStatus.Activated
 		}
 
 	}

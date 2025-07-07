@@ -1784,16 +1784,14 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 			extraConfig = nil
 		})
 
-		Context("unknown condition", func() {
+		Context("no bootstrap condition in extra config", func() {
 			When("extraConfig unset", func() {
 				BeforeEach(func() {
 					extraConfig = nil
+					conditions.MarkTrue(vm, vmopv1.GuestBootstrapCondition)
 				})
-				It("sets condition unknown", func() {
-					expectedConditions := []metav1.Condition{
-						*conditions.UnknownCondition(vmopv1.GuestBootstrapCondition, "NoExtraConfig", ""),
-					}
-					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				It("removes condition", func() {
+					Expect(conditions.Get(vm, vmopv1.GuestBootstrapCondition)).To(BeNil())
 				})
 			})
 			When("no bootstrap status", func() {
@@ -1801,12 +1799,10 @@ var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
 					extraConfig = map[string]string{
 						"key1": "val1",
 					}
+					conditions.MarkTrue(vm, vmopv1.GuestBootstrapCondition)
 				})
-				It("sets condition unknown", func() {
-					expectedConditions := []metav1.Condition{
-						*conditions.UnknownCondition(vmopv1.GuestBootstrapCondition, "NoBootstrapStatus", ""),
-					}
-					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				It("removes condition", func() {
+					Expect(conditions.Get(vm, vmopv1.GuestBootstrapCondition)).To(BeNil())
 				})
 			})
 		})

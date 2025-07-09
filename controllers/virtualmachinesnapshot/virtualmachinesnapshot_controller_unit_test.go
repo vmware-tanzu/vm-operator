@@ -123,13 +123,13 @@ func unitTestsReconcile() {
 				vmObj := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, objKey, vmObj)).To(Succeed())
 
-				Expect(vmObj.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshot)))
+				Expect(vmObj.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshot)))
 			})
 		})
 
 		When("vm ready with different current snapshot", func() {
 			BeforeEach(func() {
-				vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
+				vm.Status.CurrentSnapshot = &vmopv1common.LocalObjectRef{
 					APIVersion: vmSnapshot.APIVersion,
 					Kind:       vmSnapshot.Kind,
 					Name:       "dummy-diff-snapshot",
@@ -144,14 +144,14 @@ func unitTestsReconcile() {
 				vmObj := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, objKey, vmObj)).To(Succeed())
 
-				Expect(vmObj.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshot)))
+				Expect(vmObj.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshot)))
 			})
 		})
 
 		When("vm ready with matching current snapshot name", func() {
 			BeforeEach(func() {
 				vm.Status.UniqueID = dummyVMUUID
-				vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
+				vm.Status.CurrentSnapshot = &vmopv1common.LocalObjectRef{
 					APIVersion: vmSnapshot.APIVersion,
 					Kind:       vmSnapshot.Kind,
 					Name:       vmSnapshot.Name,
@@ -203,7 +203,6 @@ func unitTestsReconcile() {
 			It("returns success", func() {
 				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: vmSnapshotNamespacedKey})
 				Expect(err).ToNot(HaveOccurred())
-				Expect(vm.Spec.CurrentSnapshot).To(BeNil())
 				Expect(vm.Status.CurrentSnapshot).To(BeNil())
 				Expect(vm.Status.RootSnapshots).To(HaveLen(0))
 			})
@@ -318,7 +317,6 @@ func unitTestsReconcile() {
 				//   L3-n1    L3-n2
 				BeforeEach(func() {
 					vmSnapshotL2.DeletionTimestamp = &now
-					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)
 					vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)
 					vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)}
 					// assign before the reconcile
@@ -329,7 +327,6 @@ func unitTestsReconcile() {
 				When("it's the current snapshot", func() {
 					It("returns success, vm current snapshot is updated to root", func() {
 						Expect(err).ToNot(HaveOccurred())
-						Expect(vm.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)))
 						Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)))
 						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
 						Expect(vm.Status.RootSnapshots).To(ContainElement(*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)))
@@ -343,12 +340,10 @@ func unitTestsReconcile() {
 				})
 				When("it's not the current snapshot", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)
 						vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)
 					})
 					It("returns success, vm current snapshot is not changed", func() {
 						Expect(err).ToNot(HaveOccurred())
-						Expect(vm.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)))
 						Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)))
 					})
 				})
@@ -366,7 +361,6 @@ func unitTestsReconcile() {
 				//   L3-n1    L3-n2
 				BeforeEach(func() {
 					vmSnapshotL1.DeletionTimestamp = &now
-					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)
 					vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)
 					vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)}
 					vmSnapshotToReconcile = vmSnapshotL1
@@ -376,7 +370,6 @@ func unitTestsReconcile() {
 				When("it's the current snapshot", func() {
 					It("returns success, vm current snapshot is updated to nil", func() {
 						Expect(err).ToNot(HaveOccurred())
-						Expect(vm.Spec.CurrentSnapshot).To(BeNil())
 						Expect(vm.Status.CurrentSnapshot).To(BeNil())
 						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
 						Expect(vm.Status.RootSnapshots).To(ContainElement(*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
@@ -384,12 +377,10 @@ func unitTestsReconcile() {
 				})
 				When("it's not the current snapshot", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)
 						vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)
 					})
 					It("returns success, vm current snapshot is not changed", func() {
 						Expect(err).ToNot(HaveOccurred())
-						Expect(vm.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
 						Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
 					})
 				})
@@ -409,7 +400,6 @@ func unitTestsReconcile() {
 				//       L3-n2
 				BeforeEach(func() {
 					vmSnapshotL3Node1.DeletionTimestamp = &now
-					vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node1)
 					vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node1)
 					vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)}
 					vmSnapshotToReconcile = vmSnapshotL3Node1
@@ -419,7 +409,6 @@ func unitTestsReconcile() {
 				When("it's the current snapshot", func() {
 					It("returns success, vm current snapshot is updated to parent", func() {
 						Expect(err).ToNot(HaveOccurred())
-						Expect(vm.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
 						Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
 						By("check parent snapshot's children should be updated")
 						Expect(parent).To(Not(BeNil()))
@@ -432,12 +421,10 @@ func unitTestsReconcile() {
 				})
 				When("it's not the current snapshot", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)
 						vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)
 					})
 					It("returns success, vm current snapshot is not changed", func() {
 						Expect(err).ToNot(HaveOccurred())
-						Expect(vm.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
 						Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
 					})
 				})

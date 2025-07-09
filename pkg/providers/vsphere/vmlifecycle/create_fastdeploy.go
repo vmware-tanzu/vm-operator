@@ -251,7 +251,7 @@ func fastDeployLinked(
 	diskSpecs []*vimtypes.VirtualDeviceConfigSpec,
 	srcDiskPaths []string) (*vimtypes.ManagedObjectReference, error) {
 
-	logger := logr.FromContextOrDiscard(ctx).WithName("fastDeployLinked")
+	logger := pkgutil.FromContextOrDefault(ctx).WithName("fastDeployLinked")
 
 	// Linked clones do not fully support encryption, so remove the possible
 	// crypto information from the VM's disks.
@@ -304,7 +304,7 @@ func fastDeployDirect(
 	dstDiskPaths,
 	srcDiskPaths []string) (*vimtypes.ManagedObjectReference, error) {
 
-	logger := logr.FromContextOrDiscard(ctx).WithName("fastDeployDirect")
+	logger := pkgutil.FromContextOrDefault(ctx).WithName("fastDeployDirect")
 
 	// Copy each disk into the VM directory.
 	if err := fastDeployDirectCopyDisks(

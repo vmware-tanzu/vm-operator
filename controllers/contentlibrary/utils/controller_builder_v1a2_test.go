@@ -18,6 +18,7 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"

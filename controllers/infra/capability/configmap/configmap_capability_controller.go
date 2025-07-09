@@ -26,6 +26,7 @@ import (
 	pkgexit "github.com/vmware-tanzu/vm-operator/pkg/exit"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
@@ -60,6 +61,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	c, err := controller.New(controllerName, mgr, controller.Options{
 		Reconciler:              r,
 		MaxConcurrentReconciles: 1,
+		LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 	})
 	if err != nil {
 		return err
@@ -114,10 +116,10 @@ func (r *Reconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request) (ctrl.Result, error) {
 
-	r.Logger.Info("Reconciling capabilities")
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.Info("Reconciling capabilities")
 
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
-	ctx = logr.NewContext(ctx, r.Logger)
 
 	var obj corev1.ConfigMap
 	if err := r.Reader.Get(ctx, req.NamespacedName, &obj); err != nil {

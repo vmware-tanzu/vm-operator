@@ -49,6 +49,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -411,7 +412,7 @@ func (s *TestSuite) createManager() {
 		AddToManager:        s.addToManagerFn,
 		InitializeProviders: s.initProvidersFn,
 		NewCache:            s.newCacheFn,
-		Logger:              ptr.To(logr.FromContextOrDiscard(s.Context)),
+		Logger:              ptr.To(pkgutil.FromContextOrDefault(s.Context)),
 	}
 
 	opts.Scheme = runtime.NewScheme()

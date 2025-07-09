@@ -24,6 +24,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
@@ -45,7 +46,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx.VMProvider,
 	)
 
-	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
+	c, err := controller.New(controllerName, mgr, controller.Options{
+		Reconciler:     r,
+		LogConstructor: pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+	})
 	if err != nil {
 		return err
 	}
@@ -120,12 +124,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, r.reconcileWcpClusterConfig(ctx, req)
 	}
 
-	r.Logger.Error(nil, "Reconciling unexpected object", "req", req.NamespacedName)
+	pkgutil.FromContextOrDefault(ctx).Error(nil, "Reconciling unexpected object")
 	return ctrl.Result{}, nil
 }
 
 func (r *Reconciler) reconcileWcpClusterConfig(ctx context.Context, req ctrl.Request) error {
-	r.Logger.Info("Reconciling WCP Cluster Config", "configMap", req.NamespacedName)
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.Info("Reconciling WCP Cluster Config ConfigMap")
 
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
@@ -134,7 +139,7 @@ func (r *Reconciler) reconcileWcpClusterConfig(ctx context.Context, req ctrl.Req
 
 	clusterConfig, err := ParseWcpClusterConfig(cm.Data)
 	if err != nil {
-		r.Logger.Error(err, "error in parsing the WCP cluster config")
+		logger.Error(err, "error in parsing the WCP cluster config")
 		// No point of retrying until the object is updated.
 		return nil
 	}

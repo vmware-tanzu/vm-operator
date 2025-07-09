@@ -24,8 +24,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -45,19 +45,15 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
 const (
-	VsphereVMProviderName = "vsphere"
-
 	// taskHistoryCollectorPageSize represents the max count to read from task manager in one iteration.
 	taskHistoryCollectorPageSize = 10
 )
-
-var log = logf.Log.WithName(VsphereVMProviderName)
 
 type vSphereVMProvider struct {
 	k8sClient         ctrlclient.Client
@@ -186,8 +182,7 @@ func (vs *vSphereVMProvider) UpdateVcCreds(ctx context.Context, data map[string]
 // from the content library item object.
 func (vs *vSphereVMProvider) SyncVirtualMachineImage(
 	ctx context.Context,
-	cli,
-	vmi ctrlclient.Object) error {
+	cli, vmi ctrlclient.Object) error {
 
 	var (
 		itemID      string
@@ -208,9 +203,8 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(
 		return fmt.Errorf("unexpected content library item K8s object type %T", cli)
 	}
 
-	logger := log.V(4).WithValues(
-		"vmiName", vmi.GetName(),
-		"cliName", cli.GetName())
+	logger := pkgutil.FromContextOrDefault(ctx).V(4).WithValues(
+		"vmiName", vmi.GetName(), "cliName", cli.GetName())
 
 	// Exit early if the library item type is not an OVF.
 	if itemType != imgregv1a1.ContentLibraryItemTypeOvf {
@@ -237,7 +231,7 @@ func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeploy(
 	vmiCache := vmopv1.VirtualMachineImageCache{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: pkgcfg.FromContext(ctx).PodNamespace,
-			Name:      util.VMIName(itemID),
+			Name:      pkgutil.VMIName(itemID),
 		},
 	}
 	if _, err := controllerutil.CreateOrPatch(
@@ -343,7 +337,8 @@ func (vs *vSphereVMProvider) getOvfEnvelope(
 // Do not return error if the item doesn't exist in the content library.
 func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx context.Context,
 	contentLibrary, itemName string) (*library.Item, error) {
-	log.V(4).Info("Get item from ContentLibrary",
+
+	pkgutil.FromContextOrDefault(ctx).V(4).Info("Get item from ContentLibrary",
 		"UUID", contentLibrary, "item name", itemName)
 
 	client, err := vs.getVcClient(ctx)
@@ -356,7 +351,7 @@ func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx context.Context,
 }
 
 func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
-	log.V(4).Info("Update Content Library Item", "itemID", itemID)
+	pkgutil.FromContextOrDefault(ctx).V(4).Info("Update Content Library Item", "itemID", itemID)
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -367,16 +362,23 @@ func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemI
 	return contentLibraryProvider.UpdateLibraryItem(ctx, itemID, newName, newDescription)
 }
 
-func (vs *vSphereVMProvider) getOpID(vm *vmopv1.VirtualMachine, operation string) string {
-	const charset = "0123456789abcdef"
+func (vs *vSphereVMProvider) getOpID(ctx context.Context, vm *vmopv1.VirtualMachine, operation string) string {
+	var id string
 
-	id := make([]byte, 8)
-	for i := range id {
-		idx := rand.Intn(len(charset)) //nolint:gosec
-		id[i] = charset[idx]
+	if recID := controller.ReconcileIDFromContext(ctx); recID != "" {
+		id = string(recID[:8])
+	} else {
+		const charset = "0123456789abcdef"
+		buf := make([]byte, 8)
+		for i := range buf {
+			idx := rand.Intn(len(charset)) //nolint:gosec
+			buf[i] = charset[idx]
+		}
+		id = string(buf)
+		// TODO: Add this id as our own reconcile ID type?
 	}
 
-	return strings.Join([]string{"vmoperator", vm.Name, operation, string(id)}, "-")
+	return strings.Join([]string{"vmoperator", vm.Name, operation, id}, "-")
 }
 
 func (vs *vSphereVMProvider) getVM(
@@ -493,7 +495,7 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) 
 	for {
 		nextTasks, err := collector.ReadNextTasks(ctx, taskHistoryCollectorPageSize)
 		if err != nil {
-			log.Error(err, "failed to read next tasks")
+			pkgutil.FromContextOrDefault(ctx).Error(err, "failed to read next tasks")
 			return nil, err
 		}
 		if len(nextTasks) == 0 {
@@ -502,7 +504,7 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) 
 		taskList = append(taskList, nextTasks...)
 	}
 
-	log.V(5).Info("found tasks", "actID", actID, "tasks", taskList)
+	pkgutil.FromContextOrDefault(ctx).V(5).Info("found tasks", "actID", actID, "tasks", taskList)
 	return taskList, nil
 }
 
@@ -537,9 +539,12 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 	removeChildren bool,
 	consolidate *bool) (bool, error) {
 
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	ctx = logr.NewContext(ctx, logger)
+
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteSnapshot")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName(), "snapshotName", vmSnapshot.Name),
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "deleteSnapshot")),
+		Logger:  logger,
 		VM:      vm,
 	}
 
@@ -564,7 +569,7 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 		Consolidate:    consolidate,
 	}); err != nil {
 		if errors.Is(err, virtualmachine.ErrSnapshotNotFound) {
-			log.V(5).Info("snapshot not found")
+			vmCtx.Logger.V(5).Info("snapshot not found")
 			return false, nil
 		}
 		return false, err

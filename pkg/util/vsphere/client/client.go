@@ -23,7 +23,7 @@ import (
 	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/go-logr/logr"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 type Config struct {
@@ -94,7 +94,7 @@ func SoapKeepAliveHandlerFn(
 	sm *session.Manager,
 	userInfo *url.Userinfo) func() error {
 
-	log := logr.FromContextOrDiscard(ctx).WithName("SoapKeepAliveHandlerFn")
+	log := pkgutil.FromContextOrDefault(ctx).WithName("SoapKeepAliveHandlerFn")
 
 	return func() error {
 		ctx := context.Background()
@@ -123,7 +123,7 @@ func RestKeepAliveHandlerFn(
 	c *rest.Client,
 	userInfo *url.Userinfo) func() error {
 
-	log := logr.FromContextOrDiscard(ctx).WithName("RestKeepAliveHandlerFn")
+	log := pkgutil.FromContextOrDefault(ctx).WithName("RestKeepAliveHandlerFn")
 
 	return func() error {
 		ctx := context.Background()
@@ -148,7 +148,7 @@ func newRestClient(
 	vimClient *vim25.Client,
 	config Config) (*rest.Client, error) {
 
-	log := logr.FromContextOrDiscard(ctx).WithName("newRestClient")
+	log := pkgutil.FromContextOrDefault(ctx).WithName("newRestClient")
 
 	log.Info("Creating new REST Client", "VcPNID", config.Host, "VcPort", config.Port)
 	restClient := rest.NewClient(vimClient)
@@ -176,7 +176,7 @@ func NewVimClient(
 	ctx context.Context,
 	config Config) (*vim25.Client, *session.Manager, error) {
 
-	log := logr.FromContextOrDiscard(ctx).WithName("NewVimClient")
+	log := pkgutil.FromContextOrDefault(ctx).WithName("NewVimClient")
 
 	log.Info("Creating new vim Client", "VcPNID", config.Host, "VcPort", config.Port)
 	soapURL, err := soap.ParseURL(net.JoinHostPort(config.Host, config.Port))
@@ -288,7 +288,7 @@ func (c *Client) Valid() bool {
 }
 
 func (c *Client) Logout(ctx context.Context) {
-	log := logr.FromContextOrDiscard(ctx).WithName("Logout")
+	log := pkgutil.FromContextOrDefault(ctx).WithName("Logout")
 
 	clientURL := c.vimClient.URL()
 	log.Info("vsphere client logging out from", "VC", clientURL.Host)

@@ -32,6 +32,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -75,7 +76,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
-		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		}).
 		Watches(&corev1.Service{},
 			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &vmopv1.VirtualMachineService{})).
 		Watches(&corev1.Endpoints{},
@@ -130,7 +134,7 @@ func (r *ReconcileVirtualMachineService) Reconcile(ctx context.Context, request 
 
 	vmServiceCtx := &pkgctx.VirtualMachineServiceContext{
 		Context:   ctx,
-		Logger:    ctrl.Log.WithName("VirtualMachineService").WithValues("name", vmService.NamespacedName()),
+		Logger:    pkgutil.FromContextOrDefault(ctx),
 		VMService: vmService,
 	}
 

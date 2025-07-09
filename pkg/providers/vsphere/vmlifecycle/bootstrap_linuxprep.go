@@ -7,12 +7,12 @@ package vmlifecycle
 import (
 	"fmt"
 
-	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 func BootStrapLinuxPrep(
@@ -22,7 +22,7 @@ func BootStrapLinuxPrep(
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := logr.FromContextOrDiscard(vmCtx)
+	logger := pkgutil.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling LinuxPrep bootstrap state")
 
 	if !vmCtx.IsOffToOn() {

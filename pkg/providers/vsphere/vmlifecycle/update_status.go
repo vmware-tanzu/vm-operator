@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -35,7 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -323,8 +322,8 @@ func convertNetDNSConfigInfo(dnsConfig *vimtypes.NetDnsConfigInfo) *vmopv1.Virtu
 		DHCP:          dnsConfig.Dhcp,
 		DomainName:    dnsConfig.DomainName,
 		HostName:      dnsConfig.HostName,
-		Nameservers:   util.Dedupe(dnsConfig.IpAddress),
-		SearchDomains: util.Dedupe(dnsConfig.SearchDomain),
+		Nameservers:   pkgutil.Dedupe(dnsConfig.IpAddress),
+		SearchDomains: pkgutil.Dedupe(dnsConfig.SearchDomain),
 	}
 }
 
@@ -470,7 +469,7 @@ func MarkBootstrapCondition(
 	vm *vmopv1.VirtualMachine,
 	extraConfig map[string]string) {
 
-	status, reason, msg, ok := util.GetBootstrapConditionValues(extraConfig)
+	status, reason, msg, ok := pkgutil.GetBootstrapConditionValues(extraConfig)
 	if !ok {
 		conditions.Delete(vm, vmopv1.GuestBootstrapCondition)
 		return
@@ -1104,7 +1103,7 @@ func updateProbeStatus(
 		}
 
 		// Log the time when the VM changes its readiness condition.
-		logr.FromContextOrDiscard(ctx).Info(
+		pkgutil.FromContextOrDefault(ctx).Info(
 			"VM resource readiness probe condition updated",
 			"condition.status", cond.Status,
 			"time", cond.LastTransitionTime,

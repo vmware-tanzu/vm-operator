@@ -23,6 +23,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -44,14 +45,13 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx.VMProvider,
 	)
 
-	builder := ctrl.NewControllerManagedBy(mgr).
-		For(controlledType)
-
-	builder.Watches(
-		&topologyv1.Zone{},
-		handler.EnqueueRequestsFromMapFunc(zoneToNamespaceVMSRP(mgr.GetClient())))
-
-	return builder.Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).
+		For(controlledType).
+		Watches(
+			&topologyv1.Zone{},
+			handler.EnqueueRequestsFromMapFunc(zoneToNamespaceVMSRP(mgr.GetClient()))).
+		WithLogConstructor(pkgutil.ControllerLogConstructor(controlledTypeName, controlledType, mgr.GetScheme())).
+		Complete(r)
 }
 
 func NewReconciler(
@@ -183,7 +183,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	rpCtx := &pkgctx.VirtualMachineSetResourcePolicyContext{
 		Context:        ctx,
-		Logger:         r.Logger.WithName("VirtualMachineSetResourcePolicy").WithValues("name", rp.NamespacedName()),
+		Logger:         pkgutil.FromContextOrDefault(ctx),
 		ResourcePolicy: rp,
 	}
 

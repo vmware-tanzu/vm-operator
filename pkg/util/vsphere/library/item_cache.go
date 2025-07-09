@@ -12,7 +12,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -118,7 +117,7 @@ func copyFile(
 		dstFileName = GetCachedFileNameForVMDK(srcFileName) + srcFileExt
 		dstFilePath = path.Join(dstDir, dstFileName)
 		isDisk      = strings.EqualFold(".vmdk", srcFileExt)
-		logger      = logr.FromContextOrDiscard(ctx)
+		logger      = pkgutil.FromContextOrDefault(ctx)
 	)
 
 	logger = logger.WithValues(

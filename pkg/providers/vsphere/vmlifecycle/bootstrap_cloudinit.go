@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"sigs.k8s.io/yaml"
 
@@ -109,7 +108,7 @@ func BootStrapCloudInit(
 	cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := logr.FromContextOrDiscard(vmCtx)
+	logger := pkgutil.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling Cloud-Init bootstrap state")
 
 	netPlan, err := network.NetPlanCustomization(bsArgs.NetworkResults)
@@ -219,7 +218,7 @@ func GetCloudInitPrepCustSpec(
 	config *vimtypes.VirtualMachineConfigInfo,
 	metadata, userdata string) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling Cloud-Init Prep bootstrap state")
 
 	if userdata != "" {
@@ -262,7 +261,7 @@ func GetCloudInitGuestInfoCustSpec(
 	config *vimtypes.VirtualMachineConfigInfo,
 	metadata, userdata string) (*vimtypes.VirtualMachineConfigSpec, error) {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling Cloud-Init GuestInfo bootstrap state")
 
 	encodedMetadata, err := pkgutil.EncodeGzipBase64(metadata)

@@ -25,6 +25,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 )
 
@@ -56,8 +57,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 	)
 
-	c, err := controller.New(
-		controllerName, mgr, controller.Options{Reconciler: r})
+	c, err := controller.New(controllerName, mgr, controller.Options{
+		Reconciler:     r,
+		LogConstructor: pkgutil.ControllerLogConstructor(controllerNameShort, &spqv1.StoragePolicyUsage{}, mgr.GetScheme()),
+	})
 	if err != nil {
 		return err
 	}
@@ -119,7 +122,6 @@ func (r *Reconciler) ReconcileNormal(
 	// Make sure the StoragePolicyUsage document exists.
 	var obj spqv1.StoragePolicyUsage
 	if err := r.Client.Get(ctx, objKey, &obj); err != nil {
-
 		// Even if the SPU is not found, log the error to indicate that
 		// the function was enqueued but could not proceed.
 		return fmt.Errorf(

@@ -141,7 +141,7 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	vm *vmopv1.VirtualMachine,
 	async bool) (chan error, error) {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("Entering createOrUpdateVirtualMachine")
 
 	vmNamespacedName := vm.NamespacedName()
@@ -156,9 +156,9 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		Context: context.WithValue(
 			ctx,
 			vimtypes.ID{},
-			vs.getOpID(vm, "createOrUpdateVM"),
+			vs.getOpID(ctx, vm, "createOrUpdateVM"),
 		),
-		Logger: logger.WithValues("vmName", vm.NamespacedName()),
+		Logger: logger,
 		VM:     vm,
 	}
 
@@ -294,8 +294,8 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	}
 
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "deleteVM")),
-		Logger:  log.WithValues("vmName", vmNamespacedName),
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "deleteVM")),
+		Logger:  pkgutil.FromContextOrDefault(ctx),
 		VM:      vm,
 	}
 
@@ -322,13 +322,14 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 	cl *imgregv1a1.ContentLibrary,
 	actID string) (string, error) {
 
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues(
+		"vmName", vm.NamespacedName(), "clName", fmt.Sprintf("%s/%s", cl.Namespace, cl.Name))
+	ctx = logr.NewContext(ctx, logger)
+
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: ctx,
-		// Update logger info
-		Logger: log.WithValues("vmName", vm.NamespacedName()).
-			WithValues("clName", fmt.Sprintf("%s/%s", cl.Namespace, cl.Name)).
-			WithValues("vmPubName", fmt.Sprintf("%s/%s", vmPub.Namespace, vmPub.Name)),
-		VM: vm,
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "publishVM")),
+		Logger:  logger,
+		VM:      vm,
 	}
 
 	client, err := vs.getVcClient(ctx)
@@ -348,9 +349,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	ctx = logr.NewContext(ctx, logger)
+
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "heartbeat")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "heartbeat")),
+		Logger:  logger,
 		VM:      vm,
 	}
 
@@ -377,9 +381,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineProperties(
 	vm *vmopv1.VirtualMachine,
 	propertyPaths []string) (map[string]any, error) {
 
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	ctx = logr.NewContext(ctx, logger)
+
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "properties")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "properties")),
+		Logger:  logger,
 		VM:      vm,
 	}
 
@@ -437,9 +444,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	vm *vmopv1.VirtualMachine,
 	pubKey string) (string, error) {
 
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	ctx = logr.NewContext(ctx, logger)
+
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "webconsole")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "webconsole")),
+		Logger:  logger,
 		VM:      vm,
 	}
 
@@ -465,9 +475,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error) {
 
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	ctx = logr.NewContext(ctx, logger)
+
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "hardware-version")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "hardware-version")),
+		Logger:  logger,
 		VM:      vm,
 	}
 

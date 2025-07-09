@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/ovf"
 
 	ctxgen "github.com/vmware-tanzu/vm-operator/pkg/context/generic"
@@ -126,7 +125,7 @@ func GetOVFEnvelope(
 		ctx,
 		contextKeyValue,
 		func(val ContextValueType) {
-			logger := logr.FromContextOrDiscard(ctx).
+			logger := pkgutil.FromContextOrDefault(ctx).
 				WithValues(
 					"itemID", itemID,
 					"contentVersion", contentVersion,

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -23,7 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -64,6 +65,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 1,
 			SkipNameValidation:      SkipNameValidation,
+			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
 }
@@ -99,6 +101,7 @@ type Reconciler struct {
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+
 	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
 	if err := r.Get(ctx, req.NamespacedName, vmSnapshot); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -106,7 +109,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	vmSnapshotCtx := &pkgctx.VirtualMachineSnapshotContext{
 		Context:                ctx,
-		Logger:                 ctrl.Log.WithName("VirtualMachineSnapShot").WithValues("name", req.Name),
+		Logger:                 pkgutil.FromContextOrDefault(ctx),
 		VirtualMachineSnapshot: vmSnapshot,
 	}
 

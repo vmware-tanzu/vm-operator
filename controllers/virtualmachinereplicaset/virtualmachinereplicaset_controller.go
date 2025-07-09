@@ -49,7 +49,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 var (
@@ -92,7 +92,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Watches(&vmopv1.VirtualMachine{},
 			handler.EnqueueRequestsFromMapFunc(r.VMToReplicaSets(ctx)),
 		).
-		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		}).
 		Complete(r)
 }
 
@@ -207,7 +210,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	rsCtx := &pkgctx.VirtualMachineReplicaSetContext{
 		Context:    ctx,
-		Logger:     ctrl.Log.WithName("VirtualMachineReplicaSet").WithValues("namespace", rs.Namespace, "name", rs.Name),
+		Logger:     pkgutil.FromContextOrDefault(ctx),
 		ReplicaSet: rs,
 	}
 
@@ -358,7 +361,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineReplicaSetContext
 		// MustFormatValue is used here as the value of this label will be a
 		// hash if the VirtualMachineReplicaSet name is longer than max allowed
 		// label value length of 63 characters.
-		vm.Labels[vmopv1.VirtualMachineReplicaSetNameLabel] = util.MustFormatValue(ctx.ReplicaSet.Name)
+		vm.Labels[vmopv1.VirtualMachineReplicaSetNameLabel] = pkgutil.MustFormatValue(ctx.ReplicaSet.Name)
 
 		if err := helper.Patch(ctx, vm); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to apply %s label to VirtualMachine %q: %w",
@@ -369,7 +372,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineReplicaSetContext
 			"Updated VirtualMachine with the VirtualMachineReplicaSet name label",
 			"vm", vm,
 			"key", vmopv1.VirtualMachineReplicaSetNameLabel,
-			"value", util.MustFormatValue(ctx.ReplicaSet.Name))
+			"value", pkgutil.MustFormatValue(ctx.ReplicaSet.Name))
 
 		// TODO: Propagate the Deployment label from Deployment to replica set to VirtualMachine if
 		// it is set on the replica set.
@@ -403,7 +406,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineReplicaSetContext
 // MustEqualValue returns true if the replica set name equals either the label
 // value or its hashed value.
 func MustEqualValue(rsName, labelValue string) bool {
-	return labelValue == util.MustFormatValue(rsName)
+	return labelValue == pkgutil.MustFormatValue(rsName)
 }
 
 // getNewVirtualMachine creates a new VirtualMachine object. The name of the newly created resource is going
@@ -417,7 +420,7 @@ func (r *Reconciler) getNewVirtualMachine(rs *vmopv1.VirtualMachineReplicaSet) *
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(rs, replicaSetKind)},
 			Namespace:       rs.Namespace,
 			Labels: map[string]string{
-				vmopv1.VirtualMachineReplicaSetNameLabel: util.MustFormatValue(rs.Name),
+				vmopv1.VirtualMachineReplicaSetNameLabel: pkgutil.MustFormatValue(rs.Name),
 			},
 			Annotations: rs.Spec.Template.Annotations,
 		},
@@ -440,7 +443,7 @@ func getLabelsFromVMReplicaSet(rs *vmopv1.VirtualMachineReplicaSet) map[string]s
 	maps.Copy(labels, rs.Spec.Template.Labels)
 
 	// Ensure that the ReplicaSetLabel is always present.
-	labels[vmopv1.VirtualMachineReplicaSetNameLabel] = util.MustFormatValue(rs.Name)
+	labels[vmopv1.VirtualMachineReplicaSetNameLabel] = pkgutil.MustFormatValue(rs.Name)
 
 	return labels
 }

@@ -8,11 +8,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -54,7 +55,7 @@ func ReconcileMinHardwareVersion(
 
 	var (
 		configVersion string
-		log           = logr.FromContextOrDiscard(ctx)
+		log           = pkgutil.FromContextOrDefault(ctx)
 		obj           = object.NewVirtualMachine(client, mo.Self)
 		powerState    = mo.Runtime.PowerState
 	)

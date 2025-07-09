@@ -20,6 +20,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
@@ -42,6 +43,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
+		WithLogConstructor(pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme())).
 		Complete(r)
 }
 
@@ -87,12 +89,7 @@ func (r *Reconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 
-	return ctrl.Result{}, r.ReconcileNormal(
-		logr.NewContext(
-			ctx,
-			ctrl.Log.WithName("StorageClass").WithValues("name", req.Name),
-		),
-		&obj)
+	return ctrl.Result{}, r.ReconcileNormal(ctx, &obj)
 }
 
 func (r *Reconciler) ReconcileNormal(
@@ -101,7 +98,7 @@ func (r *Reconciler) ReconcileNormal(
 
 	policyID, err := kubeutil.GetStoragePolicyID(*obj)
 	if err != nil {
-		logr.FromContextOrDiscard(ctx).Error(err, "failed to get storage policy ID")
+		pkgutil.FromContextOrDefault(ctx).Error(err, "failed to get storage policy ID")
 		// Don't return an error: an update to the StorageClass will cause a reconcile.
 		return nil
 	}

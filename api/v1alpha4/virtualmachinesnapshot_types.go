@@ -65,6 +65,10 @@ const (
 	// VirtualMachineSnapshotReadyCondition represents the condition
 	// that the virtual machine snapshot is ready.
 	VirtualMachineSnapshotReadyCondition = "VirtualMachineSnapshotReady"
+
+	// VirtualMachineSnapshotInProgressReason represents that a
+	// snapshot is in progress.
+	VirtualMachineSnapshotInProgressReason = "VirtualMachineSnapshotInProgress"
 )
 
 // VirtualMachineSnapshotStatus defines the observed state of VirtualMachineSnapshot.

@@ -31,16 +31,6 @@ import (
 
 func intgTests() {
 	Describe(
-		"Reconcile",
-		Label(
-			testlabels.Controller,
-			testlabels.EnvTest,
-			testlabels.API,
-		),
-		intgTestsReconcile,
-	)
-
-	Describe(
 		"ReconcileDelete",
 		Label(
 			testlabels.Controller,
@@ -49,67 +39,6 @@ func intgTests() {
 		),
 		intgTestsReconcileDelete,
 	)
-}
-
-func intgTestsReconcile() {
-	var (
-		ctx        *builder.IntegrationTestContext
-		vmSnapshot *vmopv1.VirtualMachineSnapshot
-		vm         *vmopv1.VirtualMachine
-	)
-
-	const (
-		uniqueVMID = "unique-vm-id"
-	)
-
-	getVirtualMachine := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1.VirtualMachine {
-		vm := &vmopv1.VirtualMachine{}
-		if err := ctx.Client.Get(ctx, objKey, vm); err != nil {
-			return nil
-		}
-		return vm
-	}
-
-	BeforeEach(func() {
-		ctx = suite.NewIntegrationTestContext()
-
-		vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.Namespace)
-		vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.Namespace, "snap-1", vm.Name)
-	})
-
-	AfterEach(func() {
-		ctx.AfterEach()
-		ctx = nil
-	})
-
-	Context("Reconcile", func() {
-		BeforeEach(func() {
-			Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
-			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-			vm.Status.UniqueID = uniqueVMID
-			Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
-		})
-
-		AfterEach(func() {
-			err := ctx.Client.Delete(ctx, vmSnapshot)
-			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
-			err = ctx.Client.Delete(ctx, vm)
-			Expect(err == nil || apierrors.IsNotFound(err)).To(BeTrue())
-		})
-
-		It("vm resource successfully patched with current snapshot", func() {
-			vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
-			Eventually(func(g Gomega) {
-				vmObj := getVirtualMachine(ctx, vmObjKey)
-				g.Expect(vmObj).ToNot(BeNil())
-				g.Expect(vmObj.Spec.CurrentSnapshot).To(Equal(&vmopv1common.LocalObjectRef{
-					APIVersion: "vmoperator.vmware.com/v1alpha4",
-					Kind:       "VirtualMachineSnapshot",
-					Name:       vmSnapshot.Name,
-				}))
-			}).Should(Succeed(), "waiting current snapshot to be set on virtualmachine")
-		})
-	})
 }
 
 func intgTestsReconcileDelete() {

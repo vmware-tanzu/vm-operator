@@ -492,25 +492,6 @@ func GetVMSetResourcePolicy(
 	return resourcePolicy, nil
 }
 
-func getVirtualMachineSnapShotObject(
-	vmCtx pkgctx.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineSnapshot, error) {
-
-	var (
-		obj vmopv1.VirtualMachineSnapshot
-		key = ctrlclient.ObjectKey{
-			Name:      vmCtx.VM.Spec.CurrentSnapshot.Name,
-			Namespace: vmCtx.VM.Namespace,
-		}
-	)
-
-	if err := k8sClient.Get(vmCtx, key, &obj); err != nil {
-		return vmopv1.VirtualMachineSnapshot{}, err
-	}
-
-	return obj, nil
-}
-
 // AddInstanceStorageVolumes checks if VM class is configured with instance storage volumes and appends the
 // volumes to the VM's Spec if not already done. Return true if the VM had or now has instance storage volumes.
 func AddInstanceStorageVolumes(

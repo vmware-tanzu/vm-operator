@@ -101,7 +101,7 @@ func intgTestsReconcile() {
 			Expect(ctx.Client.Create(ctx, &spqv1.StoragePolicyUsage{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: ctx.Namespace,
-					Name:      spqutil.StoragePolicyUsageName(storageClassName),
+					Name:      spqutil.StoragePolicyUsageNameForVM(storageClassName),
 				},
 				Spec: spqv1.StoragePolicyUsageSpec{
 					StoragePolicyId:       storagePolicyID,
@@ -191,7 +191,7 @@ func intgTestsReconcile() {
 					ctx,
 					client.ObjectKey{
 						Namespace: ctx.Namespace,
-						Name:      spqutil.StoragePolicyUsageName(storageClassName),
+						Name:      spqutil.StoragePolicyUsageNameForVM(storageClassName),
 					},
 					&obj),
 				).To(Succeed())

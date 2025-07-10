@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package storagepolicyquota_test
@@ -156,21 +156,37 @@ func unitTestsReconcile() {
 		When("Normal", func() {
 			assertStoragePolicyUsage := func(err error) {
 				ExpectWithOffset(1, err).ToNot(HaveOccurred())
-				var obj spqv1.StoragePolicyUsage
-				ExpectWithOffset(1, ctx.Client.Get(
-					ctx,
-					types.NamespacedName{
-						Namespace: namespace,
-						Name:      spqutil.StoragePolicyUsageName(storageClassName),
+				By("Checking StoragePolicyUsage for VirtualMachine and VirtualMachineSnapshot")
+				resourceKinds := []struct {
+					Kind     string
+					NameFunc func(string) string
+				}{
+					{
+						Kind:     "VirtualMachine",
+						NameFunc: spqutil.StoragePolicyUsageNameForVM,
 					},
-					&obj)).To(Succeed())
-				ExpectWithOffset(1, obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
-				ExpectWithOffset(1, obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
-				ExpectWithOffset(1, obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.Namespace))
-				ExpectWithOffset(1, obj.Spec.ResourceKind).To(Equal("VirtualMachine"))
-				ExpectWithOffset(1, obj.Spec.StorageClassName).To(Equal(storageClassName))
-				ExpectWithOffset(1, obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
-				ExpectWithOffset(1, obj.Spec.CABundle).To(Equal([]byte(caBundle)))
+					{
+						Kind:     "VirtualMachineSnapshot",
+						NameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
+					},
+				}
+				for _, resourceKind := range resourceKinds {
+					var obj spqv1.StoragePolicyUsage
+					ExpectWithOffset(1, ctx.Client.Get(
+						ctx,
+						types.NamespacedName{
+							Namespace: namespace,
+							Name:      resourceKind.NameFunc(storageClassName),
+						},
+						&obj)).To(Succeed())
+					ExpectWithOffset(1, obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
+					ExpectWithOffset(1, obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
+					ExpectWithOffset(1, obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.Namespace))
+					ExpectWithOffset(1, obj.Spec.ResourceKind).To(Equal(resourceKind.Kind))
+					ExpectWithOffset(1, obj.Spec.StorageClassName).To(Equal(storageClassName))
+					ExpectWithOffset(1, obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
+					ExpectWithOffset(1, obj.Spec.CABundle).To(Equal([]byte(caBundle)))
+				}
 			}
 
 			When("a StoragePolicyUsage resource does not exist", func() {
@@ -185,7 +201,7 @@ func unitTestsReconcile() {
 					dst = &spqv1.StoragePolicyUsage{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace: namespace,
-							Name:      spqutil.StoragePolicyUsageName(storageClassName),
+							Name:      spqutil.StoragePolicyUsageNameForVM(storageClassName),
 						},
 						Spec: spqv1.StoragePolicyUsageSpec{
 							StoragePolicyId: storagePolicyID,

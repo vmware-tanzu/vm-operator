@@ -132,63 +132,50 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.ReconcileNormal(vmSnapshotCtx); err != nil {
-		vmSnapshotCtx.Logger.Error(err, "Failed to reconcile VirtualMachineSnapShot")
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{}, nil
+	return r.ReconcileNormal(vmSnapshotCtx)
 }
 
-func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) error {
+func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) (ctrl.Result, error) {
 	ctx.Logger.Info("Reconciling VirtualMachineSnapshot")
 
-	if !controllerutil.ContainsFinalizer(ctx.VirtualMachineSnapshot, Finalizer) {
-		// Set the finalizer and return so the object is patched immediately.
-		controllerutil.AddFinalizer(ctx.VirtualMachineSnapshot, Finalizer)
-		return nil
-	}
-	// return early if snapshot is ready; nothing to do
-	if conditions.IsTrue(ctx.VirtualMachineSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
-		return nil
+	// If the finalizer is not present, add it.  Return so the object is patched immediately.
+	if controllerutil.AddFinalizer(ctx.VirtualMachineSnapshot, Finalizer) {
+		ctx.Logger.Info("Added finalizer to snapshot", "snapshot", ctx.VirtualMachineSnapshot.Name)
+		return ctrl.Result{}, nil
 	}
 
 	vmSnapshot := ctx.VirtualMachineSnapshot
 	ctx.Logger.Info("Fetching VirtualMachine from snapshot object", "vmSnapshot", vmSnapshot.Name)
+
+	// TODO: AKP: These validations must be removed once they are added in the validation webhook.
 	if vmSnapshot.Spec.VMRef == nil {
-		return errVMRefNil
+		return ctrl.Result{}, errVMRefNil
 	}
+
 	vm := &vmopv1.VirtualMachine{}
 	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
 		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
-		return err
+		return ctrl.Result{}, err
 	}
 
 	ctx.VM = vm
-	if vm.Status.UniqueID == "" {
-		return errors.New("VM hasn't been created and has no uniqueID")
+
+	// The snapshot must be owned by a VM.  Set an owner reference to the VM.
+	if err := controllerutil.SetControllerReference(ctx.VM, ctx.VirtualMachineSnapshot, r.Scheme()); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to set owner reference to snapshot: %w", err)
 	}
 
-	// vm object already set with snapshot reference
-	if vm.Status.CurrentSnapshot != nil && vm.Status.CurrentSnapshot.Name == ctx.VirtualMachineSnapshot.Name {
-		ctx.Logger.Info("VirtualMachine current snapshot already up to date", "status.currentSnapshot", vm.Status.CurrentSnapshot.Name)
-		return nil
+	// Return early if snapshot is ready; nothing to do
+	if conditions.IsTrue(ctx.VirtualMachineSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+		// TODO: Patch the status of the snapshot to populate any other fields such as storage used.
+		return ctrl.Result{}, nil
 	}
 
-	objRef := vmSnapshotCRToLocalObjectRef(ctx.VirtualMachineSnapshot)
-
-	// patch vm resource with the status.currentSnapshot
-	vmPatch := client.MergeFrom(vm.DeepCopy())
-	vm.Status.CurrentSnapshot = objRef
-	if err := r.Status().Patch(ctx, vm, vmPatch); err != nil {
-		return fmt.Errorf(
-			"failed to patch VM resource %s with current snapshot %s: %w", objKey,
-			ctx.VirtualMachineSnapshot.Name, err)
-	}
-
-	ctx.Logger.Info("Successfully patched VirtualMachine status with current snapshot reference", "vm.Name", vm.Name, "status.currentSnapshot", vm.Status.CurrentSnapshot.Name)
-	return nil
+	// The snapshot is not ready yet. The VM controller will handle the actual snapshot creation
+	// when it detects this snapshot resource. We just need to requeue to check again later.
+	ctx.Logger.V(5).Info("snapshot not yet complete. Requeuing reconcile request")
+	return ctrl.Result{RequeueAfter: pkgcfg.FromContext(ctx).SnapshotInProgressRequeueDelay}, nil
 }
 
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) error {

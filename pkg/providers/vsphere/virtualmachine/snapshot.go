@@ -93,6 +93,7 @@ func CreateSnapshot(args SnapshotArgs) (*types.ManagedObjectReference, error) {
 	return &snapMoRef, nil
 }
 
+// DeleteSnapshot deletes a snapshot from vCenter.
 func DeleteSnapshot(args SnapshotArgs) error {
 	t, err := args.VcVM.RemoveSnapshot(args.VMCtx, args.VMSnapshot.Name, args.RemoveChildren, args.Consolidate)
 	if err != nil {

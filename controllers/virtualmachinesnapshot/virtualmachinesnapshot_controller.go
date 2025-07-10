@@ -187,7 +187,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 			ctx.VirtualMachineSnapshot.Name, err)
 	}
 
-	ctx.Logger.Info("Successfully patched VirtualMachine's current snapshot reference", "vm.Name", vm.Name, "status.currentSnapshot", vm.Status.CurrentSnapshot.Name)
+	ctx.Logger.Info("Successfully patched VirtualMachine status with current snapshot reference", "vm.Name", vm.Name, "status.currentSnapshot", vm.Status.CurrentSnapshot.Name)
 	return nil
 }
 

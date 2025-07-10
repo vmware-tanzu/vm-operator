@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package vmlifecycle
@@ -121,6 +121,12 @@ func ReconcileStatus(
 
 	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
 		MarkVMClassConfigurationSynced(vmCtx, vmCtx.VM, k8sClient)
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
+		if err := updateCurrentSnapshotStatus(vmCtx, k8sClient); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
@@ -1158,4 +1164,111 @@ func updateProbeStatusGuestInfo(
 	}
 
 	return probeResultSuccess, ""
+}
+
+// updateCurrentSnapshotStatus updates the VM status to reflect the
+// current snapshot on the VM.
+func updateCurrentSnapshotStatus(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) error {
+
+	vmCtx.Logger.V(5).Info("Updating current snapshot in VM status")
+
+	vm := vmCtx.VM
+
+	// If VM has no snapshots, clear the status.
+	if vmCtx.MoVM.Snapshot == nil {
+		if vm.Status.CurrentSnapshot != nil {
+			vmCtx.Logger.V(4).Info("VM has no snapshots, clearing status.currentSnapshot")
+			vm.Status.CurrentSnapshot = nil
+		}
+		return nil
+	}
+
+	// If VM has no current snapshot, clear the status.
+	if vmCtx.MoVM.Snapshot.CurrentSnapshot == nil {
+		if vm.Status.CurrentSnapshot != nil {
+			vmCtx.Logger.V(4).Info("VM has no current snapshot, clearing status.currentSnapshot")
+			vm.Status.CurrentSnapshot = nil
+		}
+		return nil
+	}
+
+	// Get the current snapshot reference from vCenter.
+	currentSnapMoref := vmCtx.MoVM.Snapshot.CurrentSnapshot
+
+	// Find the snapshot name by traversing the snapshot tree.
+	snapshotName := FindSnapshotNameInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, currentSnapMoref.Value)
+	if snapshotName == "" {
+		vmCtx.Logger.V(4).Info("Could not find snapshot name in tree",
+			"snapshotRef", currentSnapMoref.Value)
+		// Clear the status if we can't find the snapshot name.
+		if vm.Status.CurrentSnapshot != nil {
+			vm.Status.CurrentSnapshot = nil
+		}
+		return nil
+	}
+
+	vmCtx.Logger.V(5).Info("Found snapshot name in tree",
+		"snapshotName", snapshotName,
+		"snapshotRef", currentSnapMoref.Value)
+
+	// Check if there's a VirtualMachineSnapshot custom resource with this name.
+	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
+	objKey := ctrlclient.ObjectKey{
+		Name:      snapshotName,
+		Namespace: vm.Namespace,
+	}
+
+	if err := k8sClient.Get(vmCtx, objKey, vmSnapshot); err != nil {
+		if !apierrors.IsNotFound(err) {
+			vmCtx.Logger.Error(err, "Failed to get VirtualMachineSnapshot custom resource",
+				"snapshotName", snapshotName)
+			return err
+		}
+		// Snapshot custom resource doesn't exist, clear the status.
+		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot custom resource not found, clearing status",
+			"snapshotName", snapshotName)
+		vm.Status.CurrentSnapshot = nil
+
+		return nil
+	}
+
+	// If the snapshot is being deleted, don't update the status.
+	if !vmSnapshot.DeletionTimestamp.IsZero() {
+		vmCtx.Logger.Error(nil, "VM points to a snapshot that is marked for deletion",
+			"snapshotName", snapshotName)
+		return nil
+	}
+
+	// Update the status to reflect the current snapshot custom resource.
+	currentSnapshot := &common.LocalObjectRef{
+		APIVersion: vmSnapshot.APIVersion,
+		Kind:       vmSnapshot.Kind,
+		Name:       vmSnapshot.Name,
+	}
+
+	// Update the status. Let patch helper figure out which fields
+	// need to be updated exactly.
+	vm.Status.CurrentSnapshot = currentSnapshot
+
+	return nil
+}
+
+// FindSnapshotNameInTree recursively searches the snapshot tree for a
+// snapshot with the given reference value.
+// TODO: AKP: Replace this with a Govmomi helper once merged.
+func FindSnapshotNameInTree(snapshots []vimtypes.VirtualMachineSnapshotTree, targetRef string) string {
+	for _, snapshot := range snapshots {
+		// Check if this snapshot matches the target reference.
+		if snapshot.Snapshot.Value == targetRef {
+			return snapshot.Name
+		}
+
+		// Recursively search child snapshots.
+		if childName := FindSnapshotNameInTree(snapshot.ChildSnapshotList, targetRef); childName != "" {
+			return childName
+		}
+	}
+	return ""
 }

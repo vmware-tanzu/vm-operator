@@ -210,7 +210,7 @@ func snapShotTests() {
 					VMSnapshot: vmSnapshot,
 					VcVM:       vcVM,
 				}
-				Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(MatchError(virtualmachine.ErrVMSnapshotNotFound))
+				Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(MatchError(virtualmachine.ErrSnapshotNotFound))
 			})
 		})
 
@@ -251,7 +251,7 @@ func snapShotTests() {
 					VMSnapshot: vmSnapshot,
 					VcVM:       vcVM,
 				}
-				Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(MatchError(virtualmachine.ErrVMSnapshotNotFound))
+				Expect(virtualmachine.DeleteSnapshot(deleteArgs)).To(MatchError(virtualmachine.ErrSnapshotNotFound))
 			})
 		})
 	})

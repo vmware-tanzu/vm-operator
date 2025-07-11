@@ -212,7 +212,7 @@ func unitTestsReconcile() {
 				&spqv1.StoragePolicyUsage{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: namespace,
-						Name:      spqutil.StoragePolicyUsageName(name),
+						Name:      spqutil.StoragePolicyUsageNameForVM(name),
 					},
 					Spec: spqv1.StoragePolicyUsageSpec{
 						StoragePolicyId:  fake,
@@ -229,7 +229,7 @@ func unitTestsReconcile() {
 					ctx,
 					ctrlclient.ObjectKey{
 						Namespace: namespace,
-						Name:      spqutil.StoragePolicyUsageName(name),
+						Name:      spqutil.StoragePolicyUsageNameForVM(name),
 					},
 					&spu,
 				)).To(Succeed())

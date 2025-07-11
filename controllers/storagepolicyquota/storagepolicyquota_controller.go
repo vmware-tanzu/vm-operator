@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package storagepolicyquota
@@ -119,7 +119,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
 	logger logr.Logger,
-	src *spqv1.StoragePolicyQuota) error {
+	spq *spqv1.StoragePolicyQuota) error {
 
 	caBundle, err := spqutil.GetWebhookCABundle(ctx, r.Client)
 	if err != nil {
@@ -130,46 +130,64 @@ func (r *Reconciler) ReconcileNormal(
 	objs, err := spqutil.GetStorageClassesForPolicyQuota(
 		ctx,
 		r.Client,
-		src)
+		spq)
 	if err != nil {
 		return err
 	}
 
-	// Create the StoragePolicyUsage resources.
+	// Create the StoragePolicyUsage resources for below kinds:
+	// - VirtualMachine
+	// - VirtualMachineSnapshot
+	resourceKinds := []struct {
+		Kind     string
+		NameFunc func(string) string
+	}{
+		{
+			Kind:     "VirtualMachine",
+			NameFunc: spqutil.StoragePolicyUsageNameForVM,
+		},
+		{
+			Kind:     "VirtualMachineSnapshot",
+			NameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
+		},
+	}
+
 	var errs []error
 	for i := range objs {
-		dst := spqv1.StoragePolicyUsage{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: src.Namespace,
-				Name:      spqutil.StoragePolicyUsageName(objs[i].Name),
-			},
-		}
-
-		fn := func() error {
-			if err := ctrlutil.SetControllerReference(
-				src, &dst, r.Scheme()); err != nil {
-
-				return err
+		for _, resourceKind := range resourceKinds {
+			spu := spqv1.StoragePolicyUsage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: spq.Namespace,
+					Name:      resourceKind.NameFunc(objs[i].Name),
+				},
 			}
 
-			dst.Spec.StorageClassName = objs[i].Name
-			dst.Spec.StoragePolicyId = src.Spec.StoragePolicyId
-			dst.Spec.ResourceAPIgroup = ptr.To(vmopv1.GroupVersion.Group)
-			dst.Spec.ResourceKind = "VirtualMachine"
-			dst.Spec.ResourceExtensionName = spqutil.StoragePolicyQuotaExtensionName
-			dst.Spec.ResourceExtensionNamespace = r.PodNamespace
-			dst.Spec.CABundle = caBundle
+			fn := func() error {
+				if err := ctrlutil.SetControllerReference(
+					spq, &spu, r.Scheme()); err != nil {
 
-			return nil
-		}
+					return err
+				}
 
-		if _, err := ctrlutil.CreateOrPatch(
-			ctx,
-			r.Client,
-			&dst,
-			fn); err != nil {
+				spu.Spec.StorageClassName = objs[i].Name
+				spu.Spec.StoragePolicyId = spq.Spec.StoragePolicyId
+				spu.Spec.ResourceAPIgroup = ptr.To(vmopv1.GroupVersion.Group)
+				spu.Spec.ResourceKind = resourceKind.Kind
+				spu.Spec.ResourceExtensionName = spqutil.StoragePolicyQuotaExtensionName
+				spu.Spec.ResourceExtensionNamespace = r.PodNamespace
+				spu.Spec.CABundle = caBundle
 
-			errs = append(errs, err)
+				return nil
+			}
+
+			if _, err := ctrlutil.CreateOrPatch(
+				ctx,
+				r.Client,
+				&spu,
+				fn); err != nil {
+
+				errs = append(errs, err)
+			}
 		}
 	}
 

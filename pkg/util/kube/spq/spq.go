@@ -39,10 +39,16 @@ const (
 	SecretCertKey               = "ca.crt"
 )
 
-// StoragePolicyUsageName returns the name of the StoragePolicyUsage
-// resource for a given StorageClass resource name.
-func StoragePolicyUsageName(storageClassName string) string {
+// StoragePolicyUsageNameForVM returns the name of the StoragePolicyUsage
+// resource with a given StorageClass name for VirtualMachine resources.
+func StoragePolicyUsageNameForVM(storageClassName string) string {
 	return storageClassName + "-vm-usage"
+}
+
+// StoragePolicyUsageNameForVMSnapshot returns the name of the StoragePolicyUsage
+// resource with a given StorageClass name for VirtualMachineSnapshot resources.
+func StoragePolicyUsageNameForVMSnapshot(storageClassName string) string {
+	return storageClassName + "-vmsnapshot-usage"
 }
 
 // GetStorageClassesForPolicy returns the StorageClass resources that reference

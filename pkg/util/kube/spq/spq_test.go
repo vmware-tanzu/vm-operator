@@ -29,10 +29,18 @@ import (
 
 var _ = DescribeTable("StoragePolicyUsageName",
 	func(s string, expected string) {
-		Ω(spqutil.StoragePolicyUsageName(s)).Should(Equal(expected))
+		Ω(spqutil.StoragePolicyUsageNameForVM(s)).Should(Equal(expected))
 	},
 	Entry("empty input", "", "-vm-usage"),
 	Entry("non-empty-input", "my-class", "my-class-vm-usage"),
+)
+
+var _ = DescribeTable("StoragePolicyUsageName",
+	func(s string, expected string) {
+		Ω(spqutil.StoragePolicyUsageNameForVMSnapshot(s)).Should(Equal(expected))
+	},
+	Entry("empty input", "", "-vmsnapshot-usage"),
+	Entry("non-empty-input", "my-class", "my-class-vmsnapshot-usage"),
 )
 
 var _ = Describe("IsStorageClassInNamespace", func() {

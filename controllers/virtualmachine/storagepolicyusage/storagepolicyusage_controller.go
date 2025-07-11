@@ -104,7 +104,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return ctrl.Result{}, r.ReconcileNormal(
 		ctx,
 		req.Namespace,
-		spqutil.StoragePolicyUsageName(req.Name))
+		spqutil.StoragePolicyUsageNameForVM(req.Name))
 }
 
 func (r *Reconciler) ReconcileNormal(

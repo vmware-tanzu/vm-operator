@@ -112,14 +112,13 @@ var _ = Describe(
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
-						DefaultVMClassControllerName: "100",
-						MaxCreateVMsOnProvider:       101,
-						PrivilegedUsers:              "102",
-						NetworkProviderType:          "103",
-						LoadBalancerProvider:         "104",
-						VSphereNetworking:            true,
-						ContentAPIWait:               105 * time.Second,
-						JSONExtraConfig:              "106",
+						MaxCreateVMsOnProvider: 101,
+						PrivilegedUsers:        "102",
+						NetworkProviderType:    "103",
+						LoadBalancerProvider:   "104",
+						VSphereNetworking:      true,
+						ContentAPIWait:         105 * time.Second,
+						JSONExtraConfig:        "106",
 						InstanceStorage: pkgcfg.InstanceStorage{
 							PVPlacementFailedTTL: 107 * time.Hour,
 							JitterMaxFactor:      108.0,

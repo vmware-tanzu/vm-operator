@@ -19,7 +19,6 @@ func FromEnv() Config {
 
 	setString(env.JSONExtraConfig, &config.JSONExtraConfig)
 	setDuration(env.ContentAPIWaitDuration, &config.ContentAPIWait)
-	setString(env.DefaultVMClassControllerName, &config.DefaultVMClassControllerName)
 	setInt(env.MaxCreateVMsOnProvider, &config.MaxCreateVMsOnProvider)
 	setDuration(env.CreateVMRequeueDelay, &config.CreateVMRequeueDelay)
 	setDuration(env.PoweredOnVMHasIPRequeueDelay, &config.PoweredOnVMHasIPRequeueDelay)

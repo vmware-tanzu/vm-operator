@@ -15,7 +15,6 @@ import (
 	"github.com/go-logr/logr"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	ctrl "sigs.k8s.io/controller-runtime"
-	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -38,7 +37,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -51,12 +49,6 @@ import (
 const (
 	deprecatedFinalizerName = "virtualmachine.vmoperator.vmware.com"
 	finalizerName           = "vmoperator.vmware.com/virtualmachine"
-
-	// vmClassControllerName is the name of the controller specified in a
-	// VirtualMachineClass resource's field spec.controllerName field that
-	// indicates a VM pointing to that VM Class should be reconciled by this
-	// controller.
-	vmClassControllerName = "vmoperator.vmware.com/vsphere"
 )
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
@@ -88,37 +80,15 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx.VMProvider,
 		proberManager)
 
-	// isDefaultVMClassController is used to configure watches and predicates
-	// for the controller. If a VirtualMachineClass resource's
-	// spec.controllerName field is missing or empty, this controller will
-	// consider that VM Class as long as isDefaultVMClassController is true.
-	isDefaultVMClassController := getIsDefaultVMClassController(ctx)
-
 	builder := ctrl.NewControllerManagedBy(mgr).
-		// Filter any VMs that reference a VM Class with a spec.controllerName set
-		// to a non-empty value other than "vmoperator.vmware.com/vsphere". Please
-		// note that a VM will *not* be filtered if the VM Class does not exist. A
-		// VM is also not filtered if the field spec.controllerName is missing or
-		// empty as long as the default VM Class controller is
-		// "vmoperator.vmware.com/vsphere".
-		For(controlledType, ctrlbuilder.WithPredicates(kubeutil.VMForControllerPredicate(
-			r.Client,
-			// These events can be very verbose, so be careful to not log them
-			// at too high of a log level.
-			r.Logger.WithName("VMForControllerPredicate").V(8),
-			vmClassControllerName,
-			kubeutil.VMForControllerPredicateOptions{
-				MatchIfVMClassNotFound:            true,
-				MatchIfControllerNameFieldEmpty:   isDefaultVMClassController,
-				MatchIfControllerNameFieldMissing: isDefaultVMClassController,
-			}))).
+		For(controlledType).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
 			SkipNameValidation:      SkipNameValidation,
 		})
 
 	builder = builder.Watches(&vmopv1.VirtualMachineClass{},
-		handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client, isDefaultVMClassController)))
+		handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
 
 	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
 		builder = builder.Watches(
@@ -157,35 +127,13 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 // WCP_Namespaced_VM_Class FSS is enabled.
 func classToVMMapperFn(
 	ctx *pkgctx.ControllerManagerContext,
-	c client.Client,
-	isDefaultVMClassController bool) func(_ context.Context, o client.Object) []reconcile.Request {
+	c client.Client) func(_ context.Context, o client.Object) []reconcile.Request {
 
 	// For a given VirtualMachineClass, return reconcile requests
 	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
 	return func(_ context.Context, o client.Object) []reconcile.Request {
 		class := o.(*vmopv1.VirtualMachineClass)
 		logger := ctx.Logger.WithValues("name", class.Name, "namespace", class.Namespace)
-
-		// Only watch resources that reference a VirtualMachineClass with its
-		// field spec.controllerName equal to controllerName or if the field is
-		// empty and isDefaultVMClassController is true.
-		if controllerName := class.Spec.ControllerName; controllerName == "" {
-			if !isDefaultVMClassController {
-				// Log at a high-level so the logs are not over-run.
-				logger.V(8).Info(
-					"Skipping class with empty controller name & not default VM Class controller",
-					"defaultVMClassController", pkgcfg.FromContext(ctx).DefaultVMClassControllerName,
-					"expectedControllerName", vmClassControllerName)
-				return nil
-			}
-		} else if controllerName != vmClassControllerName {
-			// Log at a high-level so the logs are not over-run.
-			logger.V(8).Info(
-				"Skipping class with mismatched controller name",
-				"actualControllerName", controllerName,
-				"expectedControllerName", vmClassControllerName)
-			return nil
-		}
 
 		logger.V(4).Info("Reconciling all VMs referencing a VM class because of a VirtualMachineClass watch")
 
@@ -574,13 +522,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	}
 
 	return err
-}
-
-func getIsDefaultVMClassController(ctx context.Context) bool {
-	if v := pkgcfg.FromContext(ctx).DefaultVMClassControllerName; v == "" || v == vmClassControllerName {
-		return true
-	}
-	return false
 }
 
 // ignoredCreateErr is written this way in order to illustrate coverage more

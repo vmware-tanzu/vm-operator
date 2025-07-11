@@ -26,12 +26,6 @@ type Config struct {
 	ContentAPIWait  time.Duration
 	JSONExtraConfig string
 
-	// DefaultVMClassControllerName is the default value for the
-	// VirtualMachineClass field spec.controllerName.
-	//
-	// Defaults to vmoperator.vmware.com/vsphere.
-	DefaultVMClassControllerName string
-
 	// Features reflects the feature states.
 	Features FeatureStates
 

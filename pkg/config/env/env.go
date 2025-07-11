@@ -14,7 +14,6 @@ type VarName uint8
 const (
 	_varNameBegin VarName = iota
 
-	DefaultVMClassControllerName
 	MaxCreateVMsOnProvider
 	CreateVMRequeueDelay
 	PoweredOnVMHasIPRequeueDelay
@@ -90,8 +89,6 @@ func All() []VarName {
 //nolint:gocyclo
 func (n VarName) String() string {
 	switch n {
-	case DefaultVMClassControllerName:
-		return "DEFAULT_VM_CLASS_CONTROLLER_NAME"
 	case MaxCreateVMsOnProvider:
 		return "MAX_CREATE_VMS_ON_PROVIDER"
 	case CreateVMRequeueDelay:

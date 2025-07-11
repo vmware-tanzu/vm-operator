@@ -21,9 +21,8 @@ func Default() Config {
 		BuildVersion: pkg.BuildVersion,
 		BuildType:    pkg.BuildType,
 
-		ContainerNode:                false,
-		ContentAPIWait:               1 * time.Second,
-		DefaultVMClassControllerName: "vmoperator.vmware.com/vsphere",
+		ContainerNode:  false,
+		ContentAPIWait: 1 * time.Second,
 		Features: FeatureStates{
 			InstanceStorage:            true,
 			PodVMOnStretchedSupervisor: false,

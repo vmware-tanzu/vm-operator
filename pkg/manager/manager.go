@@ -22,6 +22,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
@@ -65,6 +66,10 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 	_ = appv1a1.AddToScheme(opts.Scheme)
 
 	_ = vmopapi.AddToScheme(opts.Scheme)
+
+	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
+		_ = imgregv1.AddToScheme(opts.Scheme)
+	}
 
 	if pkgcfg.FromContext(ctx).NetworkProviderType == pkgcfg.NetworkProviderTypeVPC {
 		_ = vpcv1alpha1.AddToScheme(opts.Scheme)

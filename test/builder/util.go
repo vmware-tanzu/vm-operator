@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,6 +46,37 @@ func applyFeatureStateFnsToCRD(
 	for i := range fns {
 		crd = fns[i](ctx, crd)
 	}
+	return crd
+}
+
+func updateImgRegStorageVersion(ctx context.Context, crd apiextensionsv1.CustomResourceDefinition) apiextensionsv1.CustomResourceDefinition {
+
+	v1a1Idx := indexOfVersion(crd, "v1alpha1")
+	v1a2Idx := indexOfVersion(crd, "v1alpha2")
+
+	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
+		if v1a1Idx >= 0 {
+			crd.Spec.Versions[v1a1Idx].Storage = !(v1a2Idx >= 0) //nolint:staticcheck
+			crd.Spec.Versions[v1a1Idx].Served = true
+		}
+
+		if v1a2Idx >= 0 {
+			crd.Spec.Versions[v1a2Idx].Storage = true
+			crd.Spec.Versions[v1a2Idx].Served = true
+		}
+	} else if v1a1Idx >= 0 {
+		crd.Spec.Versions[v1a1Idx].Storage = true
+		crd.Spec.Versions[v1a1Idx].Served = true
+
+		if v1a2Idx >= 0 {
+			var zeroVal apiextensionsv1.CustomResourceDefinitionVersion
+
+			copy(crd.Spec.Versions[v1a2Idx:], crd.Spec.Versions[v1a2Idx+1:])
+			crd.Spec.Versions[len(crd.Spec.Versions)-1] = zeroVal
+			crd.Spec.Versions = crd.Spec.Versions[:len(crd.Spec.Versions)-1]
+		}
+	}
+
 	return crd
 }
 

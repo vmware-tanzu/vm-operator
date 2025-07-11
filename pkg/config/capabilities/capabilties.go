@@ -59,6 +59,10 @@ const (
 	// defined in the Supervisor capabilities CRD for the VM snapshots
 	// capability.
 	CapabilityKeyVMSnapshots = "supports_VM_service_VM_snapshots"
+
+	// CapabilityKeyInventoryContentLibrary is the name of the key defined in the
+	// Supervisor capabilities CRD.
+	CapabilityKeyInventoryContentLibrary = "supports_inventory_content_library"
 )
 
 var (
@@ -205,6 +209,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.ImmutableClasses = capStatus.Activated
 		case CapabilityKeyVMSnapshots:
 			fs.VMSnapshots = capStatus.Activated
+		case CapabilityKeyInventoryContentLibrary:
+			fs.InventoryContentLibrary = capStatus.Activated
 		}
 
 	}

@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
@@ -100,6 +101,7 @@ func NewScheme() *runtime.Scheme {
 	_ = netopv1alpha1.AddToScheme(scheme)
 	_ = topologyv1.AddToScheme(scheme)
 	_ = imgregv1a1.AddToScheme(scheme)
+	_ = imgregv1.AddToScheme(scheme)
 	_ = vpcv1alpha1.AddToScheme(scheme)
 	return scheme
 }

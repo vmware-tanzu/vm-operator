@@ -7,7 +7,6 @@ package validation_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -60,6 +59,7 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	}
 
 	ctx.vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.Namespace, "dummy-vm-snapshot", "dummy-vm")
+
 	return ctx
 }
 
@@ -76,27 +76,22 @@ func intgTestsValidateCreate() {
 		ctx = nil
 	})
 
-	It("should allow the request", func() {
-		Eventually(func() error {
-			return ctx.Client.Create(ctx, ctx.vmSnapshot)
-		}).Should(Succeed())
+	When("the VMSnapshot is created", func() {
+		It("should allow the request", func() {
+			Expect(ctx.Client.Create(ctx, ctx.vmSnapshot)).To(Succeed())
+		})
 	})
 }
 
 func intgTestsValidateUpdate() {
 	var (
-		ctx *intgValidatingWebhookContext
+		ctx                 *intgValidatingWebhookContext
+		originalDescription string
 	)
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
 		Expect(ctx.Client.Create(ctx, ctx.vmSnapshot)).To(Succeed())
-	})
-
-	JustBeforeEach(func() {
-		Eventually(func() error {
-			return ctx.Client.Update(ctx, ctx.vmSnapshot)
-		}).Should(Succeed())
 	})
 
 	AfterEach(func() {
@@ -104,29 +99,39 @@ func intgTestsValidateUpdate() {
 		ctx = nil
 	})
 
+	When("the VMSnapshot with a new description", func() {
+		BeforeEach(func() {
+			originalDescription = ctx.vmSnapshot.Spec.Description
+			ctx.vmSnapshot.Spec.Description = "new-description"
+		})
+
+		AfterEach(func() {
+			ctx.vmSnapshot.Spec.Description = originalDescription
+		})
+
+		It("should should allow the request", func() {
+			Expect(ctx.Client.Update(ctx, ctx.vmSnapshot)).To(Succeed())
+		})
+	})
+
 }
+
 func intgTestsValidateDelete() {
 	var (
-		err error
 		ctx *intgValidatingWebhookContext
 	)
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
-		Expect(ctx.Client.Create(ctx, ctx.vmSnapshot)).To(Succeed())
-	})
-	JustBeforeEach(func() {
-		err = ctx.Client.Delete(suite, ctx.vmSnapshot)
-	})
-	AfterEach(func() {
-		err = nil
-		ctx = nil
 	})
 
 	When("delete is performed", func() {
+		BeforeEach(func() {
+			Expect(ctx.Client.Create(ctx, ctx.vmSnapshot)).To(Succeed())
+		})
+
 		It("should allow the request", func() {
-			Expect(ctx.Namespace).ToNot(BeNil())
-			Expect(err).ToNot(HaveOccurred())
+			Expect(ctx.Client.Delete(ctx, ctx.vmSnapshot)).To(Succeed())
 		})
 	})
 }

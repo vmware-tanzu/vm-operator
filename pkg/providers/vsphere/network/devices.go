@@ -5,6 +5,8 @@
 package network
 
 import (
+	"slices"
+
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -50,7 +52,7 @@ func MapEthernetDevicesToSpecIdx(
 		matchingIdx := findMatchingEthCardForInterfaceSpec(vmCtx, client, interfaceSpec, ethCards)
 		if matchingIdx >= 0 {
 			devKeyToSpecIdx[ethCards[matchingIdx].GetVirtualDevice().Key] = i
-			ethCards = append(ethCards[:matchingIdx], ethCards[matchingIdx+1:]...)
+			ethCards = slices.Delete(ethCards, matchingIdx, matchingIdx+1)
 		}
 	}
 
@@ -214,7 +216,7 @@ func findMatchingEthCardNCPNetIf(
 		}
 
 		ethCard := bEthCard.GetVirtualEthernetCard()
-		if ethCard.ExternalId == netIf.Status.InterfaceID || ethCard.MacAddress == netIf.Status.MacAddress {
+		if ethCard.ExternalId == netIf.Status.InterfaceID && ethCard.MacAddress == netIf.Status.MacAddress {
 			return i
 		}
 	}
@@ -257,8 +259,9 @@ func findMatchingEthCardVPCSubnetPort(
 			continue
 		}
 
+		// TODO: Relax this to check for just MacAddress during VPC backup/restore.
 		ethCard := bEthCard.GetVirtualEthernetCard()
-		if ethCard.ExternalId == subnetPort.Status.Attachment.ID || ethCard.MacAddress == subnetPort.Status.NetworkInterfaceConfig.MACAddress {
+		if ethCard.ExternalId == subnetPort.Status.Attachment.ID && ethCard.MacAddress == subnetPort.Status.NetworkInterfaceConfig.MACAddress {
 			return i
 		}
 	}

@@ -35,12 +35,13 @@ func ReconcileNetworkInterfaces(
 			matchDev := currentEthCards[matchingIdx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 			results.Results[idx].DeviceKey = matchDev.Key
 			results.Results[idx].MacAddress = matchDev.MacAddress
+			r.Device.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = matchDev.MacAddress
 			currentEthCards = slices.Delete(currentEthCards, matchingIdx, matchingIdx+1)
 		} else {
 			existingIdx := findExistingEthCardForOrphanedCR(ctx, r.Name, results.OrphanedNetworkInterfaces, currentEthCards)
 			if existingIdx >= 0 {
 				// As best we can, we determined that one of the VM's current ethernet card corresponds to a now
-				// unreferenced (orphaned) network interface CR for the same interface name. To keep the device
+				// unreferenced (orphaned) network interface CR with the same interface name. To keep the device
 				// type the same, do an edit on the existing device.
 				editDev := currentEthCards[existingIdx]
 
@@ -107,7 +108,7 @@ func findExistingEthCardForOrphanedCR(
 	for idx, obj := range orphanedObjects {
 		if v, ok := obj.GetLabels()[VMInterfaceNameLabel]; !ok {
 			// Favor interfaces that we had labeled with the interface spec name first. Otherwise,
-			// fallback to just trying to match by the name suffix which isn't perfect.
+			// fallback to just trying to match by the suffix which isn't perfect.
 			if strings.HasSuffix(obj.GetName(), suffix) {
 				objIdxWithoutLabel = append(objIdxWithoutLabel, idx)
 			}

@@ -53,9 +53,10 @@ const (
 	isRestrictedNetworkKey               = "IsRestrictedNetwork"
 	allowedRestrictedNetworkTCPProbePort = 6443
 
-	vmiKind     = "VirtualMachineImage"
-	cvmiKind    = "ClusterVirtualMachineImage"
-	vmclassKind = "VirtualMachineClass"
+	vmiKind        = "VirtualMachineImage"
+	cvmiKind       = "ClusterVirtualMachineImage"
+	vmclassKind    = "VirtualMachineClass"
+	vmSnapshotKind = "VirtualMachineSnapshot"
 
 	readinessProbeOnlyOneAction                = "only one action can be specified"
 	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
@@ -164,6 +165,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -264,6 +266,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1848,6 +1851,51 @@ func (v validator) validateBootOptions(
 
 			allErrs = append(allErrs, field.Forbidden(fieldPath.Child("efiSecureBoot"), "when image firmware is not EFI"))
 		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateSnapshot(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	snapshotPath := field.NewPath("spec", "currentSnapshot")
+
+	// validate a create request
+	if oldVM == nil && vm.Spec.CurrentSnapshot != nil {
+		allErrs = append(allErrs, field.Forbidden(snapshotPath, "creating VM with current snapshot is not allowed"))
+
+		return allErrs
+	}
+
+	// the Update request has no currentSnapshot. nothing to validate here
+	if vm.Spec.CurrentSnapshot == nil {
+		return allErrs
+	}
+
+	if vm.Spec.CurrentSnapshot.APIVersion != "" {
+		gv, err := schema.ParseGroupVersion(vm.Spec.CurrentSnapshot.APIVersion)
+		if err != nil {
+			allErrs = append(allErrs, field.Invalid(snapshotPath.Child("apiVersion"),
+				vm.Spec.CurrentSnapshot.APIVersion, "must be valid group version"))
+		} else if gv.Group != vmopv1.GroupName {
+			allErrs = append(allErrs, field.Invalid(snapshotPath.Child("apiVersion"),
+				vm.Spec.CurrentSnapshot.APIVersion, fmt.Sprintf("group must be %q", vmopv1.GroupName)))
+		}
+	}
+
+	if vm.Spec.CurrentSnapshot.Kind != vmSnapshotKind {
+		allErrs = append(allErrs, field.NotSupported(
+			snapshotPath.Child("kind"), vm.Spec.CurrentSnapshot.Kind, []string{vmSnapshotKind},
+		))
+	}
+
+	if vm.Spec.CurrentSnapshot.Name == "" {
+		allErrs = append(allErrs, field.Required(snapshotPath.Child("name"), ""))
 	}
 
 	return allErrs

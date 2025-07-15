@@ -117,7 +117,7 @@ func initFeatures() {
 	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
 	if err != nil {
 		setupLog.Error(err, "Failed to create client for updating capabilities")
-	} else if _, err := capabilities.UpdateCapabilities(ctx, c); err != nil {
+	} else if _, err := capabilities.UpdateCapabilities(logr.NewContext(ctx, setupLog), c); err != nil {
 		setupLog.Error(err, "Failed to update capabilities")
 	}
 

@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -39,7 +38,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
@@ -971,7 +970,7 @@ func (v validator) validateVolumes(
 		}
 
 		if vol.Name != "" {
-			errs := validation.NameIsDNSSubdomain(util.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
+			errs := validation.NameIsDNSSubdomain(pkgutil.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
 			for _, msg := range errs {
 				allErrs = append(allErrs, field.Invalid(volPath.Child("name"), vol.Name, msg))
 			}
@@ -1279,7 +1278,6 @@ func (v validator) validateSchemaUpgrade(
 	ctx *pkgctx.WebhookRequestContext,
 	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	logr.FromContextOrDiscard(ctx).Info("ValidateSchemaUpgrade", "userInfo", ctx.UserInfo)
 	if builder.IsVMOperatorServiceAccount(ctx.WebhookContext, ctx.UserInfo) ||
 		builder.IsSystemMasters(ctx.WebhookContext, ctx.UserInfo) {
 

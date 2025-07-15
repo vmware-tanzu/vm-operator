@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
@@ -20,6 +19,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
 
@@ -93,7 +93,7 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 
 	if vm.Status.TaskID != "" {
 		ref := vimtypes.ManagedObjectReference{

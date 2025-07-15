@@ -7,14 +7,13 @@ package vmlifecycle
 import (
 	"fmt"
 
-	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 func BootstrapSysPrep(
@@ -24,7 +23,7 @@ func BootstrapSysPrep(
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := logr.FromContextOrDiscard(vmCtx)
+	logger := pkgutil.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling Sysprep bootstrap state")
 
 	if !vmCtx.IsOffToOn() {
@@ -51,7 +50,7 @@ func BootstrapSysPrep(
 		}
 
 		// Ensure the data is normalized first to plain-text.
-		data, err = util.TryToDecodeBase64Gzip([]byte(data))
+		data, err = pkgutil.TryToDecodeBase64Gzip([]byte(data))
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoding Sysprep unattend XML failed: %w", err)
 		}

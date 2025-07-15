@@ -85,8 +85,7 @@ func (vm *VirtualMachine) Reconfigure(
 
 	ctxop.MarkUpdate(ctx)
 
-	logger := logr.FromContextOrDiscard(ctx)
-
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.Info("Reconfiguring VM", "configSpec", pkgutil.SafeConfigSpecToString(configSpec))
 
 	reconfigureTask, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)

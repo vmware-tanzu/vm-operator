@@ -13,12 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;patch
@@ -38,7 +38,7 @@ func Restart(
 		panic("k8sClient is nil")
 	}
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 
 	config := pkgcfg.FromContext(ctx)
 
@@ -138,7 +138,7 @@ func NewRestartSignalHandler(
 		d: make(chan struct{}),
 	}
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 
 	// Receive the restart signal.
 	signal.Notify(h.c, RestartSignal)

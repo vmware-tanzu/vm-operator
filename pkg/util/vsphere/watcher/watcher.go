@@ -11,14 +11,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-logr/logr"
-
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // DefaultWatchedPropertyPaths returns the default set of property paths to
@@ -245,7 +244,7 @@ func Start(
 	lookupNamespacedName lookupNamespacedNameFn,
 	containerRefsWithIDs map[moRef][]string) (*Watcher, error) {
 
-	logger := logr.FromContextOrDiscard(ctx).WithName("vSphereWatcher")
+	logger := pkgutil.FromContextOrDefault(ctx).WithName("vSphereWatcher")
 
 	logger.Info("Started watching VMs")
 
@@ -307,7 +306,7 @@ func (w *Watcher) onUpdate(
 	ctx context.Context,
 	ou []vimtypes.ObjectUpdate) bool {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("OnUpdate", "objectUpdates", ou)
 
 	updates := map[moRef]objUpdate{}
@@ -346,7 +345,7 @@ func (w *Watcher) onObject(
 	obj moRef,
 	update objUpdate) error {
 
-	logger := logr.FromContextOrDiscard(ctx).
+	logger := pkgutil.FromContextOrDefault(ctx).
 		WithName("onObject").
 		WithValues("obj", obj)
 

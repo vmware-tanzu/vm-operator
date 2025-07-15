@@ -25,6 +25,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vsphereclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
@@ -80,7 +81,7 @@ func (s Service) Start(ctx context.Context) error {
 	ctx = watcher.JoinContext(ctx, s.ctx)
 	ctx = pkgcfg.JoinContext(ctx, s.ctx)
 
-	logger := logr.FromContextOrDiscard(s.ctx).WithName("VMWatcherService")
+	logger := pkgutil.FromContextOrDefault(s.ctx).WithName("VMWatcherService")
 	ctx = logr.NewContext(ctx, logger)
 
 	logger.Info("Starting VM watcher service")
@@ -216,7 +217,7 @@ var emptyResult watcher.Result
 
 func (s Service) waitForChanges(ctx context.Context) error {
 	var (
-		logger     = logr.FromContextOrDiscard(ctx)
+		logger     = pkgutil.FromContextOrDefault(ctx)
 		chanSource = cource.FromContextWithBuffer(ctx, "VirtualMachine", 100)
 	)
 

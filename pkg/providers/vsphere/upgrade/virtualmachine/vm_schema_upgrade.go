@@ -9,7 +9,6 @@ import (
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/vim25/mo"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
@@ -17,6 +16,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 var ErrUpgradeSchema = pkgerr.NoRequeueNoErr("upgraded vm schema")
@@ -49,7 +49,7 @@ func ReconcileSchemaUpgrade(
 		panic("moVM.config is nil")
 	}
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM")
 
 	var (
@@ -91,7 +91,7 @@ func reconcileBIOSUUID(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM BIOS UUID")
 
 	if vm.Spec.BiosUUID != "" {
@@ -115,7 +115,7 @@ func reconcileInstanceUUID(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM instance UUID")
 
 	if vm.Spec.InstanceUUID != "" {
@@ -139,7 +139,7 @@ func reconcileCloudInitInstanceUUID(
 	vm *vmopv1.VirtualMachine,
 	_ mo.VirtualMachine) {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info(
 		"Reconciling schema upgrade for VM cloud-init instance UUID")
 

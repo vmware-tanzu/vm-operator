@@ -78,6 +78,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		For(controlledType).
 		WithOptions(controller.Options{
 			SkipNameValidation: SkipNameValidation,
+			LogConstructor:     pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		WatchesRawSource(source.Channel(
 			cource.FromContextWithBuffer(ctx, "VirtualMachineImageCache", 100),
@@ -108,9 +109,6 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
-	logger := r.Logger.WithValues("name", req.NamespacedName)
-	ctx = logr.NewContext(ctx, logger)
-
 	patchHelper, err := patch.NewHelper(&obj, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf(
@@ -121,7 +119,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			if reterr == nil {
 				reterr = err
 			}
-			logger.Error(err, "patch failed")
+			pkgutil.FromContextOrDefault(ctx).Error(err, "patch failed")
 		}
 	}()
 
@@ -164,7 +162,7 @@ func (r *reconciler) ReconcileNormal(
 		return pkgerr.NoRequeueError{Message: "spec.providerVersion is empty"}
 	}
 
-	logger := logr.FromContextOrDiscard(ctx).WithValues(
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues(
 		"providerID", obj.Spec.ProviderID,
 		"providerVersion", obj.Spec.ProviderVersion)
 	ctx = logr.NewContext(ctx, logger)
@@ -359,7 +357,7 @@ func (r *reconciler) cacheFiles(
 
 	sriClient := r.newSRIClientFn(vimClient)
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("Caching files",
 		"dstDatacenter", dstDatacenter.Reference().Value,
 		"srcDatacenter", srcDatacenter.Reference().Value,
@@ -445,7 +443,7 @@ func reconcileOVF(
 				configMap.Data = map[string]string{}
 			}
 
-			logger := logr.FromContextOrDiscard(ctx)
+			logger := pkgutil.FromContextOrDefault(ctx)
 			logger.Info("Fetching OVF")
 
 			// Get the OVF.
@@ -485,7 +483,7 @@ func reconcileLibraryItem(
 	p clprov.Provider,
 	obj *vmopv1.VirtualMachineImageCache) error {
 
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := pkgutil.FromContextOrDefault(ctx)
 
 	// Get the content library item to be cached.
 	item, err := p.GetLibraryItemID(ctx, obj.Spec.ProviderID)

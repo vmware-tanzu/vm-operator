@@ -41,7 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -83,6 +83,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	c, err := controller.New(controllerName, mgr, controller.Options{
 		Reconciler:              r,
 		MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+		LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, &vmopv1.VirtualMachine{}, mgr.GetScheme()),
 	})
 	if err != nil {
 		return err
@@ -229,7 +230,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 
 	volCtx := &pkgctx.VolumeContext{
 		Context: ctx,
-		Logger:  ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
+		Logger:  pkgutil.FromContextOrDefault(ctx),
 		VM:      vm,
 	}
 
@@ -655,7 +656,7 @@ func (r *Reconciler) processAttachments(
 			continue
 		}
 
-		attachmentName := util.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
+		attachmentName := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
 		if attachment, ok := attachments[attachmentName]; ok {
 			// The attachment for this volume already existed when we listed the attachments for this VM.
 			// If this attachment ClaimName refers to the same PVC, then that is the current attachment so
@@ -958,7 +959,7 @@ func (r *Reconciler) attachmentsToDelete(
 	for _, volume := range ctx.VM.Spec.Volumes {
 		// Only process CNS volumes here.
 		if volume.PersistentVolumeClaim != nil {
-			attachmentName := util.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
+			attachmentName := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
 			expectedAttachments[attachmentName] = volume.PersistentVolumeClaim.ClaimName
 		}
 	}

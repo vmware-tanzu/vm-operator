@@ -11,13 +11,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -139,7 +139,7 @@ func updateCapabilitiesFeatures[T updateCapTypes](
 
 	var (
 		newFeat pkgcfg.FeatureStates
-		logger  = logr.FromContextOrDiscard(ctx).WithValues("dryRun", dryRun)
+		logger  = pkgutil.FromContextOrDefault(ctx).WithValues("dryRun", dryRun)
 		oldFeat = pkgcfg.FromContext(ctx).Features
 	)
 

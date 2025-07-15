@@ -23,6 +23,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -48,6 +49,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
+		WithLogConstructor(pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme())).
 		Complete(r)
 }
 
@@ -96,9 +98,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	logger := ctrl.Log.WithName(spqutil.StoragePolicyQuotaKind).WithValues(
-		"name", req.NamespacedName)
-
 	// Ensure the GVK for the object is synced back into the object since
 	// the object's APIVersion and Kind fields may be used later.
 	kubeutil.MustSyncGVKToObject(&obj, r.Scheme())
@@ -108,8 +107,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.ReconcileNormal(ctx, logger, &obj); err != nil {
-		logger.Error(err, "Failed to ReconcileNormal StoragePolicyQuota")
+	if err := r.ReconcileNormal(ctx, &obj); err != nil {
+		pkgutil.FromContextOrDefault(ctx).Error(err, "Failed to ReconcileNormal StoragePolicyQuota")
 		return ctrl.Result{}, err
 	}
 
@@ -118,7 +117,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
-	logger logr.Logger,
 	spq *spqv1.StoragePolicyQuota) error {
 
 	caBundle, err := spqutil.GetWebhookCABundle(ctx, r.Client)

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-logr/logr"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -300,7 +299,7 @@ func EncryptionClassToVirtualMachineMapper(
 			panic(fmt.Sprintf("object is %T", o))
 		}
 
-		logger := logr.FromContextOrDiscard(ctx).
+		logger := pkgutil.FromContextOrDefault(ctx).
 			WithValues("name", o.GetName(), "namespace", o.GetNamespace())
 		logger.V(4).Info("Reconciling all VMs referencing an EncryptionClass")
 

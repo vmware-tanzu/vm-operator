@@ -1064,7 +1064,7 @@ func reconcileCrypto(
 	moVM mo.VirtualMachine,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
-	logr.FromContextOrDiscard(ctx).V(4).Info("Reconciling crypto")
+	pkgutil.FromContextOrDefault(ctx).V(4).Info("Reconciling crypto")
 
 	return vmconfcrypto.Reconcile(
 		ctx,
@@ -1083,7 +1083,7 @@ func reconcileDiskPromo(
 	moVM mo.VirtualMachine,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
-	logr.FromContextOrDiscard(ctx).V(4).Info("Reconciling disk promotion")
+	pkgutil.FromContextOrDefault(ctx).V(4).Info("Reconciling disk promotion")
 
 	return vmconfdiskpromo.Reconcile(
 		ctx,

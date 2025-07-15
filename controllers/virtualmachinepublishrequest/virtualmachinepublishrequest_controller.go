@@ -38,6 +38,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -86,7 +87,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
-		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		}).
 		Watches(&vmopv1.VirtualMachineImage{},
 			handler.EnqueueRequestsFromMapFunc(vmiToVMPubMapperFn(ctx, r.Client))).
 		Complete(r)
@@ -213,7 +217,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	vmPublishCtx := &pkgctx.VirtualMachinePublishRequestContext{
 		Context:          ctx,
-		Logger:           ctrl.Log.WithName("VirtualMachinePublishRequest").WithValues("name", req.NamespacedName),
+		Logger:           pkgutil.FromContextOrDefault(ctx),
 		VMPublishRequest: vmPublishReq,
 	}
 

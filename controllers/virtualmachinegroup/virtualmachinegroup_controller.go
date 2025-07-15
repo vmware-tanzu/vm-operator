@@ -31,6 +31,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -64,6 +65,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.EnqueueRequestsFromMapFunc(vmToParentGroupMapperFn())).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
+			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
 }
@@ -155,11 +157,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	logger := ctrl.Log.WithName("VirtualMachineGroup").WithValues("name", req.NamespacedName)
-
 	vmGroupCtx := &pkgctx.VirtualMachineGroupContext{
 		Context: ctx,
-		Logger:  logger,
+		Logger:  pkgutil.FromContextOrDefault(ctx),
 		VMGroup: vmGroup,
 	}
 

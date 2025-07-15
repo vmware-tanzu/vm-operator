@@ -25,6 +25,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 			},
 		),
 	),
+
 	storagepolicyusage.AddToManager,
 	manager.InitializeProvidersNoopFn)
 

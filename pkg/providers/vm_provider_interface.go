@@ -73,4 +73,8 @@ type VirtualMachineProviderInterface interface {
 	// DeleteSnapshot deletes a snapshot from a virtual machine.
 	DeleteSnapshot(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot,
 		vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
+	// GetParentSnapshot returns the parent snapshot of a given snapshot name.
+	GetParentSnapshot(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (*vimtypes.VirtualMachineSnapshotTree, error)
+	// SnapshotSize returns the size of a snapshot.
+	GetSnapshotSize(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 }

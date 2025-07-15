@@ -108,8 +108,6 @@ func unitTestVaildateTemplateObjectMetaAndSelectorMatching() {
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.rs)
 		Expect(err).ToNot(HaveOccurred())
 
-		fmt.Printf("context is: %+v", ctx.rs)
-
 		response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(args.expectAllowed))
 

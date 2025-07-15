@@ -5,6 +5,7 @@
 package v1alpha4
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
@@ -103,6 +104,42 @@ type VirtualMachineSnapshotStatus struct {
 
 	// Conditions describes the observed conditions of the VirtualMachine.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// +optional
+
+	// Storage describes the observed amount of storage used by a
+	// VirtualMachineSnapshot, including the space for FCDs.
+	Storage *VirtualMachineSnapshotStorageStatus `json:"storage,omitempty"`
+}
+
+// VirtualMachineSnapshotStorageStatus defines the observed state of a
+// VirtualMachineSnapshot's storage.
+type VirtualMachineSnapshotStorageStatus struct {
+	// +optional
+
+	// Used describes the observed amount of storage used by a
+	// VirtualMachineSnapshot, except the space for FCDs.
+	Used *resource.Quantity `json:"used,omitempty"`
+
+	// +optional
+
+	// Requested describes the observed amount of storage requested by a
+	// VirtualMachineSnapshot. It's a list of requested storage for each
+	// storage class.
+	// Since a snapshot can have multiple PVCs, it can point to multiple storage
+	// classes.
+	Requested []VirtualMachineSnapshotStorageStatusRequested `json:"requested,omitempty"`
+}
+
+// VirtualMachineSnapshotStorageStatusRequested describes the observed amount of
+// storage requested by a VirtualMachineSnapshot for a storage class.
+type VirtualMachineSnapshotStorageStatusRequested struct {
+	// StorageClass is the name of the storage class.
+	StorageClass string `json:"storageClass"`
+
+	// Total describes the total storage space requested by a
+	// VirtualMachineSnapshot for the storage class.
+	Total *resource.Quantity `json:"total"`
 }
 
 // +kubebuilder:object:root=true

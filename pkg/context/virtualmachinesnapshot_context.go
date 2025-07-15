@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
@@ -19,6 +20,7 @@ type VirtualMachineSnapshotContext struct {
 	Logger                 logr.Logger
 	VirtualMachineSnapshot *vmopv1.VirtualMachineSnapshot
 	VM                     *vmopv1.VirtualMachine
+	StorageClassesToSync   sets.Set[string]
 }
 
 func (v *VirtualMachineSnapshotContext) String() string {

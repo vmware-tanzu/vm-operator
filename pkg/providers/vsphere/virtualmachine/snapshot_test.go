@@ -5,6 +5,7 @@
 package virtualmachine_test
 
 import (
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -178,7 +179,6 @@ func snapShotTests() {
 			moVM := mo.VirtualMachine{}
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
 			Expect(moVM.Snapshot).ToNot(BeNil())
-
 		})
 
 		It("succeeds", func() {
@@ -255,4 +255,108 @@ func snapShotTests() {
 			})
 		})
 	})
+
+	Context("GetSnapshotSize", func() {
+		var moVM mo.VirtualMachine
+		var sum int64
+		JustBeforeEach(func() {
+			args := virtualmachine.SnapshotArgs{
+				VMCtx:      vmCtx,
+				VMSnapshot: vmSnapshot,
+				VcVM:       vcVM,
+			}
+			snapMo, err := virtualmachine.CreateSnapshot(args)
+			Expect(err).To(BeNil())
+			Expect(snapMo).ToNot(BeNil())
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM)).To(Succeed())
+			Expect(moVM.Snapshot).ToNot(BeNil())
+			vmCtx.MoVM = moVM
+
+			sum = 0
+			for _, file := range moVM.LayoutEx.File {
+				if strings.HasSuffix(file.Name, ".vmdk") || strings.HasSuffix(file.Name, ".vmsn") || strings.HasSuffix(file.Name, ".vmem") {
+					sum += file.Size
+				}
+			}
+		})
+
+		It("succeeds", func() {
+			Expect(virtualmachine.GetSnapshotSize(vmCtx, moVM.Snapshot.CurrentSnapshot)).To(Equal(sum))
+		})
+
+		When("the snapshot is nil", func() {
+			It("returns 0", func() {
+				size := virtualmachine.GetSnapshotSize(vmCtx, nil)
+				Expect(size).To(Equal(int64(0)))
+			})
+		})
+
+		When("the moVM.layoutEx is nil", func() {
+			It("returns 0", func() {
+				vmCtx.MoVM.LayoutEx = nil
+				size := virtualmachine.GetSnapshotSize(vmCtx, moVM.Snapshot.CurrentSnapshot)
+				Expect(size).To(Equal(int64(0)))
+			})
+		})
+
+		When("the moVM.config.hardware.device is empty", func() {
+			It("returns snapshot size", func() {
+				vmCtx.MoVM.Config.Hardware.Device = nil
+				Expect(virtualmachine.GetSnapshotSize(vmCtx, moVM.Snapshot.CurrentSnapshot)).To(Equal(sum))
+			})
+		})
+	})
+
+	Describe("GetParentSnapshot", func() {
+		var childSnapshot *vmopv1.VirtualMachineSnapshot
+
+		JustBeforeEach(func() {
+			By("Creating parent snapshot")
+			args := virtualmachine.SnapshotArgs{
+				VMCtx:      vmCtx,
+				VMSnapshot: vmSnapshot,
+				VcVM:       vcVM,
+			}
+			snapMo, err := virtualmachine.CreateSnapshot(args)
+			Expect(err).To(BeNil())
+			Expect(snapMo).ToNot(BeNil())
+
+			By("Creating child snapshot")
+			childSnapshot = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snap-2", vm.Name)
+			args = virtualmachine.SnapshotArgs{
+				VMCtx:      vmCtx,
+				VMSnapshot: *childSnapshot,
+				VcVM:       vcVM,
+			}
+			snapMo2, err := virtualmachine.CreateSnapshot(args)
+			Expect(err).To(BeNil())
+			Expect(snapMo2).ToNot(BeNil())
+			moVM := mo.VirtualMachine{}
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
+			Expect(moVM.Snapshot).ToNot(BeNil())
+			vmCtx.MoVM = moVM
+		})
+
+		It("should return the parent snapshot of the child snapshot", func() {
+			parent := virtualmachine.GetParentSnapshot(vmCtx, childSnapshot.Name)
+			Expect(parent).ToNot(BeNil())
+			Expect(parent.Name).To(Equal(vmSnapshot.Name))
+		})
+
+		When("there is no parent snapshot", func() {
+			It("should return nil", func() {
+				parent := virtualmachine.GetParentSnapshot(vmCtx, vmSnapshot.Name)
+				Expect(parent).To(BeNil())
+			})
+		})
+
+		When("snapshot doesn't exist", func() {
+			It("should return nil", func() {
+				childSnapshot.Name = ""
+				parent := virtualmachine.GetParentSnapshot(vmCtx, childSnapshot.Name)
+				Expect(parent).To(BeNil())
+			})
+		})
+	})
+
 }

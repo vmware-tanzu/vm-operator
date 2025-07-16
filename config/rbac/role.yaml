@@ -218,6 +218,7 @@ rules:
   - clustervirtualmachineimages
   - virtualmachineclasses
   - virtualmachineclassinstances
+  - virtualmachinegrouppublishrequests
   - virtualmachinegroups
   - virtualmachineimagecaches
   - virtualmachineimages
@@ -252,6 +253,7 @@ rules:
   resources:
   - virtualmachineclasses/status
   - virtualmachineclassinstances/status
+  - virtualmachinegrouppublishrequests/status
   - virtualmachinegroups/status
   - virtualmachineimagecaches/status
   - virtualmachinepublishrequests/status

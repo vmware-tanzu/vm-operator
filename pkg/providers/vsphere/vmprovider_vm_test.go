@@ -245,6 +245,7 @@ func vmTests() {
 			})
 
 			Context("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", func() {
+				var instanceUUID string
 
 				BeforeEach(func() {
 					skipCreateOrUpdateVM = true
@@ -256,7 +257,10 @@ func vmTests() {
 					Expect(vmList).ToNot(BeEmpty())
 
 					vcVM = vmList[0]
-					vm.Spec.BiosUUID = vcVM.UUID(ctx)
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					instanceUUID = o.Config.InstanceUuid
+					vm.Spec.InstanceUUID = instanceUUID
 
 					powerState, err := vcVM.PowerState(ctx)
 					Expect(err).ToNot(HaveOccurred())
@@ -288,17 +292,17 @@ func vmTests() {
 						JustBeforeEach(func() {
 							vm.Spec.ClassName = ""
 						})
-						When("spec.biosUUID matches existing VM", func() {
+						When("spec.instanceUUID matches existing VM", func() {
 							JustBeforeEach(func() {
-								vm.Spec.BiosUUID = vcVM.UUID(ctx)
+								vm.Spec.InstanceUUID = instanceUUID
 							})
 							It("should error when getting class", func() {
 								assertClassNotFound("")
 							})
 						})
-						When("spec.biosUUID does not match existing VM", func() {
+						When("spec.instanceUUID does not match existing VM", func() {
 							JustBeforeEach(func() {
-								vm.Spec.BiosUUID = uuid.NewString()
+								vm.Spec.InstanceUUID = uuid.NewString()
 							})
 							It("should error when getting class", func() {
 								assertClassNotFound("")
@@ -331,17 +335,17 @@ func vmTests() {
 						JustBeforeEach(func() {
 							vm.Spec.ClassName = ""
 						})
-						When("spec.biosUUID matches existing VM", func() {
+						When("spec.instanceUUID matches existing VM", func() {
 							JustBeforeEach(func() {
-								vm.Spec.BiosUUID = vcVM.UUID(ctx)
+								vm.Spec.InstanceUUID = instanceUUID
 							})
 							It("should synthesize class from vSphere VM and power it on", func() {
 								assertPoweredOnNoVMClassCondition()
 							})
 						})
-						When("spec.biosUUID does not match existing VM", func() {
+						When("spec.instanceUUID does not match existing VM", func() {
 							JustBeforeEach(func() {
-								vm.Spec.BiosUUID = uuid.NewString()
+								vm.Spec.InstanceUUID = uuid.NewString()
 							})
 							It("should return an error", func() {
 								var err error
@@ -1826,7 +1830,9 @@ func vmTests() {
 					ExpectWithOffset(1, vmList).ToNot(BeEmpty())
 
 					vcVM := vmList[0]
-					vm.Spec.BiosUUID = vcVM.UUID(ctx)
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					vm.Spec.InstanceUUID = o.Config.InstanceUuid
 
 					powerState, err := vcVM.PowerState(ctx)
 					ExpectWithOffset(1, err).ToNot(HaveOccurred())

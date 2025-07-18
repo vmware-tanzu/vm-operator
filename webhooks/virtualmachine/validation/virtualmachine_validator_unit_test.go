@@ -2982,6 +2982,34 @@ func unitTestsValidateCreate() {
 			),
 		)
 	})
+
+	Context("Snapshots", func() {
+		snapshotPath := field.NewPath("spec", "currentSnapshot")
+
+		DescribeTable("currentSnapshot", doTest,
+			Entry("when a VM is created with a currentSnapshot",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						vmSnapshot := builder.DummyVirtualMachineSnapshot(
+							ctx.vm.Namespace,
+							"dummy-vm-snapshot",
+							ctx.vm.Name,
+						)
+
+						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name:       vmSnapshot.Name,
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						field.Forbidden(snapshotPath, "creating VM with current snapshot is not allowed").Error(),
+					),
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateUpdate() {
@@ -5454,6 +5482,115 @@ func unitTestsValidateUpdate() {
 			},
 		),
 	)
+
+	Context("Snapshots", func() {
+		snapshotPath := field.NewPath("spec", "currentSnapshot")
+
+		DescribeTable("currentSnapshot", doTest,
+			Entry("when the VirtualSnapshot exists",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						vmSnapshot := builder.DummyVirtualMachineSnapshot(
+							ctx.vm.Namespace,
+							"dummy-vm-snapshot",
+							ctx.vm.Name,
+						)
+
+						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name:       vmSnapshot.Name,
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("when the currentSnapshot APIVersion is non-empty and is invalid",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						vmSnapshot := builder.DummyVirtualMachineSnapshot(
+							ctx.vm.Namespace,
+							"dummy-vm-snapshot",
+							ctx.vm.Name,
+						)
+
+						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name:       vmSnapshot.Name,
+							APIVersion: "foobar.com/v1/v2",
+							Kind:       vmSnapshot.Kind,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(snapshotPath.Child("apiVersion"), "foobar.com/v1/v2", "must be valid group version").Error(),
+					),
+					expectAllowed: false,
+				},
+			),
+			Entry("when the currentSnapshot APIVersion is non-empty and group is invalid",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						vmSnapshot := builder.DummyVirtualMachineSnapshot(
+							ctx.vm.Namespace,
+							"dummy-vm-snapshot",
+							ctx.vm.Name,
+						)
+
+						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name:       vmSnapshot.Name,
+							APIVersion: "foobar.com/v99",
+							Kind:       vmSnapshot.Kind,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Invalid(snapshotPath.Child("apiVersion"), "foobar.com/v99", fmt.Sprintf("group must be %q", vmopv1.GroupName)).Error(),
+					),
+					expectAllowed: false,
+				},
+			),
+			Entry("when the currentSnapshot Kind is invalid",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						vmSnapshot := builder.DummyVirtualMachineSnapshot(
+							ctx.vm.Namespace,
+							"dummy-vm-snapshot",
+							ctx.vm.Name,
+						)
+
+						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name:       vmSnapshot.Name,
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       "VMSnapshot",
+						}
+					},
+					validate: doValidateWithMsg(
+						field.NotSupported(snapshotPath.Child("kind"), "VMSnapshot", []string{"VirtualMachineSnapshot"}).Error(),
+					),
+					expectAllowed: false,
+				},
+			),
+			Entry("when the currentSnapshot Name is empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						vmSnapshot := builder.DummyVirtualMachineSnapshot(
+							ctx.vm.Namespace,
+							"dummy-vm-snapshot",
+							ctx.vm.Name,
+						)
+
+						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name:       "",
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Required(snapshotPath.Child("name"), "").Error(),
+					),
+					expectAllowed: false,
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateDelete() {

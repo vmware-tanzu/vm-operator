@@ -249,6 +249,39 @@ func intgTestsValidateUpdate() {
 		})
 	})
 
+	When("currentSnapshot is updated", func() {
+		When("snapshot ref is valid", func() {
+			BeforeEach(func() {
+				vmSnapshot := builder.DummyVirtualMachineSnapshot(ctx.vm.Namespace, "dummy-vm-snapshot", ctx.vm.Name)
+
+				ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+					Kind:       "VirtualMachineSnapshot",
+					APIVersion: "vmoperator.vmware.com/v1alpha4",
+					Name:       vmSnapshot.Name,
+				}
+			})
+
+			It("should allow the request", func() {
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+		When("snapshot ref is invalid", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+					Kind:       "VMSnapshot",
+					APIVersion: "",
+					Name:       "",
+				}
+			})
+
+			It("should not allow the request", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("spec.currentSnapshot.name: Required value"))
+				Expect(err.Error()).To(ContainSubstring("Unsupported value: \"VMSnapshot\": supported values: \"VirtualMachineSnapshot\""))
+			})
+		})
+	})
+
 	Context("VirtualMachine update while VM is powered on", func() {
 		BeforeEach(func() {
 			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn

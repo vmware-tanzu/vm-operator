@@ -202,6 +202,15 @@ func fastDeploy(
 	})
 	logger.Info("Got pool", "pool", pool.Reference())
 
+	var host *object.HostSystem
+	if createArgs.HostMoID != "" {
+		host = object.NewHostSystem(vimClient, vimtypes.ManagedObjectReference{
+			Type:  "HostSystem",
+			Value: createArgs.HostMoID,
+		})
+		logger.Info("Got host", "host", host.Reference())
+	}
+
 	// Determine the type of fast deploy operation.
 	var fastDeployMode string
 
@@ -222,6 +231,7 @@ func fastDeploy(
 			vmCtx,
 			folder,
 			pool,
+			host,
 			createArgs.ConfigSpec,
 			createArgs.Datastores[0].MoRef,
 			disks,
@@ -234,6 +244,7 @@ func fastDeploy(
 		datacenter,
 		folder,
 		pool,
+		host,
 		createArgs.ConfigSpec,
 		diskSpecs,
 		dstDiskFormat,
@@ -245,6 +256,7 @@ func fastDeployLinked(
 	ctx context.Context,
 	folder *object.Folder,
 	pool *object.ResourcePool,
+	host *object.HostSystem,
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	datastoreRef vimtypes.ManagedObjectReference,
 	disks []*vimtypes.VirtualDisk,
@@ -290,7 +302,7 @@ func fastDeployLinked(
 		}
 	}
 
-	return fastDeployCreateVM(ctx, logger, folder, pool, configSpec)
+	return fastDeployCreateVM(ctx, logger, folder, pool, host, configSpec)
 }
 
 func fastDeployDirect(
@@ -298,6 +310,7 @@ func fastDeployDirect(
 	datacenter *object.Datacenter,
 	folder *object.Folder,
 	pool *object.ResourcePool,
+	host *object.HostSystem,
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	diskSpecs []*vimtypes.VirtualDeviceConfigSpec,
 	diskFormat vimtypes.DatastoreSectorFormat,
@@ -341,7 +354,7 @@ func fastDeployDirect(
 		}
 	}
 
-	return fastDeployCreateVM(ctx, logger, folder, pool, configSpec)
+	return fastDeployCreateVM(ctx, logger, folder, pool, host, configSpec)
 }
 
 func fastDeployCreateVM(
@@ -349,6 +362,7 @@ func fastDeployCreateVM(
 	logger logr.Logger,
 	folder *object.Folder,
 	pool *object.ResourcePool,
+	host *object.HostSystem,
 	configSpec vimtypes.VirtualMachineConfigSpec) (*vimtypes.ManagedObjectReference, error) {
 
 	logger.Info("Creating VM", "configSpec", vimtypes.ToString(configSpec))
@@ -357,7 +371,7 @@ func fastDeployCreateVM(
 		ctx,
 		configSpec,
 		pool,
-		nil)
+		host)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call create task: %w", err)
 	}

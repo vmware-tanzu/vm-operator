@@ -3611,6 +3611,51 @@ func unitTestsValidateUpdate() {
 		)
 	})
 
+	Context("Bootstrap", func() {
+		DescribeTable("update", doTest,
+			Entry("disallow bootstrap update if VM is desired powered on",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									UserData: sysprep.UserData{},
+								},
+							},
+						}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						`spec.bootstrap: Forbidden: updates to this field is not allowed when VM power is on`,
+					),
+				},
+			),
+			Entry("allow bootstrap update if VM is desired powered on with halt annotation",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Annotations = map[string]string{
+							vmopv1.CheckAnnotationPowerOn: "",
+						}
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{},
+							},
+						}
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
 	Context("Label", func() {
 		labelPath := field.NewPath("metadata", "labels")
 

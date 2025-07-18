@@ -2855,14 +2855,16 @@ func vmTests() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(task.Wait(ctx)).To(Succeed())
 
+						// Mark the snapshot as ready.
+						conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+						// Create the snapshot CR to which the VM should revert
+						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
 						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
 							APIVersion: vmSnapshot.APIVersion,
 							Kind:       vmSnapshot.Kind,
 							Name:       vmSnapshot.Name,
 						}
-
-						// Create the snapshot CR
-						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 
 						// This should return an error because findDesiredSnapshot should return an error
 						// when there are multiple snapshots with the same name
@@ -2872,37 +2874,6 @@ func vmTests() {
 
 						// Verify that the error causes a requeue (not a NoRequeueError)
 						Expect(pkgerr.IsNoRequeueError(err)).To(BeFalse(), "Multiple snapshots error should cause requeue")
-					})
-				})
-
-				Context("create multiple snapshots with the same name", func() {
-					It("should return an error and requeue a reconcile)", func() {
-						// Create VM first to get vcVM reference
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-						Expect(err).ToNot(HaveOccurred())
-
-						// Create snapshot in vCenter
-						task, err := vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "test snapshot for revert", false, false)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(task.Wait(ctx)).To(Succeed())
-
-						// Create another snapshot with the same name
-						task, err = vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "test snapshot for revert", false, false)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(task.Wait(ctx)).To(Succeed())
-
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
-
-						// Create the snapshot CR
-						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
-
-						err = createOrUpdateVM(ctx, vmProvider, vm)
-						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("resolves to 2 snapshots"))
 					})
 				})
 
@@ -2917,38 +2888,12 @@ func vmTests() {
 
 					It("should not trigger a revert (new snapshot workflow)", func() {
 						// Create the snapshot CR but don't create actual vCenter snapshot
+						conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 
 						err := createOrUpdateVM(ctx, vmProvider, vm)
-						Expect(err).NotTo(HaveOccurred())
-
-						// Verify VM status reflects current snapshot
-						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
-						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
-					})
-				})
-
-				Context("when desired snapshot doesn't exist in vCenter", func() {
-					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       "non-existent-snapshot",
-						}
-					})
-
-					It("should not trigger a revert (create snapshot workflow)", func() {
-						// Create a different snapshot CR
-						nonExistentSnapshot := builder.DummyVirtualMachineSnapshot("", "non-existent-snapshot", vm.Name)
-						nonExistentSnapshot.Namespace = nsInfo.Namespace
-						Expect(ctx.Client.Create(ctx, nonExistentSnapshot)).To(Succeed())
-
-						err := createOrUpdateVM(ctx, vmProvider, vm)
-						Expect(err).ToNot(HaveOccurred())
-
-						// Verify VM status reflects current snapshot
-						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
-						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vm.Spec.CurrentSnapshot.Name))
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("no snapshots for this VM"))
 					})
 				})
 
@@ -2968,19 +2913,33 @@ func vmTests() {
 					})
 				})
 
-				Context("when VM is already at desired snapshot", func() {
-					It("should succeed without performing revert", func() {
-						// Create VM first to get vcVM reference
-						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-						Expect(err).ToNot(HaveOccurred())
+				Context("when desired snapshot CR is not ready", func() {
+					BeforeEach(func() {
+						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+							Name:       vmSnapshot.Name,
+						}
+					})
 
-						// Create snapshot in vCenter
-						task, err := vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "test snapshot for revert", false, false)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(task.Wait(ctx)).To(Succeed())
-
-						// Create snapshot CR for the above snapshot
+					It("should fail with snapshot CR not found error", func() {
+						// Create snapshot CR but don't mark it as ready.
 						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("snapshot CR is not ready, skipping revert"))
+					})
+				})
+
+				Context("revert to current snapshot", func() {
+					It("should succeed", func() {
+						// Create snapshot CR to trigger a snapshot workflow
+						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+						// Create VM so the snapshot reconciliation can run
+						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
 
 						// Set desired snapshot to point to the above snapshot
 						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
@@ -3012,6 +2971,9 @@ func vmTests() {
 						Expect(task.Wait(ctx)).To(Succeed())
 
 						// Create first snapshot CR
+						// Mark the snapshot as ready so that the snapshot workflow doesn't try to create it.
+						conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+
 						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 
 						// Create second snapshot
@@ -3023,6 +2985,8 @@ func vmTests() {
 						Expect(task.Wait(ctx)).To(Succeed())
 
 						// Create second snapshot CR
+						// Mark the snapshot as ready so that the snapshot workflow doesn't try to create it.
+						conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to first snapshot (revert from second to first)
@@ -4176,96 +4140,262 @@ func vmTests() {
 			})
 		})
 
-		Context("VM Snapshots", func() {
+		Context("new snapshot workflow driven by VirtualMachineSnapshot CRs", func() {
 			var (
-				vmSnapshot *vmopv1.VirtualMachineSnapshot
+				snapshot1 *vmopv1.VirtualMachineSnapshot
+				snapshot2 *vmopv1.VirtualMachineSnapshot
 			)
 
 			BeforeEach(func() {
 				testConfig.WithVMSnapshots = true
-				vmSnapshot = builder.DummyVirtualMachineSnapshot("", "test-snap", vm.Name)
 			})
 
-			JustBeforeEach(func() {
-				vmSnapshot.Namespace = nsInfo.Namespace
-			})
-
-			Context("snapshot capability is not enabled", func() {
-				BeforeEach(func() {
-					vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot.APIVersion,
-						Kind:       vmSnapshot.Kind,
-						Name:       vmSnapshot.Name,
-					}
-
-					testConfig.WithVMSnapshots = false
-				})
-
-				It("does not take a new snapshot, and the status is not updated", func() {
-					// create the snapshot obj
-					Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
-
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-					Expect(err).To(BeNil())
-					Expect(vcVM).ToNot(BeNil())
-					snap, err := vcVM.FindSnapshot(ctx, vmSnapshot.Name)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(Equal("no snapshots for this VM"))
-					Expect(snap).To(BeNil())
-					Expect(vm.Status.CurrentSnapshot).To(BeNil())
-				})
-			})
-
-			Context("vm snapshot object doesn't exist", func() {
-				BeforeEach(func() {
-					vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot.APIVersion,
-						Kind:       vmSnapshot.Kind,
-						Name:       vmSnapshot.Name,
-					}
-				})
-
-				It("return obj not found err", func() {
+			Context("when no snapshots exist", func() {
+				It("should complete without error", func() {
 					err := createOrUpdateVM(ctx, vmProvider, vm)
-					Expect(err).ToNot(BeNil())
-					Expect(err.Error()).To(ContainSubstring("virtualmachinesnapshots.vmoperator.vmware.com \"test-snap\" not found"))
+					Expect(err).ToNot(HaveOccurred())
 				})
 			})
 
-			Context("create new vm snapshot and patch status", func() {
-				BeforeEach(func() {
-					vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot.APIVersion,
-						Kind:       vmSnapshot.Kind,
-						Name:       vmSnapshot.Name,
-					}
+			Context("when one snapshot exists and is not ready", func() {
+				JustBeforeEach(func() {
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
 				})
 
-				It("success", func() {
-					// create the snapshot obj
-					Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+				It("should process the snapshot", func() {
+					err := createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
 
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-					Expect(err).To(BeNil())
-					Expect(vcVM).ToNot(BeNil())
-					snap, err := vcVM.FindSnapshot(ctx, vmSnapshot.Name)
-					Expect(err).To(BeNil())
-					Expect(snap).ToNot(BeNil())
+					// Verify snapshot was processed
+					updatedSnapshot := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+					Expect(updatedSnapshot.Status.Quiesced).To(BeTrue())
+				})
+			})
 
-					Expect(vm.Status.CurrentSnapshot).To(Equal(&vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot.APIVersion,
-						Kind:       vmSnapshot.Kind,
-						Name:       vmSnapshot.Name,
-					}))
+			Context("when multiple snapshots exist", func() {
+				It("should process snapshots in order (oldest first)", func() {
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					creationTimeStamp := metav1.NewTime(time.Now())
+					snapshot1.CreationTimestamp = creationTimeStamp
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
 
-					snapObj := &vmopv1.VirtualMachineSnapshot{}
-					err = ctx.Client.Get(ctx, client.ObjectKey{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, snapObj)
-					Expect(err).To(BeNil())
+					later := metav1.NewTime(time.Now().Add(1 * time.Second))
+					snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
+					snapshot2.CreationTimestamp = later
+					Expect(ctx.Client.Create(ctx, snapshot2)).To(Succeed())
 
-					Expect(snapObj.Status.Quiesced).To(BeFalse())
-					Expect(snapObj.Status.Conditions).To(HaveLen(1))
-					Expect(snapObj.Status.Conditions[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReadyCondition))
-					Expect(snapObj.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+					// First reconcile should process snapshot1, and requeue to process snapshot2.
+					err := createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(errors.Is(err, pkgerr.RequeueError{})).To(BeTrue())
+					Expect(err.Error()).To(ContainSubstring("requeuing to process 1 remaining snapshots"))
+
+					// Check that snapshot1 is ready
+					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot1)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot1, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+
+					// Check that snapshot2 is not ready yet
+					updatedSnapshot2 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot2.Name,
+						Namespace: snapshot2.Namespace,
+					}, updatedSnapshot2)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeFalse())
+
+					// Second reconcile should process snapshot2
+					err = createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Now snapshot2 should be ready
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot2.Name,
+						Namespace: snapshot2.Namespace,
+					}, updatedSnapshot2)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+				})
+			})
+
+			Context("when one snapshot is already in progress", func() {
+				It("should not process any snapshots", func() {
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
+
+					// Mark snapshot1 as in progress
+					conditions.MarkTrue(snapshot1, "VirtualMachineSnapshotInProgress")
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, snapshot2)).To(Succeed())
+
+					err := createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Neither snapshot should be ready
+					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot1)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot1, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeFalse())
+
+					updatedSnapshot2 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot2.Name,
+						Namespace: snapshot2.Namespace,
+					}, updatedSnapshot2)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeFalse())
+				})
+			})
+
+			Context("when snapshot is being deleted", func() {
+				It("should skip all snapshot creation due to vSphere constraint", func() {
+					// Mark snapshot1 as being deleted
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					// Set a finalizer so we can mark the object for deletion.
+					snapshot1.ObjectMeta.Finalizers = []string{"dummy-finalizer"}
+
+					// Mark snapshot1 as being deleted
+					snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
+
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, snapshot2)).To(Succeed())
+
+					// Delete the snapshot
+					Expect(ctx.Client.Delete(ctx, snapshot1)).To(Succeed())
+
+					err := createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					// snapshot1 should not be processed (being deleted)
+					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot1)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot1, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeFalse())
+
+					// snapshot2 should also not be processed due to the deletion constraint
+					updatedSnapshot2 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot2.Name,
+						Namespace: snapshot2.Namespace,
+					}, updatedSnapshot2)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeFalse())
+				})
+			})
+
+			Context("when snapshot already exists and is ready", func() {
+				It("should skip ready snapshot and process the next one", func() {
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
+
+					// Mark snapshot1 as ready
+					conditions.MarkTrue(snapshot1, vmopv1.VirtualMachineSnapshotReadyCondition)
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, snapshot2)).To(Succeed())
+
+					err := createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					// snapshot1 should remain ready and not be processed again
+					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot1)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot1, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+
+					// snapshot2 should be processed
+					updatedSnapshot2 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot2.Name,
+						Namespace: snapshot2.Namespace,
+					}, updatedSnapshot2)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+				})
+			})
+
+			Context("when snapshot has nil VMRef", func() {
+				It("should skip snapshot with nil VMRef and process the next one", func() {
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
+
+					// Set snapshot1 VMRef to nil
+					snapshot1.Spec.VMRef = nil
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, snapshot2)).To(Succeed())
+
+					err := createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					// snapshot1 should not be processed (nil VMRef)
+					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot1)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot1, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeFalse())
+
+					// snapshot2 should be processed
+					updatedSnapshot2 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot2.Name,
+						Namespace: snapshot2.Namespace,
+					}, updatedSnapshot2)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+				})
+			})
+
+			Context("when snapshot references different VM", func() {
+				It("should skip snapshot for different VM and process the next one", func() {
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					snapshot2 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-2", vm.Name)
+
+					// Set snapshot1 to reference a different VM
+					snapshot1.Spec.VMRef.Name = "different-vm"
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, snapshot2)).To(Succeed())
+
+					err := createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					// snapshot1 should not be processed (different VM)
+					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot1)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot1, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeFalse())
+
+					// snapshot2 should be processed
+					updatedSnapshot2 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot2.Name,
+						Namespace: snapshot2.Namespace,
+					}, updatedSnapshot2)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
 				})
 			})
 		})

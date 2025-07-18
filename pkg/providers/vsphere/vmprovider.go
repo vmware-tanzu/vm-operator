@@ -392,7 +392,7 @@ func (vs *vSphereVMProvider) getVM(
 	}
 
 	if vcVM == nil && notFoundReturnErr {
-		return nil, fmt.Errorf("VirtualMachine %q was not found on VC: %w", vmCtx.VM.Name, vcenter.ErrVMNotFound)
+		return nil, fmt.Errorf("VirtualMachine %q was not found on VC", vmCtx.VM.Name)
 	}
 
 	return vcVM, nil
@@ -553,12 +553,11 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 		return false, err
 	}
 
-	vcVM, err := vs.getVM(vmCtx, client, true)
+	vcVM, err := vs.getVM(vmCtx, client, false)
 	if err != nil {
-		if errors.Is(err, vcenter.ErrVMNotFound) {
-			return true, nil
-		}
 		return false, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
+	} else if vcVM == nil {
+		return true, nil
 	}
 
 	if err := virtualmachine.DeleteSnapshot(virtualmachine.SnapshotArgs{

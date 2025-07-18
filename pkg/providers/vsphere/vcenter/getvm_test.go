@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -75,7 +76,58 @@ func getVM() {
 		})
 	})
 
-	Context("Gets VM by UUID", func() {
+	Context("Gets VM by UUID from Spec", func() {
+		BeforeEach(func() {
+			vm, err := ctx.Finder.VirtualMachine(ctx, vcVMName)
+			Expect(err).ToNot(HaveOccurred())
+
+			var o mo.VirtualMachine
+			Expect(vm.Properties(ctx, vm.Reference(), nil, &o)).To(Succeed())
+			vmCtx.VM.Spec.InstanceUUID = o.Config.InstanceUuid
+		})
+
+		It("returns success", func() {
+			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vm).ToNot(BeNil())
+		})
+
+		Context("VC client is logged out", func() {
+			BeforeEach(func() {
+				Expect(ctx.VCClient.Logout(ctx)).To(Succeed())
+			})
+
+			It("returns error", func() {
+				vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+				Expect(err).To(HaveOccurred())
+				Expect(vm).To(BeNil())
+			})
+		})
+
+		Context("Multiple VMs exist with same instanced UUID", func() {
+			const vcVMName2 = "DC0_C0_RP0_VM1"
+
+			BeforeEach(func() {
+				vm, err := ctx.Finder.VirtualMachine(ctx, vcVMName2)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vm.Properties(ctx, vm.Reference(), nil, &o)).To(Succeed())
+				task, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{InstanceUuid: vmCtx.VM.Spec.InstanceUUID})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(task.Wait(ctx)).To(Succeed())
+			})
+
+			It("returns error", func() {
+				vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(HavePrefix("found multiple VMs for instance UUID"))
+				Expect(vm).To(BeNil())
+			})
+		})
+	})
+
+	Context("Gets VM by UUID from Metadata", func() {
 		BeforeEach(func() {
 			vm, err := ctx.Finder.VirtualMachine(ctx, vcVMName)
 			Expect(err).ToNot(HaveOccurred())
@@ -90,59 +142,30 @@ func getVM() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(vm).ToNot(BeNil())
 		})
-
-		Context("VC client is logged out", func() {
-			BeforeEach(func() {
-				Expect(ctx.VCClient.Logout(ctx)).To(Succeed())
-			})
-
-			It("returns error", func() {
-				vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
-				Expect(err).To(HaveOccurred())
-				Expect(vm).To(BeNil())
-			})
-		})
-	})
-
-	Context("Gets VM by BiosUUID", func() {
-		BeforeEach(func() {
-			vm, err := ctx.Finder.VirtualMachine(ctx, vcVMName)
-			Expect(err).ToNot(HaveOccurred())
-
-			var o mo.VirtualMachine
-			Expect(vm.Properties(ctx, vm.Reference(), nil, &o)).To(Succeed())
-			vmCtx.VM.Spec.BiosUUID = o.Config.Uuid
-		})
-
-		It("returns success", func() {
-			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(vm).ToNot(BeNil())
-		})
-
-		Context("VC client is logged out", func() {
-			BeforeEach(func() {
-				Expect(ctx.VCClient.Logout(ctx)).To(Succeed())
-			})
-
-			It("returns error", func() {
-				vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
-				Expect(err).To(HaveOccurred())
-				Expect(vm).To(BeNil())
-			})
-		})
 	})
 
 	Context("VM does not exist", func() {
 		BeforeEach(func() {
-			vmCtx.VM.UID = "bogus-uid"
-			vmCtx.VM.Spec.BiosUUID = "bogus-bios-uuid"
+			vmCtx.VM.Spec.InstanceUUID = "bogus-uid"
 			vmCtx.VM.Status.UniqueID = "bogus-moid"
 		})
 
 		It("returns success with nil vm", func() {
 			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(vm).To(BeNil())
+		})
+	})
+
+	Context("VM does not have IDs set", func() {
+		BeforeEach(func() {
+			vmCtx.VM.Spec.InstanceUUID = ""
+			vmCtx.VM.Status.UniqueID = ""
+		})
+
+		It("returns error", func() {
+			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.VCClient.Client, ctx.Datacenter)
+			Expect(err).To(MatchError("neither MoID or InstanceUUID set on VM"))
 			Expect(vm).To(BeNil())
 		})
 	})

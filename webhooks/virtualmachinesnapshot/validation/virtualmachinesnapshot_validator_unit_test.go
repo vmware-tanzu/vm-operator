@@ -5,15 +5,19 @@
 package validation_test
 
 import (
+	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -55,17 +59,10 @@ type unitValidatingWebhookContext struct {
 	builder.UnitTestContextForValidatingWebhook
 	vmSnapshot    *vmopv1.VirtualMachineSnapshot
 	oldVMSnapshot *vmopv1.VirtualMachineSnapshot
-	vm            *vmopv1.VirtualMachine
-	cl            *imgregv1a1.ContentLibrary
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
-	vm := builder.DummyVirtualMachine()
-	vm.Name = "dummy-vm"
-	vm.Namespace = "dummy-ns"
-	cl := builder.DummyContentLibrary("dummy-cl", "dummy-ns", "dummy-uuid")
-
-	vmSnapshot := builder.DummyVirtualMachineSnapshot("dummy-ns", "dummy-vm-snapshot", vm.Name)
+	vmSnapshot := builder.DummyVirtualMachineSnapshot("dummy-ns", "dummy-vm-snapshot", "dummy-vm")
 	obj, err := builder.ToUnstructured(vmSnapshot)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -79,11 +76,9 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 
 	return &unitValidatingWebhookContext{
-		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vm, cl),
+		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj),
 		vmSnapshot:                          vmSnapshot,
 		oldVMSnapshot:                       oldVMSnapshot,
-		vm:                                  vm,
-		cl:                                  cl,
 	}
 }
 
@@ -94,9 +89,34 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
+		invalidVMRef                bool
+		invalidVMRefKind            bool
+		invalidVMRefAPIVersion      bool
+		invalidVMRefAPIVersionGroup bool
+		emptyVMRefName              bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
+		if args.invalidVMRef {
+			ctx.vmSnapshot.Spec.VMRef = nil
+		}
+
+		if args.invalidVMRefKind {
+			ctx.vmSnapshot.Spec.VMRef.Kind = "VMVM"
+		}
+
+		if args.invalidVMRefAPIVersion {
+			ctx.vmSnapshot.Spec.VMRef.APIVersion = "foobar.com/v1/v2"
+		}
+
+		if args.invalidVMRefAPIVersionGroup {
+			ctx.vmSnapshot.Spec.VMRef.APIVersion = "foobar.com/v99"
+		}
+
+		if args.emptyVMRefName {
+			ctx.vmSnapshot.Spec.VMRef.Name = ""
+		}
+
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmSnapshot)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -118,15 +138,93 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
+	vmRefField := field.NewPath("spec", "vmRef")
+
 	DescribeTable("create table", validateCreate,
-		Entry("should allow valid", createArgs{}, true, nil, nil))
+		Entry("should allow valid",
+			createArgs{},
+			true,
+			nil,
+			nil,
+		),
+		Entry("should deny nil vmRef",
+			createArgs{invalidVMRef: true},
+			false,
+			field.Required(vmRefField, "vmRef must be provided").Error(),
+			nil,
+		),
+		Entry("should deny a non-empty vmRef, with Kind other than VirtualMachine",
+			createArgs{invalidVMRefKind: true},
+			false,
+			field.Invalid(vmRefField.Child("kind"), "VMVM", "must be \"VirtualMachine\"").Error(),
+			nil,
+		),
+		Entry("should deny a non-empty vmRef, with invalid APIVersion",
+			createArgs{invalidVMRefAPIVersion: true},
+			false,
+			field.Invalid(vmRefField.Child("apiVersion"), "foobar.com/v1/v2", "must be valid group version").Error(),
+			nil,
+		),
+		Entry("should deny a non-empty vmRef, with invalid APIVersion Group",
+			createArgs{invalidVMRefAPIVersionGroup: true},
+			false,
+			field.Invalid(vmRefField.Child("apiVersion"), "foobar.com/v99", fmt.Sprintf("group must be %q", vmopv1.GroupName)).Error(),
+			nil,
+		),
+		Entry("should deny a non-empty vmRef, with no Name specified",
+			createArgs{emptyVMRefName: true},
+			false,
+			field.Required(vmRefField.Child("name"), "name must be provided").Error(),
+			nil,
+		),
+	)
 }
 
 func unitTestsValidateUpdate() {
 	var (
-		ctx      *unitValidatingWebhookContext
-		response admission.Response
+		ctx *unitValidatingWebhookContext
 	)
+
+	type updateArgs struct {
+		updateMemory  bool
+		updateQuiesce bool
+		updateVMRef   bool
+	}
+
+	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
+		ctx.vmSnapshot.Spec.Description = "a new description"
+
+		if args.updateMemory {
+			ctx.vmSnapshot.Spec.Memory = !ctx.vmSnapshot.Spec.Memory
+		}
+
+		if args.updateQuiesce {
+			ctx.vmSnapshot.Spec.Quiesce = &vmopv1.QuiesceSpec{Timeout: &metav1.Duration{Duration: 120 * time.Second}}
+		}
+
+		if args.updateVMRef {
+			ctx.vmSnapshot.Spec.VMRef = &common.LocalObjectRef{
+				Name:       "another-vm",
+				Kind:       "VirtualMachine",
+				APIVersion: "vmoperator.vmware.com/v1alpha4",
+			}
+		}
+
+		var err error
+		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmSnapshot)
+		Expect(err).ToNot(HaveOccurred())
+		ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMSnapshot)
+		Expect(err).ToNot(HaveOccurred())
+
+		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+		Expect(response.Allowed).To(Equal(expectedAllowed))
+		if expectedReason != "" {
+			Expect(string(response.Result.Reason)).To(HaveSuffix(expectedReason))
+		}
+		if expectedErr != nil {
+			Expect(response.Result.Message).To(Equal(expectedErr.Error()))
+		}
+	}
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
@@ -136,23 +234,27 @@ func unitTestsValidateUpdate() {
 		ctx = nil
 	})
 
-	JustBeforeEach(func() {
-		response = ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-	})
-
-	Context("something is updated", func() {
-		var err error
-
-		BeforeEach(func() {
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmSnapshot)
-			Expect(err).ToNot(HaveOccurred())
-		})
-
-		It("should allow the request", func() {
-			Expect(response.Allowed).To(BeTrue())
-			Expect(response.Result).ToNot(BeNil())
-		})
-	})
+	DescribeTable("update table", validateUpdate,
+		Entry("should allow updating description", updateArgs{}, true, "", nil),
+		Entry("should not allow updating memory",
+			updateArgs{updateMemory: true},
+			false,
+			"field is immutable",
+			nil,
+		),
+		Entry("should not allow updating quiesce",
+			updateArgs{updateQuiesce: true},
+			false,
+			"field is immutable",
+			nil,
+		),
+		Entry("should not allow updating vmRef",
+			updateArgs{updateVMRef: true},
+			false,
+			"field is immutable",
+			nil,
+		),
+	)
 }
 
 func unitTestsValidateDelete() {

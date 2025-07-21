@@ -38,6 +38,7 @@ import (
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/anno2extraconfig"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -1191,6 +1192,8 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -1200,6 +1203,8 @@ func unitTestsValidateCreate() {
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(pkgconst.SkipDeletePlatformResourceKey), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -1215,6 +1220,8 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					expectAllowed: true,
 				},
@@ -1237,6 +1244,8 @@ func unitTestsValidateCreate() {
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.SkipDeletePlatformResourceKey] = dummyFailedOverAnnVal
 						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					expectAllowed: true,
 				},
@@ -3477,6 +3486,8 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
@@ -3486,6 +3497,9 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
+
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -3496,6 +3510,8 @@ func unitTestsValidateUpdate() {
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -3510,6 +3526,8 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(annotationPath.Key(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
@@ -3520,6 +3538,8 @@ func unitTestsValidateUpdate() {
 						field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -3536,6 +3556,9 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
+
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -3544,6 +3567,8 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 					},
 					expectAllowed: true,
 				},
@@ -3562,6 +3587,8 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] = dummyClusterModuleAnnVal
 						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					expectAllowed: true,
 				},
@@ -3587,6 +3614,9 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
+
 						ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
@@ -3595,6 +3625,8 @@ func unitTestsValidateUpdate() {
 						ctx.vm.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal + updateSuffix
 						ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + updateSuffix
 						ctx.vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + updateSuffix
+						ctx.vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + updateSuffix
 					},
 					expectAllowed: true,
 				},
@@ -3620,6 +3652,8 @@ func unitTestsValidateUpdate() {
 						ctx.oldVM.Annotations[vmopv1.ImportedVMAnnotation] = dummyImportedAnnVal
 						ctx.oldVM.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal
 						ctx.oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] = time.Now().Format(time.RFC3339Nano)
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName
+						ctx.oldVM.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName
 					},
 					expectAllowed: true,
 				},

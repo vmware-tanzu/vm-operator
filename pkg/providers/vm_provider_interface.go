@@ -30,6 +30,11 @@ var (
 	ErrReconcileInProgress = errors.New("reconcile already in progress")
 )
 
+type VMGroupPlacement struct {
+	VMGroup   *vmopv1.VirtualMachineGroup
+	VMMembers []*vmopv1.VirtualMachine
+}
+
 // VirtualMachineProviderInterface is a pluggable interface for VM Providers.
 type VirtualMachineProviderInterface interface {
 	CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
@@ -41,6 +46,7 @@ type VirtualMachineProviderInterface interface {
 	GetVirtualMachineProperties(ctx context.Context, vm *vmopv1.VirtualMachine, propertyPaths []string) (map[string]any, error)
 	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersion(ctx context.Context, vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error)
+	PlaceVirtualMachineGroup(ctx context.Context, group *vmopv1.VirtualMachineGroup, groupPlacements []VMGroupPlacement) error
 
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error
 	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error

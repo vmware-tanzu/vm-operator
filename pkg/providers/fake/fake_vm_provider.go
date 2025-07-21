@@ -39,6 +39,7 @@ type funcs struct {
 	GetVirtualMachinePropertiesFn      func(ctx context.Context, vm *vmopv1.VirtualMachine, propertyPaths []string) (map[string]any, error)
 	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error)
+	PlaceVirtualMachineGroupFn         func(ctx context.Context, group *vmopv1.VirtualMachineGroup, groupPlacement []providers.VMGroupPlacement) error
 
 	GetItemFromLibraryByNameFn func(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	UpdateContentLibraryItemFn func(ctx context.Context, itemID, newName string, newDescription *string) error
@@ -179,6 +180,17 @@ func (s *VMProvider) GetVirtualMachineHardwareVersion(ctx context.Context, vm *v
 		return s.GetVirtualMachineHardwareVersionFn(ctx, vm)
 	}
 	return vimtypes.VMX15, nil
+}
+
+func (s *VMProvider) PlaceVirtualMachineGroup(ctx context.Context, group *vmopv1.VirtualMachineGroup, groupPlacements []providers.VMGroupPlacement) error {
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if s.PlaceVirtualMachineGroupFn != nil {
+		return s.PlaceVirtualMachineGroupFn(ctx, group, groupPlacements)
+	}
+	return nil
 }
 
 func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {

@@ -5,6 +5,7 @@
 package virtualmachinegroup_test
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -16,8 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -113,6 +116,7 @@ var _ = Describe(
 		AfterEach(func() {
 			ctx.AfterEach()
 			ctx = nil
+			intgFakeVMProvider.Reset()
 		})
 
 		Context("Finalizer", func() {
@@ -272,7 +276,122 @@ var _ = Describe(
 		})
 
 		Context("Placement", func() {
-			// TODO(sai): Add tests for ReconcilePlacement.
+			BeforeEach(func() {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.PlaceVirtualMachineGroupFn = func(
+					ctx context.Context,
+					group *vmopv1.VirtualMachineGroup,
+					groupPlacement []providers.VMGroupPlacement) error {
+
+					for _, grpPlacement := range groupPlacement {
+						for _, vm := range grpPlacement.VMMembers {
+							found := false
+							for i := range grpPlacement.VMGroup.Status.Members {
+								ms := &grpPlacement.VMGroup.Status.Members[i]
+								if ms.Name == vm.Name && ms.Kind == "VirtualMachine" {
+									conditions.MarkTrue(ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+									found = true
+									break
+								}
+							}
+
+							if !found {
+								ms := vmopv1.VirtualMachineGroupMemberStatus{
+									Name: vm.Name,
+									Kind: "VirtualMachine",
+								}
+								conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+								grpPlacement.VMGroup.Status.Members = append(grpPlacement.VMGroup.Status.Members, ms)
+							}
+						}
+					}
+
+					return nil
+				}
+				intgFakeVMProvider.Unlock()
+
+				By("setting up group-1 with members vm-1 and vmgroup-2")
+				vmGroup1 := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+				vmGroup1Copy := vmGroup1.DeepCopy()
+				vmGroup1Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Kind: virtualMachineKind,
+								Name: vm1Key.Name,
+							},
+						},
+					},
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Kind: virtualMachineGroupKind,
+								Name: vmGroup2Key.Name,
+							},
+						},
+					},
+				}
+				Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+
+				By("setting up group-2 with members vm-2")
+				vmGroup2 := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+				vmGroup2Copy := vmGroup2.DeepCopy()
+				vmGroup2Copy.Spec.GroupName = vmGroup1Key.Name
+				vmGroup2Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Kind: virtualMachineKind,
+								Name: vm2Key.Name,
+							},
+						},
+					},
+				}
+				Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+
+				By("setting up group name for vm-1")
+				vm1 := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+				vm1Copy := vm1.DeepCopy()
+				vm1Copy.Spec.GroupName = vmGroup1Key.Name
+				Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
+				By("setting up group name for vm-2")
+				vm2 := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
+				vm2Copy := vm2.DeepCopy()
+				vm2Copy.Spec.GroupName = vmGroup2Key.Name
+				Expect(ctx.Client.Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
+			})
+
+			It("should update groups with placement ready condition", func() {
+				Eventually(func(g Gomega) {
+					By("all group members should have expected placement ready condition state")
+
+					vmGroup2 := &vmopv1.VirtualMachineGroup{}
+					g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+					g.Expect(vmGroup2.Status.Members).To(HaveLen(1))
+					vm2MS := vmGroup2.Status.Members[0]
+					g.Expect(vm2MS.Name).To(Equal("vm-2"))
+					g.Expect(vm2MS.Kind).To(Equal("VirtualMachine"))
+					g.Expect(conditions.IsTrue(&vm2MS, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
+
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					found := false
+					for _, ms := range vmGroup1.Status.Members {
+						if ms.Name == "vm-1" && ms.Kind == "VirtualMachine" {
+							g.Expect(conditions.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
+							found = true
+							break
+						}
+					}
+					g.Expect(found).To(BeTrue(), "vm-1 in vmgroup-1 should have placement ready condition")
+
+				}, "5s", "100ms").Should(Succeed())
+			})
 		})
 
 		Context("PowerState", func() {

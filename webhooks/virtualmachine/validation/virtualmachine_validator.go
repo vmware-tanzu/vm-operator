@@ -1200,41 +1200,63 @@ func (v validator) validatePowerStateOnUpdate(
 	// we power it off - all changes are allowed.
 	// If a VM is requesting a power on, we can Reconfigure the VM _before_
 	// we power it on - all changes are allowed.
-	newPowerState, oldPowerState := vm.Spec.PowerState, oldVM.Spec.PowerState
+	newDesPS, oldDesPS := vm.Spec.PowerState, oldVM.Spec.PowerState
 
-	if newPowerState == "" {
+	if newDesPS == "" {
 		allErrs = append(
 			allErrs,
 			field.Invalid(
 				powerStatePath,
-				newPowerState,
+				newDesPS,
 				invalidPowerStateOnUpdateEmptyString))
 		return allErrs
 	}
 
-	switch oldPowerState {
+	switch oldDesPS {
+
 	case vmopv1.VirtualMachinePowerStateOn:
-		// The request is attempting to power on a VM that is already powered
-		// on. Validate fields that may or may not be mutable while a VM is in
-		// a powered on state.
-		if newPowerState == vmopv1.VirtualMachinePowerStateOn {
-			allErrs = append(allErrs, v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)...)
+		// The VM's previous, desired power state is "on."
+
+		switch newDesPS { //nolint:gocritic
+
+		case vmopv1.VirtualMachinePowerStateOn:
+			// The VM's new, desired power state is "on."
+
+			// Check if the VM is currently halted from being powered on due to
+			// the check annotation.
+			isHalted := false
+			for k := range oldVM.Annotations {
+				if strings.HasPrefix(k, vmopv1.CheckAnnotationPowerOn) {
+					isHalted = true
+					break
+				}
+			}
+
+			if !isHalted {
+				allErrs = append(
+					allErrs,
+					v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)...)
+			}
+
 		}
 
 	case vmopv1.VirtualMachinePowerStateOff:
-		// Mark the power state as invalid if the request is attempting to
-		// suspend a VM that is powered off.
-		var msg string
-		if newPowerState == vmopv1.VirtualMachinePowerStateSuspended {
-			msg = "suspend"
-		}
-		if msg != "" {
+		// The VM's previous, desired power state is "off."
+
+		switch newDesPS { //nolint:gocritic
+
+		case vmopv1.VirtualMachinePowerStateSuspended:
+			// The VM's new, desired power state is "suspended."
+
 			allErrs = append(
 				allErrs,
 				field.Invalid(
 					powerStatePath,
-					newPowerState,
-					fmt.Sprintf(invalidPowerStateOnUpdateFmt, msg, "powered off")))
+					newDesPS,
+					fmt.Sprintf(
+						invalidPowerStateOnUpdateFmt,
+						"suspend",
+						"powered off")))
 		}
 	}
 

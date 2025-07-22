@@ -29,8 +29,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 	})
 
 func TestVirtualMachineGroupPublishRequest(t *testing.T) {
-	// TODO: Add intg tests and unit tests
-	// suite.Register(t, "VirtualMachineGroupPublishRequest controller suite", intgTests, unitTests)
+	suite.Register(t, "VirtualMachineGroupPublishRequest controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

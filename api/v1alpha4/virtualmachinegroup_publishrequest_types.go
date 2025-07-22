@@ -15,6 +15,10 @@ const (
 	// The condition's status is set to true only when all other conditions
 	// present on the resource have a truthy status.
 	VirtualMachineGroupPublishRequestConditionComplete = "Complete"
+
+	// VirtualMachineGroupPublishRequestConditionReasonPending indicates there are still pending
+	// VirtualMachinePublishRequest to be completed.
+	VirtualMachineGroupPublishRequestConditionReasonPending = "VirtualMachinePublishRequestsPending"
 )
 
 // VirtualMachineGroupPublishRequestSpec defines the desired state of a
@@ -64,13 +68,12 @@ type VirtualMachineGroupPublishRequestSpec struct {
 
 	// TTLSecondsAfterFinished is the time-to-live duration for how long this
 	// resource will be allowed to exist once the publication operation
-	// completes. After the TTL expires, the resource will be automatically
-	// deleted without the user having to take any direct action.
-	// This will be passed into each VirtualMachinePublishRequestSpec.
+	// completes. After the TTL expires, the resource and its child resources
+	// will be automatically deleted without the user having to take any direct action.
 	//
-	// If this field is unset then the request resource will not be
-	// automatically deleted. If this field is set to zero then the request
-	// resource is eligible for deletion immediately after it finishes.
+	// If this field is unset then the request resource and its child resources
+	// will not be automatically deleted. If this field is set to zero then the request
+	// resource and its child resources are eligible for deletion immediately after it finishes.
 	TTLSecondsAfterFinished *int64 `json:"ttlSecondsAfterFinished,omitempty"`
 }
 

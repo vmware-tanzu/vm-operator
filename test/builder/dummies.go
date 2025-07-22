@@ -21,6 +21,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
@@ -31,18 +32,26 @@ import (
 )
 
 const (
-	DummyVMIName           = "vmi-0123456789"
-	DummyCVMIName          = "vmi-9876543210"
-	DummyImageName         = "dummy-image-name"
-	DummyClassName         = "dummyClassName"
-	DummyVolumeName        = "dummy-volume-name"
-	DummyPVCName           = "dummyPVCName"
-	DummyDistroVersion     = "dummyDistroVersion"
-	DummyOSType            = "centosGuest"
-	DummyStorageClassName  = "dummy-storage-class"
-	DummyResourceQuotaName = "dummy-resource-quota"
-	DummyZoneName          = "dummy-zone"
-	DummyDeletedZoneName   = "dummy-zone-deleted"
+	DummyVMIName                   = "vmi-0123456789"
+	DummyCVMIName                  = "vmi-9876543210"
+	DummyImageName                 = "dummy-image-name"
+	DummyClassName                 = "dummyClassName"
+	DummyVolumeName                = "dummy-volume-name"
+	DummyPVCName                   = "dummyPVCName"
+	DummyDistroVersion             = "dummyDistroVersion"
+	DummyOSType                    = "centosGuest"
+	DummyStorageClassName          = "dummy-storage-class"
+	DummyResourceQuotaName         = "dummy-resource-quota"
+	DummyZoneName                  = "dummy-zone"
+	DummyDeletedZoneName           = "dummy-zone-deleted"
+	DummyNamespaceName             = "dummy-ns"
+	DummyVMGroupName               = "dummy-vm-group"
+	DummyVMGroupPublishRequestName = "dummy-vm-group-publish-request"
+	DummyContentLibraryName        = "dummy-cl"
+	DummyImageVM0Name              = "dummy-image-vm0-name"
+	DummyImageVM1Name              = "dummy-image-vm1-name"
+	DummyVirtualMachine0Name       = "dummy-vm0"
+	DummyVirtualMachine1Name       = "dummy-vm1"
 )
 
 const (
@@ -500,6 +509,20 @@ func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, cl
 					Kind:       "ContentLibrary",
 				},
 			},
+		},
+	}
+}
+
+func VirtualMachineGroupPublishRequest(name, namespace string, vms []string) *vmopv1.VirtualMachineGroupPublishRequest {
+	return &vmopv1.VirtualMachineGroupPublishRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vmopv1.VirtualMachineGroupPublishRequestSpec{
+			Source:          DummyVMGroupName,
+			Target:          DummyContentLibraryName,
+			VirtualMachines: vms,
 		},
 	}
 }

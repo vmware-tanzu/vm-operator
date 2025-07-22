@@ -106,7 +106,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			ctx context.Context,
 			client clsutil.CacheStorageURIsClient,
 			dstDatacenter, srcDatacenter *object.Datacenter,
-			dstDir string,
+			dstDir, dstProfileID string,
 			expPanic string) {
 
 			if ctx == nilContext {
@@ -120,6 +120,7 @@ var _ = Describe("CacheStorageURIs", func() {
 					dstDatacenter,
 					srcDatacenter,
 					dstDir,
+					dstProfileID,
 					vimtypes.DatastoreSectorFormatNative_512)
 			}
 
@@ -133,6 +134,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			&object.Datacenter{},
 			&object.Datacenter{},
 			"[my-datastore] .contentlib-cache/123/v1",
+			"dstProfileID",
 			"context is nil",
 		),
 		Entry(
@@ -142,6 +144,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			&object.Datacenter{},
 			&object.Datacenter{},
 			"[my-datastore] .contentlib-cache/123/v1",
+			"dstProfileID",
 			"client is nil",
 		),
 		Entry(
@@ -151,6 +154,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			nil,
 			&object.Datacenter{},
 			"[my-datastore] .contentlib-cache/123/v1",
+			"dstProfileID",
 			"dstDatacenter is nil",
 		),
 		Entry(
@@ -160,6 +164,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			&object.Datacenter{},
 			nil,
 			"[my-datastore] .contentlib-cache/123/v1",
+			"dstProfileID",
 			"srcDatacenter is nil",
 		),
 		Entry(
@@ -169,7 +174,18 @@ var _ = Describe("CacheStorageURIs", func() {
 			&object.Datacenter{},
 			&object.Datacenter{},
 			"",
+			"dstProfileID",
 			"dstDir is empty",
+		),
+		Entry(
+			"empty dstProfileID",
+			context.Background(),
+			&fakeCacheStorageURIsClient{},
+			&object.Datacenter{},
+			&object.Datacenter{},
+			"[my-datastore] .contentlib-cache/123/v1",
+			"",
+			"dstProfileID is empty",
 		),
 	)
 
@@ -186,6 +202,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			dstDatastoreName = "my-datastore-1"
 			dstDir           = "[" + dstDatastoreName + "] .contentlib-cache/" +
 				srcContentLibItemID + "/" + srcContentLibItemContentVersion
+			dstProfileID = "123456"
 		)
 
 		var (
@@ -217,6 +234,7 @@ var _ = Describe("CacheStorageURIs", func() {
 				dstDatacenter,
 				srcDatacenter,
 				dstDir,
+				dstProfileID,
 				vimtypes.DatastoreSectorFormatNative_512,
 				srcDiskURIs...)
 		})
@@ -334,12 +352,13 @@ var _ = Describe("CacheStorageURIs", func() {
 })
 
 var _ = DescribeTable("GetCacheDirForLibraryItem",
-	func(topLevelCacheDir, itemUUID, contentVersion, expOut, expPanic string) {
+	func(datastoreName, itemName, profileID, contentVersion, expOut, expPanic string) {
 		var out string
 		f := func() {
 			out = clsutil.GetCacheDirForLibraryItem(
-				topLevelCacheDir,
-				itemUUID,
+				datastoreName,
+				itemName,
+				profileID,
 				contentVersion)
 		}
 		if expPanic != "" {
@@ -350,42 +369,42 @@ var _ = DescribeTable("GetCacheDirForLibraryItem",
 		}
 	},
 	Entry(
-		"empty topLevelCacheDir should panic",
-		"", "b", "c",
+		"empty datastoreName should panic",
+		"", "b", "c", "d",
 		"",
-		"topLevelCacheDir is empty",
+		"datastoreName is empty",
 	),
 	Entry(
-		"empty itemUUID should panic",
-		"a", "", "c",
+		"empty itemName should panic",
+		"a", "", "c", "d",
 		"",
-		"itemUUID is empty",
+		"itemName is empty",
+	),
+	Entry(
+		"empty profileID should panic",
+		"a", "b", "", "d",
+		"",
+		"profileID is empty",
 	),
 	Entry(
 		"empty contentVersion should panic",
-		"a", "b", "",
-		"",
-		"contentVersion is empty",
-	),
-	Entry(
-		"absolute topLevelCacheDir",
-		"/a", "b", "c",
-		"/a/b/84a516841ba77a5b4",
+		"a", "b", "c", "",
+		"[a] b-84a516841ba77a5b4",
 		"",
 	),
 	Entry(
-		"relative topLevelCacheDir",
-		"a", "b", "c",
-		"a/b/84a516841ba77a5b4",
+		"expected path",
+		"a", "b", "c", "d",
+		"[a] b-84a516841ba77a5b4-3c363836cf4e16666",
 		"",
 	),
 )
 
-var _ = DescribeTable("GetCachedFileNameForVMDK",
-	func(vmdkFileName, expOut, expPanic string) {
+var _ = DescribeTable("GetCachedFileName",
+	func(fileName, expOut, expPanic string) {
 		var out string
 		f := func() {
-			out = clsutil.GetCachedFileNameForVMDK(vmdkFileName)
+			out = clsutil.GetCachedFileName(fileName)
 		}
 		if expPanic != "" {
 			Expect(f).To(PanicWith(expPanic))
@@ -395,10 +414,10 @@ var _ = DescribeTable("GetCachedFileNameForVMDK",
 		}
 	},
 	Entry(
-		"empty vmdkFileName should panic",
+		"empty fileName should panic",
 		"",
 		"",
-		"vmdkFileName is empty",
+		"fileName is empty",
 	),
 	Entry(
 		"file name sans extension",

@@ -7,7 +7,6 @@ package virtualmachineimagecache_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path"
 	"time"
 
@@ -139,21 +138,17 @@ var _ = Describe(
 			dsName, err := ds.ObjectName(ctx)
 			g.ExpectWithOffset(1, err).ToNot(HaveOccurred())
 
-			topLevelCacheDir := fmt.Sprintf(
-				"[%s] %s",
-				dsName,
-				clsutil.TopLevelCacheDirName)
-
 			itemCacheDir := clsutil.GetCacheDirForLibraryItem(
-				topLevelCacheDir,
-				obj.Spec.ProviderID,
+				dsName,
+				obj.Name,
+				spec.ProfileID,
 				obj.Spec.ProviderVersion)
 
-			vmdkFileName := clsutil.GetCachedFileNameForVMDK(
+			vmdkFileName := clsutil.GetCachedFileName(
 				"ttylinux-pc_i486-16.1-disk1.vmdk") + ".vmdk"
 			vmdkFilePath := path.Join(itemCacheDir, vmdkFileName)
 
-			nvramFileName := clsutil.GetCachedFileNameForVMDK(
+			nvramFileName := clsutil.GetCachedFileName(
 				"ttylinux-pc_i486-16.1-2.nvram") + ".nvram"
 			nvramFilePath := path.Join(itemCacheDir, nvramFileName)
 
@@ -398,6 +393,7 @@ var _ = Describe(
 							vmopv1.VirtualMachineImageCacheLocationSpec{
 								DatacenterID: fakeString,
 								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+								ProfileID:    vcSimCtx.StorageProfileID,
 							})
 					},
 					true, "", // OVFReady
@@ -416,6 +412,7 @@ var _ = Describe(
 							vmopv1.VirtualMachineImageCacheLocationSpec{
 								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
 								DatastoreID:  fakeString,
+								ProfileID:    vcSimCtx.StorageProfileID,
 							})
 					},
 					true, "", // OVFReady
@@ -444,6 +441,7 @@ var _ = Describe(
 							vmopv1.VirtualMachineImageCacheLocationSpec{
 								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
 								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+								ProfileID:    vcSimCtx.StorageProfileID,
 							})
 					},
 					true, "", // OVFReady
@@ -477,6 +475,7 @@ var _ = Describe(
 							vmopv1.VirtualMachineImageCacheLocationSpec{
 								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
 								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+								ProfileID:    vcSimCtx.StorageProfileID,
 							})
 					},
 					true, "", // OVFReady

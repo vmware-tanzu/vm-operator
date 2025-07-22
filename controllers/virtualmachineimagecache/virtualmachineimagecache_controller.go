@@ -264,16 +264,6 @@ func (r *reconciler) reconcileFiles(
 		return err
 	}
 
-	// Get the top-level cache directories for each datastore.
-	dstTopLevelDirs, err := r.getTopLevelCacheDirs(
-		ctx,
-		vimClient,
-		dstDatacenters,
-		dstDatastores)
-	if err != nil {
-		return err
-	}
-
 	// Reconcile the locations.
 	r.reconcileLocations(
 		ctx,
@@ -282,7 +272,6 @@ func (r *reconciler) reconcileFiles(
 		srcDatacenter,
 		dstDatastores,
 		obj,
-		dstTopLevelDirs,
 		srcFileURIs)
 
 	return nil
@@ -295,7 +284,6 @@ func (r *reconciler) reconcileLocations(
 	srcDatacenter *object.Datacenter,
 	dstDatastores map[string]datastore,
 	obj *vmopv1.VirtualMachineImageCache,
-	dstTopLevelDirs map[string]string,
 	srcFileURIs []string) {
 
 	obj.Status.Locations = make(
@@ -312,6 +300,7 @@ func (r *reconciler) reconcileLocations(
 
 		status.DatacenterID = spec.DatacenterID
 		status.DatastoreID = spec.DatastoreID
+		status.ProfileID = spec.ProfileID
 
 		// Get the preferred disk format for the datastore.
 		dstDiskFormat := pkgutil.GetPreferredDiskFormat(
@@ -323,8 +312,9 @@ func (r *reconciler) reconcileLocations(
 			vimClient,
 			dstDatacenters[spec.DatacenterID],
 			srcDatacenter,
-			dstTopLevelDirs[spec.DatastoreID],
-			obj.Spec.ProviderID,
+			dstDatastores[spec.DatastoreID].mo.Name,
+			obj.Name,
+			spec.ProfileID,
 			obj.Spec.ProviderVersion,
 			dstDiskFormat,
 			srcFileURIs)
@@ -346,13 +336,14 @@ func (r *reconciler) cacheFiles(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	dstDatacenter, srcDatacenter *object.Datacenter,
-	tldPath, itemID, itemVersion string,
+	dstDatastoreName, itemName, profileID, itemVersion string,
 	dstDiskFormat vimtypes.DatastoreSectorFormat,
 	srcFileURIs []string) ([]vmopv1.VirtualMachineImageCacheFileStatus, error) {
 
 	itemCacheDir := clsutil.GetCacheDirForLibraryItem(
-		tldPath,
-		itemID,
+		dstDatastoreName,
+		itemName,
+		profileID,
 		itemVersion)
 
 	sriClient := r.newSRIClientFn(vimClient)
@@ -362,6 +353,7 @@ func (r *reconciler) cacheFiles(
 		"dstDatacenter", dstDatacenter.Reference().Value,
 		"srcDatacenter", srcDatacenter.Reference().Value,
 		"itemCacheDir", itemCacheDir,
+		"profileID", profileID,
 		"dstDiskFormat", dstDiskFormat,
 		"srcFileURIs", srcFileURIs)
 
@@ -371,6 +363,7 @@ func (r *reconciler) cacheFiles(
 		dstDatacenter,
 		srcDatacenter,
 		itemCacheDir,
+		profileID,
 		dstDiskFormat,
 		srcFileURIs...)
 	if err != nil {
@@ -657,33 +650,6 @@ func getDatastores(
 	}
 
 	return objMap, nil
-}
-
-func (r *reconciler) getTopLevelCacheDirs(
-	ctx context.Context,
-	vimClient *vim25.Client,
-	dstDatacenters map[string]*object.Datacenter,
-	dstDatastores map[string]datastore) (map[string]string, error) {
-
-	client := r.newSRIClientFn(vimClient)
-
-	// Iterate over the unique datastores and ensure there is a top-level
-	// cache directory present on each one.
-	tldMap := map[string]string{}
-	for k, ds := range dstDatastores {
-		p := fmt.Sprintf("[%s] %s", ds.mo.Name, clsutil.TopLevelCacheDirName)
-		if err := client.MakeDirectory(
-			ctx,
-			p,
-			dstDatacenters[ds.datacenterID],
-			true); err != nil {
-			return nil, fmt.Errorf(
-				"failed to create top-level directory %q: %w",
-				p, err)
-		}
-		tldMap[k] = p
-	}
-	return tldMap, nil
 }
 
 type newContentLibraryProviderFn = func(context.Context, *rest.Client) clprov.Provider

@@ -6,6 +6,7 @@ package virtualmachinegroup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
@@ -55,6 +57,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		ctx.VMProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -125,22 +128,25 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
-	recorder record.Recorder) *Reconciler {
+	recorder record.Recorder,
+	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
 	return &Reconciler{
-		Context:  ctx,
-		Client:   client,
-		Logger:   logger,
-		Recorder: recorder,
+		Context:    ctx,
+		Client:     client,
+		Logger:     logger,
+		Recorder:   recorder,
+		VMProvider: vmProvider,
 	}
 }
 
 // Reconciler reconciles a VirtualMachineGroup object.
 type Reconciler struct {
 	client.Client
-	Context  context.Context
-	Logger   logr.Logger
-	Recorder record.Recorder
+	Context    context.Context
+	Logger     logr.Logger
+	Recorder   record.Recorder
+	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinegroups,verbs=get;list;watch;create;update;patch;delete
@@ -481,11 +487,151 @@ patchMember:
 	return nil
 }
 
-// TODO(sai): Implement placement logic for all unplaced VMs in the group.
 func (r *Reconciler) reconcilePlacement(
 	ctx *pkgctx.VirtualMachineGroupContext) error {
 
-	return nil
+	if ctx.VMGroup.Spec.GroupName != "" {
+		// Placement is only done on the group root.
+		return nil
+	}
+
+	groupPlacements, err := r.getPlacementMembers(ctx, ctx.VMGroup)
+	if err != nil {
+		return err
+	}
+
+	if len(groupPlacements) == 0 {
+		pkgutil.FromContextOrDefault(ctx).V(5).Info("No group members need placement")
+		return nil
+	}
+
+	groupPatches := make([]client.Patch, len(groupPlacements))
+	for i, placement := range groupPlacements {
+		if ctx.VMGroup == placement.VMGroup {
+			// Let the outer patch helper update the root group.
+			continue
+		}
+		groupPatches[i] = client.MergeFrom(placement.VMGroup.DeepCopy())
+	}
+
+	if err := r.VMProvider.PlaceVirtualMachineGroup(ctx, ctx.VMGroup, groupPlacements); err != nil {
+		return err
+	}
+
+	var errs []error
+	for i, placement := range groupPlacements {
+		if gp := groupPatches[i]; gp != nil {
+			if err := r.Status().Patch(ctx, placement.VMGroup, gp); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (r *Reconciler) getPlacementMembers(
+	ctx context.Context,
+	vmGroup *vmopv1.VirtualMachineGroup,
+) ([]providers.VMGroupPlacement, error) {
+
+	var groupPlacements []providers.VMGroupPlacement
+	groupPlacement := providers.VMGroupPlacement{
+		VMGroup: vmGroup,
+	}
+
+	for _, bootOrder := range vmGroup.Spec.BootOrder {
+		for _, member := range bootOrder.Members {
+			switch member.Kind {
+			case vmKind:
+				if vm, err := r.getVMForPlacement(ctx, vmGroup, member.Name); err != nil {
+					return nil, err
+				} else if vm != nil {
+					groupPlacement.VMMembers = append(groupPlacement.VMMembers, vm)
+				}
+
+			case vmgKind:
+				groupMemberPlacements, err := r.getGroupsForPlacement(ctx, vmGroup, member.Name)
+				if err != nil {
+					return nil, err
+				}
+
+				groupPlacements = append(groupPlacements, groupMemberPlacements...)
+			}
+		}
+	}
+
+	if len(groupPlacement.VMMembers) > 0 {
+		// This group has VMs that actually need to be placed.
+		groupPlacements = append(groupPlacements, groupPlacement)
+	}
+
+	return groupPlacements, nil
+}
+
+func (r *Reconciler) getVMForPlacement(
+	ctx context.Context,
+	vmGroup *vmopv1.VirtualMachineGroup,
+	vmName string) (*vmopv1.VirtualMachine, error) {
+
+	if _, member := findMemberStatus(vmName, vmKind, vmGroup.Status.Members); member != nil {
+		if conditions.IsTrue(member, vmopv1.VirtualMachineGroupMemberConditionPlacementReady) {
+			return nil, nil
+		}
+		if !conditions.IsTrue(member, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) {
+			return nil, fmt.Errorf("VM %q is not linked for group %q", vmName, vmGroup.Name)
+		}
+	} else {
+		return nil, fmt.Errorf("VM %q is not in group member status", vmName)
+	}
+
+	vm := &vmopv1.VirtualMachine{}
+	if err := r.Get(ctx, client.ObjectKey{Name: vmName, Namespace: vmGroup.Namespace}, vm); err != nil {
+		return nil, fmt.Errorf("failed to get group member VM %q: %w", vmName, err)
+	}
+
+	if gn := vm.Spec.GroupName; gn != vmGroup.Name {
+		return nil, fmt.Errorf("VM %q is assigned to group %q instead of expected %q", vmName, gn, vmGroup.Name)
+	}
+
+	// TODO: Probably need to check more stuff on the VM?
+	return vm, nil
+}
+
+func (r *Reconciler) getGroupsForPlacement(
+	ctx context.Context,
+	parentVMGroup *vmopv1.VirtualMachineGroup,
+	groupName string) ([]providers.VMGroupPlacement, error) {
+
+	if _, member := findMemberStatus(groupName, vmgKind, parentVMGroup.Status.Members); member != nil {
+		if !conditions.IsTrue(member, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) {
+			return nil, fmt.Errorf("VM Group %q is not linked for parent group %q", groupName, parentVMGroup.Name)
+		}
+	} else {
+		return nil, fmt.Errorf("VM Group %q is not in parent group %q member status", groupName, parentVMGroup.Name)
+	}
+
+	vmGroup := &vmopv1.VirtualMachineGroup{}
+	if err := r.Get(ctx, client.ObjectKey{Name: groupName, Namespace: parentVMGroup.Namespace}, vmGroup); err != nil {
+		return nil, fmt.Errorf("failed to get group member group %s: %w", groupName, err)
+	}
+
+	// TODO: Detect cycles
+	return r.getPlacementMembers(ctx, vmGroup)
+}
+
+func findMemberStatus(
+	name, kind string,
+	members []vmopv1.VirtualMachineGroupMemberStatus) (int, *vmopv1.VirtualMachineGroupMemberStatus) { //nolint:unparam
+
+	for idx := range members {
+		member := &members[idx]
+		if member.Name == name && member.Kind == kind {
+			return idx, member
+		}
+	}
+
+	return -1, nil
 }
 
 // shouldUpdatePowerState returns true if the group's power state is set and
@@ -621,7 +767,7 @@ func isMemberReady(ms vmopv1.VirtualMachineGroupMemberStatus) (bool, string) {
 		expectedConditions = []string{
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 			// TODO(sai): Uncomment this once the placement is implemented.
-			// vmopv1.VirtualMachineConditionPlacementReady,
+			// vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 		}
 	case vmgKind:
 		expectedConditions = []string{

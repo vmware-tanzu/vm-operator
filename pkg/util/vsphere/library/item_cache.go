@@ -64,8 +64,8 @@ func CacheStorageURIs(
 	ctx context.Context,
 	client CacheStorageURIsClient,
 	dstDatacenter, srcDatacenter *object.Datacenter,
-	dstDir string,
-	dstDisksFormat vimtypes.DatastoreSectorFormat,
+	dstDir, dstProfileID string,
+	dstDiskFormat vimtypes.DatastoreSectorFormat,
 	srcDiskURIs ...string) ([]CachedDisk, error) {
 
 	if pkgutil.IsNil(ctx) {
@@ -83,6 +83,9 @@ func CacheStorageURIs(
 	if dstDir == "" {
 		panic("dstDir is empty")
 	}
+	if dstProfileID == "" {
+		panic("dstProfileID is empty")
+	}
 
 	var dstStorageURIs = make([]CachedDisk, len(srcDiskURIs))
 
@@ -92,7 +95,8 @@ func CacheStorageURIs(
 			client,
 			dstDir,
 			srcDiskURIs[i],
-			dstDisksFormat,
+			dstProfileID,
+			dstDiskFormat,
 			dstDatacenter,
 			srcDatacenter)
 		if err != nil {
@@ -107,14 +111,14 @@ func CacheStorageURIs(
 func copyFile(
 	ctx context.Context,
 	client CacheStorageURIsClient,
-	dstDir, srcFilePath string,
+	dstDir, srcFilePath, dstProfileID string,
 	dstDiskFormat vimtypes.DatastoreSectorFormat,
 	dstDatacenter, srcDatacenter *object.Datacenter) (string, error) {
 
 	var (
 		srcFileName = path.Base(srcFilePath)
 		srcFileExt  = path.Ext(srcFilePath)
-		dstFileName = GetCachedFileNameForVMDK(srcFileName) + srcFileExt
+		dstFileName = GetCachedFileName(srcFileName) + srcFileExt
 		dstFilePath = path.Join(dstDir, dstFileName)
 		isDisk      = strings.EqualFold(".vmdk", srcFileExt)
 		logger      = pkgutil.FromContextOrDefault(ctx)
@@ -176,6 +180,11 @@ func copyFile(
 					DiskType:    string(vimtypes.VirtualDiskTypeThin),
 				},
 				SectorFormat: string(dstDiskFormat),
+				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+					&vimtypes.VirtualMachineDefinedProfileSpec{
+						ProfileId: dstProfileID,
+					},
+				},
 			},
 			false)
 	} else {
@@ -199,40 +208,50 @@ func copyFile(
 	return dstFilePath, nil
 }
 
-// TopLevelCacheDirName is the name of the top-level cache directory created on
-// each datastore.
-const TopLevelCacheDirName = ".contentlib-cache"
-
 // GetCacheDirForLibraryItem returns the cache directory for a library item
 // beneath a top-level cache directory.
 func GetCacheDirForLibraryItem(
-	topLevelCacheDir, itemUUID, contentVersion string) string {
+	datastoreName, itemName, profileID, contentVersion string) string {
 
-	if topLevelCacheDir == "" {
-		panic("topLevelCacheDir is empty")
+	if datastoreName == "" {
+		panic("datastoreName is empty")
 	}
-	if itemUUID == "" {
-		panic("itemUUID is empty")
+	if itemName == "" {
+		panic("itemName is empty")
 	}
-	if contentVersion == "" {
-		panic("contentVersion is empty")
+	if profileID == "" {
+		panic("profileID is empty")
 	}
+
+	profileID = pkgutil.SHA1Sum17(profileID)
+
+	// TODO(akutz) Remove once image reg v2 sets the version info for VM-backed
+	//             images.
+	// if contentVersion == "" {
+	// 	panic("contentVersion is empty")
+	// }
 
 	// Encode the contentVersion to ensure it is safe to use as part of the
 	// directory name.
-	contentVersion = pkgutil.SHA1Sum17(contentVersion)
+	if contentVersion != "" {
+		contentVersion = "-" + pkgutil.SHA1Sum17(contentVersion)
+	}
 
-	return path.Join(topLevelCacheDir, itemUUID, contentVersion)
+	return fmt.Sprintf("[%s] %s-%s%s",
+		datastoreName,
+		itemName,
+		profileID,
+		contentVersion)
 }
 
-// GetCachedFileNameForVMDK returns the first 17 characters of a SHA-1 sum of
-// a VMDK file name and extension, ex. my-disk.vmdk.
-func GetCachedFileNameForVMDK(vmdkFileName string) string {
-	if vmdkFileName == "" {
-		panic("vmdkFileName is empty")
+// GetCachedFileName returns the first 17 characters of a SHA-1 sum of
+// a file name and extension, ex. my-disk.vmdk or my-firmware.nvram.
+func GetCachedFileName(fileName string) string {
+	if fileName == "" {
+		panic("fileName is empty")
 	}
-	if ext := path.Ext(vmdkFileName); ext != "" {
-		vmdkFileName, _ = strings.CutSuffix(vmdkFileName, ext)
+	if ext := path.Ext(fileName); ext != "" {
+		fileName, _ = strings.CutSuffix(fileName, ext)
 	}
-	return pkgutil.SHA1Sum17(vmdkFileName)
+	return pkgutil.SHA1Sum17(fileName)
 }

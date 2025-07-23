@@ -70,6 +70,8 @@ func Reconcile(
 // Reconcile performs an online promotion of any of a VM's linked-clone disks to
 // full clones. This reconciler is a no-op for VMs that do not yet exists and/or
 // are not powered on.
+//
+//nolint:gocyclo
 func (r reconciler) Reconcile(
 	ctx context.Context,
 	_ ctrlclient.Client,
@@ -166,27 +168,40 @@ func (r reconciler) Reconcile(
 
 	// Find the VirtualDisks for this VM.
 	var (
-		childDisks []vimtypes.VirtualDisk
-		devices    = object.VirtualDeviceList(moVM.Config.Hardware.Device)
-		allDisks   = devices.SelectByType(&vimtypes.VirtualDisk{})
+		childDisks       []vimtypes.VirtualDisk
+		devices          = object.VirtualDeviceList(moVM.Config.Hardware.Device)
+		allDisks         = devices.SelectByType(&vimtypes.VirtualDisk{})
+		snapshotDiskKeys = map[int32]struct{}{}
 	)
 
-	// Find any classic, file-based disks that have parent backings.
+	// Find all of the disks that are participating in snapshots.
+	if moVM.LayoutEx != nil {
+		for _, snap := range moVM.LayoutEx.Snapshot {
+			for _, disk := range snap.Disk {
+				snapshotDiskKeys[disk.Key] = struct{}{}
+			}
+		}
+	}
+
+	// Find any classic, file-based disks that have parent backings that are
+	// not participating in snapshots.
 	for i := range allDisks {
 		d := allDisks[i].(*vimtypes.VirtualDisk)
-		if d.VDiskId == nil { // Skip FCDs
-			switch tBack := d.Backing.(type) {
-			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-				if tBack.Parent != nil {
-					childDisks = append(childDisks, *d)
-				}
-			case *vimtypes.VirtualDiskSeSparseBackingInfo:
-				if tBack.Parent != nil {
-					childDisks = append(childDisks, *d)
-				}
-			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-				if tBack.Parent != nil {
-					childDisks = append(childDisks, *d)
+		if _, ok := snapshotDiskKeys[d.Key]; !ok {
+			if d.VDiskId == nil { // Skip FCDs
+				switch tBack := d.Backing.(type) {
+				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+					if tBack.Parent != nil {
+						childDisks = append(childDisks, *d)
+					}
+				case *vimtypes.VirtualDiskSeSparseBackingInfo:
+					if tBack.Parent != nil {
+						childDisks = append(childDisks, *d)
+					}
+				case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+					if tBack.Parent != nil {
+						childDisks = append(childDisks, *d)
+					}
 				}
 			}
 		}
@@ -214,9 +229,10 @@ func (r reconciler) Reconcile(
 				ReasonPending,
 				"Cannot online promote disks when VM has snapshot")
 			logger.V(4).Info(
-				"Skipping disk promotion for VM with snapshot(s)")
+				"Skipping online disk promotion for VM with snapshot(s)")
 			return nil
 		}
+
 		if moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
 			pkgcond.MarkFalse(
 				vm,
@@ -224,9 +240,31 @@ func (r reconciler) Reconcile(
 				ReasonPending,
 				"Pending VM powered on")
 			logger.V(4).Info(
-				"Skipping disk promotion for powered on VM")
+				"Skipping online disk promotion until VM powered on")
 			return nil
 		}
+
+		if moVM.Guest != nil &&
+			moVM.Guest.CustomizationInfo != nil {
+
+			custStatus := vimtypes.GuestInfoCustomizationStatus(
+				moVM.Guest.CustomizationInfo.CustomizationStatus)
+
+			switch custStatus {
+			case vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING,
+				vimtypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING:
+
+				pkgcond.MarkFalse(
+					vm,
+					vmopv1.VirtualMachineDiskPromotionSynced,
+					ReasonPending,
+					"Pending guest customization")
+				logger.V(4).Info(
+					"Skipping online disk promotion for guest customization")
+				return nil
+			}
+		}
+
 	case vmopv1.VirtualMachinePromoteDisksModeOffline:
 		if moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOff {
 			// Skip VMs that are not powered off.
@@ -236,7 +274,7 @@ func (r reconciler) Reconcile(
 				ReasonPending,
 				"Pending VM powered off")
 			logger.V(4).Info(
-				"Skipping disk promotion for powered off VM")
+				"Skipping offline disk promotion until VM is powered off")
 			return nil
 		}
 	}

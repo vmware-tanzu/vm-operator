@@ -27,6 +27,12 @@ type VirtualMachineImageCacheLocationSpec struct {
 	// be cached.
 	DatacenterID string `json:"datacenterID"`
 
+	// ProfileID describes the ID of the storage profile used to cache the
+	// image.
+	// Please note, this profile *must* include the datastore specified by the
+	// datastoreID field.
+	ProfileID string `json:"profileID"`
+
 	// DatastoreID describes the ID of the datastore to which the image should
 	// be cached.
 	DatastoreID string `json:"datastoreID"`
@@ -50,22 +56,28 @@ type VirtualMachineImageCacheSpec struct {
 	// +listType=map
 	// +listMapKey=datacenterID
 	// +listMapKey=datastoreID
+	// +listMapKey=profileID
 
 	// Locations describes the locations where the image should be cached.
 	Locations []VirtualMachineImageCacheLocationSpec `json:"locations,omitempty"`
 }
 
-// AddLocation adds the provided datacenterID and datastoreID to the the image
-// cache object's spec.locations list if such a location does not already exist.
-// Calling this function for a pair of datacenterID and datastoreID values that
-// already exist in the object's spec.locations list has no effect.
+// AddLocation adds the provided datacenterID, datastoreID, and profileID to the
+// the image cache object's spec.locations list if such a location does not
+// already exist. Calling this function for a set of datacenterID, datastoreID,
+// and profileID values that already exist in the object's spec.locations list
+// has no effect.
 func (i *VirtualMachineImageCache) AddLocation(
 	datacenterID,
-	datastoreID string) {
+	datastoreID,
+	profileID string) {
 
 	for idx := range i.Spec.Locations {
 		l := i.Spec.Locations[idx]
-		if l.DatacenterID == datacenterID && l.DatastoreID == datastoreID {
+		if l.DatacenterID == datacenterID &&
+			l.DatastoreID == datastoreID &&
+			l.ProfileID == profileID {
+
 			return
 		}
 	}
@@ -74,6 +86,7 @@ func (i *VirtualMachineImageCache) AddLocation(
 		VirtualMachineImageCacheLocationSpec{
 			DatacenterID: datacenterID,
 			DatastoreID:  datastoreID,
+			ProfileID:    profileID,
 		})
 }
 
@@ -117,13 +130,16 @@ type VirtualMachineImageCacheFileStatus struct {
 
 type VirtualMachineImageCacheLocationStatus struct {
 
-	// DatacenterID describes the ID of the datacenter to which the image should
-	// be cached.
+	// DatacenterID describes the ID of the datacenter where the image is
+	// cached.
 	DatacenterID string `json:"datacenterID"`
 
-	// DatastoreID describes the ID of the datastore to which the image should
-	// be cached.
+	// DatastoreID describes the ID of the datastore where the image is cached.
 	DatastoreID string `json:"datastoreID"`
+
+	// ProfileID describes the ID of the storage profile used to cache the
+	// image.
+	ProfileID string `json:"profileID"`
 
 	// +optional
 	// +listType=map
@@ -174,6 +190,7 @@ type VirtualMachineImageCacheStatus struct {
 	// +listType=map
 	// +listMapKey=datacenterID
 	// +listMapKey=datastoreID
+	// +listMapKey=profileID
 
 	// Locations describe the observed locations where the image is cached.
 	Locations []VirtualMachineImageCacheLocationStatus `json:"locations,omitempty"`

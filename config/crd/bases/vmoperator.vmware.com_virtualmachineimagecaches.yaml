@@ -62,14 +62,23 @@ spec:
                         DatastoreID describes the ID of the datastore to which the image should
                         be cached.
                       type: string
+                    profileID:
+                      description: |-
+                        ProfileID describes the ID of the storage profile used to cache the
+                        image.
+                        Please note, this profile *must* include the datastore specified by the
+                        datastoreID field.
+                      type: string
                   required:
                   - datacenterID
                   - datastoreID
+                  - profileID
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
                 - datacenterID
                 - datastoreID
+                - profileID
                 x-kubernetes-list-type: map
               providerID:
                 description: |-
@@ -223,13 +232,12 @@ spec:
                       type: array
                     datacenterID:
                       description: |-
-                        DatacenterID describes the ID of the datacenter to which the image should
-                        be cached.
+                        DatacenterID describes the ID of the datacenter where the image is
+                        cached.
                       type: string
                     datastoreID:
-                      description: |-
-                        DatastoreID describes the ID of the datastore to which the image should
-                        be cached.
+                      description: DatastoreID describes the ID of the datastore where
+                        the image is cached.
                       type: string
                     files:
                       description: Files describes the image's files cached on this
@@ -259,14 +267,21 @@ spec:
                       - id
                       - type
                       x-kubernetes-list-type: map
+                    profileID:
+                      description: |-
+                        ProfileID describes the ID of the storage profile used to cache the
+                        image.
+                      type: string
                   required:
                   - datacenterID
                   - datastoreID
+                  - profileID
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
                 - datacenterID
                 - datastoreID
+                - profileID
                 x-kubernetes-list-type: map
               ovf:
                 description: OVF describes the observed status of the cached OVF content.
@@ -334,14 +349,23 @@ spec:
                         DatastoreID describes the ID of the datastore to which the image should
                         be cached.
                       type: string
+                    profileID:
+                      description: |-
+                        ProfileID describes the ID of the storage profile used to cache the
+                        image.
+                        Please note, this profile *must* include the datastore specified by the
+                        datastoreID field.
+                      type: string
                   required:
                   - datacenterID
                   - datastoreID
+                  - profileID
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
                 - datacenterID
                 - datastoreID
+                - profileID
                 x-kubernetes-list-type: map
               providerID:
                 description: |-
@@ -495,13 +519,12 @@ spec:
                       type: array
                     datacenterID:
                       description: |-
-                        DatacenterID describes the ID of the datacenter to which the image should
-                        be cached.
+                        DatacenterID describes the ID of the datacenter where the image is
+                        cached.
                       type: string
                     datastoreID:
-                      description: |-
-                        DatastoreID describes the ID of the datastore to which the image should
-                        be cached.
+                      description: DatastoreID describes the ID of the datastore where
+                        the image is cached.
                       type: string
                     files:
                       description: Files describes the image's files cached on this
@@ -543,14 +566,21 @@ spec:
                       - id
                       - type
                       x-kubernetes-list-type: map
+                    profileID:
+                      description: |-
+                        ProfileID describes the ID of the storage profile used to cache the
+                        image.
+                      type: string
                   required:
                   - datacenterID
                   - datastoreID
+                  - profileID
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
                 - datacenterID
                 - datastoreID
+                - profileID
                 x-kubernetes-list-type: map
               ovf:
                 description: OVF describes the observed status of the cached OVF content.

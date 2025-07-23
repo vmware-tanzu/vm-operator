@@ -1736,7 +1736,10 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 		func() error {
 			obj.Spec.ProviderID = itemID
 			obj.Spec.ProviderVersion = itemVersion
-			obj.AddLocation(datacenterID, datastoreID)
+			obj.AddLocation(
+				datacenterID,
+				datastoreID,
+				createArgs.StorageProfileID)
 			return nil
 		}); err != nil {
 		return fmt.Errorf(

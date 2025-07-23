@@ -2196,6 +2196,7 @@ func Convert_v1alpha4_VirtualMachineImageCacheList_To_v1alpha3_VirtualMachineIma
 
 func autoConvert_v1alpha3_VirtualMachineImageCacheLocationSpec_To_v1alpha4_VirtualMachineImageCacheLocationSpec(in *VirtualMachineImageCacheLocationSpec, out *v1alpha4.VirtualMachineImageCacheLocationSpec, s conversion.Scope) error {
 	out.DatacenterID = in.DatacenterID
+	out.ProfileID = in.ProfileID
 	out.DatastoreID = in.DatastoreID
 	return nil
 }
@@ -2207,6 +2208,7 @@ func Convert_v1alpha3_VirtualMachineImageCacheLocationSpec_To_v1alpha4_VirtualMa
 
 func autoConvert_v1alpha4_VirtualMachineImageCacheLocationSpec_To_v1alpha3_VirtualMachineImageCacheLocationSpec(in *v1alpha4.VirtualMachineImageCacheLocationSpec, out *VirtualMachineImageCacheLocationSpec, s conversion.Scope) error {
 	out.DatacenterID = in.DatacenterID
+	out.ProfileID = in.ProfileID
 	out.DatastoreID = in.DatastoreID
 	return nil
 }
@@ -2219,6 +2221,7 @@ func Convert_v1alpha4_VirtualMachineImageCacheLocationSpec_To_v1alpha3_VirtualMa
 func autoConvert_v1alpha3_VirtualMachineImageCacheLocationStatus_To_v1alpha4_VirtualMachineImageCacheLocationStatus(in *VirtualMachineImageCacheLocationStatus, out *v1alpha4.VirtualMachineImageCacheLocationStatus, s conversion.Scope) error {
 	out.DatacenterID = in.DatacenterID
 	out.DatastoreID = in.DatastoreID
+	out.ProfileID = in.ProfileID
 	if in.Files != nil {
 		in, out := &in.Files, &out.Files
 		*out = make([]v1alpha4.VirtualMachineImageCacheFileStatus, len(*in))
@@ -2242,6 +2245,7 @@ func Convert_v1alpha3_VirtualMachineImageCacheLocationStatus_To_v1alpha4_Virtual
 func autoConvert_v1alpha4_VirtualMachineImageCacheLocationStatus_To_v1alpha3_VirtualMachineImageCacheLocationStatus(in *v1alpha4.VirtualMachineImageCacheLocationStatus, out *VirtualMachineImageCacheLocationStatus, s conversion.Scope) error {
 	out.DatacenterID = in.DatacenterID
 	out.DatastoreID = in.DatastoreID
+	out.ProfileID = in.ProfileID
 	if in.Files != nil {
 		in, out := &in.Files, &out.Files
 		*out = make([]VirtualMachineImageCacheFileStatus, len(*in))

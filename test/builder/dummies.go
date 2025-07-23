@@ -293,6 +293,7 @@ func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
+			InstanceUUID: uuid.NewString(),
 			Image: &vmopv1.VirtualMachineImageRef{
 				Kind: vmiKind,
 				Name: DummyVMIName,

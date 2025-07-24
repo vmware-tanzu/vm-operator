@@ -272,6 +272,32 @@ var _ = Describe(
 						g.Expect(vmGroup2.OwnerReferences[0].Name).To(Equal(vmGroup1Key.Name))
 					}, "5s", "100ms").Should(Succeed())
 				})
+
+				When("members are removed from the group", func() {
+					BeforeEach(func() {
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						vmGroup1Copy := vmGroup1.DeepCopy()
+						vmGroup1Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+							{
+								Members: []vmopv1.GroupMember{},
+							},
+						}
+						Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+					})
+
+					It("should remove stale owner references from previous members", func() {
+						Eventually(func(g Gomega) {
+							vm1 := &vmopv1.VirtualMachine{}
+							g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+							g.Expect(vm1.OwnerReferences).To(HaveLen(0), "vm1 should not have owner references")
+
+							vmGroup2 := &vmopv1.VirtualMachineGroup{}
+							g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+							g.Expect(vmGroup2.OwnerReferences).To(HaveLen(0), "vmGroup2 should not have owner references")
+						}, "5s", "100ms").Should(Succeed())
+					})
+				})
 			})
 		})
 

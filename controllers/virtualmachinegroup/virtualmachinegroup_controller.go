@@ -330,6 +330,13 @@ func (r *Reconciler) reconcileMembers(
 	}
 
 	ctx.VMGroup.Status.Members = memberStatuses
+
+	// Remove stale owner references from previous members that are no longer
+	// linked to this group.
+	if err := r.removeStaleOwnerRef(ctx, memberStatuses); err != nil {
+		memberErrs = append(memberErrs, err)
+	}
+
 	return apierrorsutil.NewAggregate(memberErrs)
 }
 
@@ -352,11 +359,14 @@ func (r *Reconciler) reconcileMember(
 
 	logger := ctx.Logger.WithValues("kind", member.Kind, "name", member.Name)
 
-	if err := r.Get(ctx, client.ObjectKey{
-		Namespace: ctx.VMGroup.Namespace,
-		Name:      member.Name,
-	}, obj); err != nil {
-		logger.Error(err, "Failed to get group member")
+	if err := r.Get(
+		ctx,
+		client.ObjectKey{
+			Namespace: ctx.VMGroup.Namespace,
+			Name:      member.Name,
+		},
+		obj,
+	); err != nil {
 
 		if !apierrors.IsNotFound(err) {
 			conditions.MarkError(
@@ -367,6 +377,8 @@ func (r *Reconciler) reconcileMember(
 			)
 			return err
 		}
+
+		logger.V(4).Info("Member not found, returning early")
 
 		conditions.MarkFalse(
 			ms,
@@ -382,12 +394,12 @@ func (r *Reconciler) reconcileMember(
 		if groupName == "" {
 			groupNameErr = fmt.Errorf("member has no group name")
 		} else {
-			groupNameErr = fmt.Errorf("member has a different group name: %s",
-				groupName)
+			groupNameErr = fmt.Errorf(
+				"member has a different group name: %q",
+				groupName,
+			)
 		}
 
-		logger.Error(groupNameErr, "Invalid group name for member",
-			"groupName", groupName)
 		conditions.MarkError(
 			ms,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
@@ -399,12 +411,12 @@ func (r *Reconciler) reconcileMember(
 
 	patch := client.MergeFrom(obj.DeepCopyObject().(vmopv1.VirtualMachineOrGroup))
 
-	if err := controllerutil.SetControllerReference(
+	if err := controllerutil.SetOwnerReference(
 		ctx.VMGroup,
 		obj,
 		r.Scheme(),
 	); err != nil {
-		logger.Error(err, "Failed to set owner reference to group member")
+		err = fmt.Errorf("failed to set owner reference to member: %w", err)
 		conditions.MarkError(
 			ms,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
@@ -485,6 +497,115 @@ patchMember:
 	}
 
 	return nil
+}
+
+// removeStaleOwnerRef removes owner reference to the group from all previous
+// members that are no longer linked to this group. Process as many objects as
+// possible and return an aggregate error at the end.
+func (r *Reconciler) removeStaleOwnerRef(
+	ctx *pkgctx.VirtualMachineGroupContext,
+	memberStatuses []vmopv1.VirtualMachineGroupMemberStatus) error {
+
+	var (
+		vmList     = &vmopv1.VirtualMachineList{}
+		vmgList    = &vmopv1.VirtualMachineGroupList{}
+		listOption = client.InNamespace(ctx.VMGroup.Namespace)
+	)
+
+	if err := r.List(ctx, vmList, listOption); err != nil {
+		return fmt.Errorf("failed to list VirtualMachines: %w", err)
+	}
+
+	if err := r.List(ctx, vmgList, listOption); err != nil {
+		return fmt.Errorf("failed to list VirtualMachineGroups: %w", err)
+	}
+
+	var (
+		linkedVMs  = make(map[string]struct{}, len(memberStatuses))
+		linkedVMGs = make(map[string]struct{}, len(memberStatuses))
+		staleObjs  []client.Object
+		errs       []error
+	)
+
+	for _, member := range memberStatuses {
+		if conditions.IsTrue(
+			&member,
+			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+		) {
+			switch member.Kind {
+			case vmKind:
+				linkedVMs[member.Name] = struct{}{}
+			case vmgKind:
+				linkedVMGs[member.Name] = struct{}{}
+			}
+		}
+	}
+
+	// hasStaleOwnerRef returns true if an object has an owner reference to the
+	// group but is not linked to this group.
+	hasStaleOwnerRef := func(
+		obj client.Object,
+		linkedObjs map[string]struct{},
+	) (bool, error) {
+		hasRef, err := controllerutil.HasOwnerReference(
+			obj.GetOwnerReferences(),
+			ctx.VMGroup,
+			r.Scheme(),
+		)
+		if err != nil {
+			return false, fmt.Errorf(
+				"failed to check if object has owner reference to group: %w",
+				err,
+			)
+		}
+		if !hasRef {
+			return false, nil
+		}
+		_, linked := linkedObjs[obj.GetName()]
+		return !linked, nil
+	}
+
+	for _, vm := range vmList.Items {
+		if stale, err := hasStaleOwnerRef(&vm, linkedVMs); err != nil {
+			errs = append(errs, err)
+		} else if stale {
+			staleObjs = append(staleObjs, &vm)
+		}
+	}
+
+	for _, vmg := range vmgList.Items {
+		if stale, err := hasStaleOwnerRef(&vmg, linkedVMGs); err != nil {
+			errs = append(errs, err)
+		} else if stale {
+			staleObjs = append(staleObjs, &vmg)
+		}
+	}
+
+	// Patch objects to remove the stale owner reference to this group.
+	for _, obj := range staleObjs {
+		patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
+
+		if removeErr := controllerutil.RemoveOwnerReference(
+			ctx.VMGroup,
+			obj,
+			r.Scheme(),
+		); removeErr != nil {
+			errs = append(errs, fmt.Errorf(
+				"failed to remove owner ref from previous member: %w",
+				removeErr,
+			))
+			continue
+		}
+
+		if patchErr := r.Patch(ctx, obj, patch); patchErr != nil {
+			errs = append(errs, fmt.Errorf(
+				"failed to patch owner ref removal from previous member: %w",
+				patchErr,
+			))
+		}
+	}
+
+	return apierrorsutil.NewAggregate(errs)
 }
 
 func (r *Reconciler) reconcilePlacement(

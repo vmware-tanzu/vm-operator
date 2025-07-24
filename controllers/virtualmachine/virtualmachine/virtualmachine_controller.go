@@ -38,6 +38,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -244,17 +245,33 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			mode = pkgcfg.FromContext(ctx).FastDeployMode
 		}
 
+		reason := "unsupported mode"
+		if !pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+			isEncStorClass, _, err := kubeutil.IsEncryptedStorageClass(
+				ctx, r.Client, vm.Spec.StorageClass)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf(
+					"failed to check if storage class %q is encrypted: %w",
+					vm.Spec.StorageClass, err)
+			}
+			if isEncStorClass {
+				mode = ""
+				reason = "encrypted storage class sans byok"
+			}
+		}
+
 		switch strings.ToLower(mode) {
 		case pkgconst.FastDeployModeDirect, pkgconst.FastDeployModeLinked:
 			logger.V(4).Info("Using fast-deploy for this VM", "mode", mode)
-			// No-op
 		default:
 			// Create a copy of the config where the Fast Deploy feature is
 			// disabled for this call-stack.
 			cfg := pkgcfg.FromContext(ctx)
 			cfg.Features.FastDeploy = false
 			ctx = pkgcfg.WithContext(ctx, cfg)
-			logger.Info("Disabled fast-deploy for this VM")
+			logger.Info(
+				"Disabled fast-deploy for this VM",
+				"mode", mode, "reason", reason)
 		}
 	}
 

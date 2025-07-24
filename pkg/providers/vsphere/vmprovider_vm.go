@@ -1533,7 +1533,8 @@ func verifyResourcePool(vmCtx pkgctx.VirtualMachineContext) error {
 	return nil
 }
 
-// vmCreateDoPlacement determines placement of the VM prior to creating the VM on VC.
+// vmCreateDoPlacement determines placement of the VM prior to creating the VM
+// on VC. If VM has a group name specified, placement is determined by group.
 func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
@@ -1546,8 +1547,22 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 				vmopv1.VirtualMachineConditionPlacementReady,
 				"NotReady",
 				retErr)
+		} else {
+			pkgcnd.MarkTrue(
+				vmCtx.VM,
+				vmopv1.VirtualMachineConditionPlacementReady)
 		}
 	}()
+
+	if pkgcfg.FromContext(vmCtx).Features.VMGroups &&
+		vmCtx.VM.Spec.GroupName != "" {
+		vmCtx.Logger.Info(
+			"Getting VM placement result from its group",
+			"groupName", vmCtx.VM.Spec.GroupName,
+		)
+
+		return vs.vmCreateDoPlacementByGroup(vmCtx, vcClient, createArgs)
+	}
 
 	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
@@ -1579,6 +1594,124 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	if err != nil {
 		return err
 	}
+
+	return processPlacementResult(vmCtx, vcClient, createArgs, *result)
+}
+
+// vmCreateDoPlacementByGroup places the VM from the group's placement result.
+func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	createArgs *VMCreateArgs) error {
+
+	// Should never happen when this function is called, check just in case.
+	if vmCtx.VM.Spec.GroupName == "" {
+		return fmt.Errorf("VM.Spec.GroupName is empty")
+	}
+
+	var vmg vmopv1.VirtualMachineGroup
+	if err := vs.k8sClient.Get(
+		vmCtx,
+		ctrlclient.ObjectKey{
+			Namespace: vmCtx.VM.Namespace,
+			Name:      vmCtx.VM.Spec.GroupName,
+		},
+		&vmg,
+	); err != nil {
+		return fmt.Errorf("failed to get VM Group object: %w", err)
+	}
+
+	var memberStatus vmopv1.VirtualMachineGroupMemberStatus
+	for _, m := range vmg.Status.Members {
+		if m.Kind == vmCtx.VM.Kind && m.Name == vmCtx.VM.Name {
+			memberStatus = m
+			break
+		}
+	}
+
+	if !pkgcnd.IsTrue(
+		&memberStatus,
+		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+	) {
+		return fmt.Errorf("VM is not linked to its group")
+	}
+
+	if !pkgcnd.IsTrue(
+		&memberStatus,
+		vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+	) {
+		return fmt.Errorf("VM Group placement is not ready")
+	}
+
+	placementStatus := memberStatus.Placement
+	if placementStatus == nil {
+		return fmt.Errorf("VM Group placement is empty")
+	}
+
+	vmCtx.Logger.V(6).Info(
+		"VM Group placement is ready",
+		"placement", placementStatus,
+	)
+
+	// Create a placement result from the group's placement status.
+	var result placement.Result
+
+	if placementStatus.Zone != "" {
+		result.ZonePlacement = true
+		result.ZoneName = placementStatus.Zone
+	}
+
+	if placementStatus.Node != "" {
+		result.HostMoRef = &vimtypes.ManagedObjectReference{
+			Type:  string(vimtypes.ManagedObjectTypesHostSystem),
+			Value: placementStatus.Node,
+		}
+	}
+
+	if placementStatus.Pool != "" {
+		result.PoolMoRef = vimtypes.ManagedObjectReference{
+			Type:  string(vimtypes.ManagedObjectTypesResourcePool),
+			Value: placementStatus.Pool,
+		}
+	}
+
+	result.Datastores = make([]placement.DatastoreResult, len(placementStatus.Datastores))
+	for i, ds := range placementStatus.Datastores {
+		if val := ds.DiskKey; val != nil {
+			result.Datastores[i].DiskKey = *val
+			result.Datastores[i].ForDisk = true
+		}
+
+		result.Datastores[i].MoRef = vimtypes.ManagedObjectReference{
+			Type:  string(vimtypes.ManagedObjectTypesDatastore),
+			Value: ds.ID,
+		}
+
+		result.Datastores[i].Name = ds.Name
+		result.Datastores[i].URL = ds.URL
+		result.Datastores[i].DiskFormats = ds.SupportedDiskFormats
+	}
+
+	// InstanceStoragePlacement flag is needed to update the VM's annotations
+	// with the selected host for VMs that have instance storage backed volumes.
+	// They're likely not supported for group placement. Leave it here for now
+	// to keep consistent with the single VM placement workflow.
+	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
+		if vmopv1util.IsInstanceStoragePresent(vmCtx.VM) {
+			result.InstanceStoragePlacement = true
+		}
+	}
+
+	return processPlacementResult(vmCtx, vcClient, createArgs, result)
+}
+
+// processPlacementResult updates the createArgs and VM annotations/labels with
+// the given placement result.
+func processPlacementResult(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	createArgs *VMCreateArgs,
+	result placement.Result) error {
 
 	if result.PoolMoRef.Value != "" {
 		createArgs.ResourcePoolMoID = result.PoolMoRef.Value
@@ -1632,8 +1765,6 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = result.ZoneName
 		}
 	}
-
-	pkgcnd.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionPlacementReady)
 
 	return nil
 }

@@ -63,7 +63,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey || pkgcfg.FromContext(ctx).Features.FastDeploy {
 		if err := storageclass.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize StorageClass controller: %w", err)
 		}

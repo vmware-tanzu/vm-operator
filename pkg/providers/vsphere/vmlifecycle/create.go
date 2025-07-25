@@ -5,6 +5,8 @@
 package vmlifecycle
 
 import (
+	"strings"
+
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
@@ -53,6 +55,12 @@ func CreateVirtualMachine(
 	vimClient *vim25.Client,
 	finder *find.Finder,
 	createArgs *CreateArgs) (*vimtypes.ManagedObjectReference, error) {
+
+	if strings.HasPrefix(createArgs.ProviderItemID, "vm-") {
+		// This is a VM-backed image, and it can only be provisioned via fast
+		// deploy.
+		return fastDeploy(vmCtx, vimClient, createArgs)
+	}
 
 	if createArgs.UseContentLibrary {
 		return deployFromContentLibrary(vmCtx, restClient, vimClient, createArgs)

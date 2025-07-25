@@ -5,11 +5,15 @@
 package contentlibrary
 
 import (
+	"context"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/vmware/govmomi/ovf"
+	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vmdk"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -17,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
 var vmxRe = regexp.MustCompile(`vmx-(\d+)`)
@@ -38,7 +43,7 @@ func ParseVirtualHardwareVersion(vmxVersion string) int32 {
 	return int32(version)
 }
 
-// UpdateVmiWithOvfEnvelope updates the given vmi object with the content of given OVF envelope.
+// UpdateVmiWithOvfEnvelope updates the given VMI object from an OVF envelope.
 func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 	var status *vmopv1.VirtualMachineImageStatus
 
@@ -67,6 +72,131 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 		populateImageStatusFromOVFDiskSection(status, ovfEnvelope.Disk)
 	} else {
 		status.Disks = nil
+	}
+}
+
+// UpdateVmiWithVirtualMachine updates the given VMI object from a
+// mo.VirtualMachine data structure.
+func UpdateVmiWithVirtualMachine(
+	ctx context.Context,
+	obj client.Object,
+	vm mo.VirtualMachine) {
+
+	var status *vmopv1.VirtualMachineImageStatus
+
+	switch vmi := obj.(type) {
+	case *vmopv1.VirtualMachineImage:
+		status = &vmi.Status
+	case *vmopv1.ClusterVirtualMachineImage:
+		status = &vmi.Status
+	default:
+		return
+	}
+
+	if vm.Config == nil {
+		return
+	}
+
+	// Populate the firmware.
+	status.Firmware = vm.Config.Firmware
+
+	// Populate the guest info.
+	status.OSInfo.ID = vm.Config.GuestId
+	if vm.Guest != nil {
+		status.OSInfo.Type = vm.Guest.GuestFamily
+	}
+
+	// Populate the hardware version.
+	if version := ParseVirtualHardwareVersion(vm.Config.Version); version > 0 {
+		status.HardwareVersion = &version
+	}
+
+	if vac := vm.Config.VAppConfig; vac != nil {
+		if vmCI := vac.GetVmConfigInfo(); vmCI != nil {
+
+			// Populate the product information.
+			if product := vmCI.Product; len(product) > 0 {
+				p := product[0]
+				status.ProductInfo = vmopv1.VirtualMachineImageProductInfo{
+					Product:     p.Name,
+					Vendor:      p.Vendor,
+					Version:     p.Version,
+					FullVersion: p.FullVersion,
+				}
+			}
+
+			// Populate the vApp properties.
+			status.OVFProperties = nil
+			status.VMwareSystemProperties = nil
+			for _, prop := range vmCI.Property {
+
+				if strings.HasPrefix(prop.Id, "vmware-system") {
+
+					// Handle vmware-system properties.
+					p := common.KeyValuePair{
+						Key:   prop.Id,
+						Value: prop.DefaultValue,
+					}
+					status.VMwareSystemProperties = append(
+						status.VMwareSystemProperties,
+						p)
+
+				} else if prop.UserConfigurable != nil && *prop.UserConfigurable {
+
+					// Handle non-vmware-system properties that are
+					// user-configurable.
+					p := vmopv1.OVFProperty{
+						Key:     prop.Id,
+						Type:    prop.Type,
+						Default: &prop.DefaultValue,
+					}
+					status.OVFProperties = append(status.OVFProperties, p)
+
+				}
+			}
+		}
+	}
+
+	// Populate the disk information.
+	status.Disks = nil
+	for _, bd := range vm.Config.Hardware.Device {
+		if disk, ok := bd.(*vimtypes.VirtualDisk); ok {
+
+			var (
+				capacity *resource.Quantity
+				size     *resource.Quantity
+			)
+
+			var uuid string
+			switch tb := disk.Backing.(type) {
+			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+				uuid = tb.Uuid
+			case *vimtypes.VirtualDiskSeSparseBackingInfo:
+				uuid = tb.Uuid
+			case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
+				uuid = tb.Uuid
+			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+				uuid = tb.Uuid
+			case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
+				uuid = tb.Uuid
+			default:
+				capacity = kubeutil.BytesToResource(disk.CapacityInBytes)
+			}
+
+			if uuid != "" {
+				di, _ := vmdk.GetVirtualDiskInfoByUUID(
+					ctx, nil, vm, false, uuid)
+				capacity = kubeutil.BytesToResource(di.CapacityInBytes)
+				size = kubeutil.BytesToResource(di.Size)
+			}
+
+			status.Disks = append(
+				status.Disks,
+				vmopv1.VirtualMachineImageDiskInfo{
+					Capacity: capacity,
+					Size:     size,
+				})
+		}
 	}
 }
 

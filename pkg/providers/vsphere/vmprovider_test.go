@@ -225,7 +225,7 @@ var _ = Describe("SyncVirtualMachineImage", func() {
 						},
 						Conditions: []metav1.Condition{
 							{
-								Type:   vmopv1.VirtualMachineImageCacheConditionOVFReady,
+								Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
 								Status: metav1.ConditionTrue,
 							},
 						},

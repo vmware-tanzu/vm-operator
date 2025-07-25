@@ -4,12 +4,15 @@ go 1.23.0
 
 toolchain go1.24.4
 
+// The version of Ginkgo must match the one from hack/tools/go.mod. If updating
+// one, please update the other.
+require github.com/onsi/ginkgo/v2 v2.23.3
+
 require (
 	github.com/AlekSi/gocov-xml v1.1.0
 	github.com/axw/gocov v1.1.0
 	github.com/elastic/crd-ref-docs v0.0.12
 	github.com/golangci/golangci-lint/v2 v2.1.6
-	github.com/onsi/ginkgo/v2 v2.23.3
 	golang.org/x/tools v0.32.0
 	golang.org/x/vuln v1.1.1
 	k8s.io/code-generator v0.31.0

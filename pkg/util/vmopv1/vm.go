@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -19,8 +18,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/go-logr/logr"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -269,6 +272,44 @@ func SyncStorageUsageForNamespace(
 			},
 		}
 	}()
+}
+
+// SnapshotToVMMapperFn returns a mapper function that can be used to
+// queue reconcile requests for the VirtualMachines in response to an
+// event on the VirtualMachineSnapshot resource.
+func SnapshotToVMMapperFn(
+	ctx context.Context,
+	logger logr.Logger,
+) func(_ context.Context, o client.Object) []reconcile.Request {
+
+	return func(_ context.Context, o client.Object) []reconcile.Request {
+		snapshot := o.(*vmopv1.VirtualMachineSnapshot)
+		logger := logger.WithValues("snapshotName", snapshot.Name, "namespace", snapshot.Namespace)
+
+		// Only process snapshots that reference a VM
+		if snapshot.Spec.VMRef == nil {
+			logger.V(4).Info("Skipping snapshot with no VM reference")
+			return nil
+		}
+
+		// Only process snapshots that are not ready.
+		if conditions.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+			logger.V(4).Info("Skipping snapshot that is already ready")
+			return nil
+		}
+
+		logger.V(4).Info("Queuing VM reconciliation due to snapshot event", "vmName", snapshot.Spec.VMRef.Name)
+
+		// Queue reconciliation for the referenced VM
+		return []reconcile.Request{
+			{
+				NamespacedName: client.ObjectKey{
+					Namespace: snapshot.Namespace,
+					Name:      snapshot.Spec.VMRef.Name,
+				},
+			},
+		}
+	}
 }
 
 // EncryptionClassToVirtualMachineMapper returns a mapper function used to

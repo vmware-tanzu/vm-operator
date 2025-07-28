@@ -232,4 +232,37 @@ func intgTestsMutating() {
 			})
 		})
 	})
+
+	Context("Group Name", func() {
+		AfterEach(func() {
+			if ctx.vmGroup.ResourceVersion != "" {
+				Expect(ctx.Client.Delete(ctx, ctx.vmGroup)).To(Succeed())
+			}
+		})
+
+		When("VMGroup has an owner reference to a group", func() {
+			BeforeEach(func() {
+				ctx.vmGroup.Spec.GroupName = "my-group"
+				ctx.vmGroup.OwnerReferences = []metav1.OwnerReference{
+					{
+						APIVersion: vmopv1.GroupVersion.String(),
+						Kind:       "VirtualMachineGroup",
+						Name:       "my-group",
+						UID:        "my-group-uid",
+					},
+				}
+				Expect(ctx.Client.Create(ctx, ctx.vmGroup)).To(Succeed())
+			})
+
+			It("should remove the group owner reference if the VMGroup.Spec.GroupName is changed", func() {
+				vmGroup := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vmGroup), vmGroup)).To(Succeed())
+				vmGroup.Spec.GroupName = ""
+				Expect(ctx.Client.Update(ctx, vmGroup)).To(Succeed())
+				updated := &vmopv1.VirtualMachineGroup{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vmGroup), updated)).To(Succeed())
+				Expect(updated.OwnerReferences).To(BeEmpty())
+			})
+		})
+	})
 }

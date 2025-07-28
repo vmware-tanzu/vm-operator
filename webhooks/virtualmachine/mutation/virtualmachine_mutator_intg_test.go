@@ -737,6 +737,33 @@ func intgTestsMutating() {
 		})
 	})
 
+	Context("RemoveStaleGroupOwnerRef", func() {
+		When("VM has an owner reference to a group", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.GroupName = "my-group"
+				ctx.vm.OwnerReferences = []metav1.OwnerReference{
+					{
+						APIVersion: vmopv1.GroupVersion.String(),
+						Kind:       "VirtualMachineGroup",
+						Name:       "my-group",
+						UID:        "my-group-uid",
+					},
+				}
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			})
+
+			It("should remove the group owner reference if the VM.Spec.GroupName is changed", func() {
+				vm := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				vm.Spec.GroupName = ""
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				updated := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), updated)).To(Succeed())
+				Expect(updated.OwnerReferences).To(BeEmpty())
+			})
+		})
+	})
+
 	Context("CleanupApplyPowerStateChangeTimeAnno", func() {
 
 		When("VM has a apply power state change time annotation set", func() {

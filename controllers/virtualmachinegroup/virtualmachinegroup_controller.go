@@ -399,7 +399,7 @@ func (r *Reconciler) reconcileMember(
 
 	patch := client.MergeFrom(obj.DeepCopyObject().(vmopv1.VirtualMachineOrGroup))
 
-	if err := controllerutil.SetControllerReference(
+	if err := controllerutil.SetOwnerReference(
 		ctx.VMGroup,
 		obj,
 		r.Scheme(),

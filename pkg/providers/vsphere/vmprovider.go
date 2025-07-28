@@ -362,7 +362,7 @@ func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemI
 	return contentLibraryProvider.UpdateLibraryItem(ctx, itemID, newName, newDescription)
 }
 
-func (vs *vSphereVMProvider) getOpID(ctx context.Context, vm *vmopv1.VirtualMachine, operation string) string {
+func (vs *vSphereVMProvider) getOpID(ctx context.Context, obj ctrlclient.Object, operation string) string {
 	var id string
 
 	if recID := controller.ReconcileIDFromContext(ctx); recID != "" {
@@ -378,7 +378,7 @@ func (vs *vSphereVMProvider) getOpID(ctx context.Context, vm *vmopv1.VirtualMach
 		// TODO: Add this id as our own reconcile ID type?
 	}
 
-	return strings.Join([]string{"vmoperator", vm.Name, operation, id}, "-")
+	return strings.Join([]string{"vmoperator", obj.GetName(), operation, id}, "-")
 }
 
 func (vs *vSphereVMProvider) getVM(

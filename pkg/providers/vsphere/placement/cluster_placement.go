@@ -16,7 +16,7 @@ import (
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // Recommendation is the info about a placement recommendation.
@@ -62,7 +62,7 @@ func relocateSpecToRecommendation(
 func clusterPlacementActionToRecommendation(
 	ctx context.Context,
 	finder *find.Finder,
-	action vimtypes.ClusterClusterInitialPlacementAction) (*Recommendation, error) {
+	action *vimtypes.ClusterClusterInitialPlacementAction) (*Recommendation, error) {
 
 	r := Recommendation{
 		PoolMoRef: action.Pool,
@@ -75,7 +75,7 @@ func clusterPlacementActionToRecommendation(
 			// Get the recommended datastore for the VM.
 			//
 			if cs.Files != nil {
-				if dsn := util.DatastoreNameFromStorageURI(cs.Files.VmPathName); dsn != "" {
+				if dsn := pkgutil.DatastoreNameFromStorageURI(cs.Files.VmPathName); dsn != "" {
 					ds, err := finder.Datastore(ctx, dsn)
 					if err != nil {
 						return nil, fmt.Errorf("failed to get datastore for %q: %w", dsn, err)
@@ -219,39 +219,40 @@ func PlaceVMForCreate(
 
 // ClusterPlaceVMForCreate determines the suitable cluster placement among the specified ResourcePools.
 func ClusterPlaceVMForCreate(
-	vmCtx pkgctx.VirtualMachineContext,
+	ctx context.Context,
 	vcClient *vim25.Client,
 	finder *find.Finder,
 	resourcePoolsMoRefs []vimtypes.ManagedObjectReference,
-	configSpec vimtypes.VirtualMachineConfigSpec,
-	needHostPlacement, needDatastorePlacement bool) ([]Recommendation, error) {
+	configSpecs []vimtypes.VirtualMachineConfigSpec,
+	needHostPlacement, needDatastorePlacement bool) (map[string][]Recommendation, error) {
 
-	// Work around PlaceVmsXCluster bug that crashes vpxd when ConfigSpec.Files is nil.
-	configSpec.Files = new(vimtypes.VirtualMachineFileInfo)
-
+	logger := pkgutil.FromContextOrDefault(ctx)
 	placementSpec := vimtypes.PlaceVmsXClusterSpec{
-		ResourcePools: resourcePoolsMoRefs,
-		VmPlacementSpecs: []vimtypes.PlaceVmsXClusterSpecVmPlacementSpec{
-			{
-				ConfigSpec: configSpec,
-			},
-		},
+		PlacementType:           string(vimtypes.PlaceVmsXClusterSpecPlacementTypeCreateAndPowerOn),
+		ResourcePools:           resourcePoolsMoRefs,
+		VmPlacementSpecs:        make([]vimtypes.PlaceVmsXClusterSpecVmPlacementSpec, len(configSpecs)),
 		HostRecommRequired:      &needHostPlacement,
 		DatastoreRecommRequired: &needDatastorePlacement,
 	}
 
-	vmCtx.Logger.V(4).Info("PlaceVmsXCluster request", "placementSpec", vimtypes.ToString(placementSpec))
+	for i, cs := range configSpecs {
+		// Work around PlaceVmsXCluster bug that crashes vpxd when ConfigSpec.Files is nil (still needed?)
+		cs.Files = new(vimtypes.VirtualMachineFileInfo)
+		placementSpec.VmPlacementSpecs[i].ConfigSpec = cs
+	}
 
-	resp, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(vmCtx, placementSpec)
+	logger.Info("PlaceVmsXCluster request", "spec", vimtypes.ToString(placementSpec))
+
+	results, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(ctx, placementSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	vmCtx.Logger.V(6).Info("PlaceVmsXCluster response", "resp", vimtypes.ToString(resp))
+	logger.Info("PlaceVmsXCluster response", "results", vimtypes.ToString(results))
 
-	if len(resp.Faults) != 0 {
+	if len(results.Faults) != 0 {
 		var faultMgs []string
-		for _, f := range resp.Faults {
+		for _, f := range results.Faults {
 			msgs := make([]string, 0, len(f.Faults))
 			for _, ff := range f.Faults {
 				msgs = append(msgs, ff.LocalizedMessage)
@@ -262,22 +263,21 @@ func ClusterPlaceVMForCreate(
 		return nil, fmt.Errorf("PlaceVmsXCluster faults: %v", faultMgs)
 	}
 
-	var recommendations []Recommendation
+	recommendations := make(map[string][]Recommendation)
 
-	for _, info := range resp.PlacementInfos {
+	for _, info := range results.PlacementInfos {
 		if info.Recommendation.Reason != string(vimtypes.RecommendationReasonCodeXClusterPlacement) {
 			continue
 		}
 
 		for _, a := range info.Recommendation.Action {
 			if ca, ok := a.(*vimtypes.ClusterClusterInitialPlacementAction); ok {
-				r, err := clusterPlacementActionToRecommendation(vmCtx, finder, *ca)
+				r, err := clusterPlacementActionToRecommendation(ctx, finder, ca)
 				if err != nil {
-					return nil, fmt.Errorf(
-						"failed to translate placement action to recommendation: %w", err)
+					return nil, fmt.Errorf("failed to translate placement action to recommendation: %w", err)
 				}
 				if r != nil {
-					recommendations = append(recommendations, *r)
+					recommendations[info.VmName] = append(recommendations[info.VmName], *r)
 				}
 			}
 		}

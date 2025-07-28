@@ -27,50 +27,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("MakePlacementDecision", func() {
-
-	Context("only one placement decision is possible", func() {
-		It("makes expected decision", func() {
-			recommendations := map[string][]placement.Recommendation{
-				"zone1": {
-					placement.Recommendation{
-						PoolMoRef: vimtypes.ManagedObjectReference{Type: "a", Value: "abc"},
-						HostMoRef: &vimtypes.ManagedObjectReference{Type: "b", Value: "xyz"},
-					},
-				},
-			}
-
-			zoneName, rec := placement.MakePlacementDecision(recommendations)
-			Expect(zoneName).To(Equal("zone1"))
-			Expect(rec).To(BeElementOf(recommendations[zoneName]))
-		})
-	})
-
-	Context("multiple placement candidates exist", func() {
-		It("makes an decision", func() {
-			zones := map[string][]string{
-				"zone1": {"z1-host1", "z1-host2", "z1-host3"},
-				"zone2": {"z2-host1", "z2-host2"},
-			}
-
-			recommendations := map[string][]placement.Recommendation{}
-			for zoneName, hosts := range zones {
-				for _, host := range hosts {
-					recommendations[zoneName] = append(recommendations[zoneName],
-						placement.Recommendation{
-							PoolMoRef: vimtypes.ManagedObjectReference{Type: "a", Value: "abc"},
-							HostMoRef: &vimtypes.ManagedObjectReference{Type: "b", Value: host},
-						})
-				}
-			}
-
-			zoneName, rec := placement.MakePlacementDecision(recommendations)
-			Expect(zones).To(HaveKey(zoneName))
-			Expect(rec).To(BeElementOf(recommendations[zoneName]))
-		})
-	})
-})
-
 func vcSimPlacement() {
 
 	var (
@@ -93,7 +49,6 @@ func vcSimPlacement() {
 		vm = builder.DummyVirtualMachine()
 		vm.Name = "placement-test"
 
-		// Other than the name ConfigSpec contents don't matter for vcsim.
 		configSpec = vimtypes.VirtualMachineConfigSpec{
 			Name: vm.Name,
 

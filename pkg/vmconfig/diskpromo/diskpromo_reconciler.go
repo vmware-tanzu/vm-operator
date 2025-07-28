@@ -244,7 +244,9 @@ func (r reconciler) Reconcile(
 			return nil
 		}
 
-		if moVM.Guest != nil &&
+		if vm.Spec.Bootstrap != nil &&
+			(vm.Spec.Bootstrap.LinuxPrep != nil || vm.Spec.Bootstrap.Sysprep != nil) &&
+			moVM.Guest != nil &&
 			moVM.Guest.CustomizationInfo != nil {
 
 			custStatus := vimtypes.GuestInfoCustomizationStatus(

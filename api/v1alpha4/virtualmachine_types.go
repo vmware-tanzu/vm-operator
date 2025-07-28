@@ -1053,6 +1053,12 @@ type VirtualMachineSpec struct {
 	//
 	// VMs that belong to a group do not drive their own placement, rather that
 	// is handled by the group.
+	//
+	// When this field is set to a valid group that contains this VM as a
+	// member, an owner reference to that group is added to this VM.
+	//
+	// When this field is deleted or changed, any existing owner reference to
+	// the previous group will be removed from this VM.
 	GroupName string `json:"groupName,omitempty"`
 }
 

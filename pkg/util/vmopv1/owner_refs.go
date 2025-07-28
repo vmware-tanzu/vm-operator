@@ -27,10 +27,12 @@ func RemoveStaleGroupOwnerRef(newObj, oldObj vmopv1.VirtualMachineOrGroup) bool 
 	// Object's group name is deleted or changed to a different group name.
 	// Remove the owner reference to the old group if it exists in new object.
 
-	var (
-		filteredRefs      []metav1.OwnerReference
-		oldGroupRefExists bool
+	filteredRefs := make(
+		[]metav1.OwnerReference,
+		0,
+		len(newObj.GetOwnerReferences()),
 	)
+	oldGroupRefExists := false
 
 	for _, ref := range newObj.GetOwnerReferences() {
 		if ref.Kind == "VirtualMachineGroup" && ref.Name == oldGroupName {

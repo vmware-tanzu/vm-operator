@@ -105,8 +105,11 @@ IMAGE ?= vmoperator-controller
 IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
-# Code coverage files
+# Code coverage files.
 COVERAGE_FILE := cover.out
+
+# Test result file name (sans extension).
+TEST_RESULTS_FILE := test-results
 
 # Gather a set of root packages that have at least one file that matches
 # the pattern *_test.go as a child or descendent in that directory.
@@ -217,7 +220,7 @@ help: ## Display this help
 .PHONY: test-api
 test-api: | $(GINKGO)
 test-api: ## Run API tests
-	COVERAGE_FILE="" hack/test.sh ./api
+	COVERAGE_FILE="" TEST_RESULTS_FILE="" hack/test.sh ./api
 
 .PHONY: test-nocover
 test-nocover: | $(GINKGO)
@@ -228,8 +231,8 @@ test-nocover: ## Run tests sans coverage
 .PHONY: test
 test: | $(GINKGO) $(ETCD) $(KUBE_APISERVER)
 test: ## Run tests
-	@rm -f "$(COVERAGE_FILE)"
-	COVERAGE_FILE="$(COVERAGE_FILE)" $(MAKE) test-nocover
+	@rm -f "$(COVERAGE_FILE)" "$(TEST_RESULTS_FILE).*"
+	COVERAGE_FILE="$(COVERAGE_FILE)" TEST_RESULTS_FILE="$(TEST_RESULTS_FILE)" $(MAKE) test-nocover
 
 .PHONY: coverage-xml
 coverage-xml: $(GOCOV) $(GOCOV_XML)

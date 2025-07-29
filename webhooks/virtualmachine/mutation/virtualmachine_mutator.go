@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation
@@ -284,6 +284,9 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		}
 
 		if pkgcfg.FromContext(ctx).Features.VMGroups {
+			if ok := vmopv1util.RemoveStaleGroupOwnerRef(modified, oldVM); ok {
+				wasMutated = true
+			}
 			if ok := CleanupApplyPowerStateChangeTimeAnno(ctx, modified, oldVM); ok {
 				wasMutated = true
 			}

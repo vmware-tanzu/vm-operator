@@ -83,7 +83,11 @@ type VirtualMachineGroupSpec struct {
 
 	// GroupName describes the name of the group that this group belongs to.
 	//
-	// If omitted, this group is not a member of any other group.
+	// When this field is set to a valid group that contains this VM Group as a
+	// member, an owner reference to that group is added to this VM Group.
+	//
+	// When this field is deleted or changed, any existing owner reference to
+	// the previous group will be removed from this VM Group.
 	GroupName string `json:"groupName,omitempty"`
 
 	// +optional

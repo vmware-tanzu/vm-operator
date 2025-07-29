@@ -24,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -89,6 +90,10 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			return admission.Denied(err.Error())
 		}
 		if ok {
+			wasMutated = true
+		}
+
+		if ok := vmopv1util.RemoveStaleGroupOwnerRef(modified, oldVMGroup); ok {
 			wasMutated = true
 		}
 	}

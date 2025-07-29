@@ -1536,7 +1536,7 @@ func vmTests() {
 						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 						assertVMICNotReady(
 							err,
-							"cached ovf not ready",
+							"hardware not ready",
 							vmic.Name,
 							"",
 							"")
@@ -1552,7 +1552,7 @@ func vmTests() {
 							},
 							Conditions: []metav1.Condition{
 								{
-									Type:   vmopv1.VirtualMachineImageCacheConditionOVFReady,
+									Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
 									Status: metav1.ConditionTrue,
 								},
 							},

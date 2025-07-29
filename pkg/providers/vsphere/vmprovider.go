@@ -19,6 +19,7 @@ import (
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -206,10 +207,20 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(
 	logger := pkgutil.FromContextOrDefault(ctx).V(4).WithValues(
 		"vmiName", vmi.GetName(), "cliName", cli.GetName())
 
-	// Exit early if the library item type is not an OVF.
-	if itemType != imgregv1a1.ContentLibraryItemTypeOvf {
+	var allowed bool
+	switch itemType {
+	case imgregv1a1.ContentLibraryItemTypeOvf:
+		allowed = true
+	case imgregv1a1.ContentLibraryItemType("VM"),
+		imgregv1a1.ContentLibraryItemType("vm"):
+		allowed = pkgcfg.FromContext(ctx).Features.InventoryContentLibrary
+	default:
+		allowed = false
+	}
+
+	if !allowed {
 		logger.Info(
-			"Skip syncing VMI content as the library item is not OVF",
+			"Skip syncing VMI content as the library item is not supported",
 			"itemType", itemType)
 		return nil
 	}
@@ -247,24 +258,57 @@ func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeploy(
 			"failed to createOrPatch image cache resource: %w", err)
 	}
 
-	// Check if the OVF data is ready.
-	c := pkgcnd.Get(vmiCache, vmopv1.VirtualMachineImageCacheConditionOVFReady)
+	hardwareReadyCondition := pkgcnd.Get(
+		vmiCache,
+		vmopv1.VirtualMachineImageCacheConditionHardwareReady)
+
 	switch {
-	case c != nil && c.Status == metav1.ConditionFalse:
+	case hardwareReadyCondition != nil &&
+		hardwareReadyCondition.Status == metav1.ConditionFalse:
 
 		return fmt.Errorf(
-			"failed to get ovf: %s: %w",
-			c.Message,
+			"failed to get hardware: %s: %w",
+			hardwareReadyCondition.Message,
 			pkgerr.VMICacheNotReadyError{Name: vmiCache.Name})
 
-	case c == nil,
-		c.Status != metav1.ConditionTrue,
-		vmiCache.Status.OVF == nil,
+	case hardwareReadyCondition == nil,
+		hardwareReadyCondition.Status != metav1.ConditionTrue:
+
+		logger.V(4).Info(
+			"Skip sync VMI",
+			"vmiCache.hardwareReadyCondition", hardwareReadyCondition)
+
+		return pkgerr.VMICacheNotReadyError{Name: vmiCache.Name}
+	}
+
+	if strings.HasPrefix(itemID, "vm-") {
+		return vs.syncVirtualMachineImageFastDeployVM(
+			ctx,
+			vmi,
+			itemID)
+	}
+
+	return vs.syncVirtualMachineImageFastDeployOVF(
+		ctx,
+		vmiCache,
+		itemVersion,
+		logger,
+		vmi)
+}
+
+func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeployOVF(
+	ctx context.Context,
+	vmiCache vmopv1.VirtualMachineImageCache,
+	itemVersion string,
+	logger logr.Logger,
+	vmi ctrlclient.Object) error {
+
+	switch {
+	case vmiCache.Status.OVF == nil,
 		vmiCache.Status.OVF.ProviderVersion != itemVersion:
 
 		logger.V(4).Info(
 			"Skip sync VMI",
-			"vmiCache.ovfCond", c,
 			"vmiCache.status.ovf", vmiCache.Status.OVF,
 			"expectedContentVersion", itemVersion)
 
@@ -299,6 +343,37 @@ func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeploy(
 	}
 
 	contentlibrary.UpdateVmiWithOvfEnvelope(vmi, ovfEnvelope)
+	return nil
+}
+
+func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeployVM(
+	ctx context.Context,
+	vmi ctrlclient.Object,
+	vmMoID string) error {
+
+	vcClient, err := vs.getVcClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get a vc client for image vm: %w", err)
+	}
+
+	vm := object.NewVirtualMachine(
+		vcClient.VimClient(),
+		vimtypes.ManagedObjectReference{
+			Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+			Value: vmMoID,
+		})
+
+	var moVM mo.VirtualMachine
+	if err := vm.Properties(
+		ctx,
+		vm.Reference(),
+		[]string{"config", "guest", "layoutEx", "summary"},
+		&moVM); err != nil {
+
+		return fmt.Errorf("failed to get properties for image vm: %w", err)
+	}
+
+	contentlibrary.UpdateVmiWithVirtualMachine(ctx, vmi, moVM)
 	return nil
 }
 

@@ -613,14 +613,14 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 		return false
 	}
 
-	// Assert the OVF is ready.
+	// Assert the image hardware is ready.
 	if !conditions.IsTrue(
 		vmic,
-		vmopv1.VirtualMachineImageCacheConditionOVFReady) {
+		vmopv1.VirtualMachineImageCacheConditionHardwareReady) {
 
 		ctx.Logger.V(4).Info(
 			"Skipping due to missing true condition",
-			"conditionType", vmopv1.VirtualMachineImageCacheConditionOVFReady)
+			"conditionType", vmopv1.VirtualMachineImageCacheConditionHardwareReady)
 		return false
 	}
 

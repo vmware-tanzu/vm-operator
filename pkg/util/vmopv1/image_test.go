@@ -857,7 +857,7 @@ var _ = Describe("VirtualMachineImageCacheToItemMapper", func() {
 			Status: vmopv1.VirtualMachineImageCacheStatus{
 				Conditions: []metav1.Condition{
 					{
-						Type:   vmopv1.VirtualMachineImageCacheConditionOVFReady,
+						Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
 						Status: metav1.ConditionTrue,
 					},
 				},

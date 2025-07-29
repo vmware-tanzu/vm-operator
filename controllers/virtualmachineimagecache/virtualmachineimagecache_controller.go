@@ -157,8 +157,11 @@ func (r *reconciler) ReconcileNormal(
 		return pkgerr.NoRequeueError{Message: "spec.providerID is empty"}
 	}
 
+	// Is this an OVF-backed image?
+	isOVF := !strings.HasPrefix(obj.Spec.ProviderID, "vm-")
+
 	// Verify the item's version.
-	if obj.Spec.ProviderVersion == "" {
+	if isOVF && obj.Spec.ProviderVersion == "" {
 		return pkgerr.NoRequeueError{Message: "spec.providerVersion is empty"}
 	}
 
@@ -174,24 +177,27 @@ func (r *reconciler) ReconcileNormal(
 	}
 
 	// Get the content library provider.
-	clProv := r.newCLSProvdrFn(ctx, c.RestClient())
+	var clProv clprov.Provider
+	if isOVF {
+		clProv = r.newCLSProvdrFn(ctx, c.RestClient())
+	}
 
-	// Reconcile the OVF envelope.
-	if err := reconcileOVF(ctx, r.Client, clProv, obj); err != nil {
+	// Reconcile the hardware.
+	if err := reconcileHardware(ctx, r.Client, clProv, obj, isOVF); err != nil {
 		pkgcond.MarkError(
 			obj,
-			vmopv1.VirtualMachineImageCacheConditionOVFReady,
+			vmopv1.VirtualMachineImageCacheConditionHardwareReady,
 			conditionReasonFailed,
 			err)
 	} else {
 		pkgcond.MarkTrue(
 			obj,
-			vmopv1.VirtualMachineImageCacheConditionOVFReady)
+			vmopv1.VirtualMachineImageCacheConditionHardwareReady)
 	}
 
 	if len(obj.Spec.Locations) > 0 {
-		// Reconcile the underlying library item.
-		if err := reconcileLibraryItem(ctx, clProv, obj); err != nil {
+		// Reconcile the underlying provider.
+		if err := reconcileProvider(ctx, clProv, obj, isOVF); err != nil {
 			pkgcond.MarkError(
 				obj,
 				vmopv1.VirtualMachineImageCacheConditionProviderReady,
@@ -204,7 +210,7 @@ func (r *reconciler) ReconcileNormal(
 		}
 
 		// Reconcile the files.
-		if err := r.reconcileFiles(ctx, c, clProv, obj); err != nil {
+		if err := r.reconcileFiles(ctx, c, clProv, obj, isOVF); err != nil {
 			pkgcond.MarkError(
 				obj,
 				vmopv1.VirtualMachineImageCacheConditionFilesReady,
@@ -235,7 +241,8 @@ func (r *reconciler) reconcileFiles(
 	ctx context.Context,
 	vcClient *client.Client,
 	clProv clprov.Provider,
-	obj *vmopv1.VirtualMachineImageCache) error {
+	obj *vmopv1.VirtualMachineImageCache,
+	isOVF bool) error {
 
 	var (
 		srcDatacenter = vcClient.Datacenter()
@@ -243,11 +250,13 @@ func (r *reconciler) reconcileFiles(
 	)
 
 	// Get the library item's storage paths.
-	srcFileURIs, err := getSourceFilePaths(
+	srcFiles, err := getSourceFilePaths(
 		ctx,
+		vcClient.VimClient(),
 		clProv,
 		srcDatacenter,
-		obj.Spec.ProviderID)
+		obj.Spec.ProviderID,
+		isOVF)
 	if err != nil {
 		return err
 	}
@@ -272,7 +281,7 @@ func (r *reconciler) reconcileFiles(
 		srcDatacenter,
 		dstDatastores,
 		obj,
-		srcFileURIs)
+		srcFiles)
 
 	return nil
 }
@@ -284,7 +293,7 @@ func (r *reconciler) reconcileLocations(
 	srcDatacenter *object.Datacenter,
 	dstDatastores map[string]datastore,
 	obj *vmopv1.VirtualMachineImageCache,
-	srcFileURIs []string) {
+	srcFiles []clsutil.SourceFile) {
 
 	obj.Status.Locations = make(
 		[]vmopv1.VirtualMachineImageCacheLocationStatus,
@@ -307,6 +316,12 @@ func (r *reconciler) reconcileLocations(
 			dstDatastores[spec.DatastoreID].mo.Info.
 				GetDatastoreInfo().SupportedVDiskFormats...)
 
+		// Update the srcFiles elements with the profile and format info.
+		for i := range srcFiles {
+			srcFiles[i].DstProfileID = spec.ProfileID
+			srcFiles[i].DstDiskFormat = dstDiskFormat
+		}
+
 		cachedFiles, err := r.cacheFiles(
 			ctx,
 			vimClient,
@@ -314,10 +329,8 @@ func (r *reconciler) reconcileLocations(
 			srcDatacenter,
 			dstDatastores[spec.DatastoreID].mo.Name,
 			obj.Name,
-			spec.ProfileID,
 			obj.Spec.ProviderVersion,
-			dstDiskFormat,
-			srcFileURIs)
+			srcFiles)
 		if err != nil {
 			conditions = conditions.MarkError(
 				vmopv1.ReadyConditionType,
@@ -336,36 +349,33 @@ func (r *reconciler) cacheFiles(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	dstDatacenter, srcDatacenter *object.Datacenter,
-	dstDatastoreName, itemName, profileID, itemVersion string,
-	dstDiskFormat vimtypes.DatastoreSectorFormat,
-	srcFileURIs []string) ([]vmopv1.VirtualMachineImageCacheFileStatus, error) {
+	dstDatastoreName, itemName, itemVersion string,
+	srcFiles []clsutil.SourceFile) ([]vmopv1.VirtualMachineImageCacheFileStatus, error) {
 
-	itemCacheDir := clsutil.GetCacheDirForLibraryItem(
-		dstDatastoreName,
-		itemName,
-		profileID,
-		itemVersion)
-
+	// Update the srcFiles elements with the directory in which each file is
+	// cached.
 	sriClient := r.newSRIClientFn(vimClient)
+	for i := range srcFiles {
+		cacheDir := clsutil.GetCacheDirectory(
+			dstDatastoreName,
+			itemName,
+			srcFiles[i].DstProfileID,
+			itemVersion)
+		srcFiles[i].DstDir = cacheDir
+	}
 
 	logger := pkgutil.FromContextOrDefault(ctx)
 	logger.V(4).Info("Caching files",
 		"dstDatacenter", dstDatacenter.Reference().Value,
 		"srcDatacenter", srcDatacenter.Reference().Value,
-		"itemCacheDir", itemCacheDir,
-		"profileID", profileID,
-		"dstDiskFormat", dstDiskFormat,
-		"srcFileURIs", srcFileURIs)
+		"srcFiles", srcFiles)
 
 	cachedFiles, err := clsutil.CacheStorageURIs(
 		ctx,
 		sriClient,
 		dstDatacenter,
 		srcDatacenter,
-		itemCacheDir,
-		profileID,
-		dstDiskFormat,
-		srcFileURIs...)
+		srcFiles...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to cache storage items: %w", err)
 	}
@@ -390,6 +400,20 @@ func (r *reconciler) cacheFiles(
 	}
 
 	return cachedFileStatuses, nil
+}
+
+func reconcileHardware(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	clProv clprov.Provider,
+	obj *vmopv1.VirtualMachineImageCache,
+	isOVF bool) error {
+
+	if isOVF {
+		return reconcileOVF(ctx, k8sClient, clProv, obj)
+	}
+
+	return nil
 }
 
 const (
@@ -471,6 +495,19 @@ func reconcileOVF(
 	return nil
 }
 
+func reconcileProvider(
+	ctx context.Context,
+	p clprov.Provider,
+	obj *vmopv1.VirtualMachineImageCache,
+	isOVF bool) error {
+
+	if isOVF {
+		return reconcileLibraryItem(ctx, p, obj)
+	}
+
+	return nil
+}
+
 func reconcileLibraryItem(
 	ctx context.Context,
 	p clprov.Provider,
@@ -518,9 +555,24 @@ func includeItemFile(s string) bool {
 
 func getSourceFilePaths(
 	ctx context.Context,
+	c *vim25.Client,
 	p clprov.Provider,
 	datacenter *object.Datacenter,
-	itemID string) ([]string, error) {
+	itemID string,
+	isOVF bool) ([]clsutil.SourceFile, error) {
+
+	if isOVF {
+		return getSourceFilePathsForOVF(ctx, p, datacenter, itemID)
+	}
+
+	return getSourceFilePathsForVM(ctx, c, itemID)
+}
+
+func getSourceFilePathsForOVF(
+	ctx context.Context,
+	p clprov.Provider,
+	datacenter *object.Datacenter,
+	itemID string) ([]clsutil.SourceFile, error) {
 
 	// Get the storage URIs for the library item's files.
 	itemStor, err := p.ListLibraryItemStorage(ctx, itemID)
@@ -539,18 +591,92 @@ func getSourceFilePaths(
 	}
 
 	// Get the storage URIs for just vmdk and NVRAM files.
-	var srcFileURIs []string
+	var srcFiles []clsutil.SourceFile
 	for i := range itemStor {
 		is := itemStor[i]
 		for j := range is.StorageURIs {
 			s := is.StorageURIs[j]
 			if includeItemFile(s) {
-				srcFileURIs = append(srcFileURIs, s)
+				srcFiles = append(srcFiles, clsutil.SourceFile{
+					Path: s,
+				})
 			}
 		}
 	}
 
-	return srcFileURIs, nil
+	return srcFiles, nil
+}
+
+func getSourceFilePathsForVM(
+	ctx context.Context,
+	c *vim25.Client,
+	itemID string) ([]clsutil.SourceFile, error) {
+
+	vm := object.NewVirtualMachine(c, vimtypes.ManagedObjectReference{
+		Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+		Value: itemID,
+	})
+
+	var moVM mo.VirtualMachine
+	if err := vm.Properties(
+		ctx,
+		vm.Reference(),
+		[]string{"config.hardware.device", "layoutEx"},
+		&moVM); err != nil {
+
+		return nil, fmt.Errorf(
+			"failed to get props for vm while getting source file paths: %w",
+			err)
+	}
+
+	if moVM.Config == nil {
+		return nil, fmt.Errorf("failed to get vm property %q", "config")
+	}
+	if moVM.LayoutEx == nil {
+		return nil, fmt.Errorf("failed to get vm property %q", "layoutEx")
+	}
+
+	var srcFiles []clsutil.SourceFile
+
+	// Get the cacheable disks.
+	for _, bd := range moVM.Config.Hardware.Device {
+		if disk, ok := bd.(*vimtypes.VirtualDisk); ok {
+			var sf clsutil.SourceFile
+
+			if disk.VDiskId != nil {
+				sf.VDiskID = disk.VDiskId.Id
+			}
+
+			switch tb := disk.Backing.(type) {
+			case *vimtypes.VirtualDiskFlatVer1BackingInfo:
+				sf.Path = tb.FileName
+			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+				sf.Path = tb.FileName
+			case *vimtypes.VirtualDiskSeSparseBackingInfo:
+				sf.Path = tb.FileName
+			case *vimtypes.VirtualDiskSparseVer1BackingInfo:
+				sf.Path = tb.FileName
+			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+				sf.Path = tb.FileName
+			}
+
+			if sf.Path != "" {
+				srcFiles = append(srcFiles, sf)
+			}
+		}
+	}
+
+	// Get the NVRAM file.
+	for i := range moVM.LayoutEx.File {
+		f := moVM.LayoutEx.File[i]
+		if strings.EqualFold(path.Ext(f.Name), ".nvram") {
+			srcFiles = append(srcFiles, clsutil.SourceFile{
+				Path: f.Name,
+			})
+		}
+	}
+
+	return srcFiles, nil
 }
 
 func getDatacenters(

@@ -18,9 +18,23 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
-// CachedDisk may refer to a disk directly via its datastore path or by its
-// VDiskID if a First Class Disk (FCD).
-type CachedDisk struct {
+// SourceFile refers to a file that is to be copied, including information about
+// what the destination file.
+type SourceFile struct {
+	Path    string
+	VDiskID string
+
+	DstDir        string
+	DstProfileID  string
+	DstDiskFormat vimtypes.DatastoreSectorFormat
+
+	// TODO(akutz) In the future there may be additional information about the
+	//             disk, such as its sector format (512 vs 4k), is encrypted,
+	//             thin-provisioned, adapter type, etc.
+}
+
+// CachedFile refers to file that has been cached.
+type CachedFile struct {
 	Path    string
 	VDiskID string
 
@@ -58,15 +72,13 @@ type CacheStorageURIsClient interface {
 	WaitForTask(ctx context.Context, task *object.Task) error
 }
 
-// CacheStorageURIs copies the disk(s) from srcDiskURIs to dstDir and returns
-// the path(s) to the copied disk(s).
+// CacheStorageURIs copies the file(s) from srcFiles to dstDir and returns the
+// the information about the copied file(s).
 func CacheStorageURIs(
 	ctx context.Context,
 	client CacheStorageURIsClient,
 	dstDatacenter, srcDatacenter *object.Datacenter,
-	dstDir, dstProfileID string,
-	dstDiskFormat vimtypes.DatastoreSectorFormat,
-	srcDiskURIs ...string) ([]CachedDisk, error) {
+	srcFiles ...SourceFile) ([]CachedFile, error) {
 
 	if pkgutil.IsNil(ctx) {
 		panic("context is nil")
@@ -80,57 +92,47 @@ func CacheStorageURIs(
 	if srcDatacenter == nil {
 		panic("srcDatacenter is nil")
 	}
-	if dstDir == "" {
-		panic("dstDir is empty")
-	}
-	if dstProfileID == "" {
-		panic("dstProfileID is empty")
-	}
 
-	var dstStorageURIs = make([]CachedDisk, len(srcDiskURIs))
+	cachedFiles := make([]CachedFile, len(srcFiles))
 
-	for i := range srcDiskURIs {
+	for i := range srcFiles {
 		dstFilePath, err := copyFile(
 			ctx,
 			client,
-			dstDir,
-			srcDiskURIs[i],
-			dstProfileID,
-			dstDiskFormat,
+			srcFiles[i],
 			dstDatacenter,
 			srcDatacenter)
 		if err != nil {
 			return nil, err
 		}
-		dstStorageURIs[i].Path = dstFilePath
+		cachedFiles[i].Path = dstFilePath
 	}
 
-	return dstStorageURIs, nil
+	return cachedFiles, nil
 }
 
 func copyFile(
 	ctx context.Context,
 	client CacheStorageURIsClient,
-	dstDir, srcFilePath, dstProfileID string,
-	dstDiskFormat vimtypes.DatastoreSectorFormat,
+	srcFile SourceFile,
 	dstDatacenter, srcDatacenter *object.Datacenter) (string, error) {
 
 	var (
-		srcFileName = path.Base(srcFilePath)
-		srcFileExt  = path.Ext(srcFilePath)
+		srcFileName = path.Base(srcFile.Path)
+		srcFileExt  = path.Ext(srcFile.Path)
 		dstFileName = GetCachedFileName(srcFileName) + srcFileExt
-		dstFilePath = path.Join(dstDir, dstFileName)
+		dstFilePath = path.Join(srcFile.DstDir, dstFileName)
 		isDisk      = strings.EqualFold(".vmdk", srcFileExt)
 		logger      = pkgutil.FromContextOrDefault(ctx)
 	)
 
 	logger = logger.WithValues(
-		"srcFilePath", srcFilePath,
+		"srcFilePath", srcFile.Path,
 		"dstFilePath", dstFilePath,
 		"dstDatacenter", dstDatacenter.Reference().Value,
 		"srcDatacenter", srcDatacenter.Reference().Value)
 	if isDisk {
-		logger = logger.WithValues("dstDiskFormat", dstDiskFormat)
+		logger = logger.WithValues("dstDiskFormat", srcFile.DstDiskFormat)
 	}
 
 	logger.V(4).Info("Checking if file is already cached")
@@ -154,11 +156,12 @@ func copyFile(
 	logger.V(4).Info("Making cache directory")
 	if err := client.MakeDirectory(
 		ctx,
-		dstDir,
+		srcFile.DstDir,
 		dstDatacenter,
 		true); err != nil {
 
-		return "", fmt.Errorf("failed to create folder %q: %w", dstDir, err)
+		return "", fmt.Errorf("failed to create folder %q: %w",
+			srcFile.DstDir, err)
 	}
 
 	var (
@@ -170,7 +173,7 @@ func copyFile(
 		logger.Info("Caching disk")
 		copyTask, err = client.CopyVirtualDisk(
 			ctx,
-			srcFilePath,
+			srcFile.Path,
 			srcDatacenter,
 			dstFilePath,
 			dstDatacenter,
@@ -179,10 +182,10 @@ func copyFile(
 					AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
 					DiskType:    string(vimtypes.VirtualDiskTypeThin),
 				},
-				SectorFormat: string(dstDiskFormat),
+				SectorFormat: string(srcFile.DstDiskFormat),
 				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
 					&vimtypes.VirtualMachineDefinedProfileSpec{
-						ProfileId: dstProfileID,
+						ProfileId: srcFile.DstProfileID,
 					},
 				},
 			},
@@ -191,7 +194,7 @@ func copyFile(
 		logger.Info("Caching non-disk file")
 		copyTask, err = client.CopyDatastoreFile(
 			ctx,
-			srcFilePath,
+			srcFile.Path,
 			srcDatacenter,
 			dstFilePath,
 			dstDatacenter,
@@ -208,9 +211,9 @@ func copyFile(
 	return dstFilePath, nil
 }
 
-// GetCacheDirForLibraryItem returns the cache directory for a library item
-// beneath a top-level cache directory.
-func GetCacheDirForLibraryItem(
+// GetCacheDirectory returns the cache directory for a library item
+// based on its name, version, and intended storage profile.
+func GetCacheDirectory(
 	datastoreName, itemName, profileID, contentVersion string) string {
 
 	if datastoreName == "" {

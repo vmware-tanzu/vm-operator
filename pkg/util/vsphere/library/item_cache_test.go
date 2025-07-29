@@ -106,7 +106,6 @@ var _ = Describe("CacheStorageURIs", func() {
 			ctx context.Context,
 			client clsutil.CacheStorageURIsClient,
 			dstDatacenter, srcDatacenter *object.Datacenter,
-			dstDir, dstProfileID string,
 			expPanic string) {
 
 			if ctx == nilContext {
@@ -118,10 +117,7 @@ var _ = Describe("CacheStorageURIs", func() {
 					ctx,
 					client,
 					dstDatacenter,
-					srcDatacenter,
-					dstDir,
-					dstProfileID,
-					vimtypes.DatastoreSectorFormatNative_512)
+					srcDatacenter)
 			}
 
 			Expect(f).To(PanicWith(expPanic))
@@ -133,8 +129,6 @@ var _ = Describe("CacheStorageURIs", func() {
 			&fakeCacheStorageURIsClient{},
 			&object.Datacenter{},
 			&object.Datacenter{},
-			"[my-datastore] .contentlib-cache/123/v1",
-			"dstProfileID",
 			"context is nil",
 		),
 		Entry(
@@ -143,8 +137,6 @@ var _ = Describe("CacheStorageURIs", func() {
 			nil,
 			&object.Datacenter{},
 			&object.Datacenter{},
-			"[my-datastore] .contentlib-cache/123/v1",
-			"dstProfileID",
 			"client is nil",
 		),
 		Entry(
@@ -153,8 +145,6 @@ var _ = Describe("CacheStorageURIs", func() {
 			&fakeCacheStorageURIsClient{},
 			nil,
 			&object.Datacenter{},
-			"[my-datastore] .contentlib-cache/123/v1",
-			"dstProfileID",
 			"dstDatacenter is nil",
 		),
 		Entry(
@@ -163,29 +153,7 @@ var _ = Describe("CacheStorageURIs", func() {
 			&fakeCacheStorageURIsClient{},
 			&object.Datacenter{},
 			nil,
-			"[my-datastore] .contentlib-cache/123/v1",
-			"dstProfileID",
 			"srcDatacenter is nil",
-		),
-		Entry(
-			"empty dstDir",
-			context.Background(),
-			&fakeCacheStorageURIsClient{},
-			&object.Datacenter{},
-			&object.Datacenter{},
-			"",
-			"dstProfileID",
-			"dstDir is empty",
-		),
-		Entry(
-			"empty dstProfileID",
-			context.Background(),
-			&fakeCacheStorageURIsClient{},
-			&object.Datacenter{},
-			&object.Datacenter{},
-			"[my-datastore] .contentlib-cache/123/v1",
-			"",
-			"dstProfileID is empty",
 		),
 	)
 
@@ -208,10 +176,10 @@ var _ = Describe("CacheStorageURIs", func() {
 		var (
 			dstDatacenter *object.Datacenter
 			srcDatacenter *object.Datacenter
-			srcDiskURIs   []string
+			srcDisks      []clsutil.SourceFile
 
 			err error
-			out []clsutil.CachedDisk
+			out []clsutil.CachedFile
 		)
 
 		BeforeEach(func() {
@@ -221,9 +189,19 @@ var _ = Describe("CacheStorageURIs", func() {
 					Value: "datacenter-1",
 				})
 			srcDatacenter = dstDatacenter
-			srcDiskURIs = []string{
-				srcContentLibItemPath + "/photon5-disk1.vmdk",
-				srcContentLibItemPath + "/photon5-disk2.vmdk",
+			srcDisks = []clsutil.SourceFile{
+				{
+					Path:          srcContentLibItemPath + "/photon5-disk1.vmdk",
+					DstDir:        dstDir,
+					DstProfileID:  dstProfileID,
+					DstDiskFormat: vimtypes.DatastoreSectorFormatNative_512,
+				},
+				{
+					Path:          srcContentLibItemPath + "/photon5-disk2.vmdk",
+					DstDir:        dstDir,
+					DstProfileID:  dstProfileID,
+					DstDiskFormat: vimtypes.DatastoreSectorFormatNative_512,
+				},
 			}
 		})
 
@@ -233,10 +211,7 @@ var _ = Describe("CacheStorageURIs", func() {
 				client,
 				dstDatacenter,
 				srcDatacenter,
-				dstDir,
-				dstProfileID,
-				vimtypes.DatastoreSectorFormatNative_512,
-				srcDiskURIs...)
+				srcDisks...)
 		})
 
 		When("the disks are already cached", func() {
@@ -246,7 +221,7 @@ var _ = Describe("CacheStorageURIs", func() {
 				Expect(client.copyCalls).To(BeZero())
 				Expect(client.waitCalls).To(BeZero())
 				Expect(err).ToNot(HaveOccurred())
-				Expect(out).To(Equal([]clsutil.CachedDisk{
+				Expect(out).To(Equal([]clsutil.CachedFile{
 					{
 						Path: dstDir + "/" + "e66e8b0765f8ff917.vmdk",
 					},
@@ -334,7 +309,7 @@ var _ = Describe("CacheStorageURIs", func() {
 								Expect(client.copyCalls).To(Equal(int32(2)))
 								Expect(client.waitCalls).To(Equal(int32(2)))
 								Expect(err).ToNot(HaveOccurred())
-								Expect(out).To(Equal([]clsutil.CachedDisk{
+								Expect(out).To(Equal([]clsutil.CachedFile{
 									{
 										Path: dstDir + "/" + "e66e8b0765f8ff917.vmdk",
 									},
@@ -351,11 +326,11 @@ var _ = Describe("CacheStorageURIs", func() {
 	})
 })
 
-var _ = DescribeTable("GetCacheDirForLibraryItem",
+var _ = DescribeTable("GetCacheDirectory",
 	func(datastoreName, itemName, profileID, contentVersion, expOut, expPanic string) {
 		var out string
 		f := func() {
-			out = clsutil.GetCacheDirForLibraryItem(
+			out = clsutil.GetCacheDirectory(
 				datastoreName,
 				itemName,
 				profileID,

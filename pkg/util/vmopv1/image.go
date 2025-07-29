@@ -287,7 +287,7 @@ func VirtualMachineImageCacheToItemMapper(
 
 		// Do not reconcile anything unless the OVF for this VMI Cache resource
 		// is ready.
-		if !pkgcnd.IsTrue(obj, vmopv1.VirtualMachineImageCacheConditionOVFReady) {
+		if !pkgcnd.IsTrue(obj, vmopv1.VirtualMachineImageCacheConditionHardwareReady) {
 			return nil
 		}
 

@@ -32,6 +32,18 @@ if [ -n "${COVERAGE_FILE:-}" ]; then
   GO_TEST_FLAGS+=("--coverprofile=${COVERAGE_FILE:-}")
 fi
 
+# Create test report(s).
+if [ -n "${TEST_RESULTS_FILE:-}" ]; then
+  GO_TEST_FLAGS+=("--output-dir=$(pwd)")
+  GO_TEST_FLAGS+=("--junit-report=${TEST_RESULTS_FILE}.xml")
+  GO_TEST_FLAGS+=("--json-report=${TEST_RESULTS_FILE}.json")
+fi
+
+# If run on GitHub then use the Ginkgo GitHub flag.
+if [ -n "${GITHUB_RUN_ID:-}" ]; then
+  GO_TEST_FLAGS+=("--github-output")
+fi
+
 # Run the tests.
 # shellcheck disable=SC2086
 ginkgo "${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}" "${@:-}" || TEST_CMD_EXIT_CODE="${?}"

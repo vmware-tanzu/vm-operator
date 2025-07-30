@@ -3380,10 +3380,11 @@ func vmTests() {
 			})
 
 			It("Returns error with non-existence cluster module", func() {
-				vm.Annotations["vsphere-cluster-module-group"] = "bogusClusterMod"
+				clusterModName := "bogusClusterMod"
+				vm.Annotations["vsphere-cluster-module-group"] = clusterModName
 				err := createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("ClusterModule bogusClusterMod not found"))
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("ClusterModule %q not found", clusterModName)))
 			})
 		})
 

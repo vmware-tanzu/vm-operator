@@ -16,6 +16,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
@@ -799,26 +800,6 @@ func (s *Session) fixupMacAddressMutableNetworks(
 	return nil
 }
 
-func (s *Session) attachClusterModule(
-	vmCtx pkgctx.VirtualMachineContext,
-	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
-
-	// The clusterModule is required be able to enforce the vm-vm anti-affinity policy.
-	clusterModuleName := vmCtx.VM.Annotations[pkgconst.ClusterModuleNameAnnotationKey]
-	if clusterModuleName == "" {
-		return nil
-	}
-
-	// Find ClusterModule UUID from the ResourcePolicy.
-	_, moduleUUID := clustermodules.FindClusterModuleUUID(vmCtx, clusterModuleName, s.ClusterMoRef, resourcePolicy)
-	if moduleUUID == "" {
-		return fmt.Errorf("ClusterModule %s not found", clusterModuleName)
-	}
-
-	clusterModuleProvider := clustermodules.NewProvider(s.Client.RestClient())
-	return clusterModuleProvider.AddMoRefToModule(vmCtx, moduleUUID, vmCtx.MoVM.Self)
-}
-
 func (s *Session) resizeVMWhenPoweredStateOff(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -961,29 +942,44 @@ func (s *Session) reconcileHardwareVersion(
 	return nil
 }
 
+// reconcileClusterModule adds the current VM as a member of the cluster module as defined in the
+// VirtualMachineSetResourcePolicy. ClusterModuleUUIDAnnotationKey helps indicate if an attaching operation is
+// needed. This is because attaching to a cluster module is quite expensive since it involves listing all modules.
 func (s *Session) reconcileClusterModule(
 	vmCtx pkgctx.VirtualMachineContext,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
-
 	vmCtx.Logger.V(4).Info("Reconciling cluster module")
 
-	if !vmCtx.IsOffToOn() {
-		// TODO(akutz) Only attach to cluster modules if the VM is transitioning
-		//             from not powered on to powered on. This is because
-		//             attaching to a cluster module is quite expensive since it
-		//             involves listing all modules.
-		vmCtx.Logger.V(4).Info(
-			"Skipping cluster module reconciliation since VM is not powering on")
-		return nil
-	}
-
 	if resourcePolicy == nil {
-		vmCtx.Logger.V(4).Info(
-			"Skipping cluster module reconciliation since resource policy is nil")
+		vmCtx.Logger.V(4).Info("Skipping cluster module reconciliation since resource policy is nil")
 		return nil
 	}
 
-	return s.attachClusterModule(vmCtx, resourcePolicy)
+	// The clusterModule is required be able to enforce the vm-vm anti-affinity policy.
+	clusterModuleName := vmCtx.VM.Annotations[pkgconst.ClusterModuleNameAnnotationKey]
+	if clusterModuleName == "" {
+		vmCtx.Logger.V(4).Info("Skipping cluster module reconciliation since cluster name is empty")
+		return nil
+	}
+
+	// Find ClusterModule UUID from the ResourcePolicy.
+	_, moduleUUID := clustermodules.FindClusterModuleUUID(vmCtx, clusterModuleName, s.ClusterMoRef, resourcePolicy)
+	if moduleUUID == "" {
+		return fmt.Errorf("ClusterModule %q not found in VirtualMachineSetResourcePolicy", clusterModuleName)
+	}
+
+	if oldUUID := vmCtx.VM.Annotations[pkgconst.ClusterModuleUUIDAnnotationKey]; oldUUID == moduleUUID {
+		vmCtx.Logger.V(4).Info("Skipping cluster module reconciliation since cluster module uuid is the same")
+		return nil
+	}
+
+	if err := clustermodules.NewProvider(
+		s.Client.RestClient()).AddMoRefToModule(vmCtx, moduleUUID, vmCtx.MoVM.Self); err != nil {
+		return err
+	}
+
+	metav1.SetMetaDataAnnotation(&vmCtx.VM.ObjectMeta, pkgconst.ClusterModuleUUIDAnnotationKey, moduleUUID)
+	return nil
 }
 
 func (s *Session) reconcileNetworkAndGuestCustomizationState(

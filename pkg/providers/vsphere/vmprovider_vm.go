@@ -2194,6 +2194,19 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		createArgs.HasInstanceStorage = AddInstanceStorageVolumes(
 			vmCtx,
 			createArgs.VMClass.Spec.Hardware.InstanceStorage)
+
+		if createArgs.HasInstanceStorage && pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+			// Fast deploy breaks instance storage placement since later placement calls
+			// to get the Datastores need to provide the selected host because the PVCs
+			// are only attachable if the VM is running on that host.
+			// Instance storage isn't used all that much so fall back to DeployOVF until
+			// we can invest to fix that (as an aside PlaceVMsXCluster() cannot take a
+			// allowed host list so this will need to keep using PlaceVM for placement).
+			cfg := pkgcfg.FromContext(vmCtx)
+			cfg.Features.FastDeploy = false
+			vmCtx.Context = pkgcfg.WithContext(vmCtx, cfg)
+			vmCtx.Logger.Info("Disabled fast-deploy for instance storage VM")
+		}
 	}
 
 	vmStorageClass := vmCtx.VM.Spec.StorageClass

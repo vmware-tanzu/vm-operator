@@ -16,6 +16,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegroup"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegrouppublishrequest"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimagecache"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinereplicaset"
@@ -84,6 +85,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	if pkgcfg.FromContext(ctx).Features.VMGroups {
 		if err := virtualmachinegroup.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VMG controller: %w", err)
+		}
+		if err := virtualmachinegrouppublishrequest.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VirtualMachineGroupPublishRequest controller: %w", err)
 		}
 	}
 

@@ -17,13 +17,13 @@ import (
 // VirtualMachineGroupPublishRequest controller.
 type VirtualMachineGroupPublishRequestContext struct {
 	context.Context
-	Logger logr.Logger
-	Obj    *vmopv1.VirtualMachineGroupPublishRequest
+	Logger                logr.Logger
+	VMGroupPublishRequest *vmopv1.VirtualMachineGroupPublishRequest
 }
 
 func (v VirtualMachineGroupPublishRequestContext) String() string {
 	return fmt.Sprintf("%s %s/%s",
-		v.Obj.GroupVersionKind(),
-		v.Obj.Namespace,
-		v.Obj.Name)
+		v.VMGroupPublishRequest.GroupVersionKind(),
+		v.VMGroupPublishRequest.Namespace,
+		v.VMGroupPublishRequest.Name)
 }

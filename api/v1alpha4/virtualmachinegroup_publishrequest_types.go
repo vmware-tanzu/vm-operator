@@ -15,6 +15,10 @@ const (
 	// The condition's status is set to true only when all other conditions
 	// present on the resource have a truthy status.
 	VirtualMachineGroupPublishRequestConditionComplete = "Complete"
+
+	// VirtualMachineGroupPublishRequestConditionReasonPending indicates there are still pending
+	// VirtualMachinePublishRequest to be completed.
+	VirtualMachineGroupPublishRequestConditionReasonPending = "VirtualMachinePublishRequestsPending"
 )
 
 // VirtualMachineGroupPublishRequestSpec defines the desired state of a

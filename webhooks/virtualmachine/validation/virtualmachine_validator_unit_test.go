@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -55,6 +55,7 @@ const (
 	dummyVmiName                   = "vmi-dummy"
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
 	dummyClusterModuleAnnVal       = "dummy-cluster-module"
+	dummyGroupName                 = "dummy-group"
 	vmiKind                        = "VirtualMachineImage"
 	cvmiKind                       = "Cluster" + vmiKind
 	invalidKind                    = "InvalidKind"
@@ -3010,6 +3011,39 @@ func unitTestsValidateCreate() {
 			),
 		)
 	})
+
+	Context("GroupName", func() {
+		DescribeTable("validateGroupName", doTest,
+			Entry("disallow spec.groupName when VM Groups feature is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.GroupName = dummyGroupName
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMGroups = false
+						})
+					},
+					validate: func(response admission.Response) {
+						Expect(string(response.Result.Reason)).To(Equal(field.Invalid(
+							field.NewPath("spec", "groupName"),
+							dummyGroupName,
+							"the VM Groups feature is not enabled").Error()))
+					},
+					expectAllowed: false,
+				},
+			),
+			Entry("allow spec.groupName when VM Groups feature is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.GroupName = dummyGroupName
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMGroups = true
+						})
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateUpdate() {
@@ -5632,6 +5666,39 @@ func unitTestsValidateUpdate() {
 						field.Required(snapshotPath.Child("name"), "").Error(),
 					),
 					expectAllowed: false,
+				},
+			),
+		)
+	})
+
+	Context("GroupName", func() {
+		DescribeTable("validateGroupName", doTest,
+			Entry("disallow spec.groupName when VM Groups feature is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.GroupName = dummyGroupName
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMGroups = false
+						})
+					},
+					validate: func(response admission.Response) {
+						Expect(string(response.Result.Reason)).To(Equal(field.Invalid(
+							field.NewPath("spec", "groupName"),
+							dummyGroupName,
+							"the VM Groups feature is not enabled").Error()))
+					},
+					expectAllowed: false,
+				},
+			),
+			Entry("allow spec.groupName when VM Groups feature is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.GroupName = dummyGroupName
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMGroups = true
+						})
+					},
+					expectAllowed: true,
 				},
 			),
 		)

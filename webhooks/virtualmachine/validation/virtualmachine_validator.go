@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation
@@ -165,6 +165,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, nil)...)
+	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -266,6 +267,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1916,6 +1918,23 @@ func (v validator) validateSnapshot(
 
 	if vm.Spec.CurrentSnapshot.Name == "" {
 		allErrs = append(allErrs, field.Required(snapshotPath.Child("name"), ""))
+	}
+
+	return allErrs
+}
+
+func (v validator) validateGroupName(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if vm.Spec.GroupName != "" && !pkgcfg.FromContext(ctx).Features.VMGroups {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "groupName"),
+			vm.Spec.GroupName,
+			fmt.Sprintf(featureNotEnabled, "VM Groups")),
+		)
 	}
 
 	return allErrs

@@ -1207,8 +1207,8 @@ func updateCurrentSnapshotStatus(
 	currentSnapMoref := vmCtx.MoVM.Snapshot.CurrentSnapshot
 
 	// Find the snapshot name by traversing the snapshot tree.
-	snapshotName := FindSnapshotNameInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, currentSnapMoref.Value)
-	if snapshotName == "" {
+	snapshot := FindSnapshotInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, currentSnapMoref.Value)
+	if snapshot == nil {
 		vmCtx.Logger.V(4).Info("Could not find snapshot name in tree",
 			"snapshotRef", currentSnapMoref.Value)
 		// Clear the status if we can't find the snapshot name.
@@ -1219,25 +1219,25 @@ func updateCurrentSnapshotStatus(
 	}
 
 	vmCtx.Logger.V(5).Info("Found snapshot name in tree",
-		"snapshotName", snapshotName,
+		"snapshotName", snapshot.Name,
 		"snapshotRef", currentSnapMoref.Value)
 
 	// Check if there's a VirtualMachineSnapshot custom resource with this name.
 	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
 	objKey := ctrlclient.ObjectKey{
-		Name:      snapshotName,
+		Name:      snapshot.Name,
 		Namespace: vm.Namespace,
 	}
 
 	if err := k8sClient.Get(vmCtx, objKey, vmSnapshot); err != nil {
 		if !apierrors.IsNotFound(err) {
 			vmCtx.Logger.Error(err, "Failed to get VirtualMachineSnapshot custom resource",
-				"snapshotName", snapshotName)
+				"snapshotName", snapshot.Name)
 			return err
 		}
 		// Snapshot custom resource doesn't exist, clear the status.
 		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot custom resource not found, clearing status",
-			"snapshotName", snapshotName)
+			"snapshotName", snapshot.Name)
 		vm.Status.CurrentSnapshot = nil
 
 		return nil
@@ -1246,7 +1246,7 @@ func updateCurrentSnapshotStatus(
 	// If the snapshot is being deleted, don't update the status.
 	if !vmSnapshot.DeletionTimestamp.IsZero() {
 		vmCtx.Logger.Error(nil, "VM points to a snapshot that is marked for deletion",
-			"snapshotName", snapshotName)
+			"snapshotName", snapshot.Name)
 		return nil
 	}
 
@@ -1264,22 +1264,22 @@ func updateCurrentSnapshotStatus(
 	return nil
 }
 
-// FindSnapshotNameInTree recursively searches the snapshot tree for a
+// FindSnapshotInTree recursively searches the snapshot tree for a
 // snapshot with the given reference value.
 // TODO: AKP: Replace this with a Govmomi helper once merged.
-func FindSnapshotNameInTree(snapshots []vimtypes.VirtualMachineSnapshotTree, targetRef string) string {
+func FindSnapshotInTree(snapshots []vimtypes.VirtualMachineSnapshotTree, targetRef string) *vimtypes.VirtualMachineSnapshotTree {
 	for _, snapshot := range snapshots {
 		// Check if this snapshot matches the target reference.
 		if snapshot.Snapshot.Value == targetRef {
-			return snapshot.Name
+			return &snapshot
 		}
 
 		// Recursively search child snapshots.
-		if childName := FindSnapshotNameInTree(snapshot.ChildSnapshotList, targetRef); childName != "" {
-			return childName
+		if child := FindSnapshotInTree(snapshot.ChildSnapshotList, targetRef); child != nil {
+			return child
 		}
 	}
-	return ""
+	return nil
 }
 
 // updateRootSnapshots updates the VM status to reflect the

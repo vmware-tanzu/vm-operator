@@ -11,6 +11,14 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
+const (
+	// ImportedSnapshotAnnotation on a VirtualMachineSnapshot represents that a snapshot
+	// has been imported by the Mobility Service. Mobility service uses this annotation to
+	// differentiate such snapshots from external snapshots. This annotation is used to
+	// determine whether to approximate a VM spec for revert operations to such snapshots.
+	ImportedSnapshotAnnotation = GroupName + "/imported-snapshot"
+)
+
 // VirtualMachineSnapshotSpec defines the desired state of VirtualMachineSnapshot.
 type VirtualMachineSnapshotSpec struct {
 	// +optional

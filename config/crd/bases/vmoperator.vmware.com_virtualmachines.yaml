@@ -7688,20 +7688,15 @@ spec:
                 type: object
               currentSnapshot:
                 description: |-
-                  CurrentSnapshot represents the desired snapshot that the
-                  virtual machine should point to. This field can have three
-                  possible values:
+                  CurrentSnapshot represents the desired snapshot that the VM
+                  should point to. This field can be specified to revert the VM
+                  to a given snapshot. Once the virtual machine has been
+                  successfully reverted to the desired snapshot, the value of
+                  this field is cleared.
 
-                  - The value of this field is nil when the working snapshot is at
-                    the root of the snapshot tree.
-
-                  - When a new snapshot is requested by creating a new
-                    VirtualMachineSnapshot, the value of this field is set to the
-                    new snapshot resource's name.
-
-                  - If the value of this field is set to an existing snapshot that
-                    is different from the status.currentSnapshot, the virtual machine is
-                    reverted to the requested snapshot.
+                  The value of this field must be an existing object of
+                  VirtualMachineSnapshot kind that exists on the API server. All
+                  other values are invalid.
 
                   Reverting a virtual machine to a snapshot rolls back the data
                   and the configuration of the virtual machine to that of the

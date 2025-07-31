@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -593,6 +594,11 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 				APIVersion: "vmoperator.vmware.com/v1alpha4",
 				Kind:       "VirtualMachine",
 				Name:       vmName,
+			},
+			Quiesce: &vmopv1.QuiesceSpec{
+				Timeout: &metav1.Duration{
+					Duration: 10 * time.Minute,
+				},
 			},
 		},
 	}

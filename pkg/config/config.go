@@ -67,6 +67,13 @@ type Config struct {
 	// Defaults to 10 seconds.
 	SyncImageRequeueDelay time.Duration
 
+	// SnapshotInProgressRequeueDelay is the requeue delay that is
+	// used to requeue when a snapshot is in progress. This is used so
+	// we can come back and update the status of the snapshot of the
+	// snapshot.
+	// Defaults to 10 seconds.
+	SnapshotInProgressRequeueDelay time.Duration
+
 	NetworkProviderType  NetworkProviderType
 	VSphereNetworking    bool
 	LoadBalancerProvider string

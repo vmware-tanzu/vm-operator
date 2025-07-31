@@ -119,48 +119,6 @@ func unitTestsReconcile() {
 
 			It("returns success", func() {
 				Expect(err).ToNot(HaveOccurred())
-				objKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
-				vmObj := &vmopv1.VirtualMachine{}
-				Expect(ctx.Client.Get(ctx, objKey, vmObj)).To(Succeed())
-
-				Expect(vmObj.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshot)))
-			})
-		})
-
-		When("vm ready with different current snapshot", func() {
-			BeforeEach(func() {
-				vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot.APIVersion,
-					Kind:       vmSnapshot.Kind,
-					Name:       "dummy-diff-snapshot",
-				}
-				vm.Status.UniqueID = dummyVMUUID
-				initObjects = append(initObjects, vm)
-			})
-
-			It("returns success", func() {
-				Expect(err).ToNot(HaveOccurred())
-				objKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
-				vmObj := &vmopv1.VirtualMachine{}
-				Expect(ctx.Client.Get(ctx, objKey, vmObj)).To(Succeed())
-
-				Expect(vmObj.Spec.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshot)))
-			})
-		})
-
-		When("vm ready with matching current snapshot name", func() {
-			BeforeEach(func() {
-				vm.Status.UniqueID = dummyVMUUID
-				vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot.APIVersion,
-					Kind:       vmSnapshot.Kind,
-					Name:       vmSnapshot.Name,
-				}
-				initObjects = append(initObjects, vm)
-			})
-
-			It("returns success", func() {
-				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 

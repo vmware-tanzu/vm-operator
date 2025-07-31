@@ -11,6 +11,7 @@ import (
 	"maps"
 	"math/rand"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"text/template"
@@ -1182,17 +1183,36 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 		vmCtx.Logger.V(5).Info("No current snapshot specified, skipping revert")
 		return false, nil
 	}
-
-	// Check if the VM has a snapshot by the desired name.
 	desiredSnapshotName := vmCtx.VM.Spec.CurrentSnapshot.Name
-	snapObj, err := vs.findDesiredSnapshot(vmCtx, desiredSnapshotName)
-	if err != nil {
-		vmCtx.Logger.Error(err, "Error finding desired snapshot to revert to")
+
+	// Check if the snapshot CR exists.
+	snapCR := &vmopv1.VirtualMachineSnapshot{}
+	if err := vs.k8sClient.Get(
+		vmCtx,
+		ctrlclient.ObjectKey{Name: desiredSnapshotName, Namespace: vmCtx.VM.Namespace},
+		snapCR); err != nil {
+		vmCtx.Logger.Error(err, "Error getting snapshot CR", "snapshotName", desiredSnapshotName)
 		return false, err
 	}
 
-	// Govmomi ensures that if FindSnapshot doesn't return an error, a
-	// snapshot managed object is returned. Handle it anyway.
+	// Check if the snapshot CR is ready.  This is to ensure that the snapshot
+	// as reconciled by VM operator and is not an out-of-band, or in-progress
+	// snapshot.
+	if !pkgcnd.IsTrue(snapCR, vmopv1.VirtualMachineSnapshotReadyCondition) {
+		vmCtx.Logger.V(5).Info("Snapshot CR is not ready, skipping revert", "snapshotName", desiredSnapshotName)
+		return false, fmt.Errorf("snapshot CR is not ready, skipping revert")
+	}
+
+	// Check if the VM has a snapshot by the desired name.
+	snapObj, err := virtualmachine.FindSnapshot(vmCtx, desiredSnapshotName)
+	if err != nil {
+		vmCtx.Logger.Error(err, "Error finding snapshot", "snapshotName", desiredSnapshotName)
+
+		return false, err
+	}
+
+	// If FindSnapshot doesn't return an error, a snapshot managed object is returned.
+	// But handle a scenario where the object is nil anyway.
 	if snapObj == nil {
 		vmCtx.Logger.V(4).Info("Snapshot not found, treating as new snapshot request",
 			"snapshotName", desiredSnapshotName)
@@ -1252,47 +1272,6 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 	// the updated VM spec, labels, and annotations. The VM status
 	// will be updated in the subsequent reconcile loop.
 	return true, nil
-}
-
-// findDesiredSnapshot finds the snapshot object by name, returns nil if not found.
-func (vs *vSphereVMProvider) findDesiredSnapshot(
-	vmCtx pkgctx.VirtualMachineContext,
-	snapshotName string) (*vimtypes.ManagedObjectReference, error) {
-
-	snapObj, err := virtualmachine.FindSnapshot(vmCtx, snapshotName)
-	if err != nil {
-		// Only skip (return nil) for expected cases where we should not fail:
-		// 1. VM has no snapshots at all
-		// 2. Snapshot by name doesn't exist (this would be a different error message)
-		if errors.Is(err, virtualmachine.ErrNoSnapshots) {
-			vmCtx.Logger.V(4).Info("VM has no snapshots, skipping",
-				"snapshotName", snapshotName)
-			return nil, nil
-		}
-
-		// Check if snapshot by name doesn't exist
-		if errors.Is(err, virtualmachine.ErrSnapshotNotFound) {
-			vmCtx.Logger.V(4).Info("Snapshot not found on the VM (snapshot doesn't exist)",
-				"snapshotName", snapshotName)
-			return nil, nil
-		}
-
-		// For all other errors (property collector error, multiple snapshots, etc.),
-		// return the actual error and requeue the reconcile request.
-		vmCtx.Logger.Error(err, "Error finding snapshot",
-			"snapshotName", snapshotName)
-		return nil, err
-	}
-
-	// snapObj is nil when VM has snapshots but the specific snapshot doesn't exist
-	// This is the normal case when FindSnapshot succeeds but doesn't find the named snapshot.
-	if snapObj == nil {
-		vmCtx.Logger.V(4).Info("Snapshot not found on the VM (snapshot doesn't exist)",
-			"snapshotName", snapshotName)
-		return nil, nil
-	}
-
-	return snapObj, nil
 }
 
 // needsSnapshotRevert checks if the VM's current snapshot differs
@@ -1380,6 +1359,16 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 	// about pruning fields here since the backup process already
 	// handles that.
 	vmCtx.VM.Spec = *(&vm.Spec).DeepCopy()
+
+	// VM spec should never have spec.currentSnapshot set because the
+	// currentSnapshot is only set during a revert operation. However,
+	// in the off-chance that a snapshot was taken _during_ a revert,
+	// clear it out.
+	vmCtx.VM.Spec.CurrentSnapshot = nil
+
+	// TODO: AKP: We need to merge (and skip) some labels so that we
+	// are not simply reverting to the previous labels. Otherwise, we
+	// risk the VM being impacted after a snapshot revert.
 	vmCtx.VM.Labels = maps.Clone(vm.Labels)
 	vmCtx.VM.Annotations = maps.Clone(vm.Annotations)
 	// Empty out the status.
@@ -1392,7 +1381,7 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 	revertProgressKey := pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey
 	delete(vmCtx.VM.Annotations, revertProgressKey)
 
-	vmCtx.Logger.Info("VM custom resource has been restored from snapshot",
+	vmCtx.Logger.V(4).Info("VM custom resource has been restored from snapshot",
 		"restoredAnnotations", vmCtx.VM.Annotations,
 		"restoredLabels", vmCtx.VM.Labels)
 
@@ -1447,39 +1436,131 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 func (vs *vSphereVMProvider) reconcileSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine) error {
-	// Skip creating a new snapshot if the VM doesn't specify a desired snapshot.
-	if vmCtx.VM.Spec.CurrentSnapshot == nil {
-		return nil
-	}
 
-	// Fetch the VirtualMachineSnapshot object.
-	vmSnapshot, err := getVirtualMachineSnapShotObject(vmCtx, vs.k8sClient)
+	// Find all VirtualMachineSnapshot objects that reference this VM
+	vmSnapshots, err := vs.getVirtualMachineSnapshotsForVM(vmCtx)
 	if err != nil {
 		return err
 	}
 
-	// If it's being deleted, skip snapshot creation.
-	if !vmSnapshot.DeletionTimestamp.IsZero() {
-		vmCtx.Logger.Info("Skipping snapshot creation because the VirtualMachineSnapshot is being deleted")
+	// If no snapshots found, nothing to do
+	if len(vmSnapshots) == 0 {
 		return nil
+	}
+
+	// Sort snapshots by creation timestamp to ensure consistent ordering
+	sort.Slice(vmSnapshots, func(i, j int) bool {
+		return vmSnapshots[i].CreationTimestamp.Before(&vmSnapshots[j].CreationTimestamp)
+	})
+
+	// Find the first (oldest) snapshot that is not ready
+	// We process snapshots in chronological order, one at a time
+	// Also calculate the total pending snapshots so we can requeue the
+	// request to continue processing other snapshots.
+	var snapshotToProcess *vmopv1.VirtualMachineSnapshot
+	totalPendingSnapshots := 0
+	for _, snapshot := range vmSnapshots {
+		// Skip snapshots that are already ready
+		if pkgcnd.IsTrue(&snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+			vmCtx.Logger.V(4).Info("Skipping snapshot that is already ready",
+				"snapshotName", snapshot.Name)
+			continue
+		}
+
+		if snapshot.DeletionTimestamp.IsZero() {
+			totalPendingSnapshots++
+		}
+
+		// Found the first snapshot that needs processing
+		if snapshotToProcess == nil {
+			snapshotToProcess = &snapshot
+		}
+	}
+
+	// If no snapshot needs processing, we're done
+	if snapshotToProcess == nil {
+		vmCtx.Logger.V(4).Info("All snapshots are ready or being deleted, nothing to process")
+		return nil
+	}
+
+	// If the oldest snapshot is being deleted, wait for it to finish.
+	if !snapshotToProcess.DeletionTimestamp.IsZero() {
+		vmCtx.Logger.V(4).Info("Snapshot is being deleted, waiting for completion",
+			"snapshotName", snapshotToProcess.Name)
+		return nil
+	}
+
+	// If the oldest snapshot is not owned by this VM, wait for the
+	// owner reference to be added.  The owner ref will requeue a reconcile.
+	owner, err := controllerutil.HasOwnerReference(
+		snapshotToProcess.OwnerReferences,
+		vmCtx.VM,
+		vs.k8sClient.Scheme())
+	if err != nil {
+		vmCtx.Logger.Error(err, "error in checking if snapshot is owned by the VM")
+		return err
+	}
+
+	if !owner {
+		vmCtx.Logger.V(4).Info("Snapshot is not owned by the VM, waiting for OwnerRef update",
+			"snapshotName", snapshotToProcess.Name)
+		return nil
+	}
+
+	// If the oldest snapshot is in progress, wait for it to complete
+	if pkgcnd.GetReason(snapshotToProcess, vmopv1.VirtualMachineSnapshotReadyCondition) ==
+		vmopv1.VirtualMachineSnapshotInProgressReason {
+		vmCtx.Logger.V(4).Info("Snapshot is in progress, waiting for completion",
+			"snapshotName", snapshotToProcess.Name)
+		return nil
+	}
+
+	// Mark the snapshot as in progress before starting the operation to
+	// prevent concurrent snapshots.
+	if err := vs.markSnapshotInProgress(vmCtx, snapshotToProcess); err != nil {
+		vmCtx.Logger.Error(err, "Failed to mark snapshot as in progress", "snapshotName", snapshotToProcess.Name)
+		return err
 	}
 
 	snapArgs := virtualmachine.SnapshotArgs{
 		VMCtx:      vmCtx,
 		VcVM:       vcVM,
-		VMSnapshot: vmSnapshot,
+		VMSnapshot: *snapshotToProcess,
 	}
 
-	vmCtx.Logger.Info("Creating a new snapshot of the virtual machine")
+	vmCtx.Logger.Info("Creating snapshot on vSphere",
+		"snapshotName", snapshotToProcess.Name)
 	snapMoRef, err := virtualmachine.SnapshotVirtualMachine(snapArgs)
 	if err != nil {
-		vmCtx.Logger.Error(err, "failed to snapshot virtual machine")
+		// Mark the snapshot as failed and clear in-progress status
+		// TODO: we wait for in-progress snapshots to complete when
+		// taking a snapshot. So, if we are unable to clear the
+		// in-progress condition because status patching failes, we
+		// will forever be waiting.
+		vs.markSnapshotFailed(vmCtx, snapshotToProcess, err)
+		vmCtx.Logger.Error(err, "Failed to create snapshot", "snapshotName", snapshotToProcess.Name)
 		return err
 	}
 
-	if err = PatchSnapshotStatus(vmCtx, vs.k8sClient,
-		&vmSnapshot, snapMoRef); err != nil {
+	// Update the snapshot status with the successful result
+	if err = PatchSnapshotStatus(vmCtx, vs.k8sClient, snapshotToProcess, snapMoRef); err != nil {
+		vmCtx.Logger.Error(err, "Failed to update snapshot status", "snapshotName", snapshotToProcess.Name)
 		return err
+	}
+
+	// Successfully processed one snapshot
+	// Check if there are more snapshots to process after this one
+	totalPendingSnapshots--
+	vmCtx.Logger.Info("Successfully completed snapshot operation",
+		"snapshotName", snapshotToProcess.Name,
+		"remainingSnapshots", totalPendingSnapshots)
+
+	// If there are more pending snapshots, requeue to process the next one
+	if totalPendingSnapshots > 0 {
+		vmCtx.Logger.Info("Requeuing to process remaining snapshots",
+			"snapshotName", snapshotToProcess.Name,
+			"remainingSnapshots", totalPendingSnapshots)
+		return fmt.Errorf("requeuing to process %d remaining snapshots: %w", totalPendingSnapshots, pkgerr.RequeueError{})
 	}
 
 	/* TODO:
@@ -2734,4 +2815,66 @@ func (vs *vSphereVMProvider) vmResizeGetArgs(
 	}
 
 	return resizeArgs, nil
+}
+
+// getVirtualMachineSnapshotsForVM finds all VirtualMachineSnapshot objects that reference this VM.
+func (vs *vSphereVMProvider) getVirtualMachineSnapshotsForVM(
+	vmCtx pkgctx.VirtualMachineContext) ([]vmopv1.VirtualMachineSnapshot, error) {
+
+	// List all VirtualMachineSnapshot objects in the VM's namespace
+	var snapshotList vmopv1.VirtualMachineSnapshotList
+	if err := vs.k8sClient.List(vmCtx, &snapshotList, ctrlclient.InNamespace(vmCtx.VM.Namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list VirtualMachineSnapshot objects: %w", err)
+	}
+
+	// Filter snapshots that reference this VM. We do this by checking
+	// the VMRef, and by filtering the snapshots owned by this VM.
+	var vmSnapshots []vmopv1.VirtualMachineSnapshot
+	for _, snapshot := range snapshotList.Items {
+		if snapshot.Spec.VMRef != nil && snapshot.Spec.VMRef.Name == vmCtx.VM.Name {
+			vmSnapshots = append(vmSnapshots, snapshot)
+		}
+	}
+
+	vmCtx.Logger.V(4).Info("Found VirtualMachineSnapshot objects for VM",
+		"count", len(vmSnapshots))
+
+	return vmSnapshots, nil
+}
+
+// markSnapshotInProgress marks a snapshot as currently being processed.
+func (vs *vSphereVMProvider) markSnapshotInProgress(vmCtx pkgctx.VirtualMachineContext, vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
+	// Create a patch to set the InProgress condition
+	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
+
+	// Set the InProgress condition to prevent concurrent operations
+	pkgcnd.MarkFalse(
+		vmSnapshot,
+		vmopv1.VirtualMachineSnapshotReadyCondition,
+		vmopv1.VirtualMachineSnapshotInProgressReason,
+		"snapshot in progress")
+
+	// Use Patch instead of Update to avoid conflicts with snapshot controller
+	if err := vs.k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); err != nil {
+		return fmt.Errorf("failed to mark snapshot as in progress: %w", err)
+	}
+
+	vmCtx.Logger.V(4).Info("Marked snapshot as in progress", "snapshotName", vmSnapshot.Name)
+	return nil
+}
+
+// markSnapshotFailed marks a snapshot as failed and clears the in-progress status.
+func (vs *vSphereVMProvider) markSnapshotFailed(vmCtx pkgctx.VirtualMachineContext, vmSnapshot *vmopv1.VirtualMachineSnapshot, err error) {
+	// Create a patch to update the snapshot status
+	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
+
+	// Mark the snapshot as failed
+	pkgcnd.MarkFalse(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition, "SnapshotFailed", "%s", err.Error())
+
+	// Use Patch instead of Update to avoid conflicts with snapshot controller (best effort)
+	if updateErr := vs.k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); updateErr != nil {
+		vmCtx.Logger.Error(updateErr, "Failed to update snapshot status after failure", "snapshotName", vmSnapshot.Name)
+	}
+
+	vmCtx.Logger.V(4).Info("Marked snapshot as failed", "snapshotName", vmSnapshot.Name, "error", err.Error())
 }

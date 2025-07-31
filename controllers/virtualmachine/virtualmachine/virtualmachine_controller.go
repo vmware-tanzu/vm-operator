@@ -122,6 +122,22 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		)
 	}
 
+	// Watch VirtualMachineSnapshot resources to trigger VM reconciliation
+	// when snapshots are created or updated.
+	// We could also use the owner reference to queue the request, but on
+	// the off chance that the owner ref has not been set, use a custom mapper.
+	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
+		builder = builder.Watches(
+			&vmopv1.VirtualMachineSnapshot{},
+			handler.EnqueueRequestsFromMapFunc(
+				vmopv1util.SnapshotToVMMapperFn(
+					ctx,
+					r.Logger.WithName("SnapshotToVMMapper"),
+				),
+			),
+		)
+	}
+
 	return builder.Complete(r)
 }
 

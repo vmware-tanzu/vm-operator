@@ -12,9 +12,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/object"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -34,6 +34,7 @@ func vcSimTests() {
 	Describe("VirtualMachineResize", vmResizeTests)
 	Describe("VirtualMachineUtilsTest", vmUtilTests)
 	Describe("VirtualMachineSnapshot", vmSnapshotTests)
+	Describe("VirtualMachineGroup", vmGroupTests)
 }
 
 func TestVSphereProvider(t *testing.T) {

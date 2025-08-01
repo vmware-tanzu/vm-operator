@@ -85,8 +85,8 @@ func (s *Session) UpdateVirtualMachine(
 		vmCtx.Logger.Info("Reconciling config for suspended vm")
 		updateErr = reconcileSuspendedVM(vmCtx, s.K8sClient, vcVM)
 
-	case vmCtx.VM.Status.TaskID != "":
-		vmCtx.Logger.Info("Reconciling config for VM with task")
+	case pkgctx.HasVMRunningTask(vmCtx):
+		vmCtx.Logger.Info("Reconciling config for VM with running task")
 		updateErr = reconcileVMWithTask(vmCtx, s.K8sClient, vcVM)
 
 	case isVMPaused(vmCtx):

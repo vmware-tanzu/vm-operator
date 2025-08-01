@@ -9403,11 +9403,6 @@ spec:
                         x-kubernetes-int-or-string: true
                     type: object
                 type: object
-              taskID:
-                description: |-
-                  TaskID describes the observed ID of the task created by VM Operator to
-                  perform some long-running operation on the VM.
-                type: string
               uniqueID:
                 description: |-
                   UniqueID describes a unique identifier that is provided by the underlying

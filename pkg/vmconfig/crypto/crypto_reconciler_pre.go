@@ -18,6 +18,7 @@ import (
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
@@ -140,7 +141,10 @@ func (r reconciler) Reconcile(
 		return err
 	}
 
-	if paused.ByAdmin(moVM) || paused.ByDevOps(vm) || vm.Status.TaskID != "" {
+	if paused.ByAdmin(moVM) ||
+		paused.ByDevOps(vm) ||
+		pkgctx.HasVMRunningTask(ctx) {
+
 		// If the VM is paused or has a task, just update the status.
 		return updateStatus(ctx, args, false)
 	}

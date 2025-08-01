@@ -3671,15 +3671,49 @@ func vmTests() {
 								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
 							})
 						})
-						When("vm has task", func() {
+
+						When("vm has running task", func() {
+							var (
+								reg     *simulator.Registry
+								simCtx  *simulator.Context
+								taskRef vimtypes.ManagedObjectReference
+							)
+
 							JustBeforeEach(func() {
-								vm.Status.TaskID = "123"
+								simCtx = ctx.SimulatorContext()
+								reg = simCtx.Map
+								taskRef = reg.Put(&mo.Task{
+									Info: vimtypes.TaskInfo{
+										State:         vimtypes.TaskInfoStateRunning,
+										DescriptionId: "fake.task.1",
+									},
+								}).Reference()
+
+								vmRef := vimtypes.ManagedObjectReference{
+									Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+									Value: vm.Status.UniqueID,
+								}
+
+								reg.WithLock(
+									simCtx,
+									vmRef,
+									func() {
+										vm := reg.Get(vmRef).(*simulator.VirtualMachine)
+										vm.RecentTask = append(vm.RecentTask, taskRef)
+									})
+
 							})
+
+							AfterEach(func() {
+								reg.Remove(simCtx, taskRef)
+							})
+
 							It("should not change the power state", func() {
 								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrHasTask)).To(BeTrue())
 								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
 							})
 						})
+
 					})
 
 					DescribeTable("powerOffModes",
@@ -3801,16 +3835,50 @@ func vmTests() {
 								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
 							})
 						})
-						When("vm has task", func() {
+
+						When("vm has running task", func() {
+							var (
+								reg     *simulator.Registry
+								simCtx  *simulator.Context
+								taskRef vimtypes.ManagedObjectReference
+							)
+
 							JustBeforeEach(func() {
-								vm.Status.TaskID = "123"
+								simCtx = ctx.SimulatorContext()
+								reg = simCtx.Map
+								taskRef = reg.Put(&mo.Task{
+									Info: vimtypes.TaskInfo{
+										State:         vimtypes.TaskInfoStateRunning,
+										DescriptionId: "fake.task.2",
+									},
+								}).Reference()
+
+								vmRef := vimtypes.ManagedObjectReference{
+									Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+									Value: vm.Status.UniqueID,
+								}
+
+								reg.WithLock(
+									simCtx,
+									vmRef,
+									func() {
+										vm := reg.Get(vmRef).(*simulator.VirtualMachine)
+										vm.RecentTask = append(vm.RecentTask, taskRef)
+									})
+
 							})
+
+							AfterEach(func() {
+								reg.Remove(simCtx, taskRef)
+							})
+
 							It("should not change the power state", func() {
 								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrHasTask)).To(BeTrue())
 								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
 							})
 						})
 					})
+
 					When("suspendMode is hard", func() {
 						JustBeforeEach(func() {
 							vm.Spec.SuspendMode = vmopv1.VirtualMachinePowerOpModeHard
@@ -3895,15 +3963,49 @@ func vmTests() {
 								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
 							})
 						})
-						When("vm has task", func() {
+
+						When("vm has running task", func() {
+							var (
+								reg     *simulator.Registry
+								simCtx  *simulator.Context
+								taskRef vimtypes.ManagedObjectReference
+							)
+
 							JustBeforeEach(func() {
-								vm.Status.TaskID = "123"
+								simCtx = ctx.SimulatorContext()
+								reg = simCtx.Map
+								taskRef = reg.Put(&mo.Task{
+									Info: vimtypes.TaskInfo{
+										State:         vimtypes.TaskInfoStateRunning,
+										DescriptionId: "fake.task.3",
+									},
+								}).Reference()
+
+								vmRef := vimtypes.ManagedObjectReference{
+									Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+									Value: vm.Status.UniqueID,
+								}
+
+								reg.WithLock(
+									simCtx,
+									vmRef,
+									func() {
+										vm := reg.Get(vmRef).(*simulator.VirtualMachine)
+										vm.RecentTask = append(vm.RecentTask, taskRef)
+									})
+
 							})
+
+							AfterEach(func() {
+								reg.Remove(simCtx, taskRef)
+							})
+
 							It("should not change the power state", func() {
 								Expect(errors.Is(createOrUpdateVM(ctx, vmProvider, vm), vsphere.ErrHasTask)).To(BeTrue())
 								Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
 							})
 						})
+
 					})
 
 					When("there is a power on check annotation", func() {

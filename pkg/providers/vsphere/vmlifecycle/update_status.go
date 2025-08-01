@@ -19,7 +19,6 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vmdk"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,7 +34,7 @@ import (
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -895,17 +894,17 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 	}
 
 	if disksReqd > 0 {
-		vm.Status.Storage.Requested.Disks = BytesToResourceGiB(disksReqd)
+		vm.Status.Storage.Requested.Disks = kubeutil.BytesToResource(disksReqd)
 	}
 	if disksUsed > 0 {
-		vm.Status.Storage.Used.Disks = BytesToResourceGiB(disksUsed)
+		vm.Status.Storage.Used.Disks = kubeutil.BytesToResource(disksUsed)
 	}
 
 	if other > 0 {
-		vm.Status.Storage.Used.Other = BytesToResourceGiB(other)
+		vm.Status.Storage.Used.Other = kubeutil.BytesToResource(other)
 	}
 
-	vm.Status.Storage.Total = BytesToResourceGiB(disksReqd + other)
+	vm.Status.Storage.Total = kubeutil.BytesToResource(disksReqd + other)
 }
 
 func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
@@ -970,7 +969,7 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 			// The disk is already in the list of volume statuses, so update the
 			// existing status with the usage information.
 			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
-			vm.Status.Volumes[diskIndex].Used = BytesToResourceGiB(di.UniqueSize)
+			vm.Status.Volumes[diskIndex].Used = kubeutil.BytesToResource(di.UniqueSize)
 			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
 				vm.Status.Volumes[diskIndex].Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
 					ProviderID: di.CryptoKey.ProviderID,
@@ -987,9 +986,9 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 				Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
 				Attached:  true,
 				DiskUUID:  diskUUID,
-				Limit:     BytesToResourceGiB(di.CapacityInBytes),
-				Requested: BytesToResourceGiB(di.CapacityInBytes),
-				Used:      BytesToResourceGiB(di.UniqueSize),
+				Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
+				Requested: kubeutil.BytesToResource(di.CapacityInBytes),
+				Used:      kubeutil.BytesToResource(di.UniqueSize),
 			}
 			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
 				volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -1016,14 +1015,6 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 
 	// This sort order is consistent with the logic from the volumes controller.
 	vmopv1.SortVirtualMachineVolumeStatuses(vm.Status.Volumes)
-}
-
-const byteToGiB = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
-
-// BytesToResourceGiB returns the resource.Quantity GiB value for the specified
-// number of bytes.
-func BytesToResourceGiB(b int64) *resource.Quantity {
-	return ptr.To(resource.MustParse(fmt.Sprintf("%dGi", b/byteToGiB)))
 }
 
 type probeResult uint8

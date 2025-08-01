@@ -18,8 +18,8 @@ const (
 	// cached in a given location.
 	VirtualMachineImageCacheConditionFilesReady = "VirtualMachineImageCacheFilesReady"
 
-	// VirtualMachineImageCacheConditionOVFReady indicates the OVF is cached.
-	VirtualMachineImageCacheConditionOVFReady = "VirtualMachineImageCacheOVFReady"
+	// VirtualMachineImageCacheConditionHardwareReady indicates the hardware is cached.
+	VirtualMachineImageCacheConditionHardwareReady = "VirtualMachineImageCacheHardwareReady"
 )
 
 type VirtualMachineImageCacheLocationSpec struct {
@@ -47,10 +47,12 @@ type VirtualMachineImageCacheSpec struct {
 	// item.
 	ProviderID string `json:"providerID"`
 
+	// +optional
+
 	// ProviderVersion describes the version of the provider item to which the
 	// image corresponds.
 	// The provider is Content Library, the version is the content version.
-	ProviderVersion string `json:"providerVersion"`
+	ProviderVersion string `json:"providerVersion,omitempty"`
 
 	// +optional
 	// +listType=map

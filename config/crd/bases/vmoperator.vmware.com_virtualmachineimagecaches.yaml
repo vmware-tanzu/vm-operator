@@ -382,7 +382,6 @@ spec:
                 type: string
             required:
             - providerID
-            - providerVersion
             type: object
           status:
             description: |-

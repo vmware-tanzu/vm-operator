@@ -248,7 +248,8 @@ type VirtualMachineImageStatus struct {
 
 	// +optional
 	//
-	// Type describes the content library item type (OVF or ISO) of the image.
+	// Type describes the content library item type (OVF, ISO, or VM) of the
+	// image.
 	Type string `json:"type,omitempty"`
 }
 

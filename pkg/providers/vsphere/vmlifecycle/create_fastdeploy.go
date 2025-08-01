@@ -222,9 +222,7 @@ func fastDeploy(
 			fastDeployMode = pkgcfg.FromContext(vmCtx).FastDeployMode
 		}
 	}
-	logger.Info(
-		"Deploying OVF Library Item with Fast Deploy",
-		"mode", fastDeployMode)
+	logger.Info("Deploying VM with Fast Deploy", "mode", fastDeployMode)
 
 	if strings.EqualFold(fastDeployMode, pkgconst.FastDeployModeLinked) {
 		return fastDeployLinked(

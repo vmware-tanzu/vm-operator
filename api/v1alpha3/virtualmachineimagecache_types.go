@@ -18,8 +18,9 @@ const (
 	// cached in a given location.
 	VirtualMachineImageCacheConditionDisksReady = "VirtualMachineImageCacheDisksReady"
 
-	// VirtualMachineImageCacheConditionOVFReady indicates the OVF is cached.
-	VirtualMachineImageCacheConditionOVFReady = "VirtualMachineImageCacheOVFReady"
+	// VirtualMachineImageCacheConditionHardwareReady indicates the hardware is
+	// cached.
+	VirtualMachineImageCacheConditionHardwareReady = "VirtualMachineImageCacheHardwareReady"
 )
 
 type VirtualMachineImageCacheLocationSpec struct {

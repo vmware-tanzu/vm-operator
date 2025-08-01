@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -52,7 +53,7 @@ var _ = Describe(
 		const (
 			fakeString = "fake"
 
-			cndOVFReady = vmopv1.VirtualMachineImageCacheConditionOVFReady
+			cndHdwReady = vmopv1.VirtualMachineImageCacheConditionHardwareReady
 			cndFilReady = vmopv1.VirtualMachineImageCacheConditionFilesReady
 			cndPrvReady = vmopv1.VirtualMachineImageCacheConditionProviderReady
 			cndRdyReady = vmopv1.ReadyConditionType
@@ -77,6 +78,10 @@ var _ = Describe(
 			}
 		}
 
+		const (
+			vmName = "DC0_C0_RP0_VM1"
+		)
+
 		var (
 			ctx       context.Context
 			vcSimCtx  *builder.IntegrationTestContextForVCSim
@@ -84,8 +89,11 @@ var _ = Describe(
 			initEnvFn builder.InitVCSimEnvFn
 			nsInfo    builder.WorkloadNamespaceInfo
 
-			itemID      string
-			itemVersion string
+			itemIDOVF      string
+			itemVersionOVF string
+
+			itemIDVM      string
+			itemVersionVM string
 
 			faker fakeClient
 		)
@@ -110,13 +118,13 @@ var _ = Describe(
 			g.ExpectWithOffset(1, c.Status).To(Equal(metav1.ConditionFalse))
 		}
 
-		assertOVFConfigMap := func(g Gomega, key ctrlclient.ObjectKey) {
+		assertConfigMapOVF := func(g Gomega, key ctrlclient.ObjectKey) {
 			var obj corev1.ConfigMap
 			g.ExpectWithOffset(1, vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
 			g.ExpectWithOffset(1, obj.Data["value"]).To(MatchYAML(ovfEnvelopeYAML))
 		}
 
-		assertLocation := func(
+		assertLocationOVF := func(
 			g Gomega,
 			obj vmopv1.VirtualMachineImageCache,
 			locationIndex int) {
@@ -138,7 +146,7 @@ var _ = Describe(
 			dsName, err := ds.ObjectName(ctx)
 			g.ExpectWithOffset(1, err).ToNot(HaveOccurred())
 
-			itemCacheDir := clsutil.GetCacheDirForLibraryItem(
+			itemCacheDir := clsutil.GetCacheDirectory(
 				dsName,
 				obj.Name,
 				spec.ProfileID,
@@ -150,6 +158,51 @@ var _ = Describe(
 
 			nvramFileName := clsutil.GetCachedFileName(
 				"ttylinux-pc_i486-16.1-2.nvram") + ".nvram"
+			nvramFilePath := path.Join(itemCacheDir, nvramFileName)
+
+			g.ExpectWithOffset(1, status.Files).To(HaveLen(2))
+			g.ExpectWithOffset(1, status.Files[0].ID).To(Equal(vmdkFilePath))
+			g.ExpectWithOffset(1, status.Files[0].Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeDisk))
+			g.ExpectWithOffset(1, status.Files[0].DiskType).To(Equal(vmopv1.VirtualMachineStorageDiskTypeClassic))
+			g.ExpectWithOffset(1, status.Files[1].ID).To(Equal(nvramFilePath))
+			g.ExpectWithOffset(1, status.Files[1].Type).To(Equal(vmopv1.VirtualMachineImageCacheFileTypeOther))
+			g.ExpectWithOffset(1, status.Files[1].DiskType).To(BeEmpty())
+		}
+
+		assertLocationVM := func(
+			g Gomega,
+			obj vmopv1.VirtualMachineImageCache,
+			locationIndex int) {
+
+			var (
+				spec   = obj.Spec.Locations[locationIndex]
+				status = obj.Status.Locations[locationIndex]
+			)
+
+			g.ExpectWithOffset(1, status.DatacenterID).To(Equal(spec.DatacenterID))
+			g.ExpectWithOffset(1, status.DatastoreID).To(Equal(spec.DatastoreID))
+
+			ds := object.NewDatastore(
+				vcSimCtx.VCClient.Client,
+				vimtypes.ManagedObjectReference{
+					Type:  "Datastore",
+					Value: spec.DatastoreID,
+				})
+			dsName, err := ds.ObjectName(ctx)
+			g.ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+			itemCacheDir := clsutil.GetCacheDirectory(
+				dsName,
+				obj.Name,
+				spec.ProfileID,
+				obj.Spec.ProviderVersion)
+
+			vmdkFileName := clsutil.GetCachedFileName(
+				"disk1.vmdk") + ".vmdk"
+			vmdkFilePath := path.Join(itemCacheDir, vmdkFileName)
+
+			nvramFileName := clsutil.GetCachedFileName(
+				vmName+".nvram") + ".nvram"
 			nvramFilePath := path.Join(itemCacheDir, nvramFileName)
 
 			g.ExpectWithOffset(1, status.Files).To(HaveLen(2))
@@ -203,12 +256,24 @@ var _ = Describe(
 				vcSimCtx.BeforeEach()
 				ctx = vcSimCtx
 
-				// Get the library item ID and content version.
-				itemID = vcSimCtx.ContentLibraryItemID
+				// Get the info for the OVF-backed image.
+				itemIDOVF = vcSimCtx.ContentLibraryItemID
 				libMgr := library.NewManager(vcSimCtx.RestClient)
-				item, err := libMgr.GetLibraryItem(ctx, itemID)
+				item, err := libMgr.GetLibraryItem(ctx, itemIDOVF)
 				Expect(err).ToNot(HaveOccurred())
-				itemVersion = item.ContentVersion
+				itemVersionOVF = item.ContentVersion
+
+				// Get the info for the VM-backed image.
+				vms := vcSimCtx.SimulatorContext().Map.All(
+					string(vimtypes.ManagedObjectTypesVirtualMachine))
+				for i := range vms {
+					if vms[i].Entity().Name == vmName {
+						itemIDVM = vms[i].Reference().Value
+						break
+					}
+				}
+				Expect(itemIDVM).ToNot(BeEmpty())
+				itemVersionVM = ""
 
 				// Create one namespace for all the ordered tests.
 				nsInfo = vcSimCtx.CreateWorkloadNamespace()
@@ -230,7 +295,7 @@ var _ = Describe(
 
 			tableFn := func(
 				fn func() vmopv1.VirtualMachineImageCache,
-				expOVFRdy bool, expOVFMsg string,
+				expHdwRdy bool, expHdwMsg string,
 				expPrvRdy bool, expPrvMsg string,
 				expFilRdy bool, expDskMsg, expLocMsg string,
 				expRdyRdy bool, expRdyMsg string,
@@ -248,9 +313,9 @@ var _ = Describe(
 				}
 
 				conditionTypesAndExpVals := map[string]expCondResult{
-					cndOVFReady: {
-						ready: expOVFRdy,
-						msg:   expOVFMsg,
+					cndHdwReady: {
+						ready: expHdwRdy,
+						msg:   expHdwMsg,
 					},
 					cndPrvReady: {
 						ready: expPrvRdy,
@@ -270,6 +335,8 @@ var _ = Describe(
 					var obj vmopv1.VirtualMachineImageCache
 					g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
 
+					isOVF := !strings.HasPrefix(obj.Spec.ProviderID, "vm-")
+
 					for t, v := range conditionTypesAndExpVals {
 
 						switch {
@@ -279,17 +346,23 @@ var _ = Describe(
 							assertCondTrue(g, obj, t)
 
 							switch t {
-							case cndOVFReady:
-
-								// Verify the OVF is cached and ready.
-								assertOVFConfigMap(g, key)
+							case cndHdwReady:
+								if isOVF {
+									// Verify the OVF is cached and ready.
+									assertConfigMapOVF(g, key)
+								}
 
 							case cndFilReady:
 
 								// Verify the files are cached and ready.
 								g.Expect(obj.Status.Locations).To(HaveLen(1))
 								assertCondTrue(g, obj.Status.Locations[0], cndRdyReady)
-								assertLocation(g, obj, 0)
+
+								if isOVF {
+									assertLocationOVF(g, obj, 0)
+								} else {
+									assertLocationVM(g, obj, 0)
+								}
 
 							}
 
@@ -332,7 +405,7 @@ var _ = Describe(
 							"",
 							fakeString)
 					},
-					false, "", // OVFReady
+					false, "", // HardwareReady
 					false, "", // ProviderReady
 					false, "", "", // FilesReady
 					false, "spec.providerID is empty", // Ready
@@ -346,7 +419,7 @@ var _ = Describe(
 							fakeString,
 							"")
 					},
-					false, "", // OVFReady
+					false, "", // HardwareReady
 					false, "", // ProviderReady
 					false, "", "", // FilesReady
 					false, "spec.providerVersion is empty", // Ready
@@ -363,7 +436,7 @@ var _ = Describe(
 							fakeString,
 							fakeString)
 					},
-					false, "", // OVFReady
+					false, "", // HardwareReady
 					false, "", // ProviderReady
 					false, "", "", // FilesReady
 					false, "failed to get vSphere client: fubar", // Ready
@@ -377,52 +450,90 @@ var _ = Describe(
 							fakeString,
 							fakeString)
 					},
-					false, "failed to create or patch ovf configmap: failed to retrieve ovf envelope:", // OVFReady
+					false, "failed to create or patch ovf configmap: failed to retrieve ovf envelope:", // HardwareReady
 					false, "", // ProviderReady
 					false, "", "", // FilesReady
 					false, "0 of 1 completed", // Ready
 				),
 
 				Entry(
-					"library item exists and location has invalid datacenter ID",
+					"library item (OVF) exists and location has invalid datacenter ID",
 					func() vmopv1.VirtualMachineImageCache {
 						return getVMICacheObj(
 							nsInfo.Namespace,
-							itemID,
-							itemVersion,
+							itemIDOVF,
+							itemVersionOVF,
 							vmopv1.VirtualMachineImageCacheLocationSpec{
 								DatacenterID: fakeString,
 								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
 								ProfileID:    vcSimCtx.StorageProfileID,
 							})
 					},
-					true, "", // OVFReady
+					true, "", // HardwareReady
 					true, "", // ProviderReady
 					false, "invalid datacenter ID: "+fakeString, "", // FilesReady
 					false, "2 of 3 completed", // Ready
 				),
 
 				Entry(
-					"library item exists and location has invalid datastore ID",
+					"library item (VM) exists and location has invalid datacenter ID",
 					func() vmopv1.VirtualMachineImageCache {
 						return getVMICacheObj(
 							nsInfo.Namespace,
-							itemID,
-							itemVersion,
+							itemIDVM,
+							itemVersionVM,
+							vmopv1.VirtualMachineImageCacheLocationSpec{
+								DatacenterID: fakeString,
+								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+								ProfileID:    vcSimCtx.StorageProfileID,
+							})
+					},
+					true, "", // HardwareReady
+					true, "", // ProviderReady
+					false, "invalid datacenter ID: "+fakeString, "", // FilesReady
+					false, "2 of 3 completed", // Ready
+				),
+
+				Entry(
+					"library item (OVF) exists and location has invalid datastore ID",
+					func() vmopv1.VirtualMachineImageCache {
+						return getVMICacheObj(
+							nsInfo.Namespace,
+							itemIDOVF,
+							itemVersionOVF,
 							vmopv1.VirtualMachineImageCacheLocationSpec{
 								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
 								DatastoreID:  fakeString,
 								ProfileID:    vcSimCtx.StorageProfileID,
 							})
 					},
-					true, "", // OVFReady
+					true, "", // HardwareReady
 					true, "", // ProviderReady
 					false, "invalid datastore ID: "+fakeString, "", // FilesReady
 					false, "2 of 3 completed", // Ready
 				),
 
 				Entry(
-					"cannot cache storage uris",
+					"library item (VM) exists and location has invalid datastore ID",
+					func() vmopv1.VirtualMachineImageCache {
+						return getVMICacheObj(
+							nsInfo.Namespace,
+							itemIDVM,
+							itemVersionVM,
+							vmopv1.VirtualMachineImageCacheLocationSpec{
+								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+								DatastoreID:  fakeString,
+								ProfileID:    vcSimCtx.StorageProfileID,
+							})
+					},
+					true, "", // HardwareReady
+					true, "", // ProviderReady
+					false, "invalid datastore ID: "+fakeString, "", // FilesReady
+					false, "2 of 3 completed", // Ready
+				),
+
+				Entry(
+					"library item (OVF) cannot cache storage uris",
 					func() vmopv1.VirtualMachineImageCache {
 
 						faker.fakeSRIClient = true
@@ -436,15 +547,44 @@ var _ = Describe(
 
 						return getVMICacheObj(
 							nsInfo.Namespace,
-							itemID,
-							itemVersion,
+							itemIDOVF,
+							itemVersionOVF,
 							vmopv1.VirtualMachineImageCacheLocationSpec{
 								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
 								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
 								ProfileID:    vcSimCtx.StorageProfileID,
 							})
 					},
-					true, "", // OVFReady
+					true, "", // HardwareReady
+					true, "", // ProviderReady
+					false, "0 of 1 completed", "failed to cache storage items: failed to check if file exists: query file error", // FilesReady
+					false, "2 of 3 completed", // Ready
+				),
+
+				Entry(
+					"library item (VM) cannot cache storage uris",
+					func() vmopv1.VirtualMachineImageCache {
+
+						faker.fakeSRIClient = true
+						faker.datastoreFileExistsFn = func(
+							context.Context,
+							string,
+							*object.Datacenter) error {
+
+							return errors.New("query file error")
+						}
+
+						return getVMICacheObj(
+							nsInfo.Namespace,
+							itemIDVM,
+							itemVersionVM,
+							vmopv1.VirtualMachineImageCacheLocationSpec{
+								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+								ProfileID:    vcSimCtx.StorageProfileID,
+							})
+					},
+					true, "", // HardwareReady
 					true, "", // ProviderReady
 					false, "0 of 1 completed", "failed to cache storage items: failed to check if file exists: query file error", // FilesReady
 					false, "2 of 3 completed", // Ready
@@ -455,30 +595,60 @@ var _ = Describe(
 				tableFn,
 
 				Entry(
-					"no cache locations",
+					"library item (OVF) with no cache locations",
 					func() vmopv1.VirtualMachineImageCache {
-						return getVMICacheObj(nsInfo.Namespace, itemID, itemVersion)
+						return getVMICacheObj(nsInfo.Namespace, itemIDOVF, itemVersionOVF)
 					},
-					true, "", // OVFReady
+					true, "", // HardwareReady
 					false, "", // ProviderReady
 					false, "", "", // FilesReady
 					true, "", // Ready
 				),
 
 				Entry(
-					"a single cache location",
+					"library item (VM) with no cache locations",
+					func() vmopv1.VirtualMachineImageCache {
+						return getVMICacheObj(nsInfo.Namespace, itemIDVM, itemVersionVM)
+					},
+					true, "", // HardwareReady
+					false, "", // ProviderReady
+					false, "", "", // FilesReady
+					true, "", // Ready
+				),
+
+				Entry(
+					"library item (OVF) with a single cache location",
 					func() vmopv1.VirtualMachineImageCache {
 						return getVMICacheObj(
 							nsInfo.Namespace,
-							itemID,
-							itemVersion,
+							itemIDOVF,
+							itemVersionOVF,
 							vmopv1.VirtualMachineImageCacheLocationSpec{
 								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
 								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
 								ProfileID:    vcSimCtx.StorageProfileID,
 							})
 					},
-					true, "", // OVFReady
+					true, "", // HardwareReady
+					true, "", // ProviderReady
+					true, "", "", // FilesReady
+					true, "", // Ready
+				),
+
+				Entry(
+					"library item (VM) with a single cache location",
+					func() vmopv1.VirtualMachineImageCache {
+						return getVMICacheObj(
+							nsInfo.Namespace,
+							itemIDVM,
+							itemVersionVM,
+							vmopv1.VirtualMachineImageCacheLocationSpec{
+								DatacenterID: vcSimCtx.Datacenter.Reference().Value,
+								DatastoreID:  vcSimCtx.Datastore.Reference().Value,
+								ProfileID:    vcSimCtx.StorageProfileID,
+							})
+					},
+					true, "", // HardwareReady
 					true, "", // ProviderReady
 					true, "", "", // FilesReady
 					true, "", // Ready

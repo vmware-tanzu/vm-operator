@@ -1177,8 +1177,9 @@ spec:
                   corresponding Content Library item.
                 type: string
               type:
-                description: Type describes the content library item type (OVF or
-                  ISO) of the image.
+                description: |-
+                  Type describes the content library item type (OVF, ISO, or VM) of the
+                  image.
                 type: string
               vmwareSystemProperties:
                 description: |-

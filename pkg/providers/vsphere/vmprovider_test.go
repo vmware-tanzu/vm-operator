@@ -225,7 +225,7 @@ var _ = Describe("SyncVirtualMachineImage", func() {
 						},
 						Conditions: []metav1.Condition{
 							{
-								Type:   vmopv1.VirtualMachineImageCacheConditionOVFReady,
+								Type:   vmopv1.VirtualMachineImageCacheConditionHardwareReady,
 								Status: metav1.ConditionTrue,
 							},
 						},
@@ -285,7 +285,7 @@ var _ = Describe("SyncVirtualMachineImage", func() {
 					vmic.Status.Conditions[0].Message = "fubar"
 				})
 				It("should return an error", func() {
-					Expect(err).To(MatchError("failed to get ovf: fubar: cache not ready"))
+					Expect(err).To(MatchError("failed to get hardware: fubar: cache not ready"))
 				})
 			})
 

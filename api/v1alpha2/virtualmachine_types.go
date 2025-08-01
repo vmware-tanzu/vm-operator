@@ -232,6 +232,11 @@ type VirtualMachineSpec struct {
 	// +optional
 	ClassName string `json:"className,omitempty"`
 
+	// +optional
+
+	// Affinity describes the VM's scheduling constraints.
+	Affinity *VirtualMachineAffinitySpec `json:"affinity,omitempty"`
+
 	// StorageClass describes the name of a Kubernetes StorageClass resource
 	// used to configure this VM's storage-related attributes.
 	//

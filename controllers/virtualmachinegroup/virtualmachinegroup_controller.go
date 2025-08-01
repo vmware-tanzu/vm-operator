@@ -350,7 +350,10 @@ func (r *Reconciler) reconcileMember(
 		obj = &vmopv1.VirtualMachineGroup{}
 	}
 
-	logger := ctx.Logger.WithValues("kind", member.Kind, "name", member.Name)
+	logger := ctx.Logger.WithValues(
+		"memberKind", member.Kind,
+		"memberName", member.Name,
+	)
 
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: ctx.VMGroup.Namespace,
@@ -414,45 +417,56 @@ func (r *Reconciler) reconcileMember(
 		return err
 	}
 
-	if ctx.VMGroup.Spec.PowerState == "" {
-		conditions.Delete(
-			ms,
-			vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
-		)
-		goto patchMember
-	}
+	if member.Kind == vmKind {
+		vmStatusPowerState := obj.GetPowerState()
 
-	if member.Kind == vmKind &&
-		obj.GetPowerState() == ctx.VMGroup.Spec.PowerState {
-		conditions.MarkTrue(
-			ms,
-			vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
-		)
-		goto patchMember
+		if vmStatusPowerState == "" {
+			ms.PowerState = nil
+		} else {
+			ms.PowerState = &vmStatusPowerState
+		}
+
+		if ctx.VMGroup.Spec.PowerState == "" {
+			conditions.Delete(
+				ms,
+				vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
+			)
+			goto patchMember
+		}
+
+		if vmStatusPowerState == ctx.VMGroup.Spec.PowerState {
+			conditions.MarkTrue(
+				ms,
+				vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
+			)
+			goto patchMember
+		}
+
+		vm := obj.(*vmopv1.VirtualMachine)
+		vmSpecMatchGroup := vm.Spec.PowerState == ctx.VMGroup.Spec.PowerState
+		if updatePowerState || vmSpecMatchGroup {
+			// VM power state is syncing with group or pending status update.
+			conditions.MarkFalse(
+				ms,
+				vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
+				"Pending",
+				"",
+			)
+		} else {
+			// VM power state was changed directly outside the group.
+			conditions.MarkFalse(
+				ms,
+				vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
+				"NotSynced",
+				"",
+			)
+		}
 	}
 
 	if updatePowerState {
-		// Member is not synced with the group's power state being updated.
-		// Mark the power state synced status condition as false. After it's
-		// updated, it will trigger a new reconciliation of the parent group to
-		// update this member's condition accordingly again.
-		conditions.MarkFalse(
-			ms,
-			vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
-			"Pending",
-			"",
-		)
+		// Update power state specs for both member types (VMs and VM Groups).
 		updateMemberPowerState(*ctx.VMGroup, obj, applyPowerOnTime)
-		goto patchMember
 	}
-
-	// Member's power state has been updated outside the group.
-	conditions.MarkFalse(
-		ms,
-		vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
-		"NotSynced",
-		"",
-	)
 
 patchMember:
 	if err := r.Patch(ctx, obj, patch); err != nil {

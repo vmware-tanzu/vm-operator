@@ -37,6 +37,7 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	vmconfanno2extraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/anno2extraconfig"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 )
@@ -1094,6 +1095,25 @@ func reconcileDiskPromo(
 		configSpec)
 }
 
+func reconcileAnnotationsToExtraConfig(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkgutil.FromContextOrDefault(ctx).V(4).Info("Reconciling annotations-to-extraConfig")
+
+	return vmconfanno2extraconfig.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
 func (s *Session) reconcileChangeTracking(
 	vmCtx pkgctx.VirtualMachineContext,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
@@ -1156,6 +1176,17 @@ func doReconfigure(
 
 			return err
 		}
+	}
+
+	if err := reconcileAnnotationsToExtraConfig(
+		ctx,
+		k8sClient,
+		vm,
+		vcVM,
+		moVM,
+		&configSpec); err != nil {
+
+		return err
 	}
 
 	var defaultConfigSpec vimtypes.VirtualMachineConfigSpec

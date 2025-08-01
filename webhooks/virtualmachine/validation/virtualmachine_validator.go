@@ -44,6 +44,7 @@ import (
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/anno2extraconfig"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -1554,6 +1555,12 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 
 	if vm.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] != oldVM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ApplyPowerStateTimeAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	for k := range anno2extraconfig.AnnotationsToExtraConfigKeys {
+		if vm.Annotations[k] != oldVM.Annotations[k] {
+			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(k), modifyAnnotationNotAllowedForNonAdmin))
+		}
 	}
 
 	// The following annotations will be added by the mutation webhook upon VM creation.

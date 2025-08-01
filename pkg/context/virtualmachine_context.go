@@ -15,6 +15,14 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 )
 
+type vmContextKey uint8
+
+const (
+	// vmRecentTasksContextKey is the context key for
+	// setting/getting a []vimtypes.RecentTask slice from a context.
+	vmRecentTasksContextKey vmContextKey = iota
+)
+
 // VirtualMachineContext is the context used for VirtualMachineControllers.
 type VirtualMachineContext struct {
 	context.Context
@@ -44,4 +52,34 @@ func (v VirtualMachineContext) IsOnToOff() bool {
 	}
 	return v.MoVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOn &&
 		v.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff
+}
+
+func HasVMRunningTask(ctx context.Context) bool {
+	for _, t := range GetVMRecentTasks(ctx) {
+		if t.State == vimtypes.TaskInfoStateRunning {
+			return true
+		}
+	}
+	return false
+}
+
+func GetVMRecentTasks(ctx context.Context) []vimtypes.TaskInfo {
+	obj := ctx.Value(vmRecentTasksContextKey)
+	if obj == nil {
+		return nil
+	}
+
+	rt, ok := obj.([]vimtypes.TaskInfo)
+	if !ok {
+		return nil
+	}
+
+	return rt
+}
+
+func WithVMRecentTasks(
+	parent context.Context,
+	taskInfo []vimtypes.TaskInfo) context.Context {
+
+	return context.WithValue(parent, vmRecentTasksContextKey, taskInfo)
 }

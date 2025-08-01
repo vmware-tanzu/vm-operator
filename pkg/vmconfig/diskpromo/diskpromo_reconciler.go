@@ -8,9 +8,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -18,6 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
@@ -32,8 +31,9 @@ var _ vmconfig.Reconciler = reconciler{}
 const (
 	ReasonTaskError = "DiskPromotionTaskError"
 	ReasonPending   = "DiskPromotionPending"
+	ReasonRunning   = "DiskPromotionRunning"
 
-	promoteDisksTaskKey = "VirtualMachine.promoteDisks"
+	PromoteDisksTaskKey = "VirtualMachine.promoteDisks"
 )
 
 // New returns a new Reconciler for a VM's disk promotion state.
@@ -95,64 +95,49 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	var (
+		runningTaskInfo []vimtypes.TaskInfo
+		logger          = pkgutil.FromContextOrDefault(ctx)
+	)
 
-	if vm.Status.TaskID != "" {
-		ref := vimtypes.ManagedObjectReference{
-			Type:  "Task",
-			Value: vm.Status.TaskID,
-		}
+	// Check if the VM has any outstanding tasks.
+	for _, t := range pkgctx.GetVMRecentTasks(ctx) {
 
-		var task mo.Task
-		pc := property.DefaultCollector(vimClient)
-
-		if err := pc.RetrieveOne(ctx, ref, []string{"info"}, &task); err != nil {
-			if fault.Is(err, &vimtypes.ManagedObjectNotFound{}) {
-				// Tasks go away after 10m of completion
-				vm.Status.TaskID = ""
+		// If there is a task that is already running then do not promote the
+		// disks right now.
+		if t.State == vimtypes.TaskInfoStateRunning {
+			if t.DescriptionId == PromoteDisksTaskKey {
+				pkgcond.MarkFalse(
+					vm,
+					vmopv1.VirtualMachineDiskPromotionSynced,
+					ReasonRunning,
+					"%s",
+					"Promotion is running")
+				return nil
 			}
-			return err
-		}
 
-		logger.Info("Pending task",
-			"ID", vm.Status.TaskID,
-			"description", task.Info.DescriptionId,
-			"state", task.Info.State)
+			runningTaskInfo = append(runningTaskInfo, t)
+		} else if t.DescriptionId == PromoteDisksTaskKey {
 
-		// From the API doc:
-		//   An identifier for this operation. This includes publicly visible internal tasks and
-		//   is a lookup in the TaskDescription methodInfo data object.
-		// See also:
-		//   govc collect -s -json TaskManager:TaskManager description.methodInfo | \
-		//     jq '.[] | select(.key == "VirtualMachine.promoteDisks") | .'
+			// If the task is an online promote disk task, then check if it is
+			// completed or in error.
+			switch t.State {
 
-		if task.Info.DescriptionId != promoteDisksTaskKey {
-			return nil
-		}
+			case vimtypes.TaskInfoStateError:
+				pkgcond.MarkFalse(
+					vm,
+					vmopv1.VirtualMachineDiskPromotionSynced,
+					ReasonTaskError,
+					"%s",
+					t.Error.LocalizedMessage)
+				return nil
 
-		switch task.Info.State {
-		case vimtypes.TaskInfoStateSuccess:
-			vm.Status.TaskID = ""
-
-			pkgcond.MarkTrue(
-				vm,
-				vmopv1.VirtualMachineDiskPromotionSynced)
-
-			return nil
-		case vimtypes.TaskInfoStateError:
-			vm.Status.TaskID = ""
-
-			pkgcond.MarkFalse(
-				vm,
-				vmopv1.VirtualMachineDiskPromotionSynced,
-				ReasonTaskError,
-				"%s",
-				task.Info.Error.LocalizedMessage)
-
-			return nil
-		default:
-			// Skip VMs with outstanding tasks.
-			return nil
+			case vimtypes.TaskInfoStateSuccess:
+				pkgcond.MarkTrue(
+					vm,
+					vmopv1.VirtualMachineDiskPromotionSynced)
+				return nil
+			}
 		}
 	}
 
@@ -187,8 +172,11 @@ func (r reconciler) Reconcile(
 	// not participating in snapshots.
 	for i := range allDisks {
 		d := allDisks[i].(*vimtypes.VirtualDisk)
-		if _, ok := snapshotDiskKeys[d.Key]; !ok {
-			if d.VDiskId == nil { // Skip FCDs
+
+		if d.VDiskId == nil { // Skip FCDs.
+
+			if _, ok := snapshotDiskKeys[d.Key]; !ok { // Skip snapshots.
+
 				switch tBack := d.Backing.(type) {
 				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
 					if tBack.Parent != nil {
@@ -218,6 +206,20 @@ func (r reconciler) Reconcile(
 	}
 
 	logger.V(4).Info("Checking if disks can be promoted")
+
+	if len(runningTaskInfo) > 0 {
+		for _, t := range runningTaskInfo {
+			logger.V(4).Info("Skipping disk promotion for VM with running task",
+				"taskRef", t.Task.Value,
+				"taskDescriptionID", t.DescriptionId)
+		}
+		pkgcond.MarkFalse(
+			vm,
+			vmopv1.VirtualMachineDiskPromotionSynced,
+			ReasonPending,
+			"Cannot promote disks when VM has running task")
+		return nil
+	}
 
 	switch vm.Spec.PromoteDisksMode {
 	case vmopv1.VirtualMachinePromoteDisksModeOnline:
@@ -287,10 +289,8 @@ func (r reconciler) Reconcile(
 		return fmt.Errorf("failed to call promote disks task: %w", err)
 	}
 
-	// Track the task ID.
-	vm.Status.TaskID = task.Reference().Value
-	logger.V(4).Info("Disk promotion task created",
-		"taskID", task.Reference().Value)
+	logger.Info("Disk promotion task created",
+		"taskRef", task.Reference().Value)
 
 	return ErrPromoteDisks
 }

@@ -3916,7 +3916,6 @@ func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
 	} else {
 		out.Storage = nil
 	}
-	// WARNING: in.TaskID requires manual conversion: does not exist in peer-type
 	// WARNING: in.CurrentSnapshot requires manual conversion: does not exist in peer-type
 	// WARNING: in.RootSnapshots requires manual conversion: does not exist in peer-type
 	return nil

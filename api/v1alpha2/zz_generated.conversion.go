@@ -3334,7 +3334,6 @@ func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
 	out.HardwareVersion = in.HardwareVersion
 	// WARNING: in.Storage requires manual conversion: does not exist in peer-type
-	// WARNING: in.TaskID requires manual conversion: does not exist in peer-type
 	// WARNING: in.CurrentSnapshot requires manual conversion: does not exist in peer-type
 	// WARNING: in.RootSnapshots requires manual conversion: does not exist in peer-type
 	return nil

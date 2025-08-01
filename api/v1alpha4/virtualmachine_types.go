@@ -1236,12 +1236,6 @@ type VirtualMachineStatus struct {
 
 	// +optional
 
-	// TaskID describes the observed ID of the task created by VM Operator to
-	// perform some long-running operation on the VM.
-	TaskID string `json:"taskID,omitempty"`
-
-	// +optional
-
 	// CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
 	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
 

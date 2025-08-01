@@ -29,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -72,6 +73,13 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 		ctx = vcsimCtx
 		ctx = r.WithContext(ctx)
 		ctx = vmconfig.WithContext(ctx)
+
+		ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+			{
+				State:         vimtypes.TaskInfoStateSuccess,
+				DescriptionId: "fake.task.0",
+			},
+		})
 
 		vimClient = vcsimCtx.VCClient.Client
 		cryptoManager = crypto.NewManagerKmip(vimClient)
@@ -670,7 +678,7 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							Expect(c.Reason).To(Equal(pkgcrypto.ReasonNoDefaultKeyProvider.String()))
 						})
 
-						When("vm has task", func() {
+						When("vm has running task", func() {
 							BeforeEach(func() {
 								moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
 									&vimtypes.VirtualDisk{
@@ -681,8 +689,14 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 										},
 									},
 								}
-								vm.Status.TaskID = "123"
+								ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+									{
+										State:         vimtypes.TaskInfoStateRunning,
+										DescriptionId: "fake.task.1",
+									},
+								})
 							})
+
 							It("should update the status without returning an error", func() {
 								Expect(err).ToNot(HaveOccurred())
 								Expect(vm.Status.Crypto).ToNot(BeNil())

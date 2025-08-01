@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/pbm"
@@ -752,6 +753,7 @@ var VMUpdatePropertiesSelector = []string{
 	"config",
 	"guest",
 	"layoutEx",
+	"recentTask",
 	"resourcePool",
 	"runtime",
 	"snapshot",
@@ -793,6 +795,15 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 		return fmt.Errorf("failed to fetch vm properties: %w", err)
 	}
+
+	//
+	// Get the recent tasks.
+	//
+	ctxWithRecentTaskInfo, err := vs.getRecentTaskInfo(vmCtx, vcClient)
+	if err != nil {
+		return fmt.Errorf("failed to fetch recent tasks: %w", err)
+	}
+	vmCtx.Context = ctxWithRecentTaskInfo
 
 	//
 	// Reconcile a snapshot restore operation.
@@ -905,6 +916,38 @@ func (vs *vSphereVMProvider) reconcileStatus(
 		vmlifecycle.ReconcileStatusData{
 			NetworkDeviceKeysToSpecIdx: networkDeviceKeysToSpecIdx,
 		})
+}
+
+func (vs *vSphereVMProvider) getRecentTaskInfo(
+	ctx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client) (context.Context, error) {
+
+	pc := property.DefaultCollector(vcClient.VimClient())
+
+	// Check if the VM has any recent tasks.
+	var rt []vimtypes.TaskInfo
+	for _, taskRef := range ctx.MoVM.RecentTask {
+		var t mo.Task
+		if err := pc.RetrieveOne(
+			ctx,
+			taskRef,
+			[]string{"info"},
+			&t); err != nil {
+
+			// Tasks go away after 10m of completion.
+			if !fault.Is(err, &vimtypes.ManagedObjectNotFound{}) {
+				return nil, fmt.Errorf("failed to retrieve task info: %w", err)
+			}
+		} else {
+			rt = append(rt, t.Info)
+		}
+	}
+
+	if len(rt) > 0 {
+		return pkgctx.WithVMRecentTasks(ctx.Context, rt), nil
+	}
+
+	return ctx.Context, nil
 }
 
 func (vs *vSphereVMProvider) reconcileSchemaUpgrade(
@@ -1050,7 +1093,7 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	if isVMPaused(vmCtx) {
 		return ErrIsPaused
 	}
-	if vmCtx.VM.Status.TaskID != "" {
+	if pkgctx.HasVMRunningTask(vmCtx) {
 		return ErrHasTask
 	}
 

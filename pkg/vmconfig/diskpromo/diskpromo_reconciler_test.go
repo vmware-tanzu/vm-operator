@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -23,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
@@ -54,13 +56,11 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 		withFuncs  interceptor.Funcs
 		configSpec *vimtypes.VirtualMachineConfigSpec
 
-		// Used for testing that only tasks with promoteDisksTaskKey are reconciled
-		createDiskTask string
-
 		moVMProps = []string{
 			"config",
 			"guest",
 			"layoutEx",
+			"recentTask",
 			"runtime",
 			"summary",
 		}
@@ -92,7 +92,6 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(task.Wait(ctx)).NotTo(HaveOccurred())
-		createDiskTask = task.Reference().Value
 
 		device, err := vcVM.Device(ctx)
 		Expect(err).NotTo(HaveOccurred())
@@ -186,6 +185,27 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 
 	})
 
+	getPromoTaskRef := func() *vimtypes.ManagedObjectReference {
+		ExpectWithOffset(1, vcVM.Properties(ctx, vcVM.Reference(), moVMProps, &moVM)).To(Succeed())
+		pc := property.DefaultCollector(vimClient)
+		for i := range moVM.RecentTask {
+			taskRef := moVM.RecentTask[i]
+			var moT mo.Task
+			ExpectWithOffset(1, pc.RetrieveOne(ctx, taskRef, []string{"info"}, &moT)).To(Succeed())
+			if moT.Info.DescriptionId == diskpromo.PromoteDisksTaskKey {
+				return &taskRef
+			}
+		}
+		return nil
+	}
+
+	getPromoTaskInfo := func(g Gomega, ref vimtypes.ManagedObjectReference) vimtypes.TaskInfo {
+		pc := property.DefaultCollector(vimClient)
+		var moT mo.Task
+		g.ExpectWithOffset(1, pc.RetrieveOne(ctx, ref, []string{"info"}, &moT)).To(Succeed())
+		return moT.Info
+	}
+
 	When("it should not panic", func() {
 		var (
 			err error
@@ -246,21 +266,29 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					It("should promote disks", func() {
 						Expect(err).To(HaveOccurred())
 						Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
-						Expect(vm.Status.TaskID).ToNot(BeEmpty())
+
+						promoRef := getPromoTaskRef()
+						Expect(promoRef).ToNot(BeNil())
 
 						// Simulator promoteDisks will delay the task based on
 						// disk capacity, so we need > 1 Reconcile here.
 						Eventually(func(g Gomega) {
-							err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
-							g.Expect(err).ToNot(HaveOccurred())
-							g.Expect(vm.Status.TaskID).To(BeEmpty())
+							g.Expect(r.Reconcile(
+								pkgctx.WithVMRecentTasks(
+									ctx, []vimtypes.TaskInfo{
+										getPromoTaskInfo(g, *promoRef),
+									}),
+								k8sClient,
+								vimClient,
+								vm,
+								moVM,
+								configSpec)).ToNot(HaveOccurred())
 							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 							g.Expect(c).ToNot(BeNil())
 							g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
 						}).Should(Succeed(), "waiting for promoteDisks task to complete")
 
-						// VM should not have any child disks after disk
-						// promotion.
+						// VM should not have any child disks after disk promo.
 						device, err := vcVM.Device(ctx)
 						Expect(err).NotTo(HaveOccurred())
 						for _, d := range device.SelectByType(&vimtypes.VirtualDisk{}) {
@@ -270,28 +298,34 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 							Expect(b.Parent).To(BeNil())
 						}
 
-						// Expect no task when no child disks.
+						// Expect no promote when no child disks.
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), moVMProps, &moVM)).To(Succeed())
 						moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
 						moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
-
-						err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(vm.Status.TaskID).To(BeEmpty())
+						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
 					})
 
 					When("VM has a snapshot after disks were promoted", func() {
 						It("should not mark the disk promotion synced as false since disks with snapshots are ignored", func() {
 							Expect(err).To(HaveOccurred())
 							Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
-							Expect(vm.Status.TaskID).ToNot(BeEmpty())
 
-							// Simulator promoteDisks will delay the task based
-							// on disk capacity, so we need > 1 Reconcile here.
+							promoRef := getPromoTaskRef()
+							Expect(promoRef).ToNot(BeNil())
+
+							// Simulator promoteDisks will delay the task based on
+							// disk capacity, so we need > 1 Reconcile here.
 							Eventually(func(g Gomega) {
-								err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
-								g.Expect(err).ToNot(HaveOccurred())
-								g.Expect(vm.Status.TaskID).To(BeEmpty())
+								g.Expect(r.Reconcile(
+									pkgctx.WithVMRecentTasks(
+										ctx, []vimtypes.TaskInfo{
+											getPromoTaskInfo(g, *promoRef),
+										}),
+									k8sClient,
+									vimClient,
+									vm,
+									moVM,
+									configSpec)).ToNot(HaveOccurred())
 								c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 								g.Expect(c).ToNot(BeNil())
 								g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
@@ -332,7 +366,6 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 							// snapshots.
 							err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 							Expect(err).ToNot(HaveOccurred())
-							Expect(vm.Status.TaskID).To(BeEmpty())
 
 							// Expect the disk promotion condition to still be
 							// true.
@@ -386,14 +419,23 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 							It("should promote the disks", func() {
 								Expect(err).To(HaveOccurred())
 								Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
-								Expect(vm.Status.TaskID).ToNot(BeEmpty())
 
-								// Simulator promoteDisks will delay the task based
-								// on disk capacity, so we need > 1 Reconcile here.
+								promoRef := getPromoTaskRef()
+								Expect(promoRef).ToNot(BeNil())
+
+								// Simulator promoteDisks will delay the task based on
+								// disk capacity, so we need > 1 Reconcile here.
 								Eventually(func(g Gomega) {
-									err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
-									g.Expect(err).ToNot(HaveOccurred())
-									g.Expect(vm.Status.TaskID).To(BeEmpty())
+									g.Expect(r.Reconcile(
+										pkgctx.WithVMRecentTasks(
+											ctx, []vimtypes.TaskInfo{
+												getPromoTaskInfo(g, *promoRef),
+											}),
+										k8sClient,
+										vimClient,
+										vm,
+										moVM,
+										configSpec)).ToNot(HaveOccurred())
 									c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 									g.Expect(c).ToNot(BeNil())
 									g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
@@ -414,26 +456,22 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					})
 				})
 
-				When("status.task is not promoteDisks", func() {
+				When("there is already a task running", func() {
 					BeforeEach(func() {
-						vm.Status.TaskID = createDiskTask
+						ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+							{
+								State:         vimtypes.TaskInfoStateRunning,
+								DescriptionId: "fake.task.1",
+							},
+						})
 					})
 					It("should not fail", func() {
 						Expect(err).ToNot(HaveOccurred())
 						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
-						Expect(c).To(BeNil())
-					})
-				})
-
-				When("status.task is not found", func() {
-					BeforeEach(func() {
-						vm.Status.TaskID = "task-invalid"
-					})
-					It("should fail and clear taskID", func() {
-						Expect(err).To(HaveOccurred())
-						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
-						Expect(c).To(BeNil())
-						Expect(vm.Status.TaskID).To(BeEmpty())
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+						Expect(c.Message).To(Equal("Cannot promote disks when VM has running task"))
 					})
 				})
 
@@ -469,11 +507,21 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					It("should fail the task", func() {
 						Expect(err).To(HaveOccurred())
 						Expect(err).To(Equal(diskpromo.ErrPromoteDisks))
-						Expect(vm.Status.TaskID).ToNot(BeEmpty())
 
-						err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+						promoRef := getPromoTaskRef()
+						Expect(promoRef).ToNot(BeNil())
+
+						err = r.Reconcile(
+							pkgctx.WithVMRecentTasks(
+								ctx, []vimtypes.TaskInfo{
+									getPromoTaskInfo(Default, *promoRef),
+								}),
+							k8sClient,
+							vimClient,
+							vm,
+							moVM,
+							configSpec)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(vm.Status.TaskID).To(BeEmpty())
 						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 						Expect(c).ToNot(BeNil())
 						Expect(c.Status).To(Equal(metav1.ConditionFalse))
@@ -494,7 +542,6 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 
 				It("should not sync", func() {
 					Expect(err).ToNot(HaveOccurred())
-					Expect(vm.Status.TaskID).To(BeEmpty())
 
 					c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 					Expect(c).ToNot(BeNil())

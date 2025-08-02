@@ -11,6 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2/textlogger"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -76,6 +78,7 @@ func intgTestsReconcileDelete() {
 			)))
 
 		ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
+		ctx = cource.WithContext(ctx)
 		vcSimCtx = builder.NewIntegrationTestContextForVCSim(
 			ctx,
 			builder.VCSimTestConfig{},
@@ -161,6 +164,32 @@ func intgTestsReconcileDelete() {
 						provider.Lock()
 						provider.DeleteSnapshotFn = func(_ context.Context, _ *vmopv1.VirtualMachineSnapshot, _ *vmopv1.VirtualMachine, _ bool, _ *bool) (bool, error) {
 							return false, errors.New("fubar")
+						}
+						provider.Unlock()
+					})
+					It("snapshot is not deleted and VM is not updated", func() {
+						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+						Consistently(func(g Gomega) {
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
+						}).Should(Succeed())
+						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+						Consistently(func(g Gomega) {
+							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
+							g.Expect(vmObj).ToNot(BeNil())
+							g.Expect(vmObj.Spec.CurrentSnapshot).To(Not(BeNil()))
+							g.Expect(*vmObj.Spec.CurrentSnapshot).To(Equal(*newLocalObjectRefWithSnapshotName(vmSnapshot.Name)))
+						}).Should(Succeed())
+					})
+				})
+			})
+
+			When("Calling GetParentSnapshot to VC", func() {
+				When("VC error", func() {
+					BeforeEach(func() {
+						provider.Lock()
+						provider.GetParentSnapshotFn = func(_ context.Context, _ string, _ *vmopv1.VirtualMachine) (*vimtypes.VirtualMachineSnapshotTree, error) {
+							return nil, errors.New("fubar")
 						}
 						provider.Unlock()
 					})
@@ -275,8 +304,8 @@ func intgTestsReconcileDelete() {
 				//        L2
 				//       /   \
 				//   L3-n1    L3-n2
-				// Create the object here so that it can be customized in each BeforeEach
 
+				// Create the object here so that it can be customized in each BeforeEach
 				initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
 					vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.NSInfo.Namespace)
 					vmSnapshotL1 = builder.DummyVirtualMachineSnapshot(ctx.NSInfo.Namespace, vmSnapshotL1Name, vm.Name)
@@ -344,6 +373,14 @@ func intgTestsReconcileDelete() {
 				//        L1 <-- same root
 				//       /   \
 				//   L3-n1    L3-n2
+				BeforeEach(func() {
+					provider.GetParentSnapshotFn = func(_ context.Context, _ string, _ *vmopv1.VirtualMachine) (*vimtypes.VirtualMachineSnapshotTree, error) {
+						return &vimtypes.VirtualMachineSnapshotTree{
+							Name: vmSnapshotL1.Name,
+						}, nil
+					}
+				})
+
 				JustBeforeEach(func() {
 					By("delete the snapshot")
 					Expect(vcSimCtx.Client.Delete(ctx, vmSnapshotL2)).To(Succeed())
@@ -412,6 +449,7 @@ func intgTestsReconcileDelete() {
 				//        L2  <--- new root
 				//       /   \
 				//   L3-n1    L3-n2
+
 				JustBeforeEach(func() {
 					By("delete the snapshot")
 					Expect(vcSimCtx.Client.Delete(ctx, vmSnapshotL1)).To(Succeed())
@@ -465,6 +503,15 @@ func intgTestsReconcileDelete() {
 				//        L2
 				//         |
 				//       L3-n2
+
+				BeforeEach(func() {
+					provider.GetParentSnapshotFn = func(_ context.Context, _ string, _ *vmopv1.VirtualMachine) (*vimtypes.VirtualMachineSnapshotTree, error) {
+						return &vimtypes.VirtualMachineSnapshotTree{
+							Name: vmSnapshotL2.Name,
+						}, nil
+					}
+				})
+
 				JustBeforeEach(func() {
 					By("delete the snapshot")
 					Expect(vcSimCtx.Client.Delete(ctx, vmSnapshotL3Node1)).To(Succeed())

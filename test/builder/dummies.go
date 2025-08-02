@@ -588,6 +588,7 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 			Finalizers: []string{
 				"vmoperator.vmware.com/virtualmachinesnapshot",
 			},
+			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
 			VMRef: &vmopv1common.LocalObjectRef{

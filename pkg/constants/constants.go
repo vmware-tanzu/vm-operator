@@ -155,4 +155,19 @@ const (
 	// annotation key to indicate that a VM snapshot revert is in
 	// progress.
 	VirtualMachineSnapshotRevertInProgressAnnotationKey = "vmoperator.vmware.com/snapshot-revert-in-progress"
+
+	// CSIVSphereVolumeSyncAnnotationKey is the annotation key for the CSIVSphereVolumeSync
+	// annotation.
+	CSIVSphereVolumeSyncAnnotationKey = "csi.vsphere.volume.sync"
+
+	// CSIVSphereVolumeSyncAnnotationValueRequest is the annotation value for the
+	// CSIVSphereVolumeSync annotation. It is used to inform the CSI driver to
+	// update SPU for the attached volumes.
+	CSIVSphereVolumeSyncAnnotationValueRequest = "requested"
+
+	// CSIVSphereVolumeSyncAnnotationValueCompleted is the annotation value for the
+	// CSIVSphereVolumeSync annotation. It is used to indicate that the CSI driver
+	// has completed the sync of the volume. This annotation is set by the CSI driver
+	// when the sync is completed.
+	CSIVSphereVolumeSyncAnnotationValueCompleted = "completed"
 )

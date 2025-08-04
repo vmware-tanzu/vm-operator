@@ -276,6 +276,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			}
 		}
 
+		if mode != "" {
+			if pkgcfg.FromContext(ctx).Features.InstanceStorage && vmopv1util.IsInstanceStoragePresent(vm) {
+				mode = ""
+				reason = "instance storage present"
+			}
+		}
+
 		switch strings.ToLower(mode) {
 		case pkgconst.FastDeployModeDirect, pkgconst.FastDeployModeLinked:
 			logger.V(4).Info("Using fast-deploy for this VM", "mode", mode)

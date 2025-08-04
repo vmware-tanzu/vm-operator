@@ -5,6 +5,13 @@
 package builder_test
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
+	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -129,6 +136,56 @@ var _ = Describe("NewValidatingWebhook", func() {
 						req := getAdmissionRequest(obj, admissionv1.Create)
 						req.AdmissionRequest.Object.Raw = []byte{0}
 						assertInvalidChar(req)
+					})
+				})
+			})
+
+			Context("certificate verification", func() {
+				BeforeEach(func() {
+					dir := filepath.Dir(caFilePath)
+					err := os.MkdirAll(dir, 0755)
+					Expect(err).NotTo(HaveOccurred())
+
+					err = os.WriteFile(caFilePath, []byte(sampleCert), 0644)
+					Expect(err).NotTo(HaveOccurred())
+
+					ctx.EnableWebhookClientVerification = true
+				})
+
+				AfterEach(func() {
+					err := os.Remove(caFilePath)
+					Expect(err).NotTo(HaveOccurred())
+
+					err = os.RemoveAll("/tmp/k8s-webhook-server")
+					Expect(err).NotTo(HaveOccurred())
+				})
+
+				When("request has invalid peer certs", func() {
+					It("should return an error", func() {
+						block, _ := pem.Decode([]byte(invalidClientCert))
+						clientCert, err := x509.ParseCertificate(block.Bytes)
+						Expect(err).NotTo(HaveOccurred())
+
+						ctx.Context = context.WithValue(ctx.Context, pkgbuilder.RequestClientCertificateContextKey, &tls.ConnectionState{
+							PeerCertificates: []*x509.Certificate{clientCert},
+						})
+						assertNotOkay(getAdmissionRequest(obj, admissionv1.Create), http.StatusBadRequest, "unauthorized client CN: other-client")
+					})
+				})
+
+				When("request has valid peer certs", func() {
+					BeforeEach(func() {
+						res = getAdmissionResponseOkay()
+					})
+					It("should not return an error", func() {
+						block, _ := pem.Decode([]byte(sampleClientCert))
+						clientCert, err := x509.ParseCertificate(block.Bytes)
+						Expect(err).NotTo(HaveOccurred())
+
+						ctx.Context = context.WithValue(ctx.Context, pkgbuilder.RequestClientCertificateContextKey, &tls.ConnectionState{
+							PeerCertificates: []*x509.Certificate{clientCert},
+						})
+						assertOkay(getAdmissionRequest(obj, admissionv1.Create), "")
 					})
 				})
 			})

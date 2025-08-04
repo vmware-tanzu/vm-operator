@@ -75,12 +75,13 @@ func NewValidatingWebhook(
 
 	// Build the webhookContext.
 	webhookContext := &pkgctx.WebhookContext{
-		Context:            ctx,
-		Name:               webhookNameShort,
-		Namespace:          ctx.Namespace,
-		ServiceAccountName: ctx.ServiceAccountName,
-		Recorder:           record.New(mgr.GetEventRecorderFor(webhookNameLong)),
-		Logger:             ctx.Logger.WithName(webhookNameShort),
+		Context:                         ctx,
+		Name:                            webhookNameShort,
+		Namespace:                       ctx.Namespace,
+		ServiceAccountName:              ctx.ServiceAccountName,
+		Recorder:                        record.New(mgr.GetEventRecorderFor(webhookNameLong)),
+		Logger:                          ctx.Logger.WithName(webhookNameShort),
+		EnableWebhookClientVerification: ctx.EnableWebhookClientVerification,
 	}
 
 	// Initialize the webhook's decoder.
@@ -96,6 +97,7 @@ func NewValidatingWebhook(
 				Decoder:        decoder,
 				Validator:      validator,
 			},
+			WithContextFunc: contextWithClientCert,
 		},
 	}, nil
 }
@@ -108,7 +110,13 @@ type validatingWebhookHandler struct {
 	Validator
 }
 
-func (h *validatingWebhookHandler) Handle(_ context.Context, req admission.Request) admission.Response {
+func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
+	if h.EnableWebhookClientVerification {
+		if err := VerifyWebhookRequest(ctx); err != nil {
+			return webhook.Errored(http.StatusBadRequest, err)
+		}
+	}
+
 	if h.Validator == nil {
 		panic("validator should never be nil")
 	}

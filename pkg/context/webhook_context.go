@@ -31,6 +31,10 @@ type WebhookContext struct {
 
 	// Recorder is used to record events.
 	Recorder record.Recorder
+
+	// EnableClientVerification determines whether to use client certificate
+	// verification for authentication to webhook requests.
+	EnableWebhookClientVerification bool
 }
 
 // String returns WebhookName.

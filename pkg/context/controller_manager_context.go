@@ -75,6 +75,10 @@ type ControllerManagerContext struct {
 
 	// VMProvider is the controller manager's VM Provider.
 	VMProvider providers.VirtualMachineProviderInterface
+
+	// EnableClientVerification determines whether to use client certificate
+	// verification for authentication to webhook requests.
+	EnableWebhookClientVerification bool
 }
 
 // String returns ControllerManagerName.

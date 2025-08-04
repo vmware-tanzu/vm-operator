@@ -65,3 +65,10 @@ patches:
     version: v1
     kind: Namespace
     name: system
+- path: manager_webhook_client_ca_patch.yaml
+  target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: controller-manager
+    namespace: system

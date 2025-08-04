@@ -49,6 +49,74 @@ func fastDeploy(
 		createArgs.Datastores[0].DiskFormats...)
 	logger.Info("Got destination disk format", "dstDiskFormat", dstDiskFormat)
 
+	tldSupported := createArgs.Datastores[0].Capabilities.TopLevelDirectoryCreateSupported
+	logger.Info("Got top-level create directory supported",
+		"tldSupported", tldSupported)
+
+	datacenter := object.NewDatacenter(
+		vimClient,
+		vimtypes.ManagedObjectReference{
+			Type:  string(vimtypes.ManagedObjectTypesDatacenter),
+			Value: createArgs.DatacenterMoID,
+		})
+	logger.Info("Got datacenter", "datacenter", datacenter.Reference())
+
+	// Create the directory where the VM will be created.
+	fm := object.NewFileManager(vimClient)
+	if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
+		return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
+	}
+
+	// If any error occurs after this point, the newly created VM directory and
+	// its contents need to be cleaned up.
+	defer func() {
+		if retErr == nil {
+			// Do not delete the VM directory if this function was successful.
+			return
+		}
+
+		// Use a new context to ensure cleanup happens even if the context
+		// is cancelled.
+		ctx := context.Background()
+
+		// Delete the VM directory and its contents.
+		t, err := fm.DeleteDatastoreFile(ctx, vmDir, datacenter)
+		if err != nil {
+			err = fmt.Errorf(
+				"failed to call delete api for vm dir %q: %w", vmDir, err)
+			if retErr == nil {
+				retErr = err
+			} else {
+				retErr = fmt.Errorf("%w,%w", err, retErr)
+			}
+			return
+		}
+
+		// Wait for the delete call to return.
+		if err := t.Wait(ctx); err != nil {
+			if !fault.Is(err, &vimtypes.FileNotFound{}) {
+				err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
+				if retErr == nil {
+					retErr = err
+				} else {
+					retErr = fmt.Errorf("%w,%w", err, retErr)
+				}
+			}
+		}
+	}()
+
+	if tldSupported != nil && !*tldSupported {
+		nm := object.NewDatastoreNamespaceManager(vimClient)
+		uuidVMPath, err := nm.ConvertNamespacePathToUuidPath(
+			vmCtx, datacenter, vmDir)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to resolve vm dir %q friendly path: %w", vmDir, err)
+		}
+		vmDir = uuidVMPath
+		logger.Info("Updated vm dir", "vmDir", vmDir)
+	}
+
 	dstDiskPaths := make([]string, len(srcDiskPaths))
 	for i := 0; i < len(dstDiskPaths); i++ {
 		dstDiskPaths[i] = fmt.Sprintf("%s/disk-%d.vmdk", vmDir, i)
@@ -96,20 +164,6 @@ func fastDeploy(
 	}
 	logger.Info("Got disks", "disks", disks)
 
-	datacenter := object.NewDatacenter(
-		vimClient,
-		vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesDatacenter),
-			Value: createArgs.DatacenterMoID,
-		})
-	logger.Info("Got datacenter", "datacenter", datacenter.Reference())
-
-	// Create the directory where the VM will be created.
-	fm := object.NewFileManager(vimClient)
-	if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
-		return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
-	}
-
 	// Copy any non-disk files to the target directory.
 	for i := range dstFilePaths {
 		task, err := fm.CopyDatastoreFile(
@@ -151,44 +205,6 @@ func fastDeploy(
 			}
 		}
 	}
-
-	// If any error occurs after this point, the newly created VM directory and
-	// its contents need to be cleaned up.
-	defer func() {
-		if retErr == nil {
-			// Do not delete the VM directory if this function was successful.
-			return
-		}
-
-		// Use a new context to ensure cleanup happens even if the context
-		// is cancelled.
-		ctx := context.Background()
-
-		// Delete the VM directory and its contents.
-		t, err := fm.DeleteDatastoreFile(ctx, vmDir, datacenter)
-		if err != nil {
-			err = fmt.Errorf(
-				"failed to call delete api for vm dir %q: %w", vmDir, err)
-			if retErr == nil {
-				retErr = err
-			} else {
-				retErr = fmt.Errorf("%w,%w", err, retErr)
-			}
-			return
-		}
-
-		// Wait for the delete call to return.
-		if err := t.Wait(ctx); err != nil {
-			if !fault.Is(err, &vimtypes.FileNotFound{}) {
-				err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
-				if retErr == nil {
-					retErr = err
-				} else {
-					retErr = fmt.Errorf("%w,%w", err, retErr)
-				}
-			}
-		}
-	}()
 
 	folder := object.NewFolder(vimClient, vimtypes.ManagedObjectReference{
 		Type:  "Folder",

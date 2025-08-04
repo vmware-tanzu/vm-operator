@@ -64,6 +64,8 @@ type DatastoreResult struct {
 	// true if for a disk. DiskKey is only valid if ForDisk is true.
 	ForDisk bool
 	DiskKey int32
+
+	Capabilities vimtypes.DatastoreCapability
 }
 
 func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
@@ -489,6 +491,7 @@ func getDatastoreProperties(
 		ctx,
 		dsRefs,
 		[]string{
+			"capability",
 			"info.supportedVDiskFormats",
 			"info.url",
 			"name",
@@ -507,6 +510,7 @@ func getDatastoreProperties(
 				dsInfo := moDS.Info.GetDatastoreInfo()
 				ds.DiskFormats = dsInfo.SupportedVDiskFormats
 				ds.URL = dsInfo.Url
+				ds.Capabilities = moDS.Capability
 			}
 		}
 	}

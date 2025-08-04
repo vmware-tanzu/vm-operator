@@ -172,6 +172,10 @@ type VirtualMachineGroupPlacementDatastoreStatus struct {
 	// DiskKey describes the device key to which this recommendation applies.
 	// When omitted, this recommendation is for the VM's home directory.
 	DiskKey *int32 `json:"diskKey,omitempty"`
+
+	// TopLevelDirectoryCreateSupported indicates whether or not the datastore
+	// uses the DatastoreNamespaceManager.
+	TopLevelDirectoryCreateSupported bool `json:"topLevelDirectoryCreateSupported,omitempty"`
 }
 
 type VirtualMachinePlacementStatus struct {

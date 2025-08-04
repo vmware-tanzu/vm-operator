@@ -63,6 +63,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
@@ -1814,6 +1815,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		result.Datastores[i].Name = ds.Name
 		result.Datastores[i].URL = ds.URL
 		result.Datastores[i].DiskFormats = ds.SupportedDiskFormats
+		result.Datastores[i].Capabilities.TopLevelDirectoryCreateSupported = ptr.To(ds.TopLevelDirectoryCreateSupported)
 	}
 
 	// InstanceStoragePlacement flag is needed to update the VM's annotations
@@ -1855,6 +1857,7 @@ func processPlacementResult(
 			createArgs.Datastores[i].Name = result.Datastores[i].Name
 			createArgs.Datastores[i].URL = result.Datastores[i].URL
 			createArgs.Datastores[i].DiskFormats = result.Datastores[i].DiskFormats
+			createArgs.Datastores[i].Capabilities = result.Datastores[i].Capabilities
 		}
 	}
 

@@ -352,6 +352,11 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              topLevelDirectoryCreateSupported:
+                                description: |-
+                                  TopLevelDirectoryCreateSupported indicates whether or not the datastore
+                                  uses the DatastoreNamespaceManager.
+                                type: boolean
                               url:
                                 description: URL describes the datastore URL.
                                 type: string

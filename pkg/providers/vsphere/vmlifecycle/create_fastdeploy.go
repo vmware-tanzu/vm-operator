@@ -272,6 +272,22 @@ func fastDeployLinked(
 		}
 	}
 
+	// Ensure all the parent disks are added to the ExtraConfig as the special
+	// vmprov.keepDisks value to prevent the parent disk from being deleted with
+	// the VM when it is deleted and/or promoted.
+	srcDiskNames := make([]string, len(srcDiskPaths))
+	for i := range srcDiskPaths {
+		srcDiskNames[i] = path.Base(srcDiskPaths[i])
+	}
+	exConfigKeyVal := &vimtypes.OptionValue{
+		Key:   pkgconst.VMProvKeepDisksExtraConfigKey,
+		Value: strings.Join(srcDiskNames, ","),
+	}
+	configSpec.ExtraConfig = append(configSpec.ExtraConfig, exConfigKeyVal)
+	logger.Info("Preserving linked parents on delete/promote via extraConfig",
+		"extraConfigKey", exConfigKeyVal.Key,
+		"extraConfigValue", exConfigKeyVal.Value)
+
 	for i := range disks {
 		fileBackingInfo := vimtypes.VirtualDeviceFileBackingInfo{
 			Datastore: &datastoreRef,

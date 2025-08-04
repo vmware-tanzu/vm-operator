@@ -488,6 +488,11 @@ type VirtualMachineSpec struct {
 
 	// +optional
 
+	// Affinity describes the VM's scheduling constraints.
+	Affinity *VirtualMachineAffinitySpec `json:"affinity,omitempty"`
+
+	// +optional
+
 	// Crypto describes the desired encryption state of the VirtualMachine.
 	Crypto *VirtualMachineCryptoSpec `json:"crypto,omitempty"`
 

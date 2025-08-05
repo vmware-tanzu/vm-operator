@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"path"
 	"sync"
 	"time"
 
@@ -1793,6 +1794,8 @@ func vmTests() {
 							Expect(v1).To(Equal("world"))
 							v2, _ := ec.GetString("fu")
 							Expect(v2).To(Equal("bar"))
+							v3, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
 						})
 					})
 				})

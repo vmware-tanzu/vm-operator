@@ -155,4 +155,9 @@ const (
 	// annotation key to indicate that a VM snapshot revert is in
 	// progress.
 	VirtualMachineSnapshotRevertInProgressAnnotationKey = "vmoperator.vmware.com/snapshot-revert-in-progress"
+
+	// VMProvKeepDisksExtraConfigKey is set in ExtraConfig with the value a
+	// comma-separated list of the names of disks to keep when a VM is being
+	// deleted or having its disks promoted.
+	VMProvKeepDisksExtraConfigKey = "vmprov.keepDisks"
 )

@@ -241,14 +241,14 @@ func ClusterPlaceVMForCreate(
 		placementSpec.VmPlacementSpecs[i].ConfigSpec = cs
 	}
 
-	logger.Info("PlaceVmsXCluster request", "spec", vimtypes.ToString(placementSpec))
+	logger.V(4).Info("PlaceVmsXCluster request", "spec", vimtypes.ToString(placementSpec))
 
 	results, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(ctx, placementSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Info("PlaceVmsXCluster response", "results", vimtypes.ToString(results))
+	logger.V(6).Info("PlaceVmsXCluster response", "results", vimtypes.ToString(results))
 
 	if len(results.Faults) != 0 {
 		var faultMgs []string

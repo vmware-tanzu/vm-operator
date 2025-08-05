@@ -395,7 +395,11 @@ var _ = Describe(
 		})
 
 		Context("PowerState", func() {
+			var updateGroupPowerStateTime time.Time
+
 			BeforeEach(func() {
+				// Set the time earlier to be able to compare with the status time.
+				updateGroupPowerStateTime = time.Now().Add(-5 * time.Minute)
 				By("setting up group-1 with members vm-1 and vmgroup-2")
 				vmGroup1 := &vmopv1.VirtualMachineGroup{}
 				Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
@@ -452,18 +456,111 @@ var _ = Describe(
 				Expect(ctx.Client.Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
 			})
 
+			When("group.Spec.PowerState is empty", func() {
+				BeforeEach(func() {
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					vmGroup1Copy := vmGroup1.DeepCopy()
+					vmGroup1Copy.Spec.PowerState = ""
+					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+				})
+
+				It("should have expected group status", func() {
+					Eventually(func(g Gomega) {
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+						g.Expect(vmGroup1.Status.Members[0].PowerState).To(BeNil())
+						g.Expect(conditions.Has(&vmGroup1.Status.Members[0], vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeFalse())
+						g.Expect(vmGroup1.Status.Members[1].PowerState).To(BeNil())
+						g.Expect(conditions.Has(&vmGroup1.Status.Members[1], vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeFalse())
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).To(BeNil())
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
+
+			When("group.Spec.PowerState is set and already synced with member", func() {
+				BeforeEach(func() {
+					vm1 := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+					vm1Copy := vm1.DeepCopy()
+					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					vmGroup1Copy := vmGroup1.DeepCopy()
+					vmGroup1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					// Mimic mutating webhook to set last updated power state time annotation.
+					vmGroup1Copy.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: updateGroupPowerStateTime.Format(time.RFC3339),
+					}
+					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+				})
+
+				It("should have expected group status", func() {
+					Eventually(func(g Gomega) {
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+						for _, ms := range vmGroup1.Status.Members {
+							if ms.Kind == virtualMachineKind {
+								g.Expect(ms.PowerState).To(HaveValue(Equal(vmopv1.VirtualMachinePowerStateOn)))
+								g.Expect(conditions.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeTrue())
+							} else {
+								g.Expect(ms.PowerState).To(BeNil())
+								g.Expect(conditions.Has(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeFalse())
+							}
+						}
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
+
 			When("power off the group with try soft power off mode", func() {
 				BeforeEach(func() {
+					// Set VM power state status to be different from group.
+					vm1 := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+					vm1Copy := vm1.DeepCopy()
+					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
 					vmGroup1 := &vmopv1.VirtualMachineGroup{}
 					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
 					vmGroup1Copy := vmGroup1.DeepCopy()
 					vmGroup1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 					vmGroup1Copy.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+					// Mimic mutating webhook to set last updated power state time annotation.
+					vmGroup1Copy.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: updateGroupPowerStateTime.Format(time.RFC3339),
+					}
 					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
 				})
 
 				It("should power off all members with try soft power off mode", func() {
 					Eventually(func(g Gomega) {
+						By("group should have expected member status")
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+						for _, ms := range vmGroup1.Status.Members {
+							if ms.Kind == virtualMachineKind {
+								g.Expect(ms.PowerState).To(HaveValue(Equal(vmopv1.VirtualMachinePowerStateOn)))
+								g.Expect(conditions.IsFalse(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeTrue())
+								// Reason should always be "Pending" because there's no VM controller to update the status.
+								g.Expect(conditions.GetReason(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(Equal("Pending"))
+							} else {
+								g.Expect(ms.PowerState).To(BeNil())
+								g.Expect(conditions.Has(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeFalse())
+							}
+						}
+
+						By("group should have last updated power state time in status")
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
+
 						By("all group members should have expected power state and power off mode")
 						vm1 := &vmopv1.VirtualMachine{}
 						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
@@ -484,13 +581,19 @@ var _ = Describe(
 			})
 
 			When("power on the group with delay", func() {
-				var (
-					bootOrder1Delay  = 1 * time.Minute
-					bootOrder2Delay  = 2 * time.Minute
-					updatedPowerTime = time.Now()
+				const (
+					bootOrder1Delay = 1 * time.Minute
+					bootOrder2Delay = 2 * time.Minute
 				)
 
 				BeforeEach(func() {
+					// Set VM power state status to be different from group.
+					vm1 := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+					vm1Copy := vm1.DeepCopy()
+					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
 					vmGroup1 := &vmopv1.VirtualMachineGroup{}
 					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
 					vmGroup1Copy := vmGroup1.DeepCopy()
@@ -500,20 +603,41 @@ var _ = Describe(
 					// Mimic mutating webhook to set last updated power state time annotation.
 					// This is used to verify the power on delay is applied correctly.
 					vmGroup1Copy.Annotations = map[string]string{
-						constants.LastUpdatedPowerStateTimeAnnotation: updatedPowerTime.Format(time.RFC3339),
+						constants.LastUpdatedPowerStateTimeAnnotation: updateGroupPowerStateTime.Format(time.RFC3339),
 					}
 					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
 				})
 
 				It("should power on all members with the expected delay", func() {
 					Eventually(func(g Gomega) {
+						By("group should have expected member status")
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+						for _, ms := range vmGroup1.Status.Members {
+							if ms.Kind == virtualMachineKind {
+								g.Expect(ms.PowerState).To(HaveValue(Equal(vmopv1.VirtualMachinePowerStateOff)))
+								g.Expect(conditions.IsFalse(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeTrue())
+								// Reason should always be "Pending" because there's no VM controller to update the status.
+								g.Expect(conditions.GetReason(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(Equal("Pending"))
+							} else {
+								g.Expect(ms.PowerState).To(BeNil())
+								g.Expect(conditions.Has(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeFalse())
+							}
+						}
+
+						By("group should have last updated power state time in status")
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
+
+						By("group members CRs should have expected changes")
 						vm1 := &vmopv1.VirtualMachine{}
 						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
 						g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 						g.Expect(vm1.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
 						vm1ApplyPowerStateTime, err := time.Parse(time.RFC3339, vm1.Annotations[constants.ApplyPowerStateTimeAnnotation])
 						g.Expect(err).To(Not(HaveOccurred()))
-						g.Expect(vm1ApplyPowerStateTime).To(BeTemporally("~", updatedPowerTime.Add(bootOrder1Delay), 5*time.Second))
+						g.Expect(vm1ApplyPowerStateTime).To(BeTemporally("~", updateGroupPowerStateTime.Add(bootOrder1Delay), 5*time.Second))
 
 						vmGroup2 := &vmopv1.VirtualMachineGroup{}
 						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
@@ -521,8 +645,8 @@ var _ = Describe(
 						vmGroup2ApplyPowerStateTime, err := time.Parse(time.RFC3339, vmGroup2.Annotations[constants.ApplyPowerStateTimeAnnotation])
 						g.Expect(err).To(Not(HaveOccurred()))
 						// Boot order delay is cumulative.
-						bootOrder2Delay := bootOrder1Delay + bootOrder2Delay
-						g.Expect(vmGroup2ApplyPowerStateTime).To(BeTemporally("~", updatedPowerTime.Add(bootOrder2Delay), 5*time.Second))
+						bootOrder2DelayCum := bootOrder1Delay + bootOrder2Delay
+						g.Expect(vmGroup2ApplyPowerStateTime).To(BeTemporally("~", updateGroupPowerStateTime.Add(bootOrder2DelayCum), 5*time.Second))
 
 						vm2 := &vmopv1.VirtualMachine{}
 						g.Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
@@ -530,7 +654,79 @@ var _ = Describe(
 						g.Expect(vm2.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
 						vm2ApplyPowerStateTime, err := time.Parse(time.RFC3339, vm2.Annotations[constants.ApplyPowerStateTimeAnnotation])
 						g.Expect(err).To(Not(HaveOccurred()))
-						g.Expect(vm2ApplyPowerStateTime).To(BeTemporally("~", updatedPowerTime.Add(bootOrder2Delay), 5*time.Second))
+						g.Expect(vm2ApplyPowerStateTime).To(BeTemporally("~", updateGroupPowerStateTime.Add(bootOrder2DelayCum), 5*time.Second))
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
+
+			When("VM's power state is changed directly outside of group", func() {
+				BeforeEach(func() {
+					// First set up the group with power state on.
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					vmGroup1Copy := vmGroup1.DeepCopy()
+					vmGroup1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					// Mimic mutating webhook to set last updated power state time annotation.
+					vmGroup1Copy.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: updateGroupPowerStateTime.Format(time.RFC3339),
+					}
+					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+
+					// Wait for the group to be reconciled and status updated.
+					Eventually(func(g Gomega) {
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
+					}, "5s", "100ms").Should(Succeed())
+
+					// Set VM power state status to match group initially.
+					vm1 := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+					vm1Copy := vm1.DeepCopy()
+					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
+					// Now change VM's power state directly outside of group.
+					vm1 = &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+					vm1Copy = vm1.DeepCopy()
+					vm1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+				})
+
+				It("should detect power state mismatch without overwriting VM spec", func() {
+					Eventually(func(g Gomega) {
+						By("group should have expected member status")
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+
+						var vm1Member *vmopv1.VirtualMachineGroupMemberStatus
+						for _, ms := range vmGroup1.Status.Members {
+							if ms.Kind == virtualMachineKind && ms.Name == vm1Key.Name {
+								vm1Member = &ms
+								break
+							}
+						}
+						g.Expect(vm1Member).ToNot(BeNil(), "VM member should be found in status")
+						g.Expect(vm1Member.PowerState).To(HaveValue(Equal(vmopv1.VirtualMachinePowerStateOff)))
+						g.Expect(conditions.IsFalse(vm1Member, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeTrue())
+						g.Expect(conditions.GetReason(vm1Member, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(Equal("NotSynced"))
+
+						By("VM spec should not be overwritten by group")
+						g.Expect(vmGroup1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+						vm1 := &vmopv1.VirtualMachine{}
+						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+						g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+
+						By("group Ready condition should be False due to member not synced")
+						g.Expect(vmGroup1.Status.Conditions).To(HaveLen(1))
+						g.Expect(vmGroup1.Status.Conditions[0].Type).To(Equal(vmopv1.ReadyConditionType))
+						g.Expect(vmGroup1.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(vmGroup1.Status.Conditions[0].Reason).To(Equal("MembersNotReady"))
 					}, "5s", "100ms").Should(Succeed())
 				})
 			})

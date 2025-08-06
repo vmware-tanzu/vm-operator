@@ -120,6 +120,10 @@ const (
 	// the VM. The VM must have a VirtualMachineSetResourcePolicy assigned.
 	ClusterModuleNameAnnotationKey string = "vsphere-cluster-module-group"
 
+	// ClusterModuleUUIDAnnotationKey is the annotation key for cluster module UUID for
+	// the VM. The VM must have a VirtualMachineSetResourcePolicy assigned.
+	ClusterModuleUUIDAnnotationKey string = "vsphere-cluster-module-group-uuid"
+
 	// SkipValidationAnnotationKey is a privileged annotation that may be used
 	// to skip the validation webhooks for a given object.
 	SkipValidationAnnotationKey string = "vmoperator.vmware.com.protected/skip-validation"

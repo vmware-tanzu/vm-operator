@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -21,14 +22,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
-
-	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -44,15 +42,13 @@ const (
 	DummyStorageClassName          = "dummy-storage-class"
 	DummyResourceQuotaName         = "dummy-resource-quota"
 	DummyZoneName                  = "dummy-zone"
-	DummyDeletedZoneName           = "dummy-zone-deleted"
 	DummyNamespaceName             = "dummy-ns"
 	DummyVMGroupName               = "dummy-vm-group"
 	DummyVMGroupPublishRequestName = "dummy-vm-group-publish-request"
 	DummyContentLibraryName        = "dummy-cl"
-	DummyImageVM0Name              = "dummy-image-vm0-name"
-	DummyImageVM1Name              = "dummy-image-vm1-name"
 	DummyVirtualMachine0Name       = "dummy-vm0"
 	DummyVirtualMachine1Name       = "dummy-vm1"
+	DummyClusterModule             = "dummy-cluster-module"
 )
 
 const (
@@ -468,7 +464,7 @@ func DummyVirtualMachineSetResourcePolicy() *vmopv1.VirtualMachineSetResourcePol
 				},
 			},
 			Folder:              "dummy-folder",
-			ClusterModuleGroups: []string{"dummy-cluster-modules"},
+			ClusterModuleGroups: []string{DummyClusterModule},
 		},
 	}
 }

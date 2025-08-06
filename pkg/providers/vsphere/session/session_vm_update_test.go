@@ -8,9 +8,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -20,9 +20,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/session"
@@ -1093,6 +1095,101 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				})
 			})
 		})
+	})
+
+	When("VM's resource police changes", func() {
+		var (
+			dummyRP    *vmopv1.VirtualMachineSetResourcePolicy
+			cmProvider clustermodules.Provider
+		)
+
+		BeforeEach(func() {
+			dummyRP = builder.DummyVirtualMachineSetResourcePolicy()
+			resizeArgs = &session.VMResizeArgs{}
+			updateArgs = &session.VMUpdateArgs{}
+			resizeArgs.ResourcePolicy = dummyRP
+			updateArgs.ResourcePolicy = dummyRP
+		})
+
+		JustBeforeEach(func() {
+			cmProvider = clustermodules.NewProvider(sess.Client.RestClient())
+		})
+
+		AfterEach(func() {
+			dummyRP = nil
+			cmProvider = nil
+		})
+
+		verifyClusterModuleAdd := func() {
+			Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+			Expect(vmCtx.VM.Annotations[pkgconst.ClusterModuleUUIDAnnotationKey]).To(
+				Equal(dummyRP.Status.ClusterModules[0].ModuleUuid))
+			added, err := cmProvider.IsMoRefModuleMember(vmCtx, dummyRP.Status.ClusterModules[0].ModuleUuid, vmCtx.MoVM.Self)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(added).To(BeTrue())
+		}
+
+		It("should updates its cluster module membership accordingly", func() {
+			Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+
+			By("set up vm's vsphere-cluster-module-group annotation", func() {
+				metav1.SetMetaDataAnnotation(&vmCtx.VM.ObjectMeta,
+					pkgconst.ClusterModuleNameAnnotationKey,
+					builder.DummyClusterModule)
+			})
+
+			By("bypass annotation check and return cluster module not found error", func() {
+				err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(ContainSubstring(fmt.Sprintf(
+					" %q not found in VirtualMachineSetResourcePolicy", builder.DummyClusterModule))))
+			})
+
+			By("simulate vsphere-cluster-module-group-uuid is unchanged", func() {
+				dummyRP.Status.ClusterModules = []vmopv1.VSphereClusterModuleStatus{
+					{
+						GroupName:   builder.DummyClusterModule,
+						ClusterMoID: sess.ClusterMoRef.Value,
+						ModuleUuid:  uuid.NewString(),
+					},
+				}
+				metav1.SetMetaDataAnnotation(&vmCtx.VM.ObjectMeta,
+					pkgconst.ClusterModuleUUIDAnnotationKey,
+					dummyRP.Status.ClusterModules[0].ModuleUuid)
+			})
+
+			By("exit early without adding the vm to the cluster module", func() {
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+			})
+
+			By("set up a dummy cluster module and update VirtualMachineSetResourcePolicy status", func() {
+				cmID, err := cmProvider.CreateModule(vmCtx, sess.ClusterMoRef)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cmID).ToNot(BeEmpty())
+				exist, err := cmProvider.DoesModuleExist(vmCtx, cmID, sess.ClusterMoRef)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(exist).To(BeTrue())
+				dummyRP.Status.ClusterModules[0].ModuleUuid = cmID
+				delete(vmCtx.VM.ObjectMeta.Annotations, pkgconst.ClusterModuleUUIDAnnotationKey)
+			})
+
+			By("add vm to the cluster module and add vsphere-cluster-module-group-uuid annotation to vm", verifyClusterModuleAdd)
+
+			By("simulate cluster module changes", func() {
+				Expect(cmProvider.DeleteModule(ctx, dummyRP.Status.ClusterModules[0].ModuleUuid)).To(Succeed())
+				exist, err := cmProvider.DoesModuleExist(vmCtx, dummyRP.Status.ClusterModules[0].ModuleUuid, sess.ClusterMoRef)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(exist).To(BeFalse())
+
+				newID, err := cmProvider.CreateModule(ctx, sess.ClusterMoRef)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(newID).ToNot(BeEmpty())
+				dummyRP.Status.ClusterModules[0].ModuleUuid = newID
+			})
+
+			By("add vm to the cluster module and add vsphere-cluster-module-group-uuid annotation to vm", verifyClusterModuleAdd)
+		})
+
 	})
 })
 

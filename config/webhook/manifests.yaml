@@ -53,6 +53,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /default-mutate-vmoperator-vmware-com-v1alpha5-virtualmachinegrouppublishrequest
+  failurePolicy: Fail
+  name: default.mutating.virtualmachinegrouppublishrequest.v1alpha5.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha5
+    operations:
+    - CREATE
+    resources:
+    - virtualmachinegrouppublishrequests
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /default-mutate-vmoperator-vmware-com-v1alpha5-virtualmachinereplicaset
   failurePolicy: Fail
   name: default.mutating.virtualmachinereplicaset.v1alpha5.vmoperator.vmware.com
@@ -156,6 +176,27 @@ webhooks:
     - UPDATE
     resources:
     - virtualmachinegroups
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha5-virtualmachinegrouppublishrequest
+  failurePolicy: Fail
+  name: default.validating.virtualmachinegrouppublishrequest.v1alpha5.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha5
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachinegrouppublishrequests
   sideEffects: None
 - admissionReviewVersions:
   - v1

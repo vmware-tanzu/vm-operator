@@ -46,8 +46,7 @@ const (
 	DummyVMGroupName               = "dummy-vm-group"
 	DummyVMGroupPublishRequestName = "dummy-vm-group-publish-request"
 	DummyContentLibraryName        = "dummy-cl"
-	DummyVirtualMachine0Name       = "dummy-vm0"
-	DummyVirtualMachine1Name       = "dummy-vm1"
+	DummyVirtualMachineName        = "dummy-vm"
 	DummyClusterModule             = "dummy-cluster-module"
 )
 
@@ -132,6 +131,12 @@ func DummyPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
 			StorageClassName: &storageClass,
 		},
 	}
+}
+
+func DummyDefaultContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrary {
+	dummyCL := DummyContentLibrary(name, namespace, uuid)
+	dummyCL.Labels = map[string]string{"imageregistry.vmware.com/default": ""}
+	return dummyCL
 }
 
 func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrary {
@@ -511,7 +516,7 @@ func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, cl
 	}
 }
 
-func VirtualMachineGroupPublishRequest(name, namespace string, vms []string) *vmopv1.VirtualMachineGroupPublishRequest {
+func DummyVirtualMachineGroupPublishRequest(name, namespace string, vms []string) *vmopv1.VirtualMachineGroupPublishRequest {
 	return &vmopv1.VirtualMachineGroupPublishRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

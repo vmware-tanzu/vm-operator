@@ -308,6 +308,9 @@ func (r *Reconciler) reconcileNewPublishRequests(
 						Kind:       "ContentLibrary",
 						APIVersion: clAPIVersion,
 					},
+					Item: vmopv1.VirtualMachinePublishRequestTargetItem{
+						Name: ctx.VMGroupPublishRequest.Name + "-" + sourceVM,
+					},
 				},
 			},
 		}); err != nil {

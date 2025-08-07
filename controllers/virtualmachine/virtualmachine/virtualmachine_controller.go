@@ -261,7 +261,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			mode = pkgcfg.FromContext(ctx).FastDeployMode
 		}
 
-		reason := "unsupported mode"
+		var reasons []string
+
 		if !pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
 			isEncStorClass, _, err := kubeutil.IsEncryptedStorageClass(
 				ctx, r.Client, vm.Spec.StorageClass)
@@ -272,15 +273,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			}
 			if isEncStorClass {
 				mode = ""
-				reason = "encrypted storage class sans byok"
+				reasons = append(reasons, "encrypted storage class sans byok")
 			}
 		}
 
-		if mode != "" {
-			if pkgcfg.FromContext(ctx).Features.InstanceStorage && vmopv1util.IsInstanceStoragePresent(vm) {
-				mode = ""
-				reason = "instance storage present"
-			}
+		if pkgcfg.FromContext(ctx).Features.InstanceStorage &&
+			vmopv1util.IsInstanceStoragePresent(vm) {
+
+			mode = ""
+			reasons = append(reasons, "instance storage present")
+
+		}
+
+		if !pkgcfg.FromContext(ctx).FastDeployExplicitDir &&
+			strings.ToLower(mode) == pkgconst.FastDeployModeDirect {
+
+			mode = ""
+			reasons = append(reasons, "direct mode not supported")
 		}
 
 		switch strings.ToLower(mode) {
@@ -292,9 +301,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			cfg := pkgcfg.FromContext(ctx)
 			cfg.Features.FastDeploy = false
 			ctx = pkgcfg.WithContext(ctx, cfg)
+
+			if len(reasons) == 0 {
+				reasons = []string{"unsupported mode"}
+			}
+
 			logger.Info(
 				"Disabled fast-deploy for this VM",
-				"mode", mode, "reason", reason)
+				"mode", mode, "reasons", strings.Join(reasons, ","))
 		}
 	}
 

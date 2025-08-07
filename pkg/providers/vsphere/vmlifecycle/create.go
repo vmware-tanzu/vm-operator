@@ -46,6 +46,8 @@ type DatastoreRef struct {
 	// true if for a disk. DiskKey is only valid if ForDisk is true.
 	ForDisk bool
 	DiskKey int32
+
+	Capabilities vimtypes.DatastoreCapability
 }
 
 func CreateVirtualMachine(

@@ -25,6 +25,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
+// nolint:gocyclo
 func fastDeploy(
 	vmCtx pkgctx.VirtualMachineContext,
 	vimClient *vim25.Client,
@@ -104,91 +105,128 @@ func fastDeploy(
 		})
 	logger.Info("Got datacenter", "datacenter", datacenter.Reference())
 
-	// Create the directory where the VM will be created.
-	fm := object.NewFileManager(vimClient)
-	if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
-		return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
-	}
+	// Determine the type of fast deploy operation.
+	var fastDeployMode string
 
-	// Copy any non-disk files to the target directory.
-	for i := range dstFilePaths {
-		task, err := fm.CopyDatastoreFile(
-			vmCtx,
-			srcFilePaths[i],
-			datacenter,
-			dstFilePaths[i],
-			datacenter, false)
-		if err != nil {
-			return nil, err
-		}
-		if err = task.Wait(vmCtx); err != nil {
-			return nil, err
+	if createArgs.IsEncryptedStorageProfile {
+		fastDeployMode = pkgconst.FastDeployModeDirect
+	} else {
+		fastDeployMode = vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
+		if fastDeployMode == "" {
+			fastDeployMode = pkgcfg.FromContext(vmCtx).FastDeployMode
 		}
 	}
 
-	// Update the config spec to know about a potential NVRAM file.
-	for i := range createArgs.ConfigSpec.ExtraConfig {
-		ov := createArgs.ConfigSpec.ExtraConfig[i].GetOptionValue()
+	if fastDeployMode == pkgconst.FastDeployModeDirect &&
+		!pkgcfg.FromContext(vmCtx).FastDeployExplicitDir {
 
-		if ov != nil && ov.Key == "nvram" {
+		return nil, errors.New("fast-deploy+direct not supported")
 
-			if v, ok := ov.Value.(string); ok {
-
-				oldNvramPath := v
-
-				for j := range dstFilePaths {
-					if strings.EqualFold(".nvram", path.Ext(dstFilePaths[j])) {
-						newNvramPath := path.Base(dstFilePaths[j])
-						logger.Info("Updated NVRAM in ExtraConfig",
-							"oldValue", oldNvramPath,
-							"newValue", newNvramPath)
-						createArgs.ConfigSpec.ExtraConfig[i] = &vimtypes.OptionValue{
-							Key:   ov.Key,
-							Value: newNvramPath,
-						}
-					}
-				}
-			}
-		}
 	}
 
-	// If any error occurs after this point, the newly created VM directory and
-	// its contents need to be cleaned up.
-	defer func() {
-		if retErr == nil {
-			// Do not delete the VM directory if this function was successful.
-			return
+	if pkgcfg.FromContext(vmCtx).FastDeployExplicitDir {
+		fm := object.NewFileManager(vimClient)
+
+		// Create the directory where the VM will be created for direct mode.
+		if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
+			return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
 		}
 
-		// Use a new context to ensure cleanup happens even if the context
-		// is cancelled.
-		ctx := context.Background()
-
-		// Delete the VM directory and its contents.
-		t, err := fm.DeleteDatastoreFile(ctx, vmDir, datacenter)
-		if err != nil {
-			err = fmt.Errorf(
-				"failed to call delete api for vm dir %q: %w", vmDir, err)
+		// If any error occurs after this point, the newly created VM directory and
+		// its contents need to be cleaned up.
+		defer func() {
 			if retErr == nil {
-				retErr = err
-			} else {
-				retErr = fmt.Errorf("%w,%w", err, retErr)
+				// Do not delete the VM directory if this function was successful.
+				return
 			}
-			return
-		}
 
-		// Wait for the delete call to return.
-		if err := t.Wait(ctx); err != nil {
-			if !fault.Is(err, &vimtypes.FileNotFound{}) {
-				err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
+			// Use a new context to ensure cleanup happens even if the context
+			// is cancelled.
+			ctx := context.Background()
+
+			// Delete the VM directory and its contents.
+			t, err := fm.DeleteDatastoreFile(ctx, vmDir, datacenter)
+			if err != nil {
+				err = fmt.Errorf(
+					"failed to call delete api for vm dir %q: %w", vmDir, err)
 				if retErr == nil {
 					retErr = err
 				} else {
 					retErr = fmt.Errorf("%w,%w", err, retErr)
 				}
+				return
+			}
+
+			// Wait for the delete call to return.
+			if err := t.Wait(ctx); err != nil {
+				if !fault.Is(err, &vimtypes.FileNotFound{}) {
+					err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
+					if retErr == nil {
+						retErr = err
+					} else {
+						retErr = fmt.Errorf("%w,%w", err, retErr)
+					}
+				}
+			}
+		}()
+
+		// Copy any non-disk files to the target directory.
+		for i := range dstFilePaths {
+			task, err := fm.CopyDatastoreFile(
+				vmCtx,
+				srcFilePaths[i],
+				datacenter,
+				dstFilePaths[i],
+				datacenter, false)
+			if err != nil {
+				return nil, err
+			}
+			if err = task.Wait(vmCtx); err != nil {
+				return nil, err
 			}
 		}
-	}()
+
+		// Update the config spec to know about a potential NVRAM file.
+		for i := range createArgs.ConfigSpec.ExtraConfig {
+			ov := createArgs.ConfigSpec.ExtraConfig[i].GetOptionValue()
+
+			if ov != nil && ov.Key == "nvram" {
+
+				if v, ok := ov.Value.(string); ok {
+
+					oldNvramPath := v
+
+					for j := range dstFilePaths {
+						if strings.EqualFold(".nvram", path.Ext(dstFilePaths[j])) {
+							newNvramPath := path.Base(dstFilePaths[j])
+							logger.Info("Updated NVRAM in ExtraConfig",
+								"oldValue", oldNvramPath,
+								"newValue", newNvramPath)
+							createArgs.ConfigSpec.ExtraConfig[i] = &vimtypes.OptionValue{
+								Key:   ov.Key,
+								Value: newNvramPath,
+							}
+						}
+					}
+				}
+			}
+		}
+	} else { //nolint:gocritic
+
+		if len(createArgs.ConfigSpec.ExtraConfig) > 0 {
+			// ExplicitDir is disabled, so we must make sure to remove a
+			// potential nvram file definition from the ExtraConfig that may
+			// have come from the image.
+			newEC := []vimtypes.BaseOptionValue{}
+			for _, kvObj := range createArgs.ConfigSpec.ExtraConfig {
+				kv := kvObj.GetOptionValue()
+				if kv.Key != "nvram" {
+					newEC = append(newEC, kvObj)
+				}
+			}
+			createArgs.ConfigSpec.ExtraConfig = newEC
+		}
+	}
 
 	folder := object.NewFolder(vimClient, vimtypes.ManagedObjectReference{
 		Type:  "Folder",
@@ -211,17 +249,6 @@ func fastDeploy(
 		logger.Info("Got host", "host", host.Reference())
 	}
 
-	// Determine the type of fast deploy operation.
-	var fastDeployMode string
-
-	if createArgs.IsEncryptedStorageProfile {
-		fastDeployMode = pkgconst.FastDeployModeDirect
-	} else {
-		fastDeployMode = vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
-		if fastDeployMode == "" {
-			fastDeployMode = pkgcfg.FromContext(vmCtx).FastDeployMode
-		}
-	}
 	logger.Info("Deploying VM with Fast Deploy", "mode", fastDeployMode)
 
 	if strings.EqualFold(fastDeployMode, pkgconst.FastDeployModeLinked) {

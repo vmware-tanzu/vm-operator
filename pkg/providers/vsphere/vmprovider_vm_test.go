@@ -1742,6 +1742,7 @@ func vmTests() {
 							Expect(enc.Encode(configSpec)).To(Succeed())
 
 							vmClass.Spec.ConfigSpec = w.Bytes()
+							vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						})
 
 						JustBeforeEach(func() {
@@ -1779,24 +1780,96 @@ func vmTests() {
 								true)).To(Succeed())
 						})
 
-						It("should succeed", func() {
-							vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-							Expect(err).ToNot(HaveOccurred())
+						assertSuccess := func(
+							expectedToHaveNVRAM bool,
+							expectKeepDisksKey bool) {
 
+							vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+							ExpectWithOffset(1, err).ToNot(HaveOccurred())
 							var moVM mo.VirtualMachine
-							Expect(vcVM.Properties(
+							ExpectWithOffset(1, vcVM.Properties(
 								ctx,
 								vcVM.Reference(),
 								[]string{"config.extraConfig"},
 								&moVM)).To(Succeed())
 							ec := object.OptionValueList(moVM.Config.ExtraConfig)
 							v1, _ := ec.GetString("hello")
-							Expect(v1).To(Equal("world"))
+							ExpectWithOffset(1, v1).To(Equal("world"))
 							v2, _ := ec.GetString("fu")
-							Expect(v2).To(Equal("bar"))
-							v3, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
+							ExpectWithOffset(1, v2).To(Equal("bar"))
+
+							if expectKeepDisksKey {
+								v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								ExpectWithOffset(1, v).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
+							} else {
+								v, ok := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								ExpectWithOffset(1, ok).To(BeFalse(), v)
+							}
+
+							nvramFile, hasNVRAM := ec.GetString("nvram")
+							ExpectWithOffset(1, hasNVRAM).To(Equal(expectedToHaveNVRAM), nvramFile)
+						}
+
+						When("mode is direct", func() {
+							JustBeforeEach(func() {
+								if vm.Annotations == nil {
+									vm.Annotations = map[string]string{}
+								}
+								vm.Annotations[pkgconst.FastDeployAnnotationKey] = pkgconst.FastDeployModeDirect
+							})
+
+							When("ExplicitDir is supported", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+										config.FastDeployExplicitDir = true
+									})
+								})
+								It("should succeed", func() {
+									assertSuccess(true, false)
+								})
+							})
+							When("ExplicitDir is not supported", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+										config.FastDeployExplicitDir = false
+									})
+								})
+								It("should return an error", func() {
+									_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).To(MatchError("fast-deploy+direct not supported"))
+								})
+							})
 						})
+
+						When("mode is linked", func() {
+							JustBeforeEach(func() {
+								if vm.Annotations == nil {
+									vm.Annotations = map[string]string{}
+								}
+								vm.Annotations[pkgconst.FastDeployAnnotationKey] = pkgconst.FastDeployModeLinked
+							})
+							When("ExplicitDir is supported", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+										config.FastDeployExplicitDir = true
+									})
+								})
+								It("should succeed", func() {
+									assertSuccess(true, true)
+								})
+							})
+							When("ExplicitDir is not supported", func() {
+								JustBeforeEach(func() {
+									pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+										config.FastDeployExplicitDir = false
+									})
+								})
+								It("should succeed", func() {
+									assertSuccess(false, true)
+								})
+							})
+						})
+
 					})
 				})
 

@@ -146,8 +146,13 @@ type Config struct {
 	//   - the value is anything else, then fast deploy is not used to deploy
 	//     VMs.
 	//
-	// Defaults to "direct".
+	// Defaults to "linked".
 	FastDeployMode string
+
+	// FastDeployExplicitDir indicates whether or not we can explicitly create
+	// a VM directory with fast deploy. If false, direct mode is not supported.
+	// This is due to a bug with vSAN that is being corrected.
+	FastDeployExplicitDir bool
 
 	// VCCredsSecretName is the name of the secret in the pod namespace that
 	// contains the VC credentials.

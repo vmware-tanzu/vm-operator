@@ -24,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
@@ -33,17 +34,17 @@ import (
 
 func intgTests() {
 	Describe(
-		"ReconcileDelete",
+		"Reconcile",
 		Label(
 			testlabels.Controller,
 			testlabels.EnvTest,
 			testlabels.API,
 		),
-		intgTestsReconcileDelete,
+		intgTestsReconcile,
 	)
 }
 
-func intgTestsReconcileDelete() {
+func intgTestsReconcile() {
 	var (
 		ctx        context.Context
 		vcSimCtx   *builder.IntegrationTestContextForVCSim
@@ -97,7 +98,41 @@ func intgTestsReconcileDelete() {
 		vcSimCtx.AfterEach()
 	})
 
-	When("delete snapshot", func() {
+	Context("ReconcileNormal", func() {
+		When("snapshot is ready", func() {
+			BeforeEach(func() {
+				initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+					By("create vm in k8s")
+					vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
+					Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+					vm.Status.UniqueID = uniqueVMID
+					Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+					By("create snapshot in k8s")
+					vmSnapshot = builder.DummyVirtualMachineSnapshot(vcSimCtx.NSInfo.Namespace, "snap-1", vm.Name)
+					Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
+				}
+			})
+			JustBeforeEach(func() {
+				By("mark snapshot as ready")
+				vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
+				Expect(vcSimCtx.Client.Get(ctx, vmSnapshotObjKey, vmSnapshot)).To(Succeed())
+				patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
+				conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+				Expect(vcSimCtx.Client.Status().Patch(ctx, vmSnapshot, patch)).To(Succeed(), "mark snapshot as ready")
+			})
+
+			It("returns success, and set the annotation to requested", func() {
+				Eventually(func(g Gomega) {
+					vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
+					Expect(vcSimCtx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, vmSnapshotObj)).To(Succeed())
+					g.Expect(conditions.IsTrue(vmSnapshotObj, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+					g.Expect(vmSnapshotObj.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey]).To(Equal(constants.CSIVSphereVolumeSyncAnnotationValueRequest))
+				}).Should(Succeed())
+			})
+		})
+	})
+
+	Context("ReconcileDelete", func() {
 		When("snapshot is not nested", func() {
 			BeforeEach(func() {
 				initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
@@ -110,12 +145,6 @@ func intgTestsReconcileDelete() {
 					Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
 					vm.Spec.CurrentSnapshot = newLocalObjectRefWithSnapshotName(vmSnapshot.Name)
 					Expect(vcSimCtx.Client.Update(ctx, vm)).To(Succeed())
-					vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
-
-					Eventually(func(g Gomega) {
-						vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
-						g.Expect(vmObj).ToNot(BeNil())
-					}).Should(Succeed(), "waiting current snapshot to be set on virtualmachine")
 				}
 			})
 

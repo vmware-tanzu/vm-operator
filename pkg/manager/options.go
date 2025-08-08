@@ -124,6 +124,12 @@ type Options struct {
 	// Defaults to the eponymous constant in this package.
 	WebhookSecretVolumeMountPath string
 
+	// EnableWebhookClientVerification determines whether to use client certificate
+	// verification for authentication to webhook requests.
+	//
+	// Defaults to false.
+	EnableWebhookClientVerification bool
+
 	// ContainerNode flags whether guest cluster nodes are run in containers (with vcsim).
 	//
 	// Defaults to the eponymous constant in this package.

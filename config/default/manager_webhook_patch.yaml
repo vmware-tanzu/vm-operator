@@ -36,8 +36,18 @@ spec:
         - name: cert
           mountPath: /tmp/k8s-webhook-server/serving-certs
           readOnly: true
+        - name: client-ca
+          mountPath: /tmp/k8s-webhook-server/serving-certs/client-ca
+          readOnly: true
       volumes:
       - name: cert
         secret:
-          defaultMode: 420
+          defaultMode: 0644
           secretName: WEBHOOK_SECRET_NAME_PLACEHOLDER
+      - name: client-ca
+        configMap:
+          name: kube-root-ca.crt
+          defaultMode: 0644
+          items:
+          - key: "ca.crt"
+            path: "ca.crt"

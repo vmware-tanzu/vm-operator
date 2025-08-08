@@ -128,17 +128,18 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 
 	// Build the controller manager pkgctx.
 	controllerManagerContext := &pkgctx.ControllerManagerContext{
-		Context:                 logr.NewContext(ctx, logger),
-		Namespace:               opts.PodNamespace,
-		Name:                    opts.PodName,
-		ServiceAccountName:      opts.PodServiceAccountName,
-		LeaderElectionID:        opts.LeaderElectionID,
-		LeaderElectionNamespace: opts.PodNamespace,
-		MaxConcurrentReconciles: opts.MaxConcurrentReconciles,
-		Logger:                  logger,
-		Recorder:                record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
-		ContainerNode:           opts.ContainerNode,
-		SyncPeriod:              opts.SyncPeriod,
+		Context:                         logr.NewContext(ctx, logger),
+		Namespace:                       opts.PodNamespace,
+		Name:                            opts.PodName,
+		ServiceAccountName:              opts.PodServiceAccountName,
+		LeaderElectionID:                opts.LeaderElectionID,
+		LeaderElectionNamespace:         opts.PodNamespace,
+		MaxConcurrentReconciles:         opts.MaxConcurrentReconciles,
+		Logger:                          logger,
+		Recorder:                        record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
+		ContainerNode:                   opts.ContainerNode,
+		SyncPeriod:                      opts.SyncPeriod,
+		EnableWebhookClientVerification: opts.EnableWebhookClientVerification,
 	}
 
 	if err := opts.InitializeProviders(controllerManagerContext, mgr); err != nil {

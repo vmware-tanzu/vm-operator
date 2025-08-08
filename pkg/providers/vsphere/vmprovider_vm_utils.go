@@ -742,19 +742,17 @@ func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 }
 
 func PatchSnapshotStatus(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client,
-	snapShot *vmopv1.VirtualMachineSnapshot, snapMoRef *vimtypes.ManagedObjectReference) error {
-	snapPatch := ctrlclient.MergeFrom(snapShot.DeepCopy())
-	snapShot.Status = vmopv1.VirtualMachineSnapshotStatus{
-		UniqueID: snapMoRef.Reference().Value,
-		Quiesced: snapShot.Spec.Quiesce != nil,
-		// TODO: populate children and powerState
-	}
-	conditions.MarkTrue(snapShot, vmopv1.VirtualMachineSnapshotReadyCondition)
+	vmSnapshot *vmopv1.VirtualMachineSnapshot, snapMoRef *vimtypes.ManagedObjectReference) error {
+	snapPatch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
+	vmSnapshot.Status.UniqueID = snapMoRef.Reference().Value
+	vmSnapshot.Status.Quiesced = vmSnapshot.Spec.Quiesce != nil
+	// TODO: populate children and powerState
+	conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 
-	if err := k8sClient.Status().Patch(vmCtx, snapShot, snapPatch); err != nil {
+	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, snapPatch); err != nil {
 		return fmt.Errorf(
 			"failed to patch snapshot status resource %s/%s: err: %s",
-			snapShot.Name, snapShot.Namespace, err.Error())
+			vmSnapshot.Name, vmSnapshot.Namespace, err.Error())
 	}
 
 	return nil

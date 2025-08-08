@@ -164,4 +164,19 @@ const (
 	// comma-separated list of the names of disks to keep when a VM is being
 	// deleted or having its disks promoted.
 	VMProvKeepDisksExtraConfigKey = "vmprov.keepDisks"
+
+	// CSIVSphereVolumeSyncAnnotationKey is the annotation key for the CSIVSphereVolumeSync
+	// annotation.
+	CSIVSphereVolumeSyncAnnotationKey = "csi.vsphere.volume.sync"
+
+	// CSIVSphereVolumeSyncAnnotationValueRequest is the annotation value for the
+	// CSIVSphereVolumeSync annotation. It is used to inform the CSI driver to
+	// update SPU for the attached volumes.
+	CSIVSphereVolumeSyncAnnotationValueRequest = "requested"
+
+	// CSIVSphereVolumeSyncAnnotationValueCompleted is the annotation value for the
+	// CSIVSphereVolumeSync annotation. It is used to indicate that the CSI driver
+	// has completed the sync of the volume. This annotation is set by the CSI driver
+	// when the sync is completed.
+	CSIVSphereVolumeSyncAnnotationValueCompleted = "completed"
 )

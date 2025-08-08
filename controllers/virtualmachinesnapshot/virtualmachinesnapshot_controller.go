@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -19,12 +21,16 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -32,8 +38,7 @@ const (
 )
 
 var (
-	errParentVMSnapshotNotFound = errors.New("parent snapshot not found")
-	errVMRefNil                 = pkgerr.NoRequeueNoErr("VirtualMachineSnapshot VMRef is nil")
+	errVMRefNil = pkgerr.NoRequeueNoErr("VirtualMachineSnapshot VMRef is nil")
 )
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
@@ -94,12 +99,15 @@ type Reconciler struct {
 	VMProvider providers.VirtualMachineProviderInterface
 }
 
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesnapshots,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesnapshots/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = cource.JoinContext(ctx, r.Context)
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
@@ -111,13 +119,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		Context:                ctx,
 		Logger:                 pkgutil.FromContextOrDefault(ctx),
 		VirtualMachineSnapshot: vmSnapshot,
+		StorageClassesToSync:   sets.New[string](),
 	}
 
 	patchHelper, err := patch.NewHelper(vmSnapshot, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", vmSnapshotCtx, err)
 	}
+
 	defer func() {
+		for _, sc := range vmSnapshotCtx.StorageClassesToSync.UnsortedList() {
+			vmopv1util.SyncStorageUsageForNamespace(
+				ctx,
+				vmSnapshot.Namespace,
+				sc)
+		}
 		vmSnapshotCtx.Logger.Info("Patching VirtualMachineSnapShot", "snap", vmSnapshot)
 		if err := patchHelper.Patch(ctx, vmSnapshot); err != nil {
 			if reterr == nil {
@@ -171,6 +187,48 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		return ctrl.Result{}, errors.New("VM hasn't been created and has no uniqueID")
 	}
 
+	// Calculate the requested capacity of the snapshot at the beginning only once.
+	if vmSnapshot.Status.Storage == nil {
+		vmSnapshot.Status.Storage = &vmopv1.VirtualMachineSnapshotStorageStatus{}
+	}
+
+	if vmSnapshot.Status.Storage.Requested == nil {
+		ctx.Logger.V(4).Info("Updating snapshot's status requested capacity")
+		vmSnapshot.Status.Storage.Requested = []vmopv1.VirtualMachineSnapshotStorageStatusRequested{}
+		requested, err := kubeutil.CalculateReservedForSnapshotPerStorageClass(ctx, r.Client, r.Logger, *vmSnapshot)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to calculate requested capacity for snapshot: %w", err)
+		}
+		vmSnapshot.Status.Storage.Requested = requested
+		ctx.Logger.V(5).Info("Updated vmSnapshot requested capacity", "requested", vmSnapshot.Status.Storage.Requested)
+		// Enqueue the storage classes to sync corresponding SPU.
+		for _, requested := range vmSnapshot.Status.Storage.Requested {
+			ctx.StorageClassesToSync.Insert(requested.StorageClass)
+		}
+	}
+
+	ctx.Logger.V(4).Info("Updating snapshot's status used capacity")
+	size, err := r.VMProvider.GetSnapshotSize(ctx, vmSnapshot.Name, vm)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get snapshot size: %w", err)
+	}
+	// TODO(lubron): Now the format will very likely to fall back to decimalSI
+	// since the size is int64 and it's not a multiple of 1024.
+	// We can think of refactoring to show a more humain readble value without loosing
+	// the precision in the future.
+	total := kubeutil.BytesToResource(size)
+
+	if vmSnapshot.Status.Storage.Used == nil {
+		vmSnapshot.Status.Storage.Used = resource.NewQuantity(0, resource.BinarySI)
+	}
+	vmSnapshot.Status.Storage.Used = total
+	ctx.Logger.V(5).Info("Updated vmSnapshot's status used capacity", "used", total)
+
+	// Enqueue the storage class to sync corresponding SPU only after CSI has completed the sync.
+	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
+		constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
+		ctx.StorageClassesToSync.Insert(vm.Spec.StorageClass)
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -193,13 +251,30 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		if apierrors.IsNotFound(err) {
 			ctx.Logger.V(4).Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
 			controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
+			// We don't sync SPU since we don't know which StorageClass of the VM.
 			return nil
 		}
 		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
 		return err
 	}
 
+	// Enqueue the storage class to sync corresponding SPU.
+	ctx.StorageClassesToSync.Insert(vm.Spec.StorageClass)
+
 	ctx.VM = vm
+
+	// Fetch and update the parent snapshot first then delete the snapshot from the VM.
+	// Since we find the parent snapshot from VC.
+	parent, err := r.updateParentSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := r.updateVMStatus(ctx, parent); err != nil {
+		return err
+	}
+
+	// delete snapshot from the VM
 	vmNotFound, err := r.deleteSnapshot(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to delete snapshot: %w", err)
@@ -208,15 +283,6 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		ctx.Logger.V(4).Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
 		controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
 		return nil
-	}
-
-	parent, err := r.updateParentSnapshot(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err := r.updateVMStatus(ctx, parent); err != nil {
-		return err
 	}
 
 	controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
@@ -239,21 +305,26 @@ func (r *Reconciler) deleteSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext) (
 func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext) (*vmopv1.VirtualMachineSnapshot, error) {
 	ctx.Logger.V(3).Info("Updating parent snapshot")
 	vmSnapshot := ctx.VirtualMachineSnapshot
-	parent, err := r.getParentSnapshot(ctx, vmSnapshot)
+	parent, err := r.VMProvider.GetParentSnapshot(ctx.Context, vmSnapshot.Name, ctx.VM)
 	if err != nil {
-		if errors.Is(err, errParentVMSnapshotNotFound) {
-			ctx.Logger.V(5).Info("parent snapshot not found")
-			return nil, nil
-		}
 		return nil, fmt.Errorf("failed to get parent snapshot: %w", err)
+	}
+	if parent == nil {
+		ctx.Logger.V(5).Info("parent snapshot not found")
+		return nil, nil
 	}
 	ctx.Logger.V(5).Info("parent snapshot found", "parent", parent.Name)
 
+	parentVMSnapshot := &vmopv1.VirtualMachineSnapshot{}
+	if err := r.Get(ctx, client.ObjectKey{Name: parent.Name, Namespace: vmSnapshot.Namespace}, parentVMSnapshot); err != nil {
+		return nil, fmt.Errorf("failed to get parent snapshot %s: %w", parent.Name, err)
+	}
+
 	// remove current snapshot from parent's children
-	parentPatch := client.MergeFrom(parent.DeepCopy())
-	for i, child := range parent.Status.Children {
+	parentPatch := client.MergeFrom(parentVMSnapshot.DeepCopy())
+	for i, child := range parentVMSnapshot.Status.Children {
 		if child.Name == vmSnapshot.Name {
-			parent.Status.Children = slices.Delete(parent.Status.Children, i, i+1)
+			parentVMSnapshot.Status.Children = slices.Delete(parentVMSnapshot.Status.Children, i, i+1)
 			break
 		}
 	}
@@ -263,66 +334,15 @@ func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotCont
 		// merge current's children to parent's children.
 		// make sure no duplicates are added.
 		for _, child := range children {
-			if !slices.Contains(parent.Status.Children, child) {
-				parent.Status.Children = append(parent.Status.Children, child)
+			if !slices.Contains(parentVMSnapshot.Status.Children, child) {
+				parentVMSnapshot.Status.Children = append(parentVMSnapshot.Status.Children, child)
 			}
 		}
 	}
-	if err := r.Status().Patch(ctx, parent, parentPatch); err != nil {
-		return nil, fmt.Errorf("failed to patch parent snapshot %s with children: %w", parent.Name, err)
+	if err := r.Status().Patch(ctx, parentVMSnapshot, parentPatch); err != nil {
+		return nil, fmt.Errorf("failed to patch parent snapshot %s with children: %w", parentVMSnapshot.Name, err)
 	}
-	return parent, nil
-}
-
-// TODO: use a func in vmprovider to find the parent snapshot.
-// So that we could recursively check VirtualMachineSnapshotTree
-// to avoid the overhead of recursively requesting the apiserver.
-// getParentSnapshotName returns the parent snapshot name of the given snapshot.
-// It first checks if the snapshot is a root snapshot, if not, it will traverse the root snapshots to find the parent snapshot.
-// The upper limit of snapshot count of a VM is 128. The overhead here could be considered acceptable.
-func (r *Reconciler) getParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext, vmSnapshot *vmopv1.VirtualMachineSnapshot) (*vmopv1.VirtualMachineSnapshot, error) {
-	rootSnapshots := ctx.VM.Status.RootSnapshots
-	if len(rootSnapshots) == 0 {
-		ctx.Logger.V(5).Info("no root snapshots found for VM")
-		return nil, errParentVMSnapshotNotFound
-	}
-
-	for _, rootSnapshot := range rootSnapshots {
-		if rootSnapshot.Name == vmSnapshot.Name {
-			return nil, errParentVMSnapshotNotFound
-		}
-		parent, err := r.findParentSnapshotHelper(ctx, rootSnapshot.Name, vmSnapshot.Name, vmSnapshot.Namespace)
-		if err != nil && !errors.Is(err, errParentVMSnapshotNotFound) {
-			return nil, err
-		}
-		if parent != nil {
-			return parent, nil
-		}
-	}
-
-	return nil, errParentVMSnapshotNotFound
-}
-
-func (r *Reconciler) findParentSnapshotHelper(ctx *pkgctx.VirtualMachineSnapshotContext, parentName, target, namespace string) (*vmopv1.VirtualMachineSnapshot, error) {
-	parentVMSnapshot := &vmopv1.VirtualMachineSnapshot{}
-	if err := r.Get(ctx, client.ObjectKey{Name: parentName, Namespace: namespace}, parentVMSnapshot); err != nil {
-		return nil, fmt.Errorf("failed to get parent snapshot %s: %w", parentName, err)
-	}
-
-	for _, child := range parentVMSnapshot.Status.Children {
-		if child.Name == target {
-			ctx.Logger.V(5).Info("found parent snapshot", "parent", parentName, "target", target)
-			return parentVMSnapshot, nil
-		}
-		parent, err := r.findParentSnapshotHelper(ctx, child.Name, target, namespace)
-		if err != nil && !errors.Is(err, errParentVMSnapshotNotFound) {
-			return nil, err
-		}
-		if parent != nil {
-			return parent, nil
-		}
-	}
-	return nil, errParentVMSnapshotNotFound
+	return parentVMSnapshot, nil
 }
 
 // Update root snapshots and current snapshot of VM.
@@ -338,6 +358,7 @@ func (r *Reconciler) updateVMStatus(ctx *pkgctx.VirtualMachineSnapshotContext, p
 	return nil
 }
 
+// TODO(lubron): Update VM.Status.CurrentSnapshot as well
 // Set current snapshot of VM to the parent snapshot or to nil.
 func (r *Reconciler) updateVMCurrentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext, parentVMSnapshot *vmopv1.VirtualMachineSnapshot) error {
 	ctx.Logger.Info("Updating VM current snapshot")

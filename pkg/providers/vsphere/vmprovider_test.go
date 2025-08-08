@@ -7,11 +7,13 @@ package vsphere_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -459,6 +461,9 @@ func vmSnapshotTests() {
 		vm.Status.UniqueID = vcVM.Reference().Value
 		vmSnapshot = builder.DummyVirtualMachineSnapshot(nsInfo.Namespace, dummySnapshot, vcVM.Name())
 
+		// TODO (lubron): Add FCD to the VM and test the snapshot size once
+		// vcsim has support to show attached disk as device
+
 		By("Creating snapshot")
 		logger := testutil.GinkgoLogr(5)
 		vmCtx = pkgctx.VirtualMachineContext{
@@ -486,6 +491,100 @@ func vmSnapshotTests() {
 		vm = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
 		deleted = false
+	})
+
+	Describe("GetSnapshotSize", func() {
+		It("should return the size of the snapshot", func() {
+			size, err := vmProvider.GetSnapshotSize(ctx, vmSnapshot.Name, vm)
+			Expect(err).ToNot(HaveOccurred())
+			// since we only have one snapshot, the size should be same as the vm
+			var moVM mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM)).To(Succeed())
+
+			var sum int64
+			for _, file := range moVM.LayoutEx.File {
+				if strings.HasSuffix(file.Name, ".vmdk") || strings.HasSuffix(file.Name, ".vmsn") || strings.HasSuffix(file.Name, ".vmem") {
+					sum += file.Size
+				}
+			}
+			Expect(size).To(Equal(sum))
+		})
+
+		When("there is issue finding vm", func() {
+			BeforeEach(func() {
+				vm.Status.UniqueID = ""
+			})
+			It("should return error", func() {
+				size, err := vmProvider.GetSnapshotSize(ctx, vmSnapshot.Name, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(size).To(BeZero())
+			})
+		})
+
+		When("there is issue finding snapshot", func() {
+			BeforeEach(func() {
+				vmSnapshot.Name = ""
+			})
+			It("should return error", func() {
+				size, err := vmProvider.GetSnapshotSize(ctx, vmSnapshot.Name, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(size).To(BeZero())
+			})
+		})
+	})
+
+	Describe("GetParentSnapshot", func() {
+		var childSnapshot *vmopv1.VirtualMachineSnapshot
+
+		BeforeEach(func() {
+			By("Creating snapshot")
+			childSnapshot = builder.DummyVirtualMachineSnapshot(nsInfo.Namespace, "child-snapshot", vcVM.Name())
+			args := virtualmachine.SnapshotArgs{
+				VMCtx:      vmCtx,
+				VMSnapshot: *childSnapshot,
+				VcVM:       vcVM,
+			}
+			snapMo, err := virtualmachine.CreateSnapshot(args)
+			Expect(err).To(BeNil())
+			Expect(snapMo).ToNot(BeNil())
+		})
+
+		It("should return the parent snapshot of the child snapshot", func() {
+			parent, err := vmProvider.GetParentSnapshot(ctx, childSnapshot.Name, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parent).ToNot(BeNil())
+			Expect(parent.Name).To(Equal(vmSnapshot.Name))
+		})
+
+		When("there is issue finding vm", func() {
+			BeforeEach(func() {
+				vm.Status.UniqueID = ""
+			})
+			It("should return error", func() {
+				parent, err := vmProvider.GetParentSnapshot(ctx, childSnapshot.Name, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(parent).To(BeNil())
+			})
+		})
+
+		When("there is no parent snapshot", func() {
+			It("should return error", func() {
+				parent, err := vmProvider.GetParentSnapshot(ctx, vmSnapshot.Name, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(parent).To(BeNil())
+			})
+		})
+
+		When("snapshot doesn't exist", func() {
+			BeforeEach(func() {
+				childSnapshot.Name = ""
+			})
+			It("should return nil", func() {
+				parent, err := vmProvider.GetParentSnapshot(ctx, childSnapshot.Name, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(parent).To(BeNil())
+			})
+		})
 	})
 
 	Describe("DeleteSnapshot", func() {

@@ -651,3 +651,83 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 
 	return false, nil
 }
+
+// GetSnapshotSize gets the size of the snapshot from the VM.
+func (vs *vSphereVMProvider) GetSnapshotSize(
+	ctx context.Context,
+	vmSnapshotName string,
+	vm *vmopv1.VirtualMachine) (int64, error) {
+
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	ctx = logr.NewContext(ctx, logger)
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "getSnapshotSize")),
+		Logger:  logger,
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
+	}
+
+	var moVM mo.VirtualMachine
+
+	if err = vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM); err != nil {
+		return 0, err
+	}
+
+	vmCtx.MoVM = moVM
+
+	vmNapshot, err := virtualmachine.FindSnapshot(vmCtx, vmSnapshotName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to find snapshot %q: %w", vmSnapshotName, err)
+	}
+
+	size := virtualmachine.GetSnapshotSize(
+		vmCtx, vmNapshot)
+
+	return size, nil
+}
+
+func (vs *vSphereVMProvider) GetParentSnapshot(
+	ctx context.Context,
+	vmSnapshotName string,
+	vm *vmopv1.VirtualMachine) (*vimtypes.VirtualMachineSnapshotTree, error) {
+
+	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	ctx = logr.NewContext(ctx, logger)
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "getParentSnapshot")),
+		Logger:  logger,
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
+	}
+
+	var o mo.VirtualMachine
+
+	err = vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &o)
+	if err != nil {
+		return nil, err
+	}
+
+	vmCtx.MoVM = o
+
+	return virtualmachine.GetParentSnapshot(vmCtx, vmSnapshotName), nil
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -23,6 +24,7 @@ import (
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -94,6 +96,8 @@ type Reconciler struct {
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesnapshots,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesnapshots/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyquotas,verbs=get;list;watch
@@ -107,33 +111,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return ctrl.Result{}, r.ReconcileNormal(
 		ctx,
 		req.Namespace,
-		spqutil.StoragePolicyUsageNameForVM(req.Name))
+		req.Name)
 }
 
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
-	namespace, storagePolicyUsageName string) error {
-
-	objKey := client.ObjectKey{
-		Namespace: namespace,
-		Name:      storagePolicyUsageName,
-	}
-
-	// Make sure the StoragePolicyUsage document exists.
-	var obj spqv1.StoragePolicyUsage
-	if err := r.Client.Get(ctx, objKey, &obj); err != nil {
-		// Even if the SPU is not found, log the error to indicate that
-		// the function was enqueued but could not proceed.
-		return fmt.Errorf(
-			"failed to get StoragePolicyUsage %s: %w", objKey, err)
-	}
+	namespace string,
+	scName string) error {
 
 	var list vmopv1.VirtualMachineList
 	if err := r.Client.List(
 		ctx,
 		&list,
 		client.InNamespace(namespace),
-		client.MatchingFields{"spec.storageClass": obj.Spec.StorageClassName},
+		client.MatchingFields{"spec.storageClass": scName},
 		//
 		// !!! WARNING !!!
 		//
@@ -150,13 +141,44 @@ func (r *Reconciler) ReconcileNormal(
 			"failed to list VMs in namespace %s: %w", namespace, err)
 	}
 
+	errs := []error{}
+	if err := r.ReconcileSPUForVM(ctx, namespace, scName, list.Items); err != nil {
+		errs = append(errs, err)
+	}
+	if err := r.ReconcileSPUForVMSnapshot(ctx, namespace, scName, list.Items); err != nil {
+		errs = append(errs, err)
+	}
+
+	return apierrorsutil.NewAggregate(errs)
+}
+
+func (r *Reconciler) ReconcileSPUForVM(
+	ctx context.Context,
+	namespace string,
+	scName string,
+	vms []vmopv1.VirtualMachine) error {
+
+	objKey := client.ObjectKey{
+		Namespace: namespace,
+		Name:      spqutil.StoragePolicyUsageNameForVM(scName),
+	}
+
+	// Make sure the StoragePolicyUsage document exists.
+	var spu spqv1.StoragePolicyUsage
+	if err := r.Client.Get(ctx, objKey, &spu); err != nil {
+		// Even if the SPU is not found, log the error to indicate that
+		// the function was enqueued but could not proceed.
+		return fmt.Errorf(
+			"failed to get StoragePolicyUsage %s: %w", objKey, err)
+	}
+
 	var (
 		totalUsed     resource.Quantity
 		totalReserved resource.Quantity
 	)
 
-	for i := range list.Items {
-		vm := list.Items[i]
+	for i := range vms {
+		vm := vms[i]
 
 		if !vm.DeletionTimestamp.IsZero() {
 			// Ignore VMs that are being deleted.
@@ -184,20 +206,115 @@ func (r *Reconciler) ReconcileNormal(
 	}
 
 	// Get the StoragePolicyUsage resource again to ensure it is up-to-date.
-	if err := r.Client.Get(ctx, objKey, &obj); err != nil {
+	if err := r.Client.Get(ctx, objKey, &spu); err != nil {
 		return fmt.Errorf(
 			"failed to get StoragePolicyUsage %s: %w", objKey, err)
 	}
 
-	objPatch := client.MergeFrom(obj.DeepCopy())
+	objPatch := client.MergeFrom(spu.DeepCopy())
 
-	if obj.Status.ResourceTypeLevelQuotaUsage == nil {
-		obj.Status.ResourceTypeLevelQuotaUsage = &spqv1.QuotaUsageDetails{}
+	if spu.Status.ResourceTypeLevelQuotaUsage == nil {
+		spu.Status.ResourceTypeLevelQuotaUsage = &spqv1.QuotaUsageDetails{}
 	}
-	obj.Status.ResourceTypeLevelQuotaUsage.Reserved = &totalReserved
-	obj.Status.ResourceTypeLevelQuotaUsage.Used = &totalUsed
+	spu.Status.ResourceTypeLevelQuotaUsage.Reserved = &totalReserved
+	spu.Status.ResourceTypeLevelQuotaUsage.Used = &totalUsed
 
-	if err := r.Client.Status().Patch(ctx, &obj, objPatch); err != nil {
+	if err := r.Client.Status().Patch(ctx, &spu, objPatch); err != nil {
+		return fmt.Errorf(
+			"failed to patch StoragePolicyUsage %s: %w", objKey, err)
+	}
+
+	return nil
+}
+
+func (r *Reconciler) ReconcileSPUForVMSnapshot(
+	ctx context.Context,
+	namespace string,
+	scName string,
+	vms []vmopv1.VirtualMachine) error {
+
+	objKey := client.ObjectKey{
+		Namespace: namespace,
+		Name:      spqutil.StoragePolicyUsageNameForVMSnapshot(scName),
+	}
+
+	// Make sure the StoragePolicyUsage document exists.
+	var spu spqv1.StoragePolicyUsage
+	if err := r.Client.Get(ctx, objKey, &spu); err != nil {
+		return fmt.Errorf(
+			"failed to get StoragePolicyUsage %s: %w", objKey, err)
+	}
+
+	var (
+		totalUsed     resource.Quantity
+		totalReserved resource.Quantity
+	)
+
+	vmMap := make(map[string]vmopv1.VirtualMachine)
+	for _, vm := range vms {
+		vmMap[vm.Name] = vm
+	}
+
+	// TODO (lubron): Use pagination to fetch VirtualMachineSnapshots in batches and update
+	// the StoragePolicyUsage incrementally, so we avoid overloading memory.
+	// Can't think of a good way to index the VMSnapshots by storage class, since a VMSnapshot
+	// Can have disks with different storage classes.
+	vmSnapshotList := &vmopv1.VirtualMachineSnapshotList{}
+	if err := r.Client.List(ctx,
+		vmSnapshotList,
+		client.InNamespace(namespace),
+		//
+		// !!! WARNING !!!
+		//
+		// The use of the UnsafeDisableDeepCopy option improves
+		// performance by skipping a CPU-intensive operation.
+		// However, it also means any writes to the returned
+		// objects will directly impact the cache. Therefore,
+		// please be aware of this when doing anything with the
+		// object(s) that are the result of this operation.
+		//
+		client.UnsafeDisableDeepCopy); err != nil {
+		return fmt.Errorf(
+			"failed to list VirtualMachineSnapshots in namespace %s: %w", namespace, err)
+	}
+
+	for _, vmSnapshot := range vmSnapshotList.Items {
+		// Update the usage only when the CSI has marked the VMSnapshot with volume sync completed.
+		if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
+			constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
+			// Report the snapshot's used capacity.
+			if err := r.reportUsedForSnapshot(vmSnapshot, &totalUsed, vmMap); err != nil {
+				return fmt.Errorf(
+					"failed to report used capacity for %q: %w",
+					vmSnapshot.NamespacedName(), err)
+			}
+		} else {
+			// Report the snapshot's reserved capacity at worst case.
+			if err := r.reportReservedForSnapshot(
+				vmSnapshot, &totalReserved, spu.Spec.StorageClassName); err != nil {
+
+				return fmt.Errorf(
+					"failed to report reserved capacity for %q: %w",
+					vmSnapshot.NamespacedName(), err)
+			}
+		}
+	}
+
+	// Get the StoragePolicyUsage resource again to ensure it is up-to-date.
+	if err := r.Client.Get(ctx, objKey, &spu); err != nil {
+		return fmt.Errorf(
+			"failed to get StoragePolicyUsage %s: %w", objKey, err)
+	}
+
+	objPatch := client.MergeFrom(spu.DeepCopy())
+
+	if spu.Status.ResourceTypeLevelQuotaUsage == nil {
+		spu.Status.ResourceTypeLevelQuotaUsage = &spqv1.QuotaUsageDetails{}
+	}
+	spu.Status.ResourceTypeLevelQuotaUsage.Reserved = &totalReserved
+	spu.Status.ResourceTypeLevelQuotaUsage.Used = &totalUsed
+
+	if err := r.Client.Status().Patch(ctx, &spu, objPatch); err != nil {
 		return fmt.Errorf(
 			"failed to patch StoragePolicyUsage %s: %w", objKey, err)
 	}
@@ -269,6 +386,65 @@ func reportReserved(
 			total.Add(*v)
 		}
 	}
+
+	return nil
+}
+
+// reportReservedForSnapshot reports the reserved capacity for a snapshot.
+func (r *Reconciler) reportReservedForSnapshot(
+	vmSnapshot vmopv1.VirtualMachineSnapshot,
+	total *resource.Quantity,
+	storageClass string) error {
+
+	if vmSnapshot.Spec.VMRef == nil {
+		return fmt.Errorf("vmRef is not set")
+	}
+
+	// It's possible that the snapshot's requested capacity is not updated yet,
+	// so we skip the calculation for now
+	if vmSnapshot.Status.Storage == nil || vmSnapshot.Status.Storage.Requested == nil {
+		r.Logger.V(5).Info("snapshot has no requested capacity reported by controller yet, skip calculating reserved capacity for it", "snapshot", vmSnapshot.Name)
+		return nil
+	}
+	// Loop through all the requested capacities and add the requested capacity
+	// with the same storage class as the SPU's storage class.
+	for _, requested := range vmSnapshot.Status.Storage.Requested {
+		if requested.StorageClass == storageClass {
+			r.Logger.V(5).Info("adding snapshot's requested capacity to total reserved capacity", "snapshot", vmSnapshot.Name, "requested", requested.Total)
+			total.Add(*requested.Total)
+			break
+		}
+	}
+
+	return nil
+}
+
+// reportUsedForSnapshot reports the used capacity for a snapshot.
+// Get the snapshot size from the VMSnapshot's status.Used.Total.
+func (r *Reconciler) reportUsedForSnapshot(
+	vmSnapshot vmopv1.VirtualMachineSnapshot,
+	total *resource.Quantity,
+	vmMap map[string]vmopv1.VirtualMachine) error {
+
+	if vmSnapshot.Spec.VMRef == nil {
+		return fmt.Errorf("vmRef is not set")
+	}
+
+	if _, ok := vmMap[vmSnapshot.Spec.VMRef.Name]; !ok {
+		r.Logger.V(5).Info("VM not found in vmMap, which means the VM's storage class is different from the SPU's storage class, skip calculating used capacity for it",
+			"vm", vmSnapshot.Spec.VMRef.Name)
+		return nil
+	}
+
+	// There might be chance that VMSnapshot's marked as CSIVolumeSync completed but VMSnapshot controller
+	// hasn't updated VMSnapshot with used capacity yet.
+	// Wait for next reconcile to update the SPU.
+	if vmSnapshot.Status.Storage == nil || vmSnapshot.Status.Storage.Used == nil {
+		r.Logger.V(5).Info("snapshot has no used capacity reported by controller yet, skip calculating used capacity for it", "snapshot", vmSnapshot.Name)
+		return nil
+	}
+
+	total.Add(*vmSnapshot.Status.Storage.Used)
 
 	return nil
 }

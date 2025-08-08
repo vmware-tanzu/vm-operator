@@ -215,6 +215,50 @@ spec:
                   with the quiesce option to ensure a snapshot with a consistent
                   state of the guest file system.
                 type: boolean
+              storage:
+                description: |-
+                  Storage describes the observed amount of storage used by a
+                  VirtualMachineSnapshot, including the space for FCDs.
+                properties:
+                  requested:
+                    description: |-
+                      Requested describes the observed amount of storage requested by a
+                      VirtualMachineSnapshot. It's a list of requested storage for each
+                      storage class.
+                      Since a snapshot can have multiple PVCs, it can point to multiple storage
+                      classes.
+                    items:
+                      description: |-
+                        VirtualMachineSnapshotStorageStatusRequested describes the observed amount of
+                        storage requested by a VirtualMachineSnapshot for a storage class.
+                      properties:
+                        storageClass:
+                          description: StorageClass is the name of the storage class.
+                          type: string
+                        total:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            Total describes the total storage space requested by a
+                            VirtualMachineSnapshot for the storage class.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                      required:
+                      - storageClass
+                      - total
+                      type: object
+                    type: array
+                  used:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Used describes the observed amount of storage used by a
+                      VirtualMachineSnapshot, except the space for FCDs.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                type: object
               uniqueID:
                 description: |-
                   UniqueID describes a unique identifier provider by the backing

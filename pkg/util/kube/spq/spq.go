@@ -37,6 +37,12 @@ const (
 	ValidatingWebhookConfigName = "vmware-system-vmop-validating-webhook-configuration"
 	WebhookConfigAnnotationKey  = "cert-manager.io/inject-ca-from"
 	SecretCertKey               = "ca.crt"
+
+	// VirtualMachineKind is the name of the VirtualMachine kind.
+	VirtualMachineKind = "VirtualMachine"
+
+	// VirtualMachineSnapshotKind is the name of the VirtualMachineSnapshot kind.
+	VirtualMachineSnapshotKind = "VirtualMachineSnapshot"
 )
 
 // StoragePolicyUsageNameForVM returns the name of the StoragePolicyUsage

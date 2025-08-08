@@ -141,11 +141,11 @@ func (r *Reconciler) ReconcileNormal(
 		NameFunc func(string) string
 	}{
 		{
-			Kind:     "VirtualMachine",
+			Kind:     spqutil.VirtualMachineKind,
 			NameFunc: spqutil.StoragePolicyUsageNameForVM,
 		},
 		{
-			Kind:     "VirtualMachineSnapshot",
+			Kind:     spqutil.VirtualMachineSnapshotKind,
 			NameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
 		},
 	}

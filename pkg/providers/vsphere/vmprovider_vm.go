@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -1450,16 +1451,153 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 	ecList := object.OptionValueList(moSnap.Config.ExtraConfig)
 	raw, exists := ecList.GetString(backupapi.VMResourceYAMLExtraConfigKey)
 	if !exists {
-		vmCtx.Logger.V(4).Info("VM does not have the necessary ExtraConfig in the Snapshot",
+		vmCtx.Logger.V(4).Info("VM does not have the necessary ExtraConfig in the Snapshot. Approximating the spec from the VirtualMachineConfigInfo",
 			"expectedKey", backupapi.VMResourceYAMLExtraConfigKey)
-		// TODO: VMSVC-2709
-		// Note that an imported VM could have snapshots that do not
-		// have this backup key set. In this case, we need to
-		// approximately generate the spec from the ConfigInfo.
-		// We also set the ExtraConfig so we do not have to do this
-		// when this VM is reverted to the same snapshot in future
-		// again.
-		return "", nil
+
+		// For VMs that are imported, we do not have the
+		// ExtraConfig set in the snapshot. In this case, we
+		// will approximate the spec from the VirtualMachineConfigInfo.
+		// This is a best-effort attempt to restore the VM spec
+		// and metadata from the snapshot.
+
+		// TODO(future): Check if the VM is actually imported.
+
+		vm := vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmCtx.VM.Name,
+				Namespace: vmCtx.VM.Namespace,
+			},
+		}
+
+		// Labels and Annotations are a TODO item. Discussions are going on about
+		// storing Label and Annotations in VC.
+		//
+		// Spec
+		// ----
+		//
+		// Setting some fields like NextRestartTime, RestartMode, CurrentSnapshot
+		// don't make sense as they trigger certain lifecycle events not relevant to
+		// the current revert being done.
+		//
+		// Supervisor specific fields are not mapped:
+		// 	- ReadinessProbe
+		//  - Reserved
+		//	- Volumes
+		//
+		// Fields not applicable to Imported VMs are not mapped:
+		// 	- Image
+		//	- ImageName
+		//	- Class
+		//	- ClassName
+		//	- Cdrom
+		//	- Bootstrap
+		//
+		// No mapping for the following fields:
+		// 	- Affinity isn't used anywhere yet
+		//
+		// Fields which require discussion and/or PM input are not mapped at the moment:
+		//	- Advanced.BootDiskCapacity, DefaultVolumeProvisioningMode
+		//	- BootOptions.Firmware TODO(VMSVC-NNNN)
+		// 	- Network.{DomainName,Disabled,Nameservers,SearchDomains,Interfaces} TODO(VMSVC-NNNNN)
+		// 	- Crypto TODO(VMSVC-NNNNN)
+		//	- GroupName TODO(VMSVC-NNNNN): TODO(AKP): Figure out with the PMs what's the intended behavior.
+		//	- PowerState TODO(VMVSVC-NNNNN) Get this from vmSnap Object. Currently the PowerState is not reflected in the object.
+		//	- StorageClass TODO(VMSVC-NNNN)
+		//
+		vm.Spec = vmopv1.VirtualMachineSpec{
+			InstanceUUID: moSnap.Config.InstanceUuid,
+			BiosUUID:     moSnap.Config.Uuid,
+			GuestID:      moSnap.Config.GuestId,
+
+			// Power Modes are set to the default value (reasonable defaults)
+			PowerOffMode: vmopv1.VirtualMachinePowerOpModeTrySoft,
+			SuspendMode:  vmopv1.VirtualMachinePowerOpModeTrySoft,
+
+			// PromoteDisksMode is set to the default value (reasonable defaults)
+			PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOnline,
+
+			Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+				ChangeBlockTracking: moSnap.Config.ChangeTrackingEnabled,
+			},
+
+			// TODO(nabarun): How to get this info?
+			// Get using PbmQueryAssociatedProfile and get the Class from that
+			// Alternate, if we assume the below doesn't happen, the StorageClass might as well be
+			// the one on the VM CR since MO will ensure that
+			// TODO(AKP): Ask PM about the corner case whether MO imports a
+			// really old snapshot whose StoragePolicy doesn't exist in NS anymore
+			// StorageClass: "",
+
+			Network: &vmopv1.VirtualMachineNetworkSpec{
+				HostName: vmCtx.MoVM.Guest.HostName,
+			},
+		}
+
+		// MinHardwareVersion is set to the Current Hardware Version of the VM
+		chv, err := strconv.ParseInt(moSnap.Config.Version, 10, 32)
+		if err != nil {
+			vmCtx.Logger.V(5).Info("unable to approximate minimum hardware version", "managed object hardware version", moSnap.Config.Version)
+		} else {
+			vm.Spec.MinHardwareVersion = int32(chv)
+		}
+
+		// process BootOptions
+		// TODO(nabarun): Skip BootOptions for now. Only recently added in context of VMGroup.
+		// TODO(AKP): Start a thread with akutz and let him know.
+		/*
+			bo := &vmopv1.VirtualMachineBootOptions{
+				// TODO(nabarun): is this even stored in moVM config?
+				// Decision: Skip, create an issue and come back.
+				//Firmware: vmopv1.VirtualMachineBootOptionsFirmwareType(),
+
+				// TODO(nabarun): Skip these few.
+				BootDelay:      &metav1.Duration{Duration: time.Duration(moSnap.Config.BootOptions.BootDelay) * time.Millisecond},
+				BootOrder:      []vmopv1.VirtualMachineBootOptionsBootableDevice{},
+				BootRetryDelay: &metav1.Duration{Duration: time.Duration(moSnap.Config.BootOptions.BootRetryDelay) * time.Millisecond},
+			}
+
+			// TODO(nabarun): Skip this. Doesn't make sense.
+			if *moSnap.Config.BootOptions.BootRetryEnabled {
+				bo.BootRetry = vmopv1.VirtualMachineBootOptionsBootRetryEnabled
+			} else {
+				bo.BootRetry = vmopv1.VirtualMachineBootOptionsBootRetryDisabled
+			}
+
+			// TODO(nabarun): Skip this. Doesn't make sense.
+			// Decision: Wait for the conversation w/ akutz
+			if *moSnap.Config.BootOptions.EnterBIOSSetup {
+				bo.EnterBootSetup = vmopv1.VirtualMachineBootOptionsForceBootEntryEnabled
+			} else {
+				bo.EnterBootSetup = vmopv1.VirtualMachineBootOptionsForceBootEntryDisabled
+			}
+
+			if *moSnap.Config.BootOptions.EfiSecureBootEnabled {
+				bo.EFISecureBoot = vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled
+			} else {
+				bo.EFISecureBoot = vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled
+			}
+
+			switch moSnap.Config.BootOptions.NetworkBootProtocol {
+			case string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4):
+				bo.NetworkBootProtocol = vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4
+			case string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv6):
+				bo.NetworkBootProtocol = vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP6
+			}
+
+			vm.Spec.BootOptions = bo
+		*/
+
+		// TODO(future): Labels and Annotations are skipped for now as design discussions are
+		// on storing Labels and Annotations in VC are in progress
+		vm.Labels = map[string]string{}
+		vm.Annotations = map[string]string{}
+
+		vmYAML, err := yaml.Marshal(vm)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal VM into YAML %+v: %w", vm, err)
+		}
+
+		return string(vmYAML), nil
 	}
 
 	vmCtx.Logger.V(5).Info("Found backup data in snapshot config",

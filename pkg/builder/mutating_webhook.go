@@ -67,12 +67,13 @@ func NewMutatingWebhook(
 
 	// Build the WebhookContext.
 	webhookContext := &pkgctx.WebhookContext{
-		Context:            ctx,
-		Name:               webhookNameShort,
-		Namespace:          ctx.Namespace,
-		ServiceAccountName: ctx.ServiceAccountName,
-		Recorder:           record.New(mgr.GetEventRecorderFor(webhookNameLong)),
-		Logger:             ctx.Logger.WithName(webhookNameShort),
+		Context:                         ctx,
+		Name:                            webhookNameShort,
+		Namespace:                       ctx.Namespace,
+		ServiceAccountName:              ctx.ServiceAccountName,
+		Recorder:                        record.New(mgr.GetEventRecorderFor(webhookNameLong)),
+		Logger:                          ctx.Logger.WithName(webhookNameShort),
+		EnableWebhookClientVerification: ctx.EnableWebhookClientVerification,
 	}
 
 	// Initialize the webhook's decoder.
@@ -88,6 +89,7 @@ func NewMutatingWebhook(
 				WebhookContext: webhookContext,
 				Mutator:        mutator,
 			},
+			WithContextFunc: contextWithClientCert,
 		},
 	}, nil
 }
@@ -100,7 +102,13 @@ type mutatingWebhookHandler struct {
 	Mutator
 }
 
-func (h *mutatingWebhookHandler) Handle(_ context.Context, req admission.Request) admission.Response {
+func (h *mutatingWebhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
+	if h.EnableWebhookClientVerification {
+		if err := VerifyWebhookRequest(ctx); err != nil {
+			return webhook.Errored(http.StatusBadRequest, err)
+		}
+	}
+
 	if h.Mutator == nil {
 		panic("mutator should never be nil")
 	}

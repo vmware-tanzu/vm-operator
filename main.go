@@ -90,7 +90,7 @@ func main() {
 
 	initManager()
 
-	initWebhookServer()
+	initWebhookServer(managerOpts.EnableWebhookClientVerification)
 
 	initSIGUSR2RestartHandler()
 
@@ -264,6 +264,12 @@ func initFlags() {
 		defaultConfig.ContainerNode,
 		"Should be true if we're running nodes in containers (with vcsim).",
 	)
+	flag.BoolVar(
+		&managerOpts.EnableWebhookClientVerification,
+		"enable-webhook-client-verification",
+		false,
+		"Enable webhook client verification on the webhook server.",
+	)
 
 	logsv1.AddGoFlags(logOptions, flag.CommandLine)
 
@@ -360,7 +366,7 @@ func initManager() {
 	}
 }
 
-func initWebhookServer() {
+func initWebhookServer(enableWebhookClientVerification bool) {
 	setupLog.Info("Setting up webhook server TLS config")
 	webhookServer := mgr.GetWebhookServer()
 	srv := webhookServer.(*webhook.DefaultServer)
@@ -376,6 +382,13 @@ func initWebhookServer() {
 	}
 	srv.Options.TLSOpts = []func(*tls.Config){
 		tlsCfgFunc,
+	}
+
+	clientCfgFunc := func(cfg *tls.Config) {
+		cfg.ClientAuth = tls.RequestClientCert
+	}
+	if enableWebhookClientVerification {
+		srv.Options.TLSOpts = append(srv.Options.TLSOpts, clientCfgFunc)
 	}
 
 	setupLog.Info("Adding readiness check to controller manager")

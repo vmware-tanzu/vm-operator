@@ -5,6 +5,13 @@
 package builder_test
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
+	"os"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -73,3 +80,51 @@ var _ = DescribeTable("IsPrivilegedAccount",
 		true,
 	),
 )
+
+var _ = Describe("VerifyWebhookRequest", func() {
+	BeforeEach(func() {
+		dir := filepath.Dir(caFilePath)
+		Expect(os.MkdirAll(dir, 0755)).To(Succeed())
+		Expect(os.WriteFile(caFilePath, []byte(sampleCert), 0644)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		Expect(os.Remove(caFilePath)).To(Succeed())
+		Expect(os.RemoveAll("/tmp/k8s-webhook-server")).To(Succeed())
+	})
+
+	When("request has no context key for peer certs", func() {
+		It("should return an error", func() {
+			err := builder.VerifyWebhookRequest(context.TODO())
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	When("request has invalid peer certs", func() {
+		It("should return an error", func() {
+			block, _ := pem.Decode([]byte(invalidClientCert))
+			clientCert, err := x509.ParseCertificate(block.Bytes)
+			Expect(err).NotTo(HaveOccurred())
+
+			ctx := context.WithValue(context.TODO(), builder.RequestClientCertificateContextKey, &tls.ConnectionState{
+				PeerCertificates: []*x509.Certificate{clientCert},
+			})
+			err = builder.VerifyWebhookRequest(ctx)
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	When("request has valid peer certs", func() {
+		It("should not return an error", func() {
+			block, _ := pem.Decode([]byte(sampleClientCert))
+			clientCert, err := x509.ParseCertificate(block.Bytes)
+			Expect(err).NotTo(HaveOccurred())
+
+			ctx := context.WithValue(context.TODO(), builder.RequestClientCertificateContextKey, &tls.ConnectionState{
+				PeerCertificates: []*x509.Certificate{clientCert},
+			})
+			err = builder.VerifyWebhookRequest(ctx)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+})

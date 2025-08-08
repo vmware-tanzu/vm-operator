@@ -25,16 +25,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/go-logr/logr"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
 const (
 	webhookName            = "vmservice.cns.vsphere.vmware.com"
-	webhookPath            = "/getrequestedcapacityforvirtualmachine"
+	vmWebhookPath          = "/getrequestedcapacityforvirtualmachine"
+	vmSnapshotWebhookPath  = "/getrequestedcapacityforvirtualmachinesnapshot"
 	scParamStoragePolicyID = "storagePolicyID"
 )
 
@@ -53,12 +57,36 @@ type RequestedCapacity struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// CapacityResponse is the response body returned by the webhook to the SPQ webhook.
+// It has a list of RequestedCapacity for each storage class.
 type CapacityResponse struct {
+	RequestedCapacities []*RequestedCapacity
+	admission.Response
+}
+
+// LegacyCapacityResponse is the response body returned by the webhook to the SPQ webhook.
+// It has a single RequestedCapacity for the storage class.
+// This is to be backward compatible with the previous behavior.
+type LegacyCapacityResponse struct {
 	RequestedCapacity
 	admission.Response
 }
 
-type RequestedCapacityHandler struct {
+type WebhookHandler interface {
+	Handle(req admission.Request) CapacityResponse
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+	WriteResponse(w http.ResponseWriter, response CapacityResponse)
+}
+
+type VMRequestedCapacityHandler struct {
+	*pkgctx.WebhookContext
+	admission.Decoder
+
+	Client    client.Client
+	Converter runtime.UnstructuredConverter
+}
+
+type VMSnapshotRequestedCapacityHandler struct {
 	*pkgctx.WebhookContext
 	admission.Decoder
 
@@ -70,6 +98,8 @@ type RequestedCapacityHandler struct {
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	webhookNameLong := fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, webhookName)
 
+	logger := ctx.Logger.WithName(webhookName)
+
 	// Build the webhookContext.
 	webhookContext := &pkgctx.WebhookContext{
 		Context:            ctx,
@@ -77,23 +107,37 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		Namespace:          ctx.Namespace,
 		ServiceAccountName: ctx.ServiceAccountName,
 		Recorder:           record.New(mgr.GetEventRecorderFor(webhookNameLong)),
-		Logger:             ctx.Logger.WithName(webhookName),
+		Logger:             logger,
 	}
 	// Initialize the webhook's decoder.
 	decoder := admission.NewDecoder(mgr.GetScheme())
 
-	handler := &RequestedCapacityHandler{
+	vmHandler := &VMRequestedCapacityHandler{
 		Client:         mgr.GetClient(),
 		Converter:      runtime.DefaultUnstructuredConverter,
 		Decoder:        decoder,
 		WebhookContext: webhookContext,
 	}
-	mgr.GetWebhookServer().Register(webhookPath, handler)
+
+	mgr.GetWebhookServer().Register(vmWebhookPath, vmHandler)
+
+	// Register the VMSnapshot webhook if VMSnapshots feature is enabled.
+	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
+		logger.V(4).Info("VMSnapshots feature is enabled, registering VMSnapshot storage quota webhook")
+		vmSnapshotHandler := &VMSnapshotRequestedCapacityHandler{
+			Client:         mgr.GetClient(),
+			Converter:      runtime.DefaultUnstructuredConverter,
+			Decoder:        decoder,
+			WebhookContext: webhookContext,
+		}
+
+		mgr.GetWebhookServer().Register(vmSnapshotWebhookPath, vmSnapshotHandler)
+	}
 
 	return nil
 }
 
-func (h *RequestedCapacityHandler) Handle(req admission.Request) CapacityResponse {
+func (h *VMRequestedCapacityHandler) Handle(req admission.Request) CapacityResponse {
 	var (
 		obj, oldObj   *unstructured.Unstructured
 		handleRequest func(ctx *pkgctx.WebhookRequestContext) CapacityResponse
@@ -141,7 +185,7 @@ func (h *RequestedCapacityHandler) Handle(req admission.Request) CapacityRespons
 }
 
 // HandleCreate returns the Boot Disk capacity from the corresponding VMI/CVMI for the VM object in the AdmissionRequest.
-func (h *RequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContext) CapacityResponse {
+func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContext) CapacityResponse {
 	vm := &vmopv1.VirtualMachine{}
 	if err := h.Converter.FromUnstructured(ctx.Obj.UnstructuredContent(), vm); err != nil {
 		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
@@ -210,13 +254,15 @@ func (h *RequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContex
 	}
 
 	return CapacityResponse{
-		RequestedCapacity: RequestedCapacity{
-			Capacity:         *capacity,
-			StorageClassName: scName,
-			// If this parameter does not exist, then it is not necessarily an error condition. Return
-			// an empty value for StoragePolicyID and let Storage Policy Quota extension service decide
-			// what to do.
-			StoragePolicyID: sc.Parameters[scParamStoragePolicyID],
+		RequestedCapacities: []*RequestedCapacity{
+			{
+				Capacity:         *capacity,
+				StorageClassName: scName,
+				// If this parameter does not exist, then it is not necessarily an error condition. Return
+				// an empty value for StoragePolicyID and let Storage Policy Quota extension service decide
+				// what to do.
+				StoragePolicyID: sc.Parameters[scParamStoragePolicyID],
+			},
 		},
 		Response: webhook.Allowed(""),
 	}
@@ -227,7 +273,7 @@ func (h *RequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContex
 //   - If vm has Spec.Advanced.BootDiskCapacity set, while it is not set for oldVM, then use the first classic disk in
 //     oldVM.Status.Volumes as this basis for comparison, again returning only a positive difference.
 //   - If vm does not have Spec.Advanced.BootDiskCapacity set, then return an empty response.
-func (h *RequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestContext) CapacityResponse {
+func (h *VMRequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestContext) CapacityResponse {
 	if !ctx.Obj.GetDeletionTimestamp().IsZero() {
 		return CapacityResponse{Response: admission.Allowed(builder.AdmitMesgUpdateOnDeleting)}
 	}
@@ -262,12 +308,10 @@ func (h *RequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestContex
 	} else {
 		oldCapacity = oldVM.Spec.Advanced.BootDiskCapacity
 	}
-
 	if capacity.Cmp(*oldCapacity) != 1 {
 		return CapacityResponse{Response: webhook.Allowed("")}
 	}
 	capacity.Sub(*oldCapacity)
-
 	scName := vm.Spec.StorageClass
 	sc := &storagev1.StorageClass{}
 	if err := h.Client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
@@ -276,31 +320,22 @@ func (h *RequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestContex
 		}
 		return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
 	}
-
 	return CapacityResponse{
-		RequestedCapacity: RequestedCapacity{
-			Capacity:         *capacity,
-			StorageClassName: scName,
-			// If this parameter does not exist, then it is not necessarily an error condition. Return
-			// an empty value for StoragePolicyID and let Storage Policy Quota extension service decide
-			// what to do.
-			StoragePolicyID: sc.Parameters[scParamStoragePolicyID],
+		RequestedCapacities: []*RequestedCapacity{
+			{
+				Capacity:         *capacity,
+				StorageClassName: scName,
+				// If this parameter does not exist, then it is not necessarily an error condition. Return
+				// an empty value for StoragePolicyID and let Storage Policy Quota extension service decide
+				// what to do.
+				StoragePolicyID: sc.Parameters[scParamStoragePolicyID],
+			},
 		},
 		Response: webhook.Allowed(""),
 	}
 }
 
-var admissionScheme = runtime.NewScheme()
-var admissionCodecs = serializer.NewCodecFactory(admissionScheme)
-
-const maxRequestSize = int64(7 * 1024 * 1024)
-
-func init() {
-	utilruntime.Must(v1.AddToScheme(admissionScheme))
-	utilruntime.Must(v1beta1.AddToScheme(admissionScheme))
-}
-
-func (h *RequestedCapacityHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *VMRequestedCapacityHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil || r.Body == http.NoBody {
 		err := errors.New("request body is empty")
 		h.WebhookContext.Logger.Error(err, "bad request")
@@ -345,17 +380,198 @@ func (h *RequestedCapacityHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		h.WriteResponse(w, CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)})
 		return
 	}
-	h.WebhookContext.Logger.V(5).Info("received request")
+	h.WebhookContext.Logger.V(4).Info("received request")
 
 	h.WriteResponse(w, h.Handle(req))
 }
 
-func (h *RequestedCapacityHandler) WriteResponse(w http.ResponseWriter, response CapacityResponse) {
+var admissionScheme = runtime.NewScheme()
+var admissionCodecs = serializer.NewCodecFactory(admissionScheme)
+
+const maxRequestSize = int64(7 * 1024 * 1024)
+
+func init() {
+	utilruntime.Must(v1.AddToScheme(admissionScheme))
+	utilruntime.Must(v1beta1.AddToScheme(admissionScheme))
+}
+func (h *VMRequestedCapacityHandler) WriteResponse(w http.ResponseWriter, response CapacityResponse) {
 	if !response.Response.Allowed {
-		response.Reason = response.Response.Result.Message
-		w.WriteHeader(int(response.Response.Result.Code))
+		h.WebhookContext.Logger.Error(errors.New(response.Response.Result.Message), "admission denied")
+		// Write error and return early.
+		http.Error(w, response.Response.Result.Message, int(response.Response.Result.Code))
+		return
 	}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+
+	var res any
+	// If VMSnapshots feature is enabled, then return []*RequestedCapacity.
+	// Since that's what quota webhook expects when VMSnapshots feature is enabled.
+	if pkgcfg.FromContext(h.WebhookContext.Context).Features.VMSnapshots {
+		res = response.RequestedCapacities
+	} else {
+		switch len(response.RequestedCapacities) {
+		case 1:
+			// This is to be backward compatible with the previous behavior
+			// when the VMsnapshot feature is disabled.
+			res = LegacyCapacityResponse{
+				RequestedCapacity: *response.RequestedCapacities[0],
+				Response:          response.Response,
+			}
+		case 0:
+			// This is to be backward compatible with the previous behavior.
+			// This case should only happen when the VM Update doesn't change
+			// the requested capacity.
+			res = LegacyCapacityResponse{
+				RequestedCapacity: RequestedCapacity{},
+				Response:          response.Response,
+			}
+		default:
+			// impossible case
+		}
+	}
+
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		h.WebhookContext.Logger.Error(err, "unable to encode and write the response")
+
+		serverError := webhook.Errored(http.StatusInternalServerError, err)
+		if err = json.NewEncoder(w).Encode(v1.AdmissionReview{Response: &serverError.AdmissionResponse}); err != nil {
+			h.WebhookContext.Logger.Error(err, "still unable to encode and write the InternalServerError response")
+		}
+	}
+}
+
+func (h *VMSnapshotRequestedCapacityHandler) Handle(req admission.Request) CapacityResponse {
+	if req.Operation != v1.Create {
+		return CapacityResponse{Response: webhook.Allowed(string(req.Operation))}
+	}
+
+	obj := &unstructured.Unstructured{}
+	if err := h.DecodeRaw(req.Object, obj); err != nil {
+		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+	}
+
+	if _, ok := obj.GetAnnotations()[pkgconst.SkipValidationAnnotationKey]; ok {
+		// The VM Snapshot has the skip validation annotation, so just allow this VM Snapshot to
+		// effectively bypass quota validation by returning 0 to the quota
+		// framework.
+		return CapacityResponse{Response: webhook.Allowed(builder.SkipValidationAllowed)}
+	}
+
+	webhookRequestContext := &pkgctx.WebhookRequestContext{
+		WebhookContext: h.WebhookContext,
+		Op:             req.Operation,
+		Obj:            obj,
+		UserInfo:       req.UserInfo,
+		Logger:         h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
+	}
+
+	return h.HandleCreate(webhookRequestContext)
+
+}
+
+// HandleCreate returns the Boot Disk capacity from the corresponding VMI/CVMI for the VM object in the AdmissionRequest.
+func (h *VMSnapshotRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContext) CapacityResponse {
+	h.WebhookContext.Logger.V(4).Info("HandleCreate for VMSnapshot")
+
+	vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
+	if err := h.Converter.FromUnstructured(ctx.Obj.UnstructuredContent(), vmSnapshot); err != nil {
+		return CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)}
+	}
+
+	requested, err := kubeutil.CalculateReservedForSnapshotPerStorageClass(ctx, h.Client, h.WebhookContext.Logger, *vmSnapshot)
+	if err != nil {
+		return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
+	}
+
+	requestedCapacities := make([]*RequestedCapacity, len(requested))
+	for i, requested := range requested {
+		cur := RequestedCapacity{
+			Capacity:         *requested.Total,
+			StorageClassName: requested.StorageClass,
+		}
+		// Fetch the storage class to get the storage policy ID.
+		sc := &storagev1.StorageClass{}
+		if err := h.Client.Get(ctx, client.ObjectKey{Name: requested.StorageClass}, sc); err != nil {
+			if apierrors.IsNotFound(err) {
+				h.WebhookContext.Logger.Error(err, "storage class not found", "storageClass", requested.StorageClass)
+				return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
+			}
+			return CapacityResponse{Response: webhook.Errored(http.StatusInternalServerError, err)}
+		}
+		cur.StoragePolicyID = sc.Parameters[scParamStoragePolicyID]
+		requestedCapacities[i] = &cur
+	}
+
+	return CapacityResponse{
+		RequestedCapacities: requestedCapacities,
+		Response:            webhook.Allowed(""),
+	}
+}
+
+func (h *VMSnapshotRequestedCapacityHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	serveHTTP(w, r, h, h.WebhookContext.Logger)
+}
+
+func serveHTTP(w http.ResponseWriter, r *http.Request, h WebhookHandler, logger logr.Logger) {
+	if r.Body == nil || r.Body == http.NoBody {
+		err := errors.New("request body is empty")
+		logger.Error(err, "bad request")
+		h.WriteResponse(w, CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)})
+		return
+	}
+
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(r.Body)
+
+	limitedReader := &io.LimitedReader{R: r.Body, N: maxRequestSize}
+	body, err := io.ReadAll(limitedReader)
+	if err != nil {
+		logger.Error(err, "unable to read the body from the incoming request")
+		h.WriteResponse(w, CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)})
+		return
+	}
+	if limitedReader.N <= 0 {
+		err := fmt.Errorf("request entity is too large; limit is %d bytes", maxRequestSize)
+		logger.Error(err, "unable to read the body from the incoming request; limit reached")
+		h.WriteResponse(w, CapacityResponse{Response: webhook.Errored(http.StatusRequestEntityTooLarge, err)})
+		return
+	}
+
+	// verify the content type is accurate
+	if contentType := r.Header.Get("Content-Type"); contentType != "application/json" {
+		err = fmt.Errorf("contentType=%s, expected application/json", contentType)
+		logger.Error(err, "unable to process a request with unknown content type")
+		h.WriteResponse(w, CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)})
+		return
+	}
+
+	req := admission.Request{}
+	ar := unversionedAdmissionReview{}
+	// avoid an extra copy
+	ar.Request = &req.AdmissionRequest
+	ar.SetGroupVersionKind(v1.SchemeGroupVersion.WithKind("AdmissionReview"))
+	_, _, err = admissionCodecs.UniversalDeserializer().Decode(body, nil, &ar)
+	if err != nil {
+		logger.Error(err, "unable to decode the request")
+		h.WriteResponse(w, CapacityResponse{Response: webhook.Errored(http.StatusBadRequest, err)})
+		return
+	}
+
+	logger.V(4).Info("received request")
+
+	h.WriteResponse(w, h.Handle(req))
+}
+
+func (h *VMSnapshotRequestedCapacityHandler) WriteResponse(w http.ResponseWriter, response CapacityResponse) {
+	if !response.Response.Allowed {
+		h.WebhookContext.Logger.Error(errors.New(response.Response.Result.Message), "admission denied")
+		// Write error and return early.
+		http.Error(w, response.Response.Result.Message, int(response.Response.Result.Code))
+		return
+	}
+
+	// Only encode the RequestedCapacities since SPQ webhook only expects []*RequestedCapacity.
+	if err := json.NewEncoder(w).Encode(response.RequestedCapacities); err != nil {
 		h.WebhookContext.Logger.Error(err, "unable to encode and write the response")
 
 		serverError := webhook.Errored(http.StatusInternalServerError, err)

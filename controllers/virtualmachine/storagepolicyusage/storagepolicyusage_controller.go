@@ -283,7 +283,8 @@ func (r *Reconciler) ReconcileSPUForVMSnapshot(
 		if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
 			constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
 			// Report the snapshot's used capacity.
-			if err := r.reportUsedForSnapshot(vmSnapshot, &totalUsed, vmMap); err != nil {
+			if err := r.reportUsedForSnapshot(
+				ctx, vmSnapshot, &totalUsed, vmMap); err != nil {
 				return fmt.Errorf(
 					"failed to report used capacity for %q: %w",
 					vmSnapshot.NamespacedName(), err)
@@ -291,7 +292,7 @@ func (r *Reconciler) ReconcileSPUForVMSnapshot(
 		} else {
 			// Report the snapshot's reserved capacity at worst case.
 			if err := r.reportReservedForSnapshot(
-				vmSnapshot, &totalReserved, spu.Spec.StorageClassName); err != nil {
+				ctx, vmSnapshot, &totalReserved, spu.Spec.StorageClassName); err != nil {
 
 				return fmt.Errorf(
 					"failed to report reserved capacity for %q: %w",
@@ -392,6 +393,7 @@ func reportReserved(
 
 // reportReservedForSnapshot reports the reserved capacity for a snapshot.
 func (r *Reconciler) reportReservedForSnapshot(
+	ctx context.Context,
 	vmSnapshot vmopv1.VirtualMachineSnapshot,
 	total *resource.Quantity,
 	storageClass string) error {
@@ -400,17 +402,21 @@ func (r *Reconciler) reportReservedForSnapshot(
 		return fmt.Errorf("vmRef is not set")
 	}
 
+	logger := pkgutil.FromContextOrDefault(ctx)
+
 	// It's possible that the snapshot's requested capacity is not updated yet,
 	// so we skip the calculation for now
 	if vmSnapshot.Status.Storage == nil || vmSnapshot.Status.Storage.Requested == nil {
-		r.Logger.V(5).Info("snapshot has no requested capacity reported by controller yet, skip calculating reserved capacity for it", "snapshot", vmSnapshot.Name)
+		logger.V(5).Info("snapshot has no requested capacity reported by controller yet, "+
+			"skip calculating reserved capacity for it", "snapshot", vmSnapshot.Name)
 		return nil
 	}
 	// Loop through all the requested capacities and add the requested capacity
 	// with the same storage class as the SPU's storage class.
 	for _, requested := range vmSnapshot.Status.Storage.Requested {
 		if requested.StorageClass == storageClass {
-			r.Logger.V(5).Info("adding snapshot's requested capacity to total reserved capacity", "snapshot", vmSnapshot.Name, "requested", requested.Total)
+			logger.V(5).Info("adding snapshot's requested capacity to total reserved capacity",
+				"snapshot", vmSnapshot.Name, "requested", requested.Total)
 			total.Add(*requested.Total)
 			break
 		}
@@ -422,6 +428,7 @@ func (r *Reconciler) reportReservedForSnapshot(
 // reportUsedForSnapshot reports the used capacity for a snapshot.
 // Get the snapshot size from the VMSnapshot's status.Used.Total.
 func (r *Reconciler) reportUsedForSnapshot(
+	ctx context.Context,
 	vmSnapshot vmopv1.VirtualMachineSnapshot,
 	total *resource.Quantity,
 	vmMap map[string]vmopv1.VirtualMachine) error {
@@ -430,8 +437,11 @@ func (r *Reconciler) reportUsedForSnapshot(
 		return fmt.Errorf("vmRef is not set")
 	}
 
+	logger := pkgutil.FromContextOrDefault(ctx)
+
 	if _, ok := vmMap[vmSnapshot.Spec.VMRef.Name]; !ok {
-		r.Logger.V(5).Info("VM not found in vmMap, which means the VM's storage class is different from the SPU's storage class, skip calculating used capacity for it",
+		logger.V(5).Info("VM not found in vmMap, which means the VM's storage class is "+
+			"different from the SPU's storage class, skip calculating used capacity for it",
 			"vm", vmSnapshot.Spec.VMRef.Name)
 		return nil
 	}
@@ -440,7 +450,8 @@ func (r *Reconciler) reportUsedForSnapshot(
 	// hasn't updated VMSnapshot with used capacity yet.
 	// Wait for next reconcile to update the SPU.
 	if vmSnapshot.Status.Storage == nil || vmSnapshot.Status.Storage.Used == nil {
-		r.Logger.V(5).Info("snapshot has no used capacity reported by controller yet, skip calculating used capacity for it", "snapshot", vmSnapshot.Name)
+		logger.V(5).Info("snapshot has no used capacity reported by controller yet, "+
+			"skip calculating used capacity for it", "snapshot", vmSnapshot.Name)
 		return nil
 	}
 

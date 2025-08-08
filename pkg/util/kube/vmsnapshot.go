@@ -51,7 +51,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 			requestedMap[vm.Spec.StorageClass] = resource.NewQuantity(0, resource.BinarySI)
 		}
 
-		logger.V(5).Info("adding memory size to the total reserved capacity", "memory", vmClass.Spec.Hardware.Memory, "storageClass", vm.Spec.StorageClass)
+		logger.V(4).Info("adding memory size to the total reserved capacity", "memory", vmClass.Spec.Hardware.Memory, "storageClass", vm.Spec.StorageClass)
 		requestedMap[vm.Spec.StorageClass].Add(vmClass.Spec.Hardware.Memory)
 	}
 
@@ -75,7 +75,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 				requestedMap[vm.Spec.StorageClass] = resource.NewQuantity(0, resource.BinarySI)
 			}
 
-			logger.V(5).Info("adding disk size to the total reserved capacity", "disk", volume.Name,
+			logger.V(4).Info("adding disk size to the total reserved capacity", "disk", volume.Name,
 				"storageClass", vm.Spec.StorageClass, "requested", volume.Requested)
 			requestedMap[vm.Spec.StorageClass].Add(*volume.Requested)
 		case vmopv1.VirtualMachineStorageDiskTypeManaged:
@@ -86,7 +86,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 			pvcSpec, ok := volumePVCMap[volume.Name]
 			if !ok {
 				// TODO (lubron): If if this case possible?
-				logger.V(5).Info("skipping disk because corresponding pvc is not found in the vm.spec.volumes", "volume", volume.Name)
+				logger.V(4).Info("skipping disk because corresponding pvc is not found in the vm.spec.volumes", "volume", volume.Name)
 				continue
 			}
 
@@ -98,7 +98,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 					requestedMap[pvcSpec.InstanceVolumeClaim.StorageClass] = resource.NewQuantity(0, resource.BinarySI)
 				}
 
-				logger.V(5).Info("adding disk size to the total reserved capacity", "disk", volume.Name,
+				logger.V(4).Info("adding disk size to the total reserved capacity", "disk", volume.Name,
 					"storageClass", pvcSpec.InstanceVolumeClaim.StorageClass, "requested", pvcSpec.InstanceVolumeClaim.Size)
 				requestedMap[pvcSpec.InstanceVolumeClaim.StorageClass].Add(pvcSpec.InstanceVolumeClaim.Size)
 				continue
@@ -123,7 +123,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 
 			volumeRequested := pvc.Spec.Resources.Requests.Storage()
 
-			logger.V(5).Info("adding disk size to the total reserved capacity", "disk", volume.Name,
+			logger.V(4).Info("adding disk size to the total reserved capacity", "disk", volume.Name,
 				"storageClass", *pvc.Spec.StorageClassName, "requested", volumeRequested)
 			requestedMap[*pvc.Spec.StorageClassName].Add(*volumeRequested)
 		default:

@@ -7,6 +7,7 @@ package context
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -54,9 +55,21 @@ func (v VirtualMachineContext) IsOnToOff() bool {
 		v.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff
 }
 
-func HasVMRunningTask(ctx context.Context) bool {
+var ignoredTaskDescriptionIDs = []string{
+	"com.vmware.wcp.mobility.virtualmachinesimport.create",
+}
+
+// HasVMRunningTask returns true if the VM has a running task that should block
+// reconciling the VM's desired state.
+func HasVMRunningTask(ctx context.Context, checkSharedLock bool) bool {
 	for _, t := range GetVMRecentTasks(ctx) {
-		if t.State == vimtypes.TaskInfoStateRunning {
+		if t.State == vimtypes.TaskInfoStateRunning &&
+			!slices.Contains(ignoredTaskDescriptionIDs, t.DescriptionId) {
+
+			if t.Entity != nil && checkSharedLock {
+				return slices.Contains(t.Locked, *t.Entity)
+			}
+
 			return true
 		}
 	}

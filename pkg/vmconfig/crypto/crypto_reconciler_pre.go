@@ -143,7 +143,7 @@ func (r reconciler) Reconcile(
 
 	if paused.ByAdmin(moVM) ||
 		paused.ByDevOps(vm) ||
-		pkgctx.HasVMRunningTask(ctx) {
+		pkgctx.HasVMRunningTask(ctx, false) {
 
 		// If the VM is paused or has a task, just update the status.
 		return updateStatus(ctx, args, false)

@@ -28,9 +28,22 @@ const (
 	// StoragePolicyUsageKind is the name of the StoragePolicyUsage kind.
 	StoragePolicyUsageKind = "StoragePolicyUsage"
 
-	// StoragePolicyQuotaExtensionName is the name of the storage policy
-	// extension service provided by VM Service.
-	StoragePolicyQuotaExtensionName = "vmware-system-vmop-webhook-service"
+	// StoragePolicyQuotaVMExtensionName is the name of the storage policy
+	// extension service provided by VM Service for VirtualMachines.
+	// *Note*:
+	// This is immutable for backward compatibility, so we can't add
+	// the vm prefix.
+	StoragePolicyQuotaVMExtensionName = "vmware-system-vmop-webhook-service"
+
+	// StoragePolicyQuotaVMSnapshotExtensionName is the name of the storage policy
+	// extension service provided by VM Service for VMSnapshots.
+	// *Note*:
+	// We need to use distinct name for each SPU even though their resourceKind differ.
+	// This is due to the limitation of quota webhook.
+	// Storage quota framework uses the extension name from the webhook service
+	// (and not resource kind) to consolidate all the SPUs for the StoragePolicyQuota
+	// for a namespace.  Therefore, each extension must have a different name.
+	StoragePolicyQuotaVMSnapshotExtensionName = "snapshot-vmware-system-vmop-webhook-service"
 
 	// ValidatingWebhookConfigName is the name of the ValidatingWebhookConfiguration
 	// containing correct CA Bundle used by StoragePolicyUsage.

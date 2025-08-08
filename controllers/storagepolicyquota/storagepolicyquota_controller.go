@@ -140,19 +140,22 @@ func (r *Reconciler) ReconcileNormal(
 	// - VirtualMachine
 	// - VirtualMachineSnapshot
 	resourceKinds := []struct {
-		kind     string
-		nameFunc func(string) string
-		enabled  bool // Only create StoragePolicyUsage for enabled resource kinds
+		kind               string
+		nameFunc           func(string) string
+		quotaExtensionName string
+		enabled            bool // Only create StoragePolicyUsage for enabled resource kinds
 	}{
 		{
-			kind:     spqutil.VirtualMachineKind,
-			nameFunc: spqutil.StoragePolicyUsageNameForVM,
-			enabled:  true,
+			kind:               spqutil.VirtualMachineKind,
+			nameFunc:           spqutil.StoragePolicyUsageNameForVM,
+			quotaExtensionName: spqutil.StoragePolicyQuotaVMExtensionName,
+			enabled:            true,
 		},
 		{
-			kind:     spqutil.VirtualMachineSnapshotKind,
-			nameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
-			enabled:  pkgcfg.FromContext(ctx).Features.VMSnapshots,
+			kind:               spqutil.VirtualMachineSnapshotKind,
+			nameFunc:           spqutil.StoragePolicyUsageNameForVMSnapshot,
+			quotaExtensionName: spqutil.StoragePolicyQuotaVMSnapshotExtensionName,
+			enabled:            pkgcfg.FromContext(ctx).Features.VMSnapshots,
 		},
 	}
 
@@ -183,7 +186,7 @@ func (r *Reconciler) ReconcileNormal(
 				spu.Spec.StoragePolicyId = spq.Spec.StoragePolicyId
 				spu.Spec.ResourceAPIgroup = ptr.To(vmopv1.GroupVersion.Group)
 				spu.Spec.ResourceKind = resourceKind.kind
-				spu.Spec.ResourceExtensionName = spqutil.StoragePolicyQuotaExtensionName
+				spu.Spec.ResourceExtensionName = resourceKind.quotaExtensionName
 				spu.Spec.ResourceExtensionNamespace = r.PodNamespace
 				spu.Spec.CABundle = caBundle
 

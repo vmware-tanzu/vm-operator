@@ -109,6 +109,7 @@ var _ = Describe(
 					Expect(os.Setenv("SYNC_IMAGE_REQUEUE_DELAY", "128h")).To(Succeed())
 					Expect(os.Setenv("DEPLOYMENT_NAME", "129")).To(Succeed())
 					Expect(os.Setenv("SIGUSR2_RESTART_ENABLED", "true")).To(Succeed())
+					Expect(os.Setenv("PROMOTE_DISKS_MODE", "130")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
@@ -163,6 +164,7 @@ var _ = Describe(
 						SyncImageRequeueDelay:        128 * time.Hour,
 						DeploymentName:               "129",
 						SIGUSR2RestartEnabled:        true,
+						PromoteDisksMode:             "130",
 					}))
 				})
 			})

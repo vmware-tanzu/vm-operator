@@ -32,6 +32,7 @@ func FromEnv() Config {
 	setBool(env.AsyncCreateEnabled, &config.AsyncCreateEnabled)
 	setDuration(env.MemStatsPeriod, &config.MemStatsPeriod)
 	setString(env.FastDeployMode, &config.FastDeployMode)
+	setString(env.PromoteDisksMode, &config.PromoteDisksMode)
 	setString(env.VCCredsSecretName, &config.VCCredsSecretName)
 
 	setDuration(env.InstanceStoragePVPlacementFailedTTL, &config.InstanceStorage.PVPlacementFailedTTL)

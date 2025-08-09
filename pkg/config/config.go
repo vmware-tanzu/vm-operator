@@ -149,6 +149,9 @@ type Config struct {
 	// Defaults to "direct".
 	FastDeployMode string
 
+	// PromoteDisksMode determines the default mode for disk promotion.
+	PromoteDisksMode string
+
 	// VCCredsSecretName is the name of the secret in the pod namespace that
 	// contains the VC credentials.
 	//

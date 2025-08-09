@@ -17,6 +17,10 @@ spec:
           value: "true"
         - name: MEM_STATS_PERIOD
           value: "10m"
+        - name: FAST_DEPLOY_MODE
+          value: ""
+        - name: PROMOTE_DISKS_MODE
+          value: ""
         - name: VSPHERE_NETWORKING
           value: "false"
         - name: FSS_WCP_INSTANCE_STORAGE

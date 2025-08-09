@@ -281,10 +281,11 @@ func cdromTests() {
 					for _, r := range result {
 						if d, ok := r.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualCdrom); ok {
 							if b, ok := d.Backing.(*vimtypes.VirtualCdromIsoBackingInfo); ok {
-								if b.FileName == vmiFileName {
+								switch b.FileName {
+								case vmiFileName:
 									cdromChangeVmi = r
 									unitNumVmi = d.UnitNumber
-								} else if b.FileName == cvmiFileName {
+								case cvmiFileName:
 									cdromChangeCvmi = r
 									unitNumCvmi = d.UnitNumber
 								}

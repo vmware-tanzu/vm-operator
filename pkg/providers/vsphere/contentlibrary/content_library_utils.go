@@ -185,7 +185,12 @@ func UpdateVmiWithVirtualMachine(
 
 			if uuid != "" {
 				di, _ := vmdk.GetVirtualDiskInfoByUUID(
-					ctx, nil, vm, false, uuid)
+					ctx,
+					nil,   /* the client is not needed since props aren't refetched */
+					vm,    /* use props from this object */
+					false, /* do not refetch props */
+					false, /* include disks related to snapshots */
+					uuid)
 				capacity = kubeutil.BytesToResource(di.CapacityInBytes)
 				size = kubeutil.BytesToResource(di.Size)
 			}

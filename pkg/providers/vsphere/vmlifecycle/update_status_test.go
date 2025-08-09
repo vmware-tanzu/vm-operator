@@ -714,11 +714,19 @@ var _ = Describe("UpdateStatus", func() {
 					vmCtx.MoVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
 						File: []vimtypes.VirtualMachineFileLayoutExFileInfo{
 							{
+								Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent),
+								UniqueSize: 10 * oneGiBInBytes,
+							},
+							{
 								Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotData),
 								UniqueSize: 1 * oneGiBInBytes,
 							},
 							{
-								Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent),
+								Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotList),
+								UniqueSize: 10 * oneGiBInBytes,
+							},
+							{
+								Type:       string(vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotMemory),
 								UniqueSize: 10 * oneGiBInBytes,
 							},
 						},
@@ -728,15 +736,14 @@ var _ = Describe("UpdateStatus", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Status.Storage = nil
 					})
-					Specify("status.storage to be initialized", func() {
+					Specify("status.storage to be initialized, snapshot related files are not included", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Total: kubeutil.BytesToResource(51 * oneGiBInBytes),
+							Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
 								Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							},
 							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
-								Other: kubeutil.BytesToResource(1 * oneGiBInBytes),
 							},
 						}))
 					})
@@ -753,15 +760,14 @@ var _ = Describe("UpdateStatus", func() {
 							},
 						}
 					})
-					Specify("status.storage to be updated", func() {
+					Specify("status.storage to be updated, snapshot related files are not included", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Total: kubeutil.BytesToResource(51 * oneGiBInBytes),
+							Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
 								Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							},
 							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
-								Other: kubeutil.BytesToResource(1 * oneGiBInBytes),
 							},
 						}))
 					})
@@ -1278,6 +1284,193 @@ var _ = Describe("UpdateStatus", func() {
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+						},
+					}))
+				})
+			})
+
+			When("disk has multiple chains", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.LayoutEx.Disk = []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+						{
+							Key: 100,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{1, 11},
+								},
+								{
+									FileKey: []int32{0, 10},
+								},
+							},
+						},
+						{
+							Key: 101,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{0, 10},
+								},
+								{
+									FileKey: []int32{1, 11},
+								},
+							},
+						},
+						{
+							Key: 102,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{1, 11},
+								},
+								{
+									FileKey: []int32{2, 12},
+								},
+							},
+						},
+						{
+							Key: 103,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{2, 12},
+								},
+								{
+									FileKey: []int32{3, 13},
+								},
+							},
+						},
+						{
+							Key: 104,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{3, 13},
+								},
+								{
+									FileKey: []int32{4, 14},
+								},
+							},
+						},
+						{
+							Key: 105,
+							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+								{
+									FileKey: []int32{4, 14},
+								},
+								{
+									FileKey: []int32{5, 15},
+								},
+							},
+						},
+					}
+				})
+				Specify("status.volumes is calculated, and value of 'used' only includes the files in the last chain", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-100",
+							DiskUUID: "100",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								KeyID:      "my-key-id",
+								ProviderID: "my-provider-id",
+							},
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:      "my-disk-101",
+							DiskUUID:  "101",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+						},
+						{
+							Name:      "my-disk-102",
+							DiskUUID:  "102",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+						},
+						{
+							Name:      "my-disk-103",
+							DiskUUID:  "103",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+						},
+						{
+							Name:      "my-disk-104",
+							DiskUUID:  "104",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+						},
+					}))
+				})
+			})
+
+			When("moVM.layoutEx.disk.chain is empty", func() {
+				BeforeEach(func() {
+					for i := range vmCtx.MoVM.LayoutEx.Disk {
+						vmCtx.MoVM.LayoutEx.Disk[i].Chain = nil
+					}
+				})
+				Specify("status.volumes is calculated, and value of 'used' is 0", func() {
+					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "my-disk-100",
+							DiskUUID: "100",
+							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+								KeyID:      "my-key-id",
+								ProviderID: "my-provider-id",
+							},
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(0),
+						},
+						{
+							Name:      "my-disk-101",
+							DiskUUID:  "101",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(0),
+						},
+						{
+							Name:      "my-disk-102",
+							DiskUUID:  "102",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(0),
+						},
+						{
+							Name:      "my-disk-103",
+							DiskUUID:  "103",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(0),
+						},
+						{
+							Name:      "my-disk-104",
+							DiskUUID:  "104",
+							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Attached:  true,
+							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
+							Used:      kubeutil.BytesToResource(0),
 						},
 					}))
 				})

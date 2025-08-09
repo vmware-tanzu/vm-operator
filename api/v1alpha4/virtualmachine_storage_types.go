@@ -202,14 +202,16 @@ type VirtualMachineStorageStatusUsed struct {
 	// +optional
 
 	// Disks describes the total storage space used by a VirtualMachine's
-	// non-PVC disks.
+	// non-PVC disks. This does not include the any child / delta disks
+	// created for snapshots.
 	Disks *resource.Quantity `json:"disks,omitempty"`
 
 	// +optional
 
 	// Other describes the total storage space used by the VirtualMachine's
-	// non disk files, ex. the configuration file, swap space, logs, snapshots,
-	// etc.
+	// non-disk files, ex. the configuration file, swap space, logs, etc.
+	// This does not include the non-disk files created for snapshots,
+	// ex. snapshot data, list, and memory files.
 	Other *resource.Quantity `json:"other,omitempty"`
 }
 

@@ -4,9 +4,8 @@ go 1.23.0
 
 toolchain go1.24.4
 
-// The version of Ginkgo must match the one from hack/tools/go.mod. If updating
-// one, please update the other.
-require github.com/onsi/ginkgo/v2 v2.23.3
+// The version of Ginkgo must match the one from ../../go.mod.
+require github.com/onsi/ginkgo/v2 v2.23.4
 
 require (
 	github.com/AlekSi/gocov-xml v1.1.0
@@ -119,7 +118,7 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
+	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	github.com/google/safetext v0.0.0-20220905092116-b49f7bc46da2 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect

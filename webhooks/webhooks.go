@@ -9,6 +9,7 @@ import (
 
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegrouppublishrequest"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/conversion"
@@ -65,6 +66,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 	if pkgcfg.FromContext(ctx).Features.VMGroups {
 		if err := virtualmachinegroup.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineGroup webhooks: %w", err)
+		}
+		if err := virtualmachinegrouppublishrequest.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize VirtualMachineGroupPublishReques webhooks: %w", err)
 		}
 	}
 

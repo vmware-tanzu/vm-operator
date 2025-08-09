@@ -131,8 +131,8 @@ func intgTestsReconcile() {
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
-		vmGroupPubReq = builder.VirtualMachineGroupPublishRequest(builder.DummyVMGroupPublishRequestName,
-			ctx.Namespace, []string{builder.DummyVirtualMachine0Name, builder.DummyVirtualMachine1Name})
+		vmGroupPubReq = builder.DummyVirtualMachineGroupPublishRequest(builder.DummyVMGroupPublishRequestName,
+			ctx.Namespace, []string{builder.DummyVirtualMachineName + "-0", builder.DummyVirtualMachineName + "-1"})
 		Expect(ctx.Client.Create(ctx, vmGroupPubReq)).To(Succeed())
 
 		Eventually(func() []string {

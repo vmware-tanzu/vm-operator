@@ -28,6 +28,7 @@ import (
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
 const (
@@ -46,8 +47,6 @@ const (
 	DummyVMGroupName               = "dummy-vm-group"
 	DummyVMGroupPublishRequestName = "dummy-vm-group-publish-request"
 	DummyContentLibraryName        = "dummy-cl"
-	DummyVirtualMachine0Name       = "dummy-vm0"
-	DummyVirtualMachine1Name       = "dummy-vm1"
 	DummyClusterModule             = "dummy-cluster-module"
 )
 
@@ -132,6 +131,12 @@ func DummyPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
 			StorageClassName: &storageClass,
 		},
 	}
+}
+
+func DummyDefaultContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrary {
+	dummyCL := DummyContentLibrary(name, namespace, uuid)
+	dummyCL.Labels = map[string]string{common.DefaultIImagePublishContentLibraryLabelKey: ""}
+	return dummyCL
 }
 
 func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrary {
@@ -511,7 +516,7 @@ func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, cl
 	}
 }
 
-func VirtualMachineGroupPublishRequest(name, namespace string, vms []string) *vmopv1.VirtualMachineGroupPublishRequest {
+func DummyVirtualMachineGroupPublishRequest(name, namespace string, vms []string) *vmopv1.VirtualMachineGroupPublishRequest {
 	return &vmopv1.VirtualMachineGroupPublishRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

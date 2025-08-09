@@ -107,8 +107,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.ReconcileNormal(ctx, &obj); err != nil {
-		pkgutil.FromContextOrDefault(ctx).Error(err, "Failed to ReconcileNormal StoragePolicyQuota")
+	logger := pkgutil.FromContextOrDefault(ctx)
+
+	if err := r.ReconcileNormal(ctx, logger, &obj); err != nil {
+		logger.Error(err, "Failed to ReconcileNormal StoragePolicyQuota")
 		return ctrl.Result{}, err
 	}
 
@@ -117,6 +119,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 func (r *Reconciler) ReconcileNormal(
 	ctx context.Context,
+	logger logr.Logger,
 	spq *spqv1.StoragePolicyQuota) error {
 
 	caBundle, err := spqutil.GetWebhookCABundle(ctx, r.Client)
@@ -137,26 +140,35 @@ func (r *Reconciler) ReconcileNormal(
 	// - VirtualMachine
 	// - VirtualMachineSnapshot
 	resourceKinds := []struct {
-		Kind     string
-		NameFunc func(string) string
+		kind     string
+		nameFunc func(string) string
+		enabled  bool // Only create StoragePolicyUsage for enabled resource kinds
 	}{
 		{
-			Kind:     "VirtualMachine",
-			NameFunc: spqutil.StoragePolicyUsageNameForVM,
+			kind:     "VirtualMachine",
+			nameFunc: spqutil.StoragePolicyUsageNameForVM,
+			enabled:  true,
 		},
 		{
-			Kind:     "VirtualMachineSnapshot",
-			NameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
+			kind:     "VirtualMachineSnapshot",
+			nameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
+			enabled:  pkgcfg.FromContext(ctx).Features.VMSnapshots,
 		},
 	}
 
 	var errs []error
 	for i := range objs {
 		for _, resourceKind := range resourceKinds {
+			if !resourceKind.enabled {
+				logger.V(4).Info("Skip creating storage policy usage for resource kind",
+					"kind", resourceKind.kind)
+				continue
+			}
+
 			spu := spqv1.StoragePolicyUsage{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: spq.Namespace,
-					Name:      resourceKind.NameFunc(objs[i].Name),
+					Name:      resourceKind.nameFunc(objs[i].Name),
 				},
 			}
 
@@ -170,7 +182,7 @@ func (r *Reconciler) ReconcileNormal(
 				spu.Spec.StorageClassName = objs[i].Name
 				spu.Spec.StoragePolicyId = spq.Spec.StoragePolicyId
 				spu.Spec.ResourceAPIgroup = ptr.To(vmopv1.GroupVersion.Group)
-				spu.Spec.ResourceKind = resourceKind.Kind
+				spu.Spec.ResourceKind = resourceKind.kind
 				spu.Spec.ResourceExtensionName = spqutil.StoragePolicyQuotaExtensionName
 				spu.Spec.ResourceExtensionNamespace = r.PodNamespace
 				spu.Spec.CABundle = caBundle

@@ -21,6 +21,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -60,9 +62,9 @@ func unitTestsReconcile() {
 
 	BeforeEach(func() {
 		initObjects = nil
+		skipReconcile = false
 		vm = builder.DummyBasicVirtualMachine("dummy-vm", namespace)
 		vmSnapshot = builder.DummyVirtualMachineSnapshot(namespace, "snap-1", vm.Name)
-		skipReconcile = false
 		vmSnapshotNamespacedKey = types.NamespacedName{
 			Namespace: vmSnapshot.Namespace,
 			Name:      vmSnapshot.Name,
@@ -94,8 +96,8 @@ func unitTestsReconcile() {
 		)
 
 		BeforeEach(func() {
-			err = nil
 			initObjects = append(initObjects, vmSnapshot)
+			err = nil
 		})
 
 		JustBeforeEach(func() {
@@ -257,6 +259,8 @@ func unitTestsReconcile() {
 		When("object does not have finalizer set", func() {
 			BeforeEach(func() {
 				vmSnapshot.Finalizers = nil
+				initObjects = nil
+				initObjects = append(initObjects, vmSnapshot)
 			})
 
 			It("will set finalizer", func() {
@@ -264,6 +268,48 @@ func unitTestsReconcile() {
 				vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, vmSnapshotObj)).To(Succeed())
 				Expect(vmSnapshotObj.GetFinalizers()).To(ContainElement(virtualmachinesnapshot.Finalizer))
+			})
+		})
+
+		When("snapshot is ready", func() {
+			BeforeEach(func() {
+				conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+				initObjects = nil
+				initObjects = append(initObjects, vmSnapshot)
+
+				vm.Status.UniqueID = dummyVMUUID
+				initObjects = append(initObjects, vm)
+			})
+
+			It("returns success, and set the annotation to requested", func() {
+				Expect(err).ToNot(HaveOccurred())
+				vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
+				Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, vmSnapshotObj)).To(Succeed())
+				Expect(vmSnapshotObj.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey]).To(Equal(constants.CSIVSphereVolumeSyncAnnotationValueRequest))
+			})
+
+			When("annotation is already set to completed", func() {
+				BeforeEach(func() {
+					vmSnapshot.Annotations = map[string]string{constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueCompleted}
+				})
+				It("returns success, and does not change the annotation", func() {
+					Expect(err).ToNot(HaveOccurred())
+					vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
+					Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, vmSnapshotObj)).To(Succeed())
+					Expect(vmSnapshotObj.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey]).To(Equal(constants.CSIVSphereVolumeSyncAnnotationValueCompleted))
+				})
+			})
+
+			When("annotation is set to something unknown", func() {
+				BeforeEach(func() {
+					vmSnapshot.ObjectMeta.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = "whatever"
+				})
+				It("returns success, and set the annotation to requested", func() {
+					Expect(err).ToNot(HaveOccurred())
+					vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
+					Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, vmSnapshotObj)).To(Succeed())
+					Expect(vmSnapshotObj.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey]).To(Equal(constants.CSIVSphereVolumeSyncAnnotationValueRequest))
+				})
 			})
 		})
 	})

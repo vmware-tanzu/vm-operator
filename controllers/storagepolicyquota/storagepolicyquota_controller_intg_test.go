@@ -112,48 +112,40 @@ func intgTestsReconcile() {
 				})).To(Succeed())
 		})
 
-		It("should result in the creation of StoragePolicyUsage resources for VirtualMachine and VirtualMachineSnapshot", func() {
-			resourceKinds := []struct {
-				Kind     string
-				NameFunc func(string) string
-			}{
-				{
-					Kind:     "VirtualMachine",
-					NameFunc: spqutil.StoragePolicyUsageNameForVM,
-				},
-				{
-					Kind:     "VirtualMachineSnapshot",
-					NameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
-				},
-			}
+		It("should only create StoragePolicyUsage resources for VirtualMachine", func() {
 			Eventually(func(g Gomega) {
-				for _, resourceKind := range resourceKinds {
-					var obj spqv1.StoragePolicyUsage
-					dstKey := client.ObjectKey{
-						Namespace: ctx.Namespace,
-						Name:      resourceKind.NameFunc(storageClassName),
-					}
-					g.Expect(ctx.Client.Get(ctx, dstKey, &obj)).To(Succeed())
-
-					g.Expect(obj.OwnerReferences).To(Equal([]metav1.OwnerReference{
-						{
-							APIVersion:         spqv1.GroupVersion.String(),
-							Kind:               spqutil.StoragePolicyQuotaKind,
-							Name:               storageQuotaName,
-							UID:                storageQuotaUID,
-							Controller:         ptr.To(true),
-							BlockOwnerDeletion: ptr.To(true),
-						},
-					}))
-					g.Expect(obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
-					g.Expect(obj.Spec.StorageClassName).To(Equal(storageClassName))
-					g.Expect(obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
-					g.Expect(obj.Spec.ResourceKind).To(Equal(resourceKind.Kind))
-					g.Expect(obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
-					g.Expect(obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.PodNamespace))
-					g.Expect(obj.Spec.CABundle).To(Equal([]byte("fake-ca-bundle")))
+				var obj spqv1.StoragePolicyUsage
+				dstKey := client.ObjectKey{
+					Namespace: ctx.Namespace,
+					Name:      spqutil.StoragePolicyUsageNameForVM(storageClassName),
 				}
+				g.Expect(ctx.Client.Get(ctx, dstKey, &obj)).To(Succeed())
+
+				g.Expect(obj.OwnerReferences).To(Equal([]metav1.OwnerReference{
+					{
+						APIVersion:         spqv1.GroupVersion.String(),
+						Kind:               spqutil.StoragePolicyQuotaKind,
+						Name:               storageQuotaName,
+						UID:                storageQuotaUID,
+						Controller:         ptr.To(true),
+						BlockOwnerDeletion: ptr.To(true),
+					},
+				}))
+				g.Expect(obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
+				g.Expect(obj.Spec.StorageClassName).To(Equal(storageClassName))
+				g.Expect(obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
+				g.Expect(obj.Spec.ResourceKind).To(Equal("VirtualMachine"))
+				g.Expect(obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
+				g.Expect(obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.PodNamespace))
+				g.Expect(obj.Spec.CABundle).To(Equal([]byte("fake-ca-bundle")))
 			}).Should(Succeed())
+
+			var obj spqv1.StoragePolicyUsage
+			dstKey := client.ObjectKey{
+				Namespace: ctx.Namespace,
+				Name:      spqutil.StoragePolicyUsageNameForVMSnapshot(storageClassName),
+			}
+			Expect(ctx.Client.Get(ctx, dstKey, &obj)).NotTo(Succeed())
 		})
 	})
 }

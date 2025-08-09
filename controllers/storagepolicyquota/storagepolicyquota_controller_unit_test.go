@@ -160,18 +160,31 @@ func unitTestsReconcile() {
 				resourceKinds := []struct {
 					Kind     string
 					NameFunc func(string) string
+					Enabled  bool
 				}{
 					{
-						Kind:     "VirtualMachine",
+						Kind:     spqutil.VirtualMachineKind,
 						NameFunc: spqutil.StoragePolicyUsageNameForVM,
+						Enabled:  true,
 					},
 					{
-						Kind:     "VirtualMachineSnapshot",
+						Kind:     spqutil.VirtualMachineSnapshotKind,
 						NameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
+						Enabled:  pkgcfg.FromContext(ctx).Features.VMSnapshots,
 					},
 				}
 				for _, resourceKind := range resourceKinds {
 					var obj spqv1.StoragePolicyUsage
+					if !resourceKind.Enabled {
+						ExpectWithOffset(1, ctx.Client.Get(
+							ctx,
+							types.NamespacedName{
+								Namespace: namespace,
+								Name:      resourceKind.NameFunc(storageClassName),
+							},
+							&obj)).NotTo(Succeed())
+						continue
+					}
 					ExpectWithOffset(1, ctx.Client.Get(
 						ctx,
 						types.NamespacedName{
@@ -189,11 +202,22 @@ func unitTestsReconcile() {
 				}
 			}
 
-			When("a StoragePolicyUsage resource does not exist", func() {
-				It("creates the resource", func() {
+			When("StoragePolicyUsage resources do not exist", func() {
+				It("creates resource for VirtualMachine by default", func() {
 					assertStoragePolicyUsage(err)
 				})
+				When("VMSnapshot feature flag is enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSnapshots = true
+						})
+					})
+					It("creates resources for VirtualMachine and VirtualMachineSnapshot", func() {
+						assertStoragePolicyUsage(err)
+					})
+				})
 			})
+
 			When("a StoragePolicyUsage resource does exist", func() {
 				var dst *spqv1.StoragePolicyUsage
 
@@ -221,7 +245,7 @@ func unitTestsReconcile() {
 							dst.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 								{
 									APIVersion:         vmopv1.GroupName,
-									Kind:               "VirtualMachine",
+									Kind:               spqutil.VirtualMachineKind,
 									Name:               "my-vm",
 									UID:                types.UID("1234"),
 									Controller:         ptr.To(true),
@@ -235,7 +259,7 @@ func unitTestsReconcile() {
 								"Object %s/%s is already owned by another %s controller %s",
 								dst.Namespace,
 								dst.Name,
-								"VirtualMachine",
+								spqutil.VirtualMachineKind,
 								"my-vm")))
 						})
 					})
@@ -291,5 +315,4 @@ func unitTestsReconcile() {
 			})
 		})
 	})
-
 }

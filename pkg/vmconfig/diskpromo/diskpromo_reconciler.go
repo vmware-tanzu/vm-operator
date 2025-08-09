@@ -141,11 +141,15 @@ func (r reconciler) Reconcile(
 		}
 	}
 
-	logger = logger.WithValues("mode", vm.Spec.PromoteDisksMode)
+	promoMode := vm.Spec.PromoteDisksMode
+	if promoMode == "" {
+		promoMode = vmopv1.VirtualMachinePromoteDisksModeOnline
+	}
+	logger = logger.WithValues("mode", promoMode)
 
 	logger.V(4).Info("Finding candidates for disk promotion")
 
-	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+	if promoMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
 		// Skip VMs that do not request promotion.
 		pkgcond.Delete(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 		return nil
@@ -221,7 +225,7 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
-	switch vm.Spec.PromoteDisksMode {
+	switch promoMode {
 	case vmopv1.VirtualMachinePromoteDisksModeOnline:
 		if moVM.Snapshot != nil && moVM.Snapshot.CurrentSnapshot != nil {
 			// Skip VMs that have snapshots.

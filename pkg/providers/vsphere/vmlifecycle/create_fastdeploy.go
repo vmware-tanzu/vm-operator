@@ -25,6 +25,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
+// nolint:gocyclo
 func fastDeploy(
 	vmCtx pkgctx.VirtualMachineContext,
 	vimClient *vim25.Client,
@@ -38,6 +39,22 @@ func fastDeploy(
 
 	vmDir := path.Dir(createArgs.ConfigSpec.Files.VmPathName)
 	logger.Info("Got vm dir", "vmDir", vmDir)
+
+	// Track the datacenter and datastore on which the VM's home folder was
+	// created.
+	vmHomeDatascenterAndDatastoreID := vimtypes.OptionValue{
+		Key: pkgconst.VMHomeDatacenterAndDatastoreIDExtraConfigKey,
+		Value: fmt.Sprintf("%s,%s",
+			createArgs.DatacenterMoID,
+			createArgs.Datastores[0].Name),
+	}
+	if len(createArgs.ConfigSpec.ExtraConfig) == 0 {
+		createArgs.ConfigSpec.ExtraConfig = []vimtypes.BaseOptionValue{}
+	}
+	createArgs.ConfigSpec.ExtraConfig = append(createArgs.ConfigSpec.ExtraConfig,
+		&vmHomeDatascenterAndDatastoreID)
+	logger.Info("Got vm home datacenter and datastore ID",
+		"vmHomeDatascenterAndDatastoreID", vmHomeDatascenterAndDatastoreID)
 
 	srcFilePaths := createArgs.FilePaths
 	logger.Info("Got source file paths", "srcFilePaths", srcFilePaths)
@@ -104,11 +121,63 @@ func fastDeploy(
 		})
 	logger.Info("Got datacenter", "datacenter", datacenter.Reference())
 
-	// Create the directory where the VM will be created.
+	// Determine the type of fast deploy operation.
+	var fastDeployMode string
+
+	if createArgs.IsEncryptedStorageProfile {
+		fastDeployMode = pkgconst.FastDeployModeDirect
+	} else {
+		fastDeployMode = vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
+		if fastDeployMode == "" {
+			fastDeployMode = pkgcfg.FromContext(vmCtx).FastDeployMode
+		}
+	}
+
 	fm := object.NewFileManager(vimClient)
+
+	// Create the directory where the VM will be created for direct mode.
 	if err := fm.MakeDirectory(vmCtx, vmDir, datacenter, true); err != nil {
 		return nil, fmt.Errorf("failed to create vm dir %q: %w", vmDir, err)
 	}
+
+	// If any error occurs after this point, the newly created VM directory and
+	// its contents need to be cleaned up.
+	defer func() {
+		if retErr == nil {
+			// Do not delete the VM directory if this function was successful.
+			return
+		}
+
+		// Use a new context to ensure cleanup happens even if the context
+		// is cancelled.
+		ctx := context.Background()
+
+		// Delete the VM directory and its contents.
+		t, err := fm.DeleteDatastoreFile(ctx, vmDir, datacenter)
+		if err != nil {
+			err = fmt.Errorf(
+				"failed to call delete api for vm dir %q: %w", vmDir, err)
+			if retErr == nil {
+				retErr = err
+			} else {
+				retErr = fmt.Errorf("%w,%w", err, retErr)
+			}
+			return
+		}
+
+		// Wait for the delete call to return.
+		if err := t.Wait(ctx); err != nil {
+			if !fault.Is(err, &vimtypes.FileNotFound{}) {
+				err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
+				if retErr == nil {
+					retErr = err
+				} else {
+					retErr = fmt.Errorf("%w,%w", err, retErr)
+				}
+			}
+			return
+		}
+	}()
 
 	// Copy any non-disk files to the target directory.
 	for i := range dstFilePaths {
@@ -152,44 +221,6 @@ func fastDeploy(
 		}
 	}
 
-	// If any error occurs after this point, the newly created VM directory and
-	// its contents need to be cleaned up.
-	defer func() {
-		if retErr == nil {
-			// Do not delete the VM directory if this function was successful.
-			return
-		}
-
-		// Use a new context to ensure cleanup happens even if the context
-		// is cancelled.
-		ctx := context.Background()
-
-		// Delete the VM directory and its contents.
-		t, err := fm.DeleteDatastoreFile(ctx, vmDir, datacenter)
-		if err != nil {
-			err = fmt.Errorf(
-				"failed to call delete api for vm dir %q: %w", vmDir, err)
-			if retErr == nil {
-				retErr = err
-			} else {
-				retErr = fmt.Errorf("%w,%w", err, retErr)
-			}
-			return
-		}
-
-		// Wait for the delete call to return.
-		if err := t.Wait(ctx); err != nil {
-			if !fault.Is(err, &vimtypes.FileNotFound{}) {
-				err = fmt.Errorf("failed to delete vm dir %q: %w", vmDir, err)
-				if retErr == nil {
-					retErr = err
-				} else {
-					retErr = fmt.Errorf("%w,%w", err, retErr)
-				}
-			}
-		}
-	}()
-
 	folder := object.NewFolder(vimClient, vimtypes.ManagedObjectReference{
 		Type:  "Folder",
 		Value: createArgs.FolderMoID,
@@ -211,17 +242,6 @@ func fastDeploy(
 		logger.Info("Got host", "host", host.Reference())
 	}
 
-	// Determine the type of fast deploy operation.
-	var fastDeployMode string
-
-	if createArgs.IsEncryptedStorageProfile {
-		fastDeployMode = pkgconst.FastDeployModeDirect
-	} else {
-		fastDeployMode = vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
-		if fastDeployMode == "" {
-			fastDeployMode = pkgcfg.FromContext(vmCtx).FastDeployMode
-		}
-	}
 	logger.Info("Deploying VM with Fast Deploy", "mode", fastDeployMode)
 
 	if strings.EqualFold(fastDeployMode, pkgconst.FastDeployModeLinked) {
@@ -251,7 +271,7 @@ func fastDeploy(
 }
 
 func fastDeployLinked(
-	ctx context.Context,
+	ctx pkgctx.VirtualMachineContext,
 	folder *object.Folder,
 	pool *object.ResourcePool,
 	host *object.HostSystem,
@@ -316,11 +336,17 @@ func fastDeployLinked(
 		}
 	}
 
-	return fastDeployCreateVM(ctx, logger, folder, pool, host, configSpec)
+	return fastDeployCreateVM(
+		ctx,
+		logger,
+		folder,
+		pool,
+		host,
+		configSpec)
 }
 
 func fastDeployDirect(
-	ctx context.Context,
+	ctx pkgctx.VirtualMachineContext,
 	datacenter *object.Datacenter,
 	folder *object.Folder,
 	pool *object.ResourcePool,
@@ -368,11 +394,17 @@ func fastDeployDirect(
 		}
 	}
 
-	return fastDeployCreateVM(ctx, logger, folder, pool, host, configSpec)
+	return fastDeployCreateVM(
+		ctx,
+		logger,
+		folder,
+		pool,
+		host,
+		configSpec)
 }
 
 func fastDeployCreateVM(
-	ctx context.Context,
+	ctx pkgctx.VirtualMachineContext,
 	logger logr.Logger,
 	folder *object.Folder,
 	pool *object.ResourcePool,

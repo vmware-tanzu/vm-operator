@@ -75,6 +75,11 @@ const (
 	// the datacenter ID and datastore ID, ex. datacenter-50,datastore-42.
 	VMICacheLocationAnnotationKey = "vmicache.vmoperator.vmware.com/location"
 
+	// VMHomeDatacenterAndDatastoreIDExtraConfigKey is applied to VMs to track
+	// the managed object IDs of the datacenter and datastore when the VM's home
+	// folder is created.
+	VMHomeDatacenterAndDatastoreIDExtraConfigKey = "vmservice.vmHomeDatacenterAndDatastoreID"
+
 	// FastDeployAnnotationKey is applied to VirtualMachine resources that want
 	// to control the mode of FastDeploy used to create the underlying VM.
 	// Please note, this annotation only has any effect if the FastDeploy FSS is

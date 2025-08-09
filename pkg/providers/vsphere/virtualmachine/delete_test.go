@@ -7,6 +7,7 @@ package virtualmachine_test
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,26 +17,36 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func deleteTests() {
 
 	var (
-		ctx   *builder.TestContextForVCSim
-		vcVM  *object.VirtualMachine
-		vmCtx pkgctx.VirtualMachineContext
+		ctx    *builder.TestContextForVCSim
+		vcVM   *object.VirtualMachine
+		vmCtx  pkgctx.VirtualMachineContext
+		dcID   string
+		dsName string
 	)
 
 	BeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{
+			WithContentLibrary: true,
+		})
 
 		var err error
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+
+		dcID = ctx.Datacenter.Reference().Value
+		dsName, err = ctx.Datastore.ObjectName(ctx)
 		Expect(err).ToNot(HaveOccurred())
 
 		vmCtx = pkgctx.VirtualMachineContext{
@@ -78,6 +89,106 @@ func deleteTests() {
 		Expect(ctx.GetVMFromMoID(moID)).To(BeNil())
 	})
 
+	Context("vmHomeDir", func() {
+		deleteAndAssert := func() {
+			moID := vcVM.Reference().Value
+			ExpectWithOffset(1, ctx.GetVMFromMoID(moID)).ToNot(BeNil())
+			ExpectWithOffset(1, virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)).To(Succeed())
+			ExpectWithOffset(1, ctx.GetVMFromMoID(moID)).To(BeNil())
+		}
+
+		var (
+			fm          *object.FileManager
+			vmDir       string
+			vmDirSignal string
+		)
+
+		BeforeEach(func() {
+			fm = object.NewFileManager(vcVM.Client())
+			vmDir = fmt.Sprintf("[%s] vm-dir", dsName)
+			vmDirSignal = vmDir + "/signal"
+		})
+
+		When("extraConfig is not set", func() {
+			When("vmDir exists", func() {
+				BeforeEach(func() {
+					Expect(fm.MakeDirectory(ctx, vmDir, ctx.Datacenter, true)).To(Succeed())
+					task, err := fm.CopyDatastoreFile(
+						ctx,
+						ctx.ContentLibraryItemNVRAMPath,
+						ctx.Datacenter,
+						vmDirSignal,
+						ctx.Datacenter,
+						true)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(task.Wait(ctx)).To(Succeed())
+					Expect(pkgutil.DatastoreFileExists(
+						ctx,
+						vcVM.Client(),
+						vmDirSignal,
+						ctx.Datacenter)).To(Succeed())
+				})
+				It("should delete the vm and not remove vmDir", func() {
+					deleteAndAssert()
+					Expect(pkgutil.DatastoreFileExists(
+						ctx,
+						vcVM.Client(),
+						vmDirSignal,
+						ctx.Datacenter)).To(Succeed())
+				})
+			})
+		})
+
+		When("extraConfig is set", func() {
+			BeforeEach(func() {
+				task, err := vcVM.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+					ExtraConfig: []vimtypes.BaseOptionValue{
+						&vimtypes.OptionValue{
+							Key:   pkgconst.VMHomeDatacenterAndDatastoreIDExtraConfigKey,
+							Value: fmt.Sprintf("%s,%s", dcID, dsName),
+						},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(task.Wait(ctx)).To(Succeed())
+			})
+
+			When("path does not exist", func() {
+				It("should not return an error and still delete the vm", func() {
+					deleteAndAssert()
+				})
+			})
+
+			When("path exists", func() {
+				BeforeEach(func() {
+					Expect(fm.MakeDirectory(ctx, vmDir, ctx.Datacenter, true)).To(Succeed())
+					task, err := fm.CopyDatastoreFile(
+						ctx,
+						ctx.ContentLibraryItemNVRAMPath,
+						ctx.Datacenter,
+						vmDirSignal,
+						ctx.Datacenter,
+						true)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(task.Wait(ctx)).To(Succeed())
+					Expect(pkgutil.DatastoreFileExists(
+						ctx,
+						vcVM.Client(),
+						vmDirSignal,
+						ctx.Datacenter)).To(Succeed())
+				})
+				It("should delete the vm and the specified path", func() {
+					deleteAndAssert()
+					Expect(pkgutil.DatastoreFileExists(
+						ctx,
+						vcVM.Client(),
+						vmDirSignal,
+						ctx.Datacenter)).To(MatchError(os.ErrNotExist))
+				})
+			})
+		})
+	})
+
 	Specify("VM is paused by admin", func() {
 		var moVM mo.VirtualMachine
 		Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
@@ -98,7 +209,6 @@ func deleteTests() {
 			})
 
 		err := virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
-
 		Expect(err).To(HaveOccurred())
 		var noRequeueErr pkgerr.NoRequeueError
 		Expect(errors.As(err, &noRequeueErr)).To(BeTrue())

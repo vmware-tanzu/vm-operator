@@ -83,16 +83,6 @@ type VirtualMachineGroupPublishRequestSpec struct {
 type VirtualMachineGroupPublishRequestStatus struct {
 	// +optional
 
-	// Source is the name of the published VirtualMachineGroup.
-	Source string `json:"source,omitempty"`
-
-	// +optional
-
-	// Target is the name of the ContentLibrary to which the group is published.
-	Target string `json:"target,omitempty"`
-
-	// +optional
-
 	// CompletionTime represents when the request was completed. It is not
 	// guaranteed to be set in happens-before order across separate operations.
 	// It is represented in RFC3339 form and is in UTC.

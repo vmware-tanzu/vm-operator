@@ -263,9 +263,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - source
                 x-kubernetes-list-type: map
-              source:
-                description: Source is the name of the published VirtualMachineGroup.
-                type: string
               startTime:
                 description: |-
                   StartTime represents when the request was acknowledged by the
@@ -276,10 +273,6 @@ spec:
                   Please note that the group will not be published until the group's Ready
                   condition is true.
                 format: date-time
-                type: string
-              target:
-                description: Target is the name of the ContentLibrary to which the
-                  group is published.
                 type: string
             type: object
         type: object

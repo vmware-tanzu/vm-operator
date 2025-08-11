@@ -14,8 +14,8 @@ replace (
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ./pkg/constants/testlabels
 )
 
-// The version of Ginkgo must match the one from hack/tools/go.mod. If updating
-// one, please update the other.
+// The version of Ginkgo must match the version in hack/tools/go.mod and api/go.mod.
+// If updating one, please update the others.
 require github.com/onsi/ginkgo/v2 v2.23.4
 
 require (

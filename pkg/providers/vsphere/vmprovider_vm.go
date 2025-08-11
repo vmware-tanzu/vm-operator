@@ -922,6 +922,7 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 	ctx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (context.Context, error) {
 
+	logger := pkgutil.FromContextOrDefault(ctx)
 	pc := property.DefaultCollector(vcClient.VimClient())
 
 	// Check if the VM has any recent tasks.
@@ -939,6 +940,41 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				return nil, fmt.Errorf("failed to retrieve task info: %w", err)
 			}
 		} else {
+			logLevel := 4
+			if t.Info.State == vimtypes.TaskInfoStateRunning ||
+				t.Info.State == vimtypes.TaskInfoStateError {
+
+				logLevel = 2
+			}
+
+			var descMsg string
+			if t.Info.Description != nil {
+				descMsg = t.Info.Description.Message
+			}
+			logger.V(logLevel).Info("VM has task",
+				"activationId", t.Info.ActivationId,
+				"descriptionId", t.Info.DescriptionId,
+				"description", descMsg,
+				"cancelable", t.Info.Cancelable,
+				"cancelled", t.Info.Cancelled,
+				"changeTag", t.Info.ChangeTag,
+				"completeTime", t.Info.CompleteTime,
+				"entity", t.Info.Entity,
+				"entityName", t.Info.EntityName,
+				"error", t.Info.Error,
+				"eventChainId", t.Info.EventChainId,
+				"key", t.Info.Key,
+				"locked", vimtypes.ToString(t.Info.Locked),
+				"name", t.Info.Name,
+				"parentTaskKey", t.Info.ParentTaskKey,
+				"progress", t.Info.Progress,
+				"queueTime", t.Info.QueueTime,
+				"reason", t.Info.Reason,
+				"result", t.Info.Result,
+				"rootTaskKey", t.Info.RootTaskKey,
+				"startTime", t.Info.StartTime,
+				"state", t.Info.State,
+				"task", t.Info.Task)
 			rt = append(rt, t.Info)
 		}
 	}
@@ -1093,7 +1129,7 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	if isVMPaused(vmCtx) {
 		return ErrIsPaused
 	}
-	if pkgctx.HasVMRunningTask(vmCtx) {
+	if pkgctx.HasVMRunningTask(vmCtx, false) {
 		return ErrHasTask
 	}
 

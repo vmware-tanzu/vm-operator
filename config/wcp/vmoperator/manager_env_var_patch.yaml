@@ -61,6 +61,18 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
+    name: FAST_DEPLOY_MODE
+    value: ""
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: PROMOTE_DISKS_MODE
+    value: ""
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
     name: FSS_PODVMONSTRETCHEDSUPERVISOR
     value: "<FSS_PODVMONSTRETCHEDSUPERVISOR>"
 

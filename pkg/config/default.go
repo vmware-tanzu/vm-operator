@@ -41,6 +41,7 @@ func Default() Config {
 		AsyncCreateEnabled:           true,
 		MemStatsPeriod:               10 * time.Minute,
 		FastDeployMode:               pkgconst.FastDeployModeLinked,
+		PromoteDisksMode:             "",
 		VCCredsSecretName:            pkgconst.VCCredsSecretName,
 		CreateVMRequeueDelay:         10 * time.Second,
 		PoweredOnVMHasIPRequeueDelay: 10 * time.Second,

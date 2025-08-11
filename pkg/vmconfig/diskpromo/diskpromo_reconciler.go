@@ -16,6 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -141,11 +142,40 @@ func (r reconciler) Reconcile(
 		}
 	}
 
-	logger = logger.WithValues("mode", vm.Spec.PromoteDisksMode)
+	const defaultMode = vmopv1.VirtualMachinePromoteDisksModeOnline
+
+	promoMode := vm.Spec.PromoteDisksMode
+	if promoMode == "" {
+		// Default to online promote.
+		promoMode = defaultMode
+		logger.Info("Empty promotion mode, using default mode",
+			"defaultMode", defaultMode)
+	}
+
+	// Allow the mode to be overridden via an env var.
+	if v := pkgcfg.FromContext(ctx).PromoteDisksMode; v != "" {
+		promoMode = vmopv1.VirtualMachinePromoteDisksMode(v)
+		logger.Info("Got promo mode from env", "mode", promoMode)
+	}
+
+	// Validate the promotion mode.
+	switch promoMode {
+	case vmopv1.VirtualMachinePromoteDisksModeOnline,
+		vmopv1.VirtualMachinePromoteDisksModeOffline,
+		vmopv1.VirtualMachinePromoteDisksModeDisabled:
+		// No-op
+	default:
+		logger.Info("Invalid promotion mode, using default mode",
+			"invalidMode", promoMode,
+			"defaultMode", defaultMode)
+		promoMode = defaultMode
+	}
+
+	logger = logger.WithValues("mode", promoMode)
 
 	logger.V(4).Info("Finding candidates for disk promotion")
 
-	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+	if promoMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
 		// Skip VMs that do not request promotion.
 		pkgcond.Delete(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 		return nil
@@ -221,7 +251,7 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
-	switch vm.Spec.PromoteDisksMode {
+	switch promoMode {
 	case vmopv1.VirtualMachinePromoteDisksModeOnline:
 		if moVM.Snapshot != nil && moVM.Snapshot.CurrentSnapshot != nil {
 			// Skip VMs that have snapshots.

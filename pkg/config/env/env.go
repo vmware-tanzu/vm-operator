@@ -28,6 +28,7 @@ const (
 	AsyncSignalEnabled
 	AsyncCreateEnabled
 	FastDeployMode
+	PromoteDisksMode
 	VCCredsSecretName
 	InstanceStoragePVPlacementFailedTTL
 	InstanceStorageJitterMaxFactor
@@ -117,6 +118,8 @@ func (n VarName) String() string {
 		return "ASYNC_CREATE_ENABLED"
 	case FastDeployMode:
 		return "FAST_DEPLOY_MODE"
+	case PromoteDisksMode:
+		return "PROMOTE_DISKS_MODE"
 	case VCCredsSecretName:
 		return "VC_CREDS_SECRET_NAME"
 	case InstanceStoragePVPlacementFailedTTL:

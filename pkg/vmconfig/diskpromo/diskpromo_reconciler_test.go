@@ -305,6 +305,21 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
 					})
 
+					When("mode is overridden to Offline via env var", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.PromoteDisksMode = "Offline"
+							})
+						})
+						It("should not promote disks", func() {
+							Expect(err).ToNot(HaveOccurred())
+							c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+							Expect(c).ToNot(BeNil())
+							Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+						})
+					})
+
 					When("VM has a snapshot after disks were promoted", func() {
 						It("should not mark the disk promotion synced as false since disks with snapshots are ignored", func() {
 							Expect(err).To(HaveOccurred())

@@ -5,12 +5,15 @@
 package virtualmachine
 
 import (
+	"fmt"
+
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -148,7 +151,69 @@ func CreateConfigSpec(
 		initResourceAllocation(&configSpec.MemoryAllocation)
 	}
 
+	// Populate the affinity policy for the VM.
+	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
+		genConfigSpecAffinityPolicies(vmCtx, &configSpec)
+	}
+
 	return configSpec
+}
+
+func genConfigSpecAffinityPolicies(
+	vmCtx pkgctx.VirtualMachineContext,
+	configSpec *vimtypes.VirtualMachineConfigSpec) {
+
+	var (
+		placementPols []vimtypes.BaseVmPlacementPolicy
+	)
+
+	if affinity := vmCtx.VM.Spec.Affinity; affinity != nil {
+		if affinity.VMAffinity != nil {
+
+			// VM affinity is bidirectional, so we only need to send in the label specified
+			// in the VM affinity policy.  Not additional labels.
+			// Note that the validation webhook will ensure that the VM also has the label that it specifies in the affinity policy.
+			for _, affinityTerm := range affinity.VMAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
+				if affinityTerm.TopologyKey == topology.KubernetesTopologyZoneLabelKey {
+					// Generate a tag name using the key value pair specified in the label selector.
+					for key, value := range affinityTerm.LabelSelector.MatchLabels {
+						// TODO: there should be a more concrete way generate the tag name.
+						label := fmt.Sprintf("%s:%s", key, value)
+						placementPols = append(placementPols, &vimtypes.VmVmAffinity{
+							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
+								TagsToAttach: []string{label},
+							},
+							AffinedVmsTagName: label,
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+						})
+					}
+				}
+			}
+
+			for _, affinityTerm := range affinity.VMAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+				if affinityTerm.TopologyKey == topology.KubernetesTopologyZoneLabelKey {
+					// Generate a tag name using the key value pair specified in the label selector.
+					for key, value := range affinityTerm.LabelSelector.MatchLabels {
+						// TODO: there should be a more concrete way generate the tag name.
+						label := fmt.Sprintf("%s:%s", key, value)
+						placementPols = append(placementPols, &vimtypes.VmVmAffinity{
+							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
+								TagsToAttach: []string{label},
+							},
+							AffinedVmsTagName: label,
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+						})
+					}
+				}
+			}
+		}
+	}
+
+	if len(placementPols) > 0 {
+		configSpec.VmPlacementPolicies = placementPols
+	}
 }
 
 // CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for

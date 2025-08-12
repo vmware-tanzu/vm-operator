@@ -165,12 +165,6 @@ func CreateConfigSpecForPlacement(
 	deviceChangeCopy := make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, len(configSpec.DeviceChange))
 	for _, devChange := range configSpec.DeviceChange {
 		if spec := devChange.GetVirtualDeviceConfigSpec(); spec != nil {
-			// VC PlaceVmsXCluster() has issues when the ConfigSpec has EthCards so return to the
-			// prior status quo until those issues get sorted out.
-			if util.IsEthernetCard(spec.Device) {
-				continue
-			}
-
 			if spec.Device.GetVirtualDevice().Key == 0 {
 				if util.IsDeviceDynamicDirectPathIO(spec.Device) || util.IsDeviceNvidiaVgpu(spec.Device) {
 					spec.Device.GetVirtualDevice().Key = pciDevKey

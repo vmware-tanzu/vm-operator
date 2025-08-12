@@ -167,8 +167,73 @@ func vmGroupTests() {
 		}
 	}
 
-	Context("Group Placement", func() {
+	Context("Group placement with VMs specifying affinity policies", func() {
+		It("should process preferred VM affinity policies during group placement", func() {
+			// Add preferred affinity policy to vm1
+			vm1.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+				VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+					PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"app": "database",
+								},
+							},
+							TopologyKey: "topology.kubernetes.io/zone",
+						},
+					},
+				},
+			}
 
+			groupPlacements := []providers.VMGroupPlacement{
+				{
+					VMGroup: vmGroup,
+					VMMembers: []*vmopv1.VirtualMachine{
+						vm1,
+					},
+				},
+			}
+
+			err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vmGroup.Status.Members).To(HaveLen(1))
+			assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+		})
+
+		It("should process required VM affinity policies during group placement", func() {
+			// Add required affinity policy to vm1
+			vm1.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+				VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+					RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"tier": "frontend",
+								},
+							},
+							TopologyKey: "topology.kubernetes.io/zone",
+						},
+					},
+				},
+			}
+
+			groupPlacements := []providers.VMGroupPlacement{
+				{
+					VMGroup: vmGroup,
+					VMMembers: []*vmopv1.VirtualMachine{
+						vm1,
+					},
+				},
+			}
+
+			err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vmGroup.Status.Members).To(HaveLen(1))
+			assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+		})
+	})
+
+	Context("Group Placement", func() {
 		// vcsim PlaceVmsXCluster() only allows one ConfigSpec at the moment.
 		It("VM Group with one VM member", func() {
 			groupPlacements := []providers.VMGroupPlacement{

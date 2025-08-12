@@ -5,10 +5,11 @@
 package virtualmachine_test
 
 import (
-	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/google/uuid"
 	"github.com/vmware/govmomi/object"
@@ -20,6 +21,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -65,7 +67,7 @@ var _ = Describe("CreateConfigSpec", func() {
 		vm.Spec.MinHardwareVersion = 0
 
 		vmCtx = pkgctx.VirtualMachineContext{
-			Context: context.Background(),
+			Context: pkgcfg.NewContext(),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
 			VM:      vm,
 		}
@@ -190,6 +192,46 @@ var _ = Describe("CreateConfigSpec", func() {
 
 			It("config spec has the expected guestID set", func() {
 				Expect(configSpec.GuestId).To(Equal(fakeGuestID))
+			})
+		})
+
+		When("VM spec has affinity policies set", func() {
+			var (
+				labelKey   string
+				labelValue string
+			)
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMPlacementPolicies = true
+				})
+
+				labelKey = "node-pool"
+				labelValue = "node-pool-1"
+
+				vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+					VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+						RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										labelKey: labelValue,
+									},
+								},
+								TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+							},
+						},
+					},
+				}
+			})
+
+			It("config spec should have the expected affinity policy", func() {
+				Expect(configSpec.VmPlacementPolicies).To(Not(BeNil()))
+				Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+				vmvmAffinityPolicy := configSpec.VmPlacementPolicies[0].(*vimtypes.VmVmAffinity)
+				Expect(vmvmAffinityPolicy.AffinedVmsTagName).To(Equal(fmt.Sprintf("%s:%s", labelKey, labelValue)))
+				Expect(vmvmAffinityPolicy.TagsToAttach).To(ContainElement(fmt.Sprintf("%s:%s", labelKey, labelValue)))
+				Expect(vmvmAffinityPolicy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution)))
+				Expect(vmvmAffinityPolicy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
 			})
 		})
 	})

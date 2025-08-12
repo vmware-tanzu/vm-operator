@@ -329,8 +329,10 @@ spec:
                         Please note this field is only set for VirtualMachine members.
                       properties:
                         datastores:
-                          description: Datastores describe the recommended datastores
-                            for this VM.
+                          description: |-
+                            Datastores describe the recommended datastores for this VM.
+                            This includes the recommendations for each of the VM's disks
+                            and files.
                           items:
                             properties:
                               diskKey:
@@ -359,9 +361,6 @@ spec:
                             - name
                             type: object
                           type: array
-                          x-kubernetes-list-map-keys:
-                          - name
-                          x-kubernetes-list-type: map
                         name:
                           description: Name is the name of VirtualMachine member of
                             this group.

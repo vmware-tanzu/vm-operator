@@ -194,10 +194,10 @@ type VirtualMachinePlacementStatus struct {
 	Pool string `json:"pool,omitempty"`
 
 	// +optional
-	// +listType=map
-	// +listMapKey=name
 
 	// Datastores describe the recommended datastores for this VM.
+	// This includes the recommendations for each of the VM's disks
+	// and files.
 	Datastores []VirtualMachineGroupPlacementDatastoreStatus `json:"datastores,omitempty"`
 }
 

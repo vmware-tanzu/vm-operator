@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -117,6 +118,56 @@ var _ = Describe(
 			ctx.AfterEach()
 			ctx = nil
 			intgFakeVMProvider.Reset()
+		})
+
+		Context("MemberToGroupMapperFn", func() {
+			It("should enqueue a reconcile for the group when the member is linked", func() {
+				// VM kind member.
+				vm := &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vm1Key.Namespace,
+						Name:      vm1Key.Name,
+					},
+				}
+				reqs := virtualmachinegroup.MemberToGroupMapperFn(ctx)(ctx, vm)
+				Expect(reqs).To(BeEmpty())
+
+				vm.Spec.GroupName = vmGroup1Key.Name
+				reqs = virtualmachinegroup.MemberToGroupMapperFn(ctx)(ctx, vm)
+				Expect(reqs).To(BeEmpty())
+
+				vm.Status.Conditions = []metav1.Condition{
+					{
+						Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+						Status: metav1.ConditionTrue,
+					},
+				}
+				reqs = virtualmachinegroup.MemberToGroupMapperFn(ctx)(ctx, vm)
+				Expect(reqs).To(HaveLen(1))
+				Expect(reqs[0].NamespacedName).To(Equal(vmGroup1Key))
+
+				// VMGroup kind member.
+				vmg := &vmopv1.VirtualMachineGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmGroup1Key.Namespace,
+						Name:      vmGroup1Key.Name,
+					},
+					Spec: vmopv1.VirtualMachineGroupSpec{
+						GroupName: vmGroup2Key.Name,
+					},
+					Status: vmopv1.VirtualMachineGroupStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+								Status: metav1.ConditionTrue,
+							},
+						},
+					},
+				}
+				reqs = virtualmachinegroup.MemberToGroupMapperFn(ctx)(ctx, vmg)
+				Expect(reqs).To(HaveLen(1))
+				Expect(reqs[0].NamespacedName).To(Equal(vmGroup2Key))
+			})
 		})
 
 		Context("Finalizer", func() {
@@ -441,19 +492,29 @@ var _ = Describe(
 				}
 				Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
 
-				By("setting up group name for vm-1")
+				By("setting up group name and group linked condition for vm-1 to enqueue its group reconciliation")
 				vm1 := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
 				vm1Copy := vm1.DeepCopy()
 				vm1Copy.Spec.GroupName = vmGroup1Key.Name
 				Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+				vm1Updated := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, vm1Key, vm1Updated)).To(Succeed())
+				vm1UpdatedCopy := vm1Updated.DeepCopy()
+				conditions.MarkTrue(vm1UpdatedCopy, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+				Expect(ctx.Client.Status().Patch(ctx, vm1UpdatedCopy, client.MergeFrom(vm1Updated))).To(Succeed())
 
-				By("setting up group name for vm-2")
+				By("setting up group name and group linked condition for vm-2 to enqueue its group reconciliation")
 				vm2 := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
 				vm2Copy := vm2.DeepCopy()
 				vm2Copy.Spec.GroupName = vmGroup2Key.Name
 				Expect(ctx.Client.Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
+				vm2Updated := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, vm2Key, vm2Updated)).To(Succeed())
+				vm2UpdatedCopy := vm2Updated.DeepCopy()
+				conditions.MarkTrue(vm2UpdatedCopy, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+				Expect(ctx.Client.Status().Patch(ctx, vm2UpdatedCopy, client.MergeFrom(vm2Updated))).To(Succeed())
 			})
 
 			When("group.Spec.PowerState is empty", func() {

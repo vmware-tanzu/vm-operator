@@ -1269,6 +1269,24 @@ type VirtualMachine struct {
 	Status VirtualMachineStatus `json:"status,omitempty"`
 }
 
+// SetAnnotation adds or sets an annotation on this object.
+// Please note, this function is not thread-safe.
+func (vm *VirtualMachine) SetAnnotation(k, v string) {
+	if vm.Annotations == nil {
+		vm.Annotations = map[string]string{}
+	}
+	vm.Annotations[k] = v
+}
+
+// SetLabel adds or sets a label on this object.
+// Please note, this function is not thread-safe.
+func (vm *VirtualMachine) SetLabel(k, v string) {
+	if vm.Labels == nil {
+		vm.Labels = map[string]string{}
+	}
+	vm.Labels[k] = v
+}
+
 func (vm *VirtualMachine) NamespacedName() string {
 	return vm.Namespace + "/" + vm.Name
 }

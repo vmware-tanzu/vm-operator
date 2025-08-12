@@ -146,7 +146,7 @@ type Config struct {
 	//   - the value is anything else, then fast deploy is not used to deploy
 	//     VMs.
 	//
-	// Defaults to "direct".
+	// Defaults to "linked".
 	FastDeployMode string
 
 	// VCCredsSecretName is the name of the secret in the pod namespace that

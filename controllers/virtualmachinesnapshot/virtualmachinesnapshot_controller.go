@@ -20,6 +20,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -167,6 +168,10 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 
 	if vmSnapshot.Spec.VMRef == nil {
 		return ctrl.Result{}, errVMRefNil
+	}
+
+	if conditions.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+		ensureCSIVolumeSyncAnnotation(vmSnapshot)
 	}
 
 	vm := &vmopv1.VirtualMachine{}
@@ -412,6 +417,18 @@ func (r *Reconciler) updateVMRootSnapshots(ctx *pkgctx.VirtualMachineSnapshotCon
 		return fmt.Errorf("failed to patch VM %s with root snapshots: %w", vm.Name, err)
 	}
 	return nil
+}
+
+// ensureCSIVolumeSyncAnnotation ensures the annotation is set to request
+// to notify CSI driver to update the usage of VolumeSnapshot.
+func ensureCSIVolumeSyncAnnotation(vmSnapshot *vmopv1.VirtualMachineSnapshot) {
+	if vmSnapshot.Annotations == nil {
+		vmSnapshot.Annotations = make(map[string]string)
+	}
+	// As long as the value is not set to completed by CSI driver, we need to mark it as requested.
+	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] != constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
+		vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = constants.CSIVSphereVolumeSyncAnnotationValueRequest
+	}
 }
 
 func vmSnapshotCRToLocalObjectRef(vmSnapshot *vmopv1.VirtualMachineSnapshot) *vmopv1common.LocalObjectRef {

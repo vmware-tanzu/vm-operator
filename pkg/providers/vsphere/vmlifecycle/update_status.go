@@ -849,7 +849,11 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 				vimtypes.VirtualMachineFileLayoutExFileTypeDigestExtent:
 
 				// Skip disks
+			case vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotList,
+				vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotMemory,
+				vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotData:
 
+				// Skip snapshot related non-disk files
 			default:
 				other += f.UniqueSize
 			}
@@ -968,7 +972,13 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		if diskIndex, ok := existingDisksInStatus[diskUUID]; ok {
 			// The disk is already in the list of volume statuses, so update the
 			// existing status with the usage information.
-			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
+			di, _ := vmdk.GetVirtualDiskInfoByUUID(
+				ctx,
+				nil,   /* the client is not needed since props aren't refetched */
+				moVM,  /* use props from this object */
+				false, /* do not refetch props */
+				true,  /* exclude disks related to snapshots */
+				diskUUID)
 			vm.Status.Volumes[diskIndex].Used = kubeutil.BytesToResource(di.UniqueSize)
 			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
 				vm.Status.Volumes[diskIndex].Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
@@ -979,7 +989,13 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		} else if !isFCD {
 			// The disk is a classic, non-FCD that must be added to the list of
 			// volume statuses.
-			di, _ := vmdk.GetVirtualDiskInfoByUUID(ctx, nil, moVM, false, diskUUID)
+			di, _ := vmdk.GetVirtualDiskInfoByUUID(
+				ctx,
+				nil,   /* the client is not needed since props aren't refetched */
+				moVM,  /* use props from this object */
+				false, /* do not refetch props */
+				true,  /* exclude disks related to snapshots */
+				diskUUID)
 			dp := diskPath.Path
 			volStatus := vmopv1.VirtualMachineVolumeStatus{
 				Name:      strings.TrimSuffix(path.Base(dp), path.Ext(dp)),

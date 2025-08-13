@@ -11238,7 +11238,8 @@ spec:
                         - type: string
                         description: |-
                           Disks describes the total storage space used by a VirtualMachine's
-                          non-PVC disks.
+                          non-PVC disks. This does not include the any child / delta disks
+                          created for snapshots.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       other:
@@ -11247,8 +11248,9 @@ spec:
                         - type: string
                         description: |-
                           Other describes the total storage space used by the VirtualMachine's
-                          non disk files, ex. the configuration file, swap space, logs, snapshots,
-                          etc.
+                          non-disk files, ex. the configuration file, swap space, logs, etc.
+                          This does not include the non-disk files created for snapshots,
+                          ex. snapshot data, list, and memory files.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object

@@ -6,7 +6,7 @@ env:
   # sometimes we need to explicitly override the Go version, ex. CVEs,
   # when it is not possible to update the go.mod version yet, ex. the
   # internal builds do not yet support that version of Go.
-  GO_VERSION:
+  GO_VERSION: ""
 
 on:
   pull_request:
@@ -239,17 +239,21 @@ jobs:
         indicators: true
         output: both
         thresholds: '79 89' # really '80 90', but the values are not inclusive
-    - name: Save pull request ID
+    - name: Save commit and pull request ID
       if: github.event_name == 'pull_request'
       env:
         PR_NUMBER: ${{ github.event.number }}
       run: |
+        echo "${GITHUB_SHA}" >commit_id
         echo "${PR_NUMBER}" >pull_request_id
-    - name: Store code coverage results
+    - name: Store pull request reports
       if: github.event_name == 'pull_request'
       uses: actions/upload-artifact@v4
       with:
-        name: code-coverage-results
+        name: pull-request-reports
         path: |
           code-coverage-results.md
+          commit_id
           pull_request_id
+          test-results.json
+          test-results.xml

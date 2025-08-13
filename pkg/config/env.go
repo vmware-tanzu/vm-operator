@@ -58,6 +58,12 @@ func FromEnv() Config {
 	setString(env.WebhookSecretName, &config.WebhookSecretName)
 	setString(env.WebhookSecretNamespace, &config.WebhookSecretNamespace)
 
+	setString(env.KubeadmConfigMapName, &config.KubeadmConfigMapName)
+	setString(env.KubeDNSLBServiceName, &config.KubeDNSLBServiceName)
+	setString(env.KubeSystemNamespace, &config.KubeSystemNamespace)
+	setString(env.KubeadmClusterConfigKey, &config.KubeadmClusterConfigKey)
+	setString(env.DefaultClusterDomain, &config.DefaultClusterDomain)
+
 	setBool(env.FSSInstanceStorage, &config.Features.InstanceStorage)
 	setBool(env.FSSK8sWorkloadMgmtAPI, &config.Features.K8sWorkloadMgmtAPI)
 	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)

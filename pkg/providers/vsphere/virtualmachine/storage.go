@@ -7,7 +7,7 @@ package virtualmachine
 import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"

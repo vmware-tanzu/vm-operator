@@ -14,7 +14,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"

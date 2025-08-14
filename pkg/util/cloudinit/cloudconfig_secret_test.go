@@ -15,8 +15,8 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 )
 

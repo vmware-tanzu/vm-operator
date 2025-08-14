@@ -269,7 +269,6 @@ type VirtualMachineGroupStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmg
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // VirtualMachineGroup is the schema for the VirtualMachineGroup API and

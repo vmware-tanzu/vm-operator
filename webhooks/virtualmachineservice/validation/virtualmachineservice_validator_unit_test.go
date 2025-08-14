@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -228,7 +228,7 @@ func unitTestsValidateCreate() {
 				},
 			},
 		),
-		Entry("should deny duplicate protocol/port", "spec.ports[1]: Duplicate value: v1alpha4.VirtualMachineServicePort",
+		Entry("should deny duplicate protocol/port", "spec.ports[1]: Duplicate value: v1alpha5.VirtualMachineServicePort",
 			[]vmopv1.VirtualMachineServicePort{
 				{
 					Name:       "port1",

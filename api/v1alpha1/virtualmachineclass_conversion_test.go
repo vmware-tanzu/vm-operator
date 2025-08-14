@@ -16,7 +16,7 @@ import (
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 func TestVirtualMachineClassConversion(t *testing.T) {

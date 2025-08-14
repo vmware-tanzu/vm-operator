@@ -16,7 +16,8 @@ import (
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1a4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -49,13 +50,19 @@ func GetTemplateRenderFunc(
 	}
 
 	networkDevicesStatusV1A4 := toTemplateNetworkStatusV1A4(bsArgs)
-	networkStatusV1A4 := vmopv1.NetworkStatus{
+	networkStatusV1A4 := vmopv1a4.NetworkStatus{
 		Devices:     networkDevicesStatusV1A4,
 		Nameservers: bsArgs.DNSServers,
 	}
 
-	// Use separate deep copies of the VM to prevent issues caused by down-converting to v1a1 and v1a2.
-	// This prevents changing actual VM on next reconcile.
+	networkDevicesStatusV1A5 := toTemplateNetworkStatusV1A5(bsArgs)
+	networkStatusV1A5 := vmopv1.NetworkStatus{
+		Devices:     networkDevicesStatusV1A5,
+		Nameservers: bsArgs.DNSServers,
+	}
+
+	// Use separate deep copies of the VM to prevent issues caused by
+	// down-converting. This prevents changing actual VM on next reconcile.
 	v1a1VM := &vmopv1a1.VirtualMachine{}
 	_ = v1a1VM.ConvertFrom(vmCtx.VM.DeepCopy())
 
@@ -65,11 +72,15 @@ func GetTemplateRenderFunc(
 	v1a3VM := &vmopv1a3.VirtualMachine{}
 	_ = v1a3VM.ConvertFrom(vmCtx.VM.DeepCopy())
 
+	v1a4VM := &vmopv1a4.VirtualMachine{}
+	_ = v1a4VM.ConvertFrom(vmCtx.VM.DeepCopy())
+
 	templateData := struct {
 		V1alpha1 vmopv1a1.VirtualMachineTemplate
 		V1alpha2 vmopv1a2.VirtualMachineTemplate
 		V1alpha3 vmopv1a3.VirtualMachineTemplate
-		V1alpha4 vmopv1.VirtualMachineTemplate
+		V1alpha4 vmopv1a4.VirtualMachineTemplate
+		V1alpha5 vmopv1.VirtualMachineTemplate
 	}{
 		V1alpha1: vmopv1a1.VirtualMachineTemplate{
 			Net: networkStatusV1A1,
@@ -83,8 +94,12 @@ func GetTemplateRenderFunc(
 			Net: networkStatusV1A3,
 			VM:  v1a3VM,
 		},
-		V1alpha4: vmopv1.VirtualMachineTemplate{
+		V1alpha4: vmopv1a4.VirtualMachineTemplate{
 			Net: networkStatusV1A4,
+			VM:  v1a4VM,
+		},
+		V1alpha5: vmopv1.VirtualMachineTemplate{
+			Net: networkStatusV1A5,
 			VM:  vmCtx.VM,
 		},
 	}
@@ -93,6 +108,7 @@ func GetTemplateRenderFunc(
 	v1a2FuncMap := v1a2TemplateFunctions(networkStatusV1A2, networkDevicesStatusV1A2)
 	v1a3FuncMap := v1a3TemplateFunctions(networkStatusV1A3, networkDevicesStatusV1A3)
 	v1a4FuncMap := v1a4TemplateFunctions(networkStatusV1A4, networkDevicesStatusV1A4)
+	v1a5FuncMap := v1a5TemplateFunctions(networkStatusV1A5, networkDevicesStatusV1A5)
 
 	// Include all but could be nice to leave out newer versions if we could identify if this was
 	// created at a prior version.
@@ -107,6 +123,9 @@ func GetTemplateRenderFunc(
 		funcMap[k] = v
 	}
 	for k, v := range v1a4FuncMap {
+		funcMap[k] = v
+	}
+	for k, v := range v1a5FuncMap {
 		funcMap[k] = v
 	}
 
@@ -524,7 +543,36 @@ func toTemplateNetworkStatusV1A3(bsArgs *BootstrapArgs) []vmopv1a3.NetworkDevice
 	return networkDevicesStatus
 }
 
-func toTemplateNetworkStatusV1A4(bsArgs *BootstrapArgs) []vmopv1.NetworkDeviceStatus {
+func toTemplateNetworkStatusV1A4(bsArgs *BootstrapArgs) []vmopv1a4.NetworkDeviceStatus {
+	networkDevicesStatus := make([]vmopv1a4.NetworkDeviceStatus, 0, len(bsArgs.NetworkResults.Results))
+
+	for _, result := range bsArgs.NetworkResults.Results {
+		// When using Sysprep, the MAC address must be in the format of "-".
+		// CloudInit normalizes it again to ":" when adding it to the netplan.
+		macAddr := strings.ReplaceAll(result.MacAddress, ":", "-")
+
+		status := vmopv1a4.NetworkDeviceStatus{
+			MacAddress: macAddr,
+		}
+
+		for _, ipConfig := range result.IPConfigs {
+			// We mostly only did IPv4 before so keep that going.
+			if ipConfig.IsIPv4 {
+				if status.Gateway4 == "" {
+					status.Gateway4 = ipConfig.Gateway
+				}
+
+				status.IPAddresses = append(status.IPAddresses, ipConfig.IPCIDR)
+			}
+		}
+
+		networkDevicesStatus = append(networkDevicesStatus, status)
+	}
+
+	return networkDevicesStatus
+}
+
+func toTemplateNetworkStatusV1A5(bsArgs *BootstrapArgs) []vmopv1.NetworkDeviceStatus {
 	networkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, len(bsArgs.NetworkResults.Results))
 
 	for _, result := range bsArgs.NetworkResults.Results {
@@ -705,8 +753,8 @@ func v1a3TemplateFunctions(
 
 // This is basically identical to v1a3TemplateFunctions.
 func v1a4TemplateFunctions(
-	networkStatusV1A4 vmopv1.NetworkStatus,
-	networkDevicesStatusV1A4 []vmopv1.NetworkDeviceStatus) map[string]any {
+	networkStatusV1A4 vmopv1a4.NetworkStatus,
+	networkDevicesStatusV1A4 []vmopv1a4.NetworkDeviceStatus) map[string]any {
 
 	// Get the first IP address from the first NIC.
 	v1alpha4FirstIP := func() (string, error) {
@@ -850,5 +898,154 @@ func v1a4TemplateFunctions(
 		constants.V1alpha4SubnetMask: v1alpha4SubnetMask,
 		constants.V1alpha4IP:         v1alpha4IP,
 		constants.V1alpha4FormatIP:   v1alpha4FormatIP,
+	}
+}
+
+func v1a5TemplateFunctions(
+	networkStatusV1A5 vmopv1.NetworkStatus,
+	networkDevicesStatusV1A5 []vmopv1.NetworkDeviceStatus) map[string]any {
+
+	// Get the first IP address from the first NIC.
+	v1alpha5FirstIP := func() (string, error) {
+		if len(networkDevicesStatusV1A5) == 0 {
+			return "", errors.New("no available network device, check with VI admin")
+		}
+		return networkDevicesStatusV1A5[0].IPAddresses[0], nil
+	}
+
+	// Get the first NIC's MAC address.
+	v1alpha5FirstNicMacAddr := func() (string, error) {
+		if len(networkDevicesStatusV1A5) == 0 {
+			return "", errors.New("no available network device, check with VI admin")
+		}
+		return networkDevicesStatusV1A5[0].MacAddress, nil
+	}
+
+	// Get the first IP address from the ith NIC.
+	// if index out of bound, throw an error and template string won't be parsed
+	v1alpha5FirstIPFromNIC := func(index int) (string, error) {
+		if len(networkDevicesStatusV1A5) == 0 {
+			return "", errors.New("no available network device, check with VI admin")
+		}
+		if index >= len(networkDevicesStatusV1A5) {
+			return "", errors.New("index out of bound")
+		}
+		return networkDevicesStatusV1A5[index].IPAddresses[0], nil
+	}
+
+	// Get all IP addresses from the ith NIC.
+	// if index out of bound, throw an error and template string won't be parsed
+	v1alpha5IPsFromNIC := func(index int) ([]string, error) {
+		if len(networkDevicesStatusV1A5) == 0 {
+			return []string{""}, errors.New("no available network device, check with VI admin")
+		}
+		if index >= len(networkDevicesStatusV1A5) {
+			return []string{""}, errors.New("index out of bound")
+		}
+		return networkDevicesStatusV1A5[index].IPAddresses, nil
+	}
+
+	// Format the first occurred count of nameservers with specific delimiter
+	// A negative count number would mean format all nameservers
+	v1alpha5FormatNameservers := func(count int, delimiter string) (string, error) {
+		var nameservers []string
+		if len(networkStatusV1A5.Nameservers) == 0 {
+			return "", errors.New("no available nameservers, check with VI admin")
+		}
+		if count < 0 || count >= len(networkStatusV1A5.Nameservers) {
+			nameservers = networkStatusV1A5.Nameservers
+			return strings.Join(nameservers, delimiter), nil
+		}
+		nameservers = networkStatusV1A5.Nameservers[:count]
+		return strings.Join(nameservers, delimiter), nil
+	}
+
+	// Get subnet mask from a CIDR notation IP address and prefix length
+	// if IP address and prefix length not valid, throw an error and template string won't be parsed
+	v1alpha5SubnetMask := func(cidr string) (string, error) {
+		_, ipv4Net, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return "", err
+		}
+		netmask := fmt.Sprintf("%d.%d.%d.%d", ipv4Net.Mask[0], ipv4Net.Mask[1], ipv4Net.Mask[2], ipv4Net.Mask[3])
+		return netmask, nil
+	}
+
+	// Format an IP address with default netmask CIDR
+	// if IP not valid, throw an error and template string won't be parsed
+	v1alpha5IP := func(IP string) (string, error) {
+		if net.ParseIP(IP) == nil {
+			return "", errors.New("input IP address not valid")
+		}
+		defaultMask := net.ParseIP(IP).DefaultMask()
+		ones, _ := defaultMask.Size()
+		expectedCidrNotation := IP + "/" + strconv.Itoa(ones)
+		return expectedCidrNotation, nil
+	}
+
+	// Format an IP address with network length(eg. /24) or decimal
+	// notation (eg. 255.255.255.0). Format an IP/CIDR with updated mask.
+	// An empty mask causes just the IP to be returned.
+	v1alpha5FormatIP := func(s string, mask string) (string, error) {
+		// Get the IP address for the input string.
+		ip, _, err := net.ParseCIDR(s)
+		if err != nil {
+			ip = net.ParseIP(s)
+			if ip == nil {
+				return "", fmt.Errorf("input IP address not valid")
+			}
+		}
+		// Store the IP as a string back into s.
+		s = ip.String()
+
+		// If no mask was provided then return just the IP.
+		if mask == "" {
+			return s, nil
+		}
+
+		// The provided mask is a network length.
+		if strings.HasPrefix(mask, "/") {
+			s += mask
+			if _, _, err := net.ParseCIDR(s); err != nil {
+				return "", err
+			}
+			return s, nil
+		}
+
+		// The provided mask is subnet mask.
+		maskIP := net.ParseIP(mask)
+		if maskIP == nil {
+			return "", fmt.Errorf("mask is an invalid IP")
+		}
+
+		maskIPBytes := maskIP.To4()
+		if len(maskIPBytes) == 0 {
+			maskIPBytes = maskIP.To16()
+		}
+
+		ipNet := net.IPNet{
+			IP:   ip,
+			Mask: net.IPMask(maskIPBytes),
+		}
+		s = ipNet.String()
+
+		// Validate the ipNet is an IP/CIDR
+		if _, _, err := net.ParseCIDR(s); err != nil {
+			return "", fmt.Errorf("invalid ip net: %s", s)
+		}
+
+		return s, nil
+	}
+
+	return template.FuncMap{
+		constants.V1alpha5FirstIP:           v1alpha5FirstIP,
+		constants.V1alpha5FirstNicMacAddr:   v1alpha5FirstNicMacAddr,
+		constants.V1alpha5FirstIPFromNIC:    v1alpha5FirstIPFromNIC,
+		constants.V1alpha5IPsFromNIC:        v1alpha5IPsFromNIC,
+		constants.V1alpha5FormatNameservers: v1alpha5FormatNameservers,
+		// These are more util function that we've conflated version namespaces.
+		constants.V1alpha5SubnetMask: v1alpha5SubnetMask,
+		constants.V1alpha5IP:         v1alpha5IP,
+		constants.V1alpha5FormatIP:   v1alpha5FormatIP,
 	}
 }

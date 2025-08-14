@@ -222,7 +222,6 @@ func (i *VirtualMachineImageCache) SetConditions(conditions []metav1.Condition) 
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmic;vmicache;vmimagecache
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // VirtualMachineImageCache is the schema for the

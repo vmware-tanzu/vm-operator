@@ -97,6 +97,24 @@ resource.
 | `spec` _[VirtualMachineGroupSpec](#virtualmachinegroupspec)_ |  |
 | `status` _[VirtualMachineGroupStatus](#virtualmachinegroupstatus)_ |  |
 
+### VirtualMachineGroupPublishRequest
+
+
+
+VirtualMachineGroupPublishRequest defines the information necessary to
+publish the VirtualMachines in a VirtualMachineGroup as VirtualMachineImages
+to an image registry.
+
+
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
+| `kind` _string_ | `VirtualMachineGroupPublishRequest`
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
+| `spec` _[VirtualMachineGroupPublishRequestSpec](#virtualmachinegrouppublishrequestspec)_ |  |
+| `status` _[VirtualMachineGroupPublishRequestStatus](#virtualmachinegrouppublishrequeststatus)_ |  |
+
 ### VirtualMachineImage
 
 
@@ -502,6 +520,21 @@ _Appears in:_
 ResourcePool. |
 | `limits` _[VirtualMachineResourceSpec](#virtualmachineresourcespec)_ | Limits describes the limit to resources available to the ResourcePool. |
 
+### ResourcePoolStatus
+
+
+
+ResourcePoolStatus describes the observed state of a vSphere child
+resource pool created for the Spec.ResourcePool.Name.
+
+_Appears in:_
+- [VirtualMachineSetResourcePolicyStatus](#virtualmachinesetresourcepolicystatus)
+
+| Field | Description |
+| --- | --- |
+| `clusterMoID` _string_ |  |
+| `childResourcePoolMoID` _string_ |  |
+
 ### TCPSocketAction
 
 
@@ -770,6 +803,22 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
+| `firmware` _[VirtualMachineBootOptionsFirmwareType](#virtualmachinebootoptionsfirmwaretype)_ | Firmware represents the firmware for the virtual machine to use. Any update
+to this value after the virtual machine has already been created will be
+ignored. Setting will happen in the following manner:
+
+1. If this value is specified, it will be used to set the VM firmware. If this
+   value is unset, then
+2. the virtual machine image will be checked. If that value is set, then it will
+   be used to set the VM firmware. If that value is unset, then
+3. the virtual machine class will be checked. If that value is set, then it will
+   be used to set the VM firmware. If that value is unset, then
+4. the VM firmware will be set, by default, to BIOS.
+
+The available values of this field are:
+
+- BIOS
+- EFI |
 | `bootDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | BootDelay is the delay before starting the boot sequence. The boot delay
 specifies a time interval between virtual machine power on or restart and
 the beginning of the boot sequence. |
@@ -787,28 +836,50 @@ The available devices are:
              If there are only managed disks, the first disk is selected.
 - Network -- The first interface listed in spec.network.interfaces.
 - CDRom   -- The first bootable CD-ROM device. |
-| `bootRetryEnabled` _boolean_ | BootRetryEnabled specifies whether a virtual machine that fails to boot
-will try again. If set to true, a virtual machine that fails to boot will
-try again after BootRetryDelay time period has expired. If set to false, the
-virtual machine waits indefinitely for you to initiate boot retry. |
+| `bootRetry` _[VirtualMachineBootOptionsBootRetry](#virtualmachinebootoptionsbootretry)_ | BootRetry specifies whether a virtual machine that fails to boot
+will try again. The available values are:
+
+- Enabled -- A virtual machine that fails to boot will try again
+             after BootRetryDelay time period has expired.
+- Disabled -- The virtual machine waits indefinitely for you to
+              initiate boot retry. |
 | `bootRetryDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | BootRetryDelay specifies a time interval between virtual machine boot failure
 and the subsequent attempt to boot again. The virtual machine uses this value
-only if BootRetryEnabled is true. |
-| `enterBIOSSetup` _boolean_ | EnterBIOSSetup specifies whether to automatically enter BIOS setup the next
+only if BootRetry is Enabled. |
+| `enterBootSetup` _[VirtualMachineBootOptionsForceBootEntry](#virtualmachinebootoptionsforcebootentry)_ | EnterBootSetup specifies whether to automatically enter BIOS/EFI setup the next
 time the virtual machine boots. The virtual machine resets this flag to false
-so that subsequent boots proceed normally. |
-| `efiSecureBootEnabled` _boolean_ | EFISecureBootEnabled specifies whether the virtual machine's firmware will
+so that subsequent boots proceed normally. The available values are:
+
+- Enabled -- The virtual machine will automatically enter BIOS/EFI setup the next
+             time the virtual machine boots.
+- Disabled -- The virtual machine will boot normaally. |
+| `efiSecureBoot` _[VirtualMachineBootOptionsEFISecureBoot](#virtualmachinebootoptionsefisecureboot)_ | EFISecureBoot specifies whether the virtual machine's firmware will
 perform signature checks of any EFI images loaded during startup. If set to
 true, signature checks will be performed and the virtual machine's firmware
 will refuse to start any images which do not pass those signature checks.
 
-Please note, this field will not be honored unless the value of spec.firmware
-is "EFI". |
+Please note, this field will not be honored unless the value of
+spec.bootOptions.firmware is "EFI". The available values are:
+
+- Enabled -- Signature checks will be performed and the virtual machine's firmware
+             will refuse to start any images which do not pass those signature checks.
+- Disabled -- No signature checks will be performed. |
 | `networkBootProtocol` _[VirtualMachineBootOptionsNetworkBootProtocol](#virtualmachinebootoptionsnetworkbootprotocol)_ | NetworkBootProtocol is the protocol to attempt during PXE network boot or NetBoot.
 The available protocols are:
 
 - IP4 -- PXE (or Apple NetBoot) over IPv4. The default.
 - IP6 -- PXE over IPv6. Only meaningful for EFI virtual machines. |
+
+### VirtualMachineBootOptionsBootRetry
+
+_Underlying type:_ `string`
+
+VirtualMachineBootOptionsBootRetry represents whether a virtual machine that fails to boot
+will automatically try again.
+
+_Appears in:_
+- [VirtualMachineBootOptions](#virtualmachinebootoptions)
+
 
 ### VirtualMachineBootOptionsBootableDevice
 
@@ -816,6 +887,38 @@ _Underlying type:_ `string`
 
 VirtualMachineBootOptionsBootableDevice represents the type of bootable device
 that a VM may be booted from.
+
+_Appears in:_
+- [VirtualMachineBootOptions](#virtualmachinebootoptions)
+
+
+### VirtualMachineBootOptionsEFISecureBoot
+
+_Underlying type:_ `string`
+
+VirtualMachineBootOptionsEFISecureBoot represents whether the virtual machine will
+perform EFI Secure Boot.
+
+_Appears in:_
+- [VirtualMachineBootOptions](#virtualmachinebootoptions)
+
+
+### VirtualMachineBootOptionsFirmwareType
+
+_Underlying type:_ `string`
+
+VirtualMachineBootOptionsFirmwareType represents the firmware to use.
+
+_Appears in:_
+- [VirtualMachineBootOptions](#virtualmachinebootoptions)
+
+
+### VirtualMachineBootOptionsForceBootEntry
+
+_Underlying type:_ `string`
+
+VirtualMachineBootOptionsForceBootEntry represents whether to force the virtual machine
+to enter BIOS/EFI setup the next time the virtual machine boots.
 
 _Appears in:_
 - [VirtualMachineBootOptions](#virtualmachinebootoptions)
@@ -1391,6 +1494,109 @@ datastore. |
 | `diskKey` _integer_ | DiskKey describes the device key to which this recommendation applies.
 When omitted, this recommendation is for the VM's home directory. |
 
+### VirtualMachineGroupPublishRequestImageStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineGroupPublishRequestStatus](#virtualmachinegrouppublishrequeststatus)
+
+| Field | Description |
+| --- | --- |
+| `source` _string_ | Source is the name of the published VirtualMachine. |
+| `publishRequestName` _string_ | PublishRequestName is the name of the VirtualMachinePublishRequest object
+created to publish the VM. |
+| `imageName` _string_ | ImageName is the name of the VirtualMachineImage resource that is
+eventually realized after the publication operation completes.
+
+This field will not be set until the VirtualMachineImage resource
+is realized. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions is a copy of the conditions from the
+VirtualMachinePublishRequest object created to publish the VM. |
+
+### VirtualMachineGroupPublishRequestSpec
+
+
+
+VirtualMachineGroupPublishRequestSpec defines the desired state of a
+VirtualMachineGroupPublishRequest.
+
+All the fields in this spec are optional. This is especially useful when a
+DevOps persona wants to publish a VM Group without doing anything more than
+applying a VirtualMachineGroupPublishRequest resource that has the same name
+as said VMs in the same namespace as said VMs in VM Group.
+
+_Appears in:_
+- [VirtualMachineGroupPublishRequest](#virtualmachinegrouppublishrequest)
+
+| Field | Description |
+| --- | --- |
+| `source` _string_ | Source is the name of the VirtualMachineGroup to be published.
+
+If this value is omitted then the publication controller checks to
+see if there is a VirtualMachineGroup with the same name as this
+VirtualMachineGroupPublishRequest resource. If such a resource exists,
+then it is the source of the publication. |
+| `virtualMachines` _string array_ | VirtualMachines is a list of the VirtualMachine objects from the source
+VirtualMachineGroup that are included in this publish request.
+
+If omitted, this field defaults to the names of all of the VMs currently
+a member of the group, either directly or indirectly via a nested group. |
+| `target` _string_ | Target is the name of the ContentLibrary resource to which the
+VirtualMachines from the VirtualMachineGroup should be published.
+
+When this value is omitted, the controller attempts to identify the
+target location by matching a ContentLibrary resource with the label
+"imageregistry.vmware.com/default".
+
+Please note that while optional, if a VirtualMachineGroupPublishRequest
+sans target information is applied to a namespace without a default
+publication target, then the VirtualMachineGroupPublishRequest resource
+will be marked in error. |
+| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live duration for how long this
+resource will be allowed to exist once the publication operation
+completes. After the TTL expires, the resource will be automatically
+deleted without the user having to take any direct action.
+This will be passed into each VirtualMachinePublishRequestSpec.
+
+If this field is unset then the request resource will not be
+automatically deleted. If this field is set to zero then the request
+resource is eligible for deletion immediately after it finishes. |
+
+### VirtualMachineGroupPublishRequestStatus
+
+
+
+VirtualMachineGroupPublishRequestStatus defines the observed state of a
+VirtualMachineGroupPublishRequest.
+
+_Appears in:_
+- [VirtualMachineGroupPublishRequest](#virtualmachinegrouppublishrequest)
+
+| Field | Description |
+| --- | --- |
+| `source` _string_ | Source is the name of the published VirtualMachineGroup. |
+| `target` _string_ | Target is the name of the ContentLibrary to which the group is published. |
+| `completionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | CompletionTime represents when the request was completed. It is not
+guaranteed to be set in happens-before order across separate operations.
+It is represented in RFC3339 form and is in UTC.
+
+The value of this field should be equal to the value of the
+LastTransitionTime for the status condition Type=Complete. |
+| `startTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | StartTime represents when the request was acknowledged by the
+controller. It is not guaranteed to be set in happens-before order
+across separate operations. It is represented in RFC3339 form and is
+in UTC.
+
+Please note that the group will not be published until the group's Ready
+condition is true. |
+| `images` _[VirtualMachineGroupPublishRequestImageStatus](#virtualmachinegrouppublishrequestimagestatus) array_ | Images describes the observed status of the individual VirtualMachine
+publications. |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions is a list of the latest, available observations of the
+request's current state. |
+
 ### VirtualMachineGroupSpec
 
 
@@ -1404,7 +1610,11 @@ _Appears in:_
 | --- | --- |
 | `groupName` _string_ | GroupName describes the name of the group that this group belongs to.
 
-If omitted, this group is not a member of any other group. |
+When this field is set to a valid group that contains this VM Group as a
+member, an owner reference to that group is added to this VM Group.
+
+When this field is deleted or changed, any existing owner reference to
+the previous group will be removed from this VM Group. |
 | `bootOrder` _[VirtualMachineGroupBootOrderGroup](#virtualmachinegroupbootordergroup) array_ | BootOrder describes the boot sequence for this group members. Each boot
 order contains a set of members that will be powered on simultaneously,
 with an optional delay before powering on. The orders are processed
@@ -1514,6 +1724,10 @@ _Appears in:_
 | --- | --- |
 | `datacenterID` _string_ | DatacenterID describes the ID of the datacenter to which the image should
 be cached. |
+| `profileID` _string_ | ProfileID describes the ID of the storage profile used to cache the
+image.
+Please note, this profile *must* include the datastore specified by the
+datastoreID field. |
 | `datastoreID` _string_ | DatastoreID describes the ID of the datastore to which the image should
 be cached. |
 
@@ -1528,10 +1742,11 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `datacenterID` _string_ | DatacenterID describes the ID of the datacenter to which the image should
-be cached. |
-| `datastoreID` _string_ | DatastoreID describes the ID of the datastore to which the image should
-be cached. |
+| `datacenterID` _string_ | DatacenterID describes the ID of the datacenter where the image is
+cached. |
+| `datastoreID` _string_ | DatastoreID describes the ID of the datastore where the image is cached. |
+| `profileID` _string_ | ProfileID describes the ID of the storage profile used to cache the
+image. |
 | `files` _[VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus) array_ | Files describes the image's files cached on this datastore. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cache location.
 
@@ -1732,7 +1947,8 @@ Library, this will be the version of the corresponding Content Library item. |
 If the provider of this image is a Content Library, this ID will be that of the
 corresponding Content Library item. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions for this image. |
-| `type` _string_ | Type describes the content library item type (OVF or ISO) of the image. |
+| `type` _string_ | Type describes the content library item type (OVF, ISO, or VM) of the
+image. |
 
 ### VirtualMachineNetworkConfigDHCPOptionsStatus
 
@@ -2330,6 +2546,7 @@ If the bootstrap provider is anything else then this field is set to the
 value of the infrastructure VM's "guest.ipAddress" field. Please see
 https://bit.ly/3Au0jM4 for more information. |
 
+
 ### VirtualMachinePlacementStatus
 
 
@@ -2817,6 +3034,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
+| `resourcePools` _[ResourcePoolStatus](#resourcepoolstatus) array_ |  |
 | `clustermodules` _[VSphereClusterModuleStatus](#vsphereclustermodulestatus) array_ |  |
 
 ### VirtualMachineSnapshotSpec
@@ -2873,6 +3091,44 @@ this snapshot from other snapshots of this virtual machine. |
 | `children` _LocalObjectRef array_ | Children represents the snapshots for which this snapshot is
 the parent. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions of the VirtualMachine. |
+| `storage` _[VirtualMachineSnapshotStorageStatus](#virtualmachinesnapshotstoragestatus)_ | Storage describes the observed amount of storage used by a
+VirtualMachineSnapshot, including the space for FCDs. |
+
+### VirtualMachineSnapshotStorageStatus
+
+
+
+VirtualMachineSnapshotStorageStatus defines the observed state of a
+VirtualMachineSnapshot's storage.
+
+_Appears in:_
+- [VirtualMachineSnapshotStatus](#virtualmachinesnapshotstatus)
+
+| Field | Description |
+| --- | --- |
+| `used` _[Quantity](#quantity)_ | Used describes the observed amount of storage used by a
+VirtualMachineSnapshot, except the space for FCDs. |
+| `requested` _[VirtualMachineSnapshotStorageStatusRequested](#virtualmachinesnapshotstoragestatusrequested) array_ | Requested describes the observed amount of storage requested by a
+VirtualMachineSnapshot. It's a list of requested storage for each
+storage class.
+Since a snapshot can have multiple PVCs, it can point to multiple storage
+classes. |
+
+### VirtualMachineSnapshotStorageStatusRequested
+
+
+
+VirtualMachineSnapshotStorageStatusRequested describes the observed amount of
+storage requested by a VirtualMachineSnapshot for a storage class.
+
+_Appears in:_
+- [VirtualMachineSnapshotStorageStatus](#virtualmachinesnapshotstoragestatus)
+
+| Field | Description |
+| --- | --- |
+| `storageClass` _string_ | StorageClass is the name of the storage class. |
+| `total` _[Quantity](#quantity)_ | Total describes the total storage space requested by a
+VirtualMachineSnapshot for the storage class. |
 
 ### VirtualMachineSpec
 
@@ -3138,20 +3394,15 @@ Defaults to Online. |
 | `bootOptions` _[VirtualMachineBootOptions](#virtualmachinebootoptions)_ | BootOptions describes the settings that control the boot behavior of the
 virtual machine. These settings take effect during the next power-on of the
 virtual machine. |
-| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot represents the desired snapshot that the
-virtual machine should point to. This field can have three
-possible values:
+| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot represents the desired snapshot that the VM
+should point to. This field can be specified to revert the VM
+to a given snapshot. Once the virtual machine has been
+successfully reverted to the desired snapshot, the value of
+this field is cleared.
 
-- The value of this field is nil when the working snapshot is at
-  the root of the snapshot tree.
-
-- When a new snapshot is requested by creating a new
-  VirtualMachineSnapshot, the value of this field is set to the
-  new snapshot resource's name.
-
-- If the value of this field is set to an existing snapshot that
-  is different from the status.currentSnapshot, the virtual machine is
-  reverted to the requested snapshot.
+The value of this field must be an existing object of
+VirtualMachineSnapshot kind that exists on the API server. All
+other values are invalid.
 
 Reverting a virtual machine to a snapshot rolls back the data
 and the configuration of the virtual machine to that of the
@@ -3170,7 +3421,13 @@ VirtualMachineSpec. |
 VM belongs.
 
 VMs that belong to a group do not drive their own placement, rather that
-is handled by the group. |
+is handled by the group.
+
+When this field is set to a valid group that contains this VM as a
+member, an owner reference to that group is added to this VM.
+
+When this field is deleted or changed, any existing owner reference to
+the previous group will be removed from this VM. |
 
 ### VirtualMachineStatus
 
@@ -3216,8 +3473,6 @@ hardware version.
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
 | `storage` _[VirtualMachineStorageStatus](#virtualmachinestoragestatus)_ | Storage describes the observed state of the VirtualMachine's storage. |
-| `taskID` _string_ | TaskID describes the observed ID of the task created by VM Operator to
-perform some long-running operation on the VM. |
 | `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine. |
 | `rootSnapshots` _LocalObjectRef array_ | RootSnapshots represents the observed list of root snapshots of
 a VM. Since each snapshot includes the list of its child

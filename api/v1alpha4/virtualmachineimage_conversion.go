@@ -4,14 +4,32 @@
 
 package v1alpha4
 
-// Hub marks VirtualMachineImage as a conversion hub.
-func (*VirtualMachineImage) Hub() {}
+import (
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-// Hub marks VirtualMachineImageList as a conversion hub.
-func (*VirtualMachineImageList) Hub() {}
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+)
 
-// Hub marks ClusterVirtualMachineImage as a conversion hub.
-func (*ClusterVirtualMachineImage) Hub() {}
+// ConvertTo converts this VirtualMachineImage to the Hub version.
+func (src *VirtualMachineImage) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineImage)
+	return Convert_v1alpha4_VirtualMachineImage_To_v1alpha5_VirtualMachineImage(src, dst, nil)
+}
 
-// Hub marks ClusterVirtualMachineImageList as a conversion hub.
-func (*ClusterVirtualMachineImageList) Hub() {}
+// ConvertFrom converts the hub version to this VirtualMachineImage.
+func (dst *VirtualMachineImage) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineImage)
+	return Convert_v1alpha5_VirtualMachineImage_To_v1alpha4_VirtualMachineImage(src, dst, nil)
+}
+
+// ConvertTo converts this ClusterVirtualMachineImage to the Hub version.
+func (src *ClusterVirtualMachineImage) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.ClusterVirtualMachineImage)
+	return Convert_v1alpha4_ClusterVirtualMachineImage_To_v1alpha5_ClusterVirtualMachineImage(src, dst, nil)
+}
+
+// ConvertFrom converts the hub version to this ClusterVirtualMachineImage.
+func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.ClusterVirtualMachineImage)
+	return Convert_v1alpha5_ClusterVirtualMachineImage_To_v1alpha4_ClusterVirtualMachineImage(src, dst, nil)
+}

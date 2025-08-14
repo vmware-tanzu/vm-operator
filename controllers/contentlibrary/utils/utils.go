@@ -16,8 +16,8 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
 // GetImageFieldNameFromItem returns the Image field name in format of "vmi-<uuid>"

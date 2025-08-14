@@ -20,10 +20,10 @@ import (
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
-	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
-	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 )
 
 func TestVirtualMachineConversion(t *testing.T) {

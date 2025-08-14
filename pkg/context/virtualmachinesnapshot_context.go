@@ -11,7 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 // VirtualMachineSnapshotContext is the context used for VirtualMachineSnapShotControllers.

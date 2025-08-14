@@ -16,10 +16,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -1370,7 +1370,7 @@ func vmUtilTests() {
 			timeout, _ := time.ParseDuration("1h35m")
 			vmSnapshot = &vmopv1.VirtualMachineSnapshot{
 				TypeMeta: metav1.TypeMeta{
-					APIVersion: "vmoperator.vmware.com/v1alpha4",
+					APIVersion: "vmoperator.vmware.com/v1alpha5",
 					Kind:       "VirtualMachineSnapshot",
 				},
 				ObjectMeta: metav1.ObjectMeta{

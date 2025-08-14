@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 )
 
 const (
@@ -761,7 +761,7 @@ type VirtualMachineSpec struct {
 	// If a VM class has been modified and thus, the newly available
 	// VirtualMachineClassInstance can be specified in spec.class to
 	// trigger a resize operation.
-	Class *vmopv1common.LocalObjectRef `json:"class,omitempty"`
+	Class *vmopv1a4common.LocalObjectRef `json:"class,omitempty"`
 
 	// +optional
 
@@ -1039,7 +1039,7 @@ type VirtualMachineSpec struct {
 	// the power state from the snapshot (i.e., powered on). This can
 	// be overridden by specifying the PowerState to PoweredOff in the
 	// VirtualMachineSpec.
-	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
+	CurrentSnapshot *vmopv1a4common.LocalObjectRef `json:"currentSnapshot,omitempty"`
 
 	// +optional
 
@@ -1142,7 +1142,7 @@ type VirtualMachineStatus struct {
 
 	// Class is a reference to the VirtualMachineClass resource used to deploy
 	// this VM.
-	Class *vmopv1common.LocalObjectRef `json:"class,omitempty"`
+	Class *vmopv1a4common.LocalObjectRef `json:"class,omitempty"`
 
 	// +optional
 
@@ -1237,7 +1237,7 @@ type VirtualMachineStatus struct {
 	// +optional
 
 	// CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
-	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
+	CurrentSnapshot *vmopv1a4common.LocalObjectRef `json:"currentSnapshot,omitempty"`
 
 	// +optional
 
@@ -1246,12 +1246,11 @@ type VirtualMachineStatus struct {
 	// snapshots, these root snapshot references can effectively be
 	// used to construct the entire snapshot chain of a virtual
 	// machine.
-	RootSnapshots []vmopv1common.LocalObjectRef `json:"rootSnapshots,omitempty"`
+	RootSnapshots []vmopv1a4common.LocalObjectRef `json:"rootSnapshots,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vm
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Power-State",type="string",JSONPath=".status.powerState"
 // +kubebuilder:printcolumn:name="Class",type="string",priority=1,JSONPath=".spec.className"

@@ -13,7 +13,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/bitmask"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	ctxgen "github.com/vmware-tanzu/vm-operator/pkg/context/generic"

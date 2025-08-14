@@ -10,7 +10,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 // FindClusterModuleUUID returns the index in the Status.ClusterModules and UUID of the

@@ -8,13 +8,13 @@ import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
-func Convert_v1alpha3_VirtualMachineImageCacheFileStatus_To_v1alpha4_VirtualMachineImageCacheFileStatus(
+func Convert_v1alpha3_VirtualMachineImageCacheFileStatus_To_v1alpha5_VirtualMachineImageCacheFileStatus(
 	in *VirtualMachineImageCacheFileStatus, out *vmopv1.VirtualMachineImageCacheFileStatus, s apiconversion.Scope) error {
 
-	if err := autoConvert_v1alpha3_VirtualMachineImageCacheFileStatus_To_v1alpha4_VirtualMachineImageCacheFileStatus(in, out, s); err != nil {
+	if err := autoConvert_v1alpha3_VirtualMachineImageCacheFileStatus_To_v1alpha5_VirtualMachineImageCacheFileStatus(in, out, s); err != nil {
 		return err
 	}
 
@@ -24,10 +24,10 @@ func Convert_v1alpha3_VirtualMachineImageCacheFileStatus_To_v1alpha4_VirtualMach
 	return nil
 }
 
-func Convert_v1alpha4_VirtualMachineImageCacheFileStatus_To_v1alpha3_VirtualMachineImageCacheFileStatus(
+func Convert_v1alpha5_VirtualMachineImageCacheFileStatus_To_v1alpha3_VirtualMachineImageCacheFileStatus(
 	in *vmopv1.VirtualMachineImageCacheFileStatus, out *VirtualMachineImageCacheFileStatus, s apiconversion.Scope) error {
 
-	if err := autoConvert_v1alpha4_VirtualMachineImageCacheFileStatus_To_v1alpha3_VirtualMachineImageCacheFileStatus(in, out, s); err != nil {
+	if err := autoConvert_v1alpha5_VirtualMachineImageCacheFileStatus_To_v1alpha3_VirtualMachineImageCacheFileStatus(in, out, s); err != nil {
 		return err
 	}
 
@@ -39,23 +39,23 @@ func Convert_v1alpha4_VirtualMachineImageCacheFileStatus_To_v1alpha3_VirtualMach
 // ConvertTo converts this VirtualMachineImageCache to the Hub version.
 func (i *VirtualMachineImageCache) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachineImageCache)
-	return Convert_v1alpha3_VirtualMachineImageCache_To_v1alpha4_VirtualMachineImageCache(i, dst, nil)
+	return Convert_v1alpha3_VirtualMachineImageCache_To_v1alpha5_VirtualMachineImageCache(i, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineImageCache.
 func (i *VirtualMachineImageCache) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachineImageCache)
-	return Convert_v1alpha4_VirtualMachineImageCache_To_v1alpha3_VirtualMachineImageCache(src, i, nil)
+	return Convert_v1alpha5_VirtualMachineImageCache_To_v1alpha3_VirtualMachineImageCache(src, i, nil)
 }
 
 // ConvertTo converts this VirtualMachineImageCacheList to the Hub version.
 func (src *VirtualMachineImageCacheList) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachineImageCacheList)
-	return Convert_v1alpha3_VirtualMachineImageCacheList_To_v1alpha4_VirtualMachineImageCacheList(src, dst, nil)
+	return Convert_v1alpha3_VirtualMachineImageCacheList_To_v1alpha5_VirtualMachineImageCacheList(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineImageCacheList.
 func (dst *VirtualMachineImageCacheList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachineImageCacheList)
-	return Convert_v1alpha4_VirtualMachineImageCacheList_To_v1alpha3_VirtualMachineImageCacheList(src, dst, nil)
+	return Convert_v1alpha5_VirtualMachineImageCacheList_To_v1alpha3_VirtualMachineImageCacheList(src, dst, nil)
 }

@@ -157,7 +157,6 @@ type VirtualMachineGroupPublishRequestImageStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmgpub
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // VirtualMachineGroupPublishRequest defines the information necessary to

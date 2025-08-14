@@ -80,7 +80,7 @@ The `proxyAddr` field supports various formats:
 ### Basic Web Console Request
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineWebConsoleRequest
 metadata:
   name: my-vm-console
@@ -140,7 +140,7 @@ print(f"Web console URL: {console_url}")
 ```bash
 # 1. Create the web console request
 kubectl apply -f - <<EOF
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineWebConsoleRequest
 metadata:
   name: debug-console
@@ -305,9 +305,9 @@ The VirtualMachineWebConsoleRequest API is available in multiple versions:
 - **v1alpha1**: Legacy `WebConsoleRequest` (deprecated)
 - **v1alpha2**: `VirtualMachineWebConsoleRequest` (legacy)
 - **v1alpha3**: `VirtualMachineWebConsoleRequest` (legacy)
-- **v1alpha4**: `VirtualMachineWebConsoleRequest` (current, storage version)
+- **v1alpha5**: `VirtualMachineWebConsoleRequest` (current, storage version)
 
-Use v1alpha4 for new deployments as it's the current storage version and provides the most stable API surface.
+Use v1alpha5 for new deployments as it's the current storage version and provides the most stable API surface.
 
 ## Related Resources
 

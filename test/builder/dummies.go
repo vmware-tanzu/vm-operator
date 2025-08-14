@@ -23,8 +23,8 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -576,7 +576,7 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 	return &vmopv1.VirtualMachineSnapshot{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "VirtualMachineSnapshot",
-			APIVersion: "vmoperator.vmware.com/v1alpha4",
+			APIVersion: "vmoperator.vmware.com/v1alpha5",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -588,7 +588,7 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
 			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: "vmoperator.vmware.com/v1alpha4",
+				APIVersion: "vmoperator.vmware.com/v1alpha5",
 				Kind:       "VirtualMachine",
 				Name:       vmName,
 			},

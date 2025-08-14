@@ -11,7 +11,8 @@ import (
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/webhooks/conversion/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/webhooks/conversion/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/webhooks/conversion/v1alpha3"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/webhooks/conversion/v1alpha4"
+	vmopv1a4 "github.com/vmware-tanzu/vm-operator/webhooks/conversion/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/webhooks/conversion/v1alpha5"
 )
 
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
@@ -23,6 +24,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		return err
 	}
 	if err := vmopv1a3.AddToManager(ctx, mgr); err != nil {
+		return err
+	}
+	if err := vmopv1a4.AddToManager(ctx, mgr); err != nil {
 		return err
 	}
 	if err := vmopv1.AddToManager(ctx, mgr); err != nil {

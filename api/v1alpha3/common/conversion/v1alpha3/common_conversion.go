@@ -10,11 +10,11 @@ import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 
 	vmopv1a3common "github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
 // Convert_common_ObjectMeta_To_common_ObjectMeta converts the ObjectMeta from
-// v1alpha3 to v1alpha4.
+// v1alpha3 to v1alpha5.
 // Please see https://github.com/kubernetes/code-generator/issues/172 for why
 // this function exists in this directory structure.
 func Convert_common_ObjectMeta_To_common_ObjectMeta(

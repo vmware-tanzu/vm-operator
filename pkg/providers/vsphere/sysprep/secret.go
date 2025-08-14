@@ -9,7 +9,7 @@ import (
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 

@@ -93,7 +93,7 @@ spec:
       storage: 20Gi # (1)
   storageClassName: wcpglobal-storage-profile
 ---
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-iso-vm

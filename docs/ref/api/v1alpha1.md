@@ -671,6 +671,20 @@ _Appears in:_
 | `reservations` _[VirtualMachineResourceSpec](#virtualmachineresourcespec)_ | Reservations describes the guaranteed resources reserved for the ResourcePool. |
 | `limits` _[VirtualMachineResourceSpec](#virtualmachineresourcespec)_ | Limits describes the limit to resources available to the ResourcePool. |
 
+### ResourcePoolStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineSetResourcePolicyStatus](#virtualmachinesetresourcepolicystatus)
+
+| Field | Description |
+| --- | --- |
+| `clusterMoID` _string_ |  |
+| `childResourcePoolMoID` _string_ |  |
+
 ### TCPSocketAction
 
 
@@ -1345,6 +1359,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
+| `resourcePools` _[ResourcePoolStatus](#resourcepoolstatus) array_ |  |
 | `clustermodules` _[ClusterModuleStatus](#clustermodulestatus) array_ |  |
 
 ### VirtualMachineSpec

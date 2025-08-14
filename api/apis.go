@@ -11,7 +11,8 @@ import (
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1a4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 // AddToSchemes may be used to add all resources defined in the project to a Scheme.
@@ -26,6 +27,9 @@ func AddToScheme(s *runtime.Scheme) error {
 		return err
 	}
 	if err := vmopv1a3.AddToScheme(s); err != nil {
+		return err
+	}
+	if err := vmopv1a4.AddToScheme(s); err != nil {
 		return err
 	}
 	return vmopv1.AddToScheme(s)

@@ -11,7 +11,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"

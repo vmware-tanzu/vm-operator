@@ -9,7 +9,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 const (

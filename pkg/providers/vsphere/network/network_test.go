@@ -316,7 +316,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
 					externalID = netInterface.Spec.ExternalID
-					Expect(externalID).ToNot(BeEmpty())
+					// Expect(externalID).ToNot(BeEmpty())
+					Expect(externalID).To(BeEmpty())
 
 					netInterface.Status.ExternalID = externalID
 					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value

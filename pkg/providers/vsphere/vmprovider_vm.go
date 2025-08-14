@@ -1262,6 +1262,13 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 		vmCtx.Logger.V(5).Info("No current snapshot specified, skipping revert")
 		return false, nil
 	}
+
+	// Skip snapshot revert processing for VKS/TKG nodes
+	if kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
+		vmCtx.Logger.V(4).Info("Skipping snapshot revert for VKS/TKG node",
+			"vmName", vmCtx.VM.Name, "snapshotName", vmCtx.VM.Spec.CurrentSnapshot.Name)
+		return false, nil
+	}
 	desiredSnapshotName := vmCtx.VM.Spec.CurrentSnapshot.Name
 
 	// Check if the snapshot CR exists.
@@ -1524,6 +1531,13 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 
 	// If no snapshots found, nothing to do
 	if len(vmSnapshots) == 0 {
+		return nil
+	}
+
+	// Skip snapshot processing for VKS/TKG nodes
+	if kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
+		vmCtx.Logger.V(4).Info("Skipping snapshot processing for VKS/TKG node",
+			"vmName", vmCtx.VM.Name)
 		return nil
 	}
 

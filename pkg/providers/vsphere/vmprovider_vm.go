@@ -1300,11 +1300,8 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 
 	vmCtx.Logger.V(4).Info("Found desired snapshot for the VM", "snapshotRef", snapObj.Reference().Value)
 
-	// Check if we need to revert (current snapshot != desired snapshot)
-	if needsRevert := vs.needsSnapshotRevert(vmCtx, snapObj); !needsRevert {
-		vmCtx.Logger.V(4).Info("VM already points to the desired snapshot",
-			"snapshotName", desiredSnapshotName)
-		return false, nil
+	if vmCtx.MoVM.Snapshot.CurrentSnapshot.Value == snapObj.Reference().Value {
+		vmCtx.Logger.V(4).Info("Reverting to the current snapshot")
 	}
 
 	vmCtx.Logger.Info("Starting snapshot revert operation",
@@ -1351,30 +1348,6 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 	// the updated VM spec, labels, and annotations. The VM status
 	// will be updated in the subsequent reconcile loop.
 	return true, nil
-}
-
-// needsSnapshotRevert checks if the VM's current snapshot differs
-// from the desired snapshot.
-func (vs *vSphereVMProvider) needsSnapshotRevert(
-	vmCtx pkgctx.VirtualMachineContext,
-	desiredSnapObj *vimtypes.ManagedObjectReference) bool {
-
-	if vmCtx.MoVM.Snapshot == nil || vmCtx.MoVM.Snapshot.CurrentSnapshot == nil {
-		vmCtx.Logger.Info("VM has no current snapshot, revert needed")
-		return true
-	}
-
-	curSnapshotMoref := vmCtx.MoVM.Snapshot.CurrentSnapshot
-	if curSnapshotMoref.Value == desiredSnapObj.Reference().Value {
-		// VM already points to the desired snapshot.
-		return false
-	}
-
-	vmCtx.Logger.V(4).Info("VM snapshot mismatch detected",
-		"currentSnapshot", curSnapshotMoref.Value,
-		"desiredSnapshot", desiredSnapObj.Reference().Value)
-
-	return true
 }
 
 // setRevertInProgressAnnotation sets the annotation indicating a revert is in progress.
@@ -1614,7 +1587,7 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 		// Mark the snapshot as failed and clear in-progress status
 		// TODO: we wait for in-progress snapshots to complete when
 		// taking a snapshot. So, if we are unable to clear the
-		// in-progress condition because status patching failes, we
+		// in-progress condition because status patching fails, we
 		// will forever be waiting.
 		vs.markSnapshotFailed(vmCtx, snapshotToProcess, err)
 		vmCtx.Logger.Error(err, "Failed to create snapshot", "snapshotName", snapshotToProcess.Name)
@@ -1622,7 +1595,7 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 	}
 
 	// Update the snapshot status with the successful result
-	if err = PatchSnapshotStatus(vmCtx, vs.k8sClient, snapshotToProcess, snapMoRef); err != nil {
+	if err = PatchSnapshotSuccessStatus(vmCtx, vs.k8sClient, snapshotToProcess, snapMoRef); err != nil {
 		vmCtx.Logger.Error(err, "Failed to update snapshot status", "snapshotName", snapshotToProcess.Name)
 		return err
 	}
@@ -1641,13 +1614,6 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 			"remainingSnapshots", totalPendingSnapshots)
 		return fmt.Errorf("requeuing to process %d remaining snapshots: %w", totalPendingSnapshots, pkgerr.RequeueError{})
 	}
-
-	/* TODO:
-	 * - Signal CSI to sync their volume snapshot quota
-	 * - Update our storage quota usage
-	 * - Update the VM storage quota usage
-	 * - Update the VM status to reflect the new current snapshot
-	 */
 
 	return nil
 }

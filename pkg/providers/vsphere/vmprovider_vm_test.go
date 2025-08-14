@@ -3236,6 +3236,78 @@ func vmTests() {
 						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 					})
 				})
+
+				Context("when VM is a VKS/TKG node", func() {
+					It("should skip snapshot revert for VKS/TKG nodes", func() {
+						// Add CAPI labels to mark VM as VKS/TKG node
+						if vm.Labels == nil {
+							vm.Labels = make(map[string]string)
+						}
+						vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+
+						// Create VM first
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						// Create snapshot in vCenter
+						task, err := vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "test snapshot", false, false)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(task.Wait(ctx)).To(Succeed())
+
+						// Create snapshot CR and mark it as ready
+						conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+						// Snapshot should be owned by the VM resource.
+						o := vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), &o)).To(Succeed())
+						Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
+						Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
+
+						// Create a second snapshot in vCenter
+						secondSnapshot := builder.DummyVirtualMachineSnapshot("", "test-second-snap", vm.Name)
+						secondSnapshot.Namespace = nsInfo.Namespace
+
+						task, err = vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "test snapshot", false, false)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(task.Wait(ctx)).To(Succeed())
+
+						// Create snapshot CR and mark it as ready
+						conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
+
+						// Snapshot should be owned by the VM resource.
+						o = vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), &o)).To(Succeed())
+						Expect(controllerutil.SetOwnerReference(&o, secondSnapshot, ctx.Scheme)).To(Succeed())
+						Expect(ctx.Client.Update(ctx, secondSnapshot)).To(Succeed())
+
+						// Set desired snapshot to trigger a revert to the first snapshot.
+						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+							Name:       vmSnapshot.Name,
+						}
+
+						err = createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						// VM status should still point to first snapshot because revert was skipped
+						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
+						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+						// Verify the snapshot in vCenter is still the original one (no revert happened)
+						var moVM mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
+						Expect(moVM.Snapshot).ToNot(BeNil())
+						Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
+
+						// The current snapshot name should still be the original
+						currentSnapName := vmlifecycle.FindSnapshotNameInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
+						Expect(currentSnapName).To(Equal(vmSnapshot.Name))
+					})
+				})
 			})
 
 			Context("CNS Volumes", func() {
@@ -4765,6 +4837,48 @@ func vmTests() {
 					}, updatedSnapshot2)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+				})
+			})
+
+			Context("when VM is a VKS/TKG node", func() {
+				It("should skip snapshot processing for VKS/TKG nodes", func() {
+					// Add CAPI labels to mark VM as VKS/TKG node
+					if vm.Labels == nil {
+						vm.Labels = make(map[string]string)
+					}
+					vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
+					Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+
+					// Create a vCenter VM and update the VM status to point to it
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					snapshot1 = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snapshot-1", vm.Name)
+					Expect(ctx.Client.Create(ctx, snapshot1)).To(Succeed())
+
+					// Snapshot should be owned by the VM resource.
+					o := vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), &o)).To(Succeed())
+					Expect(controllerutil.SetOwnerReference(&o, snapshot1, ctx.Scheme)).To(Succeed())
+					Expect(ctx.Client.Update(ctx, snapshot1)).To(Succeed())
+
+					err = createOrUpdateVM(ctx, vmProvider, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Snapshot should not be processed (VM is VKS/TKG node)
+					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}
+					err = ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot1)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(conditions.IsTrue(updatedSnapshot1, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeFalse())
+
+					// Verify no new snapshots were created on the vCenter VM
+					var moVM mo.VirtualMachine
+					err = vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(moVM.Snapshot).To(BeNil())
 				})
 			})
 		})

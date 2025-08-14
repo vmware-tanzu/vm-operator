@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
@@ -371,10 +370,12 @@ func createNetOPNetworkInterface(
 			return err
 		}
 
+		/* We can only set this once we know all the hosts have been upgraded.
 		if netIf.ResourceVersion == "" {
 			// For new interfaces, set the ExternalID so we can better uniquely identify them.
 			netIf.Spec.ExternalID = uuid.NewString()
 		}
+		*/
 
 		if netIf.Labels == nil {
 			netIf.Labels = map[string]string{}

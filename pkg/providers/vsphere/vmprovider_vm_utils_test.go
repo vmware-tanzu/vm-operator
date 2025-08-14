@@ -1405,7 +1405,7 @@ func vmUtilTests() {
 			})
 
 			It("succeeds", func() {
-				err := vsphere.PatchSnapshotStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef)
+				err := vsphere.PatchSnapshotSuccessStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef)
 				Expect(err).ToNot(HaveOccurred())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}

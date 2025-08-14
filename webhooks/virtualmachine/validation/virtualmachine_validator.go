@@ -1927,6 +1927,11 @@ func (v validator) validateSnapshot(
 		allErrs = append(allErrs, field.Required(snapshotPath.Child("name"), ""))
 	}
 
+	// Check if the VM is a VKS node and prevent snapshot revert
+	if kubeutil.HasCAPILabels(vm.Labels) {
+		allErrs = append(allErrs, field.Forbidden(snapshotPath, "snapshot revert is not allowed for VKS nodes"))
+	}
+
 	return allErrs
 }
 

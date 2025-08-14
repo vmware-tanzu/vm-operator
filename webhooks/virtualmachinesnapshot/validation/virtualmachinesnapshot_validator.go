@@ -19,8 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -92,6 +94,11 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 		if vmSnapshot.Spec.VMRef.Name == "" {
 			fieldErrs = append(fieldErrs, field.Required(vmRefField.Child("name"), "name must be provided"))
+		} else {
+			// Check if the referenced VM is a VKS/TKG node and prevent snapshot
+			if err := v.validateVMNotVKSNode(ctx, vmSnapshot.Spec.VMRef, vmSnapshot.Namespace); err != nil {
+				fieldErrs = append(fieldErrs, field.Forbidden(vmRefField, err.Error()))
+			}
 		}
 	} else {
 		fieldErrs = append(fieldErrs, field.Required(vmRefField, "vmRef must be provided"))
@@ -134,6 +141,30 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+}
+
+// validateVMNotVKSNode checks if the referenced VM is a VKS/TKG node and returns an error if it is.
+func (v validator) validateVMNotVKSNode(ctx *pkgctx.WebhookRequestContext, vmRef *vmopv1common.LocalObjectRef, namespace string) error {
+	// Get the referenced VM
+	vm := &vmopv1.VirtualMachine{}
+	vmKey := client.ObjectKey{
+		Name:      vmRef.Name,
+		Namespace: namespace,
+	}
+
+	if err := v.client.Get(ctx, vmKey, vm); err != nil {
+		// If we can't get the VM, let the snapshot creation proceed
+		// The actual snapshot process will handle missing VMs appropriately
+		ctx.Logger.V(4).Info("Unable to get VM for VKS validation, allowing snapshot", "vmName", vmRef.Name, "error", err)
+		return nil
+	}
+
+	// Check if the VM has CAPI labels indicating it's a VKS/TKG node
+	if kubeutil.HasCAPILabels(vm.Labels) {
+		return fmt.Errorf("snapshots are not allowed for VKS/TKG nodes")
+	}
+
+	return nil
 }
 
 // vmSnapshotFromUnstructured returns the VirtualMachineSnapshot from the unstructured object.

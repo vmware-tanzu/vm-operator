@@ -16,7 +16,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion/fuzztests"
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {

@@ -19,7 +19,7 @@ Network interfaces for VMs are defined in the `spec.network.interfaces` field of
 ### Basic Interface Configuration
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -117,7 +117,7 @@ Cloud-Init supports the full range of network configuration options:
 #### Example Configuration
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: cloud-init-vm
@@ -182,7 +182,7 @@ LinuxPrep supports a subset of network configuration options:
 #### Example Configuration
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: linuxprep-vm
@@ -237,7 +237,7 @@ Sysprep supports network configuration options similar to LinuxPrep:
 #### Example Configuration
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: sysprep-vm
@@ -286,7 +286,7 @@ vAppConfig network support depends entirely on the implementation within the VM 
 #### Example Configuration
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: vapp-vm

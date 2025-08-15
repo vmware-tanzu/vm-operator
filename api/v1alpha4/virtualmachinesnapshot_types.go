@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 )
 
 // VirtualMachineSnapshotSpec defines the desired state of VirtualMachineSnapshot.
@@ -47,7 +47,7 @@ type VirtualMachineSnapshotSpec struct {
 
 	// VMRef represents the name of the virtual machine for which the
 	// snapshot is requested.
-	VMRef *vmopv1common.LocalObjectRef `json:"vmRef,omitempty"`
+	VMRef *vmopv1a4common.LocalObjectRef `json:"vmRef,omitempty"`
 }
 
 // QuiesceSpec represents specifications that will be used to quiesce
@@ -98,7 +98,7 @@ type VirtualMachineSnapshotStatus struct {
 
 	// Children represents the snapshots for which this snapshot is
 	// the parent.
-	Children []vmopv1common.LocalObjectRef `json:"children,omitempty"`
+	Children []vmopv1a4common.LocalObjectRef `json:"children,omitempty"`
 
 	// +optional
 
@@ -144,7 +144,6 @@ type VirtualMachineSnapshotStorageStatusRequested struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmsnapshot
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // VirtualMachineSnapshot is the schema for the virtualmachinesnapshot API.

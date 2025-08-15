@@ -4,8 +4,20 @@
 
 package v1alpha4
 
-// Hub marks VirtualMachineClass as a conversion hub.
-func (*VirtualMachineClass) Hub() {}
+import (
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-// Hub marks VirtualMachineClassList as a conversion hub.
-func (*VirtualMachineClassList) Hub() {}
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+)
+
+// ConvertTo converts this VirtualMachineClass to the Hub version.
+func (src *VirtualMachineClass) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineClass)
+	return Convert_v1alpha4_VirtualMachineClass_To_v1alpha5_VirtualMachineClass(src, dst, nil)
+}
+
+// ConvertFrom converts the hub version to this VirtualMachineClass.
+func (dst *VirtualMachineClass) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineClass)
+	return Convert_v1alpha5_VirtualMachineClass_To_v1alpha4_VirtualMachineClass(src, dst, nil)
+}

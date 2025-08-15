@@ -24,10 +24,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -655,7 +655,7 @@ func unitTestsValidateCreate() {
 							Namespace: ctx.vm.Namespace,
 							OwnerReferences: []metav1.OwnerReference{
 								{
-									APIVersion: "vmoperator.vmware.com/v1alpha4",
+									APIVersion: "vmoperator.vmware.com/v1alpha5",
 									Name:       newVMClass,
 									Kind:       "VirtualMachineClass",
 								},
@@ -3480,7 +3480,7 @@ func unitTestsValidateUpdate() {
 							Namespace: ctx.vm.Namespace,
 							OwnerReferences: []metav1.OwnerReference{
 								{
-									APIVersion: "vmoperator.vmware.com/v1alpha4",
+									APIVersion: "vmoperator.vmware.com/v1alpha5",
 									Name:       newVMClass,
 									Kind:       "VirtualMachineClass",
 								},

@@ -24,7 +24,7 @@ var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
 		}),
 	validation.AddToManager,
 	validation.NewValidator,
-	"default.validating.virtualmachinegroup.v1alpha4.vmoperator.vmware.com")
+	"default.validating.virtualmachinegroup.v1alpha5.vmoperator.vmware.com")
 
 func TestWebhook(t *testing.T) {
 	suite.Register(t, "Validation webhook suite", intgTests, unitTests)

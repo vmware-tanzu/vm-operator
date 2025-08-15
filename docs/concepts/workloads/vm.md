@@ -148,7 +148,7 @@ Additionally, an administrator might also define certain policies in a `VirtualM
 For an example, consider the following VM Class:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineClass
 metadata:
   name: my-vm-class
@@ -223,7 +223,7 @@ A VM may be encrypted with either:
 By default, `spec.crypto.useDefaultKeyProvider` is true, meaning that if there is a default key provider and the VM has an encryption storage class and/or vTPM, the VM will be subject to some level of encryption. For example, if there was a default key provider present, it would be used to encrypt the following VM:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -239,7 +239,7 @@ spec:
 It is also possible to set `spec.crypto.encryptionClassName` to the name of an `EncryptionClass` resource in the same namespace as the VM. This resource specifies the provider and key ID used to encrypt workloads. For example, the following VM would be deployed and encrypted using the `EncryptionClass` named `my-encryption-class`:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -401,7 +401,7 @@ There are several options which may be used to influence the guest's global netw
 The field `spec.network.interfaces` describes one or more network interfaces to add to the VM, ex.:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -425,7 +425,7 @@ If `spec.network.interfaces` is not specified when deploying a VM, a default net
 The `VirtualMachineClass` used to deploy a VM determines the type for the VM's network adapters. If the number of interfaces for a `VirtualMachine` exceeds the number of interfaces in a `VirtualMachineClass`, the `VirtualVmxnet3` type is used for the additional interfaces. For example, consider the following `VirtualMachineClass` that specifies two different network interfaces:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineClass
 metadata:
   name: my-vm-class
@@ -452,7 +452,7 @@ spec:
 What happens when the following VM is deployed with the above class?
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -502,7 +502,7 @@ There are several options which may be used to influence the guest's per-interfa
 Deploying a VM also normally means bootstrapping the guest with a valid network configuration. But what if the guest does not include a bootstrap engine, or the one included is not supported by VM Operator? Enter `status.network.config`.  Normally a Kubernetes resource's status contains _observed_ state. However, in the case of the VM's `status.network.config` field, the data represents the _intended_ network configuration. For example, the following YAML illustrates a VM deployed with a single network interface:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -658,7 +658,7 @@ The following steps describe how to provide additional storage with [PersistentV
 2. Update the VM's `spec.volumes` field with a new volume that references the PVC:
 
     ```yaml
-    apiVersion: vmoperator.vmware.com/v1alpha4
+    apiVersion: vmoperator.vmware.com/v1alpha5
     kind: VirtualMachine
     metadata:
       name: my-vm
@@ -982,7 +982,7 @@ The above affinity/anti-affinity settings are available with the following rules
 The following is an example of VM AF that uses the topologyKey field to indicate the VM AF rule applies to the Zone scope:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm-1

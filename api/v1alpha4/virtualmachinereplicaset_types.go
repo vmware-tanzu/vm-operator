@@ -7,7 +7,7 @@ package v1alpha4
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 )
 
 const (
@@ -56,7 +56,7 @@ type VirtualMachineTemplateSpec struct {
 	//
 	// ObjectMeta contains the desired Labels and Annotations that must be
 	// applied to each replica virtual machine.
-	vmopv1common.ObjectMeta `json:"metadata,omitempty"`
+	vmopv1a4common.ObjectMeta `json:"metadata,omitempty"`
 
 	// +optional
 	//
@@ -142,7 +142,6 @@ func (rs *VirtualMachineReplicaSet) SetConditions(conditions []metav1.Condition)
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmrs;vmreplicaset
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
 // +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".status.replicas",description="Total number of non-terminated virtual machines targeted by this VirtualMachineReplicaSet"

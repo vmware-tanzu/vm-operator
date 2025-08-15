@@ -84,7 +84,7 @@ spec:
 The specification for both VirtualMachineImage and ClusterVirtualMachineImage resources is minimal, primarily containing a reference to the source provider:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineImage
 metadata:
   name: vmi-0a0044d7c690bcbea
@@ -192,7 +192,7 @@ vmi-1234567890abcdef   Ubuntu 22.04 LTS    OVF    22.04          Linux     22.04
 #### Method 1: Using VMI ID (Recommended)
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -208,7 +208,7 @@ spec:
 #### Method 2: Using Display Name
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -222,7 +222,7 @@ spec:
 #### Method 3: Using ClusterVirtualMachineImage
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm

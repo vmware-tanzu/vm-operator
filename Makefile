@@ -472,9 +472,11 @@ generate-go-conversions: $(CONVERSION_GEN)
 endif
 
 EXTRA_PEER_DIRS := ./v1alpha2/sysprep/conversion/v1alpha2
-EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha2/sysprep/conversion/v1alpha4
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha2/sysprep/conversion/v1alpha5
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/common/conversion/v1alpha3
-EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/common/conversion/v1alpha4
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/common/conversion/v1alpha5
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha4/common/conversion/v1alpha4
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha4/common/conversion/v1alpha5
 
 generate-go-conversions:
 	cd api && \
@@ -483,7 +485,7 @@ generate-go-conversions:
 		--output-file=zz_generated.conversion.go \
 		--go-header-file=$(abspath hack/boilerplate/boilerplate.generatego.txt) \
 		--extra-peer-dirs='$(EXTRA_PEER_DIRS)' \
-		./v1alpha1 ./v1alpha2 ./v1alpha3
+		./v1alpha1 ./v1alpha2 ./v1alpha3 ./v1alpha4
 
 else ifeq (symlink,$(CONVERSION_GEN_FALLBACK_MODE))
 
@@ -607,6 +609,13 @@ generate-api-docs: ## Generate API documentation
 	  --templates-dir=./.crd-ref-docs/template \
 	  --output-path=./docs/ref/api/
 	mv ./docs/ref/api/out.md ./docs/ref/api/v1alpha4.md
+	$(CRD_REF_DOCS) \
+	  --renderer=markdown \
+	  --source-path=./api/v1alpha5 \
+	  --config=./.crd-ref-docs/config.yaml \
+	  --templates-dir=./.crd-ref-docs/template \
+	  --output-path=./docs/ref/api/
+	mv ./docs/ref/api/out.md ./docs/ref/api/v1alpha5.md
 
 
 ## --------------------------------------

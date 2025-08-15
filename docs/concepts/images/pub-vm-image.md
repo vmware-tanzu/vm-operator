@@ -27,7 +27,7 @@ The VM publishing process follows these steps:
 ### Basic Structure
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachinePublishRequest
 metadata:
   name: my-vm-publish-request
@@ -35,7 +35,7 @@ metadata:
 spec:
   source:
     name: source-vm-name
-    apiVersion: vmoperator.vmware.com/v1alpha4
+    apiVersion: vmoperator.vmware.com/v1alpha5
     kind: VirtualMachine
   target:
     item:
@@ -53,7 +53,7 @@ spec:
 #### Source Configuration
 
 - **`source.name`**: Name of the VirtualMachine to publish (defaults to the VirtualMachinePublishRequest name)
-- **`source.apiVersion`**: API version of the source object (default: `vmoperator.vmware.com/v1alpha4`)
+- **`source.apiVersion`**: API version of the source object (default: `vmoperator.vmware.com/v1alpha5`)
 - **`source.kind`**: Kind of the source object (default: `VirtualMachine`)
 
 #### Target Configuration
@@ -73,7 +73,7 @@ spec:
 ### Basic VM Publishing
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachinePublishRequest
 metadata:
   name: ubuntu-golden-image
@@ -92,7 +92,7 @@ spec:
 ### Publishing with Automatic Cleanup
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachinePublishRequest
 metadata:
   name: temp-build-publish
@@ -112,7 +112,7 @@ spec:
 ### Minimal Configuration (Using Defaults)
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachinePublishRequest
 metadata:
   name: web-server

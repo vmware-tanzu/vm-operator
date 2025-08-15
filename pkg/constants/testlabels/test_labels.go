@@ -44,8 +44,17 @@ const (
 	// V1Alpha1 describes a test related to the v1alpha1 APIs.
 	V1Alpha1 = "v1alpha1"
 
+	// V1Alpha2 describes a test related to the v1alpha2 APIS.
+	V1Alpha2 = "v1alpha2"
+
+	// V1Alpha3 describes a test related to the v1alpha3 APIS.
+	V1Alpha3 = "v1alpha3"
+
 	// V1Alpha4 describes a test related to the v1alpha4 APIS.
 	V1Alpha4 = "v1alpha4"
+
+	// V1Alpha5 describes a test related to the v1alpha5 APIS.
+	V1Alpha5 = "v1alpha5"
 
 	// VCSim describes a test that uses vC Sim.
 	VCSim = "vcsim"

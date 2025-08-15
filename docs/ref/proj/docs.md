@@ -100,7 +100,9 @@ docs
         - ref/api/README.md
         - v1alpha1: ref/api/v1alpha1.md
         - v1alpha2: ref/api/v1alpha2.md
+        - v1alpha3: ref/api/v1alpha3.md
         - v1alpha4: ref/api/v1alpha4.md
+        - v1alpha5: ref/api/v1alpha5.md
       - Configuration:
         - ref/config/README.md
         - Manager Pod: ref/config/manager.md

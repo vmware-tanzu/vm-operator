@@ -4,8 +4,20 @@
 
 package v1alpha4
 
-// Hub marks VirtualMachineImageCache as a conversion hub.
-func (*VirtualMachineImageCache) Hub() {}
+import (
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-// Hub marks VirtualMachineImageCacheList as a conversion hub.
-func (*VirtualMachineImageCacheList) Hub() {}
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+)
+
+// ConvertTo converts this VirtualMachineImageCache to the Hub version.
+func (i *VirtualMachineImageCache) ConvertTo(dstRaw ctrlconversion.Hub) error {
+	dst := dstRaw.(*vmopv1.VirtualMachineImageCache)
+	return Convert_v1alpha4_VirtualMachineImageCache_To_v1alpha5_VirtualMachineImageCache(i, dst, nil)
+}
+
+// ConvertFrom converts the hub version to this VirtualMachineImageCache.
+func (i *VirtualMachineImageCache) ConvertFrom(srcRaw ctrlconversion.Hub) error {
+	src := srcRaw.(*vmopv1.VirtualMachineImageCache)
+	return Convert_v1alpha5_VirtualMachineImageCache_To_v1alpha4_VirtualMachineImageCache(src, i, nil)
+}

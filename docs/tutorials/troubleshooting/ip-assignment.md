@@ -63,7 +63,7 @@ For VMs deployed with Sysprep, a powered on VM sans IP usually indicates that gu
 
 2. Inspect the GOSC results by logging into the VM using the web console and examining the log files located at `C:\Windows\TEMP\vmware-imc\guestcust`.
 
-3. Validate the sysprep answers file by logging into the VM using the web console and examining `C:\sysprep1001\sysprep.xml`. For example, there should be evidence that `<Identifier>{{ V1alpha4_FirstNicMacAddr }}</Identifier>` was converted to the actual MAC addresses, ex. `<Identifier>00-11-22-33-aa-bb-cc</Identifier>`.
+3. Validate the sysprep answers file by logging into the VM using the web console and examining `C:\sysprep1001\sysprep.xml`. For example, there should be evidence that `<Identifier>{{ V1alpha5_FirstNicMacAddr }}</Identifier>` was converted to the actual MAC addresses, ex. `<Identifier>00-11-22-33-aa-bb-cc</Identifier>`.
 
 4. Inspect the sysprep logs by logging into the VM using the web console and examining the log files located in `C:\Windows\Panther\setuperr`, `C:\Windows\Panther\Unattendgc\setuperr`, and `C:\Windows\System32\Sysprep\Panther\setuperr`.
 

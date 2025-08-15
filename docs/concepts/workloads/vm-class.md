@@ -19,7 +19,7 @@ VirtualMachineClass serves as a blueprint for virtual machine hardware and polic
 The `hardware` section defines the fundamental virtual hardware characteristics:
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineClass
 metadata:
   name: my-vm-class
@@ -276,7 +276,7 @@ my-custom-class        8     32Gi     gpu,instance-storage
 ### Using VirtualMachineClass in VirtualMachine
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachine
 metadata:
   name: my-vm
@@ -292,7 +292,7 @@ spec:
 #### Simple Custom Class
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineClass
 metadata:
   name: custom-web-server
@@ -312,7 +312,7 @@ spec:
 #### Advanced Custom Class with GPU
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineClass
 metadata:
   name: ml-training-class
@@ -339,7 +339,7 @@ spec:
 #### Class with Advanced vSphere Configuration
 
 ```yaml
-apiVersion: vmoperator.vmware.com/v1alpha4
+apiVersion: vmoperator.vmware.com/v1alpha5
 kind: VirtualMachineClass
 metadata:
   name: high-performance-class

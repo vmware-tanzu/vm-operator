@@ -5,9 +5,9 @@
 package v1alpha4
 
 import (
-	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
-	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
+	vmopv1a4cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
+	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1a4sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
 )
 
 // VirtualMachineBootstrapSpec defines the desired state of a VM's bootstrap
@@ -98,7 +98,7 @@ type VirtualMachineBootstrapCloudInitSpec struct {
 	// bootstrap the VM.
 	//
 	// Please note this field and RawCloudConfig are mutually exclusive.
-	CloudConfig *vmopv1cloudinit.CloudConfig `json:"cloudConfig,omitempty"`
+	CloudConfig *vmopv1a4cloudinit.CloudConfig `json:"cloudConfig,omitempty"`
 
 	// +optional
 
@@ -109,7 +109,7 @@ type VirtualMachineBootstrapCloudInitSpec struct {
 	// base64-encoded, or gzipped and base64-encoded.
 	//
 	// Please note this field and CloudConfig are mutually exclusive.
-	RawCloudConfig *vmopv1common.SecretKeySelector `json:"rawCloudConfig,omitempty"`
+	RawCloudConfig *vmopv1a4common.SecretKeySelector `json:"rawCloudConfig,omitempty"`
 
 	// +optional
 
@@ -192,7 +192,7 @@ type VirtualMachineBootstrapSysprepSpec struct {
 	// https://technet.microsoft.com/en-us/library/cc771830(v=ws.10).aspx.
 	//
 	// Please note this field and RawSysprep are mutually exclusive.
-	Sysprep *vmopv1sysprep.Sysprep `json:"sysprep,omitempty"`
+	Sysprep *vmopv1a4sysprep.Sysprep `json:"sysprep,omitempty"`
 
 	// +optional
 
@@ -203,7 +203,7 @@ type VirtualMachineBootstrapSysprepSpec struct {
 	// or gzipped and base64-encoded.
 	//
 	// Please note this field and Sysprep are mutually exclusive.
-	RawSysprep *vmopv1common.SecretKeySelector `json:"rawSysprep,omitempty"`
+	RawSysprep *vmopv1a4common.SecretKeySelector `json:"rawSysprep,omitempty"`
 }
 
 // VirtualMachineBootstrapVAppConfigSpec describes the vApp configuration
@@ -216,7 +216,7 @@ type VirtualMachineBootstrapVAppConfigSpec struct {
 	// Properties is a list of vApp/OVF property key/value pairs.
 	//
 	// Please note this field and RawProperties are mutually exclusive.
-	Properties []vmopv1common.KeyValueOrSecretKeySelectorPair `json:"properties,omitempty"`
+	Properties []vmopv1a4common.KeyValueOrSecretKeySelectorPair `json:"properties,omitempty"`
 
 	// +optional
 

@@ -20,7 +20,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -31,19 +31,19 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("New", Label(testlabels.V1Alpha4), func() {
+var _ = Describe("New", Label(testlabels.V1Alpha5), func() {
 	It("should return a reconciler", func() {
 		Expect(diskpromo.New()).ToNot(BeNil())
 	})
 })
 
-var _ = Describe("Name", Label(testlabels.V1Alpha4), func() {
+var _ = Describe("Name", Label(testlabels.V1Alpha5), func() {
 	It("should return diskpromo", func() {
 		Expect(diskpromo.New().Name()).To(Equal("diskpromo"))
 	})
 })
 
-var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
+var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 	var (
 		r          vmconfig.Reconciler
 		ctx        context.Context

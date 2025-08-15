@@ -9,7 +9,7 @@ package cloudinit
 import (
 	"encoding/json"
 
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 )
 
 // CloudConfig is the VM Operator API subset of a Cloud-Init CloudConfig and
@@ -101,7 +101,7 @@ type User struct {
 
 	// HashedPasswd is a hash of the user's password that will be applied even
 	// if the specified user already exists.
-	HashedPasswd *vmopv1common.SecretKeySelector `json:"hashed_passwd,omitempty"`
+	HashedPasswd *vmopv1a4common.SecretKeySelector `json:"hashed_passwd,omitempty"`
 
 	// +optional
 
@@ -157,7 +157,7 @@ type User struct {
 	// Passwd is a hash of the user's password that will be applied only to
 	// a newly created user. To apply a new, hashed password to an existing user
 	// please use HashedPasswd instead.
-	Passwd *vmopv1common.SecretKeySelector `json:"passwd,omitempty"`
+	Passwd *vmopv1a4common.SecretKeySelector `json:"passwd,omitempty"`
 
 	// +optional
 

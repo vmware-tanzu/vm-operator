@@ -97,8 +97,8 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 
 			Context("Applies TemplateRenderFn when specified", func() {
 				BeforeEach(func() {
-					bsArgs.TemplateRenderFn = func(_, v string) string {
-						return strings.ToUpper(v)
+					bsArgs.TemplateRenderFn = func(_, v string) (string, error) {
+						return strings.ToUpper(v), nil
 					}
 				})
 
@@ -140,8 +140,8 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 
 			Context("Applies TemplateRenderFn when specified", func() {
 				BeforeEach(func() {
-					bsArgs.TemplateRenderFn = func(_, v string) string {
-						return strings.ToUpper(v)
+					bsArgs.TemplateRenderFn = func(_, v string) (string, error) {
+						return strings.ToUpper(v), nil
 					}
 				})
 
@@ -192,8 +192,8 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 
 			Context("Applies TemplateRenderFn when specified", func() {
 				BeforeEach(func() {
-					bsArgs.TemplateRenderFn = func(_, v string) string {
-						return strings.ToUpper(v)
+					bsArgs.TemplateRenderFn = func(_, v string) (string, error) {
+						return strings.ToUpper(v), nil
 					}
 				})
 

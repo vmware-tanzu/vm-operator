@@ -56,7 +56,11 @@ func BootstrapSysPrep(
 		}
 
 		if bsArgs.TemplateRenderFn != nil {
-			data = bsArgs.TemplateRenderFn(key, data)
+			var err error
+			data, err = bsArgs.TemplateRenderFn(key, data)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to render template for key %q: %w", key, err)
+			}
 		}
 
 		identity = &vimtypes.CustomizationSysprepText{

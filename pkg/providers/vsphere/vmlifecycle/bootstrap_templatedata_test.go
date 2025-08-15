@@ -85,7 +85,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha1 template functions",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("first_cidrIp", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}", ip1Cidr),
@@ -101,7 +102,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha2 template functions",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("first_cidrIp", "{{ (index (index .V1alpha2.Net.Devices 0).IPAddresses 0) }}", ip1Cidr),
@@ -117,7 +119,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha3 template functions",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("first_cidrIp", "{{ (index (index .V1alpha3.Net.Devices 0).IPAddresses 0) }}", ip1Cidr),
@@ -133,7 +136,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha4 template functions",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("first_cidrIp", "{{ (index (index .V1alpha4.Net.Devices 0).IPAddresses 0) }}", ip1Cidr),
@@ -149,7 +153,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha5 template functions",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("first_cidrIp", "{{ (index (index .V1alpha5.Net.Devices 0).IPAddresses 0) }}", ip1Cidr),
@@ -167,7 +172,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha1 constant names",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("cidr_ip1", "{{ "+constants.V1alpha1FirstIP+" }}", ip1Cidr),
@@ -189,7 +195,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha2 constant names",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("cidr_ip1", "{{ "+constants.V1alpha2FirstIP+" }}", ip1Cidr),
@@ -211,7 +218,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha3 constant names",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("cidr_ip1", "{{ "+constants.V1alpha3FirstIP+" }}", ip1Cidr),
@@ -233,7 +241,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha4 constant names",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("cidr_ip1", "{{ "+constants.V1alpha4FirstIP+" }}", ip1Cidr),
@@ -255,7 +264,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("v1alpha5 constant names",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("cidr_ip1", "{{ "+constants.V1alpha5FirstIP+" }}", ip1Cidr),
@@ -277,11 +287,11 @@ var _ = Describe("TemplateVMMetadata", func() {
 	})
 
 	Context("Invalid template names", func() {
-		DescribeTable("returns the original text",
+		DescribeTable("returns error for invalid templates",
 			func(str string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
-				Expect(out).To(Equal(str))
+				_, err := fn("", str)
+				Expect(err).To(HaveOccurred())
 			},
 			Entry("ip1", "{{ "+constants.V1alpha1IP+" \"192.1.0\" }}"),
 			Entry("ip2", "{{ "+constants.V1alpha1FirstIPFromNIC+" 5 }}"),
@@ -292,11 +302,11 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Entry("nameserver", "{{ (index .V1alpha1.Net.NameServers 0) }}"),
 		)
 
-		DescribeTable("returns the original text, v1a2 style",
+		DescribeTable("returns error for invalid templates, v1a2 style",
 			func(str string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
-				Expect(out).To(Equal(str))
+				_, err := fn("", str)
+				Expect(err).To(HaveOccurred())
 			},
 			Entry("ip1", "{{ "+constants.V1alpha2IP+" \"192.1.0\" }}"),
 			Entry("ip2", "{{ "+constants.V1alpha2FirstIPFromNIC+" 5 }}"),
@@ -307,11 +317,11 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Entry("nameserver", "{{ (index .V1alpha2.Net.NameServers 0) }}"),
 		)
 
-		DescribeTable("returns the original text, v1a3 style",
+		DescribeTable("returns error for invalid templates, v1a3 style",
 			func(str string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
-				Expect(out).To(Equal(str))
+				_, err := fn("", str)
+				Expect(err).To(HaveOccurred())
 			},
 			Entry("ip1", "{{ "+constants.V1alpha3IP+" \"192.1.0\" }}"),
 			Entry("ip2", "{{ "+constants.V1alpha3FirstIPFromNIC+" 5 }}"),
@@ -322,11 +332,11 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Entry("nameserver", "{{ (index .V1alpha3.Net.NameServers 0) }}"),
 		)
 
-		DescribeTable("returns the original text, v1a4 style",
+		DescribeTable("returns error for invalid templates, v1a4 style",
 			func(str string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
-				Expect(out).To(Equal(str))
+				_, err := fn("", str)
+				Expect(err).To(HaveOccurred())
 			},
 			Entry("ip1", "{{ "+constants.V1alpha4IP+" \"192.1.0\" }}"),
 			Entry("ip2", "{{ "+constants.V1alpha4FirstIPFromNIC+" 5 }}"),
@@ -337,11 +347,11 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Entry("nameserver", "{{ (index .V1alpha4.Net.NameServers 0) }}"),
 		)
 
-		DescribeTable("returns the original text, v1a5 style",
+		DescribeTable("returns error for invalid templates, v1a5 style",
 			func(str string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
-				Expect(out).To(Equal(str))
+				_, err := fn("", str)
+				Expect(err).To(HaveOccurred())
 			},
 			Entry("ip1", "{{ "+constants.V1alpha5IP+" \"192.1.0\" }}"),
 			Entry("ip2", "{{ "+constants.V1alpha5FirstIPFromNIC+" 5 }}"),
@@ -357,7 +367,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("return one level of escaped removed",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("skip_data1", "\\{\\{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) \\}\\}", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"),
@@ -369,7 +380,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("return one level of escaped removed, v1a2 style",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("skip_data1", "\\{\\{ (index (index .V1alpha2.Net.Devices 0).IPAddresses 0) \\}\\}", "{{ (index (index .V1alpha2.Net.Devices 0).IPAddresses 0) }}"),
@@ -381,7 +393,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("return one level of escaped removed, v1a3 style",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("skip_data1", "\\{\\{ (index (index .V1alpha3.Net.Devices 0).IPAddresses 0) \\}\\}", "{{ (index (index .V1alpha3.Net.Devices 0).IPAddresses 0) }}"),
@@ -393,7 +406,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("return one level of escaped removed, v1a4 style",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("skip_data1", "\\{\\{ (index (index .V1alpha4.Net.Devices 0).IPAddresses 0) \\}\\}", "{{ (index (index .V1alpha4.Net.Devices 0).IPAddresses 0) }}"),
@@ -405,7 +419,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 		DescribeTable("return one level of escaped removed, v1a5 style",
 			func(str, expected string) {
 				fn := vmlifecycle.GetTemplateRenderFunc(vmCtx, bsArgs)
-				out := fn("", str)
+				out, err := fn("", str)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(out).To(Equal(expected))
 			},
 			Entry("skip_data1", "\\{\\{ (index (index .V1alpha5.Net.Devices 0).IPAddresses 0) \\}\\}", "{{ (index (index .V1alpha5.Net.Devices 0).IPAddresses 0) }}"),

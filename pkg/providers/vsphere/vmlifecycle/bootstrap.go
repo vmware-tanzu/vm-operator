@@ -50,7 +50,7 @@ type BootstrapData struct {
 	Sysprep     *sysprep.SecretData
 }
 
-type TemplateRenderFunc func(string, string) string
+type TemplateRenderFunc func(string, string) (string, error)
 
 type BootstrapArgs struct {
 	BootstrapData

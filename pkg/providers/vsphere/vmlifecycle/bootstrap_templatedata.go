@@ -386,20 +386,22 @@ func GetTemplateRenderFunc(
 		return str
 	}
 
-	// TODO: Don't log, return errors instead.
-	renderTemplate := func(name, templateStr string) string {
+	renderTemplate := func(name, templateStr string) (string, error) {
+		// Skip parsing when encountering escape characters and just normalize them
+		if strings.Contains(templateStr, "\\{") || strings.Contains(templateStr, "\\}") {
+			return normalizeStr(templateStr), nil
+		}
+		
 		templ, err := template.New(name).Funcs(funcMap).Parse(templateStr)
 		if err != nil {
-			vmCtx.Logger.Error(err, "failed to parse template", "templateStr", templateStr)
-			return normalizeStr(templateStr)
+			return normalizeStr(templateStr), fmt.Errorf("failed to parse template: %w", err)
 		}
 		var doc bytes.Buffer
 		err = templ.Execute(&doc, &templateData)
 		if err != nil {
-			vmCtx.Logger.Error(err, "failed to execute template", "templateStr", templateStr)
-			return normalizeStr(templateStr)
+			return normalizeStr(templateStr), fmt.Errorf("failed to execute template: %w", err)
 		}
-		return normalizeStr(doc.String())
+		return normalizeStr(doc.String()), nil
 	}
 
 	return renderTemplate

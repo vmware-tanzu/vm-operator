@@ -59,6 +59,13 @@ var ignoredTaskDescriptionIDs = []string{
 	"com.vmware.wcp.mobility.virtualmachinesimport.create",
 }
 
+// Snapshot-related task description IDs that should block VM reconciliation.
+var snapshotTaskDescriptionIDs = []string{
+	"VirtualMachine.createSnapshot",
+	"VirtualMachine.removeSnapshot",
+	"VirtualMachine.revertToSnapshot",
+}
+
 // HasVMRunningTask returns true if the VM has a running task that should block
 // reconciling the VM's desired state.
 func HasVMRunningTask(ctx context.Context, checkSharedLock bool) bool {
@@ -70,6 +77,17 @@ func HasVMRunningTask(ctx context.Context, checkSharedLock bool) bool {
 				return slices.Contains(t.Locked, *t.Entity)
 			}
 
+			return true
+		}
+	}
+	return false
+}
+
+// HasVMRunningSnapshotTask returns true if the VM has a running snapshot-related task.
+func HasVMRunningSnapshotTask(ctx context.Context) bool {
+	for _, t := range GetVMRecentTasks(ctx) {
+		if t.State == vimtypes.TaskInfoStateRunning &&
+			slices.Contains(snapshotTaskDescriptionIDs, t.DescriptionId) {
 			return true
 		}
 	}

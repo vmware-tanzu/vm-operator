@@ -46,10 +46,10 @@ func unitTestsReconcile() {
 	)
 
 	BeforeEach(func() {
-		vmGroupPubReq = builder.VirtualMachineGroupPublishRequest(
+		vmGroupPubReq = builder.DummyVirtualMachineGroupPublishRequest(
 			builder.DummyVMGroupPublishRequestName,
 			builder.DummyNamespaceName,
-			[]string{builder.DummyVirtualMachine0Name, builder.DummyVirtualMachine1Name})
+			[]string{builder.DummyVirtualMachineName + "-0", builder.DummyVirtualMachineName + "-1"})
 		controllerutil.AddFinalizer(vmGroupPubReq, finalizerName)
 	})
 

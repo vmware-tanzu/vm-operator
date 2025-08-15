@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/api/validation"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -72,6 +73,9 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
+	if err := v.validateCreateVMGroupPublishRequestOwnership(vmpub); err != nil {
+		return webhook.Errored(http.StatusForbidden, err)
+	}
 
 	var fieldErrs field.ErrorList
 
@@ -99,6 +103,10 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	oldVMpub, err := v.vmPublishRequestFromUnstructured(ctx.OldObj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
+	}
+
+	if err := v.validateUpdateVMGroupPublishRequestOwnership(oldVMpub, vmpub, ctx); err != nil {
+		return webhook.Errored(http.StatusForbidden, err)
 	}
 
 	var fieldErrs field.ErrorList
@@ -165,6 +173,45 @@ func (v validator) validateTargetLocation(ctx *pkgctx.WebhookRequestContext, vmp
 	}
 
 	return allErrs
+}
+
+// validateCreateVMGroupPublishRequestOwnership ensures a VirtualMachineGroupPublishRequest owner reference is set
+// when a VirtualMachinePublishRequest has a managed by VirtualMachineGroupPublishRequest label.
+func (v validator) validateCreateVMGroupPublishRequestOwnership(vmPub *vmopv1.VirtualMachinePublishRequest) error {
+	if !metav1.HasLabel(vmPub.ObjectMeta, vmopv1.VirtualMachinePublishRequestManagedByLabelKey) {
+		return nil
+	}
+
+	for _, ownerRef := range vmPub.OwnerReferences {
+		if ownerRef.Kind == "VirtualMachineGroupPublishRequest" &&
+			ownerRef.Name == vmPub.Labels[vmopv1.VirtualMachinePublishRequestManagedByLabelKey] {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("cannot add the %q label without a VirtualMachineGroupPublishRequest owner reference",
+		vmopv1.VirtualMachinePublishRequestManagedByLabelKey)
+}
+
+// validateUpdateVMGroupPublishRequestOwnership ensures no updates are applied to a VirtualMachineGroupPublishRequest
+// managed VirtualMachinePublishRequest and the managed by VirtualMachineGroupPublishRequest label can only be added
+// during a VirtualMachinePublishRequest creation.
+func (v validator) validateUpdateVMGroupPublishRequestOwnership(oldVMPub, vmPub *vmopv1.VirtualMachinePublishRequest,
+	ctx *pkgctx.WebhookRequestContext) error {
+	if ctx.IsPrivilegedAccount {
+		return nil
+	}
+
+	if metav1.HasLabel(oldVMPub.ObjectMeta, vmopv1.VirtualMachinePublishRequestManagedByLabelKey) {
+		return fmt.Errorf("cannot update VirtualMachineGroupPublishRequest owned VirtualMachinePublishRequest")
+	}
+
+	if metav1.HasLabel(vmPub.ObjectMeta, vmopv1.VirtualMachinePublishRequestManagedByLabelKey) {
+		return fmt.Errorf("cannot add the %q label without a VirtualMachineGroupPublishRequest owner reference",
+			vmopv1.VirtualMachinePublishRequestManagedByLabelKey)
+	}
+
+	return nil
 }
 
 func (v validator) validateImmutableFields(vmpub, oldvmpub *vmopv1.VirtualMachinePublishRequest) field.ErrorList {

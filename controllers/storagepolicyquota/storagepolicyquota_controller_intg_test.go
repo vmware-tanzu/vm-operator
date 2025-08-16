@@ -135,7 +135,7 @@ func intgTestsReconcile() {
 				g.Expect(obj.Spec.StorageClassName).To(Equal(storageClassName))
 				g.Expect(obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
 				g.Expect(obj.Spec.ResourceKind).To(Equal(spqutil.VirtualMachineKind))
-				g.Expect(obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
+				g.Expect(obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaVMExtensionName))
 				g.Expect(obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.PodNamespace))
 				g.Expect(obj.Spec.CABundle).To(Equal([]byte("fake-ca-bundle")))
 			}).Should(Succeed())

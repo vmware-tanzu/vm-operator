@@ -205,7 +205,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 			return ctrl.Result{}, fmt.Errorf("failed to calculate requested capacity for snapshot: %w", err)
 		}
 		vmSnapshot.Status.Storage.Requested = requested
-		ctx.Logger.V(5).Info("Updated vmSnapshot requested capacity", "requested", vmSnapshot.Status.Storage.Requested)
+		ctx.Logger.V(4).Info("Updated vmSnapshot requested capacity",
+			"requested", vmSnapshot.Status.Storage.Requested)
 		// Enqueue the storage classes to sync corresponding SPU.
 		for _, requested := range vmSnapshot.Status.Storage.Requested {
 			ctx.StorageClassesToSync.Insert(requested.StorageClass)
@@ -227,7 +228,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		vmSnapshot.Status.Storage.Used = resource.NewQuantity(0, resource.BinarySI)
 	}
 	vmSnapshot.Status.Storage.Used = total
-	ctx.Logger.V(5).Info("Updated vmSnapshot's status used capacity", "used", total)
+	ctx.Logger.V(4).Info("Updated vmSnapshot's status used capacity", "used", total)
 
 	// Enqueue the storage class to sync corresponding SPU only after CSI has completed the sync.
 	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
@@ -254,7 +255,8 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
 		if apierrors.IsNotFound(err) {
-			ctx.Logger.V(4).Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
+			ctx.Logger.V(4).Info("VirtualMachine not found, assuming the " +
+				"snapshot is deleted along with moVM, remove finalizer")
 			controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
 			// We don't sync SPU since we don't know which StorageClass of the VM.
 			return nil
@@ -285,7 +287,8 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		return fmt.Errorf("failed to delete snapshot: %w", err)
 	}
 	if vmNotFound {
-		ctx.Logger.V(4).Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
+		ctx.Logger.V(4).Info("VirtualMachine not found, assuming the" +
+			" snapshot is deleted along with moVM, remove finalizer")
 		controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
 		return nil
 	}
@@ -315,10 +318,10 @@ func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotCont
 		return nil, fmt.Errorf("failed to get parent snapshot: %w", err)
 	}
 	if parent == nil {
-		ctx.Logger.V(5).Info("parent snapshot not found")
+		ctx.Logger.V(4).Info("parent snapshot not found")
 		return nil, nil
 	}
-	ctx.Logger.V(5).Info("parent snapshot found", "parent", parent.Name)
+	ctx.Logger.V(4).Info("parent snapshot found", "parent", parent.Name)
 
 	parentVMSnapshot := &vmopv1.VirtualMachineSnapshot{}
 	if err := r.Get(ctx, client.ObjectKey{Name: parent.Name, Namespace: vmSnapshot.Namespace}, parentVMSnapshot); err != nil {
@@ -335,7 +338,7 @@ func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotCont
 	}
 	children := vmSnapshot.Status.Children
 	if children != nil {
-		ctx.Logger.V(5).Info("Add children snapshots of current snapshot to parent's children")
+		ctx.Logger.V(4).Info("Add children snapshots of current snapshot to parent's children")
 		// merge current's children to parent's children.
 		// make sure no duplicates are added.
 		for _, child := range children {
@@ -351,7 +354,9 @@ func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotCont
 }
 
 // Update root snapshots and current snapshot of VM.
-func (r *Reconciler) updateVMStatus(ctx *pkgctx.VirtualMachineSnapshotContext, parentVMSnapshot *vmopv1.VirtualMachineSnapshot) error {
+func (r *Reconciler) updateVMStatus(
+	ctx *pkgctx.VirtualMachineSnapshotContext,
+	parentVMSnapshot *vmopv1.VirtualMachineSnapshot) error {
 	ctx.Logger.Info("Updating VM status")
 	if err := r.updateVMCurrentSnapshot(ctx, parentVMSnapshot); err != nil {
 		return err
@@ -365,7 +370,9 @@ func (r *Reconciler) updateVMStatus(ctx *pkgctx.VirtualMachineSnapshotContext, p
 
 // TODO(lubron): Update VM.Status.CurrentSnapshot as well
 // Set current snapshot of VM to the parent snapshot or to nil.
-func (r *Reconciler) updateVMCurrentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext, parentVMSnapshot *vmopv1.VirtualMachineSnapshot) error {
+func (r *Reconciler) updateVMCurrentSnapshot(
+	ctx *pkgctx.VirtualMachineSnapshotContext,
+	parentVMSnapshot *vmopv1.VirtualMachineSnapshot) error {
 	ctx.Logger.Info("Updating VM current snapshot")
 	vm := ctx.VM
 	if vm.Spec.CurrentSnapshot != nil && vm.Spec.CurrentSnapshot.Name != ctx.VirtualMachineSnapshot.Name {
@@ -374,10 +381,12 @@ func (r *Reconciler) updateVMCurrentSnapshot(ctx *pkgctx.VirtualMachineSnapshotC
 	}
 	vmPatch := client.MergeFrom(vm.DeepCopy())
 	if parentVMSnapshot != nil {
-		ctx.Logger.V(5).Info("Updating VM current snapshot", "vm", vm.Name, "new current snapshot", parentVMSnapshot.Name)
+		ctx.Logger.V(4).Info("Updating VM current snapshot",
+			"vm", vm.Name, "new current snapshot", parentVMSnapshot.Name)
 		vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(parentVMSnapshot)
 	} else {
-		ctx.Logger.V(5).Info("Updating VM current snapshot", "vm", vm.Name, "new current snapshot", "nil")
+		ctx.Logger.V(4).Info("Updating VM current snapshot",
+			"vm", vm.Name, "new current snapshot", "nil")
 		vm.Spec.CurrentSnapshot = nil
 	}
 	if err := r.Patch(ctx, vm, vmPatch); err != nil {
@@ -392,7 +401,7 @@ func (r *Reconciler) updateVMRootSnapshots(ctx *pkgctx.VirtualMachineSnapshotCon
 	vm := ctx.VM
 	vmSnapshot := ctx.VirtualMachineSnapshot
 	if len(vm.Status.RootSnapshots) == 0 {
-		ctx.Logger.V(5).Info("No root snapshots found for VM, skipping update")
+		ctx.Logger.V(4).Info("No root snapshots found for VM, skipping update")
 		return nil
 	}
 	// Check if the deleted snapshot is a root snapshot by only comparing the name,
@@ -400,7 +409,7 @@ func (r *Reconciler) updateVMRootSnapshots(ctx *pkgctx.VirtualMachineSnapshotCon
 	if !slices.ContainsFunc(vm.Status.RootSnapshots, func(e vmopv1common.LocalObjectRef) bool {
 		return e.Name == vmSnapshot.Name
 	}) {
-		ctx.Logger.V(5).Info("Deleted snapshot is not a root snapshot, skipping update")
+		ctx.Logger.V(4).Info("Deleted snapshot is not a root snapshot, skipping update")
 		return nil
 	}
 

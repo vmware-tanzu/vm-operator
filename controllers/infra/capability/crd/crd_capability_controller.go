@@ -106,7 +106,7 @@ func (r *Reconciler) Reconcile(
 			r.Client,
 			fmt.Sprintf("capabilities have changed: %s", diff)); err != nil {
 
-			r.Logger.Error(err, "Failed to exit due to capability change")
+			logger.Error(err, "Failed to exit due to capability change")
 			return ctrl.Result{}, err
 		}
 	}

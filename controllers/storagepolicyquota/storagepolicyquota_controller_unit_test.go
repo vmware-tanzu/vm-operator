@@ -55,6 +55,8 @@ func unitTestsReconcile() {
 		reconciler                     *storagepolicyquota.Reconciler
 		storagePolicyQuota             *spqv1.StoragePolicyQuota
 		validatingWebhookConfiguration *admissionv1.ValidatingWebhookConfiguration
+		// enableFeatureFunc is used to enable the VMSnapshots feature flag
+		enableFeatureFunc = func(ctx *builder.UnitTestContextForController) {}
 	)
 
 	BeforeEach(func() {
@@ -105,14 +107,20 @@ func unitTestsReconcile() {
 		withObjects = append(withObjects, storagePolicyQuota, validatingWebhookConfiguration)
 
 		ctx = suite.NewUnitTestContextForController(withObjects...)
-
+		if enableFeatureFunc != nil {
+			enableFeatureFunc(ctx)
+		}
 		reconciler = storagepolicyquota.NewReconciler(
-			pkgcfg.NewContextWithDefaultConfig(),
+			ctx.Context,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
 			ctx.Namespace,
 		)
+	})
+
+	AfterEach(func() {
+		enableFeatureFunc = nil
 	})
 
 	Context("Reconcile", func() {
@@ -158,47 +166,52 @@ func unitTestsReconcile() {
 				ExpectWithOffset(1, err).ToNot(HaveOccurred())
 				By("Checking StoragePolicyUsage for VirtualMachine and VirtualMachineSnapshot")
 				resourceKinds := []struct {
-					Kind     string
-					NameFunc func(string) string
-					Enabled  bool
+					kind               string
+					nameFunc           func(string) string
+					quotaExtensionName string
+					enabled            bool
 				}{
 					{
-						Kind:     spqutil.VirtualMachineKind,
-						NameFunc: spqutil.StoragePolicyUsageNameForVM,
-						Enabled:  true,
+						kind:               spqutil.VirtualMachineKind,
+						nameFunc:           spqutil.StoragePolicyUsageNameForVM,
+						quotaExtensionName: spqutil.StoragePolicyQuotaVMExtensionName,
+						enabled:            true,
 					},
 					{
-						Kind:     spqutil.VirtualMachineSnapshotKind,
-						NameFunc: spqutil.StoragePolicyUsageNameForVMSnapshot,
-						Enabled:  pkgcfg.FromContext(ctx).Features.VMSnapshots,
+						kind:               spqutil.VirtualMachineSnapshotKind,
+						nameFunc:           spqutil.StoragePolicyUsageNameForVMSnapshot,
+						quotaExtensionName: spqutil.StoragePolicyQuotaVMSnapshotExtensionName,
+						enabled:            enableFeatureFunc != nil,
 					},
 				}
 				for _, resourceKind := range resourceKinds {
 					var obj spqv1.StoragePolicyUsage
-					if !resourceKind.Enabled {
+					if !resourceKind.enabled {
 						ExpectWithOffset(1, ctx.Client.Get(
 							ctx,
 							types.NamespacedName{
 								Namespace: namespace,
-								Name:      resourceKind.NameFunc(storageClassName),
+								Name:      resourceKind.nameFunc(storageClassName),
 							},
 							&obj)).NotTo(Succeed())
 						continue
 					}
-					ExpectWithOffset(1, ctx.Client.Get(
-						ctx,
-						types.NamespacedName{
-							Namespace: namespace,
-							Name:      resourceKind.NameFunc(storageClassName),
-						},
-						&obj)).To(Succeed())
-					ExpectWithOffset(1, obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
-					ExpectWithOffset(1, obj.Spec.ResourceExtensionName).To(Equal(spqutil.StoragePolicyQuotaExtensionName))
-					ExpectWithOffset(1, obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.Namespace))
-					ExpectWithOffset(1, obj.Spec.ResourceKind).To(Equal(resourceKind.Kind))
-					ExpectWithOffset(1, obj.Spec.StorageClassName).To(Equal(storageClassName))
-					ExpectWithOffset(1, obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
-					ExpectWithOffset(1, obj.Spec.CABundle).To(Equal([]byte(caBundle)))
+					Eventually(func(g Gomega) {
+						ExpectWithOffset(1, ctx.Client.Get(
+							ctx,
+							types.NamespacedName{
+								Namespace: namespace,
+								Name:      resourceKind.nameFunc(storageClassName),
+							},
+							&obj)).To(Succeed())
+						ExpectWithOffset(1, obj.Spec.ResourceAPIgroup).To(Equal(ptr.To(vmopv1.GroupVersion.Group)))
+						ExpectWithOffset(1, obj.Spec.ResourceExtensionName).To(Equal(resourceKind.quotaExtensionName))
+						ExpectWithOffset(1, obj.Spec.ResourceExtensionNamespace).To(Equal(ctx.Namespace))
+						ExpectWithOffset(1, obj.Spec.ResourceKind).To(Equal(resourceKind.kind))
+						ExpectWithOffset(1, obj.Spec.StorageClassName).To(Equal(storageClassName))
+						ExpectWithOffset(1, obj.Spec.StoragePolicyId).To(Equal(storagePolicyID))
+						ExpectWithOffset(1, obj.Spec.CABundle).To(Equal([]byte(caBundle)))
+					}).Should(Succeed())
 				}
 			}
 
@@ -208,9 +221,14 @@ func unitTestsReconcile() {
 				})
 				When("VMSnapshot feature flag is enabled", func() {
 					BeforeEach(func() {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.VMSnapshots = true
-						})
+						enableFeatureFunc = func(ctx *builder.UnitTestContextForController) {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.VMSnapshots = true
+							})
+						}
+					})
+					JustBeforeEach(func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeTrue())
 					})
 					It("creates resources for VirtualMachine and VirtualMachineSnapshot", func() {
 						assertStoragePolicyUsage(err)

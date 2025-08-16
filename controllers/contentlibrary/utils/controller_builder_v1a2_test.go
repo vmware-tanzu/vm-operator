@@ -380,6 +380,8 @@ var _ = XDescribe("Reconcile",
 							vmiObj, vmiSpec, vmiStatus := getVMI(ctx, req.Namespace, vmiName)
 							assertVMImageFromV1A2CLItem(cliObj, *cliSpec, *cliStatus, vmiObj, *vmiSpec, *vmiStatus)
 							Expect(vmiStatus.Firmware).To(Equal(firmwareValue))
+
+							Expect(vmiObj.GetAnnotations()).To(HaveKeyWithValue(pkgconst.DisplayNameAnnotationKey, vmiStatus.Name))
 						})
 					})
 

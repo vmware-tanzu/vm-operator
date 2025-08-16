@@ -63,6 +63,10 @@ const (
 	// hardware version for NVidia PCI devices.
 	MinSupportedHWVersionForPCIPassthruDevices = vimtypes.VMX17
 
+	// DisplayNameAnnotationKey is applied to objects so their display name is
+	// also in an annotation for metadata-only listers.
+	DisplayNameAnnotationKey = "vmware.com/display-name"
+
 	// VMICacheLabelKey is applied to resources that need to be reconciled when
 	// the VirtualMachineImageCache resource specified by the label's value is
 	// updated.

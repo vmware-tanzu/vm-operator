@@ -389,6 +389,19 @@ func (r *ReconcilerV1A2) setUpVMIFromCLItem(
 	vmiSpec *vmopv1.VirtualMachineImageSpec,
 	vmiStatus *vmopv1.VirtualMachineImageStatus) error {
 
+	if cliObj == nil {
+		panic("cliObj is nil")
+	}
+	if vmiObj == nil {
+		panic("vmiObj is nil")
+	}
+	if vmiSpec == nil {
+		panic("vmiSpec is nil")
+	}
+	if vmiStatus == nil {
+		panic("vmiStatus is nil")
+	}
+
 	if err := controllerutil.SetControllerReference(
 		cliObj,
 		vmiObj,
@@ -443,6 +456,17 @@ func (r *ReconcilerV1A2) setUpVMIFromCLItem(
 	vmiStatus.Name = cliStatus.Name
 	vmiStatus.ProviderItemID = cliSpec.ID
 	vmiStatus.Type = string(cliStatus.Type)
+
+	// Ensure the friendly name is set in an annotation for metadata-only
+	// listers.
+	if vmiStatus.Name != "" {
+		annos := vmiObj.GetAnnotations()
+		if annos == nil {
+			annos = map[string]string{}
+		}
+		annos[pkgconst.DisplayNameAnnotationKey] = vmiStatus.Name
+		vmiObj.SetAnnotations(annos)
+	}
 
 	return AddV1A2ContentLibraryRefToAnnotation(
 		vmiObj, vmiSpec.ProviderRef)

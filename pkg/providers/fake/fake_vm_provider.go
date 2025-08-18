@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -41,9 +42,10 @@ type funcs struct {
 	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error)
 	PlaceVirtualMachineGroupFn         func(ctx context.Context, group *vmopv1.VirtualMachineGroup, groupPlacement []providers.VMGroupPlacement) error
 
-	GetItemFromLibraryByNameFn func(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
-	UpdateContentLibraryItemFn func(ctx context.Context, itemID, newName string, newDescription *string) error
-	SyncVirtualMachineImageFn  func(ctx context.Context, cli, vmi client.Object) error
+	GetItemFromLibraryByNameFn   func(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
+	GetItemFromInventoryByNameFn func(ctx context.Context, contentLibrary, itemName string) (object.Reference, error)
+	UpdateContentLibraryItemFn   func(ctx context.Context, itemID, newName string, newDescription *string) error
+	SyncVirtualMachineImageFn    func(ctx context.Context, cli, vmi client.Object) error
 
 	UpdateVcPNIDFn           func(ctx context.Context, vcPNID, vcPort string) error
 	UpdateVcCredsFn          func(ctx context.Context, data map[string][]byte) error
@@ -272,6 +274,18 @@ func (s *VMProvider) GetItemFromLibraryByName(ctx context.Context,
 	defer s.Unlock()
 	if s.GetItemFromLibraryByNameFn != nil {
 		return s.GetItemFromLibraryByNameFn(ctx, contentLibrary, itemName)
+	}
+
+	return nil, nil
+}
+
+func (s *VMProvider) GetItemFromInventoryByName(ctx context.Context, contentLibrary, itemName string) (object.Reference, error) {
+	_ = pkgcfg.FromContext(ctx)
+
+	s.Lock()
+	defer s.Unlock()
+	if s.GetItemFromInventoryByNameFn != nil {
+		return s.GetItemFromInventoryByNameFn(ctx, contentLibrary, itemName)
 	}
 
 	return nil, nil

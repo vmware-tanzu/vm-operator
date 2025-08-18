@@ -363,24 +363,23 @@ func (r *Reconciler) updateVMStatus(ctx *pkgctx.VirtualMachineSnapshotContext, p
 	return nil
 }
 
-// TODO(lubron): Update VM.Status.CurrentSnapshot as well
 // Set current snapshot of VM to the parent snapshot or to nil.
 func (r *Reconciler) updateVMCurrentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext, parentVMSnapshot *vmopv1.VirtualMachineSnapshot) error {
 	ctx.Logger.Info("Updating VM current snapshot")
 	vm := ctx.VM
-	if vm.Spec.CurrentSnapshot != nil && vm.Spec.CurrentSnapshot.Name != ctx.VirtualMachineSnapshot.Name {
+	if vm.Status.CurrentSnapshot != nil && vm.Status.CurrentSnapshot.Name != ctx.VirtualMachineSnapshot.Name {
 		ctx.Logger.Info("VM current snapshot is not the same as the snapshot being deleted, skipping update")
 		return nil
 	}
 	vmPatch := client.MergeFrom(vm.DeepCopy())
 	if parentVMSnapshot != nil {
 		ctx.Logger.V(5).Info("Updating VM current snapshot", "vm", vm.Name, "new current snapshot", parentVMSnapshot.Name)
-		vm.Spec.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(parentVMSnapshot)
+		vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRef(parentVMSnapshot)
 	} else {
 		ctx.Logger.V(5).Info("Updating VM current snapshot", "vm", vm.Name, "new current snapshot", "nil")
-		vm.Spec.CurrentSnapshot = nil
+		vm.Status.CurrentSnapshot = nil
 	}
-	if err := r.Patch(ctx, vm, vmPatch); err != nil {
+	if err := r.Status().Patch(ctx, vm, vmPatch); err != nil {
 		return fmt.Errorf("failed to patch VM %s with current snapshot: %w", vm.Name, err)
 	}
 

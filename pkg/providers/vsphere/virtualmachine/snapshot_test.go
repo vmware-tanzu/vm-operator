@@ -572,14 +572,16 @@ func snapShotTests() {
 		})
 
 		It("should return the parent snapshot of the child snapshot", func() {
-			parent := virtualmachine.GetParentSnapshot(vmCtx, childSnapshot.Name)
+			parent, err := virtualmachine.GetParentSnapshot(vmCtx, vcVM, childSnapshot.Name)
+			Expect(err).To(BeNil())
 			Expect(parent).ToNot(BeNil())
 			Expect(parent.Name).To(Equal(vmSnapshot.Name))
 		})
 
 		When("there is no parent snapshot", func() {
 			It("should return nil", func() {
-				parent := virtualmachine.GetParentSnapshot(vmCtx, vmSnapshot.Name)
+				parent, err := virtualmachine.GetParentSnapshot(vmCtx, vcVM, vmSnapshot.Name)
+				Expect(err).To(BeNil())
 				Expect(parent).To(BeNil())
 			})
 		})
@@ -587,7 +589,8 @@ func snapShotTests() {
 		When("snapshot doesn't exist", func() {
 			It("should return nil", func() {
 				childSnapshot.Name = ""
-				parent := virtualmachine.GetParentSnapshot(vmCtx, childSnapshot.Name)
+				parent, err := virtualmachine.GetParentSnapshot(vmCtx, vcVM, childSnapshot.Name)
+				Expect(err).To(BeNil())
 				Expect(parent).To(BeNil())
 			})
 		})

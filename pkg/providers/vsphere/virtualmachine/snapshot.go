@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -257,19 +258,25 @@ func getFCDDeviceKeySet(vmCtx pkgctx.VirtualMachineContext) sets.Set[int32] {
 }
 
 // GetParentSnapshot finds the parent snapshot of a given snapshot name.
-func GetParentSnapshot(vmCtx pkgctx.VirtualMachineContext, vmSnapshotName string) *vimtypes.VirtualMachineSnapshotTree {
-	o := vmCtx.MoVM
+func GetParentSnapshot(vmCtx pkgctx.VirtualMachineContext, vcVM *object.VirtualMachine, vmSnapshotName string) (*vimtypes.VirtualMachineSnapshotTree, error) {
+	var o mo.VirtualMachine
+
+	err := vcVM.Properties(vmCtx, vcVM.Reference(), []string{"snapshot"}, &o)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to get snapshot")
+		return nil, err
+	}
 
 	if o.Snapshot == nil || len(o.Snapshot.RootSnapshotList) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	parent := getParentSnapshotHelper(nil, o.Snapshot.RootSnapshotList, vmSnapshotName)
 	if parent != nil {
-		return parent
+		return parent, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 func getParentSnapshotHelper(

@@ -747,7 +747,7 @@ func PatchSnapshotSuccessStatus(vmCtx pkgctx.VirtualMachineContext, k8sClient ct
 	vmSnapshot.Status.UniqueID = snapMoRef.Reference().Value
 	vmSnapshot.Status.Quiesced = vmSnapshot.Spec.Quiesce != nil
 	vmSnapshot.Status.PowerState = vmCtx.VM.Status.PowerState
-	// TODO: populate children
+
 	conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 
 	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, snapPatch); err != nil {

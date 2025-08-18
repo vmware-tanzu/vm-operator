@@ -11,6 +11,7 @@ import (
 	"maps"
 	"math/rand"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1379,6 +1380,10 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 		"afterRestoreLabels", vmCtx.VM.Labels,
 		"afterRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshot)
 
+	if err := vmlifecycle.UpdateCurrentSnapshotStatus(vmCtx, vs.k8sClient); err != nil {
+		return true, err
+	}
+
 	vmCtx.Logger.Info("Successfully completed snapshot revert and restored VM spec, requeuing for next reconcile",
 		"snapshotName", desiredSnapshotName)
 
@@ -1643,6 +1648,20 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 	// Update the snapshot status with the successful result
 	if err = PatchSnapshotSuccessStatus(vmCtx, vs.k8sClient, snapshotToProcess, snapMoRef); err != nil {
 		vmCtx.Logger.Error(err, "Failed to update snapshot status", "snapshotName", snapshotToProcess.Name)
+		return err
+	}
+
+	// Update the children snapshot status of parent snapshot
+	if err = vs.patchChildrenSnapshotStatus(snapArgs); err != nil {
+		vmCtx.Logger.Error(err, "Failed to update children snapshot status in its parent", "childrenSnapshotName", snapshotToProcess.Name)
+		return err
+	}
+
+	if err := vmlifecycle.UpdateCurrentSnapshotStatus(vmCtx, vs.k8sClient); err != nil {
+		return err
+	}
+
+	if err := vmlifecycle.UpdateRootSnapshots(vmCtx, vs.k8sClient); err != nil {
 		return err
 	}
 
@@ -3052,4 +3071,57 @@ func (vs *vSphereVMProvider) markSnapshotFailed(vmCtx pkgctx.VirtualMachineConte
 	}
 
 	vmCtx.Logger.V(4).Info("Marked snapshot as failed", "snapshotName", vmSnapshot.Name, "error", err.Error())
+}
+
+// patchChildrenSnapshotStatus find the parent snapshot of current snapshot
+// and patches the children snapshot status of the parent snapshot by adding
+// the current snapshot to the children list of the parent snapshot.
+func (vs *vSphereVMProvider) patchChildrenSnapshotStatus(snapArgs virtualmachine.SnapshotArgs) error {
+	// Use vsphereprovider's GetParentSnapshot since it will fetch latest
+	// version of moVM from vsphere, after a new snapshot was taken above.
+	vmCtx := snapArgs.VMCtx
+	vmSnapshot := snapArgs.VMSnapshot
+
+	parentSnapshot, err := virtualmachine.GetParentSnapshot(vmCtx, snapArgs.VcVM, vmSnapshot.Name)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to get parent snapshot", "snapshotName", vmSnapshot.Name)
+		return err
+	}
+
+	if parentSnapshot == nil {
+		vmCtx.Logger.V(4).Info("No parent snapshot found for snapshot, skipping children snapshot status update",
+			"snapshotName", vmSnapshot.Name)
+		return nil
+	}
+
+	parentCR := &vmopv1.VirtualMachineSnapshot{}
+	if err := vs.k8sClient.Get(vmCtx,
+		ctrlclient.ObjectKey{Name: parentSnapshot.Name, Namespace: vmSnapshot.Namespace}, parentCR); err != nil {
+		if apierrors.IsNotFound(err) {
+			// TODO (lubron): The parent snapshot might be externally created (only exist in vSphere)
+			// In this case, we should just skip the update.
+			// For now let's return an error.
+			return fmt.Errorf("parent snapshot %s/%s not found", parentSnapshot.Name, vmSnapshot.Namespace)
+		}
+		return fmt.Errorf("failed to get parent snapshot %s/%s: err: %s", parentSnapshot.Name, vmSnapshot.Namespace, err.Error())
+	}
+
+	if slices.ContainsFunc(parentCR.Status.Children, func(c common.LocalObjectRef) bool {
+		return c.Name == vmSnapshot.Name
+	}) {
+		vmCtx.Logger.V(4).Info("Snapshot already in children list of parent, skipping",
+			"parentSnapshotName", parentSnapshot.Name,
+			"snapshotName", vmSnapshot.Name)
+		return nil
+	}
+
+	objPatch := ctrlclient.MergeFrom(parentCR.DeepCopy())
+
+	parentCR.Status.Children = append(parentCR.Status.Children, common.LocalObjectRef{
+		Name:       vmSnapshot.Name,
+		APIVersion: vmopv1.GroupVersion.String(),
+		Kind:       "VirtualMachineSnapshot",
+	})
+
+	return vs.k8sClient.Status().Patch(vmCtx, parentCR, objPatch)
 }

@@ -1424,9 +1424,9 @@ func updateProbeStatusGuestInfo(
 	return probeResultSuccess, ""
 }
 
-// updateCurrentSnapshotStatus updates the VM status to reflect the
+// UpdateCurrentSnapshotStatus updates the VM status to reflect the
 // current snapshot on the VM.
-func updateCurrentSnapshotStatus(
+func UpdateCurrentSnapshotStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) error {
 
@@ -1531,9 +1531,9 @@ func FindSnapshotNameInTree(snapshots []vimtypes.VirtualMachineSnapshotTree, tar
 	return ""
 }
 
-// updateRootSnapshots updates the VM status to reflect the
+// UpdateRootSnapshots updates the VM status to reflect the
 // root snapshots on the VM.
-func updateRootSnapshots(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client) error {
+func UpdateRootSnapshots(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client) error {
 	vmCtx.Logger.V(4).Info("Updating root snapshots in VM status")
 
 	vm := vmCtx.VM

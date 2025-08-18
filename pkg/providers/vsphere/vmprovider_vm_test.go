@@ -4628,6 +4628,14 @@ func vmTests() {
 					}, updatedSnapshot2)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(conditions.IsTrue(updatedSnapshot2, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+
+					// Now snapshot1's children list should contain snapshot2
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{
+						Name:      snapshot1.Name,
+						Namespace: snapshot1.Namespace,
+					}, updatedSnapshot1)).To(Succeed())
+					Expect(updatedSnapshot1.Status.Children).To(HaveLen(1))
+					Expect(updatedSnapshot1.Status.Children[0].Name).To(Equal(snapshot2.Name))
 				})
 			})
 

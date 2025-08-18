@@ -746,14 +746,5 @@ func (vs *vSphereVMProvider) GetParentSnapshot(
 		return nil, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
 	}
 
-	var o mo.VirtualMachine
-
-	err = vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &o)
-	if err != nil {
-		return nil, err
-	}
-
-	vmCtx.MoVM = o
-
-	return virtualmachine.GetParentSnapshot(vmCtx, vmSnapshotName), nil
+	return virtualmachine.GetParentSnapshot(vmCtx, vcVM, vmSnapshotName)
 }

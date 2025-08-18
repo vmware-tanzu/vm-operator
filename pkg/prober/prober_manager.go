@@ -121,11 +121,13 @@ func (m *manager) AddToProberManager(vm *vmopv1.VirtualMachine) {
 // RemoveFromProberManager removes a VM from the prober manager.
 func (m *manager) RemoveFromProberManager(vm *vmopv1.VirtualMachine) {
 	vmName := vm.NamespacedName()
-	m.log.V(4).Info("Remove from prober manager", "vm", vmName)
 
 	m.readinessMutex.Lock()
 	defer m.readinessMutex.Unlock()
-	delete(m.vmReadinessProbeList, vmName)
+	if _, ok := m.vmReadinessProbeList[vmName]; ok {
+		m.log.V(4).Info("Remove from prober manager", "vm", vmName)
+		delete(m.vmReadinessProbeList, vmName)
+	}
 }
 
 // Start starts the probe manager.

@@ -51,6 +51,11 @@ const (
 	WebhookServiceNamespace
 	WebhookSecretName
 	WebhookSecretNamespace
+	KubeadmConfigMapName
+	KubeDNSLBServiceName
+	KubeSystemNamespace
+	KubeadmClusterConfigKey
+	DefaultClusterDomain
 	FSSInstanceStorage
 	FSSK8sWorkloadMgmtAPI
 	FSSPodVMOnStretchedSupervisor
@@ -163,6 +168,16 @@ func (n VarName) String() string {
 		return "WEBHOOK_SECRET_NAME"
 	case WebhookSecretNamespace:
 		return "WEBHOOK_SECRET_NAMESPACE"
+	case KubeadmConfigMapName:
+		return "KUBEADM_CONFIGMAP_NAME"
+	case KubeDNSLBServiceName:
+		return "KUBE_DNS_LB_SERVICE_NAME"
+	case KubeSystemNamespace:
+		return "KUBE_SYSTEM_NAMESPACE"
+	case KubeadmClusterConfigKey:
+		return "KUBEADM_CLUSTER_CONFIG_KEY"
+	case DefaultClusterDomain:
+		return "DEFAULT_CLUSTER_DOMAIN"
 	case FSSInstanceStorage:
 		return "FSS_WCP_INSTANCE_STORAGE"
 	case FSSK8sWorkloadMgmtAPI:

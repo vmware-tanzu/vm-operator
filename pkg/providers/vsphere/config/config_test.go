@@ -24,6 +24,7 @@ func configTests() {
 	var (
 		ctx        *builder.TestContextForVCSim
 		testConfig builder.VCSimTestConfig
+		cfg        pkgcfg.Config
 	)
 
 	BeforeEach(func() {
@@ -32,6 +33,7 @@ func configTests() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig)
+		cfg = pkgcfg.FromContext(ctx)
 	})
 
 	AfterEach(func() {
@@ -103,33 +105,42 @@ func configTests() {
 	})
 
 	Describe("GetDNSInformationFromConfigMap", func() {
-		var cm *corev1.ConfigMap
+		var (
+			kubeDNSLBService     *corev1.Service
+			kubeadmConfigMap     *corev1.ConfigMap
+			vmopNetworkConfigMap *corev1.ConfigMap
+		)
 
 		JustBeforeEach(func() {
 			// Note that NewTestContextForVCSim() creates this CM.
-			cm = &corev1.ConfigMap{
+			vmopNetworkConfigMap = &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      config.NetworkConfigMapName,
 					Namespace: ctx.PodNamespace,
 				},
 			}
-			Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(cm), cm)).To(Succeed())
+			Expect(ctx.Client.Get(
+				ctx,
+				ctrlclient.ObjectKeyFromObject(vmopNetworkConfigMap),
+				vmopNetworkConfigMap)).To(Succeed())
 		})
 
 		AfterEach(func() {
-			cm = nil
+			vmopNetworkConfigMap = nil
+			kubeDNSLBService = nil
+			kubeadmConfigMap = nil
 		})
 
 		It("does not exist", func() {
-			Expect(ctx.Client.Delete(ctx, cm)).To(Succeed())
+			Expect(ctx.Client.Delete(ctx, vmopNetworkConfigMap)).To(Succeed())
 
 			_, _, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
 			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		})
 
 		It("returns empty data", func() {
-			cm.Data = map[string]string{}
-			Expect(ctx.Client.Update(ctx, cm)).To(Succeed())
+			vmopNetworkConfigMap.Data = map[string]string{}
+			Expect(ctx.Client.Update(ctx, vmopNetworkConfigMap)).To(Succeed())
 
 			nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
 			Expect(err).ToNot(HaveOccurred())
@@ -138,10 +149,10 @@ func configTests() {
 		})
 
 		It("returns error if <worker_dns> is there", func() {
-			cm.Data = map[string]string{
+			vmopNetworkConfigMap.Data = map[string]string{
 				config.NameserversKey: "<worker_dns>",
 			}
-			Expect(ctx.Client.Update(ctx, cm)).To(Succeed())
+			Expect(ctx.Client.Update(ctx, vmopNetworkConfigMap)).To(Succeed())
 
 			_, _, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
 			Expect(err).To(HaveOccurred())
@@ -149,16 +160,88 @@ func configTests() {
 		})
 
 		It("returns expected data", func() {
-			cm.Data = map[string]string{
+			vmopNetworkConfigMap.Data = map[string]string{
 				config.NameserversKey:    "1.1.1.1 8.8.8.8",
 				config.SearchSuffixesKey: "vmware.com google.com",
 			}
-			Expect(ctx.Client.Update(ctx, cm)).To(Succeed())
+			Expect(ctx.Client.Update(ctx, vmopNetworkConfigMap)).To(Succeed())
 
 			nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nameservers).To(ConsistOf("1.1.1.1", "8.8.8.8"))
 			Expect(searchSuffixes).To(ConsistOf("vmware.com", "google.com"))
+		})
+
+		When("using kube-dns", func() {
+			JustBeforeEach(func() {
+				kubeDNSLBService = &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      cfg.KubeDNSLBServiceName,
+						Namespace: cfg.KubeSystemNamespace,
+					},
+				}
+				Expect(ctx.Client.Create(ctx, kubeDNSLBService)).To(Succeed())
+				kubeDNSLBService.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{
+					{
+						IP: "1.2.3.4",
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, kubeDNSLBService)).To(Succeed())
+
+				kubeadmConfigMap = &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      cfg.KubeadmConfigMapName,
+						Namespace: cfg.KubeSystemNamespace,
+					},
+					Data: map[string]string{
+						cfg.KubeadmClusterConfigKey: kubeadmConfigFile,
+					},
+				}
+				Expect(ctx.Client.Create(ctx, kubeadmConfigMap)).To(Succeed())
+
+				Expect(ctx.Client.Get(
+					ctx,
+					ctrlclient.ObjectKeyFromObject(vmopNetworkConfigMap),
+					vmopNetworkConfigMap)).To(Succeed())
+
+				vmopNetworkConfigMap.Data = map[string]string{
+					config.NameserversKey:    "1.1.1.1 8.8.8.8",
+					config.SearchSuffixesKey: "vmware.com google.com",
+				}
+				Expect(ctx.Client.Update(ctx, vmopNetworkConfigMap)).To(Succeed())
+			})
+
+			It("should return just the kube-dns data", func() {
+				nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nameservers).To(ConsistOf("1.2.3.4"))
+				Expect(searchSuffixes).To(ConsistOf("cluster.local"))
+			})
+
+			When("there is no data in the vmop configmap", func() {
+				JustBeforeEach(func() {
+					vmopNetworkConfigMap.Data = map[string]string{}
+					Expect(ctx.Client.Update(ctx, vmopNetworkConfigMap)).To(Succeed())
+				})
+				It("should return just the kube-dns data", func() {
+					nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(nameservers).To(ConsistOf("1.2.3.4"))
+					Expect(searchSuffixes).To(ConsistOf("cluster.local"))
+				})
+			})
+
+			When("the vmop configmap does not exist", func() {
+				JustBeforeEach(func() {
+					Expect(ctx.Client.Delete(ctx, vmopNetworkConfigMap)).To(Succeed())
+				})
+				It("should return just the kube-dns data", func() {
+					nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(ctx, ctx.Client)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(nameservers).To(ConsistOf("1.2.3.4"))
+					Expect(searchSuffixes).To(ConsistOf("cluster.local"))
+				})
+			})
 		})
 	})
 }
@@ -271,3 +354,77 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 		})
 	})
 })
+
+const kubeadmConfigFile = `
+apiServer:
+  certSANs:
+  - 127.0.0.1
+  - 10.192.17.69
+  - supervisor.default.svc
+  extraArgs:
+    admission-control-config-file: /etc/vmware/wcp/admission-control.yaml
+    anonymous-auth: "false"
+    audit-log-compress: "true"
+    audit-log-maxage: "30"
+    audit-log-maxbackup: "25"
+    audit-log-maxsize: "400"
+    audit-log-path: /var/log/vmware/audit/kube-apiserver.log
+    audit-policy-file: /etc/vmware/wcp/audit-policy.yaml
+    authentication-config: /etc/vmware/wcp/authentication-config.yaml
+    authorization-config: /etc/vmware/wcp/authorization/kube-apiserver-authorization.yaml
+    disable-admission-plugins: ""
+    enable-admission-plugins: NamespaceLifecycle,ServiceAccount,NodeRestriction,EventRateLimit,LimitRanger,PersistentVolumeLabel,DefaultStorageClass,DefaultTolerationSeconds,ResourceQuota,ValidatingAdmissionWebhook,PodSecurity,MutatingAdmissionWebhook,StorageObjectInUseProtection
+    enable-bootstrap-token-auth: "true"
+    encryption-provider-config: /etc/vmware/wcp/encryption-config.yaml
+    profiling: "false"
+    runtime-config: admissionregistration.k8s.io/v1
+    service-account-jwks-uri: https://kubernetes.default.svc.cluster.local/openid/v1/jwks
+    service-account-lookup: "true"
+    service-cluster-ip-range: 172.24.0.0/16
+    tls-cipher-suites: TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+    tls-filter-cert-key: /etc/vmware/wcp/tls/vip.crt,/etc/vmware/wcp/tls/vip.key:interface=eth1,require-src-cidr=0.0.0.0/32
+    tls-min-version: VersionTLS12
+    tls-sni-cert-key: /etc/kubernetes/pki/apiserver.crt,/etc/kubernetes/pki/apiserver.key
+  timeoutForControlPlane: 4m0s
+apiVersion: kubeadm.k8s.io/v1beta3
+certificatesDir: /etc/kubernetes/pki
+clusterName: kubernetes
+controlPlaneEndpoint: 10.192.17.69:6443
+controllerManager:
+  extraArgs:
+    client-ca-file: /etc/vmware/wcp/tls/vmca.pem
+    feature-gates: RotateKubeletServerCertificate=true
+    profiling: "false"
+    terminated-pod-gc-threshold: "1000"
+    tls-cipher-suites: TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+    tls-min-version: VersionTLS12
+dns:
+  imageRepository: localhost:5000/vmware
+  imageTag: v1.30
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+      auto-tls: "false"
+      cipher-suites: TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      election-timeout: "6000"
+      heartbeat-interval: "600"
+      initial-cluster-token: domain-c11
+      max-wals: "80"
+      strict-reconfig-check: "false"
+    imageRepository: vmware
+    imageTag: KUSTOMIZE
+    peerCertSANs:
+    - 10.192.17.69
+imageRepository: vmware
+kind: ClusterConfiguration
+kubernetesVersion: v1.30.10
+networking:
+  dnsDomain: cluster.local
+  serviceSubnet: 172.24.0.0/16
+scheduler:
+  extraArgs:
+    config: /etc/kubernetes/wcp-schedext-scheduler-configuration-v1.yaml
+    profiling: "false"
+    tls-min-version: VersionTLS12
+`

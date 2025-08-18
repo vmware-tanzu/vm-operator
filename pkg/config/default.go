@@ -62,5 +62,10 @@ func Default() Config {
 		WebhookSecretName:            defaultPrefix + "webhook-server-cert",
 		WebhookSecretNamespace:       defaultPrefix + "system",
 		WebhookSecretVolumeMountPath: "/tmp/k8s-webhook-server/serving-certs",
+		KubeadmConfigMapName:         "kubeadm-config",
+		KubeDNSLBServiceName:         "kube-dns-lb",
+		KubeSystemNamespace:          "kube-system",
+		KubeadmClusterConfigKey:      "ClusterConfiguration",
+		DefaultClusterDomain:         "cluster.local",
 	}
 }

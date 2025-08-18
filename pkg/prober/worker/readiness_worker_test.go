@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
@@ -68,7 +69,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 			TCPProbe:       fakeTCPProbe,
 			GuestHeartbeat: fakeHeartbeatProbe,
 		}
-		testWorker = NewReadinessWorker(queue, prober, fakeClient, fakeRecorder)
+		testWorker = NewReadinessWorker(pkgcfg.NewContext(), queue, prober, fakeClient, fakeRecorder)
 	})
 
 	checkReadyCondition := func(c client.Client, objKey client.ObjectKey, expectedCondition metav1.ConditionStatus) {

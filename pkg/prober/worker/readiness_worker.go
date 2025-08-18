@@ -14,6 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
@@ -29,6 +30,7 @@ const (
 
 // readinessWorker implements Worker interface.
 type readinessWorker struct {
+	context  context.Context
 	queue    DelayingInterface
 	prober   *probe.Prober
 	client   client.Client
@@ -37,12 +39,14 @@ type readinessWorker struct {
 
 // NewReadinessWorker creates a new readiness worker to run readiness probes.
 func NewReadinessWorker(
+	context context.Context,
 	queue DelayingInterface,
 	prober *probe.Prober,
 	client client.Client,
 	recorder vmoprecord.Recorder,
 ) Worker {
 	return &readinessWorker{
+		context:  context,
 		queue:    queue,
 		prober:   prober,
 		client:   client,
@@ -68,7 +72,7 @@ func (w *readinessWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*prober
 	}
 
 	return &proberctx.ProbeContext{
-		Context:       context.Background(),
+		Context:       pkgcfg.JoinContext(context.Background(), w.context),
 		Logger:        ctrl.Log.WithName("readiness-probe").WithValues("vmName", vm.NamespacedName()),
 		PatchHelper:   patchHelper,
 		VM:            vm,

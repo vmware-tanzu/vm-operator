@@ -5,6 +5,8 @@
 package validation_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -109,9 +111,15 @@ func unitTestsValidateCreate() {
 		targetLocationNameEmpty         bool
 		targetLocationNotFound          bool
 		targetItemAlreadyExists         bool
+		managedByLabelExists            bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
+		if args.managedByLabelExists {
+			ctx.IsPrivilegedAccount = false
+			ctx.vmPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
+		}
+
 		if args.invalidSourceAPIVersion {
 			ctx.vmPub.Spec.Source.APIVersion = invalidAPIVersion
 		}
@@ -195,6 +203,9 @@ func unitTestsValidateCreate() {
 				[]string{"ContentLibrary", ""}).Error(), nil),
 		Entry("should deny if target location name is empty", createArgs{targetLocationNameEmpty: true}, false,
 			field.Required(targetLocationPath.Child("name"), "").Error(), nil),
+		Entry("should deny if managed-by label is set by a non privileged user", createArgs{managedByLabelExists: true}, false,
+			"", fmt.Errorf("cannot add the %q label without a VirtualMachineGroupPublishRequest owner reference",
+				vmopv1.VirtualMachinePublishRequestManagedByLabelKey)),
 	)
 }
 
@@ -202,6 +213,7 @@ func unitTestsValidateUpdate() {
 	var (
 		ctx      *unitValidatingWebhookContext
 		response admission.Response
+		err      error
 	)
 
 	BeforeEach(func() {
@@ -217,8 +229,6 @@ func unitTestsValidateUpdate() {
 	})
 
 	Context("Source/Target is updated", func() {
-		var err error
-
 		BeforeEach(func() {
 			ctx.vmPub.Spec.Source.Name = "updated-vm"
 			ctx.vmPub.Spec.Target.Location.Name = "updated-cl"
@@ -231,6 +241,39 @@ func unitTestsValidateUpdate() {
 			Expect(response.Result).ToNot(BeNil())
 			Expect(string(response.Result.Reason)).To(ContainSubstring("field is immutable"))
 		})
+	})
+
+	Context("Managed-by label is updated", func() {
+		BeforeEach(func() {
+			ctx.IsPrivilegedAccount = false
+		})
+
+		When("try to add managed-by label", func() {
+			BeforeEach(func() {
+				ctx.vmPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmPub)
+				Expect(err).ToNot(HaveOccurred())
+			})
+			It("should not allow the request", func() {
+				Expect(response.Allowed).To(BeFalse())
+				Expect(response.Result.Message).To(Equal(
+					fmt.Sprintf("cannot add the %q label without a VirtualMachineGroupPublishRequest owner reference",
+						vmopv1.VirtualMachinePublishRequestManagedByLabelKey)))
+			})
+		})
+
+		When("try to update when object has the managed-by label", func() {
+			BeforeEach(func() {
+				ctx.oldVMPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMPub)
+				Expect(err).ToNot(HaveOccurred())
+			})
+			It("should not allow the request", func() {
+				Expect(response.Allowed).To(BeFalse())
+				Expect(response.Result.Message).To(ContainSubstring("VirtualMachineGroupPublishRequest owned"))
+			})
+		})
+
 	})
 }
 

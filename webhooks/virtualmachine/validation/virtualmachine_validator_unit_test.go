@@ -2408,6 +2408,76 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+
+			Entry("allow creating a VM with network interface with a specified mac address for support network providers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								/*
+									// TBD: If we want to support this on VDS.
+										{
+											Name: "eth0",
+											Network: &common.PartialObjectRef{
+												TypeMeta: metav1.TypeMeta{
+													APIVersion: "netoperator.vmware.com/v1alpha1",
+												},
+												Name: "vds-network",
+											},
+											MACAddr: "00:00:00:00:BB:AA",
+										},
+								*/
+								{
+									Name: "eth1",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "crd.nsx.vmware.com/v1alpha1",
+										},
+										Name: "vpc-network",
+									},
+									MACAddr: "00:00:00:00:CC:DD",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow creating a VM with network interface with a specified mac address for not support network providers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "vmware.com/v1alpha1",
+										},
+										Name: "nsxt-network",
+									},
+									MACAddr: "00:00:00:00:BB:AA",
+								},
+								{
+									Name: "eth1",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "foobar/v1alpha1",
+										},
+										Name: "dummy-network",
+									},
+									MACAddr: "00:00:00:00:CC:DD",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].macAddr: Invalid value: "00:00:00:00:BB:AA": macAddr is available only with the following network providers: crd.nsx.vmware.com`,
+						`spec.network.interfaces[1].macAddr: Invalid value: "00:00:00:00:CC:DD": macAddr is available only with the following network providers: crd.nsx.vmware.com`,
+					),
+				},
+			),
 		)
 
 		DescribeTable("network create - host and domain names", doTest,
@@ -5009,6 +5079,41 @@ func unitTestsValidateUpdate() {
 						validate: doValidateWithMsg(`spec.network.interfaces[0].network: Forbidden: field is immutable`),
 					},
 				),
+				Entry("disallow Network Interface MAC address change",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Network: &common.PartialObjectRef{
+											TypeMeta: metav1.TypeMeta{
+												APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											},
+											Name: "net1",
+										},
+										MACAddr: "foo",
+									},
+								},
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Network: &common.PartialObjectRef{
+											TypeMeta: metav1.TypeMeta{
+												APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											},
+											Name: "net1",
+										},
+										MACAddr: "bar",
+									},
+								},
+							}
+						},
+						validate: doValidateWithMsg(`spec.network.interfaces[0].macAddr: Invalid value: "bar": field is immutable`),
+					},
+				),
 			)
 		})
 
@@ -5076,6 +5181,87 @@ func unitTestsValidateUpdate() {
 							}
 						},
 						expectAllowed: true,
+					},
+				),
+
+				Entry("disallow Network Interface MAC address change",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.MutableNetworks = true
+							})
+
+							ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Network: &common.PartialObjectRef{
+											TypeMeta: metav1.TypeMeta{
+												APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											},
+											Name: "net1",
+										},
+										MACAddr: "foo",
+									},
+									{
+										Name: "eth42",
+										Network: &common.PartialObjectRef{
+											TypeMeta: metav1.TypeMeta{
+												APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											},
+											Name: "net1",
+										},
+										MACAddr: "unchanged",
+									},
+									{
+										Name: "eth99",
+										Network: &common.PartialObjectRef{
+											TypeMeta: metav1.TypeMeta{
+												APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											},
+											Name: "net1",
+										},
+									},
+								},
+							}
+							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+									{
+										Name: "eth0",
+										Network: &common.PartialObjectRef{
+											TypeMeta: metav1.TypeMeta{
+												APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											},
+											Name: "net1",
+										},
+										MACAddr: "bar",
+									},
+									{
+										Name: "eth42",
+										Network: &common.PartialObjectRef{
+											TypeMeta: metav1.TypeMeta{
+												APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											},
+											Name: "net1",
+										},
+										MACAddr: "unchanged",
+									},
+									{
+										Name: "eth99",
+										Network: &common.PartialObjectRef{
+											TypeMeta: metav1.TypeMeta{
+												APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											},
+											Name: "net1",
+										},
+										MACAddr: "my-new-mac",
+									},
+								},
+							}
+						},
+						validate: doValidateWithMsg(
+							`spec.network.interfaces[0].macAddr: Invalid value: "bar": field is immutable`,
+							`spec.network.interfaces[2].macAddr: Invalid value: "my-new-mac": field is immutable`),
 					},
 				),
 			)

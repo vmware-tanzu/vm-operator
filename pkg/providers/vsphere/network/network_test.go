@@ -18,6 +18,7 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -31,6 +32,10 @@ import (
 )
 
 var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), func() {
+
+	const (
+		macAddress = "01:02:03:04:05:06"
+	)
 
 	var (
 		testConfig builder.VCSimTestConfig
@@ -127,6 +132,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							Name:            "my-network-interface",
 							GuestDeviceName: "eth42",
 							Network:         &common.PartialObjectRef{Name: networkName},
+							MACAddr:         macAddress,
 							Addresses: []string{
 								"172.42.1.100/24",
 								"fd1a:6c85:79fe:7c98:0000:0000:0000:000f/56",
@@ -170,6 +176,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(result.GuestDeviceName).To(Equal("eth42"))
 					})
 
+					Expect(result.MacAddress).To(Equal(macAddress))
 					Expect(result.DHCP4).To(BeFalse())
 					Expect(result.DHCP6).To(BeFalse())
 
@@ -375,6 +382,48 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 			})
 
+			When("interfaceSpec provides MAC address", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces[0].MACAddr = macAddress
+				})
+
+				It("returns success with expected mac address", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NetOP reconcile", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+							{
+								Type:   netopv1alpha1.NetworkInterfaceReady,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.MacAddress).To(Equal(macAddress))
+				})
+			})
+
 			When("v1a1 network interface exists", func() {
 				BeforeEach(func() {
 					netIf := &netopv1alpha1.NetworkInterface{
@@ -475,7 +524,6 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			interfaceName = "eth0"
 			interfaceID   = "my-interface-id"
 			networkName   = "my-ncp-network"
-			macAddress    = "01-23-45-67-89-AB-CD-EF"
 		)
 
 		BeforeEach(func() {
@@ -710,7 +758,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 			interfaceName = "eth0"
 			interfaceID   = "my-interface-id"
 			networkName   = "my-vpc-network"
-			macAddress    = "01-23-45-67-89-AB-CD-EF"
+			macAddress    = "01-23-45-67-89-ab-cd-ef"
 		)
 
 		BeforeEach(func() {
@@ -827,6 +875,71 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(results.Results).To(HaveLen(1))
 					Expect(results.Results[0].Backing).ToNot(BeNil())
 					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+				})
+			})
+
+			When("interfaceSpec provides IP/MAC address", func() {
+				const ipAddr = "192.168.1.220"
+				const ipCIDR = ipAddr + "/24"
+
+				BeforeEach(func() {
+					networkSpec.Interfaces[0].MACAddr = macAddress
+					networkSpec.Interfaces[0].Addresses = []string{ipCIDR}
+				})
+
+				It("returns success with expected MAC address", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NSX Operator reconcile", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+
+						Expect(subnetPort.Spec.AddressBindings).To(HaveLen(1))
+						Expect(subnetPort.Spec.AddressBindings[0].IPAddress).To(Equal(ipAddr))
+						Expect(subnetPort.Spec.AddressBindings[0].MACAddress).To(Equal(macAddress))
+
+						subnetPort.Status.Attachment.ID = interfaceID
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
+						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
+							{
+								IPAddress: ipCIDR,
+								Gateway:   "192.168.1.1",
+							},
+						}
+						subnetPort.Status.Conditions = []vpcv1alpha1.Condition{
+							{
+								Type:   vpcv1alpha1.Ready,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.MacAddress).To(Equal(macAddress))
+					Expect(result.IPConfigs).To(HaveLen(1))
+					ipConfig := result.IPConfigs[0]
+					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
 				})
 			})
 		})

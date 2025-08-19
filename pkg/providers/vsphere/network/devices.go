@@ -6,6 +6,7 @@ package network
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -17,6 +18,7 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -124,12 +126,18 @@ func findMatchingEthCardVDS(
 		}
 	}
 
-	return findMatchingEthCardNetOpNetIf(netIf, ethCards)
+	// The NetworkInterface does not have a Spec field for a MAC address, but if our
+	// interface spec has one, then we would have used that to create the EthCard so
+	// match on that too.
+	macAddress := interfaceSpec.MACAddr
+
+	return findMatchingEthCardNetOpNetIf(netIf, ethCards, macAddress)
 }
 
 func findMatchingEthCardNetOpNetIf(
 	netIf *netopv1alpha1.NetworkInterface,
-	ethCards object.VirtualDeviceList) int {
+	ethCards object.VirtualDeviceList,
+	macAddress string) int {
 
 	for i, dev := range ethCards {
 		bEthCard, ok := dev.(vimtypes.BaseVirtualEthernetCard)
@@ -145,8 +153,14 @@ func findMatchingEthCardNetOpNetIf(
 		} else if ethCard.ExternalId != "" {
 			// This ethernet device has an external ID but the network interface CR does
 			// not. In VDS, the external ID is only set on newly created interface CRs so
-			// don't fallback to matching by just the backing.
+			// don't continue trying to match.
 			continue
+		}
+
+		if macAddress != "" {
+			if !strings.EqualFold(macAddress, ethCard.MacAddress) {
+				continue
+			}
 		}
 
 		dvpg, ok := ethCard.Backing.(*vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
@@ -216,7 +230,8 @@ func findMatchingEthCardNCPNetIf(
 		}
 
 		ethCard := bEthCard.GetVirtualEthernetCard()
-		if ethCard.ExternalId == netIf.Status.InterfaceID && ethCard.MacAddress == netIf.Status.MacAddress {
+		if ethCard.ExternalId == netIf.Status.InterfaceID &&
+			strings.EqualFold(ethCard.MacAddress, netIf.Status.MacAddress) {
 			return i
 		}
 	}
@@ -261,7 +276,8 @@ func findMatchingEthCardVPCSubnetPort(
 
 		// TODO: Relax this to check for just MacAddress during VPC backup/restore.
 		ethCard := bEthCard.GetVirtualEthernetCard()
-		if ethCard.ExternalId == subnetPort.Status.Attachment.ID && ethCard.MacAddress == subnetPort.Status.NetworkInterfaceConfig.MACAddress {
+		if ethCard.ExternalId == subnetPort.Status.Attachment.ID &&
+			strings.EqualFold(ethCard.MacAddress, subnetPort.Status.NetworkInterfaceConfig.MACAddress) {
 			return i
 		}
 	}
@@ -280,6 +296,17 @@ func findMatchingEthCardNamed(
 	}
 
 	for i, dev := range ethCards {
+		bEthCard, ok := dev.(vimtypes.BaseVirtualEthernetCard)
+		if !ok {
+			continue
+		}
+
+		if mac := interfaceSpec.MACAddr; mac != "" {
+			if !strings.EqualFold(mac, bEthCard.GetVirtualEthernetCard().MacAddress) {
+				continue
+			}
+		}
+
 		network, ok := dev.GetVirtualDevice().Backing.(*vimtypes.VirtualEthernetCardNetworkBackingInfo)
 		if ok && network.DeviceName == interfaceSpec.Network.Name {
 			return i

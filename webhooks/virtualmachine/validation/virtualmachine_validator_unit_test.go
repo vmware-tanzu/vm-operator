@@ -5702,6 +5702,33 @@ func unitTestsValidateUpdate() {
 					expectAllowed: false,
 				},
 			),
+			Entry("when the VM is a VKS node attempting snapshot revert",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						vmSnapshot := builder.DummyVirtualMachineSnapshot(
+							ctx.vm.Namespace,
+							"dummy-vm-snapshot",
+							ctx.vm.Name,
+						)
+
+						// Add CAPI labels to mark VM as VKS/TKG node
+						if ctx.vm.Labels == nil {
+							ctx.vm.Labels = make(map[string]string)
+						}
+						ctx.vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
+
+						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name:       vmSnapshot.Name,
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(snapshotPath, "snapshot revert is not allowed for VKS nodes").Error(),
+					),
+					expectAllowed: false,
+				},
+			),
 		)
 	})
 

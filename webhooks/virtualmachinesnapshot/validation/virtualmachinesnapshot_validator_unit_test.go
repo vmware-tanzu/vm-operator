@@ -19,6 +19,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -94,6 +95,7 @@ func unitTestsValidateCreate() {
 		invalidVMRefAPIVersion      bool
 		invalidVMRefAPIVersionGroup bool
 		emptyVMRefName              bool
+		createVKSNode               bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -115,6 +117,15 @@ func unitTestsValidateCreate() {
 
 		if args.emptyVMRefName {
 			ctx.vmSnapshot.Spec.VMRef.Name = ""
+		}
+
+		if args.createVKSNode {
+			// Create a VM with CAPI labels to simulate a VKS/TKG node
+			vm := builder.DummyBasicVirtualMachine(ctx.vmSnapshot.Spec.VMRef.Name, ctx.vmSnapshot.Namespace)
+			vm.Labels = map[string]string{
+				kubeutil.CAPWClusterRoleLabelKey: "worker",
+			}
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmSnapshot)
@@ -175,6 +186,12 @@ func unitTestsValidateCreate() {
 			createArgs{emptyVMRefName: true},
 			false,
 			field.Required(vmRefField.Child("name"), "name must be provided").Error(),
+			nil,
+		),
+		Entry("should deny snapshot for VKS/TKG node",
+			createArgs{createVKSNode: true},
+			false,
+			field.Forbidden(vmRefField, "snapshots are not allowed for VKS/TKG nodes").Error(),
 			nil,
 		),
 	)

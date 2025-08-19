@@ -1019,6 +1019,9 @@ var _ = Describe("GroupToVMsMapperFn", func() {
 						Namespace: namespaceName,
 						Name:      vmName,
 					},
+					Spec: vmopv1.VirtualMachineSpec{
+						GroupName: groupName,
+					},
 					Status: vmopv1.VirtualMachineStatus{
 						Conditions: []metav1.Condition{},
 					},
@@ -1042,6 +1045,9 @@ var _ = Describe("GroupToVMsMapperFn", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: namespaceName,
 						Name:      vmName,
+					},
+					Spec: vmopv1.VirtualMachineSpec{
+						GroupName: groupName,
 					},
 					Status: vmopv1.VirtualMachineStatus{
 						Conditions: []metav1.Condition{
@@ -1072,6 +1078,9 @@ var _ = Describe("GroupToVMsMapperFn", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: namespaceName,
 						Name:      vmName,
+					},
+					Spec: vmopv1.VirtualMachineSpec{
+						GroupName: groupName,
 					},
 					Status: vmopv1.VirtualMachineStatus{
 						Conditions: []metav1.Condition{

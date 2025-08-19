@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -35,6 +36,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgcrd "github.com/vmware-tanzu/vm-operator/pkg/crd"
 	pkgexit "github.com/vmware-tanzu/vm-operator/pkg/exit"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
@@ -84,6 +86,8 @@ func main() {
 
 	initFeatures()
 
+	initCRDs()
+
 	initRateLimiting()
 
 	waitForWebhookCertificates()
@@ -123,6 +127,23 @@ func initFeatures() {
 
 	setupLog.Info("Initial features from capabilities",
 		"features", pkgcfg.FromContext(ctx).Features)
+}
+
+func initCRDs() {
+	setupLog.Info("Installing/updating CRDs",
+		"features", pkgcfg.FromContext(ctx).Features)
+
+	scheme := runtime.NewScheme()
+	_ = apiextensionsv1.AddToScheme(scheme)
+
+	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "Failed to create client for installing/updating CRDs")
+	}
+
+	if err := pkgcrd.Install(ctx, c, nil); err != nil {
+		setupLog.Error(err, "Failed to install/update CRDs")
+	}
 }
 
 func initMemStats() {

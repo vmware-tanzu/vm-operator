@@ -62,5 +62,6 @@ func Default() Config {
 		WebhookSecretName:            defaultPrefix + "webhook-server-cert",
 		WebhookSecretNamespace:       defaultPrefix + "system",
 		WebhookSecretVolumeMountPath: "/tmp/k8s-webhook-server/serving-certs",
+		CRDCleanupEnabled:            false,
 	}
 }

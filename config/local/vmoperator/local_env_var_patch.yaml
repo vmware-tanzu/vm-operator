@@ -17,6 +17,8 @@ spec:
           value: "true"
         - name: MEM_STATS_PERIOD
           value: "10m"
+        - name: CRD_CLEANUP_ENABLED
+          value: "false"
         - name: VSPHERE_NETWORKING
           value: "false"
         - name: FSS_WCP_INSTANCE_STORAGE

@@ -30,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -150,7 +152,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateStorageClass(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
@@ -253,7 +255,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
@@ -660,7 +662,7 @@ func (v validator) validateCrypto(
 
 func (v validator) validateNetwork(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
 
@@ -690,7 +692,68 @@ func (v validator) validateNetwork(
 		}
 	}
 
+	if oldVM != nil {
+		if pkgcfg.FromContext(ctx).Features.MutableNetworks {
+			allErrs = append(allErrs, v.validateNetworkInterfaceMacAddressNotChanged(ctx, vm, oldVM)...)
+		}
+	}
+
 	return allErrs
+}
+
+// validateNetworkInterfaceMacAddressNotChanged tries to check that the MAC address
+// for an interface is not changed. From the webhook this is best-effort: one could
+// always just remove and then quickly add back the interface with just different
+// MAC address.
+func (v validator) validateNetworkInterfaceMacAddressNotChanged(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	networkSpec := vm.Spec.Network
+	if networkSpec == nil || len(networkSpec.Interfaces) == 0 {
+		return nil
+	}
+
+	oldVMNetworkSpec := oldVM.Spec.Network
+	if oldVMNetworkSpec == nil || len(oldVMNetworkSpec.Interfaces) == 0 {
+		return nil
+	}
+
+	interfaceSpecToKey := func(s vmopv1.VirtualMachineNetworkInterfaceSpec) string {
+		return fmt.Sprintf("%s::%s::%s", s.Name, s.Network.Name, s.Network.Kind)
+	}
+
+	interfacesToMACs := make(map[string]string, len(oldVMNetworkSpec.Interfaces))
+	for _, interfaceSpec := range oldVMNetworkSpec.Interfaces {
+		if interfaceSpec.Network == nil {
+			// The VM mutation webhook will always set this.
+			continue
+		}
+		interfacesToMACs[interfaceSpecToKey(interfaceSpec)] = interfaceSpec.MacAddress
+	}
+
+	var allErrs field.ErrorList
+
+	for i, interfaceSpec := range networkSpec.Interfaces {
+		if interfaceSpec.Network == nil {
+			continue
+		}
+
+		key := interfaceSpecToKey(interfaceSpec)
+		if oldMAC, ok := interfacesToMACs[key]; ok && interfaceSpec.MacAddress != oldMAC {
+			p := field.NewPath("spec", "network", "interfaces").Index(i).Child("macAddress")
+			allErrs = append(allErrs, field.Invalid(p, interfaceSpec.MacAddress, validation.FieldImmutableErrorMsg))
+		}
+	}
+
+	return allErrs
+}
+
+// Note the code for VDS is basically done, but only support this for VPC right
+// now since that is what matters.
+var macAddressSupportNetworkGroups = []string{
+	// netopv1alpha1.GroupName,
+	vpcv1alpha1.GroupVersion.Group,
 }
 
 //nolint:gocyclo
@@ -701,9 +764,11 @@ func (v validator) validateNetworkInterfaceSpec(
 
 	var allErrs field.ErrorList
 	var networkIfCRName string
+	var networkAPIVersion string
 	var networkName string
 
 	if interfaceSpec.Network != nil {
+		networkAPIVersion = interfaceSpec.Network.APIVersion
 		networkName = interfaceSpec.Network.Name
 	}
 
@@ -718,8 +783,24 @@ func (v validator) validateNetworkInterfaceSpec(
 		allErrs = append(allErrs, field.Invalid(interfacePath.Child("name"), networkIfCRName, "is the resulting network interface name: "+msg))
 	}
 
+	if interfaceSpec.MacAddress != "" {
+		match := false
+		for _, g := range macAddressSupportNetworkGroups {
+			if strings.HasPrefix(networkAPIVersion, g+"/") {
+				match = true
+				break
+			}
+		}
+
+		if !match {
+			allErrs = append(allErrs, field.Invalid(interfacePath.Child("macAddress"), interfaceSpec.MacAddress,
+				fmt.Sprintf("macAddress is available only with the following network providers: %s", strings.Join(macAddressSupportNetworkGroups, ","))))
+		}
+	}
+
 	var ipv4Addrs, ipv6Addrs []string
 	for i, ipCIDR := range interfaceSpec.Addresses {
+		// NOTE: VPC SubnetPort only takes the IP address so we might want to make this more flexible.
 		ip, _, err := net.ParseCIDR(ipCIDR)
 		if err != nil {
 			p := interfacePath.Child("addresses").Index(i)
@@ -1462,6 +1543,9 @@ func (v validator) validateImmutableNetwork(
 		if !reflect.DeepEqual(newInterface.Network, oldInterface.Network) {
 			allErrs = append(allErrs, field.Forbidden(pi.Child("network"), validation.FieldImmutableErrorMsg))
 		}
+
+		allErrs = append(allErrs,
+			validation.ValidateImmutableField(newInterface.MacAddress, oldInterface.MacAddress, pi.Child("macAddress"))...)
 	}
 
 	return allErrs

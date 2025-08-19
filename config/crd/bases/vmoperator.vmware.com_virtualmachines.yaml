@@ -2582,9 +2582,6 @@ spec:
                             Please note this field is only supported if the network connection
                             supports manual IP allocation.
 
-                            Please note the IP address must include the network prefix length, ex.
-                            192.168.0.1/24.
-
                             Please note this field is mutually exclusive with DHCP4.
                           type: string
                         gateway6:
@@ -2597,9 +2594,6 @@ spec:
                             Please note this field is only supported if the network connection
                             supports manual IP allocation.
 
-                            Please note the IP address must include the network prefix length, ex.
-                            2001:db8:101::1/64.
-
                             Please note this field is mutually exclusive with DHCP6.
                           type: string
                         guestDeviceName:
@@ -2609,6 +2603,14 @@ spec:
                             ensure the provided device name does not conflict with any other devices
                             inside the guest, ex. dvd, cdrom, sda, etc.
                           pattern: ^\w\w+$
+                          type: string
+                        macAddress:
+                          description: |-
+                            MacAddress is the MAC address of this interface.
+
+                            Please note this field is only supported when the Network API Group is
+                            crd.nsx.vmware.com.
+                          pattern: ^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$
                           type: string
                         mtu:
                           description: |-
@@ -6056,9 +6058,6 @@ spec:
                             Please note this field is only supported if the network connection
                             supports manual IP allocation.
 
-                            Please note the IP address must include the network prefix length, ex.
-                            192.168.0.1/24.
-
                             Please note this field is mutually exclusive with DHCP4.
                           type: string
                         gateway6:
@@ -6071,9 +6070,6 @@ spec:
                             Please note this field is only supported if the network connection
                             supports manual IP allocation.
 
-                            Please note the IP address must include the network prefix length, ex.
-                            2001:db8:101::1/64.
-
                             Please note this field is mutually exclusive with DHCP6.
                           type: string
                         guestDeviceName:
@@ -6083,6 +6079,14 @@ spec:
                             ensure the provided device name does not conflict with any other devices
                             inside the guest, ex. dvd, cdrom, sda, etc.
                           pattern: ^\w\w+$
+                          type: string
+                        macAddress:
+                          description: |-
+                            MacAddress is the MAC address of this interface.
+
+                            Please note this field is only supported when the Network API Group is
+                            crd.nsx.vmware.com.
+                          pattern: ^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$
                           type: string
                         mtu:
                           description: |-
@@ -9871,9 +9875,6 @@ spec:
                             Please note this field is only supported if the network connection
                             supports manual IP allocation.
 
-                            Please note the IP address must include the network prefix length, ex.
-                            192.168.0.1/24.
-
                             Please note this field is mutually exclusive with DHCP4.
                           type: string
                         gateway6:
@@ -9886,9 +9887,6 @@ spec:
                             Please note this field is only supported if the network connection
                             supports manual IP allocation.
 
-                            Please note the IP address must include the network prefix length, ex.
-                            2001:db8:101::1/64.
-
                             Please note this field is mutually exclusive with DHCP6.
                           type: string
                         guestDeviceName:
@@ -9898,6 +9896,14 @@ spec:
                             ensure the provided device name does not conflict with any other devices
                             inside the guest, ex. dvd, cdrom, sda, etc.
                           pattern: ^\w\w+$
+                          type: string
+                        macAddress:
+                          description: |-
+                            MacAddress is the MAC address of this interface.
+
+                            Please note this field is only supported when the Network API Group is
+                            crd.nsx.vmware.com.
+                          pattern: ^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$
                           type: string
                         mtu:
                           description: |-
@@ -13806,9 +13812,6 @@ spec:
                             Please note this field is only supported if the network connection
                             supports manual IP allocation.
 
-                            Please note the IP address must include the network prefix length, ex.
-                            192.168.0.1/24.
-
                             Please note this field is mutually exclusive with DHCP4.
                           type: string
                         gateway6:
@@ -13821,9 +13824,6 @@ spec:
                             Please note this field is only supported if the network connection
                             supports manual IP allocation.
 
-                            Please note the IP address must include the network prefix length, ex.
-                            2001:db8:101::1/64.
-
                             Please note this field is mutually exclusive with DHCP6.
                           type: string
                         guestDeviceName:
@@ -13833,6 +13833,14 @@ spec:
                             ensure the provided device name does not conflict with any other devices
                             inside the guest, ex. dvd, cdrom, sda, etc.
                           pattern: ^\w\w+$
+                          type: string
+                        macAddress:
+                          description: |-
+                            MacAddress is the MAC address of this interface.
+
+                            Please note this field is only supported when the Network API Group is
+                            crd.nsx.vmware.com.
+                          pattern: ^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$
                           type: string
                         mtu:
                           description: |-

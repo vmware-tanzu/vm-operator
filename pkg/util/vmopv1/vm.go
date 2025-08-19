@@ -408,8 +408,6 @@ func GroupToVMsMapperFn(
 		for _, m := range group.Status.Members {
 			if m.Kind == "VirtualMachine" &&
 				conditions.IsTrue(&m, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) {
-				// Only trigger a reconcile if the VM condition doesn't have
-				// the group linked condition true, or if the VM is not placed.
 				vmName := m.Name
 				vm := &vmopv1.VirtualMachine{}
 				key := client.ObjectKey{Namespace: namespace, Name: vmName}
@@ -417,6 +415,14 @@ func GroupToVMsMapperFn(
 					continue
 				}
 
+				// Check VM.Spec.GroupName still points to current group in case
+				// it changed while the current group hasn't been reconciled.
+				if vm.Spec.GroupName != group.Name {
+					continue
+				}
+
+				// Only trigger a reconcile if the VM condition doesn't have
+				// the group linked condition true, or if the VM is not placed.
 				if !conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) ||
 					!conditions.IsTrue(vm, vmopv1.VirtualMachineConditionPlacementReady) {
 					requests = append(requests, reconcile.Request{

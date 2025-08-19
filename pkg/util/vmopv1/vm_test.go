@@ -995,6 +995,23 @@ var _ = Describe("GroupToVMsMapperFn", func() {
 				},
 			}
 		})
+		When("the VM has a different group name", func() {
+			BeforeEach(func() {
+				vmObj := &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1.VirtualMachineSpec{
+						GroupName: "different-group",
+					},
+				}
+				withObjs = append(withObjs, vmObj)
+			})
+			Specify("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
 		When("the VM has neither linked nor placement ready conditions", func() {
 			BeforeEach(func() {
 				vmObj := &vmopv1.VirtualMachine{

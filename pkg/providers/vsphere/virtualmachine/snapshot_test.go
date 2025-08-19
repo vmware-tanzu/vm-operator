@@ -91,11 +91,6 @@ func snapShotTests() {
 			snapMo, err := virtualmachine.SnapshotVirtualMachine(args)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(snapMo).ToNot(BeNil())
-			Expect(vmCtx.VM.Status.CurrentSnapshot).To(Equal(&vmopv1common.LocalObjectRef{
-				APIVersion: vmSnapshot.APIVersion,
-				Kind:       vmSnapshot.Kind,
-				Name:       vmSnapshot.Name,
-			}))
 
 			moVM := mo.VirtualMachine{}
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
@@ -110,11 +105,6 @@ func snapShotTests() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(snapMo).ToNot(BeNil())
 			Expect(snapMo).To(Equal(snapMoDup))
-			Expect(vmCtx.VM.Status.CurrentSnapshot).To(Equal(&vmopv1common.LocalObjectRef{
-				APIVersion: vmSnapshot.APIVersion,
-				Kind:       vmSnapshot.Kind,
-				Name:       vmSnapshot.Name,
-			}))
 
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
 			Expect(moVM.Snapshot).ToNot(BeNil())
@@ -131,11 +121,6 @@ func snapShotTests() {
 			snapMo2, err := virtualmachine.SnapshotVirtualMachine(args)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(snapMo2).ToNot(BeNil())
-			Expect(vmCtx.VM.Status.CurrentSnapshot).To(Equal(&vmopv1common.LocalObjectRef{
-				APIVersion: vmSnapshot.APIVersion,
-				Kind:       vmSnapshot.Kind,
-				Name:       args.VMSnapshot.Name,
-			}))
 
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
 			Expect(moVM.Snapshot).ToNot(BeNil())

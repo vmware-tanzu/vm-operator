@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
@@ -47,8 +46,6 @@ func SnapshotVirtualMachine(args SnapshotArgs) (*vimtypes.ManagedObjectReference
 		// 	with spec.currentSnap
 		//
 		args.VMCtx.Logger.Info("Snapshot already exists", "snapshot name", obj.Name)
-		// Update vm.status with currentSnapshot
-		updateVMStatusCurrentSnapshot(args.VMCtx, obj)
 		// Return early, snapshot found
 		return snapMoRef, nil
 	}
@@ -61,8 +58,6 @@ func SnapshotVirtualMachine(args SnapshotArgs) (*vimtypes.ManagedObjectReference
 		return nil, err
 	}
 
-	// Update vm.status with currentSnapshot
-	updateVMStatusCurrentSnapshot(args.VMCtx, obj)
 	return snapMoRef, nil
 }
 
@@ -115,14 +110,6 @@ func DeleteSnapshot(args SnapshotArgs) error {
 	}
 
 	return nil
-}
-
-func updateVMStatusCurrentSnapshot(vmCtx pkgctx.VirtualMachineContext, vmSnapshot vmopv1.VirtualMachineSnapshot) {
-	vmCtx.VM.Status.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-		APIVersion: vmSnapshot.APIVersion,
-		Kind:       vmSnapshot.Kind,
-		Name:       vmSnapshot.Name,
-	}
 }
 
 // FindSnapshot returns the snapshot matching a given name from the

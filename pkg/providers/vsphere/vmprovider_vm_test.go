@@ -3109,7 +3109,7 @@ func vmTests() {
 
 				Context("revert to current snapshot", func() {
 					It("should succeed", func() {
-						// Create snapshot CR to trigger a snapshot workflow
+						// Create snapshot CR to trigger a snapshot workflow.
 						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 
 						// Snapshot should be owned by the VM resource.
@@ -3118,23 +3118,25 @@ func vmTests() {
 						Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
 						Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
 
-						// Create VM so the snapshot reconciliation can run
-						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
-						Expect(err).ToNot(HaveOccurred())
-
-						// Set desired snapshot to point to the above snapshot
+						// Create VM so the snapshot reconciliation can run.
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						// Set desired snapshot to point to the above snapshot.
 						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
 							APIVersion: vmSnapshot.APIVersion,
 							Kind:       vmSnapshot.Kind,
 							Name:       vmSnapshot.Name,
 						}
 
-						err = createOrUpdateVM(ctx, vmProvider, vm)
-						Expect(err).ToNot(HaveOccurred())
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
-						// Verify VM status reflects current snapshot
+						// Verify VM status reflects current snapshot.
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+						// Verify the status has root snapshots.
+						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
+						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
+						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
 					})
 				})
 
@@ -3193,6 +3195,14 @@ func vmTests() {
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 
+						// Verify the spec.currentSnapshot is cleared.
+						Expect(vm.Spec.CurrentSnapshot).To(BeNil())
+
+						// Verify the status has root snapshots.
+						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
+						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
+						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
+
 						// Verify the snapshot is actually current in vCenter
 						var moVM mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
@@ -3234,6 +3244,11 @@ func vmTests() {
 						// Status should reflect the actual current snapshot
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+						// Verify the status has root snapshots.
+						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
+						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
+						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
 					})
 				})
 
@@ -4552,6 +4567,7 @@ func vmTests() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(conditions.IsTrue(updatedSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
 					Expect(updatedSnapshot.Status.Quiesced).To(BeTrue())
+					Expect(updatedSnapshot.Status.PowerState).To(Equal(vm.Status.PowerState))
 				})
 			})
 

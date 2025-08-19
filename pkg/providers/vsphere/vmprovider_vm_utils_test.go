@@ -1405,7 +1405,7 @@ func vmUtilTests() {
 			})
 
 			It("succeeds", func() {
-				err := vsphere.PatchSnapshotStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef)
+				err := vsphere.PatchSnapshotSuccessStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef)
 				Expect(err).ToNot(HaveOccurred())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
@@ -1413,6 +1413,7 @@ func vmUtilTests() {
 				Expect(err).To(BeNil())
 				Expect(snapObj.Status.UniqueID).To(Equal(snapMoRef.Value))
 				Expect(snapObj.Status.Quiesced).To(BeTrue())
+				Expect(snapObj.Status.PowerState).To(Equal(vmCtx.VM.Status.PowerState))
 				Expect(snapObj.Status.Conditions).To(HaveLen(1))
 				Expect(snapObj.Status.Conditions[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReadyCondition))
 				Expect(snapObj.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))

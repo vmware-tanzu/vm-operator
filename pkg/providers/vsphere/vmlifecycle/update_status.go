@@ -125,6 +125,9 @@ func ReconcileStatus(
 		if err := updateCurrentSnapshotStatus(vmCtx, k8sClient); err != nil {
 			errs = append(errs, err)
 		}
+		if err := updateRootSnapshots(vmCtx, k8sClient); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
@@ -1277,4 +1280,64 @@ func FindSnapshotNameInTree(snapshots []vimtypes.VirtualMachineSnapshotTree, tar
 		}
 	}
 	return ""
+}
+
+// updateRootSnapshots updates the VM status to reflect the
+// root snapshots on the VM.
+func updateRootSnapshots(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client) error {
+	vmCtx.Logger.V(4).Info("Updating root snapshots in VM status")
+
+	vm := vmCtx.VM
+	// If VM has no snapshots, clear the root snapshots from the status.
+	if vmCtx.MoVM.Snapshot == nil {
+		if len(vm.Status.RootSnapshots) > 0 {
+			vmCtx.Logger.V(4).Info("VM has no snapshots, clearing status.rootSnapshots")
+			vm.Status.RootSnapshots = nil
+		}
+		return nil
+	}
+
+	// If VM has no root snapshots, clear the root snapshots from the status.
+	if len(vmCtx.MoVM.Snapshot.RootSnapshotList) == 0 {
+		if len(vm.Status.RootSnapshots) > 0 {
+			vmCtx.Logger.V(4).Info("VM has no root snapshots, clearing status.rootSnapshots")
+			vm.Status.RootSnapshots = nil
+		}
+		return nil
+	}
+
+	// Refresh the root snapshots from the VM mo
+	var newRootSnapshots []common.LocalObjectRef //nolint:prealloc
+	for _, rootSnapshot := range vmCtx.MoVM.Snapshot.RootSnapshotList {
+		objKey := ctrlclient.ObjectKey{
+			Name:      rootSnapshot.Name,
+			Namespace: vm.Namespace,
+		}
+
+		rootSnapshotCR := &vmopv1.VirtualMachineSnapshot{}
+		if err := k8sClient.Get(vmCtx, objKey, rootSnapshotCR); err != nil {
+			if !apierrors.IsNotFound(err) {
+				vmCtx.Logger.Error(err, "Failed to get VirtualMachineSnapshot custom resource",
+					"snapshotName", rootSnapshot.Name)
+				return err
+			}
+			// TODO (lubron) Snapshot custom resource doesn't exist, but the snapshot
+			// could be created by admin on the vSphere. We will reference these kind
+			// of snapshots in other way, like externally created snapshots, so the snapshot
+			// graph reflects the actual state of the VM in vSphere.
+			vmCtx.Logger.V(4).Info("VirtualMachineSnapshot custom resource not found, skipping",
+				"snapshotName", rootSnapshot.Name)
+			continue
+		}
+
+		newRootSnapshots = append(newRootSnapshots, common.LocalObjectRef{
+			APIVersion: rootSnapshotCR.APIVersion,
+			Kind:       rootSnapshotCR.Kind,
+			Name:       rootSnapshotCR.Name,
+		})
+	}
+
+	vm.Status.RootSnapshots = newRootSnapshots
+
+	return nil
 }

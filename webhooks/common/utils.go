@@ -7,6 +7,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -46,6 +47,7 @@ func RetrieveDefaultImagePublishContentLibrary(ctx context.Context, c ctrlclient
 		for i, cl := range clList.Items {
 			clNames[i] = cl.Name
 		}
+		sort.Strings(clNames)
 		return nil, apierrors.NewBadRequest(
 			fmt.Sprintf("more than one default ContentLibrary found: %s", strings.Join(clNames, ", ")))
 	}

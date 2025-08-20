@@ -217,7 +217,7 @@ help: ## Display this help
 .PHONY: test-api
 test-api: | $(GINKGO)
 test-api: ## Run API tests
-	COVERAGE_FILE="" hack/test.sh ./api
+	COVERAGE_FILE="" hack/test.sh ./api/test
 
 .PHONY: test-nocover
 test-nocover: | $(GINKGO)

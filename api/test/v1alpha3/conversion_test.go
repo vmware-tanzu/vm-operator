@@ -2,7 +2,7 @@
 // The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha4_test
+package v1alpha3_test
 
 import (
 	"encoding/json"
@@ -16,8 +16,8 @@ import (
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	"sigs.k8s.io/randfill"
 
-	"github.com/vmware-tanzu/vm-operator/api/utilconversion/fuzztests"
-	vmopv1a4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
+	"github.com/vmware-tanzu/vm-operator/api/test/utilconversion/fuzztests"
+	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 )
@@ -31,7 +31,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 
 	BeforeEach(func() {
 		scheme = runtime.NewScheme()
-		Expect(vmopv1a4.AddToScheme(scheme)).To(Succeed())
+		Expect(vmopv1a3.AddToScheme(scheme)).To(Succeed())
 		Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
 	})
 
@@ -44,7 +44,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachine{},
-				Spoke:  &vmopv1a4.VirtualMachine{},
+				Spoke:  &vmopv1a3.VirtualMachine{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineFieldsFuncs,
 				},
@@ -67,7 +67,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineClass{},
-				Spoke:  &vmopv1a4.VirtualMachineClass{},
+				Spoke:  &vmopv1a3.VirtualMachineClass{},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -87,7 +87,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineImage{},
-				Spoke:  &vmopv1a4.VirtualMachineImage{},
+				Spoke:  &vmopv1a3.VirtualMachineImage{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineImageFieldsFuncs,
 				},
@@ -110,7 +110,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.ClusterVirtualMachineImage{},
-				Spoke:  &vmopv1a4.ClusterVirtualMachineImage{},
+				Spoke:  &vmopv1a3.ClusterVirtualMachineImage{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineImageFieldsFuncs,
 				},
@@ -133,7 +133,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineImageCache{},
-				Spoke:  &vmopv1a4.VirtualMachineImageCache{},
+				Spoke:  &vmopv1a3.VirtualMachineImageCache{},
 				FuzzerFuncs: []fuzzer.FuzzerFuncs{
 					overrideVirtualMachineImageCacheFieldsFuncs,
 				},
@@ -156,7 +156,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachinePublishRequest{},
-				Spoke:  &vmopv1a4.VirtualMachinePublishRequest{},
+				Spoke:  &vmopv1a3.VirtualMachinePublishRequest{},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -176,7 +176,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineService{},
-				Spoke:  &vmopv1a4.VirtualMachineService{},
+				Spoke:  &vmopv1a3.VirtualMachineService{},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -196,7 +196,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineSetResourcePolicy{},
-				Spoke:  &vmopv1a4.VirtualMachineSetResourcePolicy{},
+				Spoke:  &vmopv1a3.VirtualMachineSetResourcePolicy{},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -216,7 +216,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineWebConsoleRequest{},
-				Spoke:  &vmopv1a4.VirtualMachineWebConsoleRequest{},
+				Spoke:  &vmopv1a3.VirtualMachineWebConsoleRequest{},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -234,7 +234,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
-		func(vmSpec *vmopv1a4.VirtualMachineSpec, c randfill.Continue) {
+		func(vmSpec *vmopv1a3.VirtualMachineSpec, c randfill.Continue) {
 			c.Fill(vmSpec)
 
 			if bs := vmSpec.Bootstrap; bs != nil {
@@ -263,7 +263,7 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 				}
 			}
 		},
-		func(vmStatus *vmopv1a4.VirtualMachineStatus, c randfill.Continue) {
+		func(vmStatus *vmopv1a3.VirtualMachineStatus, c randfill.Continue) {
 			c.Fill(vmStatus)
 		},
 		func(msg *json.RawMessage, c randfill.Continue) {

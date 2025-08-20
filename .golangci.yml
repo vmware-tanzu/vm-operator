@@ -270,6 +270,9 @@ linters:
       text: "^SA1019: .*TCPSocket is deprecated"
     - linters:
       - staticcheck
+      text: "^SA1019: c?vmiAfter.Status.ContentLibraryRef is deprecated"
+    - linters:
+      - staticcheck
       text: "QF1008: could remove embedded field"
     - linters:
       - staticcheck

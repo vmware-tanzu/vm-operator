@@ -63,9 +63,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		Watches(&vmopv1.VirtualMachineGroup{},
-			handler.EnqueueRequestsFromMapFunc(vmGroupToParentGroupMapperFn())).
+			handler.EnqueueRequestsFromMapFunc(MemberToGroupMapperFn(ctx))).
 		Watches(&vmopv1.VirtualMachine{},
-			handler.EnqueueRequestsFromMapFunc(vmToParentGroupMapperFn())).
+			handler.EnqueueRequestsFromMapFunc(MemberToGroupMapperFn(ctx))).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
 			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
@@ -73,50 +73,40 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Complete(r)
 }
 
-// vmGroupToParentGroupMapperFn returns a mapper function that enqueues
-// reconcile requests for VirtualMachineGroup when another VirtualMachineGroup's
-// Spec.GroupName pointing to it changes.
-func vmGroupToParentGroupMapperFn() handler.MapFunc {
-	return func(_ context.Context, o client.Object) []reconcile.Request {
-		vmGroup, ok := o.(*vmopv1.VirtualMachineGroup)
+// MemberToGroupMapperFn returns a MapFunc that reconciles a VirtualMachineGroup
+// when a linked member (VM or VMGroup) changes. This ensures the group's status
+// is updated in time to reflect the current member latest state (e.g. ready
+// condition for VMGroup kind members or power state for VM kind members).
+func MemberToGroupMapperFn(ctx context.Context) handler.MapFunc {
+
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
+		memberObj, ok := o.(vmopv1.VirtualMachineOrGroup)
 		if !ok {
-			panic(fmt.Sprintf("Expected a VirtualMachineGroup, but got a %T", o))
+			panic(fmt.Sprintf("Expected VirtualMachineOrGroup, but got %T", o))
 		}
 
 		var requests []reconcile.Request
 
-		if vmGroup.Spec.GroupName != "" {
+		if memberObj.GetGroupName() != "" && conditions.IsTrue(
+			memberObj,
+			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+		) {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: client.ObjectKey{
-					Namespace: vmGroup.Namespace,
-					Name:      vmGroup.Spec.GroupName,
+					Namespace: memberObj.GetNamespace(),
+					Name:      memberObj.GetGroupName(),
 				},
 			})
 		}
 
-		return requests
-	}
-}
-
-// vmToParentGroupMapperFn returns a mapper function that enqueues reconcile
-// requests for VirtualMachineGroup when a VirtualMachine's Spec.GroupName
-// pointing to it changes.
-func vmToParentGroupMapperFn() handler.MapFunc {
-	return func(_ context.Context, o client.Object) []reconcile.Request {
-		vm, ok := o.(*vmopv1.VirtualMachine)
-		if !ok {
-			panic(fmt.Sprintf("Expected a VirtualMachine, but got a %T", o))
-		}
-
-		var requests []reconcile.Request
-
-		if vm.Spec.GroupName != "" {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: client.ObjectKey{
-					Namespace: vm.Namespace,
-					Name:      vm.Spec.GroupName,
-				},
-			})
+		if len(requests) > 0 {
+			pkgutil.FromContextOrDefault(ctx).WithValues(
+				"memberName", memberObj.GetName(),
+				"memberNamespace", memberObj.GetNamespace(),
+			).V(4).Info(
+				"Reconciling VirtualMachineGroup due to its member watch",
+				"requests", requests,
+			)
 		}
 
 		return requests
@@ -300,7 +290,7 @@ func (r *Reconciler) reconcileMembers(
 		for _, member := range bootOrder.Members {
 			key := member.Kind + "/" + member.Name
 
-			// Check if we have an existing status to update, or create a new one.
+			// Check if we have an existing status to update, or create new one.
 			var ms *vmopv1.VirtualMachineGroupMemberStatus
 			if s, ok := existingStatuses[key]; ok {
 				ms = s.DeepCopy()
@@ -385,19 +375,22 @@ func (r *Reconciler) reconcileMember(
 		if groupName == "" {
 			groupNameErr = fmt.Errorf("member has no group name")
 		} else {
-			groupNameErr = fmt.Errorf("member has a different group name: %s",
+			groupNameErr = fmt.Errorf("member has a different group name: %q",
 				groupName)
 		}
 
-		logger.Error(groupNameErr, "Invalid group name for member",
-			"groupName", groupName)
 		conditions.MarkError(
 			ms,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 			"NotMember",
 			groupNameErr,
 		)
-		return groupNameErr
+
+		logger.Error(groupNameErr, "Invalid group name for member")
+
+		// Return nil to avoid requeueing the group. It will be requeued as soon
+		// as the member is updated with the correct group name.
+		return nil
 	}
 
 	patch := client.MergeFrom(obj.DeepCopyObject().(vmopv1.VirtualMachineOrGroup))

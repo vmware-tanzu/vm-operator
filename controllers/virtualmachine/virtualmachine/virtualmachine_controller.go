@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -134,6 +134,17 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 					ctx,
 					r.Logger.WithName("SnapshotToVMMapper"),
 				),
+			),
+		)
+	}
+
+	// Watch VirtualMachineGroup resources to trigger VMs reconciliation when
+	// their groups are created or updated (e.g. placement results).
+	if pkgcfg.FromContext(ctx).Features.VMGroups {
+		builder = builder.Watches(
+			&vmopv1.VirtualMachineGroup{},
+			handler.EnqueueRequestsFromMapFunc(
+				vmopv1util.GroupToVMsMapperFn(ctx, r.Client),
 			),
 		)
 	}

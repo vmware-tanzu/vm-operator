@@ -13,7 +13,6 @@ type VarName uint8
 
 const (
 	_varNameBegin VarName = iota
-
 	MaxCreateVMsOnProvider
 	CreateVMRequeueDelay
 	PoweredOnVMHasIPRequeueDelay
@@ -51,6 +50,7 @@ const (
 	WebhookServiceNamespace
 	WebhookSecretName
 	WebhookSecretNamespace
+	CRDCleanupEnabled
 	FSSInstanceStorage
 	FSSK8sWorkloadMgmtAPI
 	FSSPodVMOnStretchedSupervisor
@@ -89,6 +89,10 @@ func All() []VarName {
 //nolint:gocyclo
 func (n VarName) String() string {
 	switch n {
+
+	//
+	// Config
+	//
 	case MaxCreateVMsOnProvider:
 		return "MAX_CREATE_VMS_ON_PROVIDER"
 	case CreateVMRequeueDelay:
@@ -163,6 +167,12 @@ func (n VarName) String() string {
 		return "WEBHOOK_SECRET_NAME"
 	case WebhookSecretNamespace:
 		return "WEBHOOK_SECRET_NAMESPACE"
+	case CRDCleanupEnabled:
+		return "CRD_CLEANUP_ENABLED"
+
+	//
+	// Features/Capabilities
+	//
 	case FSSInstanceStorage:
 		return "FSS_WCP_INSTANCE_STORAGE"
 	case FSSK8sWorkloadMgmtAPI:

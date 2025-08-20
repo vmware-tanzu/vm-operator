@@ -163,6 +163,8 @@ linters:
         - alias: proxyaddr
           pkg: github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr
 
+        - alias: pkgcrd
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/crd
         - alias: pkgcfg
           pkg: github.com/vmware-tanzu/vm-operator/pkg/config
         - alias: pkgctx

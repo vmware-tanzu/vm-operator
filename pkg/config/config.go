@@ -154,6 +154,13 @@ type Config struct {
 	//
 	// Defaults to "wcp-vmop-sa-vc-auth".
 	VCCredsSecretName string
+
+	// CRDCleanupEnabled indicates to delete CRDs or remove their fields when a
+	// feature/capability is disabled.
+	//
+	// Please note, this field has no effect if a CRD is being installed for the
+	// first time.
+	CRDCleanupEnabled bool
 }
 
 // GetMaxDeployThreadsOnProvider returns MaxDeployThreadsOnProvider if it is >0

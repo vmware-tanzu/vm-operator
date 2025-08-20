@@ -1,0 +1,431 @@
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
+package crd
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
+
+	"github.com/vmware-tanzu/vm-operator/config/crd"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+)
+
+// UnstructuredBases returns a list of the base CRDs.
+func UnstructuredBases() ([]unstructured.Unstructured, error) {
+	files, err := crd.Bases.ReadDir("bases")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read embedded crd bases: %w", err)
+	}
+
+	// The following command may be used to list the expected CRD files:
+	//
+	//   /bin/ls ./config/crd/bases | xargs -n1 echo | sed 's~^\(.\{1,\}\)~case "bases/\1":~g'
+	crds := make([]unstructured.Unstructured, len(files))
+	for i := range files {
+		crds[i].Object = map[string]any{}
+		if err := decode(files[i].Name(), &crds[i]); err != nil {
+			return nil, err
+		}
+	}
+
+	return crds, nil
+}
+
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions/status,verbs=get;update;patch
+
+// Install installs the CRDs into the provided Kubernetes environment based on
+// the current set of feature/capability flags. This will also remove any APIs
+// from the provided environment if their flags have been disabled.
+func Install(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	mutateFn func(kind string, obj *unstructured.Unstructured) error) error {
+
+	crds, err := UnstructuredBases()
+	if err != nil {
+		return fmt.Errorf("failed to read embedded crd bases: %w", err)
+	}
+
+	for i := range crds {
+		c := &crds[i]
+		k, _, err := unstructured.NestedString(c.Object, "spec", "names", "kind")
+		if err != nil {
+			return fmt.Errorf("failed to get crd name: %w", err)
+		}
+
+		logger := pkgutil.FromContextOrDefault(ctx)
+		logger.Info("Processing CRD", "kind", k)
+
+		if mutateFn != nil {
+			if err := mutateFn(k, c); err != nil {
+				return fmt.Errorf("failed to mutate crd %s: %w", k, err)
+			}
+		}
+
+		// Use the following command from the root of this project to print a
+		// full and current list of CRD names:
+		//
+		//   /bin/ls ./config/crd/bases | xargs -I% -n1 grep '    kind: ' config/crd/bases/% | sed 's~^.\{1,\}: \(.\{1,\}\)~case "\1":~g'
+		//
+		// The output from the above command may be pasted directly into the
+		// following "switch" statement in order to keep it up-to-date.
+		switch k {
+		// case "ClusterVirtualMachineImage":
+		// case "ContentLibraryProvider":
+		// case "ContentSourceBinding":
+		// case "ContentSource":
+		// case "VirtualMachineClassBinding":
+		// case "VirtualMachineClass":
+		case "VirtualMachineClassInstance":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				pkgcfg.FromContext(ctx).Features.ImmutableClasses,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
+		case "VirtualMachineGroupPublishRequest",
+			"VirtualMachineGroup":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				pkgcfg.FromContext(ctx).Features.VMGroups,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
+		case "VirtualMachineImageCache":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				pkgcfg.FromContext(ctx).Features.FastDeploy,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
+		// case "VirtualMachineImage":
+		// case "VirtualMachinePublishRequest":
+		// case "VirtualMachineReplicaSet":
+		case "VirtualMachine":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				true,
+				c,
+				k,
+				func(
+					kind string,
+					obj *unstructured.Unstructured,
+					shouldRemoveFields bool) error {
+
+					if !pkgcfg.FromContext(ctx).Features.ImmutableClasses {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("class")); err != nil {
+
+							return err
+						}
+					}
+
+					if !pkgcfg.FromContext(ctx).Features.VMGroups {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("bootOptions"),
+							specFieldPath("groupName")); err != nil {
+
+							return err
+						}
+					}
+
+					if !pkgcfg.FromContext(ctx).Features.VMSnapshots {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("currentSnapshot"),
+							statusFieldPath("currentSnapshot"),
+							statusFieldPath("rootSnapshots")); err != nil {
+
+							return err
+						}
+					}
+
+					return nil
+				}); err != nil {
+
+				return err
+			}
+
+		// case "VirtualMachineService":
+		// case "VirtualMachineSetResourcePolicy":
+		case "VirtualMachineSnapshot":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				pkgcfg.FromContext(ctx).Features.VMSnapshots,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
+		// case "VirtualMachineWebConsoleRequest":
+		// case "WebConsoleRequest":
+		default:
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				true,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func removeFields(
+	ctx context.Context,
+	k string,
+	c *unstructured.Unstructured,
+	shouldRemoveFields bool,
+	fields ...[]string) error {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+
+	for j := range fields {
+		if !shouldRemoveFields {
+			logger.Info(
+				"Skipping CRD field removal",
+				"kind", k,
+				"field", strings.Join(fields[j], "."))
+		} else {
+			logger.Info(
+				"Removing CRD field",
+				"kind", k,
+				"field", strings.Join(fields[j], "."))
+
+			versions, _, err := unstructured.NestedSlice(
+				c.Object, "spec", "versions")
+			if err != nil {
+				return fmt.Errorf(
+					"failed to get crd %s versions: %w", k, err)
+			}
+
+			for k := range versions {
+				v := versions[k].(map[string]any)
+				unstructured.RemoveNestedField(v, fields[j]...)
+			}
+
+			if err := unstructured.SetNestedSlice(
+				c.Object,
+				versions,
+				"spec",
+				"versions"); err != nil {
+				return fmt.Errorf(
+					"failed to remove fields for crd %q: %w", k, err)
+			}
+		}
+	}
+	return nil
+}
+
+func updateOrDeleteUnstructured(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	enabled bool,
+	c *unstructured.Unstructured,
+	k string,
+	mutateFn func(
+		kind string,
+		obj *unstructured.Unstructured,
+		shouldRemoveFields bool) error,
+) error {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+
+	obj := unstructured.Unstructured{
+		Object: map[string]any{},
+	}
+	obj.SetGroupVersionKind(c.GroupVersionKind())
+	obj.SetName(c.GetName())
+	obj.SetNamespace(c.GetNamespace())
+
+	exists := true
+	if err := k8sClient.Get(
+		ctx,
+		ctrlclient.ObjectKeyFromObject(&obj),
+		&obj); err != nil {
+
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get crd %q: %w", k, err)
+		}
+
+		exists = false
+	}
+
+	if !exists {
+		//
+		// Create the CRD
+		//
+
+		if enabled {
+			if mutateFn != nil {
+				logger.Info("Mutating CRD on create", "kind", k)
+				if err := mutateFn(k, c, true); err != nil {
+					return fmt.Errorf(
+						"failed to mutate crd %q on create: %w", k, err)
+				}
+			}
+
+			logger.Info("Creating CRD", "kind", k)
+			if err := k8sClient.Create(ctx, c); err != nil {
+				return fmt.Errorf("failed to create crd %q: %w", k, err)
+			}
+			logger.V(4).Info("Created CRD", "kind", k)
+		} else {
+			logger.Info("Skipped creation of CRD", "kind", k)
+		}
+
+		return nil
+	}
+
+	if !enabled {
+		//
+		// Delete the CRD
+		//
+
+		if pkgcfg.FromContext(ctx).CRDCleanupEnabled {
+			logger.Info("Deleting CRD", "kind", k)
+			if err := k8sClient.Delete(ctx, c); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to delete crd %s: %w", k, err)
+				}
+			} else {
+				logger.V(4).Info("Deleted CRD", "kind", k)
+			}
+		} else {
+			logger.Info("Skipped CRD deletion", "kind", k)
+		}
+		return nil
+	}
+
+	//
+	// Update the CRD
+	//
+
+	// Create the patch to update the object.
+	objPatch := ctrlclient.MergeFrom(
+		obj.DeepCopyObject().(ctrlclient.Object))
+
+	// Get a possible CustomResourceConversion field value.
+	crc, hasCRC, err := unstructured.NestedMap(
+		obj.Object,
+		"spec", "conversion")
+	if err != nil {
+		return fmt.Errorf("failed to get crd %q conversion: %w", k, err)
+	}
+
+	// Copy the new spec into position.
+	spec, _, err := unstructured.NestedMap(c.Object, "spec")
+	if err != nil {
+		return fmt.Errorf("failed to get crd %q spec: %w", k, err)
+	}
+	if err := unstructured.SetNestedMap(
+		obj.Object,
+		spec,
+		"spec"); err != nil {
+		return fmt.Errorf("failed to set crd %q spec: %w", k, err)
+	}
+
+	// Reapply the CustomResourceConversion if one existed.
+	if hasCRC {
+		if err := unstructured.SetNestedMap(
+			obj.Object,
+			crc,
+			"spec", "conversion"); err != nil {
+			return fmt.Errorf("failed to set crd %q conversion: %w", k, err)
+		}
+	}
+
+	// Do possible mutations.
+	if mutateFn != nil {
+		logger.Info("Mutating CRD on update", "kind", k)
+		if err := mutateFn(
+			k,
+			&obj,
+			pkgcfg.FromContext(ctx).CRDCleanupEnabled); err != nil {
+
+			return fmt.Errorf(
+				"failed to mutate crd %q on update: %w", k, err)
+		}
+	}
+
+	// Patch the CRD with the change.
+	if err := k8sClient.Patch(ctx, &obj, objPatch); err != nil {
+		return fmt.Errorf("failed to patch crd %q: %w", k, err)
+	}
+
+	return nil
+}
+
+func decode(fileName string, dst ctrlclient.Object) error {
+	data, err := crd.Bases.ReadFile("bases/" + fileName)
+	if err != nil {
+		return fmt.Errorf("failed to read embedded crd: %w", err)
+	}
+	if err := yaml.Unmarshal(data, dst); err != nil {
+		return fmt.Errorf("failed to decode embedded crd: %w", err)
+	}
+	return nil
+}
+
+func specFieldPath(fieldName string) []string {
+	return []string{
+		"schema",
+		"openAPIV3Schema",
+		"properties",
+		"spec",
+		"properties",
+		fieldName,
+	}
+}
+
+func statusFieldPath(fieldName string) []string {
+	return []string{
+		"schema",
+		"openAPIV3Schema",
+		"properties",
+		"status",
+		"properties",
+		fieldName,
+	}
+}

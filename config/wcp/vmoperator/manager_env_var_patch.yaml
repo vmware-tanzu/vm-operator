@@ -61,6 +61,12 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
+    name: CRD_CLEANUP_ENABLED
+    value: "false"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
     name: FSS_PODVMONSTRETCHEDSUPERVISOR
     value: "<FSS_PODVMONSTRETCHEDSUPERVISOR>"
 

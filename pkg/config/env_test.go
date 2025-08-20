@@ -109,6 +109,7 @@ var _ = Describe(
 					Expect(os.Setenv("SYNC_IMAGE_REQUEUE_DELAY", "128h")).To(Succeed())
 					Expect(os.Setenv("DEPLOYMENT_NAME", "129")).To(Succeed())
 					Expect(os.Setenv("SIGUSR2_RESTART_ENABLED", "true")).To(Succeed())
+					Expect(os.Setenv("CRD_CLEANUP_ENABLED", "true")).To(Succeed())
 				})
 				It("Should return a default config overridden by the environment", func() {
 					Expect(config).To(BeComparableTo(pkgcfg.Config{
@@ -145,6 +146,7 @@ var _ = Describe(
 						WebhookSecretName:            "123",
 						WebhookSecretNamespace:       "124",
 						WebhookSecretVolumeMountPath: pkgcfg.Default().WebhookSecretVolumeMountPath,
+						CRDCleanupEnabled:            true,
 						Features: pkgcfg.FeatureStates{
 							InstanceStorage:           false,
 							K8sWorkloadMgmtAPI:        true,

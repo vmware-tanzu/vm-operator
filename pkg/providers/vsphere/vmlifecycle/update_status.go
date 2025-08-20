@@ -318,11 +318,7 @@ func reconcileStatusSnapshot(
 	_ ReconcileStatusData) []error {
 
 	var errs []error
-
-	if err := updateCurrentSnapshotStatus(vmCtx, k8sClient); err != nil {
-		errs = append(errs, err)
-	}
-	if err := updateRootSnapshots(vmCtx, k8sClient); err != nil {
+	if err := SyncVMSnapshotTreeStatus(vmCtx, k8sClient); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1424,9 +1420,21 @@ func updateProbeStatusGuestInfo(
 	return probeResultSuccess, ""
 }
 
-// UpdateCurrentSnapshotStatus updates the VM status to reflect the
+// SyncVMSnapshotTreeStatus updates the VM's current and root snapshots status.
+func SyncVMSnapshotTreeStatus(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) error {
+
+	if err := updateCurrentSnapshotStatus(vmCtx, k8sClient); err != nil {
+		return err
+	}
+
+	return updateRootSnapshots(vmCtx, k8sClient)
+}
+
+// updateCurrentSnapshotStatus updates the VM status to reflect the
 // current snapshot on the VM.
-func UpdateCurrentSnapshotStatus(
+func updateCurrentSnapshotStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) error {
 
@@ -1488,7 +1496,6 @@ func UpdateCurrentSnapshotStatus(
 		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot custom resource not found, clearing status",
 			"snapshotName", snapshotName)
 		vm.Status.CurrentSnapshot = nil
-
 		return nil
 	}
 
@@ -1531,9 +1538,9 @@ func FindSnapshotNameInTree(snapshots []vimtypes.VirtualMachineSnapshotTree, tar
 	return ""
 }
 
-// UpdateRootSnapshots updates the VM status to reflect the
+// updateRootSnapshots updates the VM status to reflect the
 // root snapshots on the VM.
-func UpdateRootSnapshots(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client) error {
+func updateRootSnapshots(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client) error {
 	vmCtx.Logger.V(4).Info("Updating root snapshots in VM status")
 
 	vm := vmCtx.VM

@@ -740,21 +740,3 @@ func isVMPaused(vmCtx pkgctx.VirtualMachineContext) bool {
 	delete(vmCtx.VM.Labels, vmopv1.PausedVMLabelKey)
 	return false
 }
-
-func PatchSnapshotSuccessStatus(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client,
-	vmSnapshot *vmopv1.VirtualMachineSnapshot, snapMoRef *vimtypes.ManagedObjectReference) error {
-	snapPatch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
-	vmSnapshot.Status.UniqueID = snapMoRef.Reference().Value
-	vmSnapshot.Status.Quiesced = vmSnapshot.Spec.Quiesce != nil
-	vmSnapshot.Status.PowerState = vmCtx.VM.Status.PowerState
-
-	conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
-
-	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, snapPatch); err != nil {
-		return fmt.Errorf(
-			"failed to patch snapshot status resource %s/%s: err: %s",
-			vmSnapshot.Name, vmSnapshot.Namespace, err.Error())
-	}
-
-	return nil
-}

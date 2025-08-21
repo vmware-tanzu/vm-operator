@@ -30,7 +30,7 @@ const (
 	modifyAnnotationNotAllowedForNonAdmin = "modifying this annotation is not allowed for non-admin users"
 	emptyPowerStateNotAllowedAfterSet     = "cannot set powerState to empty once it's been set"
 	invalidTimeFormat                     = "time must be in RFC3339Nano format"
-	selfReferenceMember                   = "group cannot have itself as a member"
+	selfReferenceMemberOrGroupName        = "group cannot have itself as a member or group name"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachinegroup,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinegroups,versions=v1alpha5,name=default.validating.virtualmachinegroup.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -100,6 +100,7 @@ func (v validator) ValidateCreate(
 
 	fieldErrs = append(fieldErrs, v.validatePowerState(ctx, vmGroup, nil)...)
 	fieldErrs = append(fieldErrs, v.validateBootOrderMembers(ctx, vmGroup)...)
+	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vmGroup)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -133,6 +134,7 @@ func (v validator) ValidateUpdate(
 	)
 
 	fieldErrs = append(fieldErrs, v.validateBootOrderMembers(ctx, vmGroup)...)
+	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vmGroup)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -230,10 +232,28 @@ func (v validator) validateBootOrderMembers(
 				allErrs = append(allErrs, field.Invalid(
 					path.Index(bootOrderIdx).Child("members").Index(memberIdx),
 					memberKey,
-					selfReferenceMember,
+					selfReferenceMemberOrGroupName,
 				))
 			}
 		}
+	}
+
+	return allErrs
+}
+
+// validateGroupName validates that the group name is not the same as the group.
+func (v validator) validateGroupName(
+	_ *pkgctx.WebhookRequestContext,
+	vmGroup *vmopv1.VirtualMachineGroup) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if vmGroup.Spec.GroupName == vmGroup.Name {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "groupName"),
+			vmGroup.Spec.GroupName,
+			selfReferenceMemberOrGroupName,
+		))
 	}
 
 	return allErrs

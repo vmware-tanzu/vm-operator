@@ -26,7 +26,7 @@ const (
 	invalidTimeFormatMsg                     = "time must be in RFC3339Nano format"
 	modifyAnnotationNotAllowedForNonAdminMsg = "modifying this annotation is not allowed for non-admin users"
 	emptyPowerStateNotAllowedAfterSetMsg     = "cannot set powerState to empty once it's been set"
-	selfReferenceMemberNotAllowedMsg         = "group cannot have itself as a member"
+	selfRefMemberOrGroupMsg                  = "group cannot have itself as a member or group name"
 )
 
 func intgTests() {
@@ -111,9 +111,9 @@ func intgTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidTimeFormat   bool
-		duplicateMember     bool
-		selfReferenceMember bool
+		invalidTimeFormat bool
+		duplicateMember   bool
+		selfReferenced    bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
@@ -130,7 +130,7 @@ func intgTestsValidateCreate() {
 			ctx.vmGroup.Spec.BootOrder = append(ctx.vmGroup.Spec.BootOrder, ctx.vmGroup.Spec.BootOrder...)
 		}
 
-		if args.selfReferenceMember {
+		if args.selfReferenced {
 			ctx.vmGroup.Spec.BootOrder = append(ctx.vmGroup.Spec.BootOrder, vmopv1.VirtualMachineGroupBootOrderGroup{
 				Members: []vmopv1.GroupMember{
 					{
@@ -139,6 +139,7 @@ func intgTestsValidateCreate() {
 					},
 				},
 			})
+			ctx.vmGroup.Spec.GroupName = ctx.vmGroup.Name
 		}
 
 		err := ctx.Client.Create(ctx, ctx.vmGroup)
@@ -167,8 +168,8 @@ func intgTestsValidateCreate() {
 			createArgs{invalidTimeFormat: true}, false, invalidTimeFormatMsg),
 		Entry("should not work with duplicate members",
 			createArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachine/vm-1\", spec.bootOrder[1].members[1]: Duplicate value: \"VirtualMachine/vm-2\", spec.bootOrder[1].members[2]: Duplicate value: \"VirtualMachineGroup/vmgroup-1\""),
-		Entry("should not work with self reference member",
-			createArgs{selfReferenceMember: true}, false, selfReferenceMemberNotAllowedMsg),
+		Entry("should not work with self referenced member or group name",
+			createArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
 	)
 }
 
@@ -274,7 +275,18 @@ func intgTestsValidateUpdate() {
 
 		It("should deny the request", func() {
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(selfReferenceMemberNotAllowedMsg))
+			Expect(err.Error()).To(ContainSubstring(selfRefMemberOrGroupMsg))
+		})
+	})
+
+	When("update is performed with self reference group name", func() {
+		BeforeEach(func() {
+			ctx.vmGroup.Spec.GroupName = ctx.vmGroup.Name
+		})
+
+		It("should deny the request", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(selfRefMemberOrGroupMsg))
 		})
 	})
 }

@@ -118,7 +118,7 @@ func unitTestsValidateCreate() {
 		lastUpdatedPowerState string
 		nextForceSyncTime     string
 		duplicateMember       bool
-		selfReferenceMember   bool
+		selfReferenced        bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
@@ -162,7 +162,7 @@ func unitTestsValidateCreate() {
 			}
 		}
 
-		if args.selfReferenceMember {
+		if args.selfReferenced {
 			ctx.vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
 				{
 					Members: []vmopv1.GroupMember{
@@ -173,6 +173,7 @@ func unitTestsValidateCreate() {
 					},
 				},
 			}
+			ctx.vmGroup.Spec.GroupName = ctx.vmGroup.Name
 		}
 
 		var err error
@@ -202,8 +203,8 @@ func unitTestsValidateCreate() {
 			createArgs{isServiceUser: false, nextForceSyncTime: time.Now().Format(time.RFC3339Nano), lastUpdatedPowerState: time.Now().Format(time.RFC3339Nano)}, true, ""),
 		Entry("should not work with duplicate members",
 			createArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachine/vm-dup\""),
-		Entry("should not work with self reference member",
-			createArgs{selfReferenceMember: true}, false, selfReferenceMemberNotAllowedMsg),
+		Entry("should not work with self reference member or group name",
+			createArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
 	)
 }
 
@@ -220,7 +221,7 @@ func unitTestsValidateUpdate() {
 		invalidLastUpdatedPowerState bool
 		nextForceSyncTime            string
 		duplicateMember              bool
-		selfReferenceMember          bool
+		selfReferenced               bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string) {
@@ -278,7 +279,7 @@ func unitTestsValidateUpdate() {
 			}
 		}
 
-		if args.selfReferenceMember {
+		if args.selfReferenced {
 			ctx.vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
 				{
 					Members: []vmopv1.GroupMember{
@@ -289,6 +290,7 @@ func unitTestsValidateUpdate() {
 					},
 				},
 			}
+			ctx.vmGroup.Spec.GroupName = ctx.vmGroup.Name
 		}
 
 		var err error
@@ -324,8 +326,8 @@ func unitTestsValidateUpdate() {
 			updateArgs{modifyLastUpdatedPowerState: true, isServiceUser: false, oldPowerState: vmopv1.VirtualMachinePowerStateOn, newPowerState: vmopv1.VirtualMachinePowerStateOff, nextForceSyncTime: time.Now().Format(time.RFC3339Nano)}, true, ""),
 		Entry("should not work with duplicate members",
 			updateArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachineGroup/vmg-dup\""),
-		Entry("should not work with self reference member",
-			updateArgs{selfReferenceMember: true}, false, selfReferenceMemberNotAllowedMsg),
+		Entry("should not work with self reference member or group name",
+			updateArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
 	)
 }
 

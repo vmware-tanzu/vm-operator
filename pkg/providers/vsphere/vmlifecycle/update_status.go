@@ -52,107 +52,421 @@ func ReconcileStatus(
 
 	vm := vmCtx.VM
 
-	// This is implicitly true: ensure the condition is set since it is how we determine the old v1a1 Phase.
+	// This is implicitly true: ensure the condition is set since it is how we
+	// determine the old v1a1 Phase.
 	conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
 
-	if !vmopv1util.IsClasslessVM(*vmCtx.VM) {
-		if vm.Status.Class == nil {
-			// When resize is enabled, don't backfill the class from the Spec since we don't know if the
-			// Spec class has been applied to the VM. When resize is enabled, this field is updated after
-			// a successful resize.
-			if f := pkgcfg.FromContext(vmCtx).Features; !f.VMResize && !f.VMResizeCPUMemory {
-				vm.Status.Class = &common.LocalObjectRef{
-					APIVersion: vmopv1.GroupVersion.String(),
-					Kind:       "VirtualMachineClass",
-					Name:       vm.Spec.ClassName,
-				}
-			}
-		}
-	} else {
-		vm.Status.Class = nil
-	}
+	var errs []error
 
-	var (
-		err         error
-		errs        []error
-		extraConfig map[string]string
-		summary     = vmCtx.MoVM.Summary
-	)
-
-	if err := UpdateGroupLinkedCondition(vmCtx, k8sClient); err != nil {
-		errs = append(errs, err)
-	}
-
-	if config := vmCtx.MoVM.Config; config != nil {
-		extraConfig = object.OptionValueList(config.ExtraConfig).StringMap()
-	}
-
-	vm.Status.PowerState = convertPowerState(summary.Runtime.PowerState)
-	vm.Status.UniqueID = vcVM.Reference().Value
-	vm.Status.BiosUUID = summary.Config.Uuid
-	vm.Status.InstanceUUID = summary.Config.InstanceUuid
-	hardwareVersion, _ := vimtypes.ParseHardwareVersion(summary.Config.HwVersion)
-	vm.Status.HardwareVersion = int32(hardwareVersion)
-	updateGuestNetworkStatus(vmCtx.VM, vmCtx.MoVM.Guest, extraConfig, data.NetworkDeviceKeysToSpecIdx)
-	updateStorageStatus(vmCtx.VM, vmCtx.MoVM)
+	errs = append(errs, reconcileStatusClass(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusPowerState(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusIdentifiers(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusHardware(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusHardwareVersion(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusGuest(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusStorage(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusZone(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusNodeName(vmCtx, k8sClient, vcVM, data)...)
 
 	if pkgcfg.FromContext(vmCtx).AsyncSignalEnabled {
-		updateProbeStatus(vmCtx, vm, vmCtx.MoVM, extraConfig)
+		errs = append(errs, reconcileStatusProbe(vmCtx, k8sClient, vcVM, data)...)
 	}
 
-	vm.Status.NodeName, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
-	if err != nil {
-		errs = append(errs, err)
+	if pkgcfg.FromContext(vmCtx).Features.VMGroups {
+		errs = append(errs, reconcileStatusGroup(vmCtx, k8sClient, vcVM, data)...)
 	}
 
-	if summary.Guest != nil && summary.Guest.HostName != "" {
-		if vm.Status.Network == nil {
-			vm.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
-		}
-		vm.Status.Network.HostName = summary.Guest.HostName
+	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
+		errs = append(errs, reconcileStatusSnapshot(vmCtx, k8sClient, vcVM, data)...)
 	}
 
 	MarkReconciliationCondition(vmCtx.VM)
-	MarkVMToolsRunningStatusCondition(vmCtx.VM, vmCtx.MoVM.Guest)
-	MarkCustomizationInfoCondition(vmCtx.VM, vmCtx.MoVM.Guest)
-	MarkBootstrapCondition(vmCtx.VM, extraConfig)
+
+	return apierrorsutil.NewAggregate(errs)
+}
+
+func reconcileStatusClass(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	if vmopv1util.IsClasslessVM(*vmCtx.VM) {
+		vmCtx.VM.Status.Class = nil
+	} else if vmCtx.VM.Status.Class == nil {
+		// When resize is enabled, don't backfill the class from the spec
+		// since we don't know if the class has been applied to the VM.
+		// When resize is enabled, this field is updated after a successful
+		// resize.
+		if f := pkgcfg.FromContext(vmCtx).Features; !f.VMResize && !f.VMResizeCPUMemory {
+			vmCtx.VM.Status.Class = &common.LocalObjectRef{
+				APIVersion: vmopv1.GroupVersion.String(),
+				Kind:       "VirtualMachineClass",
+				Name:       vmCtx.VM.Spec.ClassName,
+			}
+		}
+	}
 
 	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
 		MarkVMClassConfigurationSynced(vmCtx, vmCtx.VM, k8sClient)
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
-		if err := updateCurrentSnapshotStatus(vmCtx, k8sClient); err != nil {
-			errs = append(errs, err)
+	return nil
+}
+
+func reconcileStatusGroup(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error {
+
+	var errs []error
+
+	if err := UpdateGroupLinkedCondition(vmCtx, k8sClient); err != nil {
+		errs = append(errs, err)
+	}
+
+	return errs
+}
+
+func reconcileStatusHardware(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	config := vmCtx.MoVM.Config
+	if config == nil {
+		return nil
+	}
+
+	var (
+		cpuTotal       = config.Hardware.NumCPU
+		cpuReservation int64
+	)
+	if a := config.CpuAllocation; a != nil {
+		if a.Reservation != nil && *a.Reservation > 0 {
+			cpuReservation = *a.Reservation
 		}
-		if err := updateRootSnapshots(vmCtx, k8sClient); err != nil {
-			errs = append(errs, err)
+	}
+	if cpuTotal > 0 || cpuReservation > 0 {
+		if vmCtx.VM.Status.Hardware == nil {
+			vmCtx.VM.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
+		}
+
+		vmCtx.VM.Status.Hardware.CPU = &vmopv1.VirtualMachineCPUAllocationStatus{
+			Total:       cpuTotal,
+			Reservation: cpuReservation,
 		}
 	}
 
-	zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+	var (
+		memTotal       = config.Hardware.MemoryMB
+		memReservation int64
+	)
+	if a := config.MemoryAllocation; a != nil {
+		if a.Reservation != nil && *a.Reservation > 0 {
+			memReservation = *a.Reservation
+		}
+	}
+	if memTotal > 0 || memReservation > 0 {
+		if vmCtx.VM.Status.Hardware == nil {
+			vmCtx.VM.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
+		}
+
+		vmCtx.VM.Status.Hardware.Memory = &vmopv1.VirtualMachineMemoryAllocationStatus{}
+
+		if r := memTotal; r > 0 {
+			b := r * 1000 * 1000
+			q := kubeutil.BytesToResource(int64(b))
+			vmCtx.VM.Status.Hardware.Memory.Total = q
+		}
+		if r := memReservation; r > 0 {
+			b := r * 1000 * 1000
+			q := kubeutil.BytesToResource(b)
+			vmCtx.VM.Status.Hardware.Memory.Reservation = q
+		}
+	}
+
+	if vmCtx.VM.Status.Hardware != nil {
+		vmCtx.VM.Status.Hardware.VGPUs = nil
+	}
+
+	for _, d := range config.Hardware.Device {
+		switch td := d.(type) {
+
+		//
+		// PCI Passthrough
+		//
+		case *vimtypes.VirtualPCIPassthrough:
+
+			//
+			// nVidia vGPU
+			//
+			if b, ok := td.Backing.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo); ok {
+				migrationType := vmopv1.VirtualMachineVGPUMigrationTypeNone
+				if m := b.EnhancedMigrateCapability; m != nil && *m {
+					migrationType = vmopv1.VirtualMachineVGPUMigrationTypeEnhanced
+				} else if m := b.MigrateSupported; m != nil && *m {
+					migrationType = vmopv1.VirtualMachineVGPUMigrationTypeNormal
+				}
+
+				if vmCtx.VM.Status.Hardware == nil {
+					vmCtx.VM.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
+				}
+
+				vmCtx.VM.Status.Hardware.VGPUs = append(
+					vmCtx.VM.Status.Hardware.VGPUs,
+					vmopv1.VirtualMachineHardwareVGPUStatus{
+						Type:          vmopv1.VirtualMachineVGPUTypeNVIDIA,
+						Profile:       b.Vgpu,
+						MigrationType: migrationType,
+					})
+			}
+
+		//
+		// vTPM
+		//
+		case *vimtypes.VirtualTPM:
+			if vmCtx.VM.Status.Crypto == nil {
+				vmCtx.VM.Status.Crypto = &vmopv1.VirtualMachineCryptoStatus{}
+			}
+			vmCtx.VM.Status.Crypto.HasVTPM = true
+		}
+
+	}
+
+	return nil
+}
+
+func reconcileStatusPowerState(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	vmCtx.VM.Status.PowerState = convertPowerState(vmCtx.MoVM.Runtime.PowerState)
+
+	return nil
+}
+
+func reconcileStatusIdentifiers(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	vmCtx.VM.Status.UniqueID = vmCtx.MoVM.Self.Value
+	vmCtx.VM.Status.BiosUUID = vmCtx.MoVM.Summary.Config.Uuid
+	vmCtx.VM.Status.InstanceUUID = vmCtx.MoVM.Summary.Config.InstanceUuid
+
+	return nil
+}
+
+func reconcileStatusHardwareVersion(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	hardwareVersion, _ := vimtypes.ParseHardwareVersion(
+		vmCtx.MoVM.Summary.Config.HwVersion)
+	vmCtx.VM.Status.HardwareVersion = int32(hardwareVersion)
+
+	return nil
+}
+
+func reconcileStatusZone(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	vcVM *object.VirtualMachine,
+	_ ReconcileStatusData) []error {
+
+	var errs []error
+
+	zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
 	if zoneName == "" {
-		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(vmCtx, vcVM.Client(), vmCtx.MoVM.ResourcePool.Value)
+		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(
+			vmCtx, vcVM.Client(), vmCtx.MoVM.ResourcePool.Value)
 		if err != nil {
 			errs = append(errs, err)
 		} else {
-			zoneName, err = topology.LookupZoneForClusterMoID(vmCtx, k8sClient, clusterMoRef.Value)
+			zoneName, err = topology.LookupZoneForClusterMoID(
+				vmCtx, k8sClient, clusterMoRef.Value)
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				if vm.Labels == nil {
-					vm.Labels = map[string]string{}
+				if vmCtx.VM.Labels == nil {
+					vmCtx.VM.Labels = map[string]string{}
 				}
-				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 			}
 		}
 	}
 
 	if zoneName != "" {
-		vm.Status.Zone = zoneName
+		vmCtx.VM.Status.Zone = zoneName
 	}
 
-	return apierrorsutil.NewAggregate(errs)
+	return errs
+}
+
+func reconcileStatusSnapshot(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error {
+
+	var errs []error
+
+	if err := updateCurrentSnapshotStatus(vmCtx, k8sClient); err != nil {
+		errs = append(errs, err)
+	}
+	if err := updateRootSnapshots(vmCtx, k8sClient); err != nil {
+		errs = append(errs, err)
+	}
+
+	return errs
+}
+
+func reconcileStatusGuest(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	data ReconcileStatusData) []error { //nolint:unparam
+
+	var extraConfig map[string]string
+	if config := vmCtx.MoVM.Config; config != nil {
+		extraConfig = object.OptionValueList(config.ExtraConfig).StringMap()
+	}
+
+	updateGuestNetworkStatus(
+		vmCtx.VM,
+		vmCtx.MoVM.Guest,
+		extraConfig,
+		data.NetworkDeviceKeysToSpecIdx)
+
+	if vmCtx.MoVM.Summary.Guest != nil && vmCtx.MoVM.Summary.Guest.HostName != "" {
+		if vmCtx.VM.Status.Network == nil {
+			vmCtx.VM.Status.Network = &vmopv1.VirtualMachineNetworkStatus{}
+		}
+		vmCtx.VM.Status.Network.HostName = vmCtx.MoVM.Summary.Guest.HostName
+	}
+	MarkVMToolsRunningStatusCondition(vmCtx.VM, vmCtx.MoVM.Guest)
+	MarkCustomizationInfoCondition(vmCtx.VM, vmCtx.MoVM.Guest)
+	MarkBootstrapCondition(vmCtx.VM, extraConfig)
+
+	if config := vmCtx.MoVM.Config; config != nil {
+		guestID := vmCtx.MoVM.Config.GuestId
+		guestName := vmCtx.MoVM.Config.GuestFullName
+		if guestID != "" || guestName != "" {
+			if vmCtx.VM.Status.Guest == nil {
+				vmCtx.VM.Status.Guest = &vmopv1.VirtualMachineGuestStatus{}
+			}
+			vmCtx.VM.Status.Guest.GuestID = guestID
+			vmCtx.VM.Status.Guest.GuestFullName = guestName
+		}
+	}
+
+	return nil
+}
+
+// reconcileStatusStorage updates the status for all storage-related fields.
+func reconcileStatusStorage(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	updateChangeBlockTracking(vmCtx.VM, vmCtx.MoVM)
+	updateVolumeStatus(vmCtx.VM, vmCtx.MoVM)
+	updateStorageUsage(vmCtx.VM, vmCtx.MoVM)
+
+	return nil
+}
+
+func reconcileStatusNodeName(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	vcVM *object.VirtualMachine,
+	_ ReconcileStatusData) []error {
+
+	var errs []error
+
+	nodeName, err := getRuntimeHostHostname(
+		vmCtx, vcVM, vmCtx.MoVM.Summary.Runtime.Host)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		vmCtx.VM.Status.NodeName = nodeName
+	}
+
+	return errs
+}
+
+// updateProbeStatus updates a VM's status with the results of the configured
+// readiness probes.
+// Please note, this function returns early if the configured probe is TCP.
+func reconcileStatusProbe(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	p := vmCtx.VM.Spec.ReadinessProbe
+	if p == nil || p.TCPSocket != nil {
+		return nil
+	}
+
+	var (
+		result      probeResult
+		resultMsg   string
+		extraConfig map[string]string
+	)
+
+	if config := vmCtx.MoVM.Config; config != nil {
+		extraConfig = object.OptionValueList(config.ExtraConfig).StringMap()
+	}
+
+	switch {
+	case p.GuestHeartbeat != nil:
+		result, resultMsg = updateProbeStatusHeartbeat(vmCtx.VM, vmCtx.MoVM)
+	case p.GuestInfo != nil:
+		result, resultMsg = updateProbeStatusGuestInfo(vmCtx.VM, extraConfig)
+	}
+
+	var cond *metav1.Condition
+	switch result {
+	case probeResultSuccess:
+		cond = conditions.TrueCondition(vmopv1.ReadyConditionType)
+	case probeResultFailure:
+		cond = conditions.FalseCondition(
+			vmopv1.ReadyConditionType, probeReasonNotReady, "%s", resultMsg)
+	default:
+		cond = conditions.UnknownCondition(
+			vmopv1.ReadyConditionType, probeReasonUnknown, "%s", resultMsg)
+	}
+
+	// Emit event whe the condition is added or its status changes.
+	if c := conditions.Get(vmCtx.VM, cond.Type); c == nil || c.Status != cond.Status {
+		recorder := vmoprecord.FromContext(vmCtx)
+		if cond.Status == metav1.ConditionTrue {
+			recorder.Eventf(vmCtx.VM, probeReasonReady, "")
+		} else {
+			recorder.Eventf(vmCtx.VM, cond.Reason, cond.Message)
+		}
+
+		// Log the time when the VM changes its readiness condition.
+		pkgutil.FromContextOrDefault(vmCtx).Info(
+			"VM resource readiness probe condition updated",
+			"condition.status", cond.Status,
+			"time", cond.LastTransitionTime,
+			"reason", cond.Reason)
+	}
+
+	conditions.Set(vmCtx.VM, cond)
+
+	return nil
 }
 
 // UpdateGroupLinkedCondition updates the GroupLinked condition for the VM if
@@ -819,13 +1133,6 @@ func updateGuestNetworkStatus(
 	}
 }
 
-// updateStorageStatus updates the status for all storage-related fields.
-func updateStorageStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
-	updateChangeBlockTracking(vm, moVM)
-	updateVolumeStatus(vm, moVM)
-	updateStorageUsage(vm, moVM)
-}
-
 func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 	if moVM.Config != nil {
 		vm.Status.ChangeBlockTracking = moVM.Config.ChangeTrackingEnabled
@@ -1063,64 +1370,6 @@ func heartbeatValue(value string) int {
 	default:
 		return -1
 	}
-}
-
-// updateProbeStatus updates a VM's status with the results of the configured
-// readiness probes.
-// Please note, this function returns early if the configured probe is TCP.
-func updateProbeStatus(
-	ctx context.Context,
-	vm *vmopv1.VirtualMachine,
-	moVM mo.VirtualMachine,
-	extraConfig map[string]string) {
-
-	p := vm.Spec.ReadinessProbe
-	if p == nil || p.TCPSocket != nil {
-		return
-	}
-
-	var (
-		result    probeResult
-		resultMsg string
-	)
-
-	switch {
-	case p.GuestHeartbeat != nil:
-		result, resultMsg = updateProbeStatusHeartbeat(vm, moVM)
-	case p.GuestInfo != nil:
-		result, resultMsg = updateProbeStatusGuestInfo(vm, extraConfig)
-	}
-
-	var cond *metav1.Condition
-	switch result {
-	case probeResultSuccess:
-		cond = conditions.TrueCondition(vmopv1.ReadyConditionType)
-	case probeResultFailure:
-		cond = conditions.FalseCondition(
-			vmopv1.ReadyConditionType, probeReasonNotReady, "%s", resultMsg)
-	default:
-		cond = conditions.UnknownCondition(
-			vmopv1.ReadyConditionType, probeReasonUnknown, "%s", resultMsg)
-	}
-
-	// Emit event whe the condition is added or its status changes.
-	if c := conditions.Get(vm, cond.Type); c == nil || c.Status != cond.Status {
-		recorder := vmoprecord.FromContext(ctx)
-		if cond.Status == metav1.ConditionTrue {
-			recorder.Eventf(vm, probeReasonReady, "")
-		} else {
-			recorder.Eventf(vm, cond.Reason, cond.Message)
-		}
-
-		// Log the time when the VM changes its readiness condition.
-		pkgutil.FromContextOrDefault(ctx).Info(
-			"VM resource readiness probe condition updated",
-			"condition.status", cond.Status,
-			"time", cond.LastTransitionTime,
-			"reason", cond.Reason)
-	}
-
-	conditions.Set(vm, cond)
 }
 
 func updateProbeStatusHeartbeat(

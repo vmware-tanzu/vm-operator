@@ -14403,6 +14403,9 @@ spec:
                     items:
                       type: string
                     type: array
+                  hasVTPM:
+                    description: HasVTPM indicates whether or not the VM has a vTPM.
+                    type: boolean
                   keyID:
                     description: |-
                       KeyID describes the key ID used to encrypt the VirtualMachine.
@@ -14443,6 +14446,75 @@ spec:
                 - apiVersion
                 - kind
                 - name
+                type: object
+              guest:
+                description: Guest describes the observed state of the VM's guest.
+                properties:
+                  guestFullName:
+                    description: GuestFullName describes the full name of the observed
+                      operating system.
+                    type: string
+                  guestID:
+                    description: GuestID describes the ID of the observed operating
+                      system.
+                    type: string
+                type: object
+              hardware:
+                description: Hardware describes the observed state of the VM's hardware.
+                properties:
+                  cpu:
+                    description: CPU describes the observed CPU allocation of the
+                      VM.
+                    properties:
+                      reservation:
+                        description: Reservation describes the observed CPU reservation
+                          in MHz.
+                        format: int64
+                        type: integer
+                      total:
+                        description: Total describes the observed number of processors.
+                        format: int32
+                        type: integer
+                    type: object
+                  memory:
+                    description: Memory describes the observed memory allocation of
+                      the VM.
+                    properties:
+                      reservation:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Reservation describes the observed memory reservation.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      total:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Total describes the observed amount of configured
+                          memory.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    type: object
+                  vGPUs:
+                    description: VGPUs describes the observed vGPUs used by this VM.
+                    items:
+                      properties:
+                        migrationType:
+                          description: MigrationType describes the vGPU's observed
+                            vMotion support.
+                          type: string
+                        profile:
+                          description: |-
+                            Profile describes the observed profile used by the vGPU.
+
+                            Please note, this is only applicable to Nvidia vGPUs.
+                          type: string
+                        type:
+                          description: Type describes the observed type of the vGPU.
+                          type: string
+                      type: object
+                    type: array
                 type: object
               hardwareVersion:
                 description: |-

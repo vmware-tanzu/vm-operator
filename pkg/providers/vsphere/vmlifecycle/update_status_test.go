@@ -2523,6 +2523,575 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 	})
 })
 
+var _ = Describe("Hardware status", func() {
+	var (
+		ctx   *builder.TestContextForVCSim
+		vmCtx pkgctx.VirtualMachineContext
+		vcVM  *object.VirtualMachine
+		data  vmlifecycle.ReconcileStatusData
+	)
+
+	BeforeEach(func() {
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+
+		vm := builder.DummyVirtualMachine()
+		vm.Name = "hardware-status-test"
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
+			VM:      vm,
+		}
+
+		var err error
+		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(vcVM.Properties(
+			ctx,
+			vcVM.Reference(),
+			vsphere.VMUpdatePropertiesSelector,
+			&vmCtx.MoVM)).To(Succeed())
+
+		data = vmlifecycle.ReconcileStatusData{
+			NetworkDeviceKeysToSpecIdx: map[int32]int{},
+		}
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	Context("reconcileStatusHardware", func() {
+		When("config is nil", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = nil
+			})
+
+			It("should return nil without setting hardware status", func() {
+				err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmCtx.VM.Status.Hardware).To(BeNil())
+			})
+		})
+
+		When("config is valid", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						NumCPU:   4,
+						MemoryMB: 2048,
+						Device:   []vimtypes.BaseVirtualDevice{},
+					},
+					CpuAllocation: &vimtypes.ResourceAllocationInfo{
+						Reservation: ptr.To(int64(1000)),
+					},
+					MemoryAllocation: &vimtypes.ResourceAllocationInfo{
+						Reservation: ptr.To(int64(1024)),
+					},
+				}
+			})
+
+			It("should populate basic hardware status", func() {
+				err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.Hardware.CPU.Total).To(Equal(int32(4)))
+				Expect(vmCtx.VM.Status.Hardware.CPU.Reservation).To(Equal(int64(1000)))
+
+				Expect(vmCtx.VM.Status.Hardware.Memory.Total).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.Hardware.Memory.Total.String()).To(Equal("2048M"))
+
+				Expect(vmCtx.VM.Status.Hardware.Memory.Reservation).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.Hardware.Memory.Reservation.String()).To(Equal("1024M"))
+			})
+
+			When("CPU total is zero and allocation is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.NumCPU = 0
+					vmCtx.MoVM.Config.CpuAllocation = nil
+				})
+
+				It("should not set CPU status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.CPU).To(BeNil())
+				})
+			})
+
+			When("CPU total is zero and reservation is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.NumCPU = 0
+					vmCtx.MoVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{}
+				})
+
+				It("should not set CPU status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.CPU).To(BeNil())
+				})
+			})
+
+			When("CPU total is zero and reservation is zero", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.NumCPU = 0
+					vmCtx.MoVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+						Reservation: ptr.To(int64(0)),
+					}
+				})
+
+				It("should not set CPU status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.CPU).To(BeNil())
+				})
+			})
+
+			When("CPU allocation is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.CpuAllocation = nil
+				})
+
+				It("should not set CPU reservation", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.CPU.Total).To(Equal(int32(4)))
+					Expect(vmCtx.VM.Status.Hardware.CPU.Reservation).To(Equal(int64(0)))
+				})
+			})
+
+			When("CPU reservation is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.CpuAllocation.Reservation = nil
+				})
+
+				It("should not set CPU reservation", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.CPU.Reservation).To(Equal(int64(0)))
+				})
+			})
+
+			When("memory total is zero and allocation is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.MemoryMB = 0
+					vmCtx.MoVM.Config.MemoryAllocation = nil
+				})
+
+				It("should not set memory status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.Memory).To(BeNil())
+				})
+			})
+
+			When("memory total is zero and reservation is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.MemoryMB = 0
+					vmCtx.MoVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{}
+				})
+
+				It("should not set memory status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.Memory).To(BeNil())
+				})
+			})
+
+			When("memory total is zero and reservation is zero", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.MemoryMB = 0
+					vmCtx.MoVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+						Reservation: ptr.To(int64(0)),
+					}
+				})
+
+				It("should not set memory status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.Memory).To(BeNil())
+				})
+			})
+
+			When("memory allocation is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.MemoryAllocation = nil
+				})
+
+				It("should not set memory reservation", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.Memory.Reservation).To(BeNil())
+				})
+			})
+
+			When("memory reservation is nil", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.MemoryAllocation.Reservation = nil
+				})
+
+				It("should not set memory reservation", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.Memory.Reservation).To(BeNil())
+				})
+			})
+
+			When("memory reservation is zero", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.MemoryAllocation.Reservation = ptr.To(int64(0))
+				})
+
+				It("should not set memory reservation", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.Memory.Reservation).To(BeNil())
+				})
+			})
+
+			When("memory is zero", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.MemoryMB = 0
+				})
+
+				It("should not set memory", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.Memory.Total).To(BeNil())
+				})
+			})
+		})
+
+		Context("nVidia vGPU devices", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						NumCPU:   2,
+						MemoryMB: 1024,
+					},
+				}
+			})
+
+			When("PCI passthrough device has VmiopBacking with no migration support", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.Device = append(vmCtx.MoVM.Config.Hardware.Device,
+						&vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "grid_p40-2q",
+								},
+							},
+						})
+				})
+
+				It("should add nVidia vGPU with None migration type", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.VGPUs).To(HaveLen(1))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Type).To(Equal(vmopv1.VirtualMachineVGPUTypeNVIDIA))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Profile).To(Equal("grid_p40-2q"))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].MigrationType).To(Equal(vmopv1.VirtualMachineVGPUMigrationTypeNone))
+				})
+
+				It("should add single nVidia vGPU with None migration type when reconciled multiple times", func() {
+					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.VGPUs).To(HaveLen(1))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Type).To(Equal(vmopv1.VirtualMachineVGPUTypeNVIDIA))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Profile).To(Equal("grid_p40-2q"))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].MigrationType).To(Equal(vmopv1.VirtualMachineVGPUMigrationTypeNone))
+				})
+			})
+
+			When("PCI passthrough device has VmiopBacking with normal migration support", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.Device = append(vmCtx.MoVM.Config.Hardware.Device,
+						&vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu:             "grid_p40-4q",
+									MigrateSupported: ptr.To(true),
+								},
+							},
+						})
+				})
+
+				It("should add nVidia vGPU with Normal migration type", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.VGPUs).To(HaveLen(1))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Type).To(Equal(vmopv1.VirtualMachineVGPUTypeNVIDIA))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Profile).To(Equal("grid_p40-4q"))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].MigrationType).To(Equal(vmopv1.VirtualMachineVGPUMigrationTypeNormal))
+				})
+			})
+
+			When("PCI passthrough device has VmiopBacking with enhanced migration support", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.Device = append(vmCtx.MoVM.Config.Hardware.Device,
+						&vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu:                      "grid_p40-8q",
+									MigrateSupported:          ptr.To(true),
+									EnhancedMigrateCapability: ptr.To(true),
+								},
+							},
+						})
+				})
+
+				It("should add nVidia vGPU with Enhanced migration type", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.VGPUs).To(HaveLen(1))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Type).To(Equal(vmopv1.VirtualMachineVGPUTypeNVIDIA))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Profile).To(Equal("grid_p40-8q"))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].MigrationType).To(Equal(vmopv1.VirtualMachineVGPUMigrationTypeEnhanced))
+				})
+			})
+
+			When("multiple nVidia vGPU devices are present", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.Device = append(vmCtx.MoVM.Config.Hardware.Device,
+						&vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "grid_p40-1q",
+								},
+							},
+						},
+						&vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu:                      "grid_p40-2q",
+									MigrateSupported:          ptr.To(true),
+									EnhancedMigrateCapability: ptr.To(true),
+								},
+							},
+						})
+				})
+
+				It("should add all nVidia vGPUs", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.VGPUs).To(HaveLen(2))
+
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Type).To(Equal(vmopv1.VirtualMachineVGPUTypeNVIDIA))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].Profile).To(Equal("grid_p40-1q"))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[0].MigrationType).To(Equal(vmopv1.VirtualMachineVGPUMigrationTypeNone))
+
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[1].Type).To(Equal(vmopv1.VirtualMachineVGPUTypeNVIDIA))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[1].Profile).To(Equal("grid_p40-2q"))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs[1].MigrationType).To(Equal(vmopv1.VirtualMachineVGPUMigrationTypeEnhanced))
+				})
+			})
+
+			When("PCI passthrough device has different backing type", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.Device = append(vmCtx.MoVM.Config.Hardware.Device,
+						&vimtypes.VirtualPCIPassthrough{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{},
+							},
+						})
+				})
+
+				It("should not add any nVidia vGPUs", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Hardware.VGPUs).To(HaveLen(0))
+				})
+			})
+		})
+
+		Context("vTPM devices", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						NumCPU:   2,
+						MemoryMB: 1024,
+					},
+				}
+			})
+
+			When("vTPM device is present", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.Device = append(vmCtx.MoVM.Config.Hardware.Device,
+						&vimtypes.VirtualTPM{})
+				})
+
+				It("should set crypto status with vTPM", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Crypto).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Crypto.HasVTPM).To(BeTrue())
+				})
+			})
+
+			When("multiple vTPM devices are present", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.Device = append(vmCtx.MoVM.Config.Hardware.Device,
+						&vimtypes.VirtualTPM{},
+						&vimtypes.VirtualTPM{})
+				})
+
+				It("should set crypto status with vTPM", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Crypto).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.Crypto.HasVTPM).To(BeTrue())
+				})
+			})
+
+			When("no vTPM devices are present", func() {
+				It("should not set crypto status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vmCtx.VM.Status.Crypto).To(BeNil())
+				})
+			})
+		})
+	})
+})
+
+var _ = Describe("Guest status", func() {
+	var (
+		ctx   *builder.TestContextForVCSim
+		vmCtx pkgctx.VirtualMachineContext
+		vcVM  *object.VirtualMachine
+		data  vmlifecycle.ReconcileStatusData
+	)
+
+	BeforeEach(func() {
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+
+		vm := builder.DummyVirtualMachine()
+		vm.Name = "guest-status-test"
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
+			VM:      vm,
+		}
+
+		var err error
+		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(vcVM.Properties(
+			ctx,
+			vcVM.Reference(),
+			vsphere.VMUpdatePropertiesSelector,
+			&vmCtx.MoVM)).To(Succeed())
+
+		data = vmlifecycle.ReconcileStatusData{
+			NetworkDeviceKeysToSpecIdx: map[int32]int{},
+		}
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	Context("reconcileStatusGuest", func() {
+		When("config is nil", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = nil
+			})
+
+			It("should not set guest status", func() {
+				err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmCtx.VM.Status.Guest).To(BeNil())
+			})
+		})
+
+		When("config has guest information", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					GuestId:       "ubuntu64Guest",
+					GuestFullName: "Ubuntu Linux (64-bit)",
+					Hardware: vimtypes.VirtualHardware{
+						NumCPU:   2,
+						MemoryMB: 1024,
+					},
+				}
+			})
+
+			It("should populate guest status", func() {
+				err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(vmCtx.VM.Status.Guest).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.Guest.GuestID).To(Equal("ubuntu64Guest"))
+				Expect(vmCtx.VM.Status.Guest.GuestFullName).To(Equal("Ubuntu Linux (64-bit)"))
+			})
+		})
+
+		When("config has empty guest information", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					GuestId:       "",
+					GuestFullName: "",
+					Hardware: vimtypes.VirtualHardware{
+						NumCPU:   2,
+						MemoryMB: 1024,
+					},
+				}
+			})
+
+			It("should set guest status to nil", func() {
+				err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmCtx.VM.Status.Guest).To(BeNil())
+			})
+		})
+	})
+})
+
 var _ = Describe("Snapshot status", func() {
 	var (
 		ctx   *builder.TestContextForVCSim

@@ -117,6 +117,8 @@ func unitTestsValidateCreate() {
 		powerState            vmopv1.VirtualMachinePowerState
 		lastUpdatedPowerState string
 		nextForceSyncTime     string
+		duplicateMember       bool
+		selfReferenced        bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
@@ -137,6 +139,41 @@ func unitTestsValidateCreate() {
 
 		if args.nextForceSyncTime != "" {
 			ctx.vmGroup.Spec.NextForcePowerStateSyncTime = args.nextForceSyncTime
+		}
+
+		if args.duplicateMember {
+			ctx.vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				{
+					Members: []vmopv1.GroupMember{
+						{
+							Kind: "VirtualMachine",
+							Name: "vm-dup",
+						},
+					},
+				},
+				{
+					Members: []vmopv1.GroupMember{
+						{
+							Kind: "VirtualMachine",
+							Name: "vm-dup",
+						},
+					},
+				},
+			}
+		}
+
+		if args.selfReferenced {
+			ctx.vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				{
+					Members: []vmopv1.GroupMember{
+						{
+							Kind: "VirtualMachineGroup",
+							Name: ctx.vmGroup.Name,
+						},
+					},
+				},
+			}
+			ctx.vmGroup.Spec.GroupName = ctx.vmGroup.Name
 		}
 
 		var err error
@@ -164,6 +201,10 @@ func unitTestsValidateCreate() {
 			createArgs{isServiceUser: false, powerState: vmopv1.VirtualMachinePowerStateOn, lastUpdatedPowerState: time.Now().Format(time.RFC3339Nano)}, true, ""),
 		Entry("should work with non-admin setting last-updated-power-state annotation with next force sync time",
 			createArgs{isServiceUser: false, nextForceSyncTime: time.Now().Format(time.RFC3339Nano), lastUpdatedPowerState: time.Now().Format(time.RFC3339Nano)}, true, ""),
+		Entry("should not work with duplicate members",
+			createArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachine/vm-dup\""),
+		Entry("should not work with self reference member or group name",
+			createArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
 	)
 }
 
@@ -179,6 +220,8 @@ func unitTestsValidateUpdate() {
 		modifyLastUpdatedPowerState  bool
 		invalidLastUpdatedPowerState bool
 		nextForceSyncTime            string
+		duplicateMember              bool
+		selfReferenced               bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string) {
@@ -215,6 +258,41 @@ func unitTestsValidateUpdate() {
 			}
 		}
 
+		if args.duplicateMember {
+			ctx.vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				{
+					Members: []vmopv1.GroupMember{
+						{
+							Kind: "VirtualMachineGroup",
+							Name: "vmg-dup",
+						},
+					},
+				},
+				{
+					Members: []vmopv1.GroupMember{
+						{
+							Kind: "VirtualMachineGroup",
+							Name: "vmg-dup",
+						},
+					},
+				},
+			}
+		}
+
+		if args.selfReferenced {
+			ctx.vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				{
+					Members: []vmopv1.GroupMember{
+						{
+							Kind: "VirtualMachineGroup",
+							Name: ctx.vmGroup.Name,
+						},
+					},
+				},
+			}
+			ctx.vmGroup.Spec.GroupName = ctx.vmGroup.Name
+		}
+
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmGroup)
 		Expect(err).ToNot(HaveOccurred())
@@ -246,6 +324,10 @@ func unitTestsValidateUpdate() {
 			updateArgs{modifyLastUpdatedPowerState: true, isServiceUser: false, oldPowerState: vmopv1.VirtualMachinePowerStateOn, newPowerState: vmopv1.VirtualMachinePowerStateOff}, true, ""),
 		Entry("should work with non-admin updating last-updated-power-state annotation with next force sync time change",
 			updateArgs{modifyLastUpdatedPowerState: true, isServiceUser: false, oldPowerState: vmopv1.VirtualMachinePowerStateOn, newPowerState: vmopv1.VirtualMachinePowerStateOff, nextForceSyncTime: time.Now().Format(time.RFC3339Nano)}, true, ""),
+		Entry("should not work with duplicate members",
+			updateArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachineGroup/vmg-dup\""),
+		Entry("should not work with self reference member or group name",
+			updateArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
 	)
 }
 

@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation
@@ -30,6 +30,7 @@ const (
 	modifyAnnotationNotAllowedForNonAdmin = "modifying this annotation is not allowed for non-admin users"
 	emptyPowerStateNotAllowedAfterSet     = "cannot set powerState to empty once it's been set"
 	invalidTimeFormat                     = "time must be in RFC3339Nano format"
+	selfReferenceMemberOrGroupName        = "group cannot have itself as a member or group name"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachinegroup,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinegroups,versions=v1alpha5,name=default.validating.virtualmachinegroup.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -98,6 +99,8 @@ func (v validator) ValidateCreate(
 	var fieldErrs field.ErrorList
 
 	fieldErrs = append(fieldErrs, v.validatePowerState(ctx, vmGroup, nil)...)
+	fieldErrs = append(fieldErrs, v.validateBootOrderMembers(ctx, vmGroup)...)
+	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vmGroup)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -129,6 +132,9 @@ func (v validator) ValidateUpdate(
 	fieldErrs = append(fieldErrs,
 		v.validatePowerState(ctx, vmGroup, oldVMGroup)...,
 	)
+
+	fieldErrs = append(fieldErrs, v.validateBootOrderMembers(ctx, vmGroup)...)
+	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vmGroup)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -186,6 +192,67 @@ func (v validator) validatePowerState(
 		allErrs = append(allErrs, field.Forbidden(
 			field.NewPath("spec", "powerState"),
 			emptyPowerStateNotAllowedAfterSet,
+		))
+	}
+
+	return allErrs
+}
+
+// validateBootOrderMembers validates the members in all boot orders to ensure:
+// 1. No duplicate members exist across all boot orders.
+// 2. The group does not reference itself as a member.
+//
+// Note: This function does not check for circular dependencies between groups
+// since child group resources may not exist at webhook validation time.
+// Cycle detection can be handled by the controller when needed.
+func (v validator) validateBootOrderMembers(
+	_ *pkgctx.WebhookRequestContext,
+	vmGroup *vmopv1.VirtualMachineGroup) field.ErrorList {
+
+	var (
+		allErrs     field.ErrorList
+		path        = field.NewPath("spec", "bootOrder")
+		membersSeen = make(map[string]struct{})
+	)
+
+	for bootOrderIdx, bootOrder := range vmGroup.Spec.BootOrder {
+		for memberIdx, member := range bootOrder.Members {
+			memberKey := fmt.Sprintf("%s/%s", member.Kind, member.Name)
+			if _, ok := membersSeen[memberKey]; ok {
+				allErrs = append(allErrs, field.Duplicate(
+					path.Index(bootOrderIdx).Child("members").Index(memberIdx),
+					memberKey,
+				))
+			} else {
+				membersSeen[memberKey] = struct{}{}
+			}
+
+			if member.Kind == "VirtualMachineGroup" &&
+				member.Name == vmGroup.Name {
+				allErrs = append(allErrs, field.Invalid(
+					path.Index(bootOrderIdx).Child("members").Index(memberIdx),
+					memberKey,
+					selfReferenceMemberOrGroupName,
+				))
+			}
+		}
+	}
+
+	return allErrs
+}
+
+// validateGroupName validates that the group name is not the same as the group.
+func (v validator) validateGroupName(
+	_ *pkgctx.WebhookRequestContext,
+	vmGroup *vmopv1.VirtualMachineGroup) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if vmGroup.Spec.GroupName == vmGroup.Name {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "groupName"),
+			vmGroup.Spec.GroupName,
+			selfReferenceMemberOrGroupName,
 		))
 	}
 

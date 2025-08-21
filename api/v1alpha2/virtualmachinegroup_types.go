@@ -2,7 +2,7 @@
 // The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha5
+package v1alpha2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -269,7 +269,6 @@ type VirtualMachineGroupStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmg
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // VirtualMachineGroup is the schema for the VirtualMachineGroup API and

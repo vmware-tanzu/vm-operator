@@ -230,6 +230,26 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 			})
 		})
 	})
+
+	Context("VirtualMachineGroup", func() {
+		BeforeEach(func() {
+			input = fuzztests.FuzzTestFuncInput{
+				Scheme: scheme,
+				Hub:    &vmopv1.VirtualMachineGroup{},
+				Spoke:  &vmopv1a3.VirtualMachineGroup{},
+			}
+		})
+		Context("Spoke-Hub-Spoke", func() {
+			It("should get fuzzy with it", func() {
+				fuzztests.SpokeHubSpoke(input)
+			})
+		})
+		Context("Hub-Spoke-Hub", func() {
+			It("should get fuzzy with it", func() {
+				fuzztests.HubSpokeHub(input)
+			})
+		})
+	})
 })
 
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {

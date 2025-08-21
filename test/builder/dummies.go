@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -156,6 +157,32 @@ func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrar
 				{
 					Type:               imgregv1a1.ReadyCondition,
 					Status:             corev1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
+				},
+			},
+		},
+	}
+}
+
+func DummyContentLibraryV1A2(name, namespace, id string) *imgregv1.ContentLibrary {
+	return &imgregv1.ContentLibrary{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: imgregv1.ContentLibrarySpec{
+			BaseContentLibrarySpec: imgregv1.BaseContentLibrarySpec{
+				ID:   id,
+				Type: imgregv1.LibraryTypeInventory,
+			},
+			AllowPublish: true,
+		},
+		Status: imgregv1.ContentLibraryStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:               imgregv1.ReadyCondition,
+					Status:             metav1.ConditionTrue,
+					Reason:             string(metav1.ConditionTrue),
 					LastTransitionTime: metav1.Now(),
 				},
 			},

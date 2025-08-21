@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,6 +58,7 @@ type VirtualMachineProviderInterface interface {
 	ComputeCPUMinFrequency(ctx context.Context) error
 
 	GetItemFromLibraryByName(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
+	GetItemFromInventoryByName(ctx context.Context, contentLibrary, itemName string) (object.Reference, error)
 	UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
 	SyncVirtualMachineImage(ctx context.Context, cli, vmi ctrlclient.Object) error
 

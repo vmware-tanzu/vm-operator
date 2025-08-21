@@ -27,6 +27,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -36,6 +37,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
@@ -339,12 +341,42 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 		return "", fmt.Errorf("failed to get vCenter client: %w", err)
 	}
 
-	itemID, err := virtualmachine.CreateOVF(vmCtx, client.RestClient(), vmPub, cl, actID)
-	if err != nil {
-		return "", err
-	}
+	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
+		v1a2contentLibrary := &imgregv1.ContentLibrary{}
+		objKey := ctrlclient.ObjectKey{
+			Name:      vmPub.Spec.Target.Location.Name,
+			Namespace: vmPub.Namespace,
+		}
 
-	return itemID, nil
+		if err := vs.k8sClient.Get(ctx, objKey, v1a2contentLibrary); err != nil {
+			return "", fmt.Errorf("failed to get v1a2 content library %v: %w", objKey, err)
+		}
+
+		if v1a2contentLibrary.Spec.Type == imgregv1.LibraryTypeInventory {
+
+			storageClassName := v1a2contentLibrary.Spec.StorageClass
+			if storageClassName == "" {
+				return "", fmt.Errorf("storage class is not specified in content library")
+			}
+
+			sc := storagev1.StorageClass{}
+			if err := vs.k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: storageClassName}, &sc); err != nil {
+				vmCtx.Logger.Error(err, "Failed to get StorageClass", "storageClass", storageClassName)
+				return "", err
+			}
+			storagePolicyID, err := kubeutil.GetStoragePolicyID(sc)
+
+			if err != nil {
+				return "", err
+			}
+			logger.V(4).Info("Publishing VM as cloned template")
+
+			return virtualmachine.CloneVM(vmCtx, client.VimClient(), vmPub, v1a2contentLibrary, storagePolicyID, actID)
+		}
+	}
+	logger.V(4).Info("Publishing VM as OVF")
+
+	return virtualmachine.CreateOVF(vmCtx, client.RestClient(), vmPub, cl, actID)
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(

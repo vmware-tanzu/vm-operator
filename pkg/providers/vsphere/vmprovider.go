@@ -425,6 +425,32 @@ func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx context.Context,
 	return contentLibraryProvider.GetLibraryItem(ctx, contentLibrary, itemName, false)
 }
 
+func (vs *vSphereVMProvider) GetItemFromInventoryByName(
+	ctx context.Context,
+	contentLibrary, itemName string) (object.Reference, error) {
+
+	client, err := vs.getVcClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	c := client.VimClient()
+
+	searchIndex := object.NewSearchIndex(c)
+
+	folderRef := vimtypes.ManagedObjectReference{
+		Type:  string(vimtypes.ManagedObjectTypesFolder),
+		Value: contentLibrary,
+	}
+
+	vm, err := searchIndex.FindChild(ctx, folderRef, itemName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find child vm %s: %w", itemName, err)
+	}
+
+	return vm, nil
+}
+
 func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
 	pkgutil.FromContextOrDefault(ctx).V(4).Info("Update Content Library Item", "itemID", itemID)
 

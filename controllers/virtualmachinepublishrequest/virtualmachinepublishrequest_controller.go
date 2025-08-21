@@ -25,10 +25,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -321,9 +323,9 @@ func (r *Reconciler) publishVirtualMachine(ctx *pkgctx.VirtualMachinePublishRequ
 			actID := getPublishRequestActID(vmPublishReq)
 			itemID, pubErr := r.VMProvider.PublishVirtualMachine(ctx, ctx.VM, vmPublishReq, ctx.ContentLibrary, actID)
 			if pubErr != nil {
-				ctx.Logger.Error(pubErr, "failed to publish VM")
+				ctx.Logger.Error(pubErr, "failed to publish vm as image")
 			} else {
-				ctx.Logger.Info("created an OVF from VM", "itemID", itemID)
+				ctx.Logger.Info("published vm as image", "itemID", itemID)
 			}
 			r.Recorder.EmitEvent(vmPublishReq, "Publish", pubErr, false)
 		}()
@@ -441,26 +443,49 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 	}
 
 	ctx.ContentLibrary = contentLibrary
-	item, err := r.VMProvider.GetItemFromLibraryByName(ctx, string(contentLibrary.Spec.UUID), targetItemName)
+
+	contentLibraryType := imgregv1.LibraryTypeContentLibrary
+	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
+		contentLibraryV1A2 := &imgregv1.ContentLibrary{}
+		if err := r.Get(ctx, objKey, contentLibraryV1A2); err != nil {
+			ctx.Logger.Error(err, "failed to get v1alpha2 ContentLibrary", "cl", objKey)
+			if apierrors.IsNotFound(err) {
+				conditions.MarkError(vmPubReq,
+					vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+					vmopv1.TargetContentLibraryNotExistReason,
+					err)
+			}
+			return err
+		}
+		contentLibraryType = contentLibraryV1A2.Spec.Type
+	}
+	ctx.Logger.Info("target location has library type: %q", contentLibraryType)
+
+	item, err := r.getItemByName(ctx, contentLibraryType, string(ctx.ContentLibrary.Spec.UUID), targetItemName)
+
 	if err != nil {
-		ctx.Logger.Error(err, "failed to find item", "cl", objKey, "item name", targetItemName)
-		return err
+		return fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
 
-	if item != nil {
+	if !pkgutil.IsNil(item) {
 		ctx.Logger.Info("target item already exists in the content library",
-			"cl", objKey, "item name", targetItemName)
+			"library", objKey, "itemName", targetItemName)
 		// If item already exists in the content library and attempt is not zero,
 		// check if it is created from this VirtualMachinePublishRequest by getting its description.
 		// If VC forgets the task, or the task hadn't proceeded far enough to be submitted to VC
 		// within 30 seconds window, this check can help us find if there is a prior task succeeded.
 		// Ideally we are unlikely to see this.
 		if vmPubReq.Status.Attempts > 0 {
-			if r.isItemCorrelatedWithVMPub(ctx, item) {
+			itemID, ok, err := r.isItemCorrelatedWithVMPub(ctx, item)
+			if err != nil {
+				return fmt.Errorf("failed to detect if item is correlated with vm pub request: %w", err)
+			}
+
+			if ok {
 				ctx.Logger.Info("existing target item is published by this VMPubReq")
 				conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionTargetValid)
 				conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded)
-				ctx.ItemID = item.ID
+				ctx.ItemID = itemID
 				return nil
 			}
 		}
@@ -476,6 +501,14 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 
 	conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionTargetValid)
 	return nil
+}
+
+func (r *Reconciler) getItemByName(ctx *pkgctx.VirtualMachinePublishRequestContext, libraryType imgregv1.LibraryType, contentLibrary, itemName string) (any, error) {
+	if libraryType == imgregv1.LibraryTypeInventory {
+		return r.VMProvider.GetItemFromInventoryByName(ctx, contentLibrary, itemName)
+	}
+
+	return r.VMProvider.GetItemFromLibraryByName(ctx, contentLibrary, itemName)
 }
 
 // checkIsImageAvailable checks if the published VirtualMachineImage resource is available in the cluster.
@@ -730,16 +763,26 @@ func (r *Reconciler) getUploadedItemID(ctx *pkgctx.VirtualMachinePublishRequestC
 // waiting time window but a new task with a new actID is already triggered),
 // we'll get stuck if any previous task succeeds because all tasks afterwards
 // would fail due to item duplication error.
-func (r *Reconciler) isItemCorrelatedWithVMPub(ctx *pkgctx.VirtualMachinePublishRequestContext,
-	item *library.Item) bool {
-	if item.Description != nil {
-		descriptions := itemDescriptionReg.FindStringSubmatch(*item.Description)
-		if len(descriptions) > 1 && descriptions[1] == string(ctx.VMPublishRequest.UID) {
-			return true
+func (r *Reconciler) isItemCorrelatedWithVMPub(
+	ctx *pkgctx.VirtualMachinePublishRequestContext,
+	item any) (string, bool, error) {
+
+	switch tItem := item.(type) {
+	case *object.VirtualMachine:
+		// TODO(abaruni) Verify if VM is associated with this publish request
+		return tItem.Reference().Value, true, nil
+	case *library.Item:
+		if tItem.Description != nil {
+			descriptions := itemDescriptionReg.FindStringSubmatch(*tItem.Description)
+			if len(descriptions) > 1 && descriptions[1] == string(ctx.VMPublishRequest.UID) {
+				return tItem.ID, true, nil
+			}
 		}
+	default:
+		return "", false, fmt.Errorf("unexpected item type: %T", item)
 	}
 
-	return false
+	return "", false, nil
 }
 
 // findCorrelatedItemIDByName finds the published item ID in the VC by target item name.
@@ -762,8 +805,7 @@ func (r *Reconciler) findCorrelatedItemIDByName(ctx *pkgctx.VirtualMachinePublis
 
 	item, err := r.VMProvider.GetItemFromLibraryByName(ctx, string(ctx.ContentLibrary.Spec.UUID), targetItemName)
 	if err != nil {
-		ctx.Logger.Error(err, "failed to find item from VC by its name", "item name", targetItemName)
-		return "", err
+		return "", fmt.Errorf("failed to find item from VC by its name %q: %w", targetItemName, err)
 	}
 
 	if item != nil {
@@ -772,9 +814,15 @@ func (r *Reconciler) findCorrelatedItemIDByName(ctx *pkgctx.VirtualMachinePublis
 		// If VC forgets the task, or the task hadn't proceeded far enough to be submitted to VC
 		// within 30 seconds window, this check can help us find if there is a prior task succeeded.
 		// Ideally we are unlikely to see this.
-		if r.isItemCorrelatedWithVMPub(ctx, item) {
-			return item.ID, nil
+		itemID, ok, err := r.isItemCorrelatedWithVMPub(ctx, item)
+		if err != nil {
+			return "", err
 		}
+		if !ok {
+			return "", fmt.Errorf("item %q is not correlated with this publish request", targetItemName)
+		}
+
+		return itemID, nil
 	}
 
 	return "", fmt.Errorf("no item with name %s exists in the VC", targetItemName)

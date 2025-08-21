@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/uuid"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -26,6 +27,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
@@ -245,6 +247,31 @@ func unitTestsReconcile() {
 						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 				})
 			})
+
+			When("item with same name already exists in inventory", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.InventoryContentLibrary = true
+					})
+					clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+					Expect(ctx.Client.Create(ctx, clv1a2)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, cl)).To(Succeed())
+
+					fakeVMProvider.GetItemFromInventoryByNameFn = func(ctx context.Context,
+						contentLibrary, itemName string) (object.Reference, error) {
+						return &object.VirtualMachine{}, nil
+					}
+				})
+
+				It("doesn't return error to skip requeue", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					// Update TargetValid condition.
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+				})
+			})
 		})
 
 		When("Source and target are both valid", func() {
@@ -266,6 +293,34 @@ func unitTestsReconcile() {
 					Expect(vmpub.Status.SourceRef.Name).To(Equal(vm.Name))
 					Expect(vmpub.Status.TargetRef.Item.Name).To(Equal("dummy-item"))
 					Expect(vmpub.Status.TargetRef.Location).To(Equal(vmpub.Spec.Target.Location))
+				})
+
+				When("publishing to inventory", func() {
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.InventoryContentLibrary = true
+						})
+						clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+						Expect(ctx.Client.Create(ctx, clv1a2)).To(Succeed())
+					})
+					It("requeue and sets VM Publish request status to Success", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						// Eventually vmpub result should be updated to success.
+						Eventually(func() bool {
+							return fakeVMProvider.IsPublishVMCalled()
+						}).Should(BeTrue())
+
+						Eventually(func() vimtypes.TaskInfoState {
+							return fakeVMProvider.GetVMPublishRequestResult(vmpub)
+						}).Should(Equal(vimtypes.TaskInfoStateSuccess))
+
+						By("Should set sourceRef/targetRef")
+						Expect(vmpub.Status.SourceRef.Name).To(Equal(vm.Name))
+						Expect(vmpub.Status.TargetRef.Item.Name).To(Equal("dummy-item"))
+						Expect(vmpub.Status.TargetRef.Location).To(Equal(vmpub.Spec.Target.Location))
+					})
 				})
 
 				When(".spec.source.name is empty", func() {
@@ -675,6 +730,34 @@ func unitTestsReconcile() {
 						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
 					Expect(conditions.IsTrue(vmpub,
 						vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+				})
+			})
+
+			When("Publishing to inventory", func() {
+				When("Prior task succeeded", func() {
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.InventoryContentLibrary = true
+						})
+						clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+						Expect(ctx.Client.Create(ctx, clv1a2)).To(Succeed())
+
+						fakeVMProvider.GetItemFromInventoryByNameFn = func(ctx context.Context,
+							contentLibrary, itemName string) (object.Reference, error) {
+							return &object.VirtualMachine{}, nil
+						}
+					})
+
+					It("target valid and mark Upload to true", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						// Update TargetValid condition.
+						Expect(conditions.IsTrue(vmpub,
+							vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+						Expect(conditions.IsTrue(vmpub,
+							vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+					})
 				})
 			})
 		})

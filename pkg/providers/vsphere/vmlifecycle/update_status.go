@@ -318,11 +318,7 @@ func reconcileStatusSnapshot(
 	_ ReconcileStatusData) []error {
 
 	var errs []error
-
-	if err := updateCurrentSnapshotStatus(vmCtx, k8sClient); err != nil {
-		errs = append(errs, err)
-	}
-	if err := updateRootSnapshots(vmCtx, k8sClient); err != nil {
+	if err := SyncVMSnapshotTreeStatus(vmCtx, k8sClient); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1424,6 +1420,18 @@ func updateProbeStatusGuestInfo(
 	return probeResultSuccess, ""
 }
 
+// SyncVMSnapshotTreeStatus updates the VM's current and root snapshots status.
+func SyncVMSnapshotTreeStatus(
+	vmCtx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client) error {
+
+	if err := updateCurrentSnapshotStatus(vmCtx, k8sClient); err != nil {
+		return err
+	}
+
+	return updateRootSnapshots(vmCtx, k8sClient)
+}
+
 // updateCurrentSnapshotStatus updates the VM status to reflect the
 // current snapshot on the VM.
 func updateCurrentSnapshotStatus(
@@ -1488,7 +1496,6 @@ func updateCurrentSnapshotStatus(
 		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot custom resource not found, clearing status",
 			"snapshotName", snapshotName)
 		vm.Status.CurrentSnapshot = nil
-
 		return nil
 	}
 

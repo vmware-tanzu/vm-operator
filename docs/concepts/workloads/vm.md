@@ -84,7 +84,9 @@ kubectl get -n <NAMESPACE> encryptionclass
 
 For more information on `EncryptionClass` resources, please see the [Encryption](#encryption) section below.
 
-## Supported hardware
+## Hardware
+
+### Configuration
 
 Virtual machines deployed and managed by VM Operator support _all_ the same hardware and configuration options as any other VM on vSphere. The only difference is from where the hardware/configuration information is derived:
 
@@ -92,6 +94,30 @@ Virtual machines deployed and managed by VM Operator support _all_ the same hard
 * **Hardware** comes from an admin-curated [VM class](#vm-class) as well as the DevOps-provided VM specification.
 
 As long as they are specified in the VM class, features such as virtual GPUs, device groups, and SR-IOV NICs are all supported.
+
+### Status
+
+Information about the hardware being used (ex. CPU, memory, vGPUs, etc.) can be gleamed from the VM's status, ex.:
+
+```yaml
+status:
+  hardware:
+    cpu:
+      reservation: 1000
+      total: 4
+    memory:
+      reservation: 1024M
+      total: 2048M
+    vGPUs:
+    - migrationType: None
+      profile: grid_p40-1q
+      type: Nvidia
+    - migrationType: Enhanced
+      profile: grid_p40-2q
+      type: Nvidia
+```
+
+Examples of other hardware (ex. storage, vTPMs, etc.) in the status are illustrated throughout this page.
 
 ## Updating a VM
 
@@ -141,6 +167,8 @@ Non-privileged users cannot remove the annotation is because it is designed to b
 
 ## CPU and Memory
 
+### Configuration
+
 CPU and memory of a VM are derived from the `VirtualMachineClass` resource used to deploy the VM. Specifically, the `spec.configSpec.numCPUs` and `spec.configSpec.memoryMB` properties in the `VirtualMachineClass` resource dictate the number of CPUs and amount of memory allocated to the VM.
 
 Additionally, an administrator might also define certain policies in a `VirtualMachineClass` resource in the form of resource [reservations](https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.resmgmt.doc/GUID-8B88D3D8-E9D9-4C05-A065-B3DE1FFFB401.html) or [limits](https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.resmgmt.doc/GUID-117972E3-F5D3-4641-9EAC-F9DD2B0761C3.html). These are vSphere constructs reserve or set a ceiling on resources consumed by a VM. Users may view these policies by inspecting the `spec.configSpec.cpuAllocation` and `spec.configSpec.memoryAllocation` fields of a `VirtualMachineClass` resource.
@@ -173,6 +201,21 @@ A VM created with this VM class will have 2 CPUs and 4 GiB of memory. Additional
 !!! note "Units for CPU reservations/limits are in MHz"
 
     Please note that the units for CPU are different in hardware and reservations/limits. Virtual hardware is specified in units of vCPUs, whereas CPU reservations/limits are in MHz. Memory can be specified in MiB, GiB, whereas memory reservations/limits are always in MB.
+
+### Status
+
+The configured CPU and memory may be gleamed from the VM's status as well:
+
+```yaml
+status:
+  hardware:
+    cpu:
+      reservation: 1000
+      total: 4
+    memory:
+      reservation: 1024M
+      total: 2048M
+```
 
 ### Resizing
 
@@ -315,6 +358,7 @@ The following fields may be used to determine the encryption status of a VM:
 | `status.crypto.encrypted` | The observed state of the VM's encryption. May be `Config`, `Disks`, or both. |
 | `status.crypto.providerID` | The provider ID used to encrypt the VM. |
 | `status.crypto.keyID` | The key ID used to encrypt the VM. |
+| `status.crypto.hasVTPM` | True if the VM has a vTPM. |
 
 For example, the following is an example of the status of a VM encrypted with an encryption storage class:
 
@@ -326,6 +370,18 @@ status:
     - Disks
     providerID: my-key-provider-id
     keyID: my-key-id
+```
+
+The following is an example of a VM with a vTPM:
+
+```yaml
+status:
+  crypto:
+    encrypted:
+    - Config
+    providerID: my-key-provider-id
+    keyID: my-key-id
+    hasVTPM: true
 ```
 
 #### Encryption Type
@@ -879,7 +935,7 @@ govc vm.info -vm.uuid $(k get vm -o jsonpath='{.spec.instanceUUID}' -n $ns $name
 
 ## Guest OS
 
-### Guest ID
+### Configuration
 
 The optional field `spec.guestID` that may be used when deploying a VM to specify its guest operating system identifier. This field may also be updated when a VM is powered off. The value of this field is derived from the list of [supported guest identifiers](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html). The following command may be used to query the currently supported guest identifiers for a given vSphere environment:
 
@@ -894,6 +950,17 @@ almalinux_64Guest           AlmaLinux (64-bit)
 rockylinux_64Guest          Rocky Linux (64-bit)
 windows2022srvNext_64Guest  Microsoft Windows Server 2025 (64-bit)
 ...
+```
+
+### Status
+
+The configured guest OS ID and name may be gleamed from the VM's status as well:
+
+```yaml
+status:
+  guest:
+    guestFullName: Ubuntu Linux (64-bit)
+    guestID: ubuntu64Guest
 ```
 
 ## CD-ROM

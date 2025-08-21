@@ -12,6 +12,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
+func Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha3_VirtualMachineCryptoStatus(
+	in *vmopv1.VirtualMachineCryptoStatus, out *VirtualMachineCryptoStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha3_VirtualMachineCryptoStatus(in, out, s)
+}
+
 func Convert_v1alpha3_VirtualMachineStorageStatus_To_v1alpha5_VirtualMachineStorageStatus(
 	in *VirtualMachineStorageStatus, out *vmopv1.VirtualMachineStorageStatus, s apiconversion.Scope) error {
 

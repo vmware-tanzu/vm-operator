@@ -1134,6 +1134,97 @@ type VirtualMachineCryptoStatus struct {
 	// Please note, this field will be empty if the VirtualMachine is not
 	// encrypted.
 	KeyID string `json:"keyID,omitempty"`
+
+	// +optional
+
+	// HasVTPM indicates whether or not the VM has a vTPM.
+	HasVTPM bool `json:"hasVTPM,omitempty"`
+}
+
+type VirtualMachineGuestStatus struct {
+	// +optional
+
+	// GuestID describes the ID of the observed operating system.
+	GuestID string `json:"guestID,omitempty"`
+
+	// +optional
+
+	// GuestFullName describes the full name of the observed operating system.
+	GuestFullName string `json:"guestFullName,omitempty"`
+}
+
+type VirtualMachineCPUAllocationStatus struct {
+	// +optional
+
+	// Total describes the observed number of processors.
+	Total int32 `json:"total,omitempty"`
+
+	// +optional
+
+	// Reservation describes the observed CPU reservation in MHz.
+	Reservation int64 `json:"reservation,omitempty"`
+}
+
+type VirtualMachineMemoryAllocationStatus struct {
+	// +optional
+
+	// Total describes the observed amount of configured memory.
+	Total *resource.Quantity `json:"total,omitempty"`
+
+	// +optional
+
+	// Reservation describes the observed memory reservation.
+	Reservation *resource.Quantity `json:"reservation,omitempty"`
+}
+
+type VirtualMachineVGPUType string
+
+const (
+	VirtualMachineVGPUTypeNVIDIA VirtualMachineVGPUType = "Nvidia"
+)
+
+type VirtualMachineVGPUMigrationType string
+
+const (
+	VirtualMachineVGPUMigrationTypeNone     VirtualMachineVGPUMigrationType = "None"
+	VirtualMachineVGPUMigrationTypeNormal   VirtualMachineVGPUMigrationType = "Normal"
+	VirtualMachineVGPUMigrationTypeEnhanced VirtualMachineVGPUMigrationType = "Enhanced"
+)
+
+type VirtualMachineHardwareVGPUStatus struct {
+	// +optional
+
+	// Type describes the observed type of the vGPU.
+	Type VirtualMachineVGPUType `json:"type,omitempty"`
+
+	// +optional
+
+	// Profile describes the observed profile used by the vGPU.
+	//
+	// Please note, this is only applicable to Nvidia vGPUs.
+	Profile string `json:"profile,omitempty"`
+
+	// +optional
+
+	// MigrationType describes the vGPU's observed vMotion support.
+	MigrationType VirtualMachineVGPUMigrationType `json:"migrationType,omitempty"`
+}
+
+type VirtualMachineHardwareStatus struct {
+	// +optional
+
+	// CPU describes the observed CPU allocation of the VM.
+	CPU *VirtualMachineCPUAllocationStatus `json:"cpu,omitempty"`
+
+	// +optional
+
+	// Memory describes the observed memory allocation of the VM.
+	Memory *VirtualMachineMemoryAllocationStatus `json:"memory,omitempty"`
+
+	// +optional
+
+	// VGPUs describes the observed vGPUs used by this VM.
+	VGPUs []VirtualMachineHardwareVGPUStatus `json:"vGPUs,omitempty"`
 }
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
@@ -1247,6 +1338,12 @@ type VirtualMachineStatus struct {
 	// used to construct the entire snapshot chain of a virtual
 	// machine.
 	RootSnapshots []vmopv1common.LocalObjectRef `json:"rootSnapshots,omitempty"`
+
+	// Guest describes the observed state of the VM's guest.
+	Guest *VirtualMachineGuestStatus `json:"guest,omitempty"`
+
+	// Hardware describes the observed state of the VM's hardware.
+	Hardware *VirtualMachineHardwareStatus `json:"hardware,omitempty"`
 }
 
 // +kubebuilder:object:root=true

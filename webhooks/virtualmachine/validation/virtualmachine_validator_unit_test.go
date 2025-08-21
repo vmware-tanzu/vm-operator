@@ -3053,6 +3053,319 @@ func unitTestsValidateCreate() {
 			),
 		)
 	})
+
+	Context("Affinity", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMGroups = true
+				ctx.vm.Spec.GroupName = dummyGroupName
+				ctx.vm.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{}
+			})
+		})
+
+		DescribeTable("create", doTest,
+			Entry("allow empty Affinity spec",
+				testParams{
+					setup:         func(ctx *unitValidatingWebhookContext) {},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow Affinity without GroupName",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.GroupName = ""
+					},
+					validate: doValidateWithMsg(`spec.groupName: Required value: when setting affinity`),
+				},
+			),
+
+			Entry("disallow Zone Affinity/Anti-Affinity",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.ZoneAffinity = &vmopv1.VirtualMachineAffinityZoneAffinitySpec{}
+						ctx.vm.Spec.Affinity.ZoneAntiAffinity = &vmopv1.VirtualMachineAntiAffinityZoneAffinitySpec{}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.zoneAffinity: Forbidden: zone affinity is not allowed`,
+						`spec.affinity.zoneAntiAffinity: Forbidden: zone anti-affinity is not allowed`),
+				},
+			),
+
+			Entry("disallow VM Affinity with RequiredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingIgnoredDuringExecution with not supported fields",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: "",
+								},
+								{
+									TopologyKey: "kubernetes.io/hostname",
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Operator: metav1.LabelSelectorOpNotIn,
+											},
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: "",
+								},
+								{
+									TopologyKey: "kubernetes.io/hostname",
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Operator: metav1.LabelSelectorOpNotIn,
+											},
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[2].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In`,
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[2].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`),
+				},
+			),
+
+			Entry("disallow VM Affinity with RequiredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingIgnoredDuringExecution that does not match itself",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels = map[string]string{"foo": "bar"}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: "",
+								},
+								{
+									TopologyKey: "kubernetes.io/hostname",
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar1",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "foo",
+												Operator: metav1.LabelSelectorOpNotIn,
+												Values:   []string{"bar1"},
+											},
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: "",
+								},
+								{
+									TopologyKey: "kubernetes.io/hostname",
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar1",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "foo",
+												Operator: metav1.LabelSelectorOpNotIn,
+												Values:   []string{"bar1"},
+											},
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[2].labelSelector: Forbidden: label selector must match VM`,
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[2].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In`,
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[2].labelSelector: Forbidden: label selector must match VM`,
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[2].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`),
+				},
+			),
+
+			Entry("allow VM Affinity with RequiredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingIgnoredDuringExecution with supported fields",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels = map[string]string{"foo": "bar"}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "foo",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"bar"},
+											},
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "foo",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"bar"},
+											},
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingPreferredDuringExecution",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							RequiredDuringSchedulingIgnoredDuringExecution:   make([]vmopv1.VMAffinityTerm, 1),
+							RequiredDuringSchedulingPreferredDuringExecution: make([]vmopv1.VMAffinityTerm, 1),
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution: Forbidden: VM anti-affinity with RequiredDuringSchedulingIgnoredDuringExecution is not allowed`,
+						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingPreferredDuringExecution: Forbidden: VM anti-affinity with RequiredDuringSchedulingPreferredDuringExecution is not allowed`),
+				},
+			),
+
+			Entry("allow VM Anti Affinity with PreferredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingPreferredDuringExecution with supported fields",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Operator: metav1.LabelSelectorOpIn,
+											},
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Operator: metav1.LabelSelectorOpIn,
+											},
+										},
+									},
+									TopologyKey: "",
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Operator: metav1.LabelSelectorOpIn,
+											},
+										},
+									},
+									TopologyKey: "kubernetes.io/hostname",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow VM Anti Affinity with PreferredDuringSchedulingIgnoredDuringExecution and PreferredDuringSchedulingPreferredDuringExecution with unsupported fields",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Operator: metav1.LabelSelectorOpNotIn,
+											},
+										},
+									},
+									TopologyKey: "kubernetes.io/hostname",
+								},
+							},
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Operator: metav1.LabelSelectorOpNotIn,
+											},
+										},
+									},
+									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`,
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "topology.kubernetes.io/zone": supported values: "", "kubernetes.io/hostname"`,
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`),
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateUpdate() {
@@ -5760,6 +6073,45 @@ func unitTestsValidateUpdate() {
 						})
 					},
 					expectAllowed: true,
+				},
+			),
+		)
+	})
+
+	Context("Affinity", func() {
+		DescribeTable("Updates", doTest,
+			Entry("Immutable",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+							VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"foo": "bar1",
+											},
+										},
+									},
+								},
+							},
+						}
+
+						ctx.oldVM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+							VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"foo": "bar2",
+											},
+										},
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(`spec.affinity: Forbidden: updating Affinity is not allowed`),
 				},
 			),
 		)

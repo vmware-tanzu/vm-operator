@@ -77,7 +77,7 @@ type VirtualMachineProviderInterface interface {
 		vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)
 	// GetParentSnapshot returns the parent snapshot of a given snapshot name.
 	GetParentSnapshot(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (*vimtypes.VirtualMachineSnapshotTree, error)
-	// SnapshotSize returns the size of a snapshot.
+	// GetSnapshotSize returns the size of a snapshot.
 	GetSnapshotSize(ctx context.Context, vmSnapshotName string, vm *vmopv1.VirtualMachine) (int64, error)
 
 	// SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.

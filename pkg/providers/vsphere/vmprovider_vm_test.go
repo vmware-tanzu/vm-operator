@@ -3210,8 +3210,114 @@ func vmTests() {
 						Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
 
 						// Find the snapshot name in the tree to verify it matches
-						currentSnapName := vmlifecycle.FindSnapshotNameInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
-						Expect(currentSnapName).To(Equal(vmSnapshot.Name))
+						currentSnap := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
+						Expect(currentSnap).ToNot(BeNil())
+						Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
+					})
+				})
+
+				// Simulate an Imported Snapshot scenario by
+				//	- creating the VC VM and VM while ensuring the backup is not taken.
+				//	- creating a snapshot on VC AND THEN only creating the VMSnapshot CR so that the ExtraConfig is
+				// 	  not stamped by the controller.
+				// 	- change some bits in the VM CR and take a second snapshot. This snapshot can be taken through a
+				//	  VMSnapshot. This is needed to make sure that we are not reverting to a snapshot that the VM is
+				//    running off at the same time.
+				//	- Now, revert the VM to the first snapshot. It is expected that the spec fields would now be approximated.
+				Context("when reverting to imported snapshot", func() {
+					var secondSnapshot *vmopv1.VirtualMachineSnapshot
+
+					BeforeEach(func() {
+						pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+							config.Features.VMImportNewNet = true
+						})
+					})
+
+					It("should successfully revert to desired snapshot and approximate the VM Spec", func() {
+						if vm.Labels == nil {
+							vm.Labels = make(map[string]string)
+						}
+
+						// skip creation of backup VMResourceYAMLExtraConfigKey by setting the CAPV cluster role label
+						vm.Labels[kubeutil.CAPVClusterRoleLabelKey] = ""
+
+						// Create VM first
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						// make sure the VM doesn't have the ExtraConfig stamped
+						var moVM mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+						Expect(moVM.Config.ExtraConfig).ToNot(BeNil())
+						ecMap := pkgutil.OptionValues(moVM.Config.ExtraConfig).StringMap()
+						Expect(ecMap).ToNot(HaveKey(backupapi.VMResourceYAMLExtraConfigKey))
+
+						// Create first snapshot in vCenter
+						task, err := vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "first snapshot", false, false)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(task.Wait(ctx)).To(Succeed())
+
+						// Create first snapshot CR
+						// Mark the snapshot as ready so that the snapshot workflow doesn't try to create it.
+						conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+						vmSnapshot.Annotations[vmopv1.ImportedSnapshotAnnotation] = ""
+						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+						// Snapshot should be owned by the VM resource.
+						o := vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), &o)).To(Succeed())
+						Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
+						Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
+
+						// mark the snapshot as ready because snapshot workflow will skip because of the CAPV cluster role label
+						cur := &vmopv1.VirtualMachineSnapshot{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmSnapshot), cur)).To(Succeed())
+						conditions.MarkTrue(cur, vmopv1.VirtualMachineSnapshotReadyCondition)
+						Expect(ctx.Client.Status().Update(ctx, cur)).To(Succeed())
+
+						// we don't need the CAPI label anymore
+						labels := vm.Labels
+						delete(labels, kubeutil.CAPVClusterRoleLabelKey)
+						vm.Labels = labels
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+
+						// modify the VM Spec to tinker with some flag
+						Expect(vm.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeHard))
+						vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+
+						// Create second snapshot
+						secondSnapshot = builder.DummyVirtualMachineSnapshot("", "test-second-snap", vm.Name)
+						secondSnapshot.Namespace = nsInfo.Namespace
+
+						task, err = vcVM.CreateSnapshot(ctx, secondSnapshot.Name, "second snapshot", false, false)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(task.Wait(ctx)).To(Succeed())
+
+						// Create second snapshot CR
+						// Mark the snapshot as ready so that the snapshot workflow doesn't try to create it.
+						conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+						// Snapshot should be owned by the VM resource.
+						Expect(controllerutil.SetOwnerReference(&o, secondSnapshot, ctx.Scheme)).To(Succeed())
+						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
+
+						// Set desired snapshot to first snapshot (perform a revert from second to first)
+						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+							Name:       vmSnapshot.Name,
+						}
+
+						err = createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						// Verify VM status reflects the reverted snapshot
+						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
+						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+						// Verify the revert operation reverted to the expected values
+						Expect(vm.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpMode("")))
+						Expect(vm.Spec.Volumes).To(BeEmpty())
 					})
 				})
 
@@ -3319,8 +3425,8 @@ func vmTests() {
 						Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
 
 						// The current snapshot name should still be the original
-						currentSnapName := vmlifecycle.FindSnapshotNameInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
-						Expect(currentSnapName).To(Equal(vmSnapshot.Name))
+						currentSnap := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
+						Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
 					})
 				})
 			})

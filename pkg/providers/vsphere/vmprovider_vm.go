@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -1369,7 +1370,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 	// Restore VM spec and metadata from the snapshot.
 	vmCtx.Logger.Info("Starting VM spec and metadata restoration from snapshot")
 
-	if err := vs.restoreVMSpecFromSnapshot(vmCtx, vcVM, snapObj); err != nil {
+	if err := vs.restoreVMSpecFromSnapshot(vmCtx, vcVM, snapCR, snapObj); err != nil {
 		vmCtx.Logger.Error(err, "Restoring VM spec and metadata from snapshot failed")
 		return true, err
 	}
@@ -1431,9 +1432,10 @@ func (vs *vSphereVMProvider) performSnapshotRevert(
 func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
+	snapCR *vmopv1.VirtualMachineSnapshot,
 	snapObj *vimtypes.ManagedObjectReference) error {
 
-	vmYAML, err := vs.getVMYamlFromSnapshot(vmCtx, vcVM, snapObj)
+	vmYAML, err := vs.getVMYamlFromSnapshot(vmCtx, vcVM, snapCR, snapObj)
 	if err != nil {
 		vmCtx.Logger.Error(err, "failed to parse VM spec from snapshot")
 		return err
@@ -1487,6 +1489,7 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
+	snapCR *vmopv1.VirtualMachineSnapshot,
 	snap *vimtypes.ManagedObjectReference) (string, error) {
 
 	var moSnap mo.VirtualMachineSnapshot
@@ -1502,16 +1505,142 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 	ecList := object.OptionValueList(moSnap.Config.ExtraConfig)
 	raw, exists := ecList.GetString(backupapi.VMResourceYAMLExtraConfigKey)
 	if !exists {
-		vmCtx.Logger.V(4).Info("VM does not have the necessary ExtraConfig in the Snapshot",
+		// if the Snapshot has ImportedSnapshotAnnotation, then only perform an approximation of the VM spec
+		_, found := snapCR.GetAnnotations()[vmopv1.ImportedSnapshotAnnotation]
+		if !found {
+			vmCtx.Logger.Info(fmt.Sprintf("Revert is being attempted to a Snapshot which neither has ExtraConfig nor the %s annotation. This is an unsupported functionality.", vmopv1.ImportedSnapshotAnnotation))
+			return "", nil
+		}
+
+		vmCtx.Logger.Info(
+			"VM does not have the necessary ExtraConfig in the Snapshot. The snapshot is imported, approximating the spec from the VirtualMachineConfigInfo.",
 			"expectedKey", backupapi.VMResourceYAMLExtraConfigKey)
-		// TODO: VMSVC-2709
-		// Note that an imported VM could have snapshots that do not
-		// have this backup key set. In this case, we need to
-		// approximately generate the spec from the ConfigInfo.
-		// We also set the ExtraConfig so we do not have to do this
-		// when this VM is reverted to the same snapshot in future
-		// again.
-		return "", nil
+
+		// For VMs that are imported, we do not have the
+		// ExtraConfig set in the snapshot. In this case, we
+		// will approximate the spec from the VirtualMachineConfigInfo.
+		// This is a best-effort attempt to restore the VM spec
+		// and metadata from the snapshot.
+
+		vm := vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmCtx.VM.Name,
+				Namespace: vmCtx.VM.Namespace,
+			},
+		}
+
+		vcClient, err := vs.getVcClient(vmCtx)
+		if err != nil {
+			vmCtx.Logger.Error(err, "error fetching vcClient")
+			return "", err
+		}
+
+		vm.Spec = vmopv1.VirtualMachineSpec{
+			InstanceUUID: moSnap.Config.InstanceUuid,
+			BiosUUID:     moSnap.Config.Uuid,
+			GuestID:      vcClient.VimClient().ServiceContent.About.InstanceUuid,
+
+			// Classless and Imageless VMs
+			ClassName: "",
+			ImageName: "",
+			Image:     nil,
+
+			// We only support VM snapshots and affinity policies are not part of VMs.
+			Affinity: nil,
+
+			// It's not possible to construct the crypto spec looking at the VM.
+			Crypto: nil,
+
+			// No PVCs for imported VMs. For day 2, users can convert disks in PVCs using just-in-time PVCs.
+			Volumes: []vmopv1.VirtualMachineVolume{},
+
+			// This is used for slot reservation starting VCF 9.0.  The reverted VM will continue to use the reserved
+			// profile but it won't be part of the spec since the plumbing from VM class to VCFA won't exist (VCFA
+			// expects slots of a class to be reserved if this is set).
+			Reserved: nil,
+
+			// The VM will continue to have the same boot options from the snapshot state.
+			// If user wants to change that, they can specify a custom boot option (boot order).
+			BootOptions: nil,
+
+			// currentSnapshot is only used to trigger a revert, so this must be empty.
+			CurrentSnapshot: nil,
+
+			// Group name is overridden to the VM's current group.
+			// We can't know (or guess) what the group the VM was when the snapshot was taken.
+			GroupName: vmCtx.VM.Spec.GroupName,
+
+			// When Snapshot is taken with Policy A and then VM is updated to use Policy B,
+			// after a revert to Snapshot with Policy A is performed, VM continues to have Policy A.
+			// So, we just simplify by setting the StorageClass to same as the VM's current StorageClass.
+			StorageClass: vmCtx.VM.Spec.StorageClass,
+
+			Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+				ChangeBlockTracking: moSnap.Config.ChangeTrackingEnabled,
+			},
+
+			Network: &vmopv1.VirtualMachineNetworkSpec{
+				HostName: vmCtx.MoVM.Guest.HostName,
+			},
+		}
+
+		// Inferred from the power state of the snapshot
+		// It doesn't matter what the power state of the VM is at the time of revert.
+		// The VM is always reverted in the same power state as the snapshot.
+		snapshot := vmlifecycle.FindSnapshotInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, snap.Value)
+		if snapshot == nil {
+			// weird situation here
+			// the snapshot being processed doesn't exist in the snapshot tree
+			// this shouldn't be happening
+			err := fmt.Errorf("snapshot %s not found in VM Snapshot Tree", snap.Value)
+			vmCtx.Logger.Error(err, "")
+			return "", err
+		}
+		// convert from vimtypes.VirtualMachinePowerState to vmopv1.VirtualMachinePowerState
+		poweredOn := snapshot.State == vimtypes.VirtualMachinePowerStatePoweredOn
+		if poweredOn {
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+		} else {
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+		}
+
+		// Number of elements in the spec.network.interfaces list must be same as number of VM's NICs from ConfigInfo
+		// Details of each interface (which network does it connect to) is ignored
+		// Networking can be fixed after revert and it is not possible to map the vSphere network to Supervisor networks.
+		devices := object.VirtualDeviceList(moSnap.Config.Hardware.Device)
+		vNICs := devices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+		if len(vNICs) == 0 {
+			// If no vNICs are defined, then disable network
+			vm.Spec.Network.Disabled = true
+		} else {
+			interfaces := make([]vmopv1.VirtualMachineNetworkInterfaceSpec, len(vNICs))
+			for i := range vNICs {
+				interfaces[i] = vmopv1.VirtualMachineNetworkInterfaceSpec{
+					Name: fmt.Sprintf("eth%d", i),
+				}
+			}
+			vm.Spec.Network.Interfaces = interfaces
+		}
+
+		// MinHardwareVersion is set to the Current Hardware Version of the VM
+		chv, err := strconv.ParseInt(moSnap.Config.Version, 10, 32)
+		if err != nil {
+			vmCtx.Logger.V(5).Info("unable to approximate minimum hardware version", "hwVersionFromSnapshot", moSnap.Config.Version)
+		} else {
+			vm.Spec.MinHardwareVersion = int32(chv)
+		}
+
+		// TODO(future): Labels and Annotations are skipped for now as design discussions are
+		// on storing Labels and Annotations in VC are in progress
+		vm.Labels = map[string]string{}
+		vm.Annotations = map[string]string{}
+
+		vmYAML, err := yaml.Marshal(vm)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal VM into YAML %+v: %w", vm, err)
+		}
+
+		return string(vmYAML), nil
 	}
 
 	vmCtx.Logger.V(5).Info("Found backup data in snapshot config",

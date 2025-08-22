@@ -1380,10 +1380,6 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 		"afterRestoreLabels", vmCtx.VM.Labels,
 		"afterRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshot)
 
-	if err := vmlifecycle.SyncVMSnapshotTreeStatus(vmCtx, vs.k8sClient); err != nil {
-		return true, err
-	}
-
 	vmCtx.Logger.Info("Successfully completed snapshot revert and restored VM spec, requeuing for next reconcile",
 		"snapshotName", desiredSnapshotName)
 
@@ -1773,16 +1769,8 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 		return err
 	}
 
-	// Update the VM's status first before marking the snapshot as ready.
-	// In case when the VM update fails, the next reconcile will skip
-	// reconciling this snapshot if it's marked as ready.
-	if err := vs.updateVMStatus(vmCtx, snapArgs, *snapshotToProcess); err != nil {
-		vmCtx.Logger.Error(err, "Failed to update VM status", "snapshotName", snapshotToProcess.Name)
-		return err
-	}
-
 	// Update the snapshot status with the successful result
-	if err = PatchSnapshotSuccessStatus(vmCtx, vs.k8sClient, snapshotToProcess, snapMoRef); err != nil {
+	if err = kubeutil.PatchSnapshotSuccessStatus(vmCtx, vs.k8sClient, snapshotToProcess, snapMoRef); err != nil {
 		vmCtx.Logger.Error(err, "Failed to update snapshot status", "snapshotName", snapshotToProcess.Name)
 		return err
 	}

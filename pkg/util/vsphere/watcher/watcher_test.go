@@ -419,6 +419,33 @@ var _ = Describe("Start", func() {
 			})
 		})
 
+		When("there is a change to currentSnapshot", func() {
+			Specify("a result should be received", func() {
+				// Assert that a result is signaled due to the VM entering the
+				// scope of the watcher.
+				assertResult(cluster1vm1, "my-namespace-1", "my-name-1")
+
+				// Assert no more results are signaled.
+				assertNoResult()
+
+				// Invoke a snapshot operation that should update the
+				// root snapshots, and current snapshot of the VM.
+				t, err := cluster1vm1.CreateSnapshot(ctx, "snap-1", "description", false, false)
+				ExpectWithOffset(1, err).ShouldNot(HaveOccurred())
+				ExpectWithOffset(1, t.WaitEx(ctx)).To(Succeed())
+
+				// Assert that a result is signaled due to the VM entering the
+				// scope of the watcher.
+				assertResult(cluster1vm1, "my-namespace-1", "my-name-1")
+
+				// Assert no more results are signaled.
+				assertNoResult()
+
+				// Assert no error either.
+				assertNoError()
+			})
+		})
+
 		When("the container is removed from the watcher", func() {
 			Specify("no result should be received", func() {
 				// Assert that a result is signaled due to the VM entering the

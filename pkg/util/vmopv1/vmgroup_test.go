@@ -205,3 +205,153 @@ var _ = Describe("Validating RetrieveVMGroupMembers",
 		})
 
 	})
+
+var _ = Describe("UpdateGroupLinkedCondition",
+	Label(
+		testlabels.EnvTest,
+		testlabels.API,
+	),
+	func() {
+		var (
+			ctx        *builder.UnitTestContext
+			rootGroup  *vmopv1.VirtualMachineGroup
+			childGroup *vmopv1.VirtualMachineGroup
+			childVM    *vmopv1.VirtualMachine
+		)
+
+		BeforeEach(func() {
+			rootGroup = &vmopv1.VirtualMachineGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "vmg-root",
+				},
+			}
+
+			childGroup = &vmopv1.VirtualMachineGroup{
+				TypeMeta: metav1.TypeMeta{
+					Kind: "VirtualMachineGroup",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "vmg-child",
+				},
+			}
+
+			childVM = &vmopv1.VirtualMachine{
+				TypeMeta: metav1.TypeMeta{
+					Kind: "VirtualMachine",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "vm-child",
+				},
+			}
+		})
+
+		JustBeforeEach(func() {
+			ctx = builder.NewUnitTestContext(rootGroup, childGroup, childVM)
+		})
+
+		AfterEach(func() {
+			ctx = nil
+		})
+
+		When("member has no group name", func() {
+			BeforeEach(func() {
+				childVM.Spec.GroupName = ""
+				childGroup.Spec.GroupName = ""
+			})
+
+			It("should delete the group linked condition", func() {
+				// Add group link condition to verify the condition is actually deleted.
+				conditions.MarkTrue(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+				conditions.MarkTrue(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+
+				Expect(vmopv1util.UpdateGroupLinkedCondition(ctx, childVM, ctx.Client)).To(Succeed())
+				Expect(conditions.Get(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeNil())
+
+				Expect(vmopv1util.UpdateGroupLinkedCondition(ctx, childGroup, ctx.Client)).To(Succeed())
+				Expect(conditions.Get(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeNil())
+			})
+		})
+
+		When("group is not found", func() {
+			BeforeEach(func() {
+				childVM.Spec.GroupName = "non-existent-group"
+				childGroup.Spec.GroupName = "non-existent-group"
+			})
+
+			It("should mark group linked condition as false with NotFound reason", func() {
+				Expect(vmopv1util.UpdateGroupLinkedCondition(ctx, childVM, ctx.Client)).To(Succeed())
+				Expect(conditions.Get(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).ToNot(BeNil())
+				Expect(conditions.Get(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Status).To(Equal(metav1.ConditionFalse))
+				Expect(conditions.Get(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Reason).To(Equal("NotFound"))
+
+				Expect(vmopv1util.UpdateGroupLinkedCondition(ctx, childGroup, ctx.Client)).To(Succeed())
+				Expect(conditions.Get(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).ToNot(BeNil())
+				Expect(conditions.Get(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Status).To(Equal(metav1.ConditionFalse))
+				Expect(conditions.Get(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Reason).To(Equal("NotFound"))
+			})
+		})
+
+		When("member is not found in group's boot order", func() {
+			BeforeEach(func() {
+				childVM.Spec.GroupName = rootGroup.Name
+				childGroup.Spec.GroupName = rootGroup.Name
+				rootGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							// Set incorrect kinds to make members not found.
+							{
+								Name: childVM.Name,
+								Kind: "VirtualMachineGroup",
+							},
+							{
+								Name: childGroup.Name,
+								Kind: "VirtualMachine",
+							},
+						},
+					},
+				}
+			})
+
+			It("should mark condition as false with NotMember reason", func() {
+				Expect(vmopv1util.UpdateGroupLinkedCondition(ctx, childVM, ctx.Client)).To(Succeed())
+				Expect(conditions.Get(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).ToNot(BeNil())
+				Expect(conditions.Get(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Status).To(Equal(metav1.ConditionFalse))
+				Expect(conditions.Get(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Reason).To(Equal("NotMember"))
+
+				Expect(vmopv1util.UpdateGroupLinkedCondition(ctx, childGroup, ctx.Client)).To(Succeed())
+				Expect(conditions.Get(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).ToNot(BeNil())
+				Expect(conditions.Get(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Status).To(Equal(metav1.ConditionFalse))
+				Expect(conditions.Get(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Reason).To(Equal("NotMember"))
+			})
+		})
+
+		When("member is found in group's boot order", func() {
+			BeforeEach(func() {
+				childVM.Spec.GroupName = rootGroup.Name
+				childGroup.Spec.GroupName = rootGroup.Name
+				rootGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{
+								Name: childVM.Name,
+								Kind: "VirtualMachine",
+							},
+							{
+								Name: childGroup.Name,
+								Kind: "VirtualMachineGroup",
+							},
+						},
+					},
+				}
+			})
+
+			It("should mark group linked condition as true", func() {
+				Expect(vmopv1util.UpdateGroupLinkedCondition(ctx, childVM, ctx.Client)).To(Succeed())
+				Expect(conditions.IsTrue(childVM, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+
+				Expect(vmopv1util.UpdateGroupLinkedCondition(ctx, childGroup, ctx.Client)).To(Succeed())
+				Expect(conditions.IsTrue(childGroup, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+			})
+		})
+	},
+)

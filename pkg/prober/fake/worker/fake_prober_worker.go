@@ -5,13 +5,13 @@
 package worker
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 
 	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
@@ -52,7 +52,7 @@ func (w *FakeWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*proberctx.P
 	}
 
 	return &proberctx.ProbeContext{
-		Context:       context.Background(),
+		Context:       pkgcfg.NewContext(),
 		Logger:        ctrl.Log.WithName("fake-probe").WithValues("vmName", vm.NamespacedName()),
 		VM:            vm,
 		ProbeType:     "fake-probe",
@@ -61,6 +61,8 @@ func (w *FakeWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*proberctx.P
 }
 
 func (w *FakeWorker) DoProbe(ctx *proberctx.ProbeContext) error {
+	_ = pkgcfg.FromContext(ctx)
+
 	w.Lock()
 	defer w.Unlock()
 

@@ -7,6 +7,8 @@ package virtualmachine
 import (
 	"fmt"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -179,10 +181,8 @@ func genConfigSpecAffinityPolicies(
 					for key, value := range affinityTerm.LabelSelector.MatchLabels {
 						// TODO: there should be a more concrete way generate the tag name.
 						label := fmt.Sprintf("%s:%s", key, value)
+
 						placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-								TagsToAttach: []string{label},
-							},
 							AffinedVmsTagName: label,
 							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
@@ -197,10 +197,8 @@ func genConfigSpecAffinityPolicies(
 					for key, value := range affinityTerm.LabelSelector.MatchLabels {
 						// TODO: there should be a more concrete way generate the tag name.
 						label := fmt.Sprintf("%s:%s", key, value)
+
 						placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-								TagsToAttach: []string{label},
-							},
 							AffinedVmsTagName: label,
 							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
@@ -209,11 +207,51 @@ func genConfigSpecAffinityPolicies(
 				}
 			}
 		}
+
+		// Handle VM-VM anti-affinity at zonal level.
+		// For VM to VM group anti-affinity, we only support preferred during scheduling type policies.
+		if affinity.VMAntiAffinity != nil {
+			var allAntiAffinityLabels []string
+
+			// Handle PreferredDuringSchedulingIgnoredDuringExecution terms
+			for _, affinityTerm := range affinity.VMAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+				if affinityTerm.TopologyKey == topology.KubernetesTopologyZoneLabelKey {
+					labels, err := extractLabelsFromSelector(affinityTerm.LabelSelector)
+					if err != nil {
+						vmCtx.Logger.Error(err, "Anti-affinity policy specifies an invalid label selector")
+						continue
+					}
+					allAntiAffinityLabels = append(allAntiAffinityLabels, labels...)
+				}
+			}
+
+			// Create a single effective VmToVmGroupsAntiAffinity policy if we have any labels
+			if len(allAntiAffinityLabels) > 0 {
+				placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
+					VmPlacementPolicy: vimtypes.VmPlacementPolicy{
+						// TagsToAttach will be set later with all VM labels
+					},
+					AntiAffinedVmGroupTags: allAntiAffinityLabels,
+					PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+					PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+				})
+			}
+		}
+
 	}
 
 	if len(placementPols) > 0 {
 		configSpec.VmPlacementPolicies = placementPols
 	}
+
+	if configSpec.VmPlacementPolicies == nil {
+		configSpec.VmPlacementPolicies = []vimtypes.BaseVmPlacementPolicy{
+			&vimtypes.VmPlacementPolicy{},
+		}
+	}
+
+	// Attach all VM labels as tags to the placement policies
+	attachVMLabelsToPolicy(vmCtx.VM.Labels, configSpec.VmPlacementPolicies)
 }
 
 // CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for
@@ -347,4 +385,64 @@ func initResourceAllocation(ap **vimtypes.ResourceAllocationInfo) {
 	if a.Limit == nil {
 		a.Limit = ptr.To[int64](-1)
 	}
+}
+
+// extractLabelsFromSelector extracts all labels from a LabelSelector, handling both
+// MatchLabels and MatchExpressions with "In" operator (supporting multiple values).
+// Returns a slice of formatted labels in "key:value" format.
+// If any operation other than "In" is specified in the MatchExpressions, we return an error.
+// We don't de-duplicate labels since DRS handles it on the backend.
+func extractLabelsFromSelector(selector *metav1.LabelSelector) ([]string, error) {
+	if selector == nil {
+		return nil, nil
+	}
+
+	labels := make([]string, 0)
+
+	// Handle MatchLabels - direct key-value pairs
+	for key, value := range selector.MatchLabels {
+		label := fmt.Sprintf("%s:%s", key, value)
+		labels = append(labels, label)
+	}
+
+	// Handle MatchExpressions - only support "In" operator with AND logic
+	for _, expr := range selector.MatchExpressions {
+		switch expr.Operator {
+		case metav1.LabelSelectorOpIn:
+			// For "In" operator, create a label for each value
+			for _, value := range expr.Values {
+				label := fmt.Sprintf("%s:%s", expr.Key, value)
+				labels = append(labels, label)
+			}
+		default:
+			// We only support "In" operator for now as specified in requirements
+			return nil, fmt.Errorf("unsupported MatchExpression operator %q, only 'In' is supported", expr.Operator)
+		}
+	}
+
+	return labels, nil
+}
+
+// attachVMLabelsToPolicy converts VM labels to tags and attaches them to the first policy.
+// All tags will be assigned to the VM regardless of which policy they're attached to.
+func attachVMLabelsToPolicy(vmLabels map[string]string, placementPols []vimtypes.BaseVmPlacementPolicy) {
+	if len(placementPols) == 0 {
+		return // No policies to attach to
+	}
+
+	tagsToAttach := make([]string, 0, len(vmLabels))
+
+	// Any label on the VM can participate in an affinity/anti-affinity policy.
+	// It does not matter if a label is not participating in any policy.
+	// It could be specified by this, or any other VM's placement policy in future.
+	for key, value := range vmLabels {
+		// TODO: We should skip labels that are added by VM operator.
+		label := fmt.Sprintf("%s:%s", key, value)
+		tagsToAttach = append(tagsToAttach, label)
+	}
+
+	// This is a little weird that we are sending all tags to the "first"
+	// policy. But it doesn't matter _which_ policy we send all the tags to.
+	// All tags specified here will be assigned to the VM.
+	placementPols[0].GetVmPlacementPolicy().TagsToAttach = tagsToAttach
 }

@@ -1314,7 +1314,7 @@ func vmTests() {
 						Specify("it should return an error creating VM", func() {
 							err := createOrUpdateVM(ctx, vmProvider, vm)
 							Expect(err).To(HaveOccurred())
-							Expect(err.Error()).To(ContainSubstring("failed to get VM Group object"))
+							Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
 						})
 					})
 
@@ -1352,10 +1352,6 @@ func vmTests() {
 										Name: vm.Name,
 										Kind: "VirtualMachine",
 										Conditions: []metav1.Condition{
-											{
-												Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-												Status: metav1.ConditionTrue,
-											},
 											{
 												Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 												Status: metav1.ConditionFalse,
@@ -1403,10 +1399,6 @@ func vmTests() {
 										Name: vm.Name,
 										Kind: "VirtualMachine",
 										Conditions: []metav1.Condition{
-											{
-												Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-												Status: metav1.ConditionTrue,
-											},
 											{
 												Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 												Status: metav1.ConditionTrue,

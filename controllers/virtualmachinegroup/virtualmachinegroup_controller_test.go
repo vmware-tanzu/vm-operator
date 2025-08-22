@@ -185,6 +185,94 @@ var _ = Describe(
 			})
 		})
 
+		Context("GroupName", func() {
+			When("group name is not set", func() {
+				It("should not have the group linked condition", func() {
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					Expect(conditions.Get(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeNil())
+				})
+			})
+
+			When("group name is set to a non-existent group", func() {
+				BeforeEach(func() {
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					vmGroup1Copy := vmGroup1.DeepCopy()
+					vmGroup1Copy.Spec.GroupName = "non-existent-group"
+					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+				})
+
+				It("should set the group linked condition to false with NotFound reason", func() {
+					Eventually(func(g Gomega) {
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						g.Expect(conditions.Get(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).ToNot(BeNil())
+						g.Expect(conditions.Get(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(conditions.Get(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Reason).To(Equal("NotFound"))
+						g.Expect(conditions.Get(vmGroup1, vmopv1.ReadyConditionType)).ToNot(BeNil())
+						g.Expect(conditions.Get(vmGroup1, vmopv1.ReadyConditionType).Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(conditions.Get(vmGroup1, vmopv1.ReadyConditionType).Reason).To(Equal("Error"))
+						g.Expect(conditions.Get(vmGroup1, vmopv1.ReadyConditionType).Message).To(Equal("group is not linked to its parent group"))
+					}, "5s", "100ms").Should(Succeed())
+				})
+			})
+
+			When("group name is set to an existing group", func() {
+				BeforeEach(func() {
+					vmGroup1 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+					vmGroup1Copy := vmGroup1.DeepCopy()
+					vmGroup1Copy.Spec.GroupName = vmGroup2Key.Name
+					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+				})
+
+				When("the parent group members do not contain this child group", func() {
+					It("should set the child group linked condition to false with NotMember reason", func() {
+						Eventually(func(g Gomega) {
+							vmGroup1 := &vmopv1.VirtualMachineGroup{}
+							g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+							g.Expect(conditions.Get(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).ToNot(BeNil())
+							g.Expect(conditions.Get(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Status).To(Equal(metav1.ConditionFalse))
+							g.Expect(conditions.Get(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked).Reason).To(Equal("NotMember"))
+							g.Expect(conditions.Get(vmGroup1, vmopv1.ReadyConditionType)).ToNot(BeNil())
+							g.Expect(conditions.Get(vmGroup1, vmopv1.ReadyConditionType).Status).To(Equal(metav1.ConditionFalse))
+							g.Expect(conditions.Get(vmGroup1, vmopv1.ReadyConditionType).Reason).To(Equal("Error"))
+							g.Expect(conditions.Get(vmGroup1, vmopv1.ReadyConditionType).Message).To(Equal("group is not linked to its parent group"))
+						}, "5s", "100ms").Should(Succeed())
+					})
+				})
+
+				When("the parent group members contain this child group", func() {
+					BeforeEach(func() {
+						vmGroup2 := &vmopv1.VirtualMachineGroup{}
+						Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+						vmGroup2Copy := vmGroup2.DeepCopy()
+						vmGroup2Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+							{
+								Members: []vmopv1.GroupMember{
+									{
+										Kind: virtualMachineGroupKind,
+										Name: vmGroup1Key.Name,
+									},
+								},
+							},
+						}
+						Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+					})
+
+					It("should set the child group linked condition to true", func() {
+						Eventually(func(g Gomega) {
+							vmGroup1 := &vmopv1.VirtualMachineGroup{}
+							g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+							g.Expect(conditions.IsTrue(vmGroup1, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+							g.Expect(conditions.IsTrue(vmGroup1, vmopv1.ReadyConditionType)).To(BeTrue())
+						}, "5s", "100ms").Should(Succeed())
+					})
+				})
+			})
+		})
+
 		Context("Members", func() {
 			BeforeEach(func() {
 				vmGroup1 := &vmopv1.VirtualMachineGroup{}

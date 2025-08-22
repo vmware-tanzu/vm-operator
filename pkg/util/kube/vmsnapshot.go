@@ -44,7 +44,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 
 	// Add the VM's memory to the total reserved capacity.
 	if vmSnapshot.Spec.Memory {
-		// Fetch the requested memory size from the VMClass.
+		// TODO(lubron): Fetch the requested memory size from the VM.status.hardware.memory.reservation.
 		vmClass := &vmopv1.VirtualMachineClass{}
 		if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vm.Spec.ClassName}, vmClass); err != nil {
 			return nil, fmt.Errorf("failed to get VMClass %s: %w", vm.Spec.ClassName, err)
@@ -151,7 +151,10 @@ func PatchSnapshotSuccessStatus(vmCtx pkgctx.VirtualMachineContext, k8sClient ct
 	vmSnapshot.Status.UniqueID = snapMoRef.Reference().Value
 	vmSnapshot.Status.Quiesced = vmSnapshot.Spec.Quiesce != nil
 	vmSnapshot.Status.PowerState = vmCtx.VM.Status.PowerState
-
+	// If memory is not included in the snapshot, Set the power state to off.
+	if !vmSnapshot.Spec.Memory {
+		vmSnapshot.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+	}
 	pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 
 	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, snapPatch); err != nil {

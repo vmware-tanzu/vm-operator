@@ -2408,6 +2408,73 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+
+			Entry("allow creating a VM with network interface with a specified mac address for support network providers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "netoperator.vmware.com/v1alpha1",
+										},
+										Name: "vds-network",
+									},
+									MacAddress: "00:00:00:00:BB:AA",
+								},
+								{
+									Name: "eth1",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "crd.nsx.vmware.com/v1alpha1",
+										},
+										Name: "vpc-network",
+									},
+									MacAddress: "00:00:00:00:CC:DD",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow creating a VM with network interface with a specified mac address for not support network providers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "vmware.com/v1alpha1",
+										},
+										Name: "nsxt-network",
+									},
+									MacAddress: "00:00:00:00:BB:AA",
+								},
+								{
+									Name: "eth1",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "foobar/v1alpha1",
+										},
+										Name: "dummy-network",
+									},
+									MacAddress: "00:00:00:00:CC:DD",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].macAddress: Invalid value: "00:00:00:00:BB:AA": macAddress is available only with the following network providers: netoperator.vmware.com,crd.nsx.vmware.com`,
+						`spec.network.interfaces[1].macAddress: Invalid value: "00:00:00:00:CC:DD": macAddress is available only with the following network providers: netoperator.vmware.com,crd.nsx.vmware.com`,
+					),
+				},
+			),
 		)
 
 		DescribeTable("network create - host and domain names", doTest,

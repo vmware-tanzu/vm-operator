@@ -30,6 +30,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -693,6 +696,12 @@ func (v validator) validateNetwork(
 	return allErrs
 }
 
+// Only VDS and VPC support user provided MAC address.
+var macAddressSupportNetworkGroups = []string{
+	netopv1alpha1.GroupName,
+	vpcv1alpha1.GroupVersion.Group,
+}
+
 //nolint:gocyclo
 func (v validator) validateNetworkInterfaceSpec(
 	interfacePath *field.Path,
@@ -701,9 +710,11 @@ func (v validator) validateNetworkInterfaceSpec(
 
 	var allErrs field.ErrorList
 	var networkIfCRName string
+	var networkAPIVersion string
 	var networkName string
 
 	if interfaceSpec.Network != nil {
+		networkAPIVersion = interfaceSpec.Network.APIVersion
 		networkName = interfaceSpec.Network.Name
 	}
 
@@ -716,6 +727,21 @@ func (v validator) validateNetworkInterfaceSpec(
 
 	for _, msg := range validation.NameIsDNSSubdomain(networkIfCRName, false) {
 		allErrs = append(allErrs, field.Invalid(interfacePath.Child("name"), networkIfCRName, "is the resulting network interface name: "+msg))
+	}
+
+	if interfaceSpec.MacAddress != "" {
+		match := false
+		for _, g := range macAddressSupportNetworkGroups {
+			if strings.HasPrefix(networkAPIVersion, g+"/") {
+				match = true
+				break
+			}
+		}
+
+		if !match {
+			allErrs = append(allErrs, field.Invalid(interfacePath.Child("macAddress"), interfaceSpec.MacAddress,
+				fmt.Sprintf("macAddress is available only with the following network providers: %s", strings.Join(macAddressSupportNetworkGroups, ","))))
+		}
 	}
 
 	var ipv4Addrs, ipv6Addrs []string

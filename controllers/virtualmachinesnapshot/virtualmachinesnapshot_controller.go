@@ -204,14 +204,15 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 			return ctrl.Result{}, fmt.Errorf("failed to calculate requested capacity for snapshot: %w", err)
 		}
 		vmSnapshot.Status.Storage.Requested = requested
-		ctx.Logger.V(5).Info("Updated vmSnapshot requested capacity", "requested", vmSnapshot.Status.Storage.Requested)
+		ctx.Logger.V(5).Info("Updated vmSnapshot requested capacity",
+			"requested", vmSnapshot.Status.Storage.Requested)
 		// Enqueue the storage classes to sync corresponding SPU.
 		for _, requested := range vmSnapshot.Status.Storage.Requested {
 			ctx.StorageClassesToSync.Insert(requested.StorageClass)
 		}
 	}
 
-	ctx.Logger.V(4).Info("Updating snapshot's status used capacity")
+	ctx.Logger.V(5).Info("Updating snapshot's status used capacity")
 	size, err := r.VMProvider.GetSnapshotSize(ctx, vmSnapshot.Name, vm)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get snapshot size: %w", err)
@@ -253,7 +254,8 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
 		if apierrors.IsNotFound(err) {
-			ctx.Logger.V(4).Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
+			ctx.Logger.V(5).Info("VirtualMachine not found, assuming the " +
+				"snapshot is deleted along with moVM, remove finalizer")
 			controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
 			// We don't sync SPU since we don't know which StorageClass of the VM.
 			return nil
@@ -279,7 +281,8 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		return fmt.Errorf("failed to delete snapshot: %w", err)
 	}
 	if vmNotFound {
-		ctx.Logger.V(4).Info("VirtualMachine not found, assuming the snapshot is deleted along with moVM, remove finalizer")
+		ctx.Logger.V(5).Info("VirtualMachine not found, assuming the" +
+			" snapshot is deleted along with moVM, remove finalizer")
 		controllerutil.RemoveFinalizer(vmSnapshot, Finalizer)
 		return nil
 	}

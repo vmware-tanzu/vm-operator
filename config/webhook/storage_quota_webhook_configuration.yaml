@@ -56,3 +56,23 @@ webhooks:
       || (has(oldObject.spec.advanced) && has(oldObject.spec.advanced.bootDiskCapacity)
       && object.spec.advanced.bootDiskCapacity != oldObject.spec.advanced.bootDiskCapacity))
     name: boot-disk-change
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: storage-quota-webhook-service
+      namespace: kube-system
+      path: /validate-storage-quota
+  failurePolicy: Fail
+  name: quota-create.validating.virtualmachinesnapshot.v1alpha5.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha5
+    operations:
+    - CREATE
+    resources:
+    - virtualmachinesnapshots
+  sideEffects: None

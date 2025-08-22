@@ -31,11 +31,13 @@ type VirtualMachineOrGroup interface {
 	metav1.Object
 	runtime.Object
 	DeepCopyObject() runtime.Object
+	GetMemberKind() string
 	GetGroupName() string
 	SetGroupName(value string)
 	GetPowerState() VirtualMachinePowerState
 	SetPowerState(value VirtualMachinePowerState)
 	GetConditions() []metav1.Condition
+	SetConditions([]metav1.Condition)
 }
 
 // GroupMember describes a member of a VirtualMachineGroup.
@@ -280,6 +282,10 @@ type VirtualMachineGroup struct {
 
 	Spec   VirtualMachineGroupSpec   `json:"spec,omitempty"`
 	Status VirtualMachineGroupStatus `json:"status,omitempty"`
+}
+
+func (vmg *VirtualMachineGroup) GetMemberKind() string {
+	return vmg.Kind
 }
 
 func (vmg *VirtualMachineGroup) GetGroupName() string {

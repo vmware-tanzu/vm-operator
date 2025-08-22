@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -57,4 +58,69 @@ func RetrieveVMGroupMembers(ctx context.Context, c ctrlclient.Client,
 		}
 	}
 	return vmSet, nil
+}
+
+// UpdateGroupLinkedCondition updates the group linked condition for a member.
+// If the member has no group name, the group linked condition is deleted.
+func UpdateGroupLinkedCondition(
+	ctx context.Context,
+	member vmopv1.VirtualMachineOrGroup,
+	c ctrlclient.Client) error {
+
+	if member.GetGroupName() == "" {
+		conditions.Delete(
+			member,
+			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+		)
+		return nil
+	}
+
+	var (
+		obj vmopv1.VirtualMachineGroup
+		key = ctrlclient.ObjectKey{
+			Name:      member.GetGroupName(),
+			Namespace: member.GetNamespace(),
+		}
+	)
+
+	if err := c.Get(ctx, key, &obj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			conditions.MarkError(
+				member,
+				vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+				"Error",
+				err,
+			)
+			return err
+		}
+
+		conditions.MarkFalse(
+			member,
+			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+			"NotFound",
+			"",
+		)
+		return nil
+	}
+
+	for _, bo := range obj.Spec.BootOrder {
+		for _, m := range bo.Members {
+			if m.Kind == member.GetMemberKind() && m.Name == member.GetName() {
+				conditions.MarkTrue(
+					member,
+					vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+				)
+				return nil
+			}
+		}
+	}
+
+	conditions.MarkFalse(
+		member,
+		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+		"NotMember",
+		"",
+	)
+
+	return nil
 }

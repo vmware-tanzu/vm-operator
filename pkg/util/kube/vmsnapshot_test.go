@@ -327,8 +327,7 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 		When("snapshot patched with vm info and ready condition", func() {
 			BeforeEach(func() {
 				vmCtx.VM.Status = vmopv1.VirtualMachineStatus{
-					UniqueID:   "dummyID",
-					PowerState: vmopv1.VirtualMachinePowerStateOn,
+					UniqueID: "dummyID",
 				}
 
 				snapMoRef = &vimtypes.ManagedObjectReference{
@@ -351,12 +350,41 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 				Expect(k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, snapObj)).To(Succeed())
 				Expect(snapObj.Status.UniqueID).To(Equal(snapMoRef.Value))
 				Expect(snapObj.Status.Quiesced).To(BeTrue())
-				Expect(snapObj.Status.PowerState).To(Equal(vmCtx.VM.Status.PowerState))
+				Expect(snapObj.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 				Expect(conditions.IsTrue(snapObj, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
 			})
+
+			DescribeTable("memory and power state", func(
+				memory bool,
+				powerState vmopv1.VirtualMachinePowerState,
+				expectedPowerState vmopv1.VirtualMachinePowerState) {
+
+				if memory {
+					vmSnapshot.Spec.Memory = true
+				} else {
+					vmSnapshot.Spec.Memory = false
+				}
+
+				Expect(kubeutil.PatchSnapshotSuccessStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef, powerState)).To(Succeed())
+
+				snapObj := &vmopv1.VirtualMachineSnapshot{}
+				Expect(k8sClient.Get(vmCtx,
+					ctrlclient.ObjectKey{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, snapObj)).
+					To(Succeed())
+				Expect(snapObj.Status.PowerState).To(Equal(expectedPowerState))
+			},
+				Entry("memory is true, VM is on, expected power state is on",
+					true, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn),
+				Entry("memory is false, VM is on, expected power state is off",
+					false, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOff),
+				// This option is disabled on the VC UI
+				Entry("memory is true, VM is off, expected power state is off",
+					true, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff),
+				Entry("memory is false, VM is off, expected power state is off",
+					false, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff),
+			)
 		})
 	})
-
 })
 
 func addVolumeToVM(vm *vmopv1.VirtualMachine, pvcName, volumeName, storageClass string, size resource.Quantity, isFCD, isInstanceStorage bool) {

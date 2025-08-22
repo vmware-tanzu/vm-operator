@@ -17,9 +17,11 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/serializer/yaml"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/yaml"
+	k8syaml "sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
@@ -416,10 +418,11 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 		return fmt.Errorf("no VM YAML in snapshot config")
 	}
 
-	var vm vmopv1.VirtualMachine
-	if err := yaml.Unmarshal([]byte(vmYAML), &vm); err != nil {
-		return fmt.Errorf(
-			"failed to unmarshal snapshot payload into vm: %w", err)
+	vmCtx.Logger.V(5).Info("Restoring VM spec from snapshot", "vmYAML", vmYAML)
+	// Unmarshal and convert VM from yaml in snapshot based on API version
+	vm, err := vs.unmarshalAndConvertVMFromYAML(vmCtx, vmYAML)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal and convert VM from snapshot: %w", err)
 	}
 
 	// Swap the spec, annotations and labels. We don't need to worry
@@ -525,6 +528,12 @@ func getVMYamlFromSnapshotFromSynthesizedSpec(
 			Name:      vmCtx.VM.Name,
 			Namespace: vmCtx.VM.Namespace,
 		},
+		// This section is not necessary but
+		// to workaround the issue in the test.
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "VirtualMachine",
+			APIVersion: vmopv1.GroupVersion.String(),
+		},
 		Spec: synthesizeVMSpecForSnapshot(*vmCtx.VM, vmCtx.MoVM, moSnap),
 	}
 
@@ -589,7 +598,7 @@ func getVMYamlFromSnapshotFromSynthesizedSpec(
 	vm.Labels = map[string]string{}
 	vm.Annotations = map[string]string{}
 
-	vmYAML, err := yaml.Marshal(vm)
+	vmYAML, err := k8syaml.Marshal(vm)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed to marshal VM into YAML %+v: %w", vm, err)
@@ -778,7 +787,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 		VMSnapshot: *snapshotToProcess,
 	}
 
-	vmCtx.Logger.Info("Creating snapshot on vSphere")
+	logger.Info("Creating snapshot on vSphere")
 	snapMoRef, err := virtualmachine.SnapshotVirtualMachine(snapArgs)
 	if err != nil {
 		// Mark the snapshot as failed and clear in-progress status
@@ -819,4 +828,29 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 	}
 
 	return nil
+}
+
+// unmarshalAndConvertVMFromYAML unmarshals VM YAML from snapshot and converts it
+// to the latest version of VirtualMachine.
+func (vs *vSphereVMProvider) unmarshalAndConvertVMFromYAML(
+	vmCtx pkgctx.VirtualMachineContext,
+	vmYAML string) (*vmopv1.VirtualMachine, error) {
+
+	decUnstructured := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
+
+	unstructuredObj := &unstructured.Unstructured{}
+	if _, _, err := decUnstructured.Decode([]byte(vmYAML), nil, unstructuredObj); err != nil {
+		vmCtx.Logger.Error(err, "failed to decode VM YAML in to Unstructured object")
+		return nil, err
+	}
+
+	// Convert it to newest version of VirtualMachine.
+	vm := &vmopv1.VirtualMachine{}
+	if err := vs.k8sClient.Scheme().Convert(unstructuredObj, vm, nil); err != nil {
+		return nil, fmt.Errorf("failed to convert VM YAML to VirtualMachine: %w. "+
+			"currentAPIVersion: %s, desiredAPIVersion: %s",
+			err, unstructuredObj.GetAPIVersion(), vmopv1.GroupVersion.String())
+	}
+
+	return vm, nil
 }

@@ -322,7 +322,8 @@ func DummyInstanceStorageVirtualMachineVolumes() []vmopv1.VirtualMachineVolume {
 func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		TypeMeta: metav1.TypeMeta{
-			Kind: "VirtualMachine",
+			Kind:       "VirtualMachine",
+			APIVersion: vmopv1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -610,7 +611,7 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 	return &vmopv1.VirtualMachineSnapshot{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "VirtualMachineSnapshot",
-			APIVersion: "vmoperator.vmware.com/v1alpha5",
+			APIVersion: vmopv1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -622,7 +623,7 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
 			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: "vmoperator.vmware.com/v1alpha5",
+				APIVersion: vmopv1.GroupVersion.String(),
 				Kind:       "VirtualMachine",
 				Name:       vmName,
 			},

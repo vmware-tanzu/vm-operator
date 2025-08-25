@@ -2433,6 +2433,20 @@ spec:
                   ClassName describes the name of the VirtualMachineClass resource used to
                   deploy this VM.
                 type: string
+              groupName:
+                description: |-
+                  GroupName indicates the name of the VirtualMachineGroup to which this
+                  VM belongs.
+
+                  VMs that belong to a group do not drive their own placement, rather that
+                  is handled by the group.
+
+                  When this field is set to a valid group that contains this VM as a
+                  member, an owner reference to that group is added to this VM.
+
+                  When this field is deleted or changed, any existing owner reference to
+                  the previous group will be removed from this VM.
+                type: string
               imageName:
                 description: |-
                   ImageName describes the name of the image resource used to deploy this
@@ -5785,6 +5799,20 @@ spec:
                       Defaults to true if omitted.
                     type: boolean
                 type: object
+              groupName:
+                description: |-
+                  GroupName indicates the name of the VirtualMachineGroup to which this
+                  VM belongs.
+
+                  VMs that belong to a group do not drive their own placement, rather that
+                  is handled by the group.
+
+                  When this field is set to a valid group that contains this VM as a
+                  member, an owner reference to that group is added to this VM.
+
+                  When this field is deleted or changed, any existing owner reference to
+                  the previous group will be removed from this VM.
+                type: string
               guestID:
                 description: |-
                   GuestID describes the desired guest operating system identifier for a VM.

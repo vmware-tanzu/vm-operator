@@ -276,6 +276,14 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
+				name: "spec.groupName",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						GroupName: "my-group",
+					},
+				},
+			},
+			{
 				name: "spec.bootstrap.cloudInit.waitOnNetwork6",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{

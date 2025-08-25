@@ -431,6 +431,16 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine hub-spoke-hub with spec.groupName", func(t *testing.T) {
+		g := NewWithT(t)
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				GroupName: "my-group",
+			},
+		}
+		hubSpokeHub(g, &hub, &vmopv1.VirtualMachine{}, &vmopv1a2.VirtualMachine{})
+	})
+
 	t.Run("VirtualMachine status.storage", func(t *testing.T) {
 		t.Run("hub-spoke-hub", func(t *testing.T) {
 			g := NewWithT(t)

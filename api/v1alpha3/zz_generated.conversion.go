@@ -4341,6 +4341,7 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	out.InstanceUUID = in.InstanceUUID
 	out.BiosUUID = in.BiosUUID
 	out.GuestID = in.GuestID
+	out.GroupName = in.GroupName
 	return nil
 }
 
@@ -4384,7 +4385,7 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *
 	// WARNING: in.PromoteDisksMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.BootOptions requires manual conversion: does not exist in peer-type
 	// WARNING: in.CurrentSnapshot requires manual conversion: does not exist in peer-type
-	// WARNING: in.GroupName requires manual conversion: does not exist in peer-type
+	out.GroupName = in.GroupName
 	return nil
 }
 

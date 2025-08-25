@@ -1906,6 +1906,13 @@ func (v validator) validateSnapshot(
 		return allErrs
 	}
 
+	// If a revert is in progress, we don't allow a new revert.
+	if oldVM != nil && oldVM.Spec.CurrentSnapshot != nil {
+		if oldVM.Spec.CurrentSnapshot.Name != vm.Spec.CurrentSnapshot.Name {
+			allErrs = append(allErrs, field.Forbidden(snapshotPath, "a snapshot revert is already in progress"))
+		}
+	}
+
 	if vm.Spec.CurrentSnapshot.APIVersion != "" {
 		gv, err := schema.ParseGroupVersion(vm.Spec.CurrentSnapshot.APIVersion)
 		if err != nil {

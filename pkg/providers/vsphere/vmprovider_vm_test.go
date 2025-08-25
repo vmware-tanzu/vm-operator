@@ -3429,6 +3429,27 @@ func vmTests() {
 						Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
 					})
 				})
+
+				Context("when snapshot revert annotation is present", func() {
+					It("should skip VM reconciliation when revert annotation exists", func() {
+						// Create VM first
+						_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						// Set the revert in progress annotation manually
+						if vm.Annotations == nil {
+							vm.Annotations = make(map[string]string)
+						}
+						vm.Annotations[pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey] = ""
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+
+						// Attempt to reconcile VM - should return NoRequeueError due to annotation
+						err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue(), "Should return NoRequeueError when annotation is present")
+						Expect(err.Error()).To(ContainSubstring("snapshot revert in progress"))
+					})
+				})
 			})
 
 			Context("CNS Volumes", func() {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -269,12 +268,6 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 
 	ctx.VM = vm
 
-	// Fetch and update the parent snapshot first then delete the snapshot from the VM.
-	// Since we find the parent snapshot from VC.
-	if err := r.updateParentSnapshot(ctx); err != nil {
-		return err
-	}
-
 	// delete snapshot from the VM
 	vmNotFound, err := r.deleteSnapshot(ctx)
 	if err != nil {
@@ -306,49 +299,6 @@ func (r *Reconciler) deleteSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext) (
 	}
 
 	return vmNotFound, nil
-}
-
-func (r *Reconciler) updateParentSnapshot(ctx *pkgctx.VirtualMachineSnapshotContext) error {
-	ctx.Logger.V(3).Info("Updating parent snapshot")
-	vmSnapshot := ctx.VirtualMachineSnapshot
-	parent, err := r.VMProvider.GetParentSnapshot(ctx.Context, vmSnapshot.Name, ctx.VM)
-	if err != nil {
-		return fmt.Errorf("failed to get parent snapshot: %w", err)
-	}
-	if parent == nil {
-		ctx.Logger.V(5).Info("parent snapshot not found")
-		return nil
-	}
-	ctx.Logger.V(5).Info("parent snapshot found", "parent", parent.Name)
-
-	parentVMSnapshot := &vmopv1.VirtualMachineSnapshot{}
-	if err := r.Get(ctx, client.ObjectKey{Name: parent.Name, Namespace: vmSnapshot.Namespace}, parentVMSnapshot); err != nil {
-		return fmt.Errorf("failed to get parent snapshot %s: %w", parent.Name, err)
-	}
-
-	// remove current snapshot from parent's children
-	parentPatch := client.MergeFrom(parentVMSnapshot.DeepCopy())
-	for i, child := range parentVMSnapshot.Status.Children {
-		if child.Name == vmSnapshot.Name {
-			parentVMSnapshot.Status.Children = slices.Delete(parentVMSnapshot.Status.Children, i, i+1)
-			break
-		}
-	}
-	children := vmSnapshot.Status.Children
-	if children != nil {
-		ctx.Logger.V(5).Info("Add children snapshots of current snapshot to parent's children")
-		// merge current's children to parent's children.
-		// make sure no duplicates are added.
-		for _, child := range children {
-			if !slices.Contains(parentVMSnapshot.Status.Children, child) {
-				parentVMSnapshot.Status.Children = append(parentVMSnapshot.Status.Children, child)
-			}
-		}
-	}
-	if err := r.Status().Patch(ctx, parentVMSnapshot, parentPatch); err != nil {
-		return fmt.Errorf("failed to patch parent snapshot %s with children: %w", parentVMSnapshot.Name, err)
-	}
-	return nil
 }
 
 // SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.

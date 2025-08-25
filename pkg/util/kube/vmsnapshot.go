@@ -12,9 +12,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // CalculateReservedForSnapshotPerStorageClass calculates the reserved capacity for a snapshot.
@@ -24,7 +27,7 @@ import (
 // 3. Space required for each PVC.
 func CalculateReservedForSnapshotPerStorageClass(
 	ctx context.Context,
-	k8sClient client.Client,
+	k8sClient ctrlclient.Client,
 	logger logr.Logger,
 	vmSnapshot vmopv1.VirtualMachineSnapshot) ([]vmopv1.VirtualMachineSnapshotStorageStatusRequested, error) {
 
@@ -33,7 +36,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 	}
 
 	vm := &vmopv1.VirtualMachine{}
-	if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vmSnapshot.Spec.VMRef.Name}, vm); err != nil {
+	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vmSnapshot.Spec.VMRef.Name}, vm); err != nil {
 		return nil, fmt.Errorf("failed to get VM %s: %w", vmSnapshot.Spec.VMRef.Name, err)
 	}
 
@@ -43,7 +46,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 	if vmSnapshot.Spec.Memory {
 		// Fetch the requested memory size from the VMClass.
 		vmClass := &vmopv1.VirtualMachineClass{}
-		if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vm.Spec.ClassName}, vmClass); err != nil {
+		if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vm.Spec.ClassName}, vmClass); err != nil {
 			return nil, fmt.Errorf("failed to get VMClass %s: %w", vm.Spec.ClassName, err)
 		}
 
@@ -105,7 +108,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 			}
 
 			pvc := &corev1.PersistentVolumeClaim{}
-			if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: vmSnapshot.Namespace, Name: pvcSpec.ClaimName}, pvc); err != nil {
+			if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: pvcSpec.ClaimName}, pvc); err != nil {
 				return nil, fmt.Errorf("failed to get pvc %s for volume %s: %w", pvcSpec.ClaimName, volume.Name, err)
 			}
 
@@ -139,4 +142,23 @@ func CalculateReservedForSnapshotPerStorageClass(
 		})
 	}
 	return requested, nil
+}
+
+// PatchSnapshotSuccessStatus patches the snapshot status to reflect the success of the snapshot operation.
+func PatchSnapshotSuccessStatus(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot, snapMoRef *vimtypes.ManagedObjectReference) error {
+	snapPatch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
+	vmSnapshot.Status.UniqueID = snapMoRef.Reference().Value
+	vmSnapshot.Status.Quiesced = vmSnapshot.Spec.Quiesce != nil
+	vmSnapshot.Status.PowerState = vmCtx.VM.Status.PowerState
+
+	pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+
+	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, snapPatch); err != nil {
+		return fmt.Errorf(
+			"failed to patch snapshot status resource %s/%s: err: %w",
+			vmSnapshot.Name, vmSnapshot.Namespace, err)
+	}
+
+	return nil
 }

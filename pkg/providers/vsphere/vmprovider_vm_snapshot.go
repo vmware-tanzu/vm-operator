@@ -14,7 +14,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -98,23 +97,17 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 		return 0, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
 	}
 
-	var moVM mo.VirtualMachine
-
-	if err = vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM); err != nil {
+	err = vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &vmCtx.MoVM)
+	if err != nil {
 		return 0, err
 	}
 
-	vmCtx.MoVM = moVM
-
-	vmNapshot, err := virtualmachine.FindSnapshot(vmCtx, vmSnapshotName)
+	vmSnapshot, err := virtualmachine.FindSnapshot(vmCtx, vmSnapshotName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to find snapshot %q: %w", vmSnapshotName, err)
 	}
 
-	size := virtualmachine.GetSnapshotSize(
-		vmCtx, vmNapshot)
-
-	return size, nil
+	return virtualmachine.GetSnapshotSize(vmCtx, vmSnapshot), nil
 }
 
 func (vs *vSphereVMProvider) GetParentSnapshot(
@@ -150,7 +143,7 @@ func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *v
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
-		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "getParentSnapshot")),
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "syncVMSnapshotTreeStatus")),
 		Logger:  logger,
 		VM:      vm,
 	}
@@ -165,16 +158,13 @@ func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *v
 		return fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
 	}
 
-	var o mo.VirtualMachine
-	err = vcVM.Properties(vmCtx, vcVM.Reference(), []string{"snapshot"}, &o)
+	err = vcVM.Properties(vmCtx, vcVM.Reference(), []string{"snapshot"}, &vmCtx.MoVM)
 	if err != nil {
 		vmCtx.Logger.Error(err, "failed to get snapshot")
 		return err
 	}
 
-	vmCtx.MoVM = o
-
-	// sync current and root snapshots status of the VM
+	// Sync current and root snapshots status of the VM
 	return vmlifecycle.SyncVMSnapshotTreeStatus(vmCtx, vs.k8sClient)
 }
 
@@ -243,11 +233,11 @@ func (vs *vSphereVMProvider) patchChildrenSnapshotStatus(snapArgs virtualmachine
 	vmCtx := snapArgs.VMCtx
 	vmSnapshot := snapArgs.VMSnapshot
 
-	vmCtx.Logger.V(4).Info("Patching children snapshot status of parent snapshot", "child SnapshotName", vmSnapshot.Name)
+	vmCtx.Logger.V(4).Info("Patching children snapshot status of parent snapshot", "childSnapshotName", vmSnapshot.Name)
 
 	parentSnapshot, err := virtualmachine.GetParentSnapshot(vmCtx, snapArgs.VcVM, vmSnapshot.Name)
 	if err != nil {
-		vmCtx.Logger.Error(err, "failed to get parent snapshot", "child SnapshotName", vmSnapshot.Name)
+		vmCtx.Logger.Error(err, "failed to get parent snapshot", "childSnapshotName", vmSnapshot.Name)
 		return err
 	}
 

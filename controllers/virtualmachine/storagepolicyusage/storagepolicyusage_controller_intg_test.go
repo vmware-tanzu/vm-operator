@@ -99,7 +99,7 @@ func intgTestsReconcile() {
 			Expect(ctx.Client.Status().Update(ctx, &obj)).To(Succeed())
 		})
 
-		By("create StoragePolicyUsage", func() {
+		By("create StoragePolicyUsage for VM", func() {
 			Expect(ctx.Client.Create(ctx, &spqv1.StoragePolicyUsage{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: ctx.Namespace,
@@ -109,8 +109,8 @@ func intgTestsReconcile() {
 					StoragePolicyId:       storagePolicyID,
 					StorageClassName:      storageClassName,
 					ResourceAPIgroup:      ptr.To(vmopv1.GroupVersion.Group),
-					ResourceKind:          spqutil.VirtualMachineSnapshotKind,
-					ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+					ResourceKind:          spqutil.VirtualMachineKind,
+					ResourceExtensionName: spqutil.StoragePolicyQuotaVMExtensionName,
 				},
 			})).To(Succeed())
 		})
@@ -126,7 +126,7 @@ func intgTestsReconcile() {
 					StorageClassName:      storageClassName,
 					ResourceAPIgroup:      ptr.To(vmopv1.GroupVersion.Group),
 					ResourceKind:          spqutil.VirtualMachineSnapshotKind,
-					ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+					ResourceExtensionName: spqutil.StoragePolicyQuotaVMSnapshotExtensionName,
 				},
 			})).To(Succeed())
 		})

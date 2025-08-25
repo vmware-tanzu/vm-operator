@@ -17,6 +17,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/validatingwebhookconfiguration"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -45,7 +46,9 @@ func unitTestsReconcile() {
 
 		certSecret                     *corev1.Secret
 		validatingWebhookConfiguration *admissionv1.ValidatingWebhookConfiguration
-		spu                            *spqv1.StoragePolicyUsage
+		spuForVM, spuForVMSnapshot     *spqv1.StoragePolicyUsage
+		// enableFeatureFunc is used to enable the VMSnapshots feature flag
+		enableFeatureFunc func(ctx *builder.UnitTestContextForController)
 	)
 
 	BeforeEach(func() {
@@ -61,13 +64,13 @@ func unitTestsReconcile() {
 			},
 		}
 
-		spu = &spqv1.StoragePolicyUsage{
+		spuForVM = &spqv1.StoragePolicyUsage{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "fake-spu-name",
-				Namespace: "fake-spu-namespace",
+				Name:      "fake-spu-name-for-vm",
+				Namespace: "fake-spu-namespace-for-vm",
 			},
 			Spec: spqv1.StoragePolicyUsageSpec{
-				ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+				ResourceExtensionName: spqutil.StoragePolicyQuotaVMExtensionName,
 			},
 		}
 
@@ -82,10 +85,24 @@ func unitTestsReconcile() {
 		}
 	})
 
+	AfterEach(func() {
+		enableFeatureFunc = nil
+	})
+
 	JustBeforeEach(func() {
-		withObjects = append(withObjects, certSecret, validatingWebhookConfiguration, spu)
+		withObjects = append(withObjects, certSecret, validatingWebhookConfiguration, spuForVM)
+		if spuForVMSnapshot != nil {
+			withObjects = append(withObjects, spuForVMSnapshot)
+		}
 		ctx = suite.NewUnitTestContextForController(withObjects...)
-		reconciler = validatingwebhookconfiguration.NewReconciler(ctx, ctx.Client, ctx.Logger, ctx.Recorder)
+		if enableFeatureFunc != nil {
+			enableFeatureFunc(ctx)
+		}
+		reconciler = validatingwebhookconfiguration.NewReconciler(
+			ctx.Context,
+			ctx.Client,
+			ctx.Logger,
+			ctx.Recorder)
 	})
 
 	Context("Reconcile", func() {
@@ -198,40 +215,38 @@ func unitTestsReconcile() {
 		Context("update SPU docs", func() {
 			JustBeforeEach(func() {
 				Expect(err).To(BeNil())
-				err = ctx.Client.Get(ctx, client.ObjectKeyFromObject(spu), spu)
-
-				Expect(err).To(BeNil())
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(spuForVM), spuForVM)).To(Succeed())
 			})
 
 			When("no SPU docs exist for vmservice", func() {
 				BeforeEach(func() {
-					spu.Spec.ResourceExtensionName = "fake.cns.vsphere.vmware.com"
-					spu.Spec.CABundle = []byte("fake.cns.vsphere.vmware.com")
+					spuForVM.Spec.ResourceExtensionName = "fake.cns.vsphere.vmware.com"
+					spuForVM.Spec.CABundle = []byte("fake.cns.vsphere.vmware.com")
 				})
 
 				It("should not update caBundle", func() {
-					Expect(spu.Spec.CABundle).To(Equal([]byte("fake.cns.vsphere.vmware.com")))
+					Expect(spuForVM.Spec.CABundle).To(Equal([]byte("fake.cns.vsphere.vmware.com")))
 				})
 			})
 
 			When("SPU caBundle matches contents of secret", func() {
 				BeforeEach(func() {
-					spu.Spec.CABundle = certSecret.Data["ca.crt"]
+					spuForVM.Spec.CABundle = certSecret.Data["ca.crt"]
 				})
 
 				It("should not update caBundle", func() {
-					Expect(spu.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
+					Expect(spuForVM.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
 				})
 			})
 
 			When("SPU caBundle does not match contents of secret", func() {
 				BeforeEach(func() {
-					spu.Spec.CABundle = []byte("outdated-fake-ca-bundle")
+					spuForVM.Spec.CABundle = []byte("outdated-fake-ca-bundle")
 				})
 
 				It("should update caBundle", func() {
-					Expect(spu.Spec.CABundle).NotTo(Equal([]byte("outdated-fake-ca-bundle")))
-					Expect(spu.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
+					Expect(spuForVM.Spec.CABundle).NotTo(Equal([]byte("outdated-fake-ca-bundle")))
+					Expect(spuForVM.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
 				})
 			})
 
@@ -244,12 +259,74 @@ func unitTestsReconcile() {
 							},
 						},
 					}
-					spu.Spec.CABundle = []byte("outdated-fake-ca-bundle")
+					spuForVM.Spec.CABundle = []byte("outdated-fake-ca-bundle")
 				})
 
 				It("should get caBundle from first non-empty entry in slice and update caBundle", func() {
-					Expect(spu.Spec.CABundle).NotTo(Equal([]byte("outdated-fake-ca-bundle")))
-					Expect(spu.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
+					Expect(spuForVM.Spec.CABundle).NotTo(Equal([]byte("outdated-fake-ca-bundle")))
+					Expect(spuForVM.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
+				})
+			})
+
+			When("VMSnapshots feature flag is enabled", func() {
+				BeforeEach(func() {
+					spuForVMSnapshot = &spqv1.StoragePolicyUsage{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "fake-spu-name-for-vmsnapshot",
+							Namespace: "fake-spu-namespace-for-vmsnapshot",
+						},
+						Spec: spqv1.StoragePolicyUsageSpec{
+							ResourceExtensionName: spqutil.StoragePolicyQuotaVMSnapshotExtensionName,
+						},
+					}
+					enableFeatureFunc = func(ctx *builder.UnitTestContextForController) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSnapshots = true
+						})
+					}
+				})
+				JustBeforeEach(func() {
+					Expect(pkgcfg.FromContext(ctx).Features.VMSnapshots).To(BeTrue())
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(spuForVMSnapshot), spuForVMSnapshot)).To(Succeed())
+				})
+
+				When("SPU caBundle matches contents of secret", func() {
+					BeforeEach(func() {
+						spuForVMSnapshot.Spec.CABundle = certSecret.Data["ca.crt"]
+					})
+
+					It("should not update caBundle", func() {
+						Expect(spuForVMSnapshot.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
+					})
+				})
+
+				When("SPU caBundle does not match contents of secret", func() {
+					BeforeEach(func() {
+						spuForVMSnapshot.Spec.CABundle = []byte("outdated-fake-ca-bundle")
+					})
+
+					It("should update caBundle", func() {
+						Expect(spuForVMSnapshot.Spec.CABundle).NotTo(Equal([]byte("outdated-fake-ca-bundle")))
+						Expect(spuForVMSnapshot.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
+					})
+				})
+
+				When("webhooks slice is non-empty", func() {
+					BeforeEach(func() {
+						validatingWebhookConfiguration.Webhooks = []admissionv1.ValidatingWebhook{
+							{
+								ClientConfig: admissionv1.WebhookClientConfig{
+									CABundle: []byte("fake-ca-bundle"),
+								},
+							},
+						}
+						spuForVMSnapshot.Spec.CABundle = []byte("outdated-fake-ca-bundle")
+					})
+
+					It("should get caBundle from first non-empty entry in slice and update caBundle", func() {
+						Expect(spuForVMSnapshot.Spec.CABundle).NotTo(Equal([]byte("outdated-fake-ca-bundle")))
+						Expect(spuForVMSnapshot.Spec.CABundle).To(Equal(certSecret.Data["ca.crt"]))
+					})
 				})
 			})
 		})

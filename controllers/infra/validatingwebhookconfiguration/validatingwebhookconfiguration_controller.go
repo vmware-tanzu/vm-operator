@@ -100,6 +100,7 @@ type Reconciler struct {
 }
 
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyusages,verbs=list
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
@@ -112,7 +113,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 }
 
 func (r *Reconciler) ReconcileNormal(ctx context.Context, req ctrl.Request) error {
-	pkgutil.FromContextOrDefault(ctx).Info("Reconciling validating webhook configuration")
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.Info("Reconciling validating webhook configuration")
 
 	caBundle, err := spqutil.GetWebhookCABundle(ctx, r.Client)
 	if err != nil {
@@ -125,16 +127,35 @@ func (r *Reconciler) ReconcileNormal(ctx context.Context, req ctrl.Request) erro
 	}
 
 	for _, spu := range spuList.Items {
-		if spu.Spec.ResourceExtensionName == spqutil.StoragePolicyQuotaExtensionName {
-			if !bytes.Equal(spu.Spec.CABundle, caBundle) {
-				spuPatch := client.MergeFrom(spu.DeepCopy())
-				spu.Spec.CABundle = caBundle
+		switch spu.Spec.ResourceExtensionName {
+		case spqutil.StoragePolicyQuotaVMSnapshotExtensionName:
+			if !pkgcfg.FromContext(ctx).Features.VMSnapshots {
+				logger.V(4).Info(
+					"Skipping VMSnapshot SPU due to disabled feature flag",
+					"name", spu.Name, "namespace", spu.Namespace,
+				)
 
-				if err := r.Client.Patch(ctx, &spu, spuPatch); err != nil {
-					return fmt.Errorf("unable to patch StoragePolicyUsage object: %w", err)
-				}
+				continue
+			}
+			// proceed to shared patch logic
+
+		case spqutil.StoragePolicyQuotaVMExtensionName:
+			// proceed to shared patch logic
+
+		default:
+			// Not a target SPU type; skip
+			continue
+		}
+		// shared patch logic
+		if !bytes.Equal(spu.Spec.CABundle, caBundle) {
+			spuPatch := client.MergeFrom(spu.DeepCopy())
+			spu.Spec.CABundle = caBundle
+
+			if err := r.Client.Patch(ctx, &spu, spuPatch); err != nil {
+				return fmt.Errorf("unable to patch StoragePolicyUsage object: %w", err)
 			}
 		}
 	}
+
 	return nil
 }

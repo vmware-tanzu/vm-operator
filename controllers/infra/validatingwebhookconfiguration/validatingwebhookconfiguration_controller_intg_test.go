@@ -36,9 +36,10 @@ func intgTests() {
 func intgTestsReconcile() {
 
 	const (
-		secretName = "vmware-system-vmop-serving-cert"
-		vmSPUName  = "vm-spu"
-		pvcSPUName = "pvc-spu"
+		secretName             = "vmware-system-vmop-serving-cert"
+		vmSPUName              = "vm-spu"
+		pvcSPUName             = "pvc-spu"
+		vmSPUNameForVMSnapshot = "vm-spu-for-vmsnapshot"
 	)
 
 	var (
@@ -111,11 +112,25 @@ func intgTestsReconcile() {
 			Spec: spqv1.StoragePolicyUsageSpec{
 				StorageClassName:      builder.DummyStorageClassName,
 				StoragePolicyId:       "dummy-storage-policy-id",
-				ResourceExtensionName: spqutil.StoragePolicyQuotaExtensionName,
+				ResourceExtensionName: spqutil.StoragePolicyQuotaVMExtensionName,
 				CABundle:              []byte("initial-ca-bundle"),
 			},
 		}
 		Expect(ctx.Client.Create(ctx, vmSPU)).To(Succeed())
+
+		vmSPUForVMSnapshot := &spqv1.StoragePolicyUsage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmSPUNameForVMSnapshot,
+				Namespace: ctx.Namespace,
+			},
+			Spec: spqv1.StoragePolicyUsageSpec{
+				StorageClassName:      builder.DummyStorageClassName,
+				StoragePolicyId:       "dummy-storage-policy-id",
+				ResourceExtensionName: spqutil.StoragePolicyQuotaVMSnapshotExtensionName,
+				CABundle:              []byte("initial-ca-bundle"),
+			},
+		}
+		Expect(ctx.Client.Create(ctx, vmSPUForVMSnapshot)).To(Succeed())
 	})
 
 	Context("CABundle from ValidatingWebhookConfig", func() {
@@ -132,6 +147,13 @@ func intgTestsReconcile() {
 
 					g.Expect(pvcSPU.Spec.CABundle).NotTo(Equal(validatingWebhookConfiguration.Webhooks[0].ClientConfig.CABundle))
 					g.Expect(pvcSPU.Spec.CABundle).To(Equal([]byte("invalid-resource-ca-bundle")))
+
+					// Skip updating VMSnapshot SPU since VMSnapshots feature flag is disabled
+					vmSPUForVMSnapshot := &spqv1.StoragePolicyUsage{}
+					g.Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vmSPUNameForVMSnapshot, Namespace: ctx.Namespace}, vmSPUForVMSnapshot)).To(Succeed())
+
+					g.Expect(vmSPUForVMSnapshot.Spec.CABundle).NotTo(Equal(validatingWebhookConfiguration.Webhooks[0].ClientConfig.CABundle))
+					g.Expect(vmSPUForVMSnapshot.Spec.CABundle).To(Equal([]byte("initial-ca-bundle")))
 
 					vmSPU := &spqv1.StoragePolicyUsage{}
 					g.Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vmSPUName, Namespace: ctx.Namespace}, vmSPU)).To(Succeed())
@@ -164,6 +186,13 @@ func intgTestsReconcile() {
 
 					g.Expect(pvcSPU.Spec.CABundle).NotTo(Equal(webhookConfiguration.Webhooks[0].ClientConfig.CABundle))
 					g.Expect(pvcSPU.Spec.CABundle).To(Equal([]byte("invalid-resource-ca-bundle")))
+
+					// Skip updating VMSnapshot SPU since VMSnapshots feature flag is disabled
+					vmSPUForVMSnapshot := &spqv1.StoragePolicyUsage{}
+					g.Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vmSPUNameForVMSnapshot, Namespace: ctx.Namespace}, vmSPUForVMSnapshot)).To(Succeed())
+
+					g.Expect(vmSPUForVMSnapshot.Spec.CABundle).NotTo(Equal(validatingWebhookConfiguration.Webhooks[0].ClientConfig.CABundle))
+					g.Expect(vmSPUForVMSnapshot.Spec.CABundle).To(Equal([]byte("initial-ca-bundle")))
 
 					vmSPU := &spqv1.StoragePolicyUsage{}
 					g.Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vmSPUName, Namespace: ctx.Namespace}, vmSPU)).To(Succeed())
@@ -206,6 +235,12 @@ func intgTestsReconcile() {
 
 					g.Expect(pvcSPU.Spec.CABundle).NotTo(Equal(certSecret.Data["ca.crt"]))
 					g.Expect(pvcSPU.Spec.CABundle).To(Equal([]byte("invalid-resource-ca-bundle")))
+
+					// Skip updating VMSnapshot SPU since VMSnapshots feature flag is disabled
+					vmSPUForVMSnapshot := &spqv1.StoragePolicyUsage{}
+					g.Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vmSPUNameForVMSnapshot, Namespace: ctx.Namespace}, vmSPUForVMSnapshot)).To(Succeed())
+					g.Expect(vmSPUForVMSnapshot.Spec.CABundle).NotTo(Equal(certSecret.Data["ca.crt"]))
+					g.Expect(vmSPUForVMSnapshot.Spec.CABundle).To(Equal([]byte("initial-ca-bundle")))
 
 					vmSPU := &spqv1.StoragePolicyUsage{}
 					g.Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vmSPUName, Namespace: ctx.Namespace}, vmSPU)).To(Succeed())

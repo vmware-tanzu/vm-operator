@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -29,24 +30,25 @@ import (
 )
 
 const (
-	url         = "https://127.0.0.1:%d/getrequestedcapacityforvirtualmachine"
-	contentType = "application/json"
+	url           = "https://127.0.0.1:%d/getrequestedcapacityforvirtualmachine"
+	vmSnapshotURL = "https://127.0.0.1:%d/getrequestedcapacityforvirtualmachinesnapshot"
+	contentType   = "application/json"
 )
 
 func intgTests() {
 
 	Describe(
-		"Create",
+		"CreateVM",
 		Label(
 			testlabels.Create,
 			testlabels.EnvTest,
 			testlabels.Validation,
 			testlabels.Webhook,
 		),
-		intgTestsValidateCreate,
+		intgTestsValidateCreateVM,
 	)
 	Describe(
-		"Update",
+		"UpdateVM",
 		Label(
 			testlabels.Update,
 			testlabels.EnvTest,
@@ -55,9 +57,20 @@ func intgTests() {
 		),
 		intgTestsValidateUpdate,
 	)
+
+	Describe(
+		"CreateVMSnapshot",
+		Label(
+			testlabels.Create,
+			testlabels.EnvTest,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		intgTestsValidateCreateVMSnapshot,
+	)
 }
 
-func intgTestsValidateCreate() {
+func intgTestsValidateCreateVM() {
 	var (
 		ctx *builder.IntegrationTestContext
 
@@ -66,7 +79,7 @@ func intgTestsValidateCreate() {
 		vm, oldVM   *vmopv1.VirtualMachine
 		obj, oldObj []byte
 
-		r *validation.CapacityResponse
+		r *validation.LegacyCapacityResponse
 
 		httpClient = &http.Client{
 			Transport: &http.Transport{
@@ -128,7 +141,7 @@ func intgTestsValidateCreate() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		r = &validation.CapacityResponse{}
+		r = &validation.LegacyCapacityResponse{}
 		Expect(json.NewDecoder(resp.Body).Decode(r)).To(Succeed())
 
 		Expect(resp.Body.Close()).To(Succeed())
@@ -155,14 +168,14 @@ func intgTestsValidateCreate() {
 			})
 
 			JustBeforeEach(func() {
-				if r.RequestedCapacity.Capacity == resource.MustParse("0") {
-					r.RequestedCapacity.Capacity = resource.Quantity{}
+				if r.Capacity == resource.MustParse("0") {
+					r.Capacity = resource.Quantity{}
 				}
 			})
 
 			It("should return zero capacity", func() {
 				Expect(r).ToNot(BeNil())
-				Expect(*r).To(Equal(validation.CapacityResponse{Response: webhook.Allowed(pkgbuilder.SkipValidationAllowed)}))
+				Expect(*r).To(Equal(validation.LegacyCapacityResponse{Response: webhook.Allowed(pkgbuilder.SkipValidationAllowed)}))
 			})
 		})
 
@@ -214,7 +227,7 @@ func intgTestsValidateUpdate() {
 		vm, oldVM   *vmopv1.VirtualMachine
 		obj, oldObj []byte
 
-		r *validation.CapacityResponse
+		r *validation.LegacyCapacityResponse
 
 		httpClient = &http.Client{
 			Transport: &http.Transport{
@@ -282,7 +295,7 @@ func intgTestsValidateUpdate() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		r = &validation.CapacityResponse{}
+		r = &validation.LegacyCapacityResponse{}
 		Expect(json.NewDecoder(resp.Body).Decode(r)).To(Succeed())
 
 		Expect(resp.Body.Close()).To(Succeed())
@@ -297,14 +310,14 @@ func intgTestsValidateUpdate() {
 			})
 
 			JustBeforeEach(func() {
-				if r.RequestedCapacity.Capacity == resource.MustParse("0") {
-					r.RequestedCapacity.Capacity = resource.Quantity{}
+				if r.Capacity == resource.MustParse("0") {
+					r.Capacity = resource.Quantity{}
 				}
 			})
 
 			It("should return zero capacity", func() {
 				Expect(r).ToNot(BeNil())
-				Expect(*r).To(Equal(validation.CapacityResponse{Response: webhook.Allowed(pkgbuilder.SkipValidationAllowed)}))
+				Expect(*r).To(Equal(validation.LegacyCapacityResponse{Response: webhook.Allowed(pkgbuilder.SkipValidationAllowed)}))
 			})
 		})
 
@@ -325,6 +338,67 @@ func intgTestsValidateUpdate() {
 			It("should return the correct capacity as the updated boot disk size", func() {
 				expected := resource.NewQuantity(5*1024*1024*1024, resource.BinarySI)
 				Expect(r.Capacity.String()).To(Equal(expected.String()))
+			})
+		})
+	})
+}
+
+func intgTestsValidateCreateVMSnapshot() {
+	var (
+		ctx *builder.IntegrationTestContext
+
+		ar         *admissionv1.AdmissionReview
+		vm         *vmopv1.VirtualMachine
+		vmSnapshot *vmopv1.VirtualMachineSnapshot
+	)
+
+	BeforeEach(func() {
+		ctx = suite.NewIntegrationTestContext()
+
+		vm = builder.DummyVirtualMachine()
+
+		vm.Name = dummyVMName
+		vm.Namespace = ctx.Namespace
+		vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.Namespace, dummyVMSnapshotName, dummyVMName)
+		vmSnapshot.Spec.VMRef = &common.LocalObjectRef{
+			Name: vm.Name,
+		}
+		ar = &admissionv1.AdmissionReview{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "AdmissionReview",
+				APIVersion: "admission.k8s.io/v1",
+			},
+			Request: &admissionv1.AdmissionRequest{
+				Operation: admissionv1.Create,
+			},
+		}
+
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	When("create vmsnapshot is called", func() {
+		When("VMSnapshot feature gate is disabled", func() {
+			It("should return 404 when reaching the webhook, since getrequestedcapacityforvirtualmachinesnapshot is not registered", func() {
+				obj, err := json.Marshal(vmSnapshot)
+				Expect(err).NotTo(HaveOccurred())
+
+				ar.Request.Object.Raw = obj
+				port := suite.GetManager().GetWebhookServer().(*webhook.DefaultServer).Options.Port
+				body, _ := json.Marshal(ar)
+
+				httpClient := &http.Client{
+					Transport: &http.Transport{
+						TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+					},
+				}
+				resp, err := httpClient.Post(fmt.Sprintf(vmSnapshotURL, port), contentType, bytes.NewBuffer(body))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+				Expect(resp.Body.Close()).To(Succeed())
 			})
 		})
 	})

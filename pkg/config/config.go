@@ -194,6 +194,7 @@ type FeatureStates struct {
 	VMSnapshots                bool
 	InventoryContentLibrary    bool
 	VMPlacementPolicies        bool
+	VSpherePolicies            bool
 }
 
 type InstanceStorage struct {

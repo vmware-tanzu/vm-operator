@@ -141,12 +141,14 @@ func (r *Reconciler) ReconcileNormal(
 			"failed to list VMs in namespace %s: %w", namespace, err)
 	}
 
-	errs := []error{}
+	var errs []error
 	if err := r.ReconcileSPUForVM(ctx, namespace, scName, list.Items); err != nil {
 		errs = append(errs, err)
 	}
-	if err := r.ReconcileSPUForVMSnapshot(ctx, namespace, scName, list.Items); err != nil {
-		errs = append(errs, err)
+	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
+		if err := r.ReconcileSPUForVMSnapshot(ctx, namespace, scName, list.Items); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	return apierrorsutil.NewAggregate(errs)

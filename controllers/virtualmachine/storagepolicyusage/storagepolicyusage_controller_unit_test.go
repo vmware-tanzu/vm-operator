@@ -57,247 +57,375 @@ func unitTests() {
 }
 
 func unitTestsReconcile() {
-	const (
-		fake             = "fake"
-		namespace        = "default"
-		name             = "my-storage-class"
-		storageQuotaName = "my-storage-quota"
-		storagePolicyID  = "my-storage-policy"
-	)
-
-	var (
-		reconciler       *storagepolicyusage.Reconciler
-		ctx              *builder.UnitTestContextForController
-		inNamespace      string
-		inName           string
-		withFuncs        interceptor.Funcs
-		withObjects      []ctrlclient.Object
-		err              error
-		zeroQuantity     resource.Quantity
-		vm1              *vmopv1.VirtualMachine
-		vmSnapshot1      *vmopv1.VirtualMachineSnapshot
-		size10GB         resource.Quantity
-		spuForVM         spqv1.StoragePolicyUsage
-		spuForVMSnapshot spqv1.StoragePolicyUsage
-	)
-
-	assertReportedTotalsWithOffsetIgnoreError := func(
-		spu spqv1.StoragePolicyUsage,
-		expReserved, expUsed resource.Quantity,
-		offset int) {
-
-		assertReportedTotalsWithOffset(spu, nil, nil, expReserved, expUsed, offset)
-	}
-
-	BeforeEach(func() {
-		withObjects = nil
-		withFuncs = interceptor.Funcs{}
-		inNamespace = namespace
-		inName = name
-		zeroQuantity = resource.MustParse("0Gi")
-		size10GB = resource.MustParse("10Gi")
-
-		spuForVM = spqv1.StoragePolicyUsage{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-				Name:      spqutil.StoragePolicyUsageNameForVM(name),
-			},
-			Spec: spqv1.StoragePolicyUsageSpec{
-				StoragePolicyId:  fake,
-				StorageClassName: name,
-			},
-		}
-		spuForVMSnapshot = spqv1.StoragePolicyUsage{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-				Name:      spqutil.StoragePolicyUsageNameForVMSnapshot(name),
-			},
-			Spec: spqv1.StoragePolicyUsageSpec{
-				StoragePolicyId:  fake,
-				StorageClassName: name,
-			},
-		}
-		vm1 = builder.DummyBasicVirtualMachine("vm1", inNamespace)
-		vm1.Spec.StorageClass = inName
-		vm1.Status = vmopv1.VirtualMachineStatus{
-			Conditions: []metav1.Condition{
-				{
-					Type:   vmopv1.VirtualMachineConditionCreated,
-					Status: metav1.ConditionTrue,
-				},
-			},
-			Storage: &vmopv1.VirtualMachineStorageStatus{
-				Total: ptr.To(size10GB),
-			},
-		}
-		vmSnapshot1 = builder.DummyVirtualMachineSnapshot(inNamespace, "snapshot1", "vm1")
-		vmSnapshot1.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = constants.CSIVSphereVolumeSyncAnnotationValueCompleted
-		vmSnapshot1.Status.Storage = &vmopv1.VirtualMachineSnapshotStorageStatus{
-			Used: &size10GB,
-			Requested: []vmopv1.VirtualMachineSnapshotStorageStatusRequested{
-				{
-					StorageClass: inName,
-					Total:        &size10GB,
-				},
-			},
-		}
-		withObjects = append(withObjects, vm1)
-		withObjects = append(withObjects, vmSnapshot1)
-	})
-
-	JustBeforeEach(func() {
-		ctx = suite.NewUnitTestContextForController()
-
-		// Replace the client with one that has the indexed field.
-		ctx.Client = ctrlfake.NewClientBuilder().
-			WithScheme(builder.NewScheme()).
-			WithIndex(
-				&vmopv1.VirtualMachine{},
-				"spec.storageClass",
-				func(rawObj ctrlclient.Object) []string {
-					vm := rawObj.(*vmopv1.VirtualMachine)
-					return []string{vm.Spec.StorageClass}
-				}).
-			WithObjects(withObjects...).
-			WithInterceptorFuncs(withFuncs).
-			WithStatusSubresource(builder.KnownObjectTypes()...).
-			Build()
-
-		reconciler = storagepolicyusage.NewReconciler(
-			pkgcfg.UpdateContext(
-				ctx,
-				func(config *pkgcfg.Config) {
-					config.Features.PodVMOnStretchedSupervisor = true
-				},
-			),
-			ctx.Client,
-			ctx.Logger,
-			ctx.Recorder,
+	Context("with VMSnapshots feature flag enabled", func() {
+		const (
+			fake      = "fake"
+			namespace = "default"
+			name      = "my-storage-class"
 		)
 
-		_, err = reconciler.Reconcile(ctx, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Namespace: inNamespace,
-				Name:      inName,
-			}})
-	})
+		var (
+			reconciler       *storagepolicyusage.Reconciler
+			ctx              *builder.UnitTestContextForController
+			inNamespace      string
+			inName           string
+			withFuncs        interceptor.Funcs
+			withObjects      []ctrlclient.Object
+			err              error
+			zeroQuantity     resource.Quantity
+			vm1              *vmopv1.VirtualMachine
+			vmSnapshot1      *vmopv1.VirtualMachineSnapshot
+			size10GB         resource.Quantity
+			spuForVM         spqv1.StoragePolicyUsage
+			spuForVMSnapshot spqv1.StoragePolicyUsage
+		)
 
-	When("there is an error listing VM resources", func() {
+		assertReportedTotalsWithOffsetIgnoreError := func(
+			spu spqv1.StoragePolicyUsage,
+			expReserved, expUsed resource.Quantity,
+			offset int) {
+
+			assertReportedTotalsWithOffset(spu, nil, nil, expReserved, expUsed, offset)
+		}
+
 		BeforeEach(func() {
-			withFuncs.List = func(
-				ctx context.Context,
-				client ctrlclient.WithWatch,
-				list ctrlclient.ObjectList,
-				opts ...ctrlclient.ListOption) error {
+			withObjects = nil
+			withFuncs = interceptor.Funcs{}
+			inNamespace = namespace
+			inName = name
+			zeroQuantity = resource.MustParse("0Gi")
+			size10GB = resource.MustParse("10Gi")
 
-				if _, ok := list.(*vmopv1.VirtualMachineList); ok {
-					return errors.New(fake)
-				}
-
-				return client.List(ctx, list, opts...)
+			spuForVM = spqv1.StoragePolicyUsage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      spqutil.StoragePolicyUsageNameForVM(name),
+				},
+				Spec: spqv1.StoragePolicyUsageSpec{
+					StoragePolicyId:  fake,
+					StorageClassName: name,
+				},
 			}
+			spuForVMSnapshot = spqv1.StoragePolicyUsage{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      spqutil.StoragePolicyUsageNameForVMSnapshot(name),
+				},
+				Spec: spqv1.StoragePolicyUsageSpec{
+					StoragePolicyId:  fake,
+					StorageClassName: name,
+				},
+			}
+			vm1 = builder.DummyBasicVirtualMachine("vm1", inNamespace)
+			vm1.Spec.StorageClass = inName
+			vm1.Status = vmopv1.VirtualMachineStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:   vmopv1.VirtualMachineConditionCreated,
+						Status: metav1.ConditionTrue,
+					},
+				},
+				Storage: &vmopv1.VirtualMachineStorageStatus{
+					Total: ptr.To(size10GB),
+				},
+			}
+			vmSnapshot1 = builder.DummyVirtualMachineSnapshot(inNamespace, "snapshot1", "vm1")
+			vmSnapshot1.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = constants.CSIVSphereVolumeSyncAnnotationValueCompleted
+			vmSnapshot1.Status.Storage = &vmopv1.VirtualMachineSnapshotStorageStatus{
+				Used: &size10GB,
+				Requested: []vmopv1.VirtualMachineSnapshotStorageStatusRequested{
+					{
+						StorageClass: inName,
+						Total:        &size10GB,
+					},
+				},
+			}
+			withObjects = append(withObjects, vm1, vmSnapshot1)
 		})
-		It("should return an error", func() {
-			Expect(err).To(MatchError(
-				fmt.Sprintf(
-					"failed to list VMs in namespace %s: %s",
-					inNamespace, fake)))
-		})
-	})
 
-	When("there are StoragePolicyUsage resources for VM and VMSnapshot", func() {
-		BeforeEach(func() {
-			withObjects = append(withObjects, &spuForVM, &spuForVMSnapshot)
-		})
 		JustBeforeEach(func() {
-			Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: spqutil.StoragePolicyUsageNameForVM(name)}, &spuForVM)).To(Succeed())
-			Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: spqutil.StoragePolicyUsageNameForVMSnapshot(name)}, &spuForVMSnapshot)).To(Succeed())
-		})
-		It("should report the correct usage", func() {
-			Expect(err).To(Succeed())
-			assertReportedTotalsWithOffsetIgnoreError(spuForVM, zeroQuantity, size10GB, 1)
-			assertReportedTotalsWithOffsetIgnoreError(spuForVMSnapshot, zeroQuantity, size10GB, 1)
+			ctx = suite.NewUnitTestContextForController()
+
+			// Replace the client with one that has the indexed field.
+			ctx.Client = ctrlfake.NewClientBuilder().
+				WithScheme(builder.NewScheme()).
+				WithIndex(
+					&vmopv1.VirtualMachine{},
+					"spec.storageClass",
+					func(rawObj ctrlclient.Object) []string {
+						vm := rawObj.(*vmopv1.VirtualMachine)
+						return []string{vm.Spec.StorageClass}
+					}).
+				WithObjects(withObjects...).
+				WithInterceptorFuncs(withFuncs).
+				WithStatusSubresource(builder.KnownObjectTypes()...).
+				Build()
+
+			reconciler = storagepolicyusage.NewReconciler(
+				pkgcfg.UpdateContext(
+					ctx,
+					func(config *pkgcfg.Config) {
+						config.Features.PodVMOnStretchedSupervisor = true
+						// Enable VMSnapshots feature.
+						config.Features.VMSnapshots = true
+					},
+				),
+				ctx.Client,
+				ctx.Logger,
+				ctx.Recorder,
+			)
+
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: inNamespace,
+					Name:      inName,
+				}})
 		})
 
-		Context("There are VM with different storage class", func() {
+		When("there is an error listing VM resources", func() {
 			BeforeEach(func() {
-				vm3 := builder.DummyBasicVirtualMachine("vm3", inNamespace)
-				vm3.Spec.StorageClass = inName + "1"
-				vm3.Status = vmopv1.VirtualMachineStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:   vmopv1.VirtualMachineConditionCreated,
-							Status: metav1.ConditionTrue,
-						},
-					},
-					Storage: &vmopv1.VirtualMachineStorageStatus{
-						Total: ptr.To(size10GB),
-					},
+				withFuncs.List = func(
+					ctx context.Context,
+					client ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if _, ok := list.(*vmopv1.VirtualMachineList); ok {
+						return errors.New(fake)
+					}
+
+					return client.List(ctx, list, opts...)
 				}
 			})
-			Specify("the reported information should only include VMs that use the same storage class", func() {
+			It("should return an error", func() {
+				Expect(err).To(MatchError(
+					fmt.Sprintf(
+						"failed to list VMs in namespace %s: %s",
+						inNamespace, fake)))
+			})
+		})
+
+		When("there are StoragePolicyUsage resources for VM and VMSnapshot", func() {
+			BeforeEach(func() {
+				withObjects = append(withObjects, &spuForVM, &spuForVMSnapshot)
+			})
+			JustBeforeEach(func() {
+				Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: spqutil.StoragePolicyUsageNameForVM(name)}, &spuForVM)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: spqutil.StoragePolicyUsageNameForVMSnapshot(name)}, &spuForVMSnapshot)).To(Succeed())
+			})
+			It("should report the correct usage", func() {
+				Expect(err).To(Succeed())
+				assertReportedTotalsWithOffsetIgnoreError(spuForVM, zeroQuantity, size10GB, 1)
+				assertReportedTotalsWithOffsetIgnoreError(spuForVMSnapshot, zeroQuantity, size10GB, 1)
+			})
+
+			Context("There are VM with different storage class", func() {
+				BeforeEach(func() {
+					vm3 := builder.DummyBasicVirtualMachine("vm3", inNamespace)
+					vm3.Spec.StorageClass = inName + "1"
+					vm3.Status = vmopv1.VirtualMachineStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   vmopv1.VirtualMachineConditionCreated,
+								Status: metav1.ConditionTrue,
+							},
+						},
+						Storage: &vmopv1.VirtualMachineStorageStatus{
+							Total: ptr.To(size10GB),
+						},
+					}
+				})
+				Specify("the reported information should only include VMs that use the same storage class", func() {
+					assertReportedTotalsWithOffsetIgnoreError(spuForVM, zeroQuantity, size10GB, 1)
+				})
+			})
+		})
+
+		When("there is no StoragePolicyUsage resource for VM, while there is one for VMSnapshot", func() {
+			BeforeEach(func() {
+				withObjects = append(withObjects, &spuForVMSnapshot)
+			})
+			JustBeforeEach(func() {
+				Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: spqutil.StoragePolicyUsageNameForVMSnapshot(name)}, &spuForVMSnapshot)).To(Succeed())
+			})
+			It("should report the correct usage for SPU for VMSnapshot, returns error for VM", func() {
+				Expect(err).To(MatchError(
+					fmt.Sprintf(
+						"failed to get StoragePolicyUsage %s/%s-vm-usage: "+
+							"storagepolicyusages.cns.vmware.com \"%s-vm-usage\" not found",
+						inNamespace, inName, inName)))
+				assertReportedTotalsWithOffsetIgnoreError(spuForVMSnapshot, zeroQuantity, size10GB, 1)
+			})
+		})
+
+		When("there is no StoragePolicyUsage resource for VMSnapshot, while there is one for VM", func() {
+			BeforeEach(func() {
+				withObjects = append(withObjects, &spuForVM)
+			})
+			JustBeforeEach(func() {
+				Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: spqutil.StoragePolicyUsageNameForVM(name)}, &spuForVM)).To(Succeed())
+			})
+			It("should report the correct usage for SPU for VM, returns error", func() {
+				Expect(err).To(MatchError(
+					fmt.Sprintf(
+						"failed to get StoragePolicyUsage %s/%s-vmsnapshot-usage: "+
+							"storagepolicyusages.cns.vmware.com \"%s-vmsnapshot-usage\" not found",
+						inNamespace, inName, inName)))
 				assertReportedTotalsWithOffsetIgnoreError(spuForVM, zeroQuantity, size10GB, 1)
 			})
 		})
+
+		When("there is no StoragePolicyUsage resource for VM and VMSnapshot", func() {
+			It("should return error for both VM and VMSnapshot", func() {
+				Expect(err.Error()).To(ContainSubstring(
+					fmt.Sprintf(
+						"failed to get StoragePolicyUsage %s/%s-vm-usage: "+
+							"storagepolicyusages.cns.vmware.com \"%s-vm-usage\" not found",
+						inNamespace, inName, inName)))
+				Expect(err.Error()).To(ContainSubstring(
+					fmt.Sprintf(
+						"failed to get StoragePolicyUsage %s/%s-vmsnapshot-usage: "+
+							"storagepolicyusages.cns.vmware.com \"%s-vmsnapshot-usage\" not found",
+						inNamespace, inName, inName)))
+			})
+		})
 	})
 
-	When("there is no StoragePolicyUsage resource for VM, while there is one for VMSnapshot", func() {
+	Context("with VMSnapshots feature flag disabled", func() {
+		const (
+			fake      = "fake"
+			namespace = "default"
+			name      = "my-storage-class"
+		)
+
+		var (
+			reconciler  *storagepolicyusage.Reconciler
+			ctx         *builder.UnitTestContextForController
+			inNamespace string
+			inName      string
+			withObjects []ctrlclient.Object
+			vmSnapshot1 *vmopv1.VirtualMachineSnapshot
+			err         error
+			vm1         *vmopv1.VirtualMachine
+			size10GB    = resource.MustParse("10Gi")
+		)
+
 		BeforeEach(func() {
-			withObjects = append(withObjects, &spuForVMSnapshot)
+			withObjects = nil
+			inNamespace = namespace
+			inName = name
 		})
-		JustBeforeEach(func() {
-			Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: spqutil.StoragePolicyUsageNameForVMSnapshot(name)}, &spuForVMSnapshot)).To(Succeed())
-		})
-		It("should report the correct usage for SPU for VMSnapshot, returns error", func() {
-			Expect(err).To(MatchError(
-				fmt.Sprintf(
-					"failed to get StoragePolicyUsage %s/%s-vm-usage: "+
-						"storagepolicyusages.cns.vmware.com \"%s-vm-usage\" not found",
-					inNamespace, inName, inName)))
-			assertReportedTotalsWithOffsetIgnoreError(spuForVMSnapshot, zeroQuantity, size10GB, 1)
-		})
-	})
 
-	When("there is no StoragePolicyUsage resource for VMSnapshot, while there is one for VM", func() {
-		BeforeEach(func() {
-			withObjects = append(withObjects, &spuForVM)
-		})
 		JustBeforeEach(func() {
-			Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: spqutil.StoragePolicyUsageNameForVM(name)}, &spuForVM)).To(Succeed())
-		})
-		It("should report the correct usage for SPU for VM, returns error", func() {
-			Expect(err).To(MatchError(
-				fmt.Sprintf(
-					"failed to get StoragePolicyUsage %s/%s-vmsnapshot-usage: "+
-						"storagepolicyusages.cns.vmware.com \"%s-vmsnapshot-usage\" not found",
-					inNamespace, inName, inName)))
-			assertReportedTotalsWithOffsetIgnoreError(spuForVM, zeroQuantity, size10GB, 1)
-		})
-	})
+			ctx = suite.NewUnitTestContextForController(withObjects...)
+			// Replace the client with one that has the indexed field.
+			ctx.Client = ctrlfake.NewClientBuilder().
+				WithScheme(builder.NewScheme()).
+				WithIndex(
+					&vmopv1.VirtualMachine{},
+					"spec.storageClass",
+					func(rawObj ctrlclient.Object) []string {
+						vm := rawObj.(*vmopv1.VirtualMachine)
+						return []string{vm.Spec.StorageClass}
+					}).
+				WithObjects(withObjects...).
+				WithInterceptorFuncs(interceptor.Funcs{}).
+				WithStatusSubresource(builder.KnownObjectTypes()...).
+				Build()
 
-	When("there is no StoragePolicyUsage resource for VM and VMSnapshot", func() {
-		It("should report the correct usage", func() {
-			Expect(err.Error()).To(ContainSubstring(
-				fmt.Sprintf(
-					"failed to get StoragePolicyUsage %s/%s-vm-usage: "+
-						"storagepolicyusages.cns.vmware.com \"%s-vm-usage\" not found",
-					inNamespace, inName, inName)))
-			Expect(err.Error()).To(ContainSubstring(
-				fmt.Sprintf(
-					"failed to get StoragePolicyUsage %s/%s-vmsnapshot-usage: "+
-						"storagepolicyusages.cns.vmware.com \"%s-vmsnapshot-usage\" not found",
-					inNamespace, inName, inName)))
+			reconciler = storagepolicyusage.NewReconciler(
+				pkgcfg.UpdateContext(
+					ctx,
+					func(config *pkgcfg.Config) {
+						config.Features.PodVMOnStretchedSupervisor = true
+						config.Features.VMSnapshots = false
+					},
+				),
+				ctx.Client,
+				ctx.Logger,
+				ctx.Recorder,
+			)
+
+			err = reconciler.ReconcileNormal(ctx, inNamespace, inName)
+		})
+
+		When("a VirtualMachineSnapshot is found", func() {
+			BeforeEach(func() {
+				vm1 = builder.DummyBasicVirtualMachine("vm1", inNamespace)
+				vm1.Spec.StorageClass = inName
+				vmSnapshot1 = builder.DummyVirtualMachineSnapshot(inNamespace, "snapshot1", "vm1")
+				vmSnapshot1.Status.Storage = &vmopv1.VirtualMachineSnapshotStorageStatus{
+					Used: &size10GB,
+					Requested: []vmopv1.VirtualMachineSnapshotStorageStatusRequested{
+						{
+							StorageClass: inName,
+							Total:        &size10GB,
+						},
+					},
+				}
+				withObjects = append(withObjects, vm1, vmSnapshot1)
+			})
+			When("there is a StoragePolicyUsage resource for VMSnapshot (it shouldn't exist)", func() {
+				var (
+					spuForVM         spqv1.StoragePolicyUsage
+					spuForVMSnapshot spqv1.StoragePolicyUsage
+				)
+				BeforeEach(func() {
+					spuForVM = spqv1.StoragePolicyUsage{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespace,
+							Name:      spqutil.StoragePolicyUsageNameForVM(name),
+						},
+						Spec: spqv1.StoragePolicyUsageSpec{
+							StoragePolicyId:  fake,
+							StorageClassName: name,
+						},
+					}
+					spuForVMSnapshot = spqv1.StoragePolicyUsage{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespace,
+							Name:      spqutil.StoragePolicyUsageNameForVMSnapshot(name),
+						},
+						Spec: spqv1.StoragePolicyUsageSpec{
+							StoragePolicyId:  fake,
+							StorageClassName: name,
+						},
+					}
+					withObjects = append(
+						withObjects,
+						&spuForVM,
+						&spuForVMSnapshot,
+					)
+				})
+				AfterEach(func() {
+					spuForVM = spqv1.StoragePolicyUsage{}
+					spuForVMSnapshot = spqv1.StoragePolicyUsage{}
+				})
+				JustBeforeEach(func() {
+					Expect(ctx.Client.Get(
+						ctx,
+						ctrlclient.ObjectKey{
+							Namespace: namespace,
+							Name:      spqutil.StoragePolicyUsageNameForVMSnapshot(name),
+						},
+						&spuForVMSnapshot,
+					)).To(Succeed())
+				})
+
+				It("should not update the SPU for VMSnapshot since the feature is disabled", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(spuForVMSnapshot.Status.ResourceTypeLevelQuotaUsage).To(BeNil())
+				})
+			})
 		})
 	})
 }
 
 func unitTestsReconcileSPUForVM() {
 	const (
-		fake             = "fake"
-		namespace        = "default"
-		name             = "my-storage-class"
-		storageQuotaName = "my-storage-quota"
-		storagePolicyID  = "my-storage-policy"
+		fake      = "fake"
+		namespace = "default"
+		name      = "my-storage-class"
 	)
 
 	var (
@@ -856,11 +984,9 @@ func unitTestsReconcileSPUForVM() {
 
 func unitTestsReconcileSPUForVMSnapshot() {
 	const (
-		fake             = "fake"
-		namespace        = "default"
-		name             = "my-storage-class"
-		storageQuotaName = "my-storage-quota"
-		storagePolicyID  = "my-storage-policy"
+		fake      = "fake"
+		namespace = "default"
+		name      = "my-storage-class"
 	)
 
 	var (
@@ -906,6 +1032,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 				ctx,
 				func(config *pkgcfg.Config) {
 					config.Features.PodVMOnStretchedSupervisor = true
+					config.Features.VMSnapshots = true
 				},
 			),
 			ctx.Client,
@@ -1167,7 +1294,6 @@ func unitTestsReconcileSPUForVMSnapshot() {
 			})
 		})
 	})
-
 }
 
 func assertReportedTotalsWithOffset(

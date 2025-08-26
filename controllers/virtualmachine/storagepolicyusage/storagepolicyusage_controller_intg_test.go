@@ -345,7 +345,8 @@ func intgTestsReconcile() {
 				g.Expect(spuForVM.Status.ResourceTypeLevelQuotaUsage.Used).To(Equal(ptr.To(resource.MustParse("70Gi"))))
 			}, time.Second*5).Should(Succeed())
 
-			Eventually(func(g Gomega) {
+			// The SPU for VMSnapshot should not be updated since the feature is disabled.
+			Consistently(func(g Gomega) {
 				var spuForVMSnapshot spqv1.StoragePolicyUsage
 				g.Expect(ctx.Client.Get(
 					ctx,
@@ -355,11 +356,7 @@ func intgTestsReconcile() {
 					},
 					&spuForVMSnapshot),
 				).To(Succeed())
-				g.Expect(spuForVMSnapshot.Status.ResourceTypeLevelQuotaUsage).ToNot(BeNil())
-				g.Expect(spuForVMSnapshot.Status.ResourceTypeLevelQuotaUsage.Reserved).ToNot(BeNil())
-				g.Expect(spuForVMSnapshot.Status.ResourceTypeLevelQuotaUsage.Reserved).To(Equal(ptr.To(resource.MustParse("15Gi"))))
-				g.Expect(spuForVMSnapshot.Status.ResourceTypeLevelQuotaUsage.Used).ToNot(BeNil())
-				g.Expect(spuForVMSnapshot.Status.ResourceTypeLevelQuotaUsage.Used).To(Equal(ptr.To(resource.MustParse("20Gi"))))
+				g.Expect(spuForVMSnapshot.Status.ResourceTypeLevelQuotaUsage).To(BeNil())
 			}, time.Second*5).Should(Succeed())
 		})
 	})

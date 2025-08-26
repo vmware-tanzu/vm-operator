@@ -229,6 +229,17 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 	})
 })
 
+var _ = Describe("Client-side conversion", func() {
+	It("should convert VirtualMachine from current API version to latest API version", func() {
+		scheme := runtime.NewScheme()
+		Expect(vmopv1a2.AddToScheme(scheme)).To(Succeed())
+		Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
+		vm1 := &vmopv1a2.VirtualMachine{}
+		vm2 := &vmopv1.VirtualMachine{}
+		Expect(scheme.Convert(vm1, vm2, nil)).To(Succeed())
+	})
+})
+
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(vmSpec *vmopv1a2.VirtualMachineSpec, c randfill.Continue) {

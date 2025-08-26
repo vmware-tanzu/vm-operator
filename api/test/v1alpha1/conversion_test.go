@@ -241,6 +241,17 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 	}
 }
 
+var _ = Describe("Client-side conversion", func() {
+	It("should convert VirtualMachine from current API version to latest API version", func() {
+		scheme := runtime.NewScheme()
+		Expect(vmopv1a1.AddToScheme(scheme)).To(Succeed())
+		Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
+		vm1 := &vmopv1a1.VirtualMachine{}
+		vm2 := &vmopv1.VirtualMachine{}
+		Expect(scheme.Convert(vm1, vm2, nil)).To(Succeed())
+	})
+})
+
 func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(classSpec *vmopv1.VirtualMachineClassSpec, c randfill.Continue) {

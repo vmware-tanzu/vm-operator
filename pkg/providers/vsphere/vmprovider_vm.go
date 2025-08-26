@@ -1415,8 +1415,13 @@ func (vs *vSphereVMProvider) performSnapshotRevert(
 	// Wait for the revert task to complete
 	taskInfo, err := task.WaitForResult(vmCtx)
 	if err != nil {
+		// TODO(nabarun): Set the condition here to indicate revert failure.
+		// We will need to modify the condition to include the snapshot name
+		// as well.
+		// also, emit an event to record that a snapshot revert failed.
 		vmCtx.Logger.Error(err, "snapshot revert task failed",
 			"snapshotName", snapshotName, "taskInfo", taskInfo)
+
 		return err
 	}
 

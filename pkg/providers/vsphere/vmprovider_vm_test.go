@@ -3131,12 +3131,16 @@ func vmTests() {
 
 						// Verify VM status reflects current snapshot.
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
-						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference).To(Not(BeNil()))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the status has root snapshots.
 						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
 						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
-						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+						Expect(vm.Status.RootSnapshots[0].SnapshotReference).To(Not(BeNil()))
+						Expect(vm.Status.RootSnapshots[0].SnapshotReference.Name).To(Equal(vmSnapshot.Name))
 					})
 				})
 
@@ -3193,7 +3197,9 @@ func vmTests() {
 
 						// Verify VM status reflects the reverted snapshot
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
-						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference).To(Not(BeNil()))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the spec.currentSnapshot is cleared.
 						Expect(vm.Spec.CurrentSnapshot).To(BeNil())
@@ -3201,7 +3207,9 @@ func vmTests() {
 						// Verify the status has root snapshots.
 						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
 						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
-						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+						Expect(vm.Status.RootSnapshots[0].SnapshotReference).To(Not(BeNil()))
+						Expect(vm.Status.RootSnapshots[0].SnapshotReference.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the snapshot is actually current in vCenter
 						var moVM mo.VirtualMachine
@@ -3313,7 +3321,9 @@ func vmTests() {
 
 						// Verify VM status reflects the reverted snapshot
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
-						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference).To(Not(BeNil()))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the revert operation reverted to the expected values
 						Expect(vm.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpMode("")))
@@ -3349,12 +3359,16 @@ func vmTests() {
 
 						// Status should reflect the actual current snapshot
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
-						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference).To(Not(BeNil()))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the status has root snapshots.
 						Expect(vm.Status.RootSnapshots).ToNot(BeNil())
 						Expect(vm.Status.RootSnapshots).To(HaveLen(1))
-						Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+						Expect(vm.Status.RootSnapshots[0].SnapshotReference).To(Not(BeNil()))
+						Expect(vm.Status.RootSnapshots[0].SnapshotReference.Name).To(Equal(vmSnapshot.Name))
 					})
 				})
 
@@ -3416,7 +3430,9 @@ func vmTests() {
 
 						// VM status should still point to first snapshot because revert was skipped
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
-						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+						Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference).To(Not(BeNil()))
+						Expect(vm.Status.CurrentSnapshot.SnapshotReference.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the snapshot in vCenter is still the original one (no revert happened)
 						var moVM mo.VirtualMachine
@@ -4741,7 +4757,9 @@ func vmTests() {
 						Namespace: snapshot1.Namespace,
 					}, updatedSnapshot1)).To(Succeed())
 					Expect(updatedSnapshot1.Status.Children).To(HaveLen(1))
-					Expect(updatedSnapshot1.Status.Children[0].Name).To(Equal(snapshot2.Name))
+					Expect(updatedSnapshot1.Status.Children[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+					Expect(updatedSnapshot1.Status.Children[0].SnapshotReference).To(Not(BeNil()))
+					Expect(updatedSnapshot1.Status.Children[0].SnapshotReference.Name).To(Equal(snapshot2.Name))
 				})
 			})
 

@@ -15,7 +15,9 @@ import (
 	//nolint:godot
 	// "github.com/vmware-tanzu/vm-operator/api/utilconversion"
 
+	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
 func Convert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
@@ -28,6 +30,36 @@ func Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCrypt
 	in *vmopv1.VirtualMachineCryptoStatus, out *VirtualMachineCryptoStatus, s apiconversion.Scope) error {
 
 	return autoConvert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCryptoStatus(in, out, s)
+}
+
+func Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(
+	in *vmopv1a4common.LocalObjectRef, out *vmopv1.VirtualMachineSnapshotReference, s apiconversion.Scope) error {
+	if in == nil {
+		return nil
+	}
+
+	// Convert LocalObjectRef to the nested SnapshotReference field
+	out.SnapshotReference = &vmopv1common.LocalObjectRef{
+		APIVersion: in.APIVersion,
+		Kind:       in.Kind,
+		Name:       in.Name,
+	}
+
+	return nil
+}
+
+func Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(
+	in *vmopv1.VirtualMachineSnapshotReference, out *vmopv1a4common.LocalObjectRef, s apiconversion.Scope) error {
+	if in == nil || in.SnapshotReference == nil {
+		return nil
+	}
+
+	// Convert the nested SnapshotReference back to LocalObjectRef
+	out.APIVersion = in.SnapshotReference.APIVersion
+	out.Kind = in.SnapshotReference.Kind
+	out.Name = in.SnapshotReference.Name
+
+	return nil
 }
 
 // ConvertTo converts this VirtualMachine to the Hub version.

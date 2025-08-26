@@ -151,10 +151,6 @@ func Convert_v1alpha5_VirtualMachine_To_v1alpha2_VirtualMachine(
 	return nil
 }
 
-func restore_v1alpha5_VirtualMachineGroupName(dst, src *vmopv1.VirtualMachine) {
-	dst.Spec.GroupName = src.Spec.GroupName
-}
-
 func restore_v1alpha5_VirtualMachineCryptoSpec(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Crypto = src.Spec.Crypto
 }
@@ -311,10 +307,6 @@ func restore_v1alpha5_VirtualMachineBootOptions(dst, src *vmopv1.VirtualMachine)
 	dst.Spec.BootOptions = src.Spec.BootOptions
 }
 
-func restore_v1alpha5_VirtualMachineAffinitySpec(dst, src *vmopv1.VirtualMachine) {
-	dst.Spec.Affinity = src.Spec.Affinity
-}
-
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -341,8 +333,6 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)
 	restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
-	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)
-	restore_v1alpha5_VirtualMachineGroupName(dst, restored)
 
 	// END RESTORE
 

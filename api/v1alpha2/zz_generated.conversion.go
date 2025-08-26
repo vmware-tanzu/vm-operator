@@ -3756,6 +3756,7 @@ func autoConvert_v1alpha2_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	out.Advanced = (*v1alpha5.VirtualMachineAdvancedSpec)(unsafe.Pointer(in.Advanced))
 	out.Reserved = (*v1alpha5.VirtualMachineReservedSpec)(unsafe.Pointer(in.Reserved))
 	out.MinHardwareVersion = in.MinHardwareVersion
+	out.GroupName = in.GroupName
 	return nil
 }
 
@@ -3807,7 +3808,7 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 	// WARNING: in.PromoteDisksMode requires manual conversion: does not exist in peer-type
 	// WARNING: in.BootOptions requires manual conversion: does not exist in peer-type
 	// WARNING: in.CurrentSnapshot requires manual conversion: does not exist in peer-type
-	// WARNING: in.GroupName requires manual conversion: does not exist in peer-type
+	out.GroupName = in.GroupName
 	return nil
 }
 

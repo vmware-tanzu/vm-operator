@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -162,9 +163,10 @@ func (v validator) validateTargetLocation(ctx *pkgctx.WebhookRequestContext, vmp
 		allErrs = append(allErrs, field.Required(targetLocationNamePath, ""))
 	}
 
-	if vmpub.Spec.Target.Location.APIVersion != imgregv1a1.GroupVersion.String() {
+	if vmpub.Spec.Target.Location.APIVersion != imgregv1a1.GroupVersion.String() &&
+		vmpub.Spec.Target.Location.APIVersion != imgregv1.GroupVersion.String() {
 		allErrs = append(allErrs, field.NotSupported(targetLocationPath.Child("apiVersion"),
-			vmpub.Spec.Target.Location.APIVersion, []string{imgregv1a1.GroupVersion.String(), ""}))
+			vmpub.Spec.Target.Location.APIVersion, []string{imgregv1a1.GroupVersion.String(), imgregv1.GroupVersion.String(), ""}))
 	}
 
 	if vmpub.Spec.Target.Location.Kind != reflect.TypeOf(imgregv1a1.ContentLibrary{}).Name() {

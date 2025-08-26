@@ -197,7 +197,7 @@ func unitTestsValidateCreate() {
 				[]string{"VirtualMachine", ""}).Error(), nil),
 		Entry("should deny invalid target location API version", createArgs{invalidTargetLocationAPIVersion: true}, false,
 			field.NotSupported(targetLocationPath.Child("apiVersion"), invalidAPIVersion,
-				[]string{"imageregistry.vmware.com/v1alpha1", ""}).Error(), nil),
+				[]string{"imageregistry.vmware.com/v1alpha1", "imageregistry.vmware.com/v1alpha2", ""}).Error(), nil),
 		Entry("should deny invalid target location kind", createArgs{invalidTargetLocationKind: true}, false,
 			field.NotSupported(targetLocationPath.Child("kind"), "ClusterContentLibrary",
 				[]string{"ContentLibrary", ""}).Error(), nil),

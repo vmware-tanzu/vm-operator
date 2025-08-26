@@ -21,7 +21,7 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	fakeworker "github.com/vmware-tanzu/vm-operator/pkg/prober/fake/worker"
@@ -52,7 +52,7 @@ var _ = Describe("VirtualMachine probes", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = pkgcfg.NewContextWithDefaultConfig()
 		periodSeconds = 1
 
 		vm = &vmopv1.VirtualMachine{
@@ -81,7 +81,7 @@ var _ = Describe("VirtualMachine probes", func() {
 		fakeRecorder = record.New(eventRecorder)
 		fakeVMProvider = &fake.VMProvider{}
 		fakeCtrlManager = &fakeManager{client: fakeClient}
-		testManagerIf := NewManager(fakeClient, fakeRecorder, fakeVMProvider)
+		testManagerIf := NewManager(ctx, fakeClient, fakeRecorder, fakeVMProvider)
 		testManager = testManagerIf.(*manager)
 		fakeWorkerIf = fakeworker.NewFakeWorker(testManager.readinessQueue)
 		fakeWorker = fakeWorkerIf.(*fakeworker.FakeWorker)
@@ -111,13 +111,13 @@ var _ = Describe("VirtualMachine probes", func() {
 	}
 
 	Specify("Adding prober to controller manager should succeed", func() {
-		m, err := AddToManager(fakeCtrlManager, fakeVMProvider)
+		m, err := AddToManager(ctx, fakeCtrlManager, fakeVMProvider)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(m).ToNot(BeNil())
 	})
 
 	Specify("Starting probe manager should succeed", func() {
-		m, err := AddToManager(fakeCtrlManager, fakeVMProvider)
+		m, err := AddToManager(ctx, fakeCtrlManager, fakeVMProvider)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(m).ToNot(BeNil())
 

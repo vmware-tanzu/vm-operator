@@ -69,7 +69,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	proberManager, err := prober.AddToManager(mgr, ctx.VMProvider)
+	proberManager, err := prober.AddToManager(ctx, mgr, ctx.VMProvider)
 	if err != nil {
 		return err
 	}

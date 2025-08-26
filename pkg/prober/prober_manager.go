@@ -20,6 +20,7 @@ import (
 	"github.com/go-logr/logr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	proberctx "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
@@ -49,6 +50,7 @@ type Manager interface {
 
 // manager represents the probe manager, which implements the ManagerInterface.
 type manager struct {
+	context        context.Context
 	client         client.Client
 	readinessQueue worker.DelayingInterface
 	prober         *probe.Prober
@@ -66,11 +68,13 @@ type manager struct {
 
 // NewManager initializes a prober manager.
 func NewManager(
+	ctx context.Context,
 	client client.Client,
 	record vmoprecord.Recorder,
 	vmProvider providers.VirtualMachineProviderInterface) Manager {
 
 	probeManager := &manager{
+		context:              ctx,
 		client:               client,
 		readinessQueue:       workqueue.NewNamedDelayingQueue(readinessProbeQueueName),
 		prober:               probe.NewProber(vmProvider),
@@ -82,11 +86,15 @@ func NewManager(
 }
 
 // AddToManager adds the probe manager controller manager.
-func AddToManager(mgr ctrlmgr.Manager, vmProvider providers.VirtualMachineProviderInterface) (Manager, error) {
+func AddToManager(
+	ctx context.Context,
+	mgr ctrlmgr.Manager,
+	vmProvider providers.VirtualMachineProviderInterface) (Manager, error) {
+
 	probeRecorder := vmoprecord.New(mgr.GetEventRecorderFor(proberManagerName))
 
 	// Add the probe manager explicitly as runnable in order to receive a Start() event.
-	m := NewManager(mgr.GetClient(), probeRecorder, vmProvider)
+	m := NewManager(ctx, mgr.GetClient(), probeRecorder, vmProvider)
 	if err := mgr.Add(m); err != nil {
 		return nil, err
 	}
@@ -135,10 +143,12 @@ func (m *manager) Start(ctx context.Context) error {
 	m.log.Info("Start VirtualMachine Probe Manager")
 	defer m.log.Info("Stop VirtualMachine Probe Manager")
 
+	ctx = pkgcfg.JoinContext(ctx, m.context)
+
 	m.log.Info("Starting readiness workers", "count", numberOfReadinessWorkers)
 	m.workersWG.Add(numberOfReadinessWorkers)
 	for i := 0; i < numberOfReadinessWorkers; i++ {
-		readinessWorker := worker.NewReadinessWorker(m.readinessQueue, m.prober, m.client, m.recorder)
+		readinessWorker := worker.NewReadinessWorker(ctx, m.readinessQueue, m.prober, m.client, m.recorder)
 		m.worker(readinessWorker)
 	}
 

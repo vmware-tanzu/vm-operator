@@ -13,6 +13,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -180,7 +181,7 @@ func (r *Reconciler) ReconcileSPUForVM(
 	)
 
 	for i := range vms {
-		vm := vms[i]
+		vm := &vms[i]
 
 		if !vm.DeletionTimestamp.IsZero() {
 			// Ignore VMs that are being deleted.
@@ -188,7 +189,7 @@ func (r *Reconciler) ReconcileSPUForVM(
 		}
 
 		if vm.Status.Storage == nil ||
-			!conditions.IsTrue(&vm, vmopv1.VirtualMachineConditionCreated) {
+			!conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated) {
 
 			// The VM is not yet fully created or is not yet reporting its
 			// storage information. Therefore, report the VM's potential
@@ -252,11 +253,6 @@ func (r *Reconciler) ReconcileSPUForVMSnapshot(
 		totalReserved resource.Quantity
 	)
 
-	vmMap := make(map[string]vmopv1.VirtualMachine)
-	for _, vm := range vms {
-		vmMap[vm.Name] = vm
-	}
-
 	// TODO (lubron): Use pagination to fetch VirtualMachineSnapshots in batches and update
 	// the StoragePolicyUsage incrementally, so we avoid overloading memory.
 	// Can't think of a good way to index the VMSnapshots by storage class, since a VMSnapshot
@@ -280,13 +276,23 @@ func (r *Reconciler) ReconcileSPUForVMSnapshot(
 			"failed to list VirtualMachineSnapshots in namespace %s: %w", namespace, err)
 	}
 
+	var vmNames *sets.Set[string]
 	for _, vmSnapshot := range vmSnapshotList.Items {
 		// Update the usage only when the CSI has marked the VMSnapshot with volume sync completed.
 		if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
 			constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
+
+			if vmNames == nil {
+				s := make(sets.Set[string], len(vms))
+				for i := range vms {
+					s.Insert(vms[i].Name)
+				}
+				vmNames = &s
+			}
+
 			// Report the snapshot's used capacity.
 			if err := r.reportUsedForSnapshot(
-				ctx, vmSnapshot, &totalUsed, vmMap); err != nil {
+				ctx, &vmSnapshot, &totalUsed, *vmNames); err != nil {
 				return fmt.Errorf(
 					"failed to report used capacity for %q: %w",
 					vmSnapshot.NamespacedName(), err)
@@ -294,7 +300,7 @@ func (r *Reconciler) ReconcileSPUForVMSnapshot(
 		} else {
 			// Report the snapshot's reserved capacity at worst case.
 			if err := r.reportReservedForSnapshot(
-				ctx, vmSnapshot, &totalReserved, spu.Spec.StorageClassName); err != nil {
+				ctx, &vmSnapshot, &totalReserved, spu.Spec.StorageClassName); err != nil {
 
 				return fmt.Errorf(
 					"failed to report reserved capacity for %q: %w",
@@ -326,7 +332,7 @@ func (r *Reconciler) ReconcileSPUForVMSnapshot(
 }
 
 func reportUsed(
-	vm vmopv1.VirtualMachine,
+	vm *vmopv1.VirtualMachine,
 	total *resource.Quantity) {
 
 	if s := vm.Status.Storage; s != nil {
@@ -339,7 +345,7 @@ func reportUsed(
 func reportReserved(
 	ctx context.Context,
 	k8sClient client.Client,
-	vm vmopv1.VirtualMachine,
+	vm *vmopv1.VirtualMachine,
 	total *resource.Quantity) error {
 
 	var (
@@ -358,8 +364,8 @@ func reportReserved(
 	}
 
 	var (
-		imgKey    = client.ObjectKey{Name: imgName}
-		imgStatus vmopv1.VirtualMachineImageStatus
+		imgKey   = client.ObjectKey{Name: imgName}
+		imgDisks []vmopv1.VirtualMachineImageDiskInfo
 	)
 
 	switch imgKind {
@@ -372,7 +378,7 @@ func reportReserved(
 			}
 			return nil
 		}
-		imgStatus = img.Status
+		imgDisks = img.Status.Disks
 	case "ClusterVirtualMachineImage":
 		var img vmopv1.ClusterVirtualMachineImage
 		if err := k8sClient.Get(ctx, imgKey, &img); err != nil {
@@ -381,11 +387,11 @@ func reportReserved(
 			}
 			return nil
 		}
-		imgStatus = img.Status
+		imgDisks = img.Status.Disks
 	}
 
-	for i := range imgStatus.Disks {
-		if v := imgStatus.Disks[i].Capacity; v != nil {
+	for i := range imgDisks {
+		if v := imgDisks[i].Capacity; v != nil {
 			total.Add(*v)
 		}
 	}
@@ -396,7 +402,7 @@ func reportReserved(
 // reportReservedForSnapshot reports the reserved capacity for a snapshot.
 func (r *Reconciler) reportReservedForSnapshot(
 	ctx context.Context,
-	vmSnapshot vmopv1.VirtualMachineSnapshot,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot,
 	total *resource.Quantity,
 	storageClass string) error {
 
@@ -431,27 +437,24 @@ func (r *Reconciler) reportReservedForSnapshot(
 // Get the snapshot size from the VMSnapshot's status.Used.Total.
 func (r *Reconciler) reportUsedForSnapshot(
 	ctx context.Context,
-	vmSnapshot vmopv1.VirtualMachineSnapshot,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot,
 	total *resource.Quantity,
-	vmMap map[string]vmopv1.VirtualMachine) error {
+	vmNames sets.Set[string]) error {
 
 	if vmSnapshot.Spec.VMRef == nil {
 		return fmt.Errorf("vmRef is not set")
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx)
-
-	if _, ok := vmMap[vmSnapshot.Spec.VMRef.Name]; !ok {
-		logger.V(5).Info("VM not found in vmMap, which means the VM's storage class is "+
-			"different from the SPU's storage class, skip calculating used capacity for it",
-			"vm", vmSnapshot.Spec.VMRef.Name)
+	if !vmNames.Has(vmSnapshot.Spec.VMRef.Name) {
+		// The VMs listed are filtered by their StorageClass, so this means this snapshot is not
+		// for this SPU's StorageClass.
 		return nil
 	}
 
 	// There might be chance that VMSnapshot's marked as CSIVolumeSync completed but VMSnapshot controller
-	// hasn't updated VMSnapshot with used capacity yet.
-	// Wait for next reconcile to update the SPU.
+	// hasn't updated VMSnapshot with used capacity yet. Wait for next reconcile to update the SPU.
 	if vmSnapshot.Status.Storage == nil || vmSnapshot.Status.Storage.Used == nil {
+		logger := pkgutil.FromContextOrDefault(ctx)
 		logger.V(5).Info("snapshot has no used capacity reported by controller yet, "+
 			"skip calculating used capacity for it", "snapshot", vmSnapshot.Name)
 		return nil

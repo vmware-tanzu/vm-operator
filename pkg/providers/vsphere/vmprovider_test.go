@@ -17,6 +17,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -154,6 +155,13 @@ var _ = Describe("SyncVirtualMachineImage", func() {
 			err := vmProvider.SyncVirtualMachineImage(ctx, &imgregv1a1.ContentLibrary{}, &vmopv1.VirtualMachineImage{})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("unexpected content library item K8s object type %T", &imgregv1a1.ContentLibrary{})))
+		})
+	})
+
+	When("content library item is a v1alpha2 type", func() {
+		It("should not return an error", func() {
+			err := vmProvider.SyncVirtualMachineImage(ctx, &imgregv1.ContentLibraryItem{}, &vmopv1.VirtualMachineImage{})
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 

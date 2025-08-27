@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -198,6 +199,14 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(
 		itemID = string(cli.Spec.UUID)
 		itemVersion = cli.Status.ContentVersion
 		itemType = cli.Status.Type
+	case *imgregv1.ContentLibraryItem:
+		itemID = cli.Spec.ID
+		itemVersion = cli.Status.ContentVersion
+		itemType = imgregv1a1.ContentLibraryItemType(cli.Status.Type)
+	case *imgregv1.ClusterContentLibraryItem:
+		itemID = cli.Spec.ID
+		itemVersion = cli.Status.ContentVersion
+		itemType = imgregv1a1.ContentLibraryItemType(cli.Status.Type)
 	default:
 		return fmt.Errorf("unexpected content library item K8s object type %T", cli)
 	}

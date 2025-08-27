@@ -27,6 +27,7 @@ import (
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
@@ -1150,6 +1151,12 @@ func getExpectedBackupObjectYAML(obj client.Object) string {
 		delete(annotations, corev1.LastAppliedConfigAnnotation)
 		obj.SetAnnotations(annotations)
 	}
+
+	if labels := obj.GetLabels(); len(labels) > 0 {
+		delete(labels, topology.KubernetesTopologyZoneLabelKey)
+		obj.SetLabels(labels)
+	}
+
 	obj.SetManagedFields(nil)
 
 	// Ignore the VM status field as the backup condition will be added after

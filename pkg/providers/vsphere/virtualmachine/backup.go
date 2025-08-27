@@ -29,6 +29,7 @@ import (
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -304,6 +305,14 @@ func trimBackupFields(obj client.Object) {
 		obj.SetAnnotations(annotations)
 	}
 
+	if labels := obj.GetLabels(); len(labels) > 0 {
+		// Remove the zone label from the VM. When a VM is restored /
+		// failed over, VM operator detects the VM's resource pool and
+		// retroactively populates the VM's zone label.
+		delete(labels, topology.KubernetesTopologyZoneLabelKey)
+		obj.SetLabels(labels)
+	}
+
 	obj.SetManagedFields(nil)
 }
 
@@ -336,13 +345,14 @@ func isVMBackupUpToDate(vm *vmopv1.VirtualMachine, backup string) (bool, error) 
 		return false, err
 	}
 
-	// Do not compare LastAppliedConfigAnnotation as it's not in the backup.
-	curAnnotations := maps.Clone(vm.Annotations)
-	delete(curAnnotations, corev1.LastAppliedConfigAnnotation)
+	// Copy the VM so we can synthesize the backup manifest by
+	// deleting fields that are trimmed from backup.
+	curVM := vm.DeepCopy()
+	trimBackupFields(curVM)
 
-	return vm.Generation == backupVM.Generation &&
-		maps.Equal(vm.Labels, backupVM.Labels) &&
-		maps.Equal(curAnnotations, backupVM.Annotations), nil
+	return curVM.Generation == backupVM.Generation &&
+		maps.Equal(curVM.Labels, backupVM.Labels) &&
+		maps.Equal(curVM.Annotations, backupVM.Annotations), nil
 }
 
 // getDesiredAdditionalResourceYAMLForBackup returns the encoded and gzipped

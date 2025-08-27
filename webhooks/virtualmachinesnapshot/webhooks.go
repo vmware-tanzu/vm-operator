@@ -8,9 +8,13 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesnapshot/mutation"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesnapshot/validation"
 )
 
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+	if err := mutation.AddToManager(ctx, mgr); err != nil {
+		return err
+	}
 	return validation.AddToManager(ctx, mgr)
 }

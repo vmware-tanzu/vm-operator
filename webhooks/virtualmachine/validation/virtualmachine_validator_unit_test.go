@@ -5729,6 +5729,22 @@ func unitTestsValidateUpdate() {
 					expectAllowed: false,
 				},
 			),
+			Entry("when a VM is being reverted to a snapshot, revert should be rejected",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name: "new-snap",
+						}
+						ctx.oldVM.Spec.CurrentSnapshot = &common.LocalObjectRef{
+							Name: "old-snap",
+						}
+					},
+					validate: doValidateWithMsg(
+						field.Forbidden(snapshotPath, "a snapshot revert is already in progress").Error(),
+					),
+					expectAllowed: false,
+				},
+			),
 		)
 	})
 

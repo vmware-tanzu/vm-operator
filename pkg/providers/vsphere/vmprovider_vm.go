@@ -839,28 +839,6 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithRecentTaskInfo
 
 	//
-	// Reconcile a snapshot restore operation.
-	//
-	// Reverting a VM to a snapshot results in the VM's spec getting
-	// overwritten from the snapshot. For now, we do not allow any
-	// other changes to the VM's spec if a revert is being requested
-	// to avoid having to merge the spec post revert.
-	//
-	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
-		if requeue, err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
-			if pkgerr.IsNoRequeueError(err) {
-				return errOrReconcileErr(reconcileErr, err)
-			}
-			reconcileErr = getReconcileErr("snapshot revert", reconcileErr, err)
-		} else if requeue {
-			// Snapshot revert was successful and requires requeue for next reconcile
-			// to operate on the updated VM spec. Return any accumulated reconcile errors.
-			vmCtx.Logger.V(4).Info("Snapshot revert completed successfully, requeuing reconcile")
-			return reconcileErr
-		}
-	}
-
-	//
 	// Reconcile schema upgrade
 	//
 	if err := vs.reconcileSchemaUpgrade(vmCtx); err != nil {
@@ -888,6 +866,47 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			return errOrReconcileErr(reconcileErr, err)
 		}
 		reconcileErr = getReconcileErr("backup state", reconcileErr, err)
+	}
+
+	//
+	// Check if there are any running snapshot-related tasks and skip reconciliation if so.
+	// This includes create snapshot, delete snapshot, and revert snapshot operations.
+	//
+	if pkgctx.HasVMRunningSnapshotTask(vmCtx) {
+		vmCtx.Logger.Info("Skipping VM reconciliation due to running snapshot operation")
+		return pkgerr.NoRequeueError{Message: "snapshot operation in progress"}
+	}
+
+	//
+	// Check if a snapshot revert annotation is present but no corresponding vSphere task is running.
+	// This handles the case where the vSphere revert task completed but there was an issue with
+	// the VM spec restoration or annotation cleanup.
+	//
+	if _, exists := vmCtx.VM.Annotations[pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey]; exists {
+		vmCtx.Logger.Info("Skipping VM reconciliation since snapshot revert is in progress")
+		return pkgerr.NoRequeueError{Message: "snapshot revert in progress"}
+	}
+
+	//
+	// Reconcile a snapshot restore operation.
+	//
+	// Reverting a VM to a snapshot results in the VM's spec getting
+	// overwritten from the snapshot. For now, we do not allow any
+	// other changes to the VM's spec if a revert is being requested
+	// to avoid having to merge the spec post revert.
+	//
+	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
+		if requeue, err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
+			if pkgerr.IsNoRequeueError(err) {
+				return errOrReconcileErr(reconcileErr, err)
+			}
+			reconcileErr = getReconcileErr("snapshot revert", reconcileErr, err)
+		} else if requeue {
+			// Snapshot revert was successful and requires requeue for next reconcile
+			// to operate on the updated VM spec. Return any accumulated reconcile errors.
+			vmCtx.Logger.V(4).Info("Snapshot revert completed successfully, requeuing reconcile")
+			return reconcileErr
+		}
 	}
 
 	//
@@ -1324,18 +1343,10 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 
 	// Check if the VM has a snapshot by the desired name.
 	snapObj, err := virtualmachine.FindSnapshot(vmCtx, desiredSnapshotName)
-	if err != nil {
+	if err != nil || snapObj == nil {
 		vmCtx.Logger.Error(err, "Error finding snapshot", "snapshotName", desiredSnapshotName)
 
 		return false, err
-	}
-
-	// If FindSnapshot doesn't return an error, a snapshot managed object is returned.
-	// But handle a scenario where the object is nil anyway.
-	if snapObj == nil {
-		vmCtx.Logger.V(4).Info("Snapshot not found, treating as new snapshot request",
-			"snapshotName", desiredSnapshotName)
-		return false, nil
 	}
 
 	vmCtx.Logger.V(4).Info("Found desired snapshot for the VM", "snapshotRef", snapObj.Reference().Value)

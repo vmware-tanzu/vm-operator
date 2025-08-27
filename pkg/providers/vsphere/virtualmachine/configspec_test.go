@@ -204,72 +204,309 @@ var _ = Describe("CreateConfigSpec", func() {
 				prefLabelKey   string
 				prefLabelValue string
 			)
+
+			Context("required affinity policy", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMPlacementPolicies = true
+					})
+
+					reqLabelKey = "node-pool"
+					reqLabelValue = "node-pool-1"
+
+					vmCtx.VM.Labels = map[string]string{
+						reqLabelKey: reqLabelValue,
+					}
+
+					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+						VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											reqLabelKey: reqLabelValue,
+										},
+									},
+									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+								},
+							},
+						},
+					}
+				})
+
+				It("config spec should have the expected affinity policy", func() {
+					Expect(configSpec.VmPlacementPolicies).To(Not(BeNil()))
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+
+					reqLabelStr := fmt.Sprintf("%s:%s", reqLabelKey, reqLabelValue)
+					reqPolicy := &vimtypes.VmVmAffinity{
+						VmPlacementPolicy: vimtypes.VmPlacementPolicy{
+							TagsToAttach: []string{reqLabelStr},
+						},
+						PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+						PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+						AffinedVmsTagName: reqLabelStr,
+					}
+
+					Expect(configSpec.VmPlacementPolicies[0]).To(Equal(reqPolicy))
+				})
+			})
+
+			Context("preferred affinity policy", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMPlacementPolicies = true
+					})
+
+					prefLabelKey = "node-pool"
+					prefLabelValue = "node-pool-1"
+
+					vmCtx.VM.Labels = map[string]string{
+						prefLabelKey: prefLabelValue,
+					}
+
+					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+						VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											prefLabelKey: prefLabelValue,
+										},
+									},
+									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+								},
+							},
+						},
+					}
+				})
+
+				It("config spec should have the expected affinity policy", func() {
+					Expect(configSpec.VmPlacementPolicies).To(Not(BeNil()))
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+
+					prefLabelStr := fmt.Sprintf("%s:%s", prefLabelKey, prefLabelValue)
+					prefPolicy := &vimtypes.VmVmAffinity{
+						VmPlacementPolicy: vimtypes.VmPlacementPolicy{
+							TagsToAttach: []string{prefLabelStr},
+						},
+						PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+						PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+						AffinedVmsTagName: prefLabelStr,
+					}
+
+					Expect(configSpec.VmPlacementPolicies).To(ContainElement(prefPolicy))
+				})
+			})
+
+		})
+
+		When("VM spec has VM-VM anti-affinity policies set", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 					config.Features.VMPlacementPolicies = true
 				})
 
-				reqLabelKey = "node-pool"
-				reqLabelValue = "node-pool-1"
-				prefLabelKey = "node-pool"
-				prefLabelValue = "node-pool-2"
-
-				vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-					VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-						RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
-							{
-								LabelSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										reqLabelKey: reqLabelValue,
-									},
-								},
-								TopologyKey: topology.KubernetesTopologyZoneLabelKey,
-							},
-						},
-						PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
-							{
-								LabelSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										prefLabelKey: prefLabelValue,
-									},
-								},
-								TopologyKey: topology.KubernetesTopologyZoneLabelKey,
-							},
-						},
-					},
+				// Add some labels to the VM to be used for tagging
+				vmCtx.VM.Labels = map[string]string{
+					"vm-label1": "vm-value1",
+					"vm-label2": "vm-value2",
 				}
 			})
 
-			It("config spec should have the expected affinity policy", func() {
-				Expect(configSpec.VmPlacementPolicies).To(Not(BeNil()))
-				Expect(configSpec.VmPlacementPolicies).To(HaveLen(2))
+			Context("with both MatchLabels and MatchExpressions", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"component": "web",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "tier",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"frontend", "backend"},
+											},
+										},
+									},
+									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+								},
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"environment": "prod",
+										},
+									},
+									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+								},
+							},
+						},
+					}
+				})
 
-				reqLabelStr := fmt.Sprintf("%s:%s", reqLabelKey, reqLabelValue)
-				prefLabelStr := fmt.Sprintf("%s:%s", prefLabelKey, prefLabelValue)
+				It("creates a single VmToVmGroupsAntiAffinity policy with all labels", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
 
-				// Placement policies in the ConfigSpec may not be
-				// ordered. So, don't rely on the order to check that
-				// we have the expected policies.
-				reqPolicy := &vimtypes.VmVmAffinity{
-					VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-						TagsToAttach: []string{reqLabelStr},
-					},
-					PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
-					PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-					AffinedVmsTagName: reqLabelStr,
-				}
+					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmToVmGroupsAntiAffinity)
+					Expect(ok).To(BeTrue())
 
-				prefPolicy := &vimtypes.VmVmAffinity{
-					VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-						TagsToAttach: []string{prefLabelStr},
-					},
-					PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
-					PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-					AffinedVmsTagName: prefLabelStr,
-				}
+					// Validate AntiAffinedVmGroupTags contains all labels from selectors
+					expectedAntiAffinityLabels := []string{"component:web", "tier:frontend", "tier:backend", "environment:prod"}
+					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-				Expect(configSpec.VmPlacementPolicies).To(ContainElement(reqPolicy))
-				Expect(configSpec.VmPlacementPolicies).To(ContainElement(prefPolicy))
+					// Validate TagsToAttach contains all VM labels (set later in the flow)
+					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
+					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
+
+					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
+					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
+				})
+			})
+
+			Context("with unsupported topology key", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"tier": "frontend",
+										},
+									},
+									TopologyKey: "kubernetes.io/hostname", // Not supported for anti-affinity
+								},
+							},
+						},
+					}
+				})
+
+				It("creates a minimal policy with VM tags but no anti-affinity rules", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+
+					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmPlacementPolicy)
+					Expect(ok).To(BeTrue())
+
+					// VM tags should still be attached even though anti-affinity policy failed
+					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
+					Expect(policy.TagsToAttach).To(ConsistOf(expectedVMTags))
+				})
+			})
+
+			Context("with simple MatchLabels case", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"tier":        "frontend",
+											"environment": "prod",
+										},
+									},
+									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+								},
+							},
+						},
+					}
+				})
+
+				It("creates a policy with correct anti-affinity labels and VM tags", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+
+					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmToVmGroupsAntiAffinity)
+					Expect(ok).To(BeTrue())
+
+					// Validate AntiAffinedVmGroupTags contains selector labels
+					expectedAntiAffinityLabels := []string{"tier:frontend", "environment:prod"}
+					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
+
+					// Validate TagsToAttach contains VM labels
+					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
+					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
+
+					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
+					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
+				})
+			})
+
+			Context("with MatchExpressions multiple values", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "tier",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"frontend", "backend", "middleware"},
+											},
+										},
+									},
+									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+								},
+							},
+						},
+					}
+				})
+
+				It("creates a policy with expanded labels from MatchExpressions", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+
+					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmToVmGroupsAntiAffinity)
+					Expect(ok).To(BeTrue())
+
+					// Validate AntiAffinedVmGroupTags contains all expanded labels
+					expectedAntiAffinityLabels := []string{"tier:frontend", "tier:backend", "tier:middleware"}
+					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
+
+					// Validate TagsToAttach contains VM labels
+					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
+					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
+
+					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
+					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
+				})
+			})
+
+			Context("with invalid label selector", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
+						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "tier",
+												Operator: metav1.LabelSelectorOpNotIn, // Unsupported operator
+												Values:   []string{"frontend"},
+											},
+										},
+									},
+									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+								},
+							},
+						},
+					}
+				})
+
+				It("creates a minimal policy with VM tags but no anti-affinity rules", func() {
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+
+					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmPlacementPolicy)
+					Expect(ok).To(BeTrue())
+
+					// VM tags should still be attached even though selector was invalid
+					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
+					Expect(policy.TagsToAttach).To(ConsistOf(expectedVMTags))
+				})
 			})
 		})
 	})

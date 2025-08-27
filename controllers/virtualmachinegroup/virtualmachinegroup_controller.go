@@ -34,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -220,6 +221,13 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineGroupContext) (
 		setReadyCondition(ctx, reterr)
 	}()
 
+	// Reconcile spec.groupName first as it's required for other reconciles
+	// (e.g. placement and boot order delays) if this group is a nested group.
+	if reterr = r.reconcileGroupName(ctx); reterr != nil {
+		ctx.Logger.Error(reterr, "Failed to reconcile group's spec.groupName")
+		return ctrl.Result{}, reterr
+	}
+
 	if reterr = r.reconcileMembers(ctx); reterr != nil {
 		ctx.Logger.Error(reterr, "Failed to reconcile group members")
 		return ctrl.Result{}, reterr
@@ -231,6 +239,31 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineGroupContext) (
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileGroupName reconciles the group.spec.groupName field.
+func (r *Reconciler) reconcileGroupName(
+	ctx *pkgctx.VirtualMachineGroupContext) error {
+
+	// Call UpdateGroupLinkedCondition even if the group name is empty to delete
+	// that condition if it existed previously.
+	if err := vmopv1util.UpdateGroupLinkedCondition(
+		ctx,
+		ctx.VMGroup,
+		r.Client,
+	); err != nil {
+		return fmt.Errorf("failed to update group linked condition: %w", err)
+	}
+
+	// Return an error if the group linked condition is explicitly set to false.
+	if conditions.IsFalse(
+		ctx.VMGroup,
+		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+	) {
+		return fmt.Errorf("group is not linked to its parent group")
+	}
+
+	return nil
 }
 
 // reconcileMembers reconciles all current members of the group and updates

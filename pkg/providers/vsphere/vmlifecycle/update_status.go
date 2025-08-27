@@ -124,7 +124,11 @@ func reconcileStatusGroup(
 
 	var errs []error
 
-	if err := UpdateGroupLinkedCondition(vmCtx, k8sClient); err != nil {
+	if err := vmopv1util.UpdateGroupLinkedCondition(
+		vmCtx,
+		vmCtx.VM,
+		k8sClient,
+	); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -463,70 +467,6 @@ func reconcileStatusProbe(
 	}
 
 	conditions.Set(vmCtx.VM, cond)
-
-	return nil
-}
-
-// UpdateGroupLinkedCondition updates the GroupLinked condition for the VM if
-// the VM is a member of a group.
-func UpdateGroupLinkedCondition(
-	vmCtx pkgctx.VirtualMachineContext,
-	k8sClient ctrlclient.Client) error {
-	if vmCtx.VM.Spec.GroupName == "" {
-		conditions.Delete(
-			vmCtx.VM,
-			vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-
-		return nil
-	}
-
-	var (
-		obj vmopv1.VirtualMachineGroup
-		key = ctrlclient.ObjectKey{
-			Name:      vmCtx.VM.Spec.GroupName,
-			Namespace: vmCtx.VM.Namespace,
-		}
-	)
-
-	if err := k8sClient.Get(vmCtx, key, &obj); err != nil {
-		if !apierrors.IsNotFound(err) {
-			conditions.MarkError(
-				vmCtx.VM,
-				vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-				"Error",
-				err)
-
-			return err
-		}
-
-		conditions.MarkFalse(
-			vmCtx.VM,
-			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-			"NotFound",
-			"")
-
-		return nil
-	}
-
-	for _, bo := range obj.Spec.BootOrder {
-		for _, m := range bo.Members {
-			if m.Kind == "VirtualMachine" {
-				if m.Name == vmCtx.VM.Name {
-					conditions.MarkTrue(
-						vmCtx.VM,
-						vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-
-					return nil
-				}
-			}
-		}
-	}
-
-	conditions.MarkFalse(
-		vmCtx.VM,
-		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-		"NotMember",
-		"")
 
 	return nil
 }

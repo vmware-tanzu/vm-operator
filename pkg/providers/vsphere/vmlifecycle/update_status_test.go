@@ -2416,26 +2416,51 @@ var _ = Describe("UpdateNetworkStatusConfig", func() {
 	})
 })
 
-var _ = Describe("UpdateGroupLinkedCondition", func() {
+var _ = Describe("Group status", func() {
 	var (
-		ctx   *builder.IntegrationTestContext
+		ctx   *builder.TestContextForVCSim
 		vmCtx pkgctx.VirtualMachineContext
+		data  vmlifecycle.ReconcileStatusData
+		vcVM  *object.VirtualMachine
 		vm    *vmopv1.VirtualMachine
 		vmg   *vmopv1.VirtualMachineGroup
 	)
 
 	BeforeEach(func() {
-		ctx = suite.NewIntegrationTestContext()
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.VMGroups = true
+		})
 
 		vm = builder.DummyVirtualMachine()
-		vm.Namespace = ctx.Namespace
+		vm.Name = "group-status-test"
 		Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 
 		vmCtx = pkgctx.VirtualMachineContext{
-			Context: pkgcfg.NewContextWithDefaultConfig(),
+			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,
 		}
+
+		// The following vars are just required to call ReconcileStatus().
+		// They're not actually used in these group status tests.
+		var err error
+		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(vcVM.Properties(
+			ctx,
+			vcVM.Reference(),
+			vsphere.VMUpdatePropertiesSelector,
+			&vmCtx.MoVM)).To(Succeed())
+
+		data = vmlifecycle.ReconcileStatusData{
+			NetworkDeviceKeysToSpecIdx: map[int32]int{},
+		}
+	})
+
+	JustBeforeEach(func() {
+		Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -2447,11 +2472,9 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 		BeforeEach(func() {
 			vm.Spec.GroupName = ""
 			conditions.MarkTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
-			Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 		})
 
 		It("should delete the GroupLinked condition", func() {
-			Expect(vmlifecycle.UpdateGroupLinkedCondition(vmCtx, ctx.Client)).To(Succeed())
 			Expect(conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeNil())
 		})
 	})
@@ -2459,11 +2482,9 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 	When("VM group name is set to a non-existent group", func() {
 		BeforeEach(func() {
 			vm.Spec.GroupName = "non-existent-group"
-			Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 		})
 
 		It("should set GroupLinked condition to False with NotFound reason", func() {
-			Expect(vmlifecycle.UpdateGroupLinkedCondition(vmCtx, ctx.Client)).To(Succeed())
 			c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
 			Expect(c).ToNot(BeNil())
 			Expect(c.Status).To(Equal(metav1.ConditionFalse))
@@ -2489,12 +2510,10 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 			Expect(ctx.Client.Create(ctx, vmg)).To(Succeed())
 
 			vm.Spec.GroupName = vmg.Name
-			Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 		})
 
 		When("VM is not a member of the group", func() {
 			It("should set GroupLinked condition to False with NotMember reason", func() {
-				Expect(vmlifecycle.UpdateGroupLinkedCondition(vmCtx, ctx.Client)).To(Succeed())
 				c := conditions.Get(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
 				Expect(c).ToNot(BeNil())
 				Expect(c.Status).To(Equal(metav1.ConditionFalse))
@@ -2518,7 +2537,6 @@ var _ = Describe("UpdateGroupLinkedCondition", func() {
 			})
 
 			It("should set GroupLinked condition to True", func() {
-				Expect(vmlifecycle.UpdateGroupLinkedCondition(vmCtx, ctx.Client)).To(Succeed())
 				Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
 			})
 		})

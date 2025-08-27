@@ -938,6 +938,10 @@ func (vm *VirtualMachine) SetConditions(conditions []metav1.Condition) {
 	vm.Status.Conditions = conditions
 }
 
+func (vm *VirtualMachine) GetMemberKind() string {
+	return vm.Kind
+}
+
 func (vm *VirtualMachine) GetGroupName() string {
 	return vm.Spec.GroupName
 }

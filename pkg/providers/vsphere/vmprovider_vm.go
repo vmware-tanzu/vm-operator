@@ -1910,6 +1910,22 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		return fmt.Errorf("VM.Spec.GroupName is empty")
 	}
 
+	// First update and check if the VM is linked to its group.
+	if err := vmopv1util.UpdateGroupLinkedCondition(
+		vmCtx,
+		vmCtx.VM,
+		vs.k8sClient,
+	); err != nil {
+		return fmt.Errorf("failed to update VM group linked condition: %w", err)
+	}
+
+	if !pkgcnd.IsTrue(
+		vmCtx.VM,
+		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+	) {
+		return fmt.Errorf("VM is not linked to its group")
+	}
+
 	var vmg vmopv1.VirtualMachineGroup
 	if err := vs.k8sClient.Get(
 		vmCtx,
@@ -1928,13 +1944,6 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 			memberStatus = m
 			break
 		}
-	}
-
-	if !pkgcnd.IsTrue(
-		&memberStatus,
-		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-	) {
-		return fmt.Errorf("VM is not linked to its group")
 	}
 
 	if !pkgcnd.IsTrue(
@@ -2359,10 +2368,6 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	}
 
 	if err := vs.vmCreateGetStoragePrereqs(vmCtx, vcClient, createArgs); err != nil {
-		prereqErrs = append(prereqErrs, err)
-	}
-
-	if err := vmlifecycle.UpdateGroupLinkedCondition(vmCtx, vs.k8sClient); err != nil {
 		prereqErrs = append(prereqErrs, err)
 	}
 

@@ -7,6 +7,9 @@ package validation_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -59,6 +62,8 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	}
 
 	ctx.vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.Namespace, "dummy-vm-snapshot", "dummy-vm")
+	// Set the label on the snapshot manually since the mutation webhook is not running.
+	metav1.SetMetaDataLabel(&ctx.vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, ctx.vmSnapshot.Spec.VMRef.Name)
 
 	return ctx
 }
@@ -114,6 +119,21 @@ func intgTestsValidateUpdate() {
 		})
 	})
 
+	When("trying to update VM name label", func() {
+		It("should reject attempt to change VM name label", func() {
+			ctx.vmSnapshot.Labels[vmopv1.VMNameForSnapshotLabel] = "different-vm-name"
+			err := ctx.Client.Update(ctx, ctx.vmSnapshot)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("field is immutable"))
+		})
+
+		It("should reject attempt to remove VM name label", func() {
+			delete(ctx.vmSnapshot.Labels, vmopv1.VMNameForSnapshotLabel)
+			err := ctx.Client.Update(ctx, ctx.vmSnapshot)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("field is immutable"))
+		})
+	})
 }
 
 func intgTestsValidateDelete() {

@@ -14,13 +14,13 @@ import (
 	unsafe "unsafe"
 
 	v1alpha4cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
-	v1alpha4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
+	common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	conversionv1alpha4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common/conversion/v1alpha4"
 	conversionv1alpha5 "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common/conversion/v1alpha5"
 	v1alpha4sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
 	v1alpha5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
-	common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	v1alpha5common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	resource "k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1495,8 +1495,18 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*common.LocalObjectRef)(nil), (*v1alpha5.VirtualMachineSnapshotReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(a.(*common.LocalObjectRef), b.(*v1alpha5.VirtualMachineSnapshotReference), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineCryptoStatus)(nil), (*VirtualMachineCryptoStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCryptoStatus(a.(*v1alpha5.VirtualMachineCryptoStatus), b.(*VirtualMachineCryptoStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineSnapshotReference)(nil), (*common.LocalObjectRef)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(a.(*v1alpha5.VirtualMachineSnapshotReference), b.(*common.LocalObjectRef), scope)
 	}); err != nil {
 		return err
 	}
@@ -2243,7 +2253,7 @@ func Convert_v1alpha5_VirtualMachineBootOptions_To_v1alpha4_VirtualMachineBootOp
 func autoConvert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha5_VirtualMachineBootstrapCloudInitSpec(in *VirtualMachineBootstrapCloudInitSpec, out *v1alpha5.VirtualMachineBootstrapCloudInitSpec, s conversion.Scope) error {
 	out.InstanceID = in.InstanceID
 	out.CloudConfig = (*cloudinit.CloudConfig)(unsafe.Pointer(in.CloudConfig))
-	out.RawCloudConfig = (*common.SecretKeySelector)(unsafe.Pointer(in.RawCloudConfig))
+	out.RawCloudConfig = (*v1alpha5common.SecretKeySelector)(unsafe.Pointer(in.RawCloudConfig))
 	out.SSHAuthorizedKeys = *(*[]string)(unsafe.Pointer(&in.SSHAuthorizedKeys))
 	out.UseGlobalNameserversAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalNameserversAsDefault))
 	out.UseGlobalSearchDomainsAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalSearchDomainsAsDefault))
@@ -2260,7 +2270,7 @@ func Convert_v1alpha4_VirtualMachineBootstrapCloudInitSpec_To_v1alpha5_VirtualMa
 func autoConvert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha4_VirtualMachineBootstrapCloudInitSpec(in *v1alpha5.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s conversion.Scope) error {
 	out.InstanceID = in.InstanceID
 	out.CloudConfig = (*v1alpha4cloudinit.CloudConfig)(unsafe.Pointer(in.CloudConfig))
-	out.RawCloudConfig = (*v1alpha4common.SecretKeySelector)(unsafe.Pointer(in.RawCloudConfig))
+	out.RawCloudConfig = (*common.SecretKeySelector)(unsafe.Pointer(in.RawCloudConfig))
 	out.SSHAuthorizedKeys = *(*[]string)(unsafe.Pointer(&in.SSHAuthorizedKeys))
 	out.UseGlobalNameserversAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalNameserversAsDefault))
 	out.UseGlobalSearchDomainsAsDefault = (*bool)(unsafe.Pointer(in.UseGlobalSearchDomainsAsDefault))
@@ -2324,7 +2334,7 @@ func Convert_v1alpha5_VirtualMachineBootstrapSpec_To_v1alpha4_VirtualMachineBoot
 
 func autoConvert_v1alpha4_VirtualMachineBootstrapSysprepSpec_To_v1alpha5_VirtualMachineBootstrapSysprepSpec(in *VirtualMachineBootstrapSysprepSpec, out *v1alpha5.VirtualMachineBootstrapSysprepSpec, s conversion.Scope) error {
 	out.Sysprep = (*sysprep.Sysprep)(unsafe.Pointer(in.Sysprep))
-	out.RawSysprep = (*common.SecretKeySelector)(unsafe.Pointer(in.RawSysprep))
+	out.RawSysprep = (*v1alpha5common.SecretKeySelector)(unsafe.Pointer(in.RawSysprep))
 	return nil
 }
 
@@ -2335,7 +2345,7 @@ func Convert_v1alpha4_VirtualMachineBootstrapSysprepSpec_To_v1alpha5_VirtualMach
 
 func autoConvert_v1alpha5_VirtualMachineBootstrapSysprepSpec_To_v1alpha4_VirtualMachineBootstrapSysprepSpec(in *v1alpha5.VirtualMachineBootstrapSysprepSpec, out *VirtualMachineBootstrapSysprepSpec, s conversion.Scope) error {
 	out.Sysprep = (*v1alpha4sysprep.Sysprep)(unsafe.Pointer(in.Sysprep))
-	out.RawSysprep = (*v1alpha4common.SecretKeySelector)(unsafe.Pointer(in.RawSysprep))
+	out.RawSysprep = (*common.SecretKeySelector)(unsafe.Pointer(in.RawSysprep))
 	return nil
 }
 
@@ -2345,7 +2355,7 @@ func Convert_v1alpha5_VirtualMachineBootstrapSysprepSpec_To_v1alpha4_VirtualMach
 }
 
 func autoConvert_v1alpha4_VirtualMachineBootstrapVAppConfigSpec_To_v1alpha5_VirtualMachineBootstrapVAppConfigSpec(in *VirtualMachineBootstrapVAppConfigSpec, out *v1alpha5.VirtualMachineBootstrapVAppConfigSpec, s conversion.Scope) error {
-	out.Properties = *(*[]common.KeyValueOrSecretKeySelectorPair)(unsafe.Pointer(&in.Properties))
+	out.Properties = *(*[]v1alpha5common.KeyValueOrSecretKeySelectorPair)(unsafe.Pointer(&in.Properties))
 	out.RawProperties = in.RawProperties
 	return nil
 }
@@ -2356,7 +2366,7 @@ func Convert_v1alpha4_VirtualMachineBootstrapVAppConfigSpec_To_v1alpha5_VirtualM
 }
 
 func autoConvert_v1alpha5_VirtualMachineBootstrapVAppConfigSpec_To_v1alpha4_VirtualMachineBootstrapVAppConfigSpec(in *v1alpha5.VirtualMachineBootstrapVAppConfigSpec, out *VirtualMachineBootstrapVAppConfigSpec, s conversion.Scope) error {
-	out.Properties = *(*[]v1alpha4common.KeyValueOrSecretKeySelectorPair)(unsafe.Pointer(&in.Properties))
+	out.Properties = *(*[]common.KeyValueOrSecretKeySelectorPair)(unsafe.Pointer(&in.Properties))
 	out.RawProperties = in.RawProperties
 	return nil
 }
@@ -3405,7 +3415,7 @@ func Convert_v1alpha5_VirtualMachineImageRef_To_v1alpha4_VirtualMachineImageRef(
 }
 
 func autoConvert_v1alpha4_VirtualMachineImageSpec_To_v1alpha5_VirtualMachineImageSpec(in *VirtualMachineImageSpec, out *v1alpha5.VirtualMachineImageSpec, s conversion.Scope) error {
-	out.ProviderRef = (*common.LocalObjectRef)(unsafe.Pointer(in.ProviderRef))
+	out.ProviderRef = (*v1alpha5common.LocalObjectRef)(unsafe.Pointer(in.ProviderRef))
 	return nil
 }
 
@@ -3415,7 +3425,7 @@ func Convert_v1alpha4_VirtualMachineImageSpec_To_v1alpha5_VirtualMachineImageSpe
 }
 
 func autoConvert_v1alpha5_VirtualMachineImageSpec_To_v1alpha4_VirtualMachineImageSpec(in *v1alpha5.VirtualMachineImageSpec, out *VirtualMachineImageSpec, s conversion.Scope) error {
-	out.ProviderRef = (*v1alpha4common.LocalObjectRef)(unsafe.Pointer(in.ProviderRef))
+	out.ProviderRef = (*common.LocalObjectRef)(unsafe.Pointer(in.ProviderRef))
 	return nil
 }
 
@@ -3433,7 +3443,7 @@ func autoConvert_v1alpha4_VirtualMachineImageStatus_To_v1alpha5_VirtualMachineIm
 		return err
 	}
 	out.OVFProperties = *(*[]v1alpha5.OVFProperty)(unsafe.Pointer(&in.OVFProperties))
-	out.VMwareSystemProperties = *(*[]common.KeyValuePair)(unsafe.Pointer(&in.VMwareSystemProperties))
+	out.VMwareSystemProperties = *(*[]v1alpha5common.KeyValuePair)(unsafe.Pointer(&in.VMwareSystemProperties))
 	if err := Convert_v1alpha4_VirtualMachineImageProductInfo_To_v1alpha5_VirtualMachineImageProductInfo(&in.ProductInfo, &out.ProductInfo, s); err != nil {
 		return err
 	}
@@ -3459,7 +3469,7 @@ func autoConvert_v1alpha5_VirtualMachineImageStatus_To_v1alpha4_VirtualMachineIm
 		return err
 	}
 	out.OVFProperties = *(*[]OVFProperty)(unsafe.Pointer(&in.OVFProperties))
-	out.VMwareSystemProperties = *(*[]v1alpha4common.KeyValuePair)(unsafe.Pointer(&in.VMwareSystemProperties))
+	out.VMwareSystemProperties = *(*[]common.KeyValuePair)(unsafe.Pointer(&in.VMwareSystemProperties))
 	if err := Convert_v1alpha5_VirtualMachineImageProductInfo_To_v1alpha4_VirtualMachineImageProductInfo(&in.ProductInfo, &out.ProductInfo, s); err != nil {
 		return err
 	}
@@ -3659,7 +3669,7 @@ func Convert_v1alpha5_VirtualMachineNetworkConfigStatus_To_v1alpha4_VirtualMachi
 }
 
 func autoConvert_v1alpha4_VirtualMachineNetworkDHCPOptionsStatus_To_v1alpha5_VirtualMachineNetworkDHCPOptionsStatus(in *VirtualMachineNetworkDHCPOptionsStatus, out *v1alpha5.VirtualMachineNetworkDHCPOptionsStatus, s conversion.Scope) error {
-	out.Config = *(*[]common.KeyValuePair)(unsafe.Pointer(&in.Config))
+	out.Config = *(*[]v1alpha5common.KeyValuePair)(unsafe.Pointer(&in.Config))
 	out.Enabled = in.Enabled
 	return nil
 }
@@ -3670,7 +3680,7 @@ func Convert_v1alpha4_VirtualMachineNetworkDHCPOptionsStatus_To_v1alpha5_Virtual
 }
 
 func autoConvert_v1alpha5_VirtualMachineNetworkDHCPOptionsStatus_To_v1alpha4_VirtualMachineNetworkDHCPOptionsStatus(in *v1alpha5.VirtualMachineNetworkDHCPOptionsStatus, out *VirtualMachineNetworkDHCPOptionsStatus, s conversion.Scope) error {
-	out.Config = *(*[]v1alpha4common.KeyValuePair)(unsafe.Pointer(&in.Config))
+	out.Config = *(*[]common.KeyValuePair)(unsafe.Pointer(&in.Config))
 	out.Enabled = in.Enabled
 	return nil
 }
@@ -3790,7 +3800,7 @@ func autoConvert_v1alpha4_VirtualMachineNetworkIPStackStatus_To_v1alpha5_Virtual
 	out.DHCP = (*v1alpha5.VirtualMachineNetworkDHCPStatus)(unsafe.Pointer(in.DHCP))
 	out.DNS = (*v1alpha5.VirtualMachineNetworkDNSStatus)(unsafe.Pointer(in.DNS))
 	out.IPRoutes = *(*[]v1alpha5.VirtualMachineNetworkIPRouteStatus)(unsafe.Pointer(&in.IPRoutes))
-	out.KernelConfig = *(*[]common.KeyValuePair)(unsafe.Pointer(&in.KernelConfig))
+	out.KernelConfig = *(*[]v1alpha5common.KeyValuePair)(unsafe.Pointer(&in.KernelConfig))
 	return nil
 }
 
@@ -3803,7 +3813,7 @@ func autoConvert_v1alpha5_VirtualMachineNetworkIPStackStatus_To_v1alpha4_Virtual
 	out.DHCP = (*VirtualMachineNetworkDHCPStatus)(unsafe.Pointer(in.DHCP))
 	out.DNS = (*VirtualMachineNetworkDNSStatus)(unsafe.Pointer(in.DNS))
 	out.IPRoutes = *(*[]VirtualMachineNetworkIPRouteStatus)(unsafe.Pointer(&in.IPRoutes))
-	out.KernelConfig = *(*[]v1alpha4common.KeyValuePair)(unsafe.Pointer(&in.KernelConfig))
+	out.KernelConfig = *(*[]common.KeyValuePair)(unsafe.Pointer(&in.KernelConfig))
 	return nil
 }
 
@@ -3866,7 +3876,7 @@ func Convert_v1alpha5_VirtualMachineNetworkInterfaceIPStatus_To_v1alpha4_Virtual
 
 func autoConvert_v1alpha4_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMachineNetworkInterfaceSpec(in *VirtualMachineNetworkInterfaceSpec, out *v1alpha5.VirtualMachineNetworkInterfaceSpec, s conversion.Scope) error {
 	out.Name = in.Name
-	out.Network = (*common.PartialObjectRef)(unsafe.Pointer(in.Network))
+	out.Network = (*v1alpha5common.PartialObjectRef)(unsafe.Pointer(in.Network))
 	out.GuestDeviceName = in.GuestDeviceName
 	out.Addresses = *(*[]string)(unsafe.Pointer(&in.Addresses))
 	out.DHCP4 = in.DHCP4
@@ -3887,7 +3897,7 @@ func Convert_v1alpha4_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_VirtualMach
 
 func autoConvert_v1alpha5_VirtualMachineNetworkInterfaceSpec_To_v1alpha4_VirtualMachineNetworkInterfaceSpec(in *v1alpha5.VirtualMachineNetworkInterfaceSpec, out *VirtualMachineNetworkInterfaceSpec, s conversion.Scope) error {
 	out.Name = in.Name
-	out.Network = (*v1alpha4common.PartialObjectRef)(unsafe.Pointer(in.Network))
+	out.Network = (*common.PartialObjectRef)(unsafe.Pointer(in.Network))
 	out.GuestDeviceName = in.GuestDeviceName
 	out.Addresses = *(*[]string)(unsafe.Pointer(&in.Addresses))
 	out.DHCP4 = in.DHCP4
@@ -4762,7 +4772,17 @@ func Convert_v1alpha5_VirtualMachineSnapshot_To_v1alpha4_VirtualMachineSnapshot(
 
 func autoConvert_v1alpha4_VirtualMachineSnapshotList_To_v1alpha5_VirtualMachineSnapshotList(in *VirtualMachineSnapshotList, out *v1alpha5.VirtualMachineSnapshotList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1alpha5.VirtualMachineSnapshot)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1alpha5.VirtualMachineSnapshot, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha4_VirtualMachineSnapshot_To_v1alpha5_VirtualMachineSnapshot(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -4773,7 +4793,17 @@ func Convert_v1alpha4_VirtualMachineSnapshotList_To_v1alpha5_VirtualMachineSnaps
 
 func autoConvert_v1alpha5_VirtualMachineSnapshotList_To_v1alpha4_VirtualMachineSnapshotList(in *v1alpha5.VirtualMachineSnapshotList, out *VirtualMachineSnapshotList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]VirtualMachineSnapshot)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]VirtualMachineSnapshot, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineSnapshot_To_v1alpha4_VirtualMachineSnapshot(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -4786,7 +4816,7 @@ func autoConvert_v1alpha4_VirtualMachineSnapshotSpec_To_v1alpha5_VirtualMachineS
 	out.Memory = in.Memory
 	out.Quiesce = (*v1alpha5.QuiesceSpec)(unsafe.Pointer(in.Quiesce))
 	out.Description = in.Description
-	out.VMRef = (*common.LocalObjectRef)(unsafe.Pointer(in.VMRef))
+	out.VMRef = (*v1alpha5common.LocalObjectRef)(unsafe.Pointer(in.VMRef))
 	return nil
 }
 
@@ -4799,7 +4829,7 @@ func autoConvert_v1alpha5_VirtualMachineSnapshotSpec_To_v1alpha4_VirtualMachineS
 	out.Memory = in.Memory
 	out.Quiesce = (*QuiesceSpec)(unsafe.Pointer(in.Quiesce))
 	out.Description = in.Description
-	out.VMRef = (*v1alpha4common.LocalObjectRef)(unsafe.Pointer(in.VMRef))
+	out.VMRef = (*common.LocalObjectRef)(unsafe.Pointer(in.VMRef))
 	return nil
 }
 
@@ -4812,7 +4842,17 @@ func autoConvert_v1alpha4_VirtualMachineSnapshotStatus_To_v1alpha5_VirtualMachin
 	out.PowerState = v1alpha5.VirtualMachinePowerState(in.PowerState)
 	out.Quiesced = in.Quiesced
 	out.UniqueID = in.UniqueID
-	out.Children = *(*[]common.LocalObjectRef)(unsafe.Pointer(&in.Children))
+	if in.Children != nil {
+		in, out := &in.Children, &out.Children
+		*out = make([]v1alpha5.VirtualMachineSnapshotReference, len(*in))
+		for i := range *in {
+			if err := Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Children = nil
+	}
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
 	out.Storage = (*v1alpha5.VirtualMachineSnapshotStorageStatus)(unsafe.Pointer(in.Storage))
 	return nil
@@ -4827,7 +4867,17 @@ func autoConvert_v1alpha5_VirtualMachineSnapshotStatus_To_v1alpha4_VirtualMachin
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.Quiesced = in.Quiesced
 	out.UniqueID = in.UniqueID
-	out.Children = *(*[]v1alpha4common.LocalObjectRef)(unsafe.Pointer(&in.Children))
+	if in.Children != nil {
+		in, out := &in.Children, &out.Children
+		*out = make([]common.LocalObjectRef, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Children = nil
+	}
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
 	out.Storage = (*VirtualMachineSnapshotStorageStatus)(unsafe.Pointer(in.Storage))
 	return nil
@@ -4887,7 +4937,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	out.Image = (*v1alpha5.VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
-	out.Class = (*common.LocalObjectRef)(unsafe.Pointer(in.Class))
+	out.Class = (*v1alpha5common.LocalObjectRef)(unsafe.Pointer(in.Class))
 	out.Affinity = (*v1alpha5.VirtualMachineAffinitySpec)(unsafe.Pointer(in.Affinity))
 	out.Crypto = (*v1alpha5.VirtualMachineCryptoSpec)(unsafe.Pointer(in.Crypto))
 	out.StorageClass = in.StorageClass
@@ -4908,7 +4958,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	out.GuestID = in.GuestID
 	out.PromoteDisksMode = v1alpha5.VirtualMachinePromoteDisksMode(in.PromoteDisksMode)
 	out.BootOptions = (*v1alpha5.VirtualMachineBootOptions)(unsafe.Pointer(in.BootOptions))
-	out.CurrentSnapshot = (*common.LocalObjectRef)(unsafe.Pointer(in.CurrentSnapshot))
+	out.CurrentSnapshot = (*v1alpha5common.LocalObjectRef)(unsafe.Pointer(in.CurrentSnapshot))
 	out.GroupName = in.GroupName
 	return nil
 }
@@ -4923,7 +4973,7 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *
 	out.Image = (*VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
-	out.Class = (*v1alpha4common.LocalObjectRef)(unsafe.Pointer(in.Class))
+	out.Class = (*common.LocalObjectRef)(unsafe.Pointer(in.Class))
 	out.Affinity = (*VirtualMachineAffinitySpec)(unsafe.Pointer(in.Affinity))
 	out.Crypto = (*VirtualMachineCryptoSpec)(unsafe.Pointer(in.Crypto))
 	out.StorageClass = in.StorageClass
@@ -4944,7 +4994,7 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *
 	out.GuestID = in.GuestID
 	out.PromoteDisksMode = VirtualMachinePromoteDisksMode(in.PromoteDisksMode)
 	out.BootOptions = (*VirtualMachineBootOptions)(unsafe.Pointer(in.BootOptions))
-	out.CurrentSnapshot = (*v1alpha4common.LocalObjectRef)(unsafe.Pointer(in.CurrentSnapshot))
+	out.CurrentSnapshot = (*common.LocalObjectRef)(unsafe.Pointer(in.CurrentSnapshot))
 	out.GroupName = in.GroupName
 	return nil
 }
@@ -4955,7 +5005,7 @@ func Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *v1al
 }
 
 func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(in *VirtualMachineStatus, out *v1alpha5.VirtualMachineStatus, s conversion.Scope) error {
-	out.Class = (*common.LocalObjectRef)(unsafe.Pointer(in.Class))
+	out.Class = (*v1alpha5common.LocalObjectRef)(unsafe.Pointer(in.Class))
 	out.NodeName = in.NodeName
 	out.PowerState = v1alpha5.VirtualMachinePowerState(in.PowerState)
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
@@ -4978,8 +5028,26 @@ func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
 	out.HardwareVersion = in.HardwareVersion
 	out.Storage = (*v1alpha5.VirtualMachineStorageStatus)(unsafe.Pointer(in.Storage))
-	out.CurrentSnapshot = (*common.LocalObjectRef)(unsafe.Pointer(in.CurrentSnapshot))
-	out.RootSnapshots = *(*[]common.LocalObjectRef)(unsafe.Pointer(&in.RootSnapshots))
+	if in.CurrentSnapshot != nil {
+		in, out := &in.CurrentSnapshot, &out.CurrentSnapshot
+		*out = new(v1alpha5.VirtualMachineSnapshotReference)
+		if err := Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.CurrentSnapshot = nil
+	}
+	if in.RootSnapshots != nil {
+		in, out := &in.RootSnapshots, &out.RootSnapshots
+		*out = make([]v1alpha5.VirtualMachineSnapshotReference, len(*in))
+		for i := range *in {
+			if err := Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.RootSnapshots = nil
+	}
 	return nil
 }
 
@@ -4989,7 +5057,7 @@ func Convert_v1alpha4_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(in *
 }
 
 func autoConvert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(in *v1alpha5.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
-	out.Class = (*v1alpha4common.LocalObjectRef)(unsafe.Pointer(in.Class))
+	out.Class = (*common.LocalObjectRef)(unsafe.Pointer(in.Class))
 	out.NodeName = in.NodeName
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
@@ -5012,8 +5080,26 @@ func autoConvert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
 	out.HardwareVersion = in.HardwareVersion
 	out.Storage = (*VirtualMachineStorageStatus)(unsafe.Pointer(in.Storage))
-	out.CurrentSnapshot = (*v1alpha4common.LocalObjectRef)(unsafe.Pointer(in.CurrentSnapshot))
-	out.RootSnapshots = *(*[]v1alpha4common.LocalObjectRef)(unsafe.Pointer(&in.RootSnapshots))
+	if in.CurrentSnapshot != nil {
+		in, out := &in.CurrentSnapshot, &out.CurrentSnapshot
+		*out = new(common.LocalObjectRef)
+		if err := Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.CurrentSnapshot = nil
+	}
+	if in.RootSnapshots != nil {
+		in, out := &in.RootSnapshots, &out.RootSnapshots
+		*out = make([]common.LocalObjectRef, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.RootSnapshots = nil
+	}
 	// WARNING: in.Guest requires manual conversion: does not exist in peer-type
 	// WARNING: in.Hardware requires manual conversion: does not exist in peer-type
 	return nil

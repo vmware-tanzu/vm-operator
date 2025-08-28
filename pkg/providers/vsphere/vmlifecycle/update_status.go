@@ -1406,31 +1406,37 @@ func updateSnapshotChildrenStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
 	node vimtypes.VirtualMachineSnapshotTree,
-) (*common.LocalObjectRef, error) {
+) (*vmopv1.VirtualMachineSnapshotReference, error) {
 	curSnapshot, err := getSnapshotCR(vmCtx, k8sClient, node.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	if curSnapshot == nil {
-		// TODO (Lubron): This is for external snapshots.
-		vmCtx.Logger.V(4).Info("Snapshot custom resource not found, skipping",
+		// If the current snapshot custom resource is not found,
+		// it means it's an Unmanaged snapshot.
+		// Nothing to update here.
+		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot not found, skipping",
 			"snapshotName", node.Name)
 		return nil, nil
 	}
 
 	// Recurse into children and collect their refs (only if their CRs exist).
-	children := make([]common.LocalObjectRef, 0, len(node.ChildSnapshotList))
-	for i := range node.ChildSnapshotList {
-		child := node.ChildSnapshotList[i]
+	children := make([]vmopv1.VirtualMachineSnapshotReference, 0, len(node.ChildSnapshotList))
+	for _, child := range node.ChildSnapshotList {
 		ref, err := updateSnapshotChildrenStatus(vmCtx, k8sClient, child)
 		if err != nil {
 			return nil, err
 		}
-		// TODO (Lubron): If ref is nil, it means the snapshot custom resource is not found
-		// and it's an external snapshot.
+
 		if ref != nil {
 			children = append(children, *ref)
+		} else {
+			vmCtx.Logger.V(4).Info("VirtualMachineSnapshot not found, adding an Unmanaged reference",
+				"snapshotName", child.Name)
+			children = append(children, vmopv1.VirtualMachineSnapshotReference{
+				Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
+			})
 		}
 	}
 
@@ -1444,12 +1450,16 @@ func updateSnapshotChildrenStatus(
 	}
 
 	// Return this node's LocalObjectRef to the parent.
-	curSnapshotRef := common.LocalObjectRef{
-		APIVersion: curSnapshot.APIVersion,
-		Kind:       curSnapshot.Kind,
-		Name:       curSnapshot.Name,
+	curSnapshotRef := &vmopv1.VirtualMachineSnapshotReference{
+		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+		SnapshotReference: &common.LocalObjectRef{
+			APIVersion: curSnapshot.APIVersion,
+			Kind:       curSnapshot.Kind,
+			Name:       curSnapshot.Name,
+		},
 	}
-	return &curSnapshotRef, nil
+
+	return curSnapshotRef, nil
 }
 
 // getSnapshotCR gets the snapshot custom resource by name.
@@ -1474,9 +1484,7 @@ func getSnapshotCR(
 			return nil, err
 		}
 
-		// TODO (Lubron): We can just store an object with External kind
-		// Skip for now
-		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot not found, skipping",
+		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot not found, the snapshot might be Unmanaged",
 			"snapshotName", snapshotName)
 		return nil, nil
 	}
@@ -1538,10 +1546,11 @@ func updateCurrentSnapshotStatus(
 	}
 
 	if vmSnapshot == nil {
-		// TODO (Lubron): This is for external snapshots.
-		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot custom resource not found, clearing status",
+		vmCtx.Logger.V(4).Info("VirtualMachineSnapshot not found, adding an Unmanaged reference",
 			"snapshotName", snapshot.Name)
-		vm.Status.CurrentSnapshot = nil
+		vm.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
+			Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
+		}
 		return nil
 	}
 
@@ -1553,10 +1562,13 @@ func updateCurrentSnapshotStatus(
 	}
 
 	// Update the status to reflect the current snapshot custom resource.
-	currentSnapshot := &common.LocalObjectRef{
-		APIVersion: vmSnapshot.APIVersion,
-		Kind:       vmSnapshot.Kind,
-		Name:       vmSnapshot.Name,
+	currentSnapshot := &vmopv1.VirtualMachineSnapshotReference{
+		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+		SnapshotReference: &common.LocalObjectRef{
+			APIVersion: vmSnapshot.APIVersion,
+			Kind:       vmSnapshot.Kind,
+			Name:       vmSnapshot.Name,
+		},
 	}
 
 	// Update the status. Let patch helper figure out which fields
@@ -1611,7 +1623,7 @@ func updateRootSnapshots(
 	}
 
 	// Refresh the root snapshots from the VM mo
-	var newRootSnapshots []common.LocalObjectRef //nolint:prealloc
+	var newRootSnapshots []vmopv1.VirtualMachineSnapshotReference //nolint:prealloc
 	for _, rootSnapshot := range vmCtx.MoVM.Snapshot.RootSnapshotList {
 		rootSnapshotCR, err := getSnapshotCR(vmCtx, k8sClient, rootSnapshot.Name)
 		if err != nil {
@@ -1619,16 +1631,21 @@ func updateRootSnapshots(
 		}
 
 		if rootSnapshotCR == nil {
-			// TODO (Lubron): This is for external snapshots.
-			vmCtx.Logger.V(4).Info("Snapshot custom resource not found, skipping",
+			vmCtx.Logger.V(4).Info("VirtualMachineSnapshot not found, adding an Unmanaged reference",
 				"snapshotName", rootSnapshot.Name)
+			newRootSnapshots = append(newRootSnapshots, vmopv1.VirtualMachineSnapshotReference{
+				Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
+			})
 			continue
 		}
 
-		newRootSnapshots = append(newRootSnapshots, common.LocalObjectRef{
-			APIVersion: rootSnapshotCR.APIVersion,
-			Kind:       rootSnapshotCR.Kind,
-			Name:       rootSnapshotCR.Name,
+		newRootSnapshots = append(newRootSnapshots, vmopv1.VirtualMachineSnapshotReference{
+			Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+			SnapshotReference: &common.LocalObjectRef{
+				APIVersion: rootSnapshotCR.APIVersion,
+				Kind:       rootSnapshotCR.Kind,
+				Name:       rootSnapshotCR.Name,
+			},
 		})
 	}
 
@@ -1637,14 +1654,14 @@ func updateRootSnapshots(
 	return nil
 }
 
-// sameChildrenList checks if two lists of LocalObjectRef
+// sameChildrenList checks if two lists of VirtualMachineSnapshotReference
 // are the same regardless of the order.
-func sameChildrenList(a, b []common.LocalObjectRef) bool {
+func sameChildrenList(a, b []vmopv1.VirtualMachineSnapshotReference) bool {
 	if len(a) != len(b) {
 		return false
 	}
 
-	m := sets.New[common.LocalObjectRef]()
+	m := sets.New[vmopv1.VirtualMachineSnapshotReference]()
 	for i := range a {
 		m.Insert(a[i])
 	}

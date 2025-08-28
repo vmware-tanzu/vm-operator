@@ -106,7 +106,7 @@ type VirtualMachineSnapshotStatus struct {
 
 	// Children represents the snapshots for which this snapshot is
 	// the parent.
-	Children []vmopv1common.LocalObjectRef `json:"children,omitempty"`
+	Children []VirtualMachineSnapshotReference `json:"children,omitempty"`
 
 	// +optional
 
@@ -137,6 +137,31 @@ type VirtualMachineSnapshotStorageStatus struct {
 	// Since a snapshot can have multiple PVCs, it can point to multiple storage
 	// classes.
 	Requested []VirtualMachineSnapshotStorageStatusRequested `json:"requested,omitempty"`
+}
+
+type VirtualMachineSnapshotReferenceType string
+
+const (
+	// VirtualMachineSnapshotReferenceTypeManaged represents a snapshot that is managed by the Supervisor Cluster.
+	VirtualMachineSnapshotReferenceTypeManaged VirtualMachineSnapshotReferenceType = "Managed"
+
+	// VirtualMachineSnapshotReferenceTypeUnmanaged represents a snapshot that is managed by the backing infrastructure (e.g., vSphere).
+	VirtualMachineSnapshotReferenceTypeUnmanaged VirtualMachineSnapshotReferenceType = "Unmanaged"
+)
+
+type VirtualMachineSnapshotReference struct {
+	// Type is the type of the snapshot reference.
+	//
+	// The value can be one of the following:
+	// - Managed -> the snapshot is managed by the Supervisor Cluster
+	// - Unmanaged -> the snapshot is managed by the backing infrastructure (e.g., vSphere).
+	// +kubebuilder:validation:Enum=Managed;Unmanaged
+	Type VirtualMachineSnapshotReferenceType `json:"type"`
+
+	// +optional
+
+	// SnapshotReference is the reference to the snapshot in the Supervisor Cluster.
+	SnapshotReference *vmopv1common.LocalObjectRef `json:"snapshotReference,omitempty"`
 }
 
 // VirtualMachineSnapshotStorageStatusRequested describes the observed amount of

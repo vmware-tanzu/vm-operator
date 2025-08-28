@@ -189,6 +189,21 @@ func genConfigSpecAffinityPolicies(
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 						})
 					}
+
+					for _, expr := range affinityTerm.LabelSelector.MatchExpressions {
+						if expr.Operator == metav1.LabelSelectorOpIn {
+							for _, value := range expr.Values {
+								// TODO: there should be a more concrete way generate the tag name.
+								label := fmt.Sprintf("%s:%s", expr.Key, value)
+
+								placementPols = append(placementPols, &vimtypes.VmVmAffinity{
+									AffinedVmsTagName: label,
+									PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+									PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+								})
+							}
+						}
+					}
 				}
 			}
 
@@ -204,6 +219,21 @@ func genConfigSpecAffinityPolicies(
 							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 						})
+					}
+
+					for _, expr := range affinityTerm.LabelSelector.MatchExpressions {
+						if expr.Operator == metav1.LabelSelectorOpIn {
+							for _, value := range expr.Values {
+								// TODO: there should be a more concrete way generate the tag name.
+								label := fmt.Sprintf("%s:%s", expr.Key, value)
+
+								placementPols = append(placementPols, &vimtypes.VmVmAffinity{
+									AffinedVmsTagName: label,
+									PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+									PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+								})
+							}
+						}
 					}
 				}
 			}

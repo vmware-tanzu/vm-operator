@@ -198,24 +198,16 @@ var _ = Describe("CreateConfigSpec", func() {
 		})
 
 		When("VM spec has affinity policies set", func() {
-			var (
-				reqLabelKey    string
-				reqLabelValue  string
-				prefLabelKey   string
-				prefLabelValue string
-			)
-
 			Context("required affinity policy", func() {
 				BeforeEach(func() {
 					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 						config.Features.VMPlacementPolicies = true
 					})
 
-					reqLabelKey = "node-pool"
-					reqLabelValue = "node-pool-1"
-
 					vmCtx.VM.Labels = map[string]string{
-						reqLabelKey: reqLabelValue,
+						"app":  "db",
+						"env":  "prod",
+						"zone": "us-west",
 					}
 
 					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
@@ -224,7 +216,19 @@ var _ = Describe("CreateConfigSpec", func() {
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
-											reqLabelKey: reqLabelValue,
+											"env": "prod",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "app",
+												Values:   []string{"db"},
+												Operator: metav1.LabelSelectorOpIn,
+											},
+											{
+												Key:      "zone",
+												Values:   []string{"us-west"},
+												Operator: metav1.LabelSelectorOpIn,
+											},
 										},
 									},
 									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
@@ -236,19 +240,35 @@ var _ = Describe("CreateConfigSpec", func() {
 
 				It("config spec should have the expected affinity policy", func() {
 					Expect(configSpec.VmPlacementPolicies).To(Not(BeNil()))
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(3))
 
-					reqLabelStr := fmt.Sprintf("%s:%s", reqLabelKey, reqLabelValue)
-					reqPolicy := &vimtypes.VmVmAffinity{
-						VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-							TagsToAttach: []string{reqLabelStr},
+					pols := []vimtypes.BaseVmPlacementPolicy{
+						&vimtypes.VmVmAffinity{
+							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
+								// Sorted list of tags
+								TagsToAttach: []string{
+									fmt.Sprintf("%s:%s", "app", "db"),
+									fmt.Sprintf("%s:%s", "env", "prod"),
+									fmt.Sprintf("%s:%s", "zone", "us-west"),
+								},
+							},
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTagName: fmt.Sprintf("%s:%s", "env", "prod"),
 						},
-						PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
-						PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-						AffinedVmsTagName: reqLabelStr,
+						&vimtypes.VmVmAffinity{
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTagName: fmt.Sprintf("%s:%s", "app", "db"),
+						},
+						&vimtypes.VmVmAffinity{
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTagName: fmt.Sprintf("%s:%s", "zone", "us-west"),
+						},
 					}
 
-					Expect(configSpec.VmPlacementPolicies[0]).To(Equal(reqPolicy))
+					Expect(configSpec.VmPlacementPolicies).To(ContainElements(pols))
 				})
 			})
 
@@ -258,11 +278,10 @@ var _ = Describe("CreateConfigSpec", func() {
 						config.Features.VMPlacementPolicies = true
 					})
 
-					prefLabelKey = "node-pool"
-					prefLabelValue = "node-pool-1"
-
 					vmCtx.VM.Labels = map[string]string{
-						prefLabelKey: prefLabelValue,
+						"env":  "prod",
+						"app":  "db",
+						"zone": "us-east",
 					}
 
 					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
@@ -271,7 +290,19 @@ var _ = Describe("CreateConfigSpec", func() {
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
-											prefLabelKey: prefLabelValue,
+											"env": "prod",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "app",
+												Values:   []string{"db"},
+												Operator: metav1.LabelSelectorOpIn,
+											},
+											{
+												Key:      "zone",
+												Values:   []string{"us-east"},
+												Operator: metav1.LabelSelectorOpIn,
+											},
 										},
 									},
 									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
@@ -283,19 +314,35 @@ var _ = Describe("CreateConfigSpec", func() {
 
 				It("config spec should have the expected affinity policy", func() {
 					Expect(configSpec.VmPlacementPolicies).To(Not(BeNil()))
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
+					Expect(configSpec.VmPlacementPolicies).To(HaveLen(3))
 
-					prefLabelStr := fmt.Sprintf("%s:%s", prefLabelKey, prefLabelValue)
-					prefPolicy := &vimtypes.VmVmAffinity{
-						VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-							TagsToAttach: []string{prefLabelStr},
+					pols := []vimtypes.BaseVmPlacementPolicy{
+						&vimtypes.VmVmAffinity{
+							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
+								// Sorted list of tags
+								TagsToAttach: []string{
+									fmt.Sprintf("%s:%s", "app", "db"),
+									fmt.Sprintf("%s:%s", "env", "prod"),
+									fmt.Sprintf("%s:%s", "zone", "us-east"),
+								},
+							},
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTagName: fmt.Sprintf("%s:%s", "env", "prod"),
 						},
-						PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
-						PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-						AffinedVmsTagName: prefLabelStr,
+						&vimtypes.VmVmAffinity{
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTagName: fmt.Sprintf("%s:%s", "app", "db"),
+						},
+						&vimtypes.VmVmAffinity{
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTagName: fmt.Sprintf("%s:%s", "zone", "us-east"),
+						},
 					}
 
-					Expect(configSpec.VmPlacementPolicies).To(ContainElement(prefPolicy))
+					Expect(configSpec.VmPlacementPolicies).To(ContainElements(pols))
 				})
 			})
 

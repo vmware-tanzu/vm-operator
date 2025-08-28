@@ -5,18 +5,20 @@
 package v1alpha4
 
 import (
+	"slices"
+
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-	//
-	// Leaving this here for when v1a5 diverges from v1a4.
-	//
-
-	//nolint:godot
-	// "github.com/vmware-tanzu/vm-operator/api/utilconversion"
-
+	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
+
+func Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(
+	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in, out, s)
+}
 
 func Convert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	in *vmopv1.VirtualMachineStatus, out *VirtualMachineStatus, s apiconversion.Scope) error {
@@ -28,6 +30,10 @@ func Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCrypt
 	in *vmopv1.VirtualMachineCryptoStatus, out *VirtualMachineCryptoStatus, s apiconversion.Scope) error {
 
 	return autoConvert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCryptoStatus(in, out, s)
+}
+
+func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
 }
 
 // ConvertTo converts this VirtualMachine to the Hub version.
@@ -42,16 +48,18 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	//
 
 	// Manually restore data.
-	// restored := &vmopv1.VirtualMachine{}
-	// if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
-	// 	return err
-	// }
+	restored := &vmopv1.VirtualMachine{}
+	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
+		return err
+	}
 
-	// // BEGIN RESTORE
+	// BEGIN RESTORE
 
-	// // END RESTORE
+	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
 
-	// dst.Status = restored.Status
+	// END RESTORE
+
+	dst.Status = restored.Status
 
 	return nil
 }
@@ -63,12 +71,6 @@ func (dst *VirtualMachine) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 		return err
 	}
 
-	//
-	// Leaving this here for when v1a5 diverges from v1a4.
-	//
-
 	// Preserve Hub data on down-conversion except for metadata
-	// return utilconversion.MarshalData(src, dst)
-
-	return nil
+	return utilconversion.MarshalData(src, dst)
 }

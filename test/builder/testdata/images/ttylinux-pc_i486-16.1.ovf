@@ -28,6 +28,21 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
   <VirtualSystem ovf:id="vm">
     <Info>A virtual machine</Info>
     <Name>ttylinux-pc_i486-16.1</Name>
+    <ProductSection>
+      <Info></Info>
+      <Category></Category>
+      <Product>Linux</Product>
+      <Vendor>LinuxVendor</Vendor>
+      <Version>v1</Version>
+      <FullVersion>v1.0.0</FullVersion>
+      <ProductUrl></ProductUrl>
+      <VendorUrl></VendorUrl>
+      <AppUrl></AppUrl>
+      <Property key="vmware-system.tkr.os-version" type="string" value="1.15"></Property>
+      <Property key="dummy-key-configurable" type="string" userConfigurable="true" value="dummy-value"></Property>
+      <Property key="dummy-key-not-configurable" type="string" userConfigurable="false" value="dummy-value"></Property>
+      <Property key="dummy-key-not-configurable" type="string" userConfigurable="false" value="dummy-value"></Property>
+    </ProductSection>
     <OperatingSystemSection ovf:id="36" vmw:osType="otherLinuxGuest">
       <Info>The kind of installed guest operating system</Info>
     </OperatingSystemSection>
@@ -94,6 +109,8 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
         <rasd:ResourceSubType>vmware.vmci</rasd:ResourceSubType>
         <rasd:ResourceType>1</rasd:ResourceType>
       </Item>
+
+      <!-- Config -->
       <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="efi" />
       <vmw:Config ovf:required="false" vmw:key="powerOpInfo.powerOffType" vmw:value="soft" />
       <vmw:Config ovf:required="false" vmw:key="powerOpInfo.resetType" vmw:value="soft" />
@@ -101,6 +118,14 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
       <vmw:Config ovf:required="false" vmw:key="tools.syncTimeWithHost" vmw:value="true" />
       <vmw:Config ovf:required="false" vmw:key="tools.toolsUpgradePolicy"
         vmw:value="upgradeAtPowerCycle" />
+      <!-- Config -->
+
+
+      <!-- ExtraConfig -->
+      <vmw:ExtraConfig ovf:required="false" vmw:key="vmservice.vmi.labels"
+        vmw:value="example.com/hello:world,fu.bar:,another.example.com:true" />
+      <!-- ExtraConfig -->
+
     </VirtualHardwareSection>
   </VirtualSystem>
 </Envelope>

@@ -6,10 +6,10 @@ package contentlibrary
 
 import (
 	"context"
-	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -20,28 +20,11 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
-
-var vmxRe = regexp.MustCompile(`vmx-(\d+)`)
-
-// ParseVirtualHardwareVersion parses the virtual hardware version
-// For eg. "vmx-15" returns 15.
-func ParseVirtualHardwareVersion(vmxVersion string) int32 {
-	// obj is the full string and the submatch (\d+) and return a []string with values
-	obj := vmxRe.FindStringSubmatch(vmxVersion)
-	if len(obj) != 2 {
-		return 0
-	}
-
-	version, err := strconv.ParseInt(obj[1], 10, 32)
-	if err != nil {
-		return 0
-	}
-
-	return int32(version)
-}
 
 // UpdateVmiWithOvfEnvelope updates the given VMI object from an OVF envelope.
 func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
@@ -73,6 +56,8 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 	} else {
 		status.Disks = nil
 	}
+
+	initVSpherePolicyLabelsFromOVFExtraConfig(obj, ovfEnvelope.VirtualSystem)
 }
 
 // UpdateVmiWithVirtualMachine updates the given VMI object from a
@@ -101,14 +86,17 @@ func UpdateVmiWithVirtualMachine(
 	status.Firmware = vm.Config.Firmware
 
 	// Populate the guest info.
-	status.OSInfo.ID = vm.Config.GuestId
-	if vm.Guest != nil {
-		status.OSInfo.Type = vm.Guest.GuestFamily
-	}
+	status.OSInfo.Type = vm.Config.GuestId
+	status.OSInfo.ID = strconv.Itoa(int(ovf.GuestIDToCIMOSType(
+		vm.Config.GuestId)))
 
 	// Populate the hardware version.
-	if version := ParseVirtualHardwareVersion(vm.Config.Version); version > 0 {
-		status.HardwareVersion = &version
+	version, err := vimtypes.ParseHardwareVersion(vm.Config.Version)
+	if err != nil {
+		version = 0
+	}
+	if version > 0 {
+		status.HardwareVersion = ptr.To(int32(version))
 	}
 
 	if vac := vm.Config.VAppConfig; vac != nil {
@@ -203,6 +191,16 @@ func UpdateVmiWithVirtualMachine(
 				})
 		}
 	}
+
+	initVSpherePolicyLabelsFromVMExtraConfig(obj, vm.Config.ExtraConfig)
+
+	if setter, ok := obj.(conditions.Setter); ok {
+		if isVMV1Alpha1Compatible(vm.Config.ExtraConfig) {
+			conditions.MarkTrue(setter, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
+		} else {
+			conditions.Delete(setter, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
+		}
+	}
 }
 
 func initImageStatusFromOVFVirtualSystem(
@@ -237,9 +235,12 @@ func initImageStatusFromOVFVirtualSystem(
 		imageStatus.Firmware = getFirmwareType(virtualHW[0])
 
 		if sys := virtualHW[0].System; sys != nil && sys.VirtualSystemType != nil {
-			ver := ParseVirtualHardwareVersion(*sys.VirtualSystemType)
-			if ver != 0 {
-				imageStatus.HardwareVersion = &ver
+			version, err := vimtypes.ParseHardwareVersion(*sys.VirtualSystemType)
+			if err != nil {
+				version = 0
+			}
+			if version > 0 {
+				imageStatus.HardwareVersion = ptr.To(int32(version))
 			}
 		}
 	}
@@ -279,7 +280,7 @@ func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineIma
 		diskDetail := vmopv1.VirtualMachineImageDiskInfo{}
 		if disk.PopulatedSize != nil {
 			populatedSize := int64(*disk.PopulatedSize)
-			diskDetail.Size = resource.NewQuantity(populatedSize, getQuantityFormat(populatedSize))
+			diskDetail.Size = kubeutil.BytesToResource(populatedSize)
 		}
 
 		capacity, _ := strconv.ParseInt(disk.Capacity, 10, 64)
@@ -287,7 +288,7 @@ func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineIma
 			bytesMultiplier := ovf.ParseCapacityAllocationUnits(*capacityAllocationUnits)
 			capacity *= bytesMultiplier
 		}
-		diskDetail.Capacity = resource.NewQuantity(capacity, getQuantityFormat(capacity))
+		diskDetail.Capacity = kubeutil.BytesToResource(capacity)
 
 		imageStatus.Disks[i] = diskDetail
 	}
@@ -312,7 +313,7 @@ func getVmwareSystemPropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[s
 }
 
 // isOVFV1Alpha1Compatible checks if the image has VMOperatorV1Alpha1ExtraConfigKey
-// set to VMOperatorV1Alpha1ConfigReady in it's the ExtraConfig.
+// set to VMOperatorV1Alpha1ConfigReady in its ExtraConfig.
 func isOVFV1Alpha1Compatible(ovfVirtualSystem *ovf.VirtualSystem) bool {
 	if ovfVirtualSystem != nil {
 		for _, virtualHardware := range ovfVirtualSystem.VirtualHardware {
@@ -326,6 +327,69 @@ func isOVFV1Alpha1Compatible(ovfVirtualSystem *ovf.VirtualSystem) bool {
 	return false
 }
 
+// isVMV1Alpha1Compatible checks if the image has VMOperatorV1Alpha1ExtraConfigKey
+// set to VMOperatorV1Alpha1ConfigReady in its ExtraConfig.
+func isVMV1Alpha1Compatible(extraConfig object.OptionValueList) bool {
+	v, _ := extraConfig.GetString(constants.VMOperatorV1Alpha1ExtraConfigKey)
+	return v == constants.VMOperatorV1Alpha1ConfigReady
+}
+
+func initVSpherePolicyLabelsFromOVFExtraConfig(
+	obj client.Object,
+	ovfVirtualSystem *ovf.VirtualSystem) {
+
+	if ovfVirtualSystem != nil {
+		for _, vh := range ovfVirtualSystem.VirtualHardware {
+			for _, ec := range vh.ExtraConfig {
+				if ec.Key == pkgconst.VirtualMachineImageExtraConfigLabelsKey {
+					if ec.Value != "" {
+						ecLabels := strings.Split(ec.Value, ",")
+						objLabels := obj.GetLabels()
+						if objLabels == nil {
+							objLabels = map[string]string{}
+						}
+						for _, kv := range ecLabels {
+							kvParts := strings.Split(kv, ":")
+							switch len(kvParts) {
+							case 1:
+								objLabels[kvParts[0]] = ""
+							case 2:
+								objLabels[kvParts[0]] = kvParts[1]
+							}
+						}
+						obj.SetLabels(objLabels)
+					}
+				}
+			}
+		}
+	}
+}
+
+func initVSpherePolicyLabelsFromVMExtraConfig(
+	obj client.Object,
+	extraConfig object.OptionValueList) {
+
+	if v, _ := extraConfig.GetString(
+		pkgconst.VirtualMachineImageExtraConfigLabelsKey); v != "" {
+
+		ecLabels := strings.Split(v, ",")
+		objLabels := obj.GetLabels()
+		if objLabels == nil {
+			objLabels = map[string]string{}
+		}
+		for _, kv := range ecLabels {
+			kvParts := strings.Split(kv, ":")
+			switch len(kvParts) {
+			case 1:
+				objLabels[kvParts[0]] = ""
+			case 2:
+				objLabels[kvParts[0]] = kvParts[1]
+			}
+		}
+		obj.SetLabels(objLabels)
+	}
+}
+
 // getFirmwareType returns the firmware type (eg: "efi", "bios") present in the virtual hardware section of the OVF.
 func getFirmwareType(hardware ovf.VirtualHardwareSection) string {
 	for _, cfg := range hardware.Config {
@@ -334,14 +398,4 @@ func getFirmwareType(hardware ovf.VirtualHardwareSection) string {
 		}
 	}
 	return ""
-}
-
-// getQuantityFormat returns the appropriate resource.Format based upon the divisibility of the input val.
-func getQuantityFormat(val int64) resource.Format {
-	format := resource.DecimalSI
-
-	if val%1024 == 0 {
-		format = resource.BinarySI
-	}
-	return format
 }

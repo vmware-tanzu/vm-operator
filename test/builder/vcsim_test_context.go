@@ -37,6 +37,7 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/soap"
@@ -193,6 +194,9 @@ type TestContextForVCSim struct {
 	// When WithoutNativeKeyProvider is false:
 	NativeKeyProviderID string
 
+	CategoryID string
+	TagID      string
+
 	networkEnv   NetworkEnv
 	networkCount int
 	NetworkRef   object.NetworkReference
@@ -255,6 +259,7 @@ func NewTestContextForVCSim(
 	ctx.setupContentLibrary(config)
 	ctx.setupK8sConfig(config)
 	ctx.setupAZs()
+	ctx.setupTags()
 
 	return ctx
 }
@@ -1194,6 +1199,46 @@ func (c *TestContextForVCSim) GetResourcePoolForNamespace(namespace, azName, chi
 	Expect(err).ToNot(HaveOccurred())
 
 	return nsRP
+}
+
+func (c *TestContextForVCSim) setupTags() {
+	ctx := context.Background()
+	mgr := tags.NewManager(c.RestClient)
+
+	categorySpec := tags.Category{
+		Name:            "my-category-1",
+		Description:     "my-category-1",
+		AssociableTypes: []string{"VirtualMachine"},
+	}
+	categoryID, err := mgr.CreateCategory(ctx, &categorySpec)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(categoryID).ToNot(BeEmpty())
+
+	tagSpec := tags.Tag{
+		Name:        "my-tag-1",
+		Description: "my-tag-1",
+		CategoryID:  categoryID,
+	}
+	tagID, err := mgr.CreateTag(ctx, &tagSpec)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(tagID).ToNot(BeEmpty())
+
+	category, err := mgr.GetCategory(ctx, categoryID)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(category).ToNot(BeNil())
+	Expect(category.Name).To(Equal(categorySpec.Name))
+	Expect(category.Description).To(Equal(categorySpec.Description))
+	Expect(category.AssociableTypes).To(Equal(categorySpec.AssociableTypes))
+
+	tag, err := mgr.GetTag(ctx, tagID)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(tag).ToNot(BeNil())
+	Expect(tag.Name).To(Equal(tagSpec.Name))
+	Expect(tag.Description).To(Equal(tagSpec.Description))
+	Expect(tag.CategoryID).To(Equal(tagSpec.CategoryID))
+
+	c.CategoryID = categoryID
+	c.TagID = tagID
 }
 
 func generatePrivateKey() *rsa.PrivateKey {

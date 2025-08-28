@@ -260,6 +260,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 							EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
 							NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
 						},
+						Policies: []vmopv1.PolicySpec{
+							{
+								APIVersion: "vsphere.policies.vmware.com/v1alpha1",
+								Kind:       "ComputePolicy",
+								Name:       "my-compute-policy-1",
+							},
+						},
 					},
 				},
 			},

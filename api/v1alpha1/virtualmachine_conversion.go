@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -1243,6 +1244,10 @@ func Convert_v1alpha1_VirtualMachine_To_v1alpha5_VirtualMachine(in *VirtualMachi
 	return nil
 }
 
+func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -1275,6 +1280,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
 	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)
 	restore_v1alpha5_VirtualMachineGroupName(dst, restored)
+	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
 
 	// END RESTORE
 

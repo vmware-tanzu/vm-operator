@@ -22,6 +22,7 @@ const (
 	// vmRecentTasksContextKey is the context key for
 	// setting/getting a []vimtypes.RecentTask slice from a context.
 	vmRecentTasksContextKey vmContextKey = iota
+	vmTagsContextKey
 )
 
 // VirtualMachineContext is the context used for VirtualMachineControllers.
@@ -100,12 +101,12 @@ func GetVMRecentTasks(ctx context.Context) []vimtypes.TaskInfo {
 		return nil
 	}
 
-	rt, ok := obj.([]vimtypes.TaskInfo)
+	val, ok := obj.([]vimtypes.TaskInfo)
 	if !ok {
 		return nil
 	}
 
-	return rt
+	return val
 }
 
 func WithVMRecentTasks(
@@ -113,4 +114,25 @@ func WithVMRecentTasks(
 	taskInfo []vimtypes.TaskInfo) context.Context {
 
 	return context.WithValue(parent, vmRecentTasksContextKey, taskInfo)
+}
+
+func WithVMTags(
+	parent context.Context,
+	tags []string) context.Context {
+
+	return context.WithValue(parent, vmTagsContextKey, tags)
+}
+
+func GetVMTags(ctx context.Context) []string {
+	obj := ctx.Value(vmTagsContextKey)
+	if obj == nil {
+		return nil
+	}
+
+	val, ok := obj.([]string)
+	if !ok {
+		return nil
+	}
+
+	return val
 }

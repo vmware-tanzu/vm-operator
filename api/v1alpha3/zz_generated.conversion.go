@@ -4386,6 +4386,7 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *
 	// WARNING: in.BootOptions requires manual conversion: does not exist in peer-type
 	// WARNING: in.CurrentSnapshot requires manual conversion: does not exist in peer-type
 	out.GroupName = in.GroupName
+	// WARNING: in.Policies requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -4480,6 +4481,7 @@ func autoConvert_v1alpha5_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
 	// WARNING: in.RootSnapshots requires manual conversion: does not exist in peer-type
 	// WARNING: in.Guest requires manual conversion: does not exist in peer-type
 	// WARNING: in.Hardware requires manual conversion: does not exist in peer-type
+	// WARNING: in.Policies requires manual conversion: does not exist in peer-type
 	return nil
 }
 

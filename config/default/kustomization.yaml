@@ -9,6 +9,9 @@ resources:
 - ../webhook
 - ../certmanager
 - ../crd/external-crds/encryption.vmware.com_encryptionclasses.yaml
+- ../crd/external-crds/vsphere.policy.vmware.com_computepolicies.yaml
+- ../crd/external-crds/vsphere.policy.vmware.com_policyevaluations.yaml
+- ../crd/external-crds/vsphere.policy.vmware.com_tagpolicies.yaml
 
 patches:
 - path: manager_default_container_patch.yaml

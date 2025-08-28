@@ -5,7 +5,7 @@
 package vsphere_test
 
 import (
-	"strings"
+	"path/filepath"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -25,18 +25,19 @@ import (
 )
 
 func vmSnapshotTests() {
-	var (
-		initObjects   []ctrlclient.Object
-		ctx           *builder.TestContextForVCSim
-		vmProvider    providers.VirtualMachineProviderInterface
-		nsInfo        builder.WorkloadNamespaceInfo
-		vmSnapshot    *vmopv1.VirtualMachineSnapshot
-		vcVM          *object.VirtualMachine
-		vm            *vmopv1.VirtualMachine
-		vmCtx         pkgctx.VirtualMachineContext
-		deleted       bool
-		err           error
+	const (
 		dummySnapshot = "dummy-snapshot"
+	)
+
+	var (
+		initObjects []ctrlclient.Object
+		ctx         *builder.TestContextForVCSim
+		vmProvider  providers.VirtualMachineProviderInterface
+		nsInfo      builder.WorkloadNamespaceInfo
+		vmSnapshot  *vmopv1.VirtualMachineSnapshot
+		vcVM        *object.VirtualMachine
+		vm          *vmopv1.VirtualMachine
+		vmCtx       pkgctx.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
@@ -45,6 +46,7 @@ func vmSnapshotTests() {
 		nsInfo = ctx.CreateWorkloadNamespace()
 
 		By("Creating VM")
+		var err error
 		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(vcVM).ToNot(BeNil())
@@ -69,7 +71,7 @@ func vmSnapshotTests() {
 			VcVM:       vcVM,
 		}
 		snapMo, err := virtualmachine.CreateSnapshot(args)
-		Expect(err).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
 		Expect(snapMo).ToNot(BeNil())
 	})
 
@@ -82,24 +84,24 @@ func vmSnapshotTests() {
 		vmCtx = pkgctx.VirtualMachineContext{}
 		vm = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
-		deleted = false
 	})
 
 	Context("GetSnapshotSize", func() {
 		It("should return the size of the snapshot", func() {
 			size, err := vmProvider.GetSnapshotSize(ctx, vmSnapshot.Name, vm)
 			Expect(err).ToNot(HaveOccurred())
-			// since we only have one snapshot, the size should be same as the vm
-			var moVM mo.VirtualMachine
-			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM)).To(Succeed())
 
-			var sum int64
+			// Since we only have one snapshot, the size should be same as the vm
+			var moVM mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"layoutEx"}, &moVM)).To(Succeed())
+			var total int64
 			for _, file := range moVM.LayoutEx.File {
-				if strings.HasSuffix(file.Name, ".vmdk") || strings.HasSuffix(file.Name, ".vmsn") || strings.HasSuffix(file.Name, ".vmem") {
-					sum += file.Size
+				switch filepath.Ext(file.Name) {
+				case ".vmdk", ".vmsn", ".vmem":
+					total += file.Size
 				}
 			}
-			Expect(size).To(Equal(sum))
+			Expect(size).To(Equal(total))
 		})
 
 		When("there is issue finding vm", func() {
@@ -126,6 +128,11 @@ func vmSnapshotTests() {
 	})
 
 	Context("DeleteSnapshot", func() {
+		var (
+			deleted bool
+			err     error
+		)
+
 		JustBeforeEach(func() {
 			deleted, err = vmProvider.DeleteSnapshot(ctx, vmSnapshot, vm, true, nil)
 		})

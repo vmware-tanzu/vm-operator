@@ -729,7 +729,7 @@ func (s *Session) fixupMacAddresses(
 		}
 	}
 	if !missingMAC {
-		// Expected path in NSX-T since it always provides the MAC address.
+		// Expected path in NSX-T/VPC since it always provides the MAC address.
 		return nil
 	}
 
@@ -758,7 +758,7 @@ func (s *Session) fixupMacAddressMutableNetworks(
 
 	if !networkResults.UpdatedEthCards {
 		// Even if there were no network changes, for VDS we still may have fix up the MAC address
-		// because we can VC assign it since NetOP does not in the interface CR.
+		// because VC can assign it since NetOP does not specify in the interface CR Status.
 		missingMAC := false
 		for idx := range networkResults.Results {
 			if networkResults.Results[idx].MacAddress == "" {

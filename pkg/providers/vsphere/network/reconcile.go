@@ -15,6 +15,7 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
@@ -93,7 +94,8 @@ func findExistingEthCardForOrphanedCR(
 	findMatchFn := func(obj ctrlclient.Object) int {
 		switch netIf := obj.(type) {
 		case *netopv1alpha1.NetworkInterface:
-			return findMatchingEthCardNetOpNetIf(netIf, currentEthCards)
+			// Since this is orphaned we do not know what the MAC could have been.
+			return findMatchingEthCardNetOpNetIf(netIf, currentEthCards, "")
 		case *ncpv1alpha1.VirtualNetworkInterface:
 			return findMatchingEthCardNCPNetIf(netIf, currentEthCards)
 		case *vpcv1alpha1.SubnetPort:
@@ -144,7 +146,7 @@ func FindMatchingEthCard(
 		curDev := currentEthCards[idx].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 
 		if ethDev.AddressType == string(vimtypes.VirtualEthernetCardMacTypeManual) {
-			if ethDev.MacAddress != curDev.MacAddress {
+			if !strings.EqualFold(ethDev.MacAddress, curDev.MacAddress) {
 				continue
 			}
 		}

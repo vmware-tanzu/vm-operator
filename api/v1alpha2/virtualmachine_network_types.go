@@ -57,6 +57,15 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// +kubebuilder:validation:Pattern=^\w\w+$
 	GuestDeviceName string `json:"guestDeviceName,omitempty"`
 
+	// MacAddress is the MAC address of this interface.
+	//
+	// Please note this field is only supported when the Network API Group is
+	// crd.nsx.vmware.com.
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern="^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$"
+	MacAddress string `json:"macAddress,omitempty"`
+
 	// Addresses is an optional list of IP4 or IP6 addresses to assign to this
 	// interface.
 	//
@@ -104,9 +113,6 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Please note this field is only supported if the network connection
 	// supports manual IP allocation.
 	//
-	// Please note the IP address must include the network prefix length, ex.
-	// 192.168.0.1/24.
-	//
 	// Please note this field is mutually exclusive with DHCP4.
 	//
 	// +optional
@@ -119,9 +125,6 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	//
 	// Please note this field is only supported if the network connection
 	// supports manual IP allocation.
-	//
-	// Please note the IP address must include the network prefix length, ex.
-	// 2001:db8:101::1/64.
 	//
 	// Please note this field is mutually exclusive with DHCP6.
 	//

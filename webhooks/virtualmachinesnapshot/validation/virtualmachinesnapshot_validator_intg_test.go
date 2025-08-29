@@ -7,6 +7,7 @@ package validation_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -114,6 +115,31 @@ func intgTestsValidateUpdate() {
 		})
 	})
 
+	When("trying to update VM name label", func() {
+		BeforeEach(func() {
+			// Update the object manually to set the label since the
+			// mutation webhook is not running.
+			if ctx.vmSnapshot.Labels == nil {
+				ctx.vmSnapshot.Labels = make(map[string]string)
+			}
+			ctx.vmSnapshot.Labels[vmopv1.VMNameForSnapshotLabel] = "dummy-vm"
+			Expect(ctx.Client.Update(ctx, ctx.vmSnapshot)).To(Succeed())
+		})
+
+		It("should reject attempt to change VM name label", func() {
+			ctx.vmSnapshot.Labels[vmopv1.VMNameForSnapshotLabel] = "different-vm-name"
+			err := ctx.Client.Update(ctx, ctx.vmSnapshot)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("field is immutable"))
+		})
+
+		It("should reject attempt to remove VM name label", func() {
+			delete(ctx.vmSnapshot.Labels, vmopv1.VMNameForSnapshotLabel)
+			err := ctx.Client.Update(ctx, ctx.vmSnapshot)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("field is immutable"))
+		})
+	})
 }
 
 func intgTestsValidateDelete() {

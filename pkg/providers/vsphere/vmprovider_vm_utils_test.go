@@ -1048,19 +1048,19 @@ func vmUtilTests() {
 				Name:     "attached-vol",
 				DiskUUID: "attached-classic-disk-uuid",
 				Attached: true,
-				Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+				Type:     vmopv1.VolumeTypeClassic,
 			}
 			unattachedClassicVolStatus = vmopv1.VirtualMachineVolumeStatus{
 				Name:     "unattached-vol",
 				DiskUUID: "unattached-classic-disk-uuid",
 				Attached: false,
-				Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+				Type:     vmopv1.VolumeTypeClassic,
 			}
 			pvcVolStatus = vmopv1.VirtualMachineVolumeStatus{
 				Name:     "attached-pvc-vol",
 				DiskUUID: "attached-pvc-disk-uuid",
 				Attached: true,
-				Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+				Type:     vmopv1.VolumeTypeManaged,
 			}
 		)
 

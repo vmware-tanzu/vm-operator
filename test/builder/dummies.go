@@ -385,24 +385,26 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 					},
 				},
 			},
-			Cdrom: []vmopv1.VirtualMachineCdromSpec{
-				{
-					Name: "cdrom1",
-					Image: vmopv1.VirtualMachineImageRef{
-						Kind: vmiKind,
-						Name: DummyVMIName,
+			Hardware: &vmopv1.VirtualMachineHardwareSpec{
+				Cdrom: []vmopv1.VirtualMachineCdromSpec{
+					{
+						Name: "cdrom1",
+						Image: vmopv1.VirtualMachineImageRef{
+							Kind: vmiKind,
+							Name: DummyVMIName,
+						},
+						Connected:         ptr.To(true),
+						AllowGuestControl: ptr.To(true),
 					},
-					Connected:         ptr.To(true),
-					AllowGuestControl: ptr.To(true),
-				},
-				{
-					Name: "cdrom2",
-					Image: vmopv1.VirtualMachineImageRef{
-						Kind: cvmiKind,
-						Name: DummyCVMIName,
+					{
+						Name: "cdrom2",
+						Image: vmopv1.VirtualMachineImageRef{
+							Kind: cvmiKind,
+							Name: DummyCVMIName,
+						},
+						Connected:         ptr.To(true),
+						AllowGuestControl: ptr.To(true),
 					},
-					Connected:         ptr.To(true),
-					AllowGuestControl: ptr.To(true),
 				},
 			},
 			GuestID: string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),

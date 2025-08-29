@@ -1563,7 +1563,7 @@ func testVMSnapshotRequestedCapacityHandlerServeHTTP() {
 				{
 					Name:      "vm-1-classic-1",
 					Requested: ptr.To(resource.MustParse("1Gi")),
-					Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+					Type:      vmopv1.VolumeTypeClassic,
 				},
 			}
 
@@ -1658,7 +1658,7 @@ func testVMSnapshotRequestedCapacityHandlerHandle() {
 				{
 					Name:      "vm-1-classic-1",
 					Requested: ptr.To(resource.MustParse("1Gi")),
-					Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+					Type:      vmopv1.VolumeTypeClassic,
 				},
 			}
 
@@ -1761,7 +1761,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				{
 					Name:      "vm-1-classic-1",
 					Requested: ptr.To(resource.MustParse("5Gi")),
-					Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+					Type:      vmopv1.VolumeTypeClassic,
 				},
 			}
 
@@ -1865,7 +1865,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
 					Name:      "vm-1-managed-1",
 					Requested: ptr.To(resource.MustParse("5Gi")),
-					Type:      vmopv1.VirtualMachineStorageDiskTypeManaged,
+					Type:      vmopv1.VolumeTypeManaged,
 				},
 				)
 				vm.Spec.Volumes = append(vm.Spec.Volumes,
@@ -1975,7 +1975,7 @@ func dummyVMWithStatusVolumes() *vmopv1.VirtualMachine {
 	vm := builder.DummyVirtualMachine()
 	vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 		{
-			Type:  vmopv1.VirtualMachineStorageDiskTypeClassic,
+			Type:  vmopv1.VolumeTypeClassic,
 			Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 		},
 	}

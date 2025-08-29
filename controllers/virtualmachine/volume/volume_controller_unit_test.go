@@ -1126,7 +1126,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					classicDisk1 := func() vmopv1.VirtualMachineVolumeStatus {
 						return vmopv1.VirtualMachineVolumeStatus{
 							Name:     "my-disk-0",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Limit:    ptr.To(resource.MustParse("10Gi")),
 							Used:     ptr.To(resource.MustParse("9.1Gi")),
 							Attached: true,
@@ -1137,7 +1137,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 					classicDisk2 := func() vmopv1.VirtualMachineVolumeStatus {
 						return vmopv1.VirtualMachineVolumeStatus{
 							Name:     "my-disk-1",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Limit:    ptr.To(resource.MustParse("15Gi")),
 							Used:     ptr.To(resource.MustParse("5Gi")),
 							Attached: true,
@@ -1191,7 +1191,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							vm.Status.Volumes = append(vm.Status.Volumes,
 								vmopv1.VirtualMachineVolumeStatus{
 									Name: vmVol1.Name,
-									Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+									Type: vmopv1.VolumeTypeManaged,
 									Used: ptr.To(resource.MustParse("1Gi")),
 								},
 							)
@@ -1206,7 +1206,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 								vm.Status.Volumes = append(vm.Status.Volumes,
 									vmopv1.VirtualMachineVolumeStatus{
 										Name: "non-existing-pvc",
-										Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+										Type: vmopv1.VolumeTypeManaged,
 										Used: ptr.To(resource.MustParse("1Gi")),
 									},
 								)
@@ -1302,7 +1302,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							vm.Status.Volumes = append(vm.Status.Volumes,
 								vmopv1.VirtualMachineVolumeStatus{
 									Name:   vmVol1.Name,
-									Type:   vmopv1.VirtualMachineStorageDiskTypeManaged,
+									Type:   vmopv1.VolumeTypeManaged,
 									Crypto: newCryptoStatus(),
 								},
 							)

@@ -298,7 +298,7 @@ func (h *VMRequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestCont
 	if oldVM.Spec.Advanced == nil || oldVM.Spec.Advanced.BootDiskCapacity == nil {
 		oldCapacity = resource.NewQuantity(0, resource.BinarySI)
 		for _, volume := range oldVM.Status.Volumes {
-			if volume.Type == vmopv1.VirtualMachineStorageDiskTypeClassic {
+			if volume.Type == vmopv1.VolumeTypeClassic {
 				if volume.Limit != nil {
 					oldCapacity = volume.Limit
 					break

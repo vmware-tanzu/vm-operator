@@ -18,7 +18,7 @@ func Convert_v1alpha3_VirtualMachineImageCacheFileStatus_To_v1alpha5_VirtualMach
 		return err
 	}
 
-	out.DiskType = vmopv1.VirtualMachineVolumeType(in.Type)
+	out.DiskType = vmopv1.VolumeType(in.Type)
 	out.Type = vmopv1.VirtualMachineImageCacheFileTypeDisk
 
 	return nil

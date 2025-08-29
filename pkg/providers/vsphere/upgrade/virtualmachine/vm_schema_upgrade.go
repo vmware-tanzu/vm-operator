@@ -10,6 +10,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -17,6 +18,7 @@ import (
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 var ErrUpgradeSchema = pkgerr.NoRequeueNoErr("upgraded vm schema")
@@ -71,6 +73,8 @@ func ReconcileSchemaUpgrade(
 	reconcileBIOSUUID(ctx, vm, moVM)
 	reconcileInstanceUUID(ctx, vm, moVM)
 	reconcileCloudInitInstanceUUID(ctx, vm, moVM)
+	reconcileControllers(ctx, vm, moVM)
+	reconcileDevices(ctx, vm, moVM)
 
 	// Indicate the VM has been upgraded.
 	if vm.Annotations == nil {
@@ -170,4 +174,262 @@ func reconcileCloudInitInstanceUUID(
 
 	logger.V(4).Info(
 		"Reconciled schema upgrade for VM cloud-init instance UUID")
+}
+
+func reconcileControllers(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine) {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM controllers")
+
+	for i := range moVM.Config.Hardware.Device {
+		switch d := moVM.Config.Hardware.Device[i].(type) {
+
+		// IDE
+		case *vimtypes.VirtualIDEController:
+			reconcileIDEController(ctx, vm, d)
+
+		// NVME
+		case *vimtypes.VirtualNVMEController:
+			reconcileNVMEController(ctx, vm, d)
+
+		// SATA
+		case *vimtypes.VirtualAHCIController:
+			reconcileSATAController(ctx, vm, d)
+
+		// SCSI
+		case vimtypes.BaseVirtualSCSIController:
+			reconcileSCSIController(ctx, vm, d)
+		}
+	}
+}
+
+func initSpecHardware(vm *vmopv1.VirtualMachine) {
+	if vm.Spec.Hardware == nil {
+		vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+	}
+}
+
+func getPCISlot(i vimtypes.BaseVirtualDeviceBusSlotInfo) *int32 {
+	if pi, ok := i.(*vimtypes.VirtualDevicePciBusSlotInfo); ok {
+		return ptr.To(pi.PciSlotNumber)
+	}
+	return nil
+}
+
+func reconcileIDEController(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	dev *vimtypes.VirtualIDEController) {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM IDE controller")
+
+	if vm.Spec.Hardware != nil {
+		for _, c := range vm.Spec.Hardware.IDEControllers {
+			if c.BusNumber == dev.BusNumber {
+				logger.V(4).Info(
+					"Skipping reconciliation of schema upgrade for VM " +
+						"IDE controller that already exists")
+				return
+			}
+		}
+	}
+
+	initSpecHardware(vm)
+
+	newController := vmopv1.IDEControllerSpec{
+		BusNumber: dev.BusNumber,
+	}
+	vm.Spec.Hardware.IDEControllers = append(
+		vm.Spec.Hardware.IDEControllers,
+		newController,
+	)
+
+	logger.V(4).Info("Added new IDE controller",
+		"busNumber", newController.BusNumber)
+}
+
+func reconcileNVMEController(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	dev *vimtypes.VirtualNVMEController) {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM NVME controller")
+
+	if vm.Spec.Hardware != nil {
+		for _, c := range vm.Spec.Hardware.NVMEControllers {
+			if c.BusNumber == dev.BusNumber {
+				logger.V(4).Info(
+					"Skipping reconciliation of schema upgrade for VM " +
+						"NVME controller that already exists")
+				return
+			}
+		}
+	}
+
+	initSpecHardware(vm)
+
+	newController := vmopv1.NVMEControllerSpec{
+		BusNumber: dev.BusNumber,
+	}
+	switch dev.SharedBus {
+	case string(vimtypes.VirtualNVMEControllerSharingNoSharing):
+		newController.SharingMode = vmopv1.VirtualControllerSharingModeNone
+	case string(vimtypes.VirtualNVMEControllerSharingPhysicalSharing):
+		newController.SharingMode = vmopv1.VirtualControllerSharingModePhysical
+	}
+	if pi, ok := dev.SlotInfo.(*vimtypes.VirtualDevicePciBusSlotInfo); ok {
+		newController.PCISlotNumber = ptr.To(pi.PciSlotNumber)
+	}
+	newController.PCISlotNumber = getPCISlot(dev.SlotInfo)
+
+	vm.Spec.Hardware.NVMEControllers = append(
+		vm.Spec.Hardware.NVMEControllers,
+		newController,
+	)
+
+	logger.V(4).Info("Added new NVME controller",
+		"busNumber", newController.BusNumber)
+
+}
+
+func reconcileSATAController(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	dev *vimtypes.VirtualAHCIController) {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM SATA controller")
+
+	if vm.Spec.Hardware != nil {
+		for _, c := range vm.Spec.Hardware.SATAControllers {
+			if c.BusNumber == dev.BusNumber {
+				logger.V(4).Info(
+					"Skipping reconciliation of schema upgrade for VM " +
+						"SATA controller that already exists")
+				return
+			}
+		}
+	}
+
+	initSpecHardware(vm)
+
+	newController := vmopv1.SATAControllerSpec{
+		BusNumber: dev.BusNumber,
+	}
+	if pi, ok := dev.SlotInfo.(*vimtypes.VirtualDevicePciBusSlotInfo); ok {
+		newController.PCISlotNumber = ptr.To(pi.PciSlotNumber)
+	}
+	newController.PCISlotNumber = getPCISlot(dev.SlotInfo)
+
+	vm.Spec.Hardware.SATAControllers = append(
+		vm.Spec.Hardware.SATAControllers,
+		newController,
+	)
+
+	logger.V(4).Info("Added new SATA controller",
+		"busNumber", newController.BusNumber)
+
+}
+
+func reconcileSCSIController(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	dev vimtypes.BaseVirtualSCSIController) {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM SCSI controller")
+
+	baseController := dev.GetVirtualSCSIController()
+
+	if vm.Spec.Hardware != nil {
+		for _, c := range vm.Spec.Hardware.SCSIControllers {
+			if c.BusNumber == baseController.BusNumber {
+				logger.V(4).Info(
+					"Skipping reconciliation of schema upgrade for VM " +
+						"SCSI controller that already exists")
+				return
+			}
+		}
+	}
+
+	initSpecHardware(vm)
+
+	newController := vmopv1.SCSIControllerSpec{
+		BusNumber:     baseController.BusNumber,
+		PCISlotNumber: getPCISlot(baseController.SlotInfo),
+	}
+
+	switch baseController.SharedBus {
+	case vimtypes.VirtualSCSISharingNoSharing:
+		newController.SharingMode = vmopv1.VirtualControllerSharingModeNone
+	case vimtypes.VirtualSCSISharingPhysicalSharing:
+		newController.SharingMode = vmopv1.VirtualControllerSharingModePhysical
+	case vimtypes.VirtualSCSISharingVirtualSharing:
+		newController.SharingMode = vmopv1.VirtualControllerSharingModeVirtual
+	}
+
+	switch dev.(type) {
+	case *vimtypes.ParaVirtualSCSIController:
+		newController.Type = vmopv1.SCSIControllerTypeParaVirtualSCSI
+	case *vimtypes.VirtualBusLogicController:
+		newController.Type = vmopv1.SCSIControllerTypeBusLogic
+	case *vimtypes.VirtualLsiLogicController:
+		newController.Type = vmopv1.SCSIControllerTypeLsiLogic
+	case *vimtypes.VirtualLsiLogicSASController:
+		newController.Type = vmopv1.SCSIControllerTypeLsiLogicSAS
+	}
+
+	vm.Spec.Hardware.SCSIControllers = append(
+		vm.Spec.Hardware.SCSIControllers,
+		newController,
+	)
+
+	logger.V(4).Info("Added new SCSI controller",
+		"busNumber", newController.BusNumber,
+		"type", newController.Type)
+}
+
+func reconcileDevices(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine) {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM devices")
+
+	for i := range moVM.Config.Hardware.Device {
+		switch d := moVM.Config.Hardware.Device[i].(type) {
+
+		case *vimtypes.VirtualDisk:
+			reconcileVirtualDisk(ctx, vm, d)
+
+		case *vimtypes.VirtualCdrom:
+			reconcileVirtualCDROM(ctx, vm, d)
+		}
+	}
+}
+
+func reconcileVirtualDisk(
+	ctx context.Context,
+	_ *vmopv1.VirtualMachine,
+	_ *vimtypes.VirtualDisk) {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM disk")
+
+}
+
+func reconcileVirtualCDROM(
+	ctx context.Context,
+	_ *vmopv1.VirtualMachine,
+	_ *vimtypes.VirtualCdrom) {
+
+	logger := pkgutil.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM CD-ROM")
+
 }

@@ -256,6 +256,328 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 					})
 				})
 			})
+
+			Context("Controller reconciliation", func() {
+				Context("IDE Controllers", func() {
+					BeforeEach(func() {
+						moVM.Config.Hardware = vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualIDEController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 200,
+										},
+										BusNumber: 0,
+									},
+								},
+							},
+						}
+					})
+
+					It("should add IDE controller to VM spec", func() {
+						Expect(vm.Spec.Hardware).ToNot(BeNil())
+						Expect(vm.Spec.Hardware.IDEControllers).To(HaveLen(1))
+						Expect(vm.Spec.Hardware.IDEControllers[0].BusNumber).To(Equal(int32(0)))
+					})
+
+					When("IDE controller already exists in VM spec", func() {
+						BeforeEach(func() {
+							vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+								IDEControllers: []vmopv1.IDEControllerSpec{
+									{BusNumber: 0},
+								},
+							}
+						})
+						It("should not add duplicate IDE controller", func() {
+							Expect(vm.Spec.Hardware.IDEControllers).To(HaveLen(1))
+						})
+					})
+				})
+
+				Context("NVME Controllers", func() {
+					BeforeEach(func() {
+						moVM.Config.Hardware = vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualNVMEController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 300,
+											SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
+												PciSlotNumber: 32,
+											},
+										},
+										BusNumber: 0,
+									},
+									SharedBus: string(vimtypes.VirtualNVMEControllerSharingNoSharing),
+								},
+							},
+						}
+					})
+
+					It("should add NVME controller to VM spec", func() {
+						Expect(vm.Spec.Hardware).ToNot(BeNil())
+						Expect(vm.Spec.Hardware.NVMEControllers).To(HaveLen(1))
+						controller := vm.Spec.Hardware.NVMEControllers[0]
+						Expect(controller.BusNumber).To(Equal(int32(0)))
+						Expect(controller.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeNone))
+						Expect(controller.PCISlotNumber).ToNot(BeNil())
+						Expect(*controller.PCISlotNumber).To(Equal(int32(32)))
+					})
+
+					When("NVME controller already exists in VM spec", func() {
+						BeforeEach(func() {
+							vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+								NVMEControllers: []vmopv1.NVMEControllerSpec{
+									{BusNumber: 0},
+								},
+							}
+						})
+						It("should not add duplicate NVME controller", func() {
+							Expect(vm.Spec.Hardware.NVMEControllers).To(HaveLen(1))
+						})
+					})
+
+					When("NVME controller has physical sharing", func() {
+						BeforeEach(func() {
+							moVM.Config.Hardware.Device[0].(*vimtypes.VirtualNVMEController).SharedBus = string(vimtypes.VirtualNVMEControllerSharingPhysicalSharing)
+						})
+						It("should set physical sharing mode", func() {
+							controller := vm.Spec.Hardware.NVMEControllers[0]
+							Expect(controller.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModePhysical))
+						})
+					})
+				})
+
+				Context("SATA Controllers", func() {
+					BeforeEach(func() {
+						moVM.Config.Hardware = vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualAHCIController{
+									VirtualSATAController: vimtypes.VirtualSATAController{
+										VirtualController: vimtypes.VirtualController{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Key: 400,
+												SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
+													PciSlotNumber: 33,
+												},
+											},
+											BusNumber: 0,
+										},
+									},
+								},
+							},
+						}
+					})
+
+					It("should add SATA controller to VM spec", func() {
+						Expect(vm.Spec.Hardware).ToNot(BeNil())
+						Expect(vm.Spec.Hardware.SATAControllers).To(HaveLen(1))
+						controller := vm.Spec.Hardware.SATAControllers[0]
+						Expect(controller.BusNumber).To(Equal(int32(0)))
+						Expect(controller.PCISlotNumber).ToNot(BeNil())
+						Expect(*controller.PCISlotNumber).To(Equal(int32(33)))
+					})
+
+					When("SATA controller already exists in VM spec", func() {
+						BeforeEach(func() {
+							vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+								SATAControllers: []vmopv1.SATAControllerSpec{
+									{BusNumber: 0},
+								},
+							}
+						})
+						It("should not add duplicate SATA controller", func() {
+							Expect(vm.Spec.Hardware.SATAControllers).To(HaveLen(1))
+						})
+					})
+				})
+
+				Context("SCSI Controllers", func() {
+					When("ParaVirtual SCSI Controller", func() {
+						BeforeEach(func() {
+							moVM.Config.Hardware = vimtypes.VirtualHardware{
+								Device: []vimtypes.BaseVirtualDevice{
+									&vimtypes.ParaVirtualSCSIController{
+										VirtualSCSIController: vimtypes.VirtualSCSIController{
+											VirtualController: vimtypes.VirtualController{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 1000,
+													SlotInfo: &vimtypes.VirtualDevicePciBusSlotInfo{
+														PciSlotNumber: 16,
+													},
+												},
+												BusNumber: 0,
+											},
+											SharedBus: vimtypes.VirtualSCSISharingNoSharing,
+										},
+									},
+								},
+							}
+						})
+
+						It("should add ParaVirtual SCSI controller to VM spec", func() {
+							Expect(vm.Spec.Hardware).ToNot(BeNil())
+							Expect(vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
+							controller := vm.Spec.Hardware.SCSIControllers[0]
+							Expect(controller.BusNumber).To(Equal(int32(0)))
+							Expect(controller.Type).To(Equal(vmopv1.SCSIControllerTypeParaVirtualSCSI))
+							Expect(controller.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeNone))
+							Expect(controller.PCISlotNumber).ToNot(BeNil())
+							Expect(*controller.PCISlotNumber).To(Equal(int32(16)))
+						})
+					})
+
+					When("LSI Logic SCSI Controller", func() {
+						BeforeEach(func() {
+							moVM.Config.Hardware = vimtypes.VirtualHardware{
+								Device: []vimtypes.BaseVirtualDevice{
+									&vimtypes.VirtualLsiLogicController{
+										VirtualSCSIController: vimtypes.VirtualSCSIController{
+											VirtualController: vimtypes.VirtualController{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 1001,
+												},
+												BusNumber: 1,
+											},
+											SharedBus: vimtypes.VirtualSCSISharingPhysicalSharing,
+										},
+									},
+								},
+							}
+						})
+
+						It("should add LSI Logic SCSI controller to VM spec", func() {
+							Expect(vm.Spec.Hardware).ToNot(BeNil())
+							Expect(vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
+							controller := vm.Spec.Hardware.SCSIControllers[0]
+							Expect(controller.BusNumber).To(Equal(int32(1)))
+							Expect(controller.Type).To(Equal(vmopv1.SCSIControllerTypeLsiLogic))
+							Expect(controller.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModePhysical))
+						})
+					})
+
+					When("LSI Logic SAS SCSI Controller", func() {
+						BeforeEach(func() {
+							moVM.Config.Hardware = vimtypes.VirtualHardware{
+								Device: []vimtypes.BaseVirtualDevice{
+									&vimtypes.VirtualLsiLogicSASController{
+										VirtualSCSIController: vimtypes.VirtualSCSIController{
+											VirtualController: vimtypes.VirtualController{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 1002,
+												},
+												BusNumber: 2,
+											},
+											SharedBus: vimtypes.VirtualSCSISharingVirtualSharing,
+										},
+									},
+								},
+							}
+						})
+
+						It("should add LSI Logic SAS SCSI controller to VM spec", func() {
+							Expect(vm.Spec.Hardware).ToNot(BeNil())
+							Expect(vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
+							controller := vm.Spec.Hardware.SCSIControllers[0]
+							Expect(controller.BusNumber).To(Equal(int32(2)))
+							Expect(controller.Type).To(Equal(vmopv1.SCSIControllerTypeLsiLogicSAS))
+							Expect(controller.SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeVirtual))
+						})
+					})
+
+					When("Bus Logic SCSI Controller", func() {
+						BeforeEach(func() {
+							moVM.Config.Hardware = vimtypes.VirtualHardware{
+								Device: []vimtypes.BaseVirtualDevice{
+									&vimtypes.VirtualBusLogicController{
+										VirtualSCSIController: vimtypes.VirtualSCSIController{
+											VirtualController: vimtypes.VirtualController{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 1003,
+												},
+												BusNumber: 3,
+											},
+										},
+									},
+								},
+							}
+						})
+
+						It("should add Bus Logic SCSI controller to VM spec", func() {
+							Expect(vm.Spec.Hardware).ToNot(BeNil())
+							Expect(vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
+							controller := vm.Spec.Hardware.SCSIControllers[0]
+							Expect(controller.BusNumber).To(Equal(int32(3)))
+							Expect(controller.Type).To(Equal(vmopv1.SCSIControllerTypeBusLogic))
+						})
+					})
+
+					When("SCSI controller already exists in VM spec", func() {
+						BeforeEach(func() {
+							vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+								SCSIControllers: []vmopv1.SCSIControllerSpec{
+									{BusNumber: 0},
+								},
+							}
+							moVM.Config.Hardware = vimtypes.VirtualHardware{
+								Device: []vimtypes.BaseVirtualDevice{
+									&vimtypes.ParaVirtualSCSIController{
+										VirtualSCSIController: vimtypes.VirtualSCSIController{
+											VirtualController: vimtypes.VirtualController{
+												VirtualDevice: vimtypes.VirtualDevice{
+													Key: 1000,
+												},
+												BusNumber: 0,
+											},
+										},
+									},
+								},
+							}
+						})
+						It("should not add duplicate SCSI controller", func() {
+							Expect(vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
+						})
+					})
+				})
+
+				Context("Multiple controllers", func() {
+					BeforeEach(func() {
+						moVM.Config.Hardware = vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualIDEController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{Key: 200},
+										BusNumber:     0,
+									},
+								},
+								&vimtypes.VirtualNVMEController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{Key: 300},
+										BusNumber:     0,
+									},
+									SharedBus: string(vimtypes.VirtualNVMEControllerSharingNoSharing),
+								},
+								&vimtypes.ParaVirtualSCSIController{
+									VirtualSCSIController: vimtypes.VirtualSCSIController{
+										VirtualController: vimtypes.VirtualController{
+											VirtualDevice: vimtypes.VirtualDevice{Key: 1000},
+											BusNumber:     0,
+										},
+									},
+								},
+							},
+						}
+					})
+
+					It("should add all controller types", func() {
+						Expect(vm.Spec.Hardware).ToNot(BeNil())
+						Expect(vm.Spec.Hardware.IDEControllers).To(HaveLen(1))
+						Expect(vm.Spec.Hardware.NVMEControllers).To(HaveLen(1))
+						Expect(vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
+					})
+				})
+			})
+
 		})
 	})
 })

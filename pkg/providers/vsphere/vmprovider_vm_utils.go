@@ -599,7 +599,7 @@ func GetAttachedClassicDiskUUIDs(vmCtx pkgctx.VirtualMachineContext) map[string]
 	for _, vol := range vmCtx.VM.Status.Volumes {
 		if vol.Attached &&
 			vol.DiskUUID != "" &&
-			vol.Type == vmopv1.VirtualMachineStorageDiskTypeClassic {
+			vol.Type == vmopv1.VolumeTypeClassic {
 			diskUUIDs[vol.DiskUUID] = struct{}{}
 		}
 	}

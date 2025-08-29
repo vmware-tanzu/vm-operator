@@ -388,14 +388,14 @@ func (r *reconciler) cacheFiles(
 			cachedFileStatuses[i].ID = v
 			if strings.EqualFold(".vmdk", path.Ext(v)) {
 				cachedFileStatuses[i].Type = vmopv1.VirtualMachineImageCacheFileTypeDisk
-				cachedFileStatuses[i].DiskType = vmopv1.VirtualMachineStorageDiskTypeClassic
+				cachedFileStatuses[i].DiskType = vmopv1.VolumeTypeClassic
 			} else {
 				cachedFileStatuses[i].Type = vmopv1.VirtualMachineImageCacheFileTypeOther
 			}
 		} else {
 			cachedFileStatuses[i].ID = cachedFiles[i].VDiskID
 			cachedFileStatuses[i].Type = vmopv1.VirtualMachineImageCacheFileTypeDisk
-			cachedFileStatuses[i].DiskType = vmopv1.VirtualMachineStorageDiskTypeManaged
+			cachedFileStatuses[i].DiskType = vmopv1.VolumeTypeManaged
 		}
 	}
 

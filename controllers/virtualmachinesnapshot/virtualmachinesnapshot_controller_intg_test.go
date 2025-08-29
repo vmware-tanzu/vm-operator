@@ -45,12 +45,13 @@ func intgTests() {
 
 func intgTestsReconcile() {
 	var (
-		ctx        context.Context
-		vcSimCtx   *builder.IntegrationTestContextForVCSim
-		provider   *providerfake.VMProvider
-		initEnvFn  builder.InitVCSimEnvFn
-		vmSnapshot *vmopv1.VirtualMachineSnapshot
-		vm         *vmopv1.VirtualMachine
+		ctx            context.Context
+		vcSimCtx       *builder.IntegrationTestContextForVCSim
+		provider       *providerfake.VMProvider
+		initEnvFn      builder.InitVCSimEnvFn
+		vmSnapshot     *vmopv1.VirtualMachineSnapshot
+		vm             *vmopv1.VirtualMachine
+		snapshotObjKey types.NamespacedName
 	)
 
 	const (
@@ -91,6 +92,11 @@ func intgTestsReconcile() {
 		Expect(vcSimCtx).ToNot(BeNil())
 
 		vcSimCtx.BeforeEach()
+
+		snapshotObjKey = types.NamespacedName{
+			Name:      vmSnapshot.Name,
+			Namespace: vmSnapshot.Namespace,
+		}
 	})
 
 	AfterEach(func() {
@@ -98,7 +104,38 @@ func intgTestsReconcile() {
 	})
 
 	Context("ReconcileNormal", func() {
-		When("snapshot is ready", func() {
+		When("snapshot's created condition is not set", func() {
+			BeforeEach(func() {
+				initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+					By("create vm in k8s")
+					vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
+					Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+					vm.Status.UniqueID = uniqueVMID
+					Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+					By("create snapshot in k8s")
+					vmSnapshot = builder.DummyVirtualMachineSnapshot(vcSimCtx.NSInfo.Namespace, "snap-1", vm.Name)
+					Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
+				}
+			})
+
+			It("returns success, not set created condition "+
+				"and csi volume sync condition", func() {
+				Eventually(func(g Gomega) {
+					Expect(vcSimCtx.Client.Get(ctx, snapshotObjKey, vmSnapshot)).To(Succeed())
+					g.Expect(conditions.Has(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)).
+						To(BeFalse())
+					g.Expect(conditions.Has(vmSnapshot,
+						vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)).To(BeFalse())
+					g.Expect(conditions.IsFalse(vmSnapshot,
+						vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+					g.Expect(conditions.GetReason(vmSnapshot,
+						vmopv1.VirtualMachineSnapshotReadyCondition)).
+						To(Equal(vmopv1.VirtualMachineSnapshotWaitingForCreationReason))
+				}).Should(Succeed())
+			})
+		})
+
+		When("snapshot's created condition is true", func() {
 			BeforeEach(func() {
 				initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
 					By("create vm in k8s")
@@ -112,21 +149,49 @@ func intgTestsReconcile() {
 				}
 			})
 			JustBeforeEach(func() {
-				By("mark snapshot as ready")
-				vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
-				Expect(vcSimCtx.Client.Get(ctx, vmSnapshotObjKey, vmSnapshot)).To(Succeed())
+				Expect(vcSimCtx.Client.Get(ctx, snapshotObjKey, vmSnapshot)).To(Succeed())
 				patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
-				conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
-				Expect(vcSimCtx.Client.Status().Patch(ctx, vmSnapshot, patch)).To(Succeed(), "mark snapshot as ready")
+				conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+				Expect(vcSimCtx.Client.Status().Patch(ctx, vmSnapshot, patch)).To(Succeed(), "mark snapshot as created")
 			})
 
-			It("returns success, and set the annotation to requested", func() {
+			It("returns success, and set the csi volume sync annotation to requested", func() {
 				Eventually(func(g Gomega) {
 					vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
-					Expect(vcSimCtx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, vmSnapshotObj)).To(Succeed())
-					g.Expect(conditions.IsTrue(vmSnapshotObj, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
-					g.Expect(vmSnapshotObj.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey]).To(Equal(constants.CSIVSphereVolumeSyncAnnotationValueRequest))
+					Expect(vcSimCtx.Client.Get(ctx, snapshotObjKey, vmSnapshotObj)).To(Succeed())
+					g.Expect(vmSnapshotObj.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey]).
+						To(Equal(constants.CSIVSphereVolumeSyncAnnotationValueRequested))
+					g.Expect(conditions.IsFalse(vmSnapshotObj,
+						vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)).To(BeTrue())
+					g.Expect(conditions.GetReason(vmSnapshotObj,
+						vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)).
+						To(Equal(vmopv1.VirtualMachineSnapshotCSIVolumeSyncInProgressReason))
+					g.Expect(conditions.IsFalse(vmSnapshotObj,
+						vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+					g.Expect(conditions.GetReason(vmSnapshotObj,
+						vmopv1.VirtualMachineSnapshotReadyCondition)).
+						To(Equal(vmopv1.VirtualMachineSnapshotWaitingForCSISyncReason))
 				}).Should(Succeed())
+			})
+
+			When("CSI sync annotation is already set to completed", func() {
+				JustBeforeEach(func() {
+					Expect(vcSimCtx.Client.Get(ctx, snapshotObjKey, vmSnapshot)).To(Succeed())
+					patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
+					vmSnapshot.Annotations = make(map[string]string)
+					vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = constants.CSIVSphereVolumeSyncAnnotationValueCompleted
+					Expect(vcSimCtx.Client.Patch(ctx, vmSnapshot, patch)).To(Succeed(), "update snapshot annotation")
+				})
+				It("returns success, and set snapshot as ready", func() {
+					Eventually(func(g Gomega) {
+						vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
+						Expect(vcSimCtx.Client.Get(ctx, snapshotObjKey, vmSnapshotObj)).To(Succeed())
+						g.Expect(conditions.IsTrue(vmSnapshotObj,
+							vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)).To(BeTrue())
+						g.Expect(conditions.IsTrue(vmSnapshotObj,
+							vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+					}).Should(Succeed())
+				})
 			})
 		})
 	})
@@ -187,9 +252,8 @@ func intgTestsReconcile() {
 						provider.Unlock()
 					})
 					It("snapshot is deleted", func() {
-						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
 						Eventually(func(g Gomega) {
-							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, snapshotObjKey)
 							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
 						}).Should(Succeed())
 					})
@@ -203,9 +267,8 @@ func intgTestsReconcile() {
 						provider.Unlock()
 					})
 					It("snapshot is not deleted and VM is not updated", func() {
-						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
 						Consistently(func(g Gomega) {
-							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, snapshotObjKey)
 							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
 						}).Should(Succeed())
 						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
@@ -229,9 +292,8 @@ func intgTestsReconcile() {
 						provider.Unlock()
 					})
 					It("returns error, and current and root snapshots are not updated", func() {
-						vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
 						Consistently(func(g Gomega) {
-							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+							tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, snapshotObjKey)
 							g.Expect(tmpVMSSnapshot).To(Not(BeNil()))
 						}).Should(Succeed())
 						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
@@ -262,9 +324,8 @@ func intgTestsReconcile() {
 					}).Should(Succeed())
 
 					By("Snapshot is deleted")
-					vmSnapshotObjKey := types.NamespacedName{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}
 					Eventually(func(g Gomega) {
-						tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, vmSnapshotObjKey)
+						tmpVMSSnapshot := getVirtualMachineSnapshot(vcSimCtx, snapshotObjKey)
 						g.Expect(tmpVMSSnapshot).To(BeNil())
 					}).Should(Succeed())
 				})
@@ -450,8 +511,10 @@ func intgTestsReconcile() {
 							vmSnapshotL1Obj := getVirtualMachineSnapshot(vcSimCtx, types.NamespacedName{Name: vmSnapshotL1.Name, Namespace: vmSnapshotL1.Namespace})
 							g.Expect(vmSnapshotL1Obj).ToNot(BeNil())
 							g.Expect(vmSnapshotL1Obj.Status.Children).To(HaveLen(2))
-							g.Expect(vmSnapshotL1Obj.Status.Children).To(ContainElement(*newLocalObjectRefWithSnapshotName(vmSnapshotL3Node1.Name)))
-							g.Expect(vmSnapshotL1Obj.Status.Children).To(ContainElement(*newLocalObjectRefWithSnapshotName(vmSnapshotL3Node2.Name)))
+							g.Expect(vmSnapshotL1Obj.Status.Children).To(ConsistOf(
+								*newLocalObjectRefWithSnapshotName(vmSnapshotL3Node1.Name),
+								*newLocalObjectRefWithSnapshotName(vmSnapshotL3Node2.Name),
+							))
 						}).Should(Succeed(), "waiting for vmSnapshotL1's children to be updated")
 
 						By("check vm root snapshots should stay the same")

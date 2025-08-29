@@ -196,10 +196,10 @@ const (
 	// annotation.
 	CSIVSphereVolumeSyncAnnotationKey = "csi.vsphere.volume.sync"
 
-	// CSIVSphereVolumeSyncAnnotationValueRequest is the annotation value for the
+	// CSIVSphereVolumeSyncAnnotationValueRequested is the annotation value for the
 	// CSIVSphereVolumeSync annotation. It is used to inform the CSI driver to
 	// update SPU for the attached volumes.
-	CSIVSphereVolumeSyncAnnotationValueRequest = "requested"
+	CSIVSphereVolumeSyncAnnotationValueRequested = "requested"
 
 	// CSIVSphereVolumeSyncAnnotationValueCompleted is the annotation value for the
 	// CSIVSphereVolumeSync annotation. It is used to indicate that the CSI driver

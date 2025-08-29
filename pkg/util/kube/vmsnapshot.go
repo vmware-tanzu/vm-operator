@@ -160,7 +160,7 @@ func PatchSnapshotSuccessStatus(
 		snap.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
 	}
 
-	pkgcnd.MarkTrue(snap, vmopv1.VirtualMachineSnapshotReadyCondition)
+	pkgcnd.MarkTrue(snap, vmopv1.VirtualMachineSnapshotCreatedCondition)
 
 	if err := k8sClient.Status().Patch(ctx, snap, snapPatch); err != nil {
 		return fmt.Errorf(

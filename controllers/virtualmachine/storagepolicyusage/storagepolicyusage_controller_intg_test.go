@@ -248,7 +248,7 @@ func intgTestsReconcile() {
 						Namespace: ctx.Namespace,
 						Name:      "vm-snapshot-1",
 						Annotations: map[string]string{
-							constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequest,
+							constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequested,
 						},
 					},
 					Spec: vmopv1.VirtualMachineSnapshotSpec{

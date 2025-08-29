@@ -79,11 +79,41 @@ type QuiesceSpec struct {
 const (
 	// VirtualMachineSnapshotReadyCondition represents the condition
 	// that the virtual machine snapshot is ready.
+	// It's ready only when both VirtualMachineSnapshotCreatedCondition
+	// and VirtualMachineSnapshotCSIVolumeSyncedCondition are true.
 	VirtualMachineSnapshotReadyCondition = "VirtualMachineSnapshotReady"
 
-	// VirtualMachineSnapshotInProgressReason represents that a
-	// snapshot is in progress.
-	VirtualMachineSnapshotInProgressReason = "VirtualMachineSnapshotInProgress"
+	// VirtualMachineSnapshotWaitingForCreationReason documents that the virtual machine
+	// snapshot is waiting for creation.
+	VirtualMachineSnapshotWaitingForCreationReason = "VirtualMachineSnapshotWaitingForCreation"
+
+	// VirtualMachineSnapshotWaitingForCSISyncReason documents that the virtual machine
+	// snapshot is waiting for CSI volume sync.
+	VirtualMachineSnapshotWaitingForCSISyncReason = "VirtualMachineSnapshotWaitingForCSISync"
+)
+
+const (
+	// VirtualMachineSnapshotCreatedCondition exposes the status of
+	// the virtual machine snapshot creation.
+	VirtualMachineSnapshotCreatedCondition = "VirtualMachineSnapshotCreated"
+
+	// VirtualMachineSnapshotCreationInProgressReason documents that the
+	// virtual machine snapshot creation is in progress.
+	VirtualMachineSnapshotCreationInProgressReason = "VirtualMachineSnapshotCreationInProgress"
+
+	// VirtualMachineSnapshotCreationFailedReason documents that the virtual machine
+	// snapshot creation has failed.
+	VirtualMachineSnapshotCreationFailedReason = "VirtualMachineSnapshotCreationFailed"
+)
+
+const (
+	// VirtualMachineSnapshotCSIVolumeSyncedCondition expose the status of
+	// syncing CSI volume for this virtual machine snapshot.
+	VirtualMachineSnapshotCSIVolumeSyncedCondition = "VirtualMachineSnapshotCSISynced"
+
+	// VirtualMachineSnapshotCSIVolumeSyncInProgressReason documents that the
+	// CSI volume sync is in progress for this virtual machine snapshot.
+	VirtualMachineSnapshotCSIVolumeSyncInProgressReason = "VirtualMachineSnapshotCSISyncInProgress"
 )
 
 // VirtualMachineSnapshotStatus defines the observed state of VirtualMachineSnapshot.
@@ -170,11 +200,11 @@ type VirtualMachineSnapshot struct {
 	Status VirtualMachineSnapshotStatus `json:"status,omitempty"`
 }
 
-func (vmSnapshot *VirtualMachineSnapshot) NamespacedName() string {
+func (vmSnapshot VirtualMachineSnapshot) NamespacedName() string {
 	return vmSnapshot.Namespace + "/" + vmSnapshot.Name
 }
 
-func (vmSnapshot *VirtualMachineSnapshot) GetConditions() []metav1.Condition {
+func (vmSnapshot VirtualMachineSnapshot) GetConditions() []metav1.Condition {
 	return vmSnapshot.Status.Conditions
 }
 

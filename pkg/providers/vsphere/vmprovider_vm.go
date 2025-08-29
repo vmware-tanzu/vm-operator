@@ -1428,6 +1428,55 @@ func (vs *vSphereVMProvider) performSnapshotRevert(
 	if err != nil {
 		vmCtx.Logger.Error(err, "snapshot revert task failed",
 			"snapshotName", snapshotName, "taskInfo", taskInfo)
+
+		var msg string
+
+		// taskInfo.Error is of the format:
+		//
+		// {
+		// 	"fault": {
+		//   "faultMessage": [
+		//     {
+		//       "key":"msg.snapshot.vigor.revert.error",
+		//       "arg":[
+		//         {
+		//           "key":"1",
+		//           "value":"msg.snapshot.error-NOTREVERTABLE"
+		//         }
+		//       ],
+		//       "message":"An error occurred while reverting to a snapshot: The specified snapshot is not revertable."
+		//     },
+		//     {
+		//       "key":"msg.snapshot.vigor.revert.errorFcd",
+		//       "message":"The virtual machine cannot be reverted when crossing an Improved-Virtual-Disk snapshot."
+		//      }
+		//   ]
+		// }
+		//
+		// Note: A risk is that if the key strings change in future vSphere versions,
+		// the error parsing will break. However, this is unlikely to happen without notice.
+		revertErrorMessage := errorMessageFromTaskInfoWithKey(taskInfo, "msg.snapshot.vigor.revert.error")
+		if revertErrorMessage != "" {
+			msg += revertErrorMessage
+		}
+
+		// We don't use the fcdErrorMessage directly since it has references to Improved-Virtual-Disk
+		// which may not be clear to users.
+		fcdErrorMessage := errorMessageFromTaskInfoWithKey(taskInfo, "msg.snapshot.vigor.revert.errorFcd")
+		if fcdErrorMessage != "" {
+			msg += " The virtual machine cannot be reverted when crossing a CSI VolumeSnapshot. " +
+				"Please delete the VolumeSnapshots and retry the revert."
+		}
+
+		// The condition reason and message are based on the error encountered.
+		// The condition would be reset when a revert is successful, since the Status is wiped out after a revert.
+		pkgcnd.MarkFalse(vmCtx.VM,
+			vmopv1.VirtualMachineSnapshotRevertSucceeded,
+			vmopv1.VirtualMachineSnapshotRevertInvalidReason,
+			"%s",
+			msg,
+		)
+
 		return err
 	}
 

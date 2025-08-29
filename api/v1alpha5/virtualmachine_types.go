@@ -56,6 +56,12 @@ const (
 	// VirtualMachineClassConfigurationSynced indicates that the VM's current configuration is synced to the
 	// current version of its VirtualMachineClass.
 	VirtualMachineClassConfigurationSynced = "VirtualMachineClassConfigurationSynced"
+
+	// VirtualMachineSnapshotRevertSucceeded indicates that the VM has been reverted to a snapshot.
+	VirtualMachineSnapshotRevertSucceeded = "VirtualMachineSnapshotRevertSucceeded"
+
+	// VirtualMachineSnapshotRevertInvalidReason indicates that the revert operation is invalid.
+	VirtualMachineSnapshotRevertInvalidReason = "VirtualMachineSnapshotRevertInvalid"
 )
 
 const (

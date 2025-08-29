@@ -5,6 +5,7 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
@@ -22,4 +23,11 @@ func (e RequeueError) Error() string {
 		return "requeue immediately"
 	}
 	return fmt.Sprintf("requeue after %s", e.After)
+}
+
+// IsRequeueError returns true if the error or a nested error is a
+// RequeueError.
+func IsRequeueError(err error) bool {
+	var requeue RequeueError
+	return errors.As(err, &requeue)
 }

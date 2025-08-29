@@ -180,11 +180,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.PersistentVolumeClaimVolumeSource)(nil), (*PersistentVolumeClaimVolumeSource)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(a.(*v1alpha5.PersistentVolumeClaimVolumeSource), b.(*PersistentVolumeClaimVolumeSource), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*QuiesceSpec)(nil), (*v1alpha5.QuiesceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha4_QuiesceSpec_To_v1alpha5_QuiesceSpec(a.(*QuiesceSpec), b.(*v1alpha5.QuiesceSpec), scope)
 	}); err != nil {
@@ -392,16 +387,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineBootstrapVAppConfigSpec)(nil), (*VirtualMachineBootstrapVAppConfigSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineBootstrapVAppConfigSpec_To_v1alpha4_VirtualMachineBootstrapVAppConfigSpec(a.(*v1alpha5.VirtualMachineBootstrapVAppConfigSpec), b.(*VirtualMachineBootstrapVAppConfigSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineCdromSpec)(nil), (*v1alpha5.VirtualMachineCdromSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(a.(*VirtualMachineCdromSpec), b.(*v1alpha5.VirtualMachineCdromSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineCdromSpec)(nil), (*VirtualMachineCdromSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(a.(*v1alpha5.VirtualMachineCdromSpec), b.(*VirtualMachineCdromSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -1330,16 +1315,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineSpec)(nil), (*v1alpha5.VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(a.(*VirtualMachineSpec), b.(*v1alpha5.VirtualMachineSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineSpec)(nil), (*VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(a.(*v1alpha5.VirtualMachineSpec), b.(*VirtualMachineSpec), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineStatus)(nil), (*v1alpha5.VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha4_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(a.(*VirtualMachineStatus), b.(*v1alpha5.VirtualMachineStatus), scope)
 	}); err != nil {
@@ -1430,11 +1405,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineVolumeStatus)(nil), (*VirtualMachineVolumeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(a.(*v1alpha5.VirtualMachineVolumeStatus), b.(*VirtualMachineVolumeStatus), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineWebConsoleRequest)(nil), (*v1alpha5.VirtualMachineWebConsoleRequest)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha4_VirtualMachineWebConsoleRequest_To_v1alpha5_VirtualMachineWebConsoleRequest(a.(*VirtualMachineWebConsoleRequest), b.(*v1alpha5.VirtualMachineWebConsoleRequest), scope)
 	}); err != nil {
@@ -1495,13 +1465,43 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*VirtualMachineCdromSpec)(nil), (*v1alpha5.VirtualMachineCdromSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(a.(*VirtualMachineCdromSpec), b.(*v1alpha5.VirtualMachineCdromSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*VirtualMachineSpec)(nil), (*v1alpha5.VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(a.(*VirtualMachineSpec), b.(*v1alpha5.VirtualMachineSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha5.PersistentVolumeClaimVolumeSource)(nil), (*PersistentVolumeClaimVolumeSource)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(a.(*v1alpha5.PersistentVolumeClaimVolumeSource), b.(*PersistentVolumeClaimVolumeSource), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineCdromSpec)(nil), (*VirtualMachineCdromSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(a.(*v1alpha5.VirtualMachineCdromSpec), b.(*VirtualMachineCdromSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineCryptoStatus)(nil), (*VirtualMachineCryptoStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCryptoStatus(a.(*v1alpha5.VirtualMachineCryptoStatus), b.(*VirtualMachineCryptoStatus), scope)
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineSpec)(nil), (*VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(a.(*v1alpha5.VirtualMachineSpec), b.(*VirtualMachineSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineStatus)(nil), (*VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(a.(*v1alpha5.VirtualMachineStatus), b.(*VirtualMachineStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineVolumeStatus)(nil), (*VirtualMachineVolumeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(a.(*v1alpha5.VirtualMachineVolumeStatus), b.(*VirtualMachineVolumeStatus), scope)
 	}); err != nil {
 		return err
 	}
@@ -1840,12 +1840,13 @@ func Convert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha5_PersistentVo
 func autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(in *v1alpha5.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s conversion.Scope) error {
 	out.PersistentVolumeClaimVolumeSource = in.PersistentVolumeClaimVolumeSource
 	out.InstanceVolumeClaim = (*InstanceVolumeClaimVolumeSource)(unsafe.Pointer(in.InstanceVolumeClaim))
+	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
+	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
+	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type
+	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource is an autogenerated conversion function.
-func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(in *v1alpha5.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s conversion.Scope) error {
-	return autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(in, out, s)
 }
 
 func autoConvert_v1alpha4_QuiesceSpec_To_v1alpha5_QuiesceSpec(in *QuiesceSpec, out *v1alpha5.QuiesceSpec, s conversion.Scope) error {
@@ -2066,7 +2067,7 @@ func Convert_v1alpha5_VirtualMachine_To_v1alpha4_VirtualMachine(in *v1alpha5.Vir
 
 func autoConvert_v1alpha4_VirtualMachineAdvancedSpec_To_v1alpha5_VirtualMachineAdvancedSpec(in *VirtualMachineAdvancedSpec, out *v1alpha5.VirtualMachineAdvancedSpec, s conversion.Scope) error {
 	out.BootDiskCapacity = (*resource.Quantity)(unsafe.Pointer(in.BootDiskCapacity))
-	out.DefaultVolumeProvisioningMode = v1alpha5.VirtualMachineVolumeProvisioningMode(in.DefaultVolumeProvisioningMode)
+	out.DefaultVolumeProvisioningMode = v1alpha5.VolumeProvisioningMode(in.DefaultVolumeProvisioningMode)
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	return nil
 }
@@ -2376,24 +2377,17 @@ func autoConvert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdro
 	return nil
 }
 
-// Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec is an autogenerated conversion function.
-func Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(in *VirtualMachineCdromSpec, out *v1alpha5.VirtualMachineCdromSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(in, out, s)
-}
-
 func autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in *v1alpha5.VirtualMachineCdromSpec, out *VirtualMachineCdromSpec, s conversion.Scope) error {
 	out.Name = in.Name
 	if err := Convert_v1alpha5_VirtualMachineImageRef_To_v1alpha4_VirtualMachineImageRef(&in.Image, &out.Image, s); err != nil {
 		return err
 	}
+	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
+	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
 	out.Connected = (*bool)(unsafe.Pointer(in.Connected))
 	out.AllowGuestControl = (*bool)(unsafe.Pointer(in.AllowGuestControl))
 	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in *v1alpha5.VirtualMachineCdromSpec, out *VirtualMachineCdromSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in, out, s)
 }
 
 func autoConvert_v1alpha4_VirtualMachineClass_To_v1alpha5_VirtualMachineClass(in *VirtualMachineClass, out *v1alpha5.VirtualMachineClass, s conversion.Scope) error {
@@ -3123,7 +3117,7 @@ func Convert_v1alpha5_VirtualMachineImageCache_To_v1alpha4_VirtualMachineImageCa
 func autoConvert_v1alpha4_VirtualMachineImageCacheFileStatus_To_v1alpha5_VirtualMachineImageCacheFileStatus(in *VirtualMachineImageCacheFileStatus, out *v1alpha5.VirtualMachineImageCacheFileStatus, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Type = v1alpha5.VirtualMachineImageCacheFileType(in.Type)
-	out.DiskType = v1alpha5.VirtualMachineVolumeType(in.DiskType)
+	out.DiskType = v1alpha5.VolumeType(in.DiskType)
 	return nil
 }
 
@@ -4883,7 +4877,7 @@ func Convert_v1alpha5_VirtualMachineSnapshotStorageStatusRequested_To_v1alpha4_V
 }
 
 func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *VirtualMachineSpec, out *v1alpha5.VirtualMachineSpec, s conversion.Scope) error {
-	out.Cdrom = *(*[]v1alpha5.VirtualMachineCdromSpec)(unsafe.Pointer(&in.Cdrom))
+	// WARNING: in.Cdrom requires manual conversion: does not exist in peer-type
 	out.Image = (*v1alpha5.VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
@@ -4898,7 +4892,17 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	out.SuspendMode = v1alpha5.VirtualMachinePowerOpMode(in.SuspendMode)
 	out.NextRestartTime = in.NextRestartTime
 	out.RestartMode = v1alpha5.VirtualMachinePowerOpMode(in.RestartMode)
-	out.Volumes = *(*[]v1alpha5.VirtualMachineVolume)(unsafe.Pointer(&in.Volumes))
+	if in.Volumes != nil {
+		in, out := &in.Volumes, &out.Volumes
+		*out = make([]v1alpha5.VirtualMachineVolume, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha4_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Volumes = nil
+	}
 	out.ReadinessProbe = (*v1alpha5.VirtualMachineReadinessProbeSpec)(unsafe.Pointer(in.ReadinessProbe))
 	out.Advanced = (*v1alpha5.VirtualMachineAdvancedSpec)(unsafe.Pointer(in.Advanced))
 	out.Reserved = (*v1alpha5.VirtualMachineReservedSpec)(unsafe.Pointer(in.Reserved))
@@ -4913,13 +4917,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	return nil
 }
 
-// Convert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec is an autogenerated conversion function.
-func Convert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *VirtualMachineSpec, out *v1alpha5.VirtualMachineSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in, out, s)
-}
-
 func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *v1alpha5.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
-	out.Cdrom = *(*[]VirtualMachineCdromSpec)(unsafe.Pointer(&in.Cdrom))
 	out.Image = (*VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
@@ -4934,7 +4932,17 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *
 	out.SuspendMode = VirtualMachinePowerOpMode(in.SuspendMode)
 	out.NextRestartTime = in.NextRestartTime
 	out.RestartMode = VirtualMachinePowerOpMode(in.RestartMode)
-	out.Volumes = *(*[]VirtualMachineVolume)(unsafe.Pointer(&in.Volumes))
+	if in.Volumes != nil {
+		in, out := &in.Volumes, &out.Volumes
+		*out = make([]VirtualMachineVolume, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineVolume_To_v1alpha4_VirtualMachineVolume(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Volumes = nil
+	}
 	out.ReadinessProbe = (*VirtualMachineReadinessProbeSpec)(unsafe.Pointer(in.ReadinessProbe))
 	out.Advanced = (*VirtualMachineAdvancedSpec)(unsafe.Pointer(in.Advanced))
 	out.Reserved = (*VirtualMachineReservedSpec)(unsafe.Pointer(in.Reserved))
@@ -4946,12 +4954,8 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *
 	out.BootOptions = (*VirtualMachineBootOptions)(unsafe.Pointer(in.BootOptions))
 	out.CurrentSnapshot = (*v1alpha4common.LocalObjectRef)(unsafe.Pointer(in.CurrentSnapshot))
 	out.GroupName = in.GroupName
+	// WARNING: in.Hardware requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *v1alpha5.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in, out, s)
 }
 
 func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(in *VirtualMachineStatus, out *v1alpha5.VirtualMachineStatus, s conversion.Scope) error {
@@ -4972,7 +4976,17 @@ func autoConvert_v1alpha4_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(
 	out.UniqueID = in.UniqueID
 	out.BiosUUID = in.BiosUUID
 	out.InstanceUUID = in.InstanceUUID
-	out.Volumes = *(*[]v1alpha5.VirtualMachineVolumeStatus)(unsafe.Pointer(&in.Volumes))
+	if in.Volumes != nil {
+		in, out := &in.Volumes, &out.Volumes
+		*out = make([]v1alpha5.VirtualMachineVolumeStatus, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolumeStatus(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Volumes = nil
+	}
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	out.Zone = in.Zone
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
@@ -5006,7 +5020,17 @@ func autoConvert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	out.UniqueID = in.UniqueID
 	out.BiosUUID = in.BiosUUID
 	out.InstanceUUID = in.InstanceUUID
-	out.Volumes = *(*[]VirtualMachineVolumeStatus)(unsafe.Pointer(&in.Volumes))
+	if in.Volumes != nil {
+		in, out := &in.Volumes, &out.Volumes
+		*out = make([]VirtualMachineVolumeStatus, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Volumes = nil
+	}
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	out.Zone = in.Zone
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
@@ -5206,7 +5230,15 @@ func Convert_v1alpha5_VirtualMachineVolumeCryptoStatus_To_v1alpha4_VirtualMachin
 }
 
 func autoConvert_v1alpha4_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(in *VirtualMachineVolumeSource, out *v1alpha5.VirtualMachineVolumeSource, s conversion.Scope) error {
-	out.PersistentVolumeClaim = (*v1alpha5.PersistentVolumeClaimVolumeSource)(unsafe.Pointer(in.PersistentVolumeClaim))
+	if in.PersistentVolumeClaim != nil {
+		in, out := &in.PersistentVolumeClaim, &out.PersistentVolumeClaim
+		*out = new(v1alpha5.PersistentVolumeClaimVolumeSource)
+		if err := Convert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha5_PersistentVolumeClaimVolumeSource(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.PersistentVolumeClaim = nil
+	}
 	return nil
 }
 
@@ -5216,7 +5248,15 @@ func Convert_v1alpha4_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolum
 }
 
 func autoConvert_v1alpha5_VirtualMachineVolumeSource_To_v1alpha4_VirtualMachineVolumeSource(in *v1alpha5.VirtualMachineVolumeSource, out *VirtualMachineVolumeSource, s conversion.Scope) error {
-	out.PersistentVolumeClaim = (*PersistentVolumeClaimVolumeSource)(unsafe.Pointer(in.PersistentVolumeClaim))
+	if in.PersistentVolumeClaim != nil {
+		in, out := &in.PersistentVolumeClaim, &out.PersistentVolumeClaim
+		*out = new(PersistentVolumeClaimVolumeSource)
+		if err := Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.PersistentVolumeClaim = nil
+	}
 	return nil
 }
 
@@ -5227,7 +5267,7 @@ func Convert_v1alpha5_VirtualMachineVolumeSource_To_v1alpha4_VirtualMachineVolum
 
 func autoConvert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolumeStatus(in *VirtualMachineVolumeStatus, out *v1alpha5.VirtualMachineVolumeStatus, s conversion.Scope) error {
 	out.Name = in.Name
-	out.Type = v1alpha5.VirtualMachineVolumeType(in.Type)
+	out.Type = v1alpha5.VolumeType(in.Type)
 	out.Crypto = (*v1alpha5.VirtualMachineVolumeCryptoStatus)(unsafe.Pointer(in.Crypto))
 	out.Limit = (*resource.Quantity)(unsafe.Pointer(in.Limit))
 	out.Requested = (*resource.Quantity)(unsafe.Pointer(in.Requested))
@@ -5245,7 +5285,11 @@ func Convert_v1alpha4_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolum
 
 func autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(in *v1alpha5.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s conversion.Scope) error {
 	out.Name = in.Name
+	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
+	// WARNING: in.ControllerType requires manual conversion: does not exist in peer-type
 	out.Type = VirtualMachineVolumeType(in.Type)
+	// WARNING: in.DiskMode requires manual conversion: does not exist in peer-type
+	// WARNING: in.SharingMode requires manual conversion: does not exist in peer-type
 	out.Crypto = (*VirtualMachineVolumeCryptoStatus)(unsafe.Pointer(in.Crypto))
 	out.Limit = (*resource.Quantity)(unsafe.Pointer(in.Limit))
 	out.Requested = (*resource.Quantity)(unsafe.Pointer(in.Requested))
@@ -5254,11 +5298,6 @@ func autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineV
 	out.DiskUUID = in.DiskUUID
 	out.Error = in.Error
 	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(in *v1alpha5.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(in, out, s)
 }
 
 func autoConvert_v1alpha4_VirtualMachineWebConsoleRequest_To_v1alpha5_VirtualMachineWebConsoleRequest(in *VirtualMachineWebConsoleRequest, out *v1alpha5.VirtualMachineWebConsoleRequest, s conversion.Scope) error {

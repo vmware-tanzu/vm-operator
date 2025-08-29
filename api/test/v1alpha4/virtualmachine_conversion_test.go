@@ -224,7 +224,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						},
 						Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 							BootDiskCapacity:              ptrOf(resource.MustParse("1024k")),
-							DefaultVolumeProvisioningMode: vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero,
+							DefaultVolumeProvisioningMode: vmopv1.VolumeProvisioningModeThickEagerZero,
 							ChangeBlockTracking:           ptrOf(true),
 						},
 						Reserved: &vmopv1.VirtualMachineReservedSpec{
@@ -234,18 +234,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 						InstanceUUID:       uuid.NewString(),
 						BiosUUID:           uuid.NewString(),
 						GuestID:            "my-guest-id",
-						Cdrom: []vmopv1.VirtualMachineCdromSpec{
-							{
-								Name: "cdrom1",
-								Image: vmopv1.VirtualMachineImageRef{
-									Name: "my-cdrom-image",
-									Kind: "VirtualMachineImage",
-								},
-								AllowGuestControl: ptrOf(true),
-								Connected:         ptrOf(true),
-							},
-						},
-						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOffline,
+						PromoteDisksMode:   vmopv1.VirtualMachinePromoteDisksModeOffline,
 						BootOptions: &vmopv1.VirtualMachineBootOptions{
 							Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
 							BootDelay: &metav1.Duration{Duration: time.Second * 10},
@@ -259,6 +248,19 @@ func TestVirtualMachineConversion(t *testing.T) {
 							EnterBootSetup:      vmopv1.VirtualMachineBootOptionsForceBootEntryDisabled,
 							EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
 							NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
+						},
+						Hardware: &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "cdrom1",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "my-cdrom-image",
+										Kind: "VirtualMachineImage",
+									},
+									AllowGuestControl: ptrOf(true),
+									Connected:         ptrOf(true),
+								},
+							},
 						},
 					},
 				},

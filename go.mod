@@ -42,7 +42,7 @@ require (
 	github.com/onsi/gomega v1.36.3
 	github.com/prometheus/client_golang v1.22.0
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250624211456-dfc90459c658
-	github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0
+	github.com/vmware-tanzu/net-operator-api v0.0.0-20250826165015-90a4bb21727b
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20250813103855-288a237381b5
 	github.com/vmware/govmomi v0.53.0-alpha.0.0.20250904165626-3676bbffada5
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56

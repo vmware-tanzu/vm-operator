@@ -116,8 +116,8 @@ github.com/stretchr/testify v1.10.0 h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOf
 github.com/stretchr/testify v1.10.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250624211456-dfc90459c658 h1:JJg5zTkKLyCQDcKJpuOGiZM2aqQ7NWe5VJT+H9lpQrE=
 github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250624211456-dfc90459c658/go.mod h1:sh4NJb1tCbzNRJ+ajRuu3thDovFN10Hic2wYmyklG/M=
-github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0 h1:ymNjvIbvYrk+hyNw6+Gat7XI/8z/15eqSD7CLG7VkOI=
-github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0/go.mod h1:w6QJGm3crIA16ZIz1FVQXD2NVeJhOgGXxW05RbVTSTo=
+github.com/vmware-tanzu/net-operator-api v0.0.0-20250826165015-90a4bb21727b h1:4LXcpS7olGK7vDtzpkSoGMvkFYm0HNdzMqJxnTiv0sY=
+github.com/vmware-tanzu/net-operator-api v0.0.0-20250826165015-90a4bb21727b/go.mod h1:w6QJGm3crIA16ZIz1FVQXD2NVeJhOgGXxW05RbVTSTo=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20250813103855-288a237381b5 h1:OUPe+BjC/XWqHRWYHDCtTa/lZpEz6U8YmZcZi1Rp5BU=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20250813103855-288a237381b5/go.mod h1:Q4JzNkNMvjo7pXtlB5/R3oME4Nhah7fAObWgghVmtxk=
 github.com/vmware/govmomi v0.53.0-alpha.0.0.20250904165626-3676bbffada5 h1:or71u3qXwH/Z2prk+vtcrzTGbTSKaMQulGkjuqBkwpA=

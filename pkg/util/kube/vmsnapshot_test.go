@@ -324,7 +324,7 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 			}
 		})
 
-		When("snapshot patched with vm info and ready condition", func() {
+		When("snapshot patched with vm info and created condition", func() {
 			BeforeEach(func() {
 				vmCtx.VM.Status = vmopv1.VirtualMachineStatus{
 					UniqueID:   "dummyID",
@@ -347,7 +347,7 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 				Expect(snapObj.Status.UniqueID).To(Equal(snapMoRef.Value))
 				Expect(snapObj.Status.Quiesced).To(BeTrue())
 				Expect(snapObj.Status.PowerState).To(Equal(vmCtx.VM.Status.PowerState))
-				Expect(conditions.IsTrue(snapObj, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+				Expect(conditions.IsTrue(snapObj, vmopv1.VirtualMachineSnapshotCreatedCondition)).To(BeTrue())
 			})
 		})
 	})

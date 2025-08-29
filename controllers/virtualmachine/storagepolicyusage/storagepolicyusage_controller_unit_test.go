@@ -1117,7 +1117,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 			When("CSI driver has not completed the sync of the volume", func() {
 				BeforeEach(func() {
 					vmSnapshot1.Annotations = map[string]string{
-						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequest,
+						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequested,
 					}
 				})
 
@@ -1234,10 +1234,10 @@ func unitTestsReconcileSPUForVMSnapshot() {
 			When("CSI driver has not completed the sync of the volume on both VMs", func() {
 				BeforeEach(func() {
 					vmSnapshot1.Annotations = map[string]string{
-						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequest,
+						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequested,
 					}
 					vmSnapshot2.Annotations = map[string]string{
-						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequest,
+						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequested,
 					}
 				})
 				It("should report the snapshot's reserved capacity with sum of the two VMs' reserved capacity, ignore the used capacity", func() {
@@ -1281,7 +1281,7 @@ func unitTestsReconcileSPUForVMSnapshot() {
 			When("CSI driver has not completed the sync of the volume on one VM, but completed on the other", func() {
 				BeforeEach(func() {
 					vmSnapshot1.Annotations = map[string]string{
-						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequest,
+						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueRequested,
 					}
 					vmSnapshot2.Annotations = map[string]string{
 						constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueCompleted,

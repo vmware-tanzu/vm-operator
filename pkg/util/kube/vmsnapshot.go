@@ -152,7 +152,7 @@ func PatchSnapshotSuccessStatus(vmCtx pkgctx.VirtualMachineContext, k8sClient ct
 	vmSnapshot.Status.Quiesced = vmSnapshot.Spec.Quiesce != nil
 	vmSnapshot.Status.PowerState = vmCtx.VM.Status.PowerState
 
-	pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+	pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
 
 	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, snapPatch); err != nil {
 		return fmt.Errorf(

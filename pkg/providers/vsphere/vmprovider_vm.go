@@ -1337,8 +1337,9 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevert(
 	// as reconciled by VM operator and is not an out-of-band, or in-progress
 	// snapshot.
 	if !pkgcnd.IsTrue(snapCR, vmopv1.VirtualMachineSnapshotReadyCondition) {
-		vmCtx.Logger.V(5).Info("Snapshot CR is not ready, skipping revert", "snapshotName", desiredSnapshotName)
-		return false, fmt.Errorf("snapshot CR is not ready, skipping revert")
+		vmCtx.Logger.V(5).Info("VirtualMachineSnapshot is not ready, skipping revert",
+			"snapshotName", desiredSnapshotName)
+		return false, fmt.Errorf("VirtualMachineSnapshot is not ready, skipping revert")
 	}
 
 	// Check if the VM has a snapshot by the desired name.
@@ -1698,9 +1699,9 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 	var snapshotToProcess *vmopv1.VirtualMachineSnapshot
 	totalPendingSnapshots := 0
 	for _, snapshot := range vmSnapshots {
-		// Skip snapshots that are already ready
-		if pkgcnd.IsTrue(&snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
-			vmCtx.Logger.V(4).Info("Skipping snapshot that is already ready",
+		// Skip snapshots that are already created successfully
+		if pkgcnd.IsTrue(&snapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) {
+			vmCtx.Logger.V(4).Info("Skipping snapshot that is already created",
 				"snapshotName", snapshot.Name)
 			continue
 		}
@@ -1747,7 +1748,7 @@ func (vs *vSphereVMProvider) reconcileSnapshot(
 
 	// If the oldest snapshot is in progress, wait for it to complete
 	if pkgcnd.GetReason(snapshotToProcess, vmopv1.VirtualMachineSnapshotReadyCondition) ==
-		vmopv1.VirtualMachineSnapshotInProgressReason {
+		vmopv1.VirtualMachineSnapshotCreationInProgressReason {
 		vmCtx.Logger.V(4).Info("Snapshot is in progress, waiting for completion",
 			"snapshotName", snapshotToProcess.Name)
 		return nil

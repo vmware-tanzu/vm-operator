@@ -73,11 +73,45 @@ type QuiesceSpec struct {
 const (
 	// VirtualMachineSnapshotReadyCondition represents the condition
 	// that the virtual machine snapshot is ready.
+	// It's ready only when both VirtualMachineSnapshotCreatedCondition
+	// and VirtualMachineSnapshotCSIVolumeSyncedCondition are true.
 	VirtualMachineSnapshotReadyCondition = "VirtualMachineSnapshotReady"
 
-	// VirtualMachineSnapshotInProgressReason represents that a
-	// snapshot is in progress.
-	VirtualMachineSnapshotInProgressReason = "VirtualMachineSnapshotInProgress"
+	// VirtualMachineSnapshotWaitingForCreationReason documents that the virtual machine
+	// snapshot is waiting for creation.
+	VirtualMachineSnapshotWaitingForCreationReason = "VirtualMachineSnapshotWaitingForCreation"
+
+	// VirtualMachineSnapshotWaitingForCSISyncReason documents that the virtual machine
+	// snapshot is waiting for CSI volume sync.
+	VirtualMachineSnapshotWaitingForCSISyncReason = "VirtualMachineSnapshotWaitingForCSISync"
+
+	// VirtualMachineSnapshotCreatedCondition exposes the status of
+	// the virtual machine snapshot creation.
+	VirtualMachineSnapshotCreatedCondition = "VirtualMachineSnapshotCreated"
+
+	// VirtualMachineSnapshotCreationPendingReason documents that the virtual machine
+	// snapshot is pending to be created.
+	VirtualMachineSnapshotCreationPendingReason = "VirtualMachineSnapshotCreationPending"
+
+	// VirtualMachineSnapshotCreationInProgressReason documents that the
+	// virtual machine snapshot creation is in progress.
+	VirtualMachineSnapshotCreationInProgressReason = "VirtualMachineSnapshotCreationInProgress"
+
+	// VirtualMachineSnapshotCreationFailedReason documents that the virtual machine
+	// snapshot creation has failed.
+	VirtualMachineSnapshotCreationFailedReason = "VirtualMachineSnapshotCreationFailed"
+
+	// VirtualMachineSnapshotCSIVolumeSyncedCondition expose the status of
+	// syncing CSI volume for this virtual machine snapshot.
+	VirtualMachineSnapshotCSIVolumeSyncedCondition = "VirtualMachineSnapshotCSISynced"
+
+	// VirtualMachineSnapshotCSIVolumeSyncPendingReason documents that the
+	// CSI volume sync is pending for this virtual machine snapshot.
+	VirtualMachineSnapshotCSIVolumeSyncPendingReason = "VirtualMachineSnapshotCSISyncPending"
+
+	// VirtualMachineSnapshotCSIVolumeSyncInProgressReason documents that the
+	// CSI volume sync is in progress for this virtual machine snapshot.
+	VirtualMachineSnapshotCSIVolumeSyncInProgressReason = "VirtualMachineSnapshotCSISyncInProgress"
 )
 
 // VirtualMachineSnapshotStatus defines the observed state of VirtualMachineSnapshot.

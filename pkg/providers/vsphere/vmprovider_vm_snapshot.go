@@ -94,8 +94,10 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 		return 0, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
 	}
 
-	err = vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &vmCtx.MoVM)
-	if err != nil {
+	if err := vcVM.Properties(
+		ctx, vcVM.Reference(),
+		[]string{"snapshot", "layoutEx", "config.hardware.device"},
+		&vmCtx.MoVM); err != nil {
 		return 0, err
 	}
 
@@ -139,15 +141,17 @@ func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *v
 }
 
 // markSnapshotInProgress marks a snapshot as currently being processed.
-func (vs *vSphereVMProvider) markSnapshotInProgress(vmCtx pkgctx.VirtualMachineContext, vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
+func (vs *vSphereVMProvider) markSnapshotInProgress(
+	vmCtx pkgctx.VirtualMachineContext,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
 	// Create a patch to set the InProgress condition
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
 
 	// Set the InProgress condition to prevent concurrent operations
 	pkgcnd.MarkFalse(
 		vmSnapshot,
-		vmopv1.VirtualMachineSnapshotReadyCondition,
-		vmopv1.VirtualMachineSnapshotInProgressReason,
+		vmopv1.VirtualMachineSnapshotCreatedCondition,
+		vmopv1.VirtualMachineSnapshotCreationInProgressReason,
 		"snapshot in progress")
 
 	// Use Patch instead of Update to avoid conflicts with snapshot controller
@@ -165,7 +169,11 @@ func (vs *vSphereVMProvider) markSnapshotFailed(vmCtx pkgctx.VirtualMachineConte
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
 
 	// Mark the snapshot as failed
-	pkgcnd.MarkFalse(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition, "SnapshotFailed", "%s", err.Error())
+	pkgcnd.MarkError(
+		vmSnapshot,
+		vmopv1.VirtualMachineSnapshotCreatedCondition,
+		vmopv1.VirtualMachineSnapshotCreationFailedReason,
+		err)
 
 	// Use Patch instead of Update to avoid conflicts with snapshot controller (best effort)
 	if updateErr := vs.k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); updateErr != nil {

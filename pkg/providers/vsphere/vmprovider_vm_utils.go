@@ -48,6 +48,20 @@ func errToConditionReasonAndMessage(err error) (string, string) {
 	}
 }
 
+func errorMessageFromTaskInfoWithKey(taskInfo *vimtypes.TaskInfo, key string) string {
+	if taskInfo == nil || taskInfo.Error == nil || taskInfo.Error.Fault == nil {
+		return ""
+	}
+
+	for _, fm := range taskInfo.Error.Fault.GetMethodFault().FaultMessage {
+		if fm.Key == key {
+			return fm.Message
+		}
+	}
+
+	return ""
+}
+
 func GetVirtualMachineClass(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) (vmopv1.VirtualMachineClass, error) {

@@ -144,6 +144,16 @@ spec:
                 description: ExternalID is a network provider specific identifier
                   assigned to the network interface.
                 type: string
+              ipAssignmentMode:
+                description: |-
+                  IPAssignmentMode indicates how IP addresses are assigned to this interface.
+                  When unset:
+                  - If IP is assigned, it is assumed to be NetworkInterfaceIPAssignmentModeStaticPool.
+                  - If IP is unassigned, it is assumed to be NetworkInterfaceIPAssignmentModeDHCP.
+                  When set to NetworkInterfaceIPAssignmentModeStaticPool, indicates IP is assigned from a static pool.
+                  When set to NetworkInterfaceIPAssignmentModeDHCP, indicates IP should be obtained via DHCP.
+                  When set to NetworkInterfaceIPAssignmentModeNone, indicates no IP assignment should be performed.
+                type: string
               ipConfigs:
                 description: IPConfigs is an array of IP configurations for the network
                   interface.

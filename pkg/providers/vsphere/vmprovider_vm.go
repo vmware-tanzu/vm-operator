@@ -31,11 +31,13 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/serializer/yaml"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/yaml"
+	k8syaml "sigs.k8s.io/yaml"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
@@ -1453,9 +1455,11 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 		return fmt.Errorf("no VM YAML in snapshot config")
 	}
 
-	var vm vmopv1.VirtualMachine
-	if err := yaml.Unmarshal([]byte(vmYAML), &vm); err != nil {
-		vmCtx.Logger.Error(err, "failed to unmarshal the payload stored in the snapshot into a VM type")
+	vmCtx.Logger.V(5).Info("Restoring VM spec from snapshot", "vmYAML", vmYAML)
+	// Unmarshal and convert VM from yaml in snapshot based on API version
+	vm, err := vs.unmarshalAndConvertVMFromYAML(vmCtx, vmYAML)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to unmarshal and convert VM from snapshot")
 		return err
 	}
 
@@ -1492,6 +1496,32 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 	return nil
 }
 
+// unmarshalAndConvertVMFromYAML unmarshals VM YAML from snapshot and converts it
+// to the latest version of VirtualMachine.
+func (vs *vSphereVMProvider) unmarshalAndConvertVMFromYAML(
+	vmCtx pkgctx.VirtualMachineContext,
+	vmYAML string) (*vmopv1.VirtualMachine, error) {
+
+	decUnstructured := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
+
+	unstructuredObj := &unstructured.Unstructured{}
+	if _, _, err := decUnstructured.Decode([]byte(vmYAML), nil, unstructuredObj); err != nil {
+		vmCtx.Logger.Error(err, "failed to decode VM YAML in to Unstructured object")
+		return nil, err
+	}
+
+	// Convert it to newest version of VirtualMachine.
+	vm := &vmopv1.VirtualMachine{}
+	if err := vs.k8sClient.Scheme().Convert(unstructuredObj, vm, nil); err != nil {
+		vmCtx.Logger.Error(err, "failed to convert VM YAML to VirtualMachine",
+			"currentAPIVersion", unstructuredObj.GetAPIVersion(),
+			"desiredAPIVersion", vmopv1.GroupVersion.String())
+		return nil, err
+	}
+
+	return vm, nil
+}
+
 // getVMYamlFromSnapshot extracts the VM YAML from snapshot's ExtraConfig.
 func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
@@ -1515,12 +1545,15 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 		// if the Snapshot has ImportedSnapshotAnnotation, then only perform an approximation of the VM spec
 		_, found := snapCR.GetAnnotations()[vmopv1.ImportedSnapshotAnnotation]
 		if !found {
-			vmCtx.Logger.Info(fmt.Sprintf("Revert is being attempted to a Snapshot which neither has ExtraConfig nor the %s annotation. This is an unsupported functionality.", vmopv1.ImportedSnapshotAnnotation))
+			vmCtx.Logger.Info(fmt.Sprintf("Revert is being attempted to a Snapshot which neither"+
+				"has ExtraConfig nor the %s annotation. This is an unsupported functionality.",
+				vmopv1.ImportedSnapshotAnnotation))
 			return "", nil
 		}
 
 		vmCtx.Logger.Info(
-			"VM does not have the necessary ExtraConfig in the Snapshot. The snapshot is imported, approximating the spec from the VirtualMachineConfigInfo.",
+			"VM does not have the necessary ExtraConfig in the Snapshot. The snapshot is imported, "+
+				"approximating the spec from the VirtualMachineConfigInfo.",
 			"expectedKey", backupapi.VMResourceYAMLExtraConfigKey)
 
 		// For VMs that are imported, we do not have the
@@ -1533,6 +1566,11 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      vmCtx.VM.Name,
 				Namespace: vmCtx.VM.Namespace,
+			},
+			// This to workaround the issue in the test
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "VirtualMachine",
+				APIVersion: vmopv1.GroupVersion.String(),
 			},
 		}
 
@@ -1642,7 +1680,7 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 		vm.Labels = map[string]string{}
 		vm.Annotations = map[string]string{}
 
-		vmYAML, err := yaml.Marshal(vm)
+		vmYAML, err := k8syaml.Marshal(vm)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal VM into YAML %+v: %w", vm, err)
 		}
@@ -2826,7 +2864,7 @@ func (vs *vSphereVMProvider) getConfigSpecFromOVF(
 	}
 
 	var ovfEnvelope ovf.Envelope
-	if err := yaml.Unmarshal(
+	if err := k8syaml.Unmarshal(
 		[]byte(ovfConfigMap.Data["value"]), &ovfEnvelope); err != nil {
 
 		return vimtypes.VirtualMachineConfigSpec{},

@@ -3095,7 +3095,9 @@ func vmTests() {
 
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("snapshot CR is not ready, skipping revert"))
+						Expect(err.Error()).To(ContainSubstring(
+							fmt.Sprintf("skipping revert for not-ready snapshot %q",
+								vmSnapshot.Name)))
 					})
 				})
 
@@ -3112,6 +3114,7 @@ func vmTests() {
 
 						// Create VM so the snapshot reconciliation can run.
 						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+
 						// Set desired snapshot to point to the above snapshot.
 						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
 							APIVersion: vmSnapshot.APIVersion,

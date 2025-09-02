@@ -2975,7 +2975,7 @@ func vmTests() {
 				})
 			})
 
-			Context("Snapshot Revert", func() {
+			Context("Snapshot revert", func() {
 				var (
 					vmSnapshot *vmopv1.VirtualMachineSnapshot
 				)
@@ -3095,7 +3095,9 @@ func vmTests() {
 
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("snapshot CR is not ready, skipping revert"))
+						Expect(err.Error()).To(ContainSubstring(
+							fmt.Sprintf("skipping revert for not-ready snapshot %q",
+								vmSnapshot.Name)))
 					})
 				})
 
@@ -3112,6 +3114,7 @@ func vmTests() {
 
 						// Create VM so the snapshot reconciliation can run.
 						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+
 						// Set desired snapshot to point to the above snapshot.
 						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
 							APIVersion: vmSnapshot.APIVersion,
@@ -4649,7 +4652,7 @@ func vmTests() {
 			})
 		})
 
-		Context("new snapshot workflow driven by VirtualMachineSnapshot CRs", func() {
+		Context("Snapshot create", func() {
 			var (
 				snapshot1 *vmopv1.VirtualMachineSnapshot
 				snapshot2 *vmopv1.VirtualMachineSnapshot
@@ -4720,7 +4723,7 @@ func vmTests() {
 					// First reconcile should process snapshot1, and requeue to process snapshot2.
 					err := createOrUpdateVM(ctx, vmProvider, vm)
 					Expect(err).To(HaveOccurred())
-					Expect(errors.Is(err, pkgerr.RequeueError{})).To(BeTrue())
+					Expect(pkgerr.IsRequeueError(err)).To(BeTrue())
 					Expect(err.Error()).To(ContainSubstring("requeuing to process 1 remaining snapshots"))
 
 					// Check that snapshot1 is ready
@@ -4782,7 +4785,7 @@ func vmTests() {
 
 					err := createOrUpdateVM(ctx, vmProvider, vm)
 					Expect(err).To(HaveOccurred())
-					Expect(errors.As(err, &pkgerr.RequeueError{})).To(BeTrue())
+					Expect(pkgerr.IsRequeueError(err)).To(BeTrue())
 
 					// Neither snapshot should be ready
 					updatedSnapshot1 := &vmopv1.VirtualMachineSnapshot{}

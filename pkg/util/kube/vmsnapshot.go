@@ -15,7 +15,6 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -144,20 +143,26 @@ func CalculateReservedForSnapshotPerStorageClass(
 	return requested, nil
 }
 
-// PatchSnapshotSuccessStatus patches the snapshot status to reflect the success of the snapshot operation.
-func PatchSnapshotSuccessStatus(vmCtx pkgctx.VirtualMachineContext, k8sClient ctrlclient.Client,
-	vmSnapshot *vmopv1.VirtualMachineSnapshot, snapMoRef *vimtypes.ManagedObjectReference) error {
-	snapPatch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
-	vmSnapshot.Status.UniqueID = snapMoRef.Reference().Value
-	vmSnapshot.Status.Quiesced = vmSnapshot.Spec.Quiesce != nil
-	vmSnapshot.Status.PowerState = vmCtx.VM.Status.PowerState
+// PatchSnapshotSuccessStatus patches the snapshot status to reflect the success
+// of the snapshot operation.
+func PatchSnapshotSuccessStatus(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	snap *vmopv1.VirtualMachineSnapshot,
+	snapRef *vimtypes.ManagedObjectReference,
+	vmPowerState vmopv1.VirtualMachinePowerState) error {
 
-	pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+	snapPatch := ctrlclient.MergeFrom(snap.DeepCopy())
+	snap.Status.UniqueID = snapRef.Reference().Value
+	snap.Status.Quiesced = snap.Spec.Quiesce != nil
+	snap.Status.PowerState = vmPowerState
 
-	if err := k8sClient.Status().Patch(vmCtx, vmSnapshot, snapPatch); err != nil {
+	pkgcnd.MarkTrue(snap, vmopv1.VirtualMachineSnapshotReadyCondition)
+
+	if err := k8sClient.Status().Patch(ctx, snap, snapPatch); err != nil {
 		return fmt.Errorf(
 			"failed to patch snapshot status resource %s/%s: err: %w",
-			vmSnapshot.Name, vmSnapshot.Namespace, err)
+			snap.Name, snap.Namespace, err)
 	}
 
 	return nil

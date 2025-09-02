@@ -11,8 +11,6 @@ import (
 	"maps"
 	"math/rand"
 	"path"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -42,7 +40,6 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
-	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -86,6 +83,7 @@ var (
 	ErrPromoteDisks           = vmconfdiskpromo.ErrPromoteDisks
 	ErrCreate                 = pkgerr.NoRequeueNoErr("created vm")
 	ErrUpdate                 = pkgerr.NoRequeueNoErr("updated vm")
+	ErrSnapshotRevert         = pkgerr.RequeueError{Message: "reverted snapshot"}
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -543,7 +541,7 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
-	if len(vmCtx.VM.Spec.Cdrom) == 0 {
+	if cdrom := vmCtx.VM.Spec.Cdrom; len(cdrom) == 0 {
 		return nil // only needed when deploying ISO library items
 	}
 
@@ -808,6 +806,17 @@ func errOrReconcileErr(reconcileErr, err error) error {
 	return err
 }
 
+// updateVirtualMachine performs the following operations in the stated order:
+//
+//  1. Fetch properties
+//  2. Fetch recent tasks
+//  3. Reconcile status
+//  4. Reconcile schema upgrade
+//  5. Reconcile backup state
+//  6. Reconcile snapshot revert
+//  7. Reconcile config
+//  8. Reconcile power state
+//  9. Reconcile snapshot create
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -818,7 +827,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	var reconcileErr error
 
 	//
-	// Fetch properties
+	// 1. Fetch properties
 	//
 	if err := vcVM.Properties(
 		vmCtx,
@@ -830,7 +839,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// Get the recent tasks.
+	// 2. Get the recent tasks.
 	//
 	ctxWithRecentTaskInfo, err := vs.getRecentTaskInfo(vmCtx, vcClient)
 	if err != nil {
@@ -839,17 +848,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithRecentTaskInfo
 
 	//
-	// Reconcile schema upgrade
-	//
-	if err := vs.reconcileSchemaUpgrade(vmCtx); err != nil {
-		if pkgerr.IsNoRequeueError(err) {
-			return errOrReconcileErr(reconcileErr, err)
-		}
-		reconcileErr = getReconcileErr("schema upgrade", reconcileErr, err)
-	}
-
-	//
-	// Reconcile status
+	// 3. Reconcile status
 	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -859,7 +858,21 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// Reconcile backup state (VKS nodes excluded)
+	// 4. Reconcile schema upgrade
+	//
+	//    It is important that this step occurs *after* the status is
+	//    reconciled. This is because reconciling the status builds information
+	//    used during the schema upgrade to push data back into the spec.
+	//
+	if err := vs.reconcileSchemaUpgrade(vmCtx); err != nil {
+		if pkgerr.IsNoRequeueError(err) {
+			return errOrReconcileErr(reconcileErr, err)
+		}
+		reconcileErr = getReconcileErr("schema upgrade", reconcileErr, err)
+	}
+
+	//
+	// 5. Reconcile backup state (VKS nodes excluded)
 	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -869,48 +882,19 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// Check if there are any running snapshot-related tasks and skip reconciliation if so.
-	// This includes create snapshot, delete snapshot, and revert snapshot operations.
-	//
-	if pkgctx.HasVMRunningSnapshotTask(vmCtx) {
-		vmCtx.Logger.Info("Skipping VM reconciliation due to running snapshot operation")
-		return pkgerr.NoRequeueError{Message: "snapshot operation in progress"}
-	}
-
-	//
-	// Check if a snapshot revert annotation is present but no corresponding vSphere task is running.
-	// This handles the case where the vSphere revert task completed but there was an issue with
-	// the VM spec restoration or annotation cleanup.
-	//
-	if _, exists := vmCtx.VM.Annotations[pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey]; exists {
-		vmCtx.Logger.Info("Skipping VM reconciliation since snapshot revert is in progress")
-		return pkgerr.NoRequeueError{Message: "snapshot revert in progress"}
-	}
-
-	//
-	// Reconcile a snapshot restore operation.
-	//
-	// Reverting a VM to a snapshot results in the VM's spec getting
-	// overwritten from the snapshot. For now, we do not allow any
-	// other changes to the VM's spec if a revert is being requested
-	// to avoid having to merge the spec post revert.
+	// 6. Reconcile snapshot revert
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
-		if requeue, err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
+		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
 			if pkgerr.IsNoRequeueError(err) {
 				return errOrReconcileErr(reconcileErr, err)
 			}
 			reconcileErr = getReconcileErr("snapshot revert", reconcileErr, err)
-		} else if requeue {
-			// Snapshot revert was successful and requires requeue for next reconcile
-			// to operate on the updated VM spec. Return any accumulated reconcile errors.
-			vmCtx.Logger.V(4).Info("Snapshot revert completed successfully, requeuing reconcile")
-			return reconcileErr
 		}
 	}
 
 	//
-	// Reconcile config
+	// 7. Reconcile config
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -927,7 +911,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// Reconcile power state
+	// 8. Reconcile power state
 	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -936,13 +920,15 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		reconcileErr = getReconcileErr("power state", reconcileErr, err)
 	}
 
-	// Reconcile the current snapshot of this VM.
+	//
+	// 9. Reconcile snapshot create
+	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
-		if err := vs.reconcileSnapshot(vmCtx, vcVM); err != nil {
+		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
 			if pkgerr.IsNoRequeueError(err) {
-				return err
+				return errOrReconcileErr(reconcileErr, err)
 			}
-			return fmt.Errorf("failed to reconcile the current snapshot: %w", err)
+			reconcileErr = getReconcileErr("snapshot create", reconcileErr, err)
 		}
 	}
 
@@ -1298,507 +1284,6 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 		}
 
 		return err
-	}
-
-	return nil
-}
-
-func (vs *vSphereVMProvider) reconcileSnapshotRevert(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine) (bool, error) {
-
-	vmCtx.Logger.V(4).Info("Reconciling snapshot revert")
-
-	// If no spec.CurrentSnapshot is specified, nothing to revert to.
-	if vmCtx.VM.Spec.CurrentSnapshot == nil {
-		vmCtx.Logger.V(5).Info("No current snapshot specified, skipping revert")
-		return false, nil
-	}
-
-	// Skip snapshot revert processing for VKS/TKG nodes
-	if kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
-		vmCtx.Logger.V(4).Info("Skipping snapshot revert for VKS/TKG node",
-			"vmName", vmCtx.VM.Name, "snapshotName", vmCtx.VM.Spec.CurrentSnapshot.Name)
-		return false, nil
-	}
-	desiredSnapshotName := vmCtx.VM.Spec.CurrentSnapshot.Name
-
-	// Check if the snapshot CR exists.
-	snapCR := &vmopv1.VirtualMachineSnapshot{}
-	if err := vs.k8sClient.Get(
-		vmCtx,
-		ctrlclient.ObjectKey{Name: desiredSnapshotName, Namespace: vmCtx.VM.Namespace},
-		snapCR); err != nil {
-		vmCtx.Logger.Error(err, "Error getting snapshot CR", "snapshotName", desiredSnapshotName)
-		return false, err
-	}
-
-	// Check if the snapshot CR is ready.  This is to ensure that the snapshot
-	// as reconciled by VM operator and is not an out-of-band, or in-progress
-	// snapshot.
-	if !pkgcnd.IsTrue(snapCR, vmopv1.VirtualMachineSnapshotReadyCondition) {
-		vmCtx.Logger.V(5).Info("Snapshot CR is not ready, skipping revert", "snapshotName", desiredSnapshotName)
-		return false, fmt.Errorf("snapshot CR is not ready, skipping revert")
-	}
-
-	// Check if the VM has a snapshot by the desired name.
-	snapObj, err := virtualmachine.FindSnapshot(vmCtx, desiredSnapshotName)
-	if err != nil || snapObj == nil {
-		vmCtx.Logger.Error(err, "Error finding snapshot", "snapshotName", desiredSnapshotName)
-
-		return false, err
-	}
-
-	vmCtx.Logger.V(4).Info("Found desired snapshot for the VM", "snapshotRef", snapObj.Reference().Value)
-
-	if vmCtx.MoVM.Snapshot.CurrentSnapshot.Value == snapObj.Reference().Value {
-		vmCtx.Logger.V(4).Info("Reverting to the current snapshot")
-	}
-
-	vmCtx.Logger.Info("Starting snapshot revert operation",
-		"snapshotName", desiredSnapshotName,
-		"currentSnapshot", vmCtx.MoVM.Snapshot.CurrentSnapshot.Value,
-		"desiredSnapshot", snapObj.Reference().Value)
-
-	// Set the revert in progress annotation.
-	vmCtx.Logger.V(4).Info("Setting revert in progress annotation")
-	vs.setRevertInProgressAnnotation(vmCtx)
-
-	// Perform the actual snapshot revert
-	vmCtx.Logger.V(4).Info("Starting vSphere snapshot revert operation")
-	if err := vs.performSnapshotRevert(vmCtx, vcVM, snapObj, desiredSnapshotName); err != nil {
-		vmCtx.Logger.Error(err, "vSphere snapshot revert failed")
-		return true, err
-	}
-	vmCtx.Logger.Info("vSphere snapshot revert completed successfully")
-
-	// TODO: AKP: We will modify the snapshot workflow to always skip the automatic
-	// registration.  Once we do that, we will have to remove that ExtraConfig key.
-
-	// TODO: Move the parsing VM spec code above this section so we can bail out if
-	// it's not a VM that we can restore.
-
-	// Restore VM spec and metadata from the snapshot.
-	vmCtx.Logger.Info("Starting VM spec and metadata restoration from snapshot")
-
-	if err := vs.restoreVMSpecFromSnapshot(vmCtx, vcVM, snapCR, snapObj); err != nil {
-		vmCtx.Logger.Error(err, "Restoring VM spec and metadata from snapshot failed")
-		return true, err
-	}
-
-	vmCtx.Logger.V(5).Info("VM spec restoration completed",
-		"afterRestoreAnnotations", vmCtx.VM.Annotations,
-		"afterRestoreLabels", vmCtx.VM.Labels,
-		"afterRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshot)
-
-	vmCtx.Logger.Info("Successfully completed snapshot revert and restored VM spec, requeuing for next reconcile",
-		"snapshotName", desiredSnapshotName)
-
-	// Return immediately after successful revert and spec restoration
-	// to trigger requeue. This ensures the next reconcile operates on
-	// the updated VM spec, labels, and annotations. The VM status
-	// will be updated in the subsequent reconcile loop.
-	return true, nil
-}
-
-// setRevertInProgressAnnotation sets the annotation indicating a revert is in progress.
-func (vs *vSphereVMProvider) setRevertInProgressAnnotation(vmCtx pkgctx.VirtualMachineContext) {
-	if vmCtx.VM.Annotations == nil {
-		vmCtx.VM.Annotations = make(map[string]string)
-	}
-	vmCtx.VM.Annotations[pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey] = ""
-}
-
-// performSnapshotRevert executes the actual snapshot revert operation.
-func (vs *vSphereVMProvider) performSnapshotRevert(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	snapObj *vimtypes.ManagedObjectReference,
-	snapshotName string) error {
-
-	// TODO: AKP: Add support for suppresspoweron option.
-	task, err := vcVM.RevertToSnapshot(vmCtx, snapObj.Value, false)
-	if err != nil {
-		vmCtx.Logger.Error(err, "revert to snapshot failed", "snapshotName", snapshotName)
-		return err
-	}
-
-	// Wait for the revert task to complete
-	taskInfo, err := task.WaitForResult(vmCtx)
-	if err != nil {
-		vmCtx.Logger.Error(err, "snapshot revert task failed",
-			"snapshotName", snapshotName, "taskInfo", taskInfo)
-		return err
-	}
-
-	vmCtx.Logger.Info("Successfully reverted VM to snapshot", "snapshotName", snapshotName)
-	return nil
-}
-
-// restoreVMSpecFromSnapshot extracts and applies the VM spec from the snapshot.
-func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	snapCR *vmopv1.VirtualMachineSnapshot,
-	snapObj *vimtypes.ManagedObjectReference) error {
-
-	vmYAML, err := vs.getVMYamlFromSnapshot(vmCtx, vcVM, snapCR, snapObj)
-	if err != nil {
-		vmCtx.Logger.Error(err, "failed to parse VM spec from snapshot")
-		return err
-	}
-
-	// Handle cases where the snapshot doesn't contain any VM spec and metadata.
-	if vmYAML == "" {
-		return fmt.Errorf("no VM YAML in snapshot config")
-	}
-
-	var vm vmopv1.VirtualMachine
-	if err := yaml.Unmarshal([]byte(vmYAML), &vm); err != nil {
-		vmCtx.Logger.Error(err, "failed to unmarshal the payload stored in the snapshot into a VM type")
-		return err
-	}
-
-	// Swap the spec, annotations and labels. We don't need to worry
-	// about pruning fields here since the backup process already
-	// handles that.
-	vmCtx.VM.Spec = *(&vm.Spec).DeepCopy()
-
-	// VM spec should never have spec.currentSnapshot set because the
-	// currentSnapshot is only set during a revert operation. However,
-	// in the off-chance that a snapshot was taken _during_ a revert,
-	// clear it out.
-	vmCtx.VM.Spec.CurrentSnapshot = nil
-
-	// TODO: AKP: We need to merge (and skip) some labels so that we
-	// are not simply reverting to the previous labels. Otherwise, we
-	// risk the VM being impacted after a snapshot revert.
-	vmCtx.VM.Labels = maps.Clone(vm.Labels)
-	vmCtx.VM.Annotations = maps.Clone(vm.Annotations)
-	// Empty out the status.
-	vmCtx.VM.Status = vmopv1.VirtualMachineStatus{}
-
-	// Note that since we swapped out the annotations from the
-	// snapshot, it will implicitly remove the "restore-in-progress"
-	// annotation. But go ahead and clean it up again in case the
-	// snapshot somehow contained this annotation.
-	revertProgressKey := pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey
-	delete(vmCtx.VM.Annotations, revertProgressKey)
-
-	vmCtx.Logger.V(4).Info("VM custom resource has been restored from snapshot",
-		"restoredAnnotations", vmCtx.VM.Annotations,
-		"restoredLabels", vmCtx.VM.Labels)
-
-	return nil
-}
-
-// getVMYamlFromSnapshot extracts the VM YAML from snapshot's ExtraConfig.
-func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine,
-	snapCR *vmopv1.VirtualMachineSnapshot,
-	snap *vimtypes.ManagedObjectReference) (string, error) {
-
-	var moSnap mo.VirtualMachineSnapshot
-
-	// Fetch the config stored with the snapshot.
-	if err := vcVM.Properties(vmCtx, *snap, []string{"config"}, &moSnap); err != nil {
-		vmCtx.Logger.Error(err, "error fetching the snapshot config")
-		return "", err
-	}
-
-	vmCtx.Logger.V(5).Info("Successfully fetched snapshot properties")
-
-	ecList := object.OptionValueList(moSnap.Config.ExtraConfig)
-	raw, exists := ecList.GetString(backupapi.VMResourceYAMLExtraConfigKey)
-	if !exists {
-		// if the Snapshot has ImportedSnapshotAnnotation, then only perform an approximation of the VM spec
-		_, found := snapCR.GetAnnotations()[vmopv1.ImportedSnapshotAnnotation]
-		if !found {
-			vmCtx.Logger.Info(fmt.Sprintf("Revert is being attempted to a Snapshot which neither has ExtraConfig nor the %s annotation. This is an unsupported functionality.", vmopv1.ImportedSnapshotAnnotation))
-			return "", nil
-		}
-
-		vmCtx.Logger.Info(
-			"VM does not have the necessary ExtraConfig in the Snapshot. The snapshot is imported, approximating the spec from the VirtualMachineConfigInfo.",
-			"expectedKey", backupapi.VMResourceYAMLExtraConfigKey)
-
-		// For VMs that are imported, we do not have the
-		// ExtraConfig set in the snapshot. In this case, we
-		// will approximate the spec from the VirtualMachineConfigInfo.
-		// This is a best-effort attempt to restore the VM spec
-		// and metadata from the snapshot.
-
-		vm := vmopv1.VirtualMachine{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      vmCtx.VM.Name,
-				Namespace: vmCtx.VM.Namespace,
-			},
-		}
-
-		vcClient, err := vs.getVcClient(vmCtx)
-		if err != nil {
-			vmCtx.Logger.Error(err, "error fetching vcClient")
-			return "", err
-		}
-
-		vm.Spec = vmopv1.VirtualMachineSpec{
-			InstanceUUID: moSnap.Config.InstanceUuid,
-			BiosUUID:     moSnap.Config.Uuid,
-			GuestID:      vcClient.VimClient().ServiceContent.About.InstanceUuid,
-
-			// Classless and Imageless VMs
-			ClassName: "",
-			ImageName: "",
-			Image:     nil,
-
-			// We only support VM snapshots and affinity policies are not part of VMs.
-			Affinity: nil,
-
-			// It's not possible to construct the crypto spec looking at the VM.
-			Crypto: nil,
-
-			// No PVCs for imported VMs. For day 2, users can convert disks in PVCs using just-in-time PVCs.
-			Volumes: []vmopv1.VirtualMachineVolume{},
-
-			// This is used for slot reservation starting VCF 9.0.  The reverted VM will continue to use the reserved
-			// profile but it won't be part of the spec since the plumbing from VM class to VCFA won't exist (VCFA
-			// expects slots of a class to be reserved if this is set).
-			Reserved: nil,
-
-			// The VM will continue to have the same boot options from the snapshot state.
-			// If user wants to change that, they can specify a custom boot option (boot order).
-			BootOptions: nil,
-
-			// currentSnapshot is only used to trigger a revert, so this must be empty.
-			CurrentSnapshot: nil,
-
-			// Group name is overridden to the VM's current group.
-			// We can't know (or guess) what the group the VM was when the snapshot was taken.
-			GroupName: vmCtx.VM.Spec.GroupName,
-
-			// When Snapshot is taken with Policy A and then VM is updated to use Policy B,
-			// after a revert to Snapshot with Policy A is performed, VM continues to have Policy A.
-			// So, we just simplify by setting the StorageClass to same as the VM's current StorageClass.
-			StorageClass: vmCtx.VM.Spec.StorageClass,
-
-			Advanced: &vmopv1.VirtualMachineAdvancedSpec{
-				ChangeBlockTracking: moSnap.Config.ChangeTrackingEnabled,
-			},
-
-			Network: &vmopv1.VirtualMachineNetworkSpec{
-				HostName: vmCtx.MoVM.Guest.HostName,
-			},
-		}
-
-		// Inferred from the power state of the snapshot
-		// It doesn't matter what the power state of the VM is at the time of revert.
-		// The VM is always reverted in the same power state as the snapshot.
-		snapshot := vmlifecycle.FindSnapshotInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, snap.Value)
-		if snapshot == nil {
-			// weird situation here
-			// the snapshot being processed doesn't exist in the snapshot tree
-			// this shouldn't be happening
-			err := fmt.Errorf("snapshot %s not found in VM Snapshot Tree", snap.Value)
-			vmCtx.Logger.Error(err, "")
-			return "", err
-		}
-		// convert from vimtypes.VirtualMachinePowerState to vmopv1.VirtualMachinePowerState
-		poweredOn := snapshot.State == vimtypes.VirtualMachinePowerStatePoweredOn
-		if poweredOn {
-			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-		} else {
-			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-		}
-
-		// Number of elements in the spec.network.interfaces list must be same as number of VM's NICs from ConfigInfo
-		// Details of each interface (which network does it connect to) is ignored
-		// Networking can be fixed after revert and it is not possible to map the vSphere network to Supervisor networks.
-		devices := object.VirtualDeviceList(moSnap.Config.Hardware.Device)
-		vNICs := devices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
-		if len(vNICs) == 0 {
-			// If no vNICs are defined, then disable network
-			vm.Spec.Network.Disabled = true
-		} else {
-			interfaces := make([]vmopv1.VirtualMachineNetworkInterfaceSpec, len(vNICs))
-			for i := range vNICs {
-				interfaces[i] = vmopv1.VirtualMachineNetworkInterfaceSpec{
-					Name: fmt.Sprintf("eth%d", i),
-				}
-			}
-			vm.Spec.Network.Interfaces = interfaces
-		}
-
-		// MinHardwareVersion is set to the Current Hardware Version of the VM
-		chv, err := strconv.ParseInt(moSnap.Config.Version, 10, 32)
-		if err != nil {
-			vmCtx.Logger.V(5).Info("unable to approximate minimum hardware version", "hwVersionFromSnapshot", moSnap.Config.Version)
-		} else {
-			vm.Spec.MinHardwareVersion = int32(chv)
-		}
-
-		// TODO(future): Labels and Annotations are skipped for now as design discussions are
-		// on storing Labels and Annotations in VC are in progress
-		vm.Labels = map[string]string{}
-		vm.Annotations = map[string]string{}
-
-		vmYAML, err := yaml.Marshal(vm)
-		if err != nil {
-			return "", fmt.Errorf("failed to marshal VM into YAML %+v: %w", vm, err)
-		}
-
-		return string(vmYAML), nil
-	}
-
-	vmCtx.Logger.V(5).Info("Found backup data in snapshot config",
-		"key", backupapi.VMResourceYAMLExtraConfigKey,
-		"dataLength", len(raw))
-
-	// Uncompress and decode the data
-	data, err := pkgutil.TryToDecodeBase64Gzip([]byte(raw))
-	if err != nil {
-		vmCtx.Logger.Error(err, "error in decoding the payload from snapshot")
-		return "", err
-	}
-
-	return data, nil
-}
-
-func (vs *vSphereVMProvider) reconcileSnapshot(
-	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine) error {
-
-	// Find all VirtualMachineSnapshot objects that reference this VM
-	vmSnapshots, err := vs.getVirtualMachineSnapshotsForVM(vmCtx)
-	if err != nil {
-		return err
-	}
-
-	// If no snapshots found, nothing to do
-	if len(vmSnapshots) == 0 {
-		return nil
-	}
-
-	// Skip snapshot processing for VKS/TKG nodes
-	if kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
-		vmCtx.Logger.V(4).Info("Skipping snapshot processing for VKS/TKG node",
-			"vmName", vmCtx.VM.Name)
-		return nil
-	}
-
-	// Sort snapshots by creation timestamp to ensure consistent ordering
-	sort.Slice(vmSnapshots, func(i, j int) bool {
-		return vmSnapshots[i].CreationTimestamp.Before(&vmSnapshots[j].CreationTimestamp)
-	})
-
-	// Find the first (oldest) snapshot that is not ready
-	// We process snapshots in chronological order, one at a time
-	// Also calculate the total pending snapshots so we can requeue the
-	// request to continue processing other snapshots.
-	var snapshotToProcess *vmopv1.VirtualMachineSnapshot
-	totalPendingSnapshots := 0
-	for _, snapshot := range vmSnapshots {
-		// Skip snapshots that are already ready
-		if pkgcnd.IsTrue(&snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
-			vmCtx.Logger.V(4).Info("Skipping snapshot that is already ready",
-				"snapshotName", snapshot.Name)
-			continue
-		}
-
-		if snapshot.DeletionTimestamp.IsZero() {
-			totalPendingSnapshots++
-		}
-
-		// Found the first snapshot that needs processing
-		if snapshotToProcess == nil {
-			snapshotToProcess = &snapshot
-		}
-	}
-
-	// If no snapshot needs processing, we're done
-	if snapshotToProcess == nil {
-		vmCtx.Logger.V(4).Info("All snapshots are ready or being deleted, nothing to process")
-		return nil
-	}
-
-	// If the oldest snapshot is being deleted, wait for it to finish.
-	if !snapshotToProcess.DeletionTimestamp.IsZero() {
-		vmCtx.Logger.V(4).Info("Snapshot is being deleted, waiting for completion",
-			"snapshotName", snapshotToProcess.Name)
-		return nil
-	}
-
-	// If the oldest snapshot is not owned by this VM, wait for the
-	// owner reference to be added.  The owner ref will requeue a reconcile.
-	owner, err := controllerutil.HasOwnerReference(
-		snapshotToProcess.OwnerReferences,
-		vmCtx.VM,
-		vs.k8sClient.Scheme())
-	if err != nil {
-		vmCtx.Logger.Error(err, "error in checking if snapshot is owned by the VM")
-		return err
-	}
-
-	if !owner {
-		vmCtx.Logger.V(4).Info("Snapshot is not owned by the VM, waiting for OwnerRef update",
-			"snapshotName", snapshotToProcess.Name)
-		return nil
-	}
-
-	// If the oldest snapshot is in progress, wait for it to complete
-	if pkgcnd.GetReason(snapshotToProcess, vmopv1.VirtualMachineSnapshotReadyCondition) ==
-		vmopv1.VirtualMachineSnapshotInProgressReason {
-		vmCtx.Logger.V(4).Info("Snapshot is in progress, waiting for completion",
-			"snapshotName", snapshotToProcess.Name)
-		return nil
-	}
-
-	// Mark the snapshot as in progress before starting the operation to
-	// prevent concurrent snapshots.
-	if err := vs.markSnapshotInProgress(vmCtx, snapshotToProcess); err != nil {
-		vmCtx.Logger.Error(err, "Failed to mark snapshot as in progress", "snapshotName", snapshotToProcess.Name)
-		return err
-	}
-
-	snapArgs := virtualmachine.SnapshotArgs{
-		VMCtx:      vmCtx,
-		VcVM:       vcVM,
-		VMSnapshot: *snapshotToProcess,
-	}
-
-	vmCtx.Logger.Info("Creating snapshot on vSphere",
-		"snapshotName", snapshotToProcess.Name)
-	snapMoRef, err := virtualmachine.SnapshotVirtualMachine(snapArgs)
-	if err != nil {
-		// Mark the snapshot as failed and clear in-progress status
-		// TODO: we wait for in-progress snapshots to complete when
-		// taking a snapshot. So, if we are unable to clear the
-		// in-progress condition because status patching fails, we
-		// will forever be waiting.
-		vs.markSnapshotFailed(vmCtx, snapshotToProcess, err)
-		vmCtx.Logger.Error(err, "Failed to create snapshot", "snapshotName", snapshotToProcess.Name)
-		return err
-	}
-
-	// Update the snapshot status with the successful result
-	if err = kubeutil.PatchSnapshotSuccessStatus(vmCtx, vs.k8sClient, snapshotToProcess, snapMoRef); err != nil {
-		vmCtx.Logger.Error(err, "Failed to update snapshot status", "snapshotName", snapshotToProcess.Name)
-		return err
-	}
-
-	// Successfully processed one snapshot
-	// Check if there are more snapshots to process after this one
-	totalPendingSnapshots--
-	vmCtx.Logger.Info("Successfully completed snapshot operation",
-		"snapshotName", snapshotToProcess.Name,
-		"remainingSnapshots", totalPendingSnapshots)
-
-	// If there are more pending snapshots, requeue to process the next one
-	if totalPendingSnapshots > 0 {
-		vmCtx.Logger.Info("Requeuing to process remaining snapshots",
-			"snapshotName", snapshotToProcess.Name,
-			"remainingSnapshots", totalPendingSnapshots)
-		return fmt.Errorf("requeuing to process %d remaining snapshots: %w", totalPendingSnapshots, pkgerr.RequeueError{})
 	}
 
 	return nil

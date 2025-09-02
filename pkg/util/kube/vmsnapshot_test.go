@@ -339,7 +339,12 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 			})
 
 			It("succeeds", func() {
-				err := kubeutil.PatchSnapshotSuccessStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef)
+				err := kubeutil.PatchSnapshotSuccessStatus(
+					vmCtx,
+					k8sClient,
+					vmSnapshot,
+					snapMoRef,
+					vmCtx.VM.Spec.PowerState)
 				Expect(err).ToNot(HaveOccurred())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}

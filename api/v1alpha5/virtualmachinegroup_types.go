@@ -21,6 +21,11 @@ const (
 	// VirtualMachineGroupMemberConditionPlacementReady indicates that the
 	// member has a placement decision ready.
 	VirtualMachineGroupMemberConditionPlacementReady = "PlacementReady"
+
+	// VirtualMachineGroupMemberAlreadyPlacedReason indicates that the
+	// group member already exists on the back-end infrastructure
+	// (e.g., vSphere) and therefore does not require placement.
+	VirtualMachineGroupMemberAlreadyPlacedReason = "AlreadyPlaced"
 )
 
 // +kubebuilder:object:generate=false

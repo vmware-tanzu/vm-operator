@@ -81,7 +81,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 func MemberToGroupMapperFn(ctx context.Context) handler.MapFunc {
 
 	return func(ctx context.Context, o client.Object) []reconcile.Request {
-		memberObj, ok := o.(vmopv1.VirtualMachineOrGroup)
+		memberObj, ok := o.(vmopv1util.VirtualMachineOrGroup)
 		if !ok {
 			panic(fmt.Sprintf("Expected VirtualMachineOrGroup, but got %T", o))
 		}
@@ -365,7 +365,7 @@ func (r *Reconciler) reconcileMember(
 	applyPowerOnTime time.Time,
 ) error {
 
-	var obj vmopv1.VirtualMachineOrGroup
+	var obj vmopv1util.VirtualMachineOrGroup
 	switch member.Kind {
 	case vmKind:
 		obj = &vmopv1.VirtualMachine{}
@@ -426,7 +426,7 @@ func (r *Reconciler) reconcileMember(
 		return nil
 	}
 
-	patch := client.MergeFrom(obj.DeepCopyObject().(vmopv1.VirtualMachineOrGroup))
+	patch := client.MergeFrom(obj.DeepCopyObject().(vmopv1util.VirtualMachineOrGroup))
 
 	if err := controllerutil.SetOwnerReference(
 		ctx.VMGroup,

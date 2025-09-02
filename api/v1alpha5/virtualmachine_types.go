@@ -1373,11 +1373,11 @@ func (vm *VirtualMachine) SetAnnotation(k, v string) {
 	vm.Annotations[k] = v
 }
 
-func (vm *VirtualMachine) NamespacedName() string {
+func (vm VirtualMachine) NamespacedName() string {
 	return vm.Namespace + "/" + vm.Name
 }
 
-func (vm *VirtualMachine) GetConditions() []metav1.Condition {
+func (vm VirtualMachine) GetConditions() []metav1.Condition {
 	return vm.Status.Conditions
 }
 
@@ -1385,8 +1385,8 @@ func (vm *VirtualMachine) SetConditions(conditions []metav1.Condition) {
 	vm.Status.Conditions = conditions
 }
 
-func (vm *VirtualMachine) GetMemberKind() string {
-	return vm.Kind
+func (vm VirtualMachine) GetMemberKind() string {
+	return "VirtualMachine"
 }
 
 func (vm VirtualMachine) GetGroupName() string {

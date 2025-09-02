@@ -6,7 +6,6 @@ package v1alpha2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -22,23 +21,6 @@ const (
 	// member has a placement decision ready.
 	VirtualMachineGroupMemberConditionPlacementReady = "PlacementReady"
 )
-
-// +kubebuilder:object:generate=false
-
-// VirtualMachineOrGroup is an internal interface that represents a
-// VirtualMachine or VirtualMachineGroup object.
-type VirtualMachineOrGroup interface {
-	metav1.Object
-	runtime.Object
-	DeepCopyObject() runtime.Object
-	GetMemberKind() string
-	GetGroupName() string
-	SetGroupName(value string)
-	GetPowerState() VirtualMachinePowerState
-	SetPowerState(value VirtualMachinePowerState)
-	GetConditions() []metav1.Condition
-	SetConditions([]metav1.Condition)
-}
 
 // GroupMember describes a member of a VirtualMachineGroup.
 type GroupMember struct {
@@ -284,11 +266,11 @@ type VirtualMachineGroup struct {
 	Status VirtualMachineGroupStatus `json:"status,omitempty"`
 }
 
-func (vmg *VirtualMachineGroup) GetMemberKind() string {
-	return vmg.Kind
+func (vmg VirtualMachineGroup) GetMemberKind() string {
+	return "VirtualMachineGroup"
 }
 
-func (vmg *VirtualMachineGroup) GetGroupName() string {
+func (vmg VirtualMachineGroup) GetGroupName() string {
 	return vmg.Spec.GroupName
 }
 
@@ -296,7 +278,7 @@ func (vmg *VirtualMachineGroup) SetGroupName(value string) {
 	vmg.Spec.GroupName = value
 }
 
-func (vmg *VirtualMachineGroup) GetPowerState() VirtualMachinePowerState {
+func (vmg VirtualMachineGroup) GetPowerState() VirtualMachinePowerState {
 	// VirtualMachineGroup does not have a power state recorded in its status.
 	return ""
 }
@@ -305,7 +287,7 @@ func (vmg *VirtualMachineGroup) SetPowerState(value VirtualMachinePowerState) {
 	vmg.Spec.PowerState = value
 }
 
-func (vmg *VirtualMachineGroup) GetConditions() []metav1.Condition {
+func (vmg VirtualMachineGroup) GetConditions() []metav1.Condition {
 	return vmg.Status.Conditions
 }
 
@@ -313,7 +295,7 @@ func (vmg *VirtualMachineGroup) SetConditions(conditions []metav1.Condition) {
 	vmg.Status.Conditions = conditions
 }
 
-func (m *VirtualMachineGroupMemberStatus) GetConditions() []metav1.Condition {
+func (m VirtualMachineGroupMemberStatus) GetConditions() []metav1.Condition {
 	return m.Conditions
 }
 

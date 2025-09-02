@@ -443,6 +443,20 @@ func (r *Reconciler) reconcileMember(
 	}
 
 	if member.Kind == vmKind {
+		vm := obj.(*vmopv1.VirtualMachine)
+
+		// If the VM already exists, set the member condition appropriately.
+		if vm.Status.UniqueID != "" {
+			if !conditions.IsTrue(ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady) {
+				conditions.Set(ms, &metav1.Condition{
+					Type:    vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  vmopv1.VirtualMachineGroupMemberAlreadyPlacedReason,
+					Message: "VM already placed",
+				})
+			}
+		}
+
 		vmStatusPowerState := obj.GetPowerState()
 
 		if vmStatusPowerState == "" {
@@ -467,7 +481,6 @@ func (r *Reconciler) reconcileMember(
 			goto patchMember
 		}
 
-		vm := obj.(*vmopv1.VirtualMachine)
 		vmSpecMatchGroup := vm.Spec.PowerState == ctx.VMGroup.Spec.PowerState
 		if updatePowerState || vmSpecMatchGroup {
 			// VM power state is syncing with group or pending status update.
@@ -526,6 +539,14 @@ patchMember:
 	return nil
 }
 
+// reconcilePlacement reconciles and updates the placement status of
+// the members of the group and its children groups.
+//
+// It does so by collecting all the members across all groups that
+// need to be placed and by calling into the VM provider to get
+// placement recommendations from DRS. Group member statuses are then
+// updated with the placement recommendations. VMs members that
+// already exist are skipped from placement.
 func (r *Reconciler) reconcilePlacement(
 	ctx *pkgctx.VirtualMachineGroupContext) error {
 
@@ -633,7 +654,17 @@ func (r *Reconciler) getVMForPlacement(
 		return nil, fmt.Errorf("VM %q is assigned to group %q instead of expected %q", vmName, gn, vmGroup.Name)
 	}
 
-	// TODO: Probably need to check more stuff on the VM?
+	// If the VM has uniqueID set, then we don't need to do placement
+	// for it.
+	//
+	// Preexisting VMs would already be reconciled and thus will have
+	// MemberLinked condition set. Therefore, will not be part of
+	// placement. But on the off chance that the condition doesn't
+	// exist, we still check for existing VMs explicitly.
+	if vm.Status.UniqueID != "" {
+		return nil, nil
+	}
+
 	return vm, nil
 }
 

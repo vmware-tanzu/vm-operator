@@ -35,7 +35,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
@@ -285,13 +287,11 @@ func (r *Reconciler) publishVirtualMachine(ctx *pkgctx.VirtualMachinePublishRequ
 	vmPublishReq := ctx.VMPublishRequest
 	// Check if the source and target is valid
 	if err := r.checkIsSourceValid(ctx); err != nil {
-		ctx.Logger.Error(err, "failed to check if source is valid")
-		return err
+		return fmt.Errorf("failed to check if source is valid: %w", err)
 	}
 
 	if err := r.checkIsTargetValid(ctx); err != nil {
-		ctx.Logger.Error(err, "failed to check if target is valid")
-		return err
+		return fmt.Errorf("failed to check if target is valid: %w", err)
 	}
 
 	// In case we mark Upload condition to true when checking target, return early.
@@ -458,6 +458,16 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 			return err
 		}
 		contentLibraryType = contentLibraryV1A2.Spec.Type
+
+		if contentLibraryType == imgregv1.LibraryTypeInventory {
+			// Check if quota validation is needed
+			if metav1.HasLabel(contentLibraryV1A2.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
+
+				if err := r.checkContentLibraryQuota(ctx); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	ctx.Logger.Info("target location has library type: %q", contentLibraryType)
 
@@ -509,6 +519,57 @@ func (r *Reconciler) getItemByName(ctx *pkgctx.VirtualMachinePublishRequestConte
 	}
 
 	return r.VMProvider.GetItemFromLibraryByName(ctx, contentLibrary, itemName)
+}
+
+func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
+	vmPubReq := ctx.VMPublishRequest
+	// If this annotation is not present on the VM Publish Request, then we have not begun quota
+	// validation. We need to apply this annotation along with the requested capacity annotation
+	// and await processing.
+	if !metav1.HasAnnotation(vmPubReq.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
+		vm := ctx.VM
+		if vm.Status.Storage != nil && vm.Status.Storage.Total != nil {
+			if vmPubReq.Annotations == nil {
+				vmPubReq.Annotations = make(map[string]string)
+			}
+			vmPubReq.Annotations[pkgconst.AsyncQuotaPerformCheckAnnotationKey] = "true"
+			vmPubReq.Annotations[pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey] = vm.Status.Storage.Total.String()
+
+			return pkgerr.NoRequeueNoErr("quota validation is needed for this request")
+		}
+		return fmt.Errorf("unable get storage total for VM %q for quota validation", vm.Name)
+	}
+	// Check for the existence of the requested-quota annotation. If this annotation is present, then we are
+	// currently awaiting quota verification, and we should halt any further processing. Ideally we should
+	// not have reconciled again until the annotation is removed, but in case the request is modified independently
+	// of the quota validation, we check.
+	if metav1.HasAnnotation(vmPubReq.ObjectMeta, pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey) {
+		return pkgerr.NoRequeueNoErr("quota validation has not completed for this request")
+	}
+
+	// Check for the existence of the quota check status annotation. If this annotation is present, and the
+	// requested-quota annotation is not present, then this signifies that the quota check is complete. We
+	// expect a value of 'Failed' with the presence of this annotation.
+	if status, ok := vmPubReq.Annotations[pkgconst.AsyncQuotaCheckStatusAnnotationKey]; ok {
+		if status == pkgconst.AsyncQuotaCheckStatusAnnotationValueFailed {
+			message := vmPubReq.Annotations[pkgconst.AsyncQuotaCheckMessageAnnotationKey]
+			err := pkgerr.NoRequeueError{
+				Message: fmt.Sprintf("quota validation has failed with message %q", message),
+			}
+			conditions.MarkError(vmPubReq,
+				vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+				vmopv1.TargetContentLibraryFailedQuotaCheckReason,
+				err)
+
+			return err
+		}
+		return pkgerr.NoRequeueError{
+			Message: fmt.Sprintf("quota validation has completed with an unexpected status: %s", status),
+		}
+	}
+
+	// Quota check has completed successfully. Continue processing as normal.
+	return nil
 }
 
 // checkIsImageAvailable checks if the published VirtualMachineImage resource is available in the cluster.
@@ -941,8 +1002,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 	if shouldPublish {
 		err := r.publishVirtualMachine(ctx)
 		if err != nil {
-			ctx.Logger.Error(err, "failed to publish VirtualMachine")
-			return ctrl.Result{}, fmt.Errorf("failed to publish VirtualMachine: %w", err)
+			return pkgerr.ResultFromError(err)
 		}
 		return requeueResult(ctx), nil
 	}

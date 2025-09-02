@@ -14,6 +14,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
@@ -270,6 +272,100 @@ func unitTestsReconcile() {
 					// Update TargetValid condition.
 					Expect(conditions.IsFalse(vmpub,
 						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+				})
+			})
+		})
+
+		When("target is subject to quota validation", func() {
+			BeforeEach(func() {
+				clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+				clv1a2.Labels = map[string]string{
+					pkgconst.AsyncQuotaPerformCheckAnnotationKey: "true",
+				}
+				initObjects = append(initObjects, clv1a2)
+
+				vm.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
+					Total: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+			})
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.InventoryContentLibrary = true
+				})
+			})
+			When("validation has not been initiated", func() {
+				When("vm status.storage is empty", func() {
+					BeforeEach(func() {
+						vm.Status.Storage = nil
+					})
+					It("should leave the request untouched and return an error", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).To(HaveOccurred())
+						Expect(vmpub.Annotations).To(BeEmpty())
+					})
+				})
+
+				When("vm status.storage is not empty", func() {
+					It("should apply the correct annotations and not return an error", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(vmpub.Annotations).NotTo(BeEmpty())
+
+						Expect(vmpub.Annotations).To(HaveKeyWithValue(
+							pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
+						Expect(vmpub.Annotations).To(HaveKeyWithValue(
+							pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, vm.Status.Storage.Total.String()))
+					})
+				})
+			})
+
+			When("validation has been initiated, but has yet to complete", func() {
+				BeforeEach(func() {
+					vmpub.Annotations = map[string]string{
+						pkgconst.AsyncQuotaPerformCheckAnnotationKey:           "true",
+						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey: vm.Status.Storage.Total.String(),
+					}
+				})
+
+				It("should leave the request untouched and not return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(vmpub.Annotations).NotTo(BeEmpty())
+
+					Expect(vmpub.Annotations).To(HaveKeyWithValue(
+						pkgconst.AsyncQuotaPerformCheckAnnotationKey, "true"))
+					Expect(vmpub.Annotations).To(HaveKeyWithValue(
+						pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey, vm.Status.Storage.Total.String()))
+				})
+			})
+
+			When("validation has completed with a failed status", func() {
+				BeforeEach(func() {
+					vmpub.Annotations = map[string]string{
+						pkgconst.AsyncQuotaPerformCheckAnnotationKey: "true",
+						pkgconst.AsyncQuotaCheckStatusAnnotationKey:  "Failed",
+						pkgconst.AsyncQuotaCheckMessageAnnotationKey: "Requested capacity exceeds project foo quota limit.",
+					}
+				})
+
+				It("should mark the target as invalid", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+				})
+			})
+
+			When("validation has completed successfully", func() {
+				BeforeEach(func() {
+					vmpub.Annotations = map[string]string{
+						pkgconst.AsyncQuotaPerformCheckAnnotationKey: "true",
+					}
+				})
+
+				It("should not return an error to allow continued processing", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).NotTo(HaveOccurred())
 				})
 			})
 		})

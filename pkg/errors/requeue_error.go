@@ -5,6 +5,7 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
@@ -14,12 +15,26 @@ import (
 // requeued with the provided value, otherwise the request is requeued
 // immediately.
 type RequeueError struct {
-	After time.Duration
+	After   time.Duration
+	Message string
 }
 
 func (e RequeueError) Error() string {
-	if e.After == 0 {
-		return "requeue immediately"
+	if e.Message == "" {
+		if e.After == 0 {
+			return "requeue immediately"
+		}
+		return fmt.Sprintf("requeue after %s", e.After)
 	}
-	return fmt.Sprintf("requeue after %s", e.After)
+	if e.After == 0 {
+		return "requeue immediately: " + e.Message
+	}
+	return fmt.Sprintf("requeue after %s: %s", e.After, e.Message)
+}
+
+// IsRequeueError returns true if the error or a nested error is a
+// RequeueError.
+func IsRequeueError(err error) bool {
+	var requeue RequeueError
+	return errors.As(err, &requeue)
 }

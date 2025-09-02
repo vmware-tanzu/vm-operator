@@ -1366,6 +1366,13 @@ type VirtualMachine struct {
 	Status VirtualMachineStatus `json:"status,omitempty"`
 }
 
+func (vm *VirtualMachine) SetAnnotation(k, v string) {
+	if vm.Annotations == nil {
+		vm.Annotations = map[string]string{}
+	}
+	vm.Annotations[k] = v
+}
+
 func (vm *VirtualMachine) NamespacedName() string {
 	return vm.Namespace + "/" + vm.Name
 }
@@ -1382,7 +1389,7 @@ func (vm *VirtualMachine) GetMemberKind() string {
 	return vm.Kind
 }
 
-func (vm *VirtualMachine) GetGroupName() string {
+func (vm VirtualMachine) GetGroupName() string {
 	return vm.Spec.GroupName
 }
 
@@ -1390,7 +1397,7 @@ func (vm *VirtualMachine) SetGroupName(value string) {
 	vm.Spec.GroupName = value
 }
 
-func (vm *VirtualMachine) GetPowerState() VirtualMachinePowerState {
+func (vm VirtualMachine) GetPowerState() VirtualMachinePowerState {
 	return vm.Status.PowerState
 }
 

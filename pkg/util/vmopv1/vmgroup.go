@@ -9,12 +9,29 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 )
+
+// VirtualMachineOrGroup is an internal interface that represents a
+// VirtualMachine or VirtualMachineGroup object.
+type VirtualMachineOrGroup interface {
+	metav1.Object
+	runtime.Object
+	DeepCopyObject() runtime.Object
+	GetMemberKind() string
+	GetGroupName() string
+	SetGroupName(value string)
+	GetPowerState() vmopv1.VirtualMachinePowerState
+	SetPowerState(value vmopv1.VirtualMachinePowerState)
+	GetConditions() []metav1.Condition
+	SetConditions([]metav1.Condition)
+}
 
 // RetrieveVMGroupMembers retrieves all the group linked VMs under a VM group recursively.
 // An error is return if a loop is detected among nested groups or a group has duplicated members.
@@ -64,7 +81,7 @@ func RetrieveVMGroupMembers(ctx context.Context, c ctrlclient.Client,
 // If the member has no group name, the group linked condition is deleted.
 func UpdateGroupLinkedCondition(
 	ctx context.Context,
-	member vmopv1.VirtualMachineOrGroup,
+	member VirtualMachineOrGroup,
 	c ctrlclient.Client) error {
 
 	if member.GetGroupName() == "" {
@@ -123,4 +140,44 @@ func UpdateGroupLinkedCondition(
 	)
 
 	return nil
+}
+
+// RemoveStaleGroupOwnerRef removes an object's owner reference to the previous
+// group if the object's group name is deleted or changed to a different group.
+// Returns true if any owner references were modified, false otherwise.
+func RemoveStaleGroupOwnerRef(newObj, oldObj VirtualMachineOrGroup) bool {
+
+	var (
+		oldGroupName = oldObj.GetGroupName()
+		newGroupName = newObj.GetGroupName()
+	)
+
+	if oldGroupName == "" || oldGroupName == newGroupName {
+		return false
+	}
+
+	// Object's group name is deleted or changed to a different group name.
+	// Remove the owner reference to the old group if it exists in new object.
+
+	filteredRefs := make(
+		[]metav1.OwnerReference,
+		0,
+		len(newObj.GetOwnerReferences()),
+	)
+	oldGroupRefExists := false
+
+	for _, ref := range newObj.GetOwnerReferences() {
+		if ref.Kind == "VirtualMachineGroup" && ref.Name == oldGroupName {
+			oldGroupRefExists = true
+			continue
+		}
+		filteredRefs = append(filteredRefs, ref)
+	}
+
+	if oldGroupRefExists {
+		newObj.SetOwnerReferences(filteredRefs)
+		return true
+	}
+
+	return false
 }

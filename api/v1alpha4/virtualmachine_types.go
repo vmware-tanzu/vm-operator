@@ -1268,11 +1268,11 @@ type VirtualMachine struct {
 	Status VirtualMachineStatus `json:"status,omitempty"`
 }
 
-func (vm *VirtualMachine) NamespacedName() string {
+func (vm VirtualMachine) NamespacedName() string {
 	return vm.Namespace + "/" + vm.Name
 }
 
-func (vm *VirtualMachine) GetConditions() []metav1.Condition {
+func (vm VirtualMachine) GetConditions() []metav1.Condition {
 	return vm.Status.Conditions
 }
 
@@ -1280,11 +1280,11 @@ func (vm *VirtualMachine) SetConditions(conditions []metav1.Condition) {
 	vm.Status.Conditions = conditions
 }
 
-func (vm *VirtualMachine) GetMemberKind() string {
-	return vm.Kind
+func (vm VirtualMachine) GetMemberKind() string {
+	return "VirtualMachine"
 }
 
-func (vm *VirtualMachine) GetGroupName() string {
+func (vm VirtualMachine) GetGroupName() string {
 	return vm.Spec.GroupName
 }
 
@@ -1292,7 +1292,7 @@ func (vm *VirtualMachine) SetGroupName(value string) {
 	vm.Spec.GroupName = value
 }
 
-func (vm *VirtualMachine) GetPowerState() VirtualMachinePowerState {
+func (vm VirtualMachine) GetPowerState() VirtualMachinePowerState {
 	return vm.Status.PowerState
 }
 

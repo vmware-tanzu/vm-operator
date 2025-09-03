@@ -112,6 +112,10 @@ const (
 	// VirtualMachinePublishRequestManagedByLabelKey is the label key to identify VirtualMachinePublishRequest that
 	// is created as a part of the VirtualMachineGroupPublishRequest.
 	VirtualMachinePublishRequestManagedByLabelKey = GroupName + "/virtualmachinepublishrequest-managed-by"
+
+	// VirtualMachinePublishRequestUUIDLabelKey is the label key to store UUID of the VirtualMachinePublishRequest that
+	// clones a source virtual machine, as a virtual machine template.
+	VirtualMachinePublishRequestUUIDLabelKey = GroupName + "/virtualmachinepublishrequest-uuid"
 )
 
 // VirtualMachinePublishRequestSource is the source of a publication request,

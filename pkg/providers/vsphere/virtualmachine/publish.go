@@ -75,8 +75,6 @@ func CloneVM(
 	cl *imgregv1.ContentLibrary,
 	storagePolicyID, actID string) (string, error) {
 
-	descriptionPrefix := fmt.Sprintf(itemDescriptionFormat, string(vmPubReq.UID))
-
 	targetName := vmPubReq.Status.TargetRef.Item.Name
 
 	folderRef := vimtypes.ManagedObjectReference{
@@ -95,7 +93,13 @@ func CloneVM(
 		},
 		Template: true,
 		Config: &vimtypes.VirtualMachineConfigSpec{
-			Annotation: descriptionPrefix + vmPubReq.Status.TargetRef.Item.Description,
+			Annotation: vmPubReq.Status.TargetRef.Item.Description,
+			ExtraConfig: []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{
+					Key:   vmopv1.VirtualMachinePublishRequestUUIDLabelKey,
+					Value: string(vmPubReq.UID),
+				},
+			},
 		},
 	}
 

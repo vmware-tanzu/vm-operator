@@ -27,6 +27,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -459,7 +460,7 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 		}
 		contentLibraryType = contentLibraryV1A2.Spec.Type
 	}
-	ctx.Logger.Info("target location has library type: %q", contentLibraryType)
+	ctx.Logger.Info("target location type", "LibraryType", contentLibraryType)
 
 	item, err := r.getItemByName(ctx, contentLibraryType, string(ctx.ContentLibrary.Spec.UUID), targetItemName)
 
@@ -754,8 +755,10 @@ func (r *Reconciler) getUploadedItemID(ctx *pkgctx.VirtualMachinePublishRequestC
 	return parseItemIDFromTaskResult(task.Result)
 }
 
-// isItemCorrelatedWithVMPub checks if the item is correlated with this VM Publish request
-// by checking the item description. We add the vmPub uuid to the target item description when publishing.
+// isItemCorrelatedWithVMPub checks if the item is correlated with this VM
+// Publish request. It checks item's description for vmPub UUID if the item
+// is a CLS supported library item. It checks item's extraConfig for vmPub UUID
+// if the item is a VM template. The vmPub UUID is added during publishing.
 //
 // Currently, there is no easy way to link published item to the VM publish request
 // other than activation ID.
@@ -769,8 +772,22 @@ func (r *Reconciler) isItemCorrelatedWithVMPub(
 
 	switch tItem := item.(type) {
 	case *object.VirtualMachine:
-		// TODO(abaruni) Verify if VM is associated with this publish request
-		return tItem.Reference().Value, true, nil
+		var o mo.VirtualMachine
+		if err := tItem.Properties(ctx,
+			tItem.Reference(),
+			[]string{"config.extraConfig"},
+			&o); err != nil {
+			return "", false, err
+		}
+		for _, opt := range o.Config.ExtraConfig {
+			if optKV := opt.GetOptionValue(); optKV != nil &&
+				optKV.Key == vmopv1.VirtualMachinePublishRequestUUIDLabelKey {
+				if optKV.Value.(string) == string(ctx.VMPublishRequest.UID) {
+					return tItem.Reference().Value, true, nil
+				}
+				return "", false, nil
+			}
+		}
 	case *library.Item:
 		if tItem.Description != nil {
 			descriptions := itemDescriptionReg.FindStringSubmatch(*tItem.Description)

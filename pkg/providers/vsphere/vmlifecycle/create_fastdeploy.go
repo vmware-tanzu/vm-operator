@@ -18,6 +18,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -151,6 +152,13 @@ func fastDeploy(
 			}
 		}
 	}
+
+	// If a VM template is cloned via a VM publish request, the VM publish
+	// request UUID is added to the extraConfig. The UUID is removed when the
+	// template is used to clone a new VM.
+	createArgs.ConfigSpec.ExtraConfig = pkgutil.OptionValues(
+		createArgs.ConfigSpec.ExtraConfig).Delete(
+		vmopv1.VirtualMachinePublishRequestUUIDLabelKey)
 
 	// If any error occurs after this point, the newly created VM directory and
 	// its contents need to be cleaned up.

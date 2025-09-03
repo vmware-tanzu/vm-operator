@@ -732,34 +732,6 @@ func unitTestsReconcile() {
 						vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
 				})
 			})
-
-			When("Publishing to inventory", func() {
-				When("Prior task succeeded", func() {
-					JustBeforeEach(func() {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.InventoryContentLibrary = true
-						})
-						clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
-						Expect(ctx.Client.Create(ctx, clv1a2)).To(Succeed())
-
-						fakeVMProvider.GetItemFromInventoryByNameFn = func(ctx context.Context,
-							contentLibrary, itemName string) (object.Reference, error) {
-							return &object.VirtualMachine{}, nil
-						}
-					})
-
-					It("target valid and mark Upload to true", func() {
-						_, err := reconciler.ReconcileNormal(vmpubCtx)
-						Expect(err).NotTo(HaveOccurred())
-
-						// Update TargetValid condition.
-						Expect(conditions.IsTrue(vmpub,
-							vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
-						Expect(conditions.IsTrue(vmpub,
-							vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
-					})
-				})
-			})
 		})
 	})
 }

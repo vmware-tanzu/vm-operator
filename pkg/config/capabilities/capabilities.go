@@ -33,7 +33,7 @@ const (
 
 	// CapabilityKeyBringYourOwnKeyProvider is the name of capability key
 	// defined in the capabilities ConfigMap and/or CRD.
-	CapabilityKeyBringYourOwnKeyProvider = "Bring_Your_Own_Key_Provider_Supported"
+	CapabilityKeyBringYourOwnKeyProvider = "supports_BYOK_encryption"
 
 	// CapabilityKeyTKGMultipleContentLibraries is the name of capability key
 	// defined in the capabilities ConfigMap and/or CRD.
@@ -63,6 +63,7 @@ const (
 	// CapabilityKeyInventoryContentLibrary is the name of the key defined in the
 	// Supervisor capabilities CRD.
 	CapabilityKeyInventoryContentLibrary = "supports_inventory_content_library"
+
 	// CapabilityKeyVMPlacementPolicies is the name of the capability key
 	// defined in the Supervisor capabilities CRD for the VM placement policy
 	// capability.

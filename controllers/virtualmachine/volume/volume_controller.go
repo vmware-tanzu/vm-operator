@@ -633,7 +633,7 @@ func (r *Reconciler) processAttachments(
 	existingManagedVols := map[string]vmopv1.VirtualMachineVolumeStatus{}
 	for i := range ctx.VM.Status.Volumes {
 		vol := ctx.VM.Status.Volumes[i]
-		if vol.Type != vmopv1.VirtualMachineStorageDiskTypeClassic {
+		if vol.Type != vmopv1.VolumeTypeClassic {
 			existingManagedVols[vol.Name] = vol
 		}
 	}
@@ -740,7 +740,7 @@ func (r *Reconciler) processAttachments(
 				volumeStatuses,
 				vmopv1.VirtualMachineVolumeStatus{
 					Name: volume.Name,
-					Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+					Type: vmopv1.VolumeTypeManaged,
 				})
 		}
 	}
@@ -752,7 +752,7 @@ func (r *Reconciler) processAttachments(
 	// Remove any managed volumes from the existing status.
 	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
-			return e.Type != vmopv1.VirtualMachineStorageDiskTypeClassic
+			return e.Type != vmopv1.VolumeTypeClassic
 		})
 
 	// Update the existing status with the new list of managed volumes.
@@ -1019,7 +1019,7 @@ func attachmentToVolumeStatus(
 		Attached: attachment.Status.Attached,
 		DiskUUID: attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],
 		Error:    sanitizeCNSErrorMessage(attachment.Status.Error),
-		Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+		Type:     vmopv1.VolumeTypeManaged,
 	}
 }
 

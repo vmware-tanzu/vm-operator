@@ -26,6 +26,12 @@ const (
 	bootDiskDeviceKey = 2000
 )
 
+func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha1_PersistentVolumeClaimVolumeSource(
+	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha1_PersistentVolumeClaimVolumeSource(in, out, s)
+}
+
 func Convert_v1alpha1_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(
 	in *VirtualMachineVolume, out *vmopv1.VirtualMachineVolume, s apiconversion.Scope) error {
 
@@ -404,12 +410,12 @@ func convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha5_VirtualMachineAd
 		if opts := in.DefaultVolumeProvisioningOptions; opts != nil {
 			if opts.ThinProvisioned != nil {
 				if *opts.ThinProvisioned {
-					out.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThin
+					out.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThin
 				} else {
-					out.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThick
+					out.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThick
 				}
 			} else if opts.EagerZeroed != nil && *opts.EagerZeroed {
-				out.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero
+				out.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThickEagerZero
 			}
 		}
 
@@ -451,15 +457,15 @@ func convert_v1alpha5_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvan
 	}
 
 	switch in.DefaultVolumeProvisioningMode {
-	case vmopv1.VirtualMachineVolumeProvisioningModeThin:
+	case vmopv1.VolumeProvisioningModeThin:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
 			ThinProvisioned: ptrTo(true),
 		}
-	case vmopv1.VirtualMachineVolumeProvisioningModeThick:
+	case vmopv1.VolumeProvisioningModeThick:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
 			ThinProvisioned: ptrTo(false),
 		}
-	case vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero:
+	case vmopv1.VolumeProvisioningModeThickEagerZero:
 		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
 			EagerZeroed: ptrTo(true),
 		}
@@ -679,7 +685,7 @@ func Convert_v1alpha1_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolum
 
 	out.DiskUUID = in.DiskUuid
 	if out.Type == "" {
-		out.Type = vmopv1.VirtualMachineStorageDiskTypeManaged
+		out.Type = vmopv1.VolumeTypeManaged
 	}
 
 	return autoConvert_v1alpha1_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolumeStatus(in, out, s)
@@ -813,7 +819,7 @@ func Convert_v1alpha5_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 
 	out.Volumes = nil
 	for i := range in.Volumes {
-		if in.Volumes[i].Type != vmopv1.VirtualMachineStorageDiskTypeClassic {
+		if in.Volumes[i].Type != vmopv1.VolumeTypeClassic {
 
 			// Only down-convert volume statuses if the volume is managed.
 			var vol VirtualMachineVolumeStatus
@@ -1003,10 +1009,6 @@ func restore_v1alpha5_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
 
-func restore_v1alpha5_VirtualMachineCdrom(dst, src *vmopv1.VirtualMachine) {
-	dst.Spec.Cdrom = src.Spec.Cdrom
-}
-
 func restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
 }
@@ -1017,6 +1019,37 @@ func restore_v1alpha5_VirtualMachineBootOptions(dst, src *vmopv1.VirtualMachine)
 
 func restore_v1alpha5_VirtualMachineAffinitySpec(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Affinity = src.Spec.Affinity
+}
+
+func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
+	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
+	for i := range src.Spec.Volumes {
+		vol := &src.Spec.Volumes[i]
+		srcVolMap[vol.Name] = vol
+	}
+	for i := range dst.Spec.Volumes {
+		dstVol := &dst.Spec.Volumes[i]
+		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
+			if dstPvc := dstVol.PersistentVolumeClaim; dstPvc != nil {
+				if srcPvc := srcVol.PersistentVolumeClaim; srcPvc != nil {
+					dstPvc.ApplicationType = srcPvc.ApplicationType
+					dstPvc.ControllerBusNumber = srcPvc.ControllerBusNumber
+					dstPvc.ControllerType = srcPvc.ControllerType
+					dstPvc.DiskMode = srcPvc.DiskMode
+					dstPvc.SharingMode = srcPvc.SharingMode
+					dstPvc.UnitNumber = srcPvc.UnitNumber
+				}
+			}
+		}
+	}
+}
+
+func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Hardware != nil {
+		dst.Spec.Hardware = src.Spec.Hardware.DeepCopy()
+	} else {
+		dst.Spec.Hardware = nil
+	}
 }
 
 func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha5_Conditions(
@@ -1269,12 +1302,13 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 	restore_v1alpha5_VirtualMachineInstanceUUID(dst, restored)
 	restore_v1alpha5_VirtualMachineGuestID(dst, restored)
-	restore_v1alpha5_VirtualMachineCdrom(dst, restored)
 	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)
 	restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
 	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)
 	restore_v1alpha5_VirtualMachineGroupName(dst, restored)
+	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
+	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 
 	// END RESTORE
 

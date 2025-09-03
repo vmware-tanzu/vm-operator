@@ -29,7 +29,7 @@ func updateVirtualDiskDeviceChanges(
 
 	// Skip resizing ISO VMs with attached CD-ROMs as their boot disks are FCDs
 	// and should be managed by PVCs.
-	if len(vmCtx.VM.Spec.Cdrom) > 0 {
+	if hw := vmCtx.VM.Spec.Hardware; hw != nil && len(hw.Cdrom) > 0 {
 		return nil, nil
 	}
 

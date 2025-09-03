@@ -13,6 +13,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
+func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVolumeClaimVolumeSource(
+	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVolumeClaimVolumeSource(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(
 	in *vmopv1.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s apiconversion.Scope) error {
 
@@ -55,7 +61,7 @@ func Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha5_VirtualMachineVolum
 	}
 
 	if out.Type == "" {
-		out.Type = vmopv1.VirtualMachineStorageDiskTypeManaged
+		out.Type = vmopv1.VolumeTypeManaged
 	}
 
 	return nil
@@ -70,7 +76,7 @@ func Convert_v1alpha5_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 
 	out.Volumes = nil
 	for i := range in.Volumes {
-		if in.Volumes[i].Type != vmopv1.VirtualMachineStorageDiskTypeClassic {
+		if in.Volumes[i].Type != vmopv1.VolumeTypeClassic {
 
 			// Only down-convert volume statuses if the volume is managed.
 			var vol VirtualMachineVolumeStatus
@@ -295,16 +301,47 @@ func restore_v1alpha5_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
 
-func restore_v1alpha5_VirtualMachineCdrom(dst, src *vmopv1.VirtualMachine) {
-	dst.Spec.Cdrom = src.Spec.Cdrom
-}
-
 func restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
 }
 
 func restore_v1alpha5_VirtualMachineBootOptions(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.BootOptions = src.Spec.BootOptions
+}
+
+func restore_v1alpha5_VirtualMachineAffinitySpec(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Affinity = src.Spec.Affinity
+}
+
+func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
+	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
+	for i := range src.Spec.Volumes {
+		vol := &src.Spec.Volumes[i]
+		srcVolMap[vol.Name] = vol
+	}
+	for i := range dst.Spec.Volumes {
+		dstVol := &dst.Spec.Volumes[i]
+		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
+			if dstPvc := dstVol.PersistentVolumeClaim; dstPvc != nil {
+				if srcPvc := srcVol.PersistentVolumeClaim; srcPvc != nil {
+					dstPvc.ApplicationType = srcPvc.ApplicationType
+					dstPvc.ControllerBusNumber = srcPvc.ControllerBusNumber
+					dstPvc.ControllerType = srcPvc.ControllerType
+					dstPvc.DiskMode = srcPvc.DiskMode
+					dstPvc.SharingMode = srcPvc.SharingMode
+					dstPvc.UnitNumber = srcPvc.UnitNumber
+				}
+			}
+		}
+	}
+}
+
+func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Hardware != nil {
+		dst.Spec.Hardware = src.Spec.Hardware.DeepCopy()
+	} else {
+		dst.Spec.Hardware = nil
+	}
 }
 
 // ConvertTo converts this VirtualMachine to the Hub version.
@@ -329,10 +366,12 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha5_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha5_VirtualMachineGuestID(dst, restored)
-	restore_v1alpha5_VirtualMachineCdrom(dst, restored)
 	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)
 	restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
+	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)
+	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
+	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 
 	// END RESTORE
 

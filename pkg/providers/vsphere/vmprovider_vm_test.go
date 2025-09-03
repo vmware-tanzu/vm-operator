@@ -1748,7 +1748,7 @@ func vmTests() {
 										{
 											ID:       ctx.ContentLibraryItemDiskPath,
 											Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
-											DiskType: vmopv1.VirtualMachineStorageDiskTypeClassic,
+											DiskType: vmopv1.VolumeTypeClassic,
 										},
 										{
 											ID:   ctx.ContentLibraryItemNVRAMPath,
@@ -2901,7 +2901,7 @@ func vmTests() {
 						if vm.Spec.Advanced == nil {
 							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
 						}
-						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThin
+						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThin
 					})
 
 					It("Succeeds", func() {
@@ -2918,7 +2918,7 @@ func vmTests() {
 
 				XContext("VM has thick provisioning", func() {
 					BeforeEach(func() {
-						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThick
+						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThick
 					})
 
 					It("Succeeds", func() {
@@ -2939,7 +2939,7 @@ func vmTests() {
 						if vm.Spec.Advanced == nil {
 							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
 						}
-						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero
+						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VolumeProvisioningModeThickEagerZero
 					})
 
 					It("Succeeds", func() {
@@ -3782,13 +3782,15 @@ func vmTests() {
 				vm.Spec.Image.Kind = cvmiKind
 				vm.Spec.Image.Name = cvmiName
 				vm.Spec.StorageClass = ctx.StorageClassName
-				vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{{
-					Name: "cdrom0",
-					Image: vmopv1.VirtualMachineImageRef{
-						Name: cvmiName,
-						Kind: cvmiKind,
-					},
-				}}
+				vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+					Cdrom: []vmopv1.VirtualMachineCdromSpec{{
+						Name: "cdrom0",
+						Image: vmopv1.VirtualMachineImageRef{
+							Name: cvmiName,
+							Kind: cvmiKind,
+						},
+					}},
+				}
 
 				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 			})
@@ -4295,7 +4297,10 @@ func vmTests() {
 							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
 								BootDiskCapacity: &q,
 							}
-							vm.Spec.Cdrom = nil
+							if vm.Spec.Hardware == nil {
+								vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+							}
+							vm.Spec.Hardware.Cdrom = nil
 						})
 						It("should power on the VM with the boot disk resized", func() {
 							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
@@ -4413,18 +4418,19 @@ func vmTests() {
 						)
 
 						JustBeforeEach(func() {
-							vm.Spec.Cdrom = []vmopv1.VirtualMachineCdromSpec{
-								{
-									Name: "cdrom1",
-									Image: vmopv1.VirtualMachineImageRef{
-										Name: vmiName,
-										Kind: vmiKind,
+							vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+								Cdrom: []vmopv1.VirtualMachineCdromSpec{
+									{
+										Name: "cdrom1",
+										Image: vmopv1.VirtualMachineImageRef{
+											Name: vmiName,
+											Kind: vmiKind,
+										},
+										AllowGuestControl: ptr.To(true),
+										Connected:         ptr.To(true),
 									},
-									AllowGuestControl: ptr.To(true),
-									Connected:         ptr.To(true),
 								},
 							}
-
 							testConfig.WithContentLibrary = true
 						})
 

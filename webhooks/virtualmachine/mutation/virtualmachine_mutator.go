@@ -713,9 +713,13 @@ func SetDefaultCdromImgKindOnCreate(
 	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) {
 
-	for i, c := range vm.Spec.Cdrom {
+	if vm.Spec.Hardware == nil {
+		return
+	}
+
+	for i, c := range vm.Spec.Hardware.Cdrom {
 		if c.Image.Kind == "" {
-			vm.Spec.Cdrom[i].Image.Kind = vmiKind
+			vm.Spec.Hardware.Cdrom[i].Image.Kind = vmiKind
 		}
 	}
 }
@@ -726,19 +730,28 @@ func SetDefaultCdromImgKindOnUpdate(
 
 	var (
 		mutated          bool
-		imgNameToOldKind = make(map[string]string, len(oldVM.Spec.Cdrom))
+		imgNameToOldKind map[string]string
+		oldHW            = oldVM.Spec.Hardware
+		newHW            = vm.Spec.Hardware
 	)
 
-	for _, c := range oldVM.Spec.Cdrom {
-		imgNameToOldKind[c.Image.Name] = c.Image.Kind
+	if newHW == nil {
+		return false
 	}
 
-	for i, c := range vm.Spec.Cdrom {
+	if oldHW != nil {
+		imgNameToOldKind = make(map[string]string, len(oldHW.Cdrom))
+		for _, c := range oldHW.Cdrom {
+			imgNameToOldKind[c.Image.Name] = c.Image.Kind
+		}
+	}
+
+	for i, c := range newHW.Cdrom {
 		// Repopulate the image kind only if it was previously set to default.
 		// This ensures an error is returned if the image kind was reset from
 		// a different value other than the default VirtualMachineImage kind.
 		if c.Image.Kind == "" && imgNameToOldKind[c.Image.Name] == vmiKind {
-			vm.Spec.Cdrom[i].Image.Kind = vmiKind
+			newHW.Cdrom[i].Image.Kind = vmiKind
 			mutated = true
 		}
 	}
@@ -751,12 +764,12 @@ func SetImageNameFromCdrom(
 	vm *vmopv1.VirtualMachine) {
 
 	// Return early if the VM image name is set or no CD-ROMs are specified.
-	if vm.Spec.ImageName != "" || len(vm.Spec.Cdrom) == 0 {
+	if vm.Spec.ImageName != "" || vm.Spec.Hardware == nil || len(vm.Spec.Hardware.Cdrom) == 0 {
 		return
 	}
 
 	var cdromImageName string
-	for _, cdrom := range vm.Spec.Cdrom {
+	for _, cdrom := range vm.Spec.Hardware.Cdrom {
 		// Set the image name to the first connected CD-ROM image name.
 		if cdrom.Connected != nil && *cdrom.Connected {
 			cdromImageName = cdrom.Image.Name
@@ -766,7 +779,7 @@ func SetImageNameFromCdrom(
 
 	// If no connected CD-ROM is found, set it to the first CD-ROM image name.
 	if cdromImageName == "" {
-		cdromImageName = vm.Spec.Cdrom[0].Image.Name
+		cdromImageName = vm.Spec.Hardware.Cdrom[0].Image.Name
 	}
 
 	vm.Spec.ImageName = cdromImageName

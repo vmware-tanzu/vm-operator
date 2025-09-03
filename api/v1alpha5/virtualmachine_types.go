@@ -344,55 +344,6 @@ type VirtualMachineImageRef struct {
 	Name string `json:"name"`
 }
 
-// VirtualMachineCdromSpec describes the desired state of a CD-ROM device.
-type VirtualMachineCdromSpec struct {
-	// +kubebuilder:validation:Pattern="^[a-z0-9]{2,}$"
-
-	// Name consists of at least two lowercase letters or digits of this CD-ROM.
-	// It must be unique among all CD-ROM devices attached to the VM.
-	//
-	// This field is immutable when the VM is powered on.
-	Name string `json:"name"`
-
-	// Image describes the reference to an ISO type VirtualMachineImage or
-	// ClusterVirtualMachineImage resource used as the backing for the CD-ROM.
-	// If the image kind is omitted, it defaults to VirtualMachineImage.
-	//
-	// This field is immutable when the VM is powered on.
-	//
-	// Please note, unlike the spec.imageName field, the value of this
-	// spec.cdrom.image.name MUST be a Kubernetes object name.
-	Image VirtualMachineImageRef `json:"image"`
-
-	// +optional
-	// +kubebuilder:default=true
-
-	// Connected describes the desired connection state of the CD-ROM device.
-	//
-	// When true, the CD-ROM device is added and connected to the VM.
-	// If the device already exists, it is updated to a connected state.
-	//
-	// When explicitly set to false, the CD-ROM device is added but remains
-	// disconnected from the VM. If the CD-ROM device already exists, it is
-	// updated to a disconnected state.
-	//
-	// Note: Before disconnecting a CD-ROM, the device may need to be unmounted
-	// in the guest OS. Refer to the following KB article for more details:
-	// https://knowledge.broadcom.com/external/article?legacyId=2144053
-	//
-	// Defaults to true if omitted.
-	Connected *bool `json:"connected,omitempty"`
-
-	// +optional
-	// +kubebuilder:default=true
-
-	// AllowGuestControl describes whether or not a web console connection
-	// may be used to connect/disconnect the CD-ROM device.
-	//
-	// Defaults to true if omitted.
-	AllowGuestControl *bool `json:"allowGuestControl,omitempty"`
-}
-
 // VirtualMachineCryptoSpec defines the desired state of a VirtualMachine's
 // encryption state.
 type VirtualMachineCryptoSpec struct {
@@ -651,24 +602,6 @@ const (
 
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
-	// +optional
-	// +listType=map
-	// +listMapKey=name
-
-	// Cdrom describes the desired state of the VM's CD-ROM devices.
-	//
-	// Each CD-ROM device requires a reference to an ISO-type
-	// VirtualMachineImage or ClusterVirtualMachineImage resource as backing.
-	//
-	// Multiple CD-ROM devices using the same backing image, regardless of image
-	// kinds (namespace or cluster scope), are not allowed.
-	//
-	// CD-ROM devices can be added, updated, or removed when the VM is powered
-	// off. When the VM is powered on, only the connection state of existing
-	// CD-ROM devices can be changed.
-	// CD-ROM devices are attached to the VM in the specified list-order.
-	Cdrom []VirtualMachineCdromSpec `json:"cdrom,omitempty"`
-
 	// +optional
 
 	// Image describes the reference to the VirtualMachineImage or
@@ -1055,6 +988,11 @@ type VirtualMachineSpec struct {
 	// When this field is deleted or changed, any existing owner reference to
 	// the previous group will be removed from this VM.
 	GroupName string `json:"groupName,omitempty"`
+
+	// +optional
+
+	// Hardware describes the VM's desired hardware.
+	Hardware *VirtualMachineHardwareSpec `json:"hardware,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options
@@ -1091,7 +1029,7 @@ type VirtualMachineAdvancedSpec struct {
 
 	// DefaultVolumeProvisioningMode specifies the default provisioning mode for
 	// persistent volumes managed by this VM.
-	DefaultVolumeProvisioningMode VirtualMachineVolumeProvisioningMode `json:"defaultVolumeProvisioningMode,omitempty"`
+	DefaultVolumeProvisioningMode VolumeProvisioningMode `json:"defaultVolumeProvisioningMode,omitempty"`
 
 	// +optional
 
@@ -1151,80 +1089,6 @@ type VirtualMachineGuestStatus struct {
 
 	// GuestFullName describes the full name of the observed operating system.
 	GuestFullName string `json:"guestFullName,omitempty"`
-}
-
-type VirtualMachineCPUAllocationStatus struct {
-	// +optional
-
-	// Total describes the observed number of processors.
-	Total int32 `json:"total,omitempty"`
-
-	// +optional
-
-	// Reservation describes the observed CPU reservation in MHz.
-	Reservation int64 `json:"reservation,omitempty"`
-}
-
-type VirtualMachineMemoryAllocationStatus struct {
-	// +optional
-
-	// Total describes the observed amount of configured memory.
-	Total *resource.Quantity `json:"total,omitempty"`
-
-	// +optional
-
-	// Reservation describes the observed memory reservation.
-	Reservation *resource.Quantity `json:"reservation,omitempty"`
-}
-
-type VirtualMachineVGPUType string
-
-const (
-	VirtualMachineVGPUTypeNVIDIA VirtualMachineVGPUType = "Nvidia"
-)
-
-type VirtualMachineVGPUMigrationType string
-
-const (
-	VirtualMachineVGPUMigrationTypeNone     VirtualMachineVGPUMigrationType = "None"
-	VirtualMachineVGPUMigrationTypeNormal   VirtualMachineVGPUMigrationType = "Normal"
-	VirtualMachineVGPUMigrationTypeEnhanced VirtualMachineVGPUMigrationType = "Enhanced"
-)
-
-type VirtualMachineHardwareVGPUStatus struct {
-	// +optional
-
-	// Type describes the observed type of the vGPU.
-	Type VirtualMachineVGPUType `json:"type,omitempty"`
-
-	// +optional
-
-	// Profile describes the observed profile used by the vGPU.
-	//
-	// Please note, this is only applicable to Nvidia vGPUs.
-	Profile string `json:"profile,omitempty"`
-
-	// +optional
-
-	// MigrationType describes the vGPU's observed vMotion support.
-	MigrationType VirtualMachineVGPUMigrationType `json:"migrationType,omitempty"`
-}
-
-type VirtualMachineHardwareStatus struct {
-	// +optional
-
-	// CPU describes the observed CPU allocation of the VM.
-	CPU *VirtualMachineCPUAllocationStatus `json:"cpu,omitempty"`
-
-	// +optional
-
-	// Memory describes the observed memory allocation of the VM.
-	Memory *VirtualMachineMemoryAllocationStatus `json:"memory,omitempty"`
-
-	// +optional
-
-	// VGPUs describes the observed vGPUs used by this VM.
-	VGPUs []VirtualMachineHardwareVGPUStatus `json:"vGPUs,omitempty"`
 }
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.

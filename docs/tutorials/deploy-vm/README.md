@@ -17,13 +17,14 @@ spec:
   bootstrap: # (8)
     cloudInit:
       cloudConfig: {}
-  cdrom: # (9)
-    - name: cdrom1
-      image:
-        name: vmi-0a0044d7c690bcbea
-        kind: VirtualMachineImage
-      connected: true
-      allowGuestControl: true
+  hardware:
+    cdrom: # (9)
+      - name: cdrom1
+        image:
+          name: vmi-0a0044d7c690bcbea
+          kind: VirtualMachineImage
+        connected: true
+        allowGuestControl: true
 ```
 
 1.  :wave: The field `apiVersion` indicates the resource's schema, ex. `vmoperator.vmware.com`, and version, ex.`v1alpha5`.
@@ -75,7 +76,7 @@ spec:
 
 8.  :wave: The field `spec.bootstrap`, and the fields inside of it, are used to configure the VM's [bootstrap provider](#bootstrap-provider).
 
-9.  :wave: The field `spec.cdrom` is used to configure the VM's [CD-ROM](../../concepts/workloads/vm/#cd-rom) devices to mount ISO images.
+9.  :wave: The field `spec.hardware.cdrom` is used to configure the VM's [CD-ROM](../../concepts/workloads/vm/#cd-rom) devices to mount ISO images.
 
 ## Bootstrap Provider
 

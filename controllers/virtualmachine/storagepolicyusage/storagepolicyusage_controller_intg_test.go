@@ -171,12 +171,12 @@ func intgTestsReconcile() {
 							{
 								Name:  "vm-1-volume-1",
 								Limit: ptr.To(resource.MustParse("10Gi")),
-								Type:  vmopv1.VirtualMachineStorageDiskTypeManaged,
+								Type:  vmopv1.VolumeTypeManaged,
 							},
 							{
 								Name:  "vm-1-volume-2",
 								Limit: ptr.To(resource.MustParse("20Gi")),
-								Type:  vmopv1.VirtualMachineStorageDiskTypeClassic,
+								Type:  vmopv1.VolumeTypeClassic,
 							},
 						},
 					},
@@ -219,12 +219,12 @@ func intgTestsReconcile() {
 							{
 								Name:  "vm-2-volume-1",
 								Limit: ptr.To(resource.MustParse("10Gi")),
-								Type:  vmopv1.VirtualMachineStorageDiskTypeManaged,
+								Type:  vmopv1.VolumeTypeManaged,
 							},
 							{
 								Name:  "vm-2-volume-2",
 								Limit: ptr.To(resource.MustParse("20Gi")),
-								Type:  vmopv1.VirtualMachineStorageDiskTypeClassic,
+								Type:  vmopv1.VolumeTypeClassic,
 							},
 						},
 					},

@@ -185,7 +185,7 @@ func unitTestsReconcile() {
 						{
 							Name:      "vm-1-pvc-1",
 							Requested: ptr.To(resource.MustParse("1Gi")),
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 						},
 					}
 					initObjects = append(initObjects, vm)
@@ -208,12 +208,12 @@ func unitTestsReconcile() {
 						{
 							Name:      "vm-1-classic-1",
 							Requested: ptr.To(resource.MustParse("1Gi")),
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 						},
 						{
 							Name:      "vm-1-fcd-1",
 							Requested: ptr.To(resource.MustParse("1Gi")),
-							Type:      vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type:      vmopv1.VolumeTypeManaged,
 						},
 					}
 					pvc1 := builder.DummyPersistentVolumeClaim()

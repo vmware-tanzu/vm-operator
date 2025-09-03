@@ -380,9 +380,9 @@ func addVolumeToVM(vm *vmopv1.VirtualMachine, pvcName, volumeName, storageClass 
 			}
 		}
 	}
-	volumeType := vmopv1.VirtualMachineStorageDiskTypeClassic
+	volumeType := vmopv1.VolumeTypeClassic
 	if isFCD {
-		volumeType = vmopv1.VirtualMachineStorageDiskTypeManaged
+		volumeType = vmopv1.VolumeTypeManaged
 	}
 	vm.Status.Volumes = append(vm.Status.Volumes,
 		vmopv1.VirtualMachineVolumeStatus{

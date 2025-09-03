@@ -69,6 +69,7 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusStorage(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusZone(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusNodeName(vmCtx, k8sClient, vcVM, data)...)
+	errs = append(errs, reconcileStatusController(vmCtx, k8sClient, vcVM, data)...)
 
 	if pkgcfg.FromContext(vmCtx).AsyncSignalEnabled {
 		errs = append(errs, reconcileStatusProbe(vmCtx, k8sClient, vcVM, data)...)
@@ -1111,7 +1112,7 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 	// Get the storage consumed by disks.
 	for i := range vm.Status.Volumes {
 		v := vm.Status.Volumes[i]
-		if v.Type == vmopv1.VirtualMachineStorageDiskTypeClassic {
+		if v.Type == vmopv1.VolumeTypeClassic {
 			if v.Used != nil {
 				i, _ := v.Used.AsInt64()
 				disksUsed += i
@@ -1247,7 +1248,7 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 			dp := diskPath.Path
 			volStatus := vmopv1.VirtualMachineVolumeStatus{
 				Name:      strings.TrimSuffix(path.Base(dp), path.Ext(dp)),
-				Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+				Type:      vmopv1.VolumeTypeClassic,
 				Attached:  true,
 				DiskUUID:  diskUUID,
 				Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
@@ -1269,7 +1270,7 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 	vm.Status.Volumes = slices.DeleteFunc(vm.Status.Volumes,
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
 			switch e.Type {
-			case vmopv1.VirtualMachineStorageDiskTypeClassic:
+			case vmopv1.VolumeTypeClassic:
 				_, keep := existingDisksInConfig[e.DiskUUID]
 				return !keep
 			default:
@@ -1654,4 +1655,129 @@ func sameChildrenList(a, b []common.LocalObjectRef) bool {
 		}
 	}
 	return true
+}
+
+// reconcileStatusController updates the VM's status.hardware.controllers field
+// with information about all the controller types.
+func reconcileStatusController(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	var (
+		vm   = vmCtx.VM
+		moVM = vmCtx.MoVM
+	)
+
+	if moVM.Config == nil || len(moVM.Config.Hardware.Device) == 0 {
+		return nil
+	}
+
+	if vm.Status.Hardware == nil {
+		vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
+	}
+
+	var (
+		// Map controllers to device key and to their busNumber+type.
+		controllerKeyMap = make(map[int32]*vmopv1.VirtualControllerStatus)
+		controllerMap    = make(map[string]*vmopv1.VirtualControllerStatus)
+	)
+
+	// Collect all the controllers.
+	for _, device := range moVM.Config.Hardware.Device {
+		var cs *vmopv1.VirtualControllerStatus
+
+		switch ctrl := device.(type) {
+		case *vimtypes.VirtualIDEController:
+			cs = &vmopv1.VirtualControllerStatus{
+				BusNumber: ctrl.BusNumber,
+				Type:      vmopv1.VirtualControllerTypeIDE,
+			}
+
+		case *vimtypes.VirtualSCSIController:
+			cs = &vmopv1.VirtualControllerStatus{
+				BusNumber: ctrl.BusNumber,
+				Type:      vmopv1.VirtualControllerTypeSCSI,
+			}
+
+		case *vimtypes.VirtualSATAController:
+			cs = &vmopv1.VirtualControllerStatus{
+				BusNumber: ctrl.BusNumber,
+				Type:      vmopv1.VirtualControllerTypeSATA,
+			}
+
+		case *vimtypes.VirtualNVMEController:
+			cs = &vmopv1.VirtualControllerStatus{
+				BusNumber: ctrl.BusNumber,
+				Type:      vmopv1.VirtualControllerTypeNVME,
+			}
+		}
+
+		if cs != nil {
+			deviceKey := device.GetVirtualDevice().Key
+			controllerKeyMap[deviceKey] = cs
+			displayKey := fmt.Sprintf("%d-%s", cs.BusNumber, cs.Type)
+			controllerMap[displayKey] = cs
+		}
+	}
+
+	// Collect all devices attached to controllers.
+	for _, device := range moVM.Config.Hardware.Device {
+		var unitNumber int32
+		if u := device.GetVirtualDevice().UnitNumber; u != nil {
+			unitNumber = *u
+		}
+
+		switch dev := device.(type) {
+		case *vimtypes.VirtualDisk:
+			deviceStatus := vmopv1.VirtualDeviceStatus{
+				Type:       vmopv1.VirtualDeviceTypeDisk,
+				UnitNumber: unitNumber,
+			}
+			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
+				c.Devices = append(c.Devices, deviceStatus)
+			}
+
+		case *vimtypes.VirtualCdrom:
+			deviceStatus := vmopv1.VirtualDeviceStatus{
+				Type:       vmopv1.VirtualDeviceTypeCDROM,
+				UnitNumber: unitNumber,
+			}
+			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
+				c.Devices = append(c.Devices, deviceStatus)
+			}
+		}
+	}
+
+	// Convert map to slice and sort for consistent output.
+	var (
+		ctlStatusesIndex int
+		ctlStatuses      = make([]vmopv1.VirtualControllerStatus, len(controllerMap))
+	)
+	for _, cs := range controllerMap {
+
+		// Sort the device statuses by type and unit number.
+		slices.SortFunc(cs.Devices, func(a, b vmopv1.VirtualDeviceStatus) int {
+			if a.Type != b.Type {
+				return strings.Compare(string(a.Type), string(b.Type))
+			}
+			return int(a.UnitNumber - b.UnitNumber)
+		})
+
+		ctlStatuses[ctlStatusesIndex] = *cs
+		ctlStatusesIndex++
+	}
+
+	// Sort controllers by type and then by bus number
+	slices.SortFunc(ctlStatuses, func(a, b vmopv1.VirtualControllerStatus) int {
+		if a.Type != b.Type {
+			return strings.Compare(string(a.Type), string(b.Type))
+		}
+		return int(a.BusNumber - b.BusNumber)
+	})
+
+	vm.Status.Hardware.Controllers = ctlStatuses
+
+	return nil
 }

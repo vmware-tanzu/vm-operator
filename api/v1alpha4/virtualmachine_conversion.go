@@ -8,15 +8,81 @@ import (
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
-	//
-	// Leaving this here for when v1a5 diverges from v1a4.
-	//
-
-	//nolint:godot
-	// "github.com/vmware-tanzu/vm-operator/api/utilconversion"
+	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
+
+func Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(
+	in *VirtualMachineCdromSpec, out *vmopv1.VirtualMachineCdromSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(in, out, s)
+}
+
+func Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(
+	in *vmopv1.VirtualMachineCdromSpec, out *VirtualMachineCdromSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in, out, s)
+}
+
+func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(
+	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(in, out, s)
+}
+
+func Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(
+	in *vmopv1.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(in, out, s)
+}
+
+func Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(
+	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in, out, s); err != nil {
+		return err
+	}
+
+	switch {
+	case in.Hardware == nil:
+		out.Cdrom = nil
+	case len(in.Hardware.Cdrom) == 0:
+		out.Cdrom = nil
+	default:
+		out.Cdrom = make([]VirtualMachineCdromSpec, len(in.Hardware.Cdrom))
+		for i := range in.Hardware.Cdrom {
+			if err := autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(
+				&in.Hardware.Cdrom[i], &out.Cdrom[i], s); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func Convert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(
+	in *VirtualMachineSpec, out *vmopv1.VirtualMachineSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in, out, s); err != nil {
+		return err
+	}
+
+	if len(in.Cdrom) > 0 {
+		if out.Hardware == nil {
+			out.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+		}
+		out.Hardware.Cdrom = make([]vmopv1.VirtualMachineCdromSpec, len(in.Cdrom))
+		for i := range in.Cdrom {
+			if err := autoConvert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(&in.Cdrom[i], &out.Hardware.Cdrom[i], s); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
 
 func Convert_v1alpha5_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	in *vmopv1.VirtualMachineStatus, out *VirtualMachineStatus, s apiconversion.Scope) error {
@@ -30,6 +96,38 @@ func Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCrypt
 	return autoConvert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCryptoStatus(in, out, s)
 }
 
+func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Hardware == nil {
+		// There is nothing to restore so return early.
+		return
+	}
+
+	// Create a copy of the CD-ROMs currently stored on the dst VM.
+	var cdromChanges []vmopv1.VirtualMachineCdromSpec
+	if dst.Spec.Hardware != nil && len(dst.Spec.Hardware.Cdrom) > 0 {
+		cdromChanges = dst.Spec.Hardware.Cdrom
+	}
+
+	// Restore the missing hardware.
+	dst.Spec.Hardware = src.Spec.Hardware.DeepCopy()
+	dst.Spec.Hardware.Cdrom = cdromChanges
+
+	// Restore the old CD-ROM device information.
+	for i := range dst.Spec.Hardware.Cdrom {
+		dstCdrom := &dst.Spec.Hardware.Cdrom[i]
+
+		// Find the matching CD-ROM from the source.
+		for _, srcCdrom := range src.Spec.Hardware.Cdrom {
+			if srcCdrom.Name == dstCdrom.Name {
+				dstCdrom.ControllerBusNumber = srcCdrom.ControllerBusNumber
+				dstCdrom.ControllerType = srcCdrom.ControllerType
+				dstCdrom.UnitNumber = srcCdrom.UnitNumber
+				break
+			}
+		}
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -37,21 +135,19 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 		return err
 	}
 
-	//
-	// Leaving this here for when v1a5 diverges from v1a4.
-	//
-
 	// Manually restore data.
-	// restored := &vmopv1.VirtualMachine{}
-	// if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
-	// 	return err
-	// }
+	restored := &vmopv1.VirtualMachine{}
+	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
+		return err
+	}
 
-	// // BEGIN RESTORE
+	// BEGIN RESTORE
 
-	// // END RESTORE
+	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 
-	// dst.Status = restored.Status
+	// END RESTORE
+
+	dst.Status = restored.Status
 
 	return nil
 }
@@ -63,12 +159,6 @@ func (dst *VirtualMachine) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 		return err
 	}
 
-	//
-	// Leaving this here for when v1a5 diverges from v1a4.
-	//
-
 	// Preserve Hub data on down-conversion except for metadata
-	// return utilconversion.MarshalData(src, dst)
-
-	return nil
+	return utilconversion.MarshalData(src, dst)
 }

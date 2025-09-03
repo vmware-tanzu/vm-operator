@@ -119,7 +119,7 @@ func vmGroupTests() {
 						{
 							ID:       ctx.ContentLibraryItemDiskPath,
 							Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
-							DiskType: vmopv1.VirtualMachineStorageDiskTypeClassic,
+							DiskType: vmopv1.VolumeTypeClassic,
 						},
 						{
 							ID:   ctx.ContentLibraryItemNVRAMPath,

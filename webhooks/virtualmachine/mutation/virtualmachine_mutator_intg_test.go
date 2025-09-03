@@ -495,9 +495,9 @@ func intgTestsMutating() {
 			When("spec.cdrom.image.kind is empty", func() {
 
 				BeforeEach(func() {
-					for i, c := range ctx.vm.Spec.Cdrom {
+					for i, c := range ctx.vm.Spec.Hardware.Cdrom {
 						c.Image.Kind = ""
-						ctx.vm.Spec.Cdrom[i] = c
+						ctx.vm.Spec.Hardware.Cdrom[i] = c
 					}
 				})
 
@@ -505,7 +505,7 @@ func intgTestsMutating() {
 					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 					vm := &vmopv1.VirtualMachine{}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
-					for _, c := range vm.Spec.Cdrom {
+					for _, c := range vm.Spec.Hardware.Cdrom {
 						Expect(c.Image.Kind).To(Equal("VirtualMachineImage"))
 					}
 				})
@@ -521,7 +521,7 @@ func intgTestsMutating() {
 					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 					vm := &vmopv1.VirtualMachine{}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
-					Expect(vm.Spec.ImageName).To(Equal(ctx.vm.Spec.Cdrom[0].Image.Name))
+					Expect(vm.Spec.ImageName).To(Equal(ctx.vm.Spec.Hardware.Cdrom[0].Image.Name))
 				})
 			})
 		})
@@ -532,15 +532,15 @@ func intgTestsMutating() {
 
 			BeforeEach(func() {
 				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
-				imgNameToOldKind = make(map[string]string, len(ctx.vm.Spec.Cdrom))
+				imgNameToOldKind = make(map[string]string, len(ctx.vm.Spec.Hardware.Cdrom))
 			})
 
 			When("spec.cdrom.image.kind is reset", func() {
 
 				BeforeEach(func() {
-					for i, c := range ctx.vm.Spec.Cdrom {
+					for i, c := range ctx.vm.Spec.Hardware.Cdrom {
 						imgNameToOldKind[c.Image.Name] = c.Image.Kind
-						ctx.vm.Spec.Cdrom[i].Image.Kind = ""
+						ctx.vm.Spec.Hardware.Cdrom[i].Image.Kind = ""
 					}
 				})
 
@@ -549,7 +549,7 @@ func intgTestsMutating() {
 					vm := &vmopv1.VirtualMachine{}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
 					defaultKind := "VirtualMachineImage"
-					for _, c := range vm.Spec.Cdrom {
+					for _, c := range vm.Spec.Hardware.Cdrom {
 						if imgNameToOldKind[c.Image.Name] == defaultKind {
 							Expect(c.Image.Kind).To(Equal(defaultKind))
 						} else {

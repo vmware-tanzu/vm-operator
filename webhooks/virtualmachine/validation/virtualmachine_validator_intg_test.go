@@ -227,22 +227,22 @@ func intgTestsValidateUpdate() {
 	When("update is performed with changed cd-rom", func() {
 		When("cd-rom image kind is invalid", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Cdrom[0].Image.Kind = invalidKind
+				ctx.vm.Spec.Hardware.Cdrom[0].Image.Kind = invalidKind
 			})
 			It("should deny the request", func() {
 				Expect(err).To(HaveOccurred())
-				expectedPath := field.NewPath("spec", "cdrom[0]", "image", "kind")
+				expectedPath := field.NewPath("spec", "hardware", "cdrom[0]", "image", "kind")
 				Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
 				Expect(err.Error()).To(ContainSubstring(unsupportedValMsg))
 			})
 		})
 		When("cd-rom image name is duplicate with others", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Cdrom[0].Image.Name = ctx.vm.Spec.Cdrom[1].Image.Name
+				ctx.vm.Spec.Hardware.Cdrom[0].Image.Name = ctx.vm.Spec.Hardware.Cdrom[1].Image.Name
 			})
 			It("should deny the request", func() {
 				Expect(err).To(HaveOccurred())
-				expectedPath := field.NewPath("spec", "cdrom[1]", "image", "name")
+				expectedPath := field.NewPath("spec", "hardware", "cdrom[1]", "image", "name")
 				Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
 				Expect(err.Error()).To(ContainSubstring(duplicateValMsg))
 			})
@@ -360,11 +360,11 @@ func intgTestsValidateUpdate() {
 		When("CD-ROM name is updated", func() {
 			BeforeEach(func() {
 				// Name can only consist of lowercase letters and digits.
-				ctx.vm.Spec.Cdrom[0].Name = "dummy2"
+				ctx.vm.Spec.Hardware.Cdrom[0].Name = "dummy2"
 			})
 
 			It("rejects the request", func() {
-				expectedReason := field.Forbidden(field.NewPath("spec", "cdrom[0]", "name"),
+				expectedReason := field.Forbidden(field.NewPath("spec", "hardware", "cdrom[0]", "name"),
 					"updates to this field is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
@@ -373,11 +373,11 @@ func intgTestsValidateUpdate() {
 
 		When("CD-ROM image ref is updated", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Cdrom[0].Image.Name = "dummy-new-image-name"
+				ctx.vm.Spec.Hardware.Cdrom[0].Image.Name = "dummy-new-image-name"
 			})
 
 			It("rejects the request", func() {
-				expectedReason := field.Forbidden(field.NewPath("spec", "cdrom[0]", "image"),
+				expectedReason := field.Forbidden(field.NewPath("spec", "hardware", "cdrom[0]", "image"),
 					"updates to this field is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))

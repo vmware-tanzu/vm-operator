@@ -79,11 +79,16 @@ func DoBootstrap(
 
 	bootstrap := vmCtx.VM.Spec.Bootstrap
 	if bootstrap == nil {
+		var cdRomSpecs []vmopv1.VirtualMachineCdromSpec
+		if hw := vmCtx.VM.Spec.Hardware; hw != nil {
+			cdRomSpecs = hw.Cdrom
+		}
+
 		// V1ALPHA1: We had always defaulted to LinuxPrep w/ HwClockUTC=true.
 		// Now, try to just do that on Linux VMs.
 		// Skip if the VM has a CD-ROM as the Linux ISO-type image may not have
 		// the necessary tools to do the default LinuxPrep bootstrap.
-		if !isLinuxGuest(config.GuestId) || len(vmCtx.VM.Spec.Cdrom) > 0 {
+		if !isLinuxGuest(config.GuestId) || len(cdRomSpecs) > 0 {
 			vmCtx.Logger.V(6).Info("no bootstrap provider specified")
 			return nil
 		}

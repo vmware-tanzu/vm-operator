@@ -102,13 +102,14 @@ spec:
   className: best-effort-small
   storageClass: wcpglobal-storage-profile
   guestID: otherGuest # (2)
-  cdrom:
-  - name: cdrom1 # (3)
-    image:
-      kind: VirtualMachineImage # (4)
-      name: vmi-0a0044d7c690bcbea # (5)
-    connected: true # (6)
-    allowGuestControl: true # (7)
+  hardware:
+    cdrom:
+    - name: cdrom1 # (3)
+      image:
+        kind: VirtualMachineImage # (4)
+        name: vmi-0a0044d7c690bcbea # (5)
+      connected: true # (6)
+      allowGuestControl: true # (7)
   volumes:
     - name: boot-disk
       persistentVolumeClaim:

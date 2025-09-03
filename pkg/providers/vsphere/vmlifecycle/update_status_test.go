@@ -642,13 +642,13 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Requested: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Limit:     kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Used:      kubeutil.BytesToResource(10 * oneGiBInBytes),
 						},
 						{
-							Type:      vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type:      vmopv1.VolumeTypeManaged,
 							Requested: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Limit:     kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Used:      kubeutil.BytesToResource(20 * oneGiBInBytes),
@@ -701,13 +701,13 @@ var _ = Describe("UpdateStatus", func() {
 				BeforeEach(func() {
 					vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
 						{
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Requested: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Limit:     kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Used:      kubeutil.BytesToResource(10 * oneGiBInBytes),
 						},
 						{
-							Type:      vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type:      vmopv1.VolumeTypeManaged,
 							Requested: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Limit:     kubeutil.BytesToResource(50 * oneGiBInBytes),
 							Used:      kubeutil.BytesToResource(20 * oneGiBInBytes),
@@ -1043,7 +1043,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-100",
 							DiskUUID: "100",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
@@ -1056,7 +1056,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-101",
 							DiskUUID:  "101",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
@@ -1065,7 +1065,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-102",
 							DiskUUID:  "102",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
@@ -1074,7 +1074,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-103",
 							DiskUUID:  "103",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
@@ -1083,7 +1083,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-104",
 							DiskUUID:  "104",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
@@ -1099,7 +1099,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-105",
 							DiskUUID:  "105",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type:      vmopv1.VolumeTypeManaged,
 							Attached:  false,
 							Limit:     kubeutil.BytesToResource(100 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(100 * oneGiBInBytes),
@@ -1111,7 +1111,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-100",
 							DiskUUID: "100",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
@@ -1124,7 +1124,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-101",
 							DiskUUID:  "101",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
@@ -1133,7 +1133,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-102",
 							DiskUUID:  "102",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
@@ -1142,7 +1142,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-103",
 							DiskUUID:  "103",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
@@ -1151,7 +1151,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-104",
 							DiskUUID:  "104",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
@@ -1160,7 +1160,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-105",
 							DiskUUID: "105",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type:     vmopv1.VolumeTypeManaged,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
@@ -1180,7 +1180,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-106",
 							DiskUUID:  "106",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
@@ -1192,7 +1192,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-100",
 							DiskUUID: "100",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								ProviderID: "my-provider-id",
 								KeyID:      "my-key-id",
@@ -1205,7 +1205,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-101",
 							DiskUUID:  "101",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
@@ -1214,7 +1214,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-102",
 							DiskUUID:  "102",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
@@ -1223,7 +1223,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-103",
 							DiskUUID:  "103",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
@@ -1232,7 +1232,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-104",
 							DiskUUID:  "104",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
@@ -1254,7 +1254,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-101",
 							DiskUUID:  "101",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
@@ -1263,7 +1263,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-102",
 							DiskUUID:  "102",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
@@ -1272,7 +1272,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-103",
 							DiskUUID:  "103",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
@@ -1281,7 +1281,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-104",
 							DiskUUID:  "104",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
@@ -1367,7 +1367,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-100",
 							DiskUUID: "100",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
@@ -1380,7 +1380,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-101",
 							DiskUUID:  "101",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
@@ -1389,7 +1389,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-102",
 							DiskUUID:  "102",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
@@ -1398,7 +1398,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-103",
 							DiskUUID:  "103",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
@@ -1407,7 +1407,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-104",
 							DiskUUID:  "104",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
@@ -1428,7 +1428,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:     "my-disk-100",
 							DiskUUID: "100",
-							Type:     vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:     vmopv1.VolumeTypeClassic,
 							Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
 								KeyID:      "my-key-id",
 								ProviderID: "my-provider-id",
@@ -1441,7 +1441,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-101",
 							DiskUUID:  "101",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
@@ -1450,7 +1450,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-102",
 							DiskUUID:  "102",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
@@ -1459,7 +1459,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-103",
 							DiskUUID:  "103",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
@@ -1468,7 +1468,7 @@ var _ = Describe("UpdateStatus", func() {
 						{
 							Name:      "my-disk-104",
 							DiskUUID:  "104",
-							Type:      vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type:      vmopv1.VolumeTypeClassic,
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
@@ -1476,6 +1476,161 @@ var _ = Describe("UpdateStatus", func() {
 						},
 					}))
 				})
+			})
+		})
+	})
+
+	Context("Controllers", func() {
+		When("moVM.Config is nil", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = nil
+			})
+			Specify("status.hardware.controllers should be empty", func() {
+				if vmCtx.VM.Status.Hardware != nil {
+					Expect(vmCtx.VM.Status.Hardware.Controllers).To(BeEmpty())
+				}
+			})
+		})
+
+		When("moVM.Config.Hardware.Device is empty", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{},
+					},
+				}
+			})
+			Specify("status.hardware.controllers should be empty", func() {
+				if vmCtx.VM.Status.Hardware != nil {
+					Expect(vmCtx.VM.Status.Hardware.Controllers).To(BeEmpty())
+				}
+			})
+		})
+
+		When("VM has various controller types", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							&vimtypes.VirtualIDEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 200,
+									},
+									BusNumber: 0,
+								},
+							},
+							&vimtypes.VirtualSCSIController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 1000,
+									},
+									BusNumber: 0,
+								},
+							},
+							&vimtypes.VirtualSATAController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 15000,
+									},
+									BusNumber: 0,
+								},
+							},
+							&vimtypes.VirtualNVMEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 20000,
+									},
+									BusNumber: 0,
+								},
+							},
+						},
+					},
+				}
+			})
+			Specify("status.hardware.controllers should contain all controller types", func() {
+				Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.Hardware.Controllers).To(HaveLen(4))
+
+				controllerTypes := make([]vmopv1.VirtualControllerType, 0, 4)
+				for _, controller := range vmCtx.VM.Status.Hardware.Controllers {
+					controllerTypes = append(controllerTypes, controller.Type)
+					Expect(controller.BusNumber).To(Equal(int32(0)))
+				}
+
+				Expect(controllerTypes).To(ContainElements(
+					vmopv1.VirtualControllerTypeIDE,
+					vmopv1.VirtualControllerTypeSCSI,
+					vmopv1.VirtualControllerTypeSATA,
+					vmopv1.VirtualControllerTypeNVME,
+				))
+			})
+		})
+
+		When("VM has controllers with attached devices", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							&vimtypes.VirtualSCSIController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 1000,
+									},
+									BusNumber: 0,
+								},
+							},
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key:           2000,
+									ControllerKey: 1000,
+									UnitNumber:    ptr.To(int32(0)),
+								},
+							},
+							&vimtypes.VirtualIDEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 200,
+									},
+									BusNumber: 0,
+								},
+							},
+							&vimtypes.VirtualCdrom{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key:           3000,
+									ControllerKey: 200,
+									UnitNumber:    ptr.To(int32(0)),
+								},
+							},
+						},
+					},
+				}
+			})
+			Specify("status.hardware.controllers should contain controllers with their devices", func() {
+				Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.Hardware.Controllers).To(HaveLen(2))
+
+				var scsiController, ideController *vmopv1.VirtualControllerStatus
+				for i := range vmCtx.VM.Status.Hardware.Controllers {
+					controller := &vmCtx.VM.Status.Hardware.Controllers[i]
+					if controller.Type == vmopv1.VirtualControllerTypeSCSI {
+						scsiController = controller
+					} else if controller.Type == vmopv1.VirtualControllerTypeIDE {
+						ideController = controller
+					}
+				}
+
+				Expect(scsiController).ToNot(BeNil())
+				Expect(scsiController.BusNumber).To(Equal(int32(0)))
+				Expect(scsiController.Devices).To(HaveLen(1))
+				Expect(scsiController.Devices[0].UnitNumber).To(Equal(int32(0)))
+				Expect(scsiController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeDisk))
+
+				Expect(ideController).ToNot(BeNil())
+				Expect(ideController.BusNumber).To(Equal(int32(0)))
+				Expect(ideController.Devices).To(HaveLen(1))
+				Expect(ideController.Devices[0].UnitNumber).To(Equal(int32(0)))
+				Expect(ideController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeCDROM))
 			})
 		})
 	})

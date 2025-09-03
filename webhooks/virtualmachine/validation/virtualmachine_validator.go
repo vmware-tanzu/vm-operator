@@ -161,7 +161,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, nil)...)
-	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateHardware(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
@@ -263,7 +263,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateMinHardwareVersion(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateLabel(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNetworkHostAndDomainName(ctx, vm, oldVM)...)
-	fieldErrs = append(fieldErrs, v.validateCdrom(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateHardware(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
@@ -1274,7 +1274,7 @@ func isBootstrapCloudInit(vm *vmopv1.VirtualMachine) bool {
 }
 
 func (v validator) validateUpdatesWhenPoweredOn(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -1295,7 +1295,7 @@ func (v validator) validateUpdatesWhenPoweredOn(
 		allErrs = append(allErrs, field.Forbidden(specPath.Child("guestID"), updatesNotAllowedWhenPowerOn))
 	}
 
-	allErrs = append(allErrs, validateCdromWhenPoweredOn(vm.Spec.Cdrom, oldVM.Spec.Cdrom)...)
+	allErrs = append(allErrs, v.validateHardwareWhenPoweredOn(ctx, vm, oldVM)...)
 
 	// TODO: More checks.
 
@@ -1368,6 +1368,28 @@ func (v validator) validateSchemaUpgrade(
 
 		*/
 	}
+
+	return allErrs
+}
+
+func (v validator) validateHardware(
+	ctx *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	allErrs = append(allErrs, v.validateCdrom(ctx, newVM, oldVM)...)
+
+	return allErrs
+}
+
+func (v validator) validateHardwareWhenPoweredOn(
+	ctx *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	allErrs = append(allErrs, v.validateCdromWhenPoweredOn(ctx, newVM, oldVM)...)
 
 	return allErrs
 }
@@ -1683,26 +1705,39 @@ func (v validator) validateNetworkHostAndDomainName(
 }
 
 func (v validator) validateCdrom(
-	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
-	var allErrs field.ErrorList
+	_ *pkgctx.WebhookRequestContext,
+	newVM, _ *vmopv1.VirtualMachine) field.ErrorList {
 
-	if len(vm.Spec.Cdrom) == 0 {
+	var (
+		allErrs field.ErrorList
+		newCD   []vmopv1.VirtualMachineCdromSpec
+		newHW   = newVM.Spec.Hardware
+		f       = field.NewPath("spec", "hardware", "cdrom")
+	)
+
+	if newHW != nil {
+		newCD = newHW.Cdrom
+	}
+
+	if len(newCD) == 0 {
 		return allErrs
 	}
 
-	f := field.NewPath("spec", "cdrom")
-
 	// GuestID must be set when deploying an ISO VM with CD-ROMs.
-	if vm.Spec.GuestID == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec", "guestID"), "when deploying a VM with CD-ROMs"))
+	if newVM.Spec.GuestID == "" {
+		allErrs = append(
+			allErrs,
+			field.Required(
+				field.NewPath("spec", "guestID"),
+				"when deploying a VM with CD-ROMs"),
+		)
 	}
 
 	// Validate image kind and uniqueness for each CD-ROM.
 	// Namespace and cluster scope images with the same name are considered
 	// duplicates since they come from the same content library item file.
-	imgNames := make(map[string]struct{}, len(vm.Spec.Cdrom))
-	for i, c := range vm.Spec.Cdrom {
+	imgNames := make(map[string]struct{}, len(newCD))
+	for i, c := range newCD {
 		imgPath := f.Index(i).Child("image")
 		imgKind := c.Image.Kind
 		if imgKind != vmiKind && imgKind != cvmiKind {
@@ -1719,26 +1754,38 @@ func (v validator) validateCdrom(
 	return allErrs
 }
 
-func validateCdromWhenPoweredOn(
-	cdrom, oldCdrom []vmopv1.VirtualMachineCdromSpec) field.ErrorList {
+func (v validator) validateCdromWhenPoweredOn(
+	_ *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
 		allErrs field.ErrorList
-		f       = field.NewPath("spec", "cdrom")
+		newCD   []vmopv1.VirtualMachineCdromSpec
+		oldCD   []vmopv1.VirtualMachineCdromSpec
+		newHW   = newVM.Spec.Hardware
+		oldHW   = oldVM.Spec.Hardware
+		f       = field.NewPath("spec", "hardware", "cdrom")
 	)
 
-	if len(cdrom) != len(oldCdrom) {
+	if newHW != nil {
+		newCD = newHW.Cdrom
+	}
+	if oldHW != nil {
+		oldCD = oldHW.Cdrom
+	}
+
+	if len(newCD) != len(oldCD) {
 		// Adding or removing CD-ROMs is not allowed when VM is powered on.
 		allErrs = append(allErrs, field.Forbidden(f, updatesNotAllowedWhenPowerOn))
 		return allErrs
 	}
 
-	oldCdromNameToImage := make(map[string]vmopv1.VirtualMachineImageRef, len(oldCdrom))
-	for _, c := range oldCdrom {
+	oldCdromNameToImage := make(map[string]vmopv1.VirtualMachineImageRef, len(oldCD))
+	for _, c := range oldCD {
 		oldCdromNameToImage[c.Name] = c.Image
 	}
 
-	for i, c := range cdrom {
+	for i, c := range newCD {
 		if oldImage, ok := oldCdromNameToImage[c.Name]; !ok {
 			// CD-ROM name is changed.
 			allErrs = append(allErrs, field.Forbidden(f.Index(i).Child("name"), updatesNotAllowedWhenPowerOn))

@@ -44,6 +44,12 @@ func Convert_v1alpha3_VirtualMachineStorageStatus_To_v1alpha5_VirtualMachineStor
 	return nil
 }
 
+func Convert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(
+	in *VirtualMachineCdromSpec, out *vmopv1.VirtualMachineCdromSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineStorageStatus_To_v1alpha3_VirtualMachineStorageStatus(
 	in *vmopv1.VirtualMachineStorageStatus, out *VirtualMachineStorageStatus, s apiconversion.Scope) error {
 
@@ -77,10 +83,10 @@ func Convert_v1alpha5_VirtualMachineStorageStatus_To_v1alpha3_VirtualMachineStor
 	return nil
 }
 
-func Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(
-	in *vmopv1.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s apiconversion.Scope) error {
+func Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(
+	in *vmopv1.VirtualMachineCdromSpec, out *VirtualMachineCdromSpec, s apiconversion.Scope) error {
 
-	return autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in, out, s)
+	return autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(in, out, s)
 }
 
 func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(
@@ -89,10 +95,41 @@ func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMa
 	return autoConvert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(in, out, s)
 }
 
+func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha3_PersistentVolumeClaimVolumeSource(
+	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha3_PersistentVolumeClaimVolumeSource(in, out, s)
+}
+
+func Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(
+	in *vmopv1.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha3_VirtualMachineVolumeStatus(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(
 	in *vmopv1.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
 
-	return autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in, out, s)
+	if err := autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in, out, s); err != nil {
+		return err
+	}
+
+	switch {
+	case in.Hardware == nil:
+		out.Cdrom = nil
+	case len(in.Hardware.Cdrom) == 0:
+		out.Cdrom = nil
+	default:
+		out.Cdrom = make([]VirtualMachineCdromSpec, len(in.Hardware.Cdrom))
+		for i := range in.Hardware.Cdrom {
+			if err := autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha3_VirtualMachineCdromSpec(
+				&in.Hardware.Cdrom[i], &out.Cdrom[i], s); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func Convert_v1alpha5_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(
@@ -123,8 +160,103 @@ func restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, src *vmopv1.VirtualMac
 	dst.Spec.PromoteDisksMode = src.Spec.PromoteDisksMode
 }
 
+func Convert_v1alpha3_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(
+	in *VirtualMachineSpec, out *vmopv1.VirtualMachineSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in, out, s); err != nil {
+		return err
+	}
+
+	if len(in.Cdrom) > 0 {
+		if out.Hardware == nil {
+			out.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+		}
+		out.Hardware.Cdrom = make([]vmopv1.VirtualMachineCdromSpec, len(in.Cdrom))
+		for i := range in.Cdrom {
+			if err := autoConvert_v1alpha3_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(&in.Cdrom[i], &out.Hardware.Cdrom[i], s); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func restore_v1alpha5_VirtualMachineBootOptions(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.BootOptions = src.Spec.BootOptions
+}
+
+func restore_v1alpha5_VirtualMachineAffinitySpec(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Affinity = src.Spec.Affinity
+}
+
+func restore_v1alpha5_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
+	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
+	for i := range src.Spec.Volumes {
+		vol := &src.Spec.Volumes[i]
+		srcVolMap[vol.Name] = vol
+	}
+	for i := range dst.Spec.Volumes {
+		dstVol := &dst.Spec.Volumes[i]
+		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
+			if dstPvc := dstVol.PersistentVolumeClaim; dstPvc != nil {
+				if srcPvc := srcVol.PersistentVolumeClaim; srcPvc != nil {
+					dstPvc.ApplicationType = srcPvc.ApplicationType
+					dstPvc.ControllerBusNumber = srcPvc.ControllerBusNumber
+					dstPvc.ControllerType = srcPvc.ControllerType
+					dstPvc.DiskMode = srcPvc.DiskMode
+					dstPvc.SharingMode = srcPvc.SharingMode
+					dstPvc.UnitNumber = srcPvc.UnitNumber
+				}
+			}
+		}
+	}
+}
+
+func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Hardware == nil {
+		// There is nothing to restore so return early.
+		return
+	}
+
+	// Create a copy of the CD-ROMs currently stored on the dst VM.
+	var cdromChanges []vmopv1.VirtualMachineCdromSpec
+	if dst.Spec.Hardware != nil && len(dst.Spec.Hardware.Cdrom) > 0 {
+		cdromChanges = dst.Spec.Hardware.Cdrom
+	}
+
+	// Restore the missing hardware.
+	dst.Spec.Hardware = src.Spec.Hardware.DeepCopy()
+	dst.Spec.Hardware.Cdrom = cdromChanges
+
+	// Restore the old CD-ROM device information.
+	for i := range dst.Spec.Hardware.Cdrom {
+		dstCdrom := &dst.Spec.Hardware.Cdrom[i]
+
+		// Find the matching CD-ROM from the source.
+		for _, srcCdrom := range src.Spec.Hardware.Cdrom {
+			if srcCdrom.Name == dstCdrom.Name {
+				dstCdrom.ControllerBusNumber = srcCdrom.ControllerBusNumber
+				dstCdrom.ControllerType = srcCdrom.ControllerType
+				dstCdrom.UnitNumber = srcCdrom.UnitNumber
+				break
+			}
+		}
+	}
+}
+
+func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if ci := bs.CloudInit; ci != nil {
+			if ci.WaitOnNetwork4 != nil || ci.WaitOnNetwork6 != nil {
+				// Only restore these values if dst still has a CloudInit spec.
+				if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.CloudInit != nil {
+					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork4 = ci.WaitOnNetwork4
+					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork6 = ci.WaitOnNetwork6
+				}
+			}
+		}
+	}
 }
 
 // ConvertTo converts this VirtualMachine to the Hub version.
@@ -145,6 +277,9 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
+	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)
+	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
+	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 
 	// END RESTORE
 
@@ -174,18 +309,4 @@ func (src *VirtualMachineList) ConvertTo(dstRaw ctrlconversion.Hub) error {
 func (dst *VirtualMachineList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachineList)
 	return Convert_v1alpha5_VirtualMachineList_To_v1alpha3_VirtualMachineList(src, dst, nil)
-}
-
-func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vmopv1.VirtualMachine) {
-	if bs := src.Spec.Bootstrap; bs != nil {
-		if ci := bs.CloudInit; ci != nil {
-			if ci.WaitOnNetwork4 != nil || ci.WaitOnNetwork6 != nil {
-				// Only restore these values if dst still has a CloudInit spec.
-				if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.CloudInit != nil {
-					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork4 = ci.WaitOnNetwork4
-					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork6 = ci.WaitOnNetwork6
-				}
-			}
-		}
-	}
 }

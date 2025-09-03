@@ -67,7 +67,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 	// Calculate the total capacity of the Classic disks and PVCs included in the VM.
 	for _, volume := range vm.Status.Volumes {
 		switch volume.Type {
-		case vmopv1.VirtualMachineStorageDiskTypeClassic:
+		case vmopv1.VolumeTypeClassic:
 			// Add the disk size to the total reserved capacity
 			if volume.Requested == nil {
 				return nil, fmt.Errorf("requested is not set for classic disk")
@@ -80,7 +80,7 @@ func CalculateReservedForSnapshotPerStorageClass(
 			logger.V(4).Info("adding disk size to the total reserved capacity", "disk", volume.Name,
 				"storageClass", vm.Spec.StorageClass, "requested", volume.Requested)
 			requestedMap[vm.Spec.StorageClass].Add(*volume.Requested)
-		case vmopv1.VirtualMachineStorageDiskTypeManaged:
+		case vmopv1.VolumeTypeManaged:
 			// For FCD, find the pvc of the volume, then check if pvc's storage class
 			// matches the SPU's storage class.
 			// If it doesn't match, skip the disk.

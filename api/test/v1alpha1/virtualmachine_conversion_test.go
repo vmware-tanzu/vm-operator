@@ -180,6 +180,93 @@ func TestVirtualMachineConversion(t *testing.T) {
 				SuspendMode:     vmopv1.VirtualMachinePowerOpModeTrySoft,
 				NextRestartTime: "tomorrow",
 				RestartMode:     vmopv1.VirtualMachinePowerOpModeSoft,
+				Hardware: &vmopv1.VirtualMachineHardwareSpec{
+					Cdrom: []vmopv1.VirtualMachineCdromSpec{
+						{
+							Name: "cdrom1",
+							Image: vmopv1.VirtualMachineImageRef{
+								Name: "my-cdrom-image",
+								Kind: "VirtualMachineImage",
+							},
+							AllowGuestControl: ptrOf(true),
+							Connected:         ptrOf(true),
+						},
+					},
+					IDEControllers: []vmopv1.IDEControllerSpec{
+						{
+							BusNumber: 0,
+						},
+						{
+							BusNumber: 1,
+						},
+					},
+					NVMEControllers: []vmopv1.NVMEControllerSpec{
+						{
+							BusNumber:     0,
+							PCISlotNumber: ptrOf(int32(160)),
+							SharingMode:   vmopv1.VirtualControllerSharingModeNone,
+						},
+						{
+							BusNumber:     1,
+							PCISlotNumber: ptrOf(int32(16)),
+							SharingMode:   vmopv1.VirtualControllerSharingModePhysical,
+						},
+						{
+							BusNumber:     2,
+							PCISlotNumber: ptrOf(int32(162)),
+							SharingMode:   vmopv1.VirtualControllerSharingModeVirtual,
+						},
+						{
+							BusNumber:     3,
+							PCISlotNumber: ptrOf(int32(163)),
+							SharingMode:   vmopv1.VirtualControllerSharingModeNone,
+						},
+					},
+					SATAControllers: []vmopv1.SATAControllerSpec{
+						{
+							BusNumber:     0,
+							PCISlotNumber: ptrOf(int32(170)),
+						},
+						{
+							BusNumber:     1,
+							PCISlotNumber: ptrOf(int32(17)),
+						},
+						{
+							BusNumber:     2,
+							PCISlotNumber: ptrOf(int32(172)),
+						},
+						{
+							BusNumber:     3,
+							PCISlotNumber: ptrOf(int32(173)),
+						},
+					},
+					SCSIControllers: []vmopv1.SCSIControllerSpec{
+						{
+							BusNumber:     0,
+							PCISlotNumber: ptrOf(int32(180)),
+							SharingMode:   vmopv1.VirtualControllerSharingModeNone,
+							Type:          vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						},
+						{
+							BusNumber:     1,
+							PCISlotNumber: ptrOf(int32(18)),
+							SharingMode:   vmopv1.VirtualControllerSharingModePhysical,
+							Type:          vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						},
+						{
+							BusNumber:     2,
+							PCISlotNumber: ptrOf(int32(182)),
+							SharingMode:   vmopv1.VirtualControllerSharingModeVirtual,
+							Type:          vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						},
+						{
+							BusNumber:     3,
+							PCISlotNumber: ptrOf(int32(183)),
+							SharingMode:   vmopv1.VirtualControllerSharingModeNone,
+							Type:          vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						},
+					},
+				},
 				Volumes: []vmopv1.VirtualMachineVolume{
 					{
 						Name: "my-volume",
@@ -188,6 +275,11 @@ func TestVirtualMachineConversion(t *testing.T) {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "my-claim",
 								},
+								ApplicationType:     vmopv1.VolumeApplicationTypeOracleRAC,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptrOf(int32(0)),
+								DiskMode:            vmopv1.VolumeDiskModePersistent,
+								UnitNumber:          ptrOf(int32(0)),
 							}),
 						},
 					},
@@ -225,7 +317,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 					BootDiskCapacity:              ptrOf(resource.MustParse("1024k")),
-					DefaultVolumeProvisioningMode: vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero,
+					DefaultVolumeProvisioningMode: vmopv1.VolumeProvisioningModeThickEagerZero,
 					ChangeBlockTracking:           ptrOf(true),
 				},
 				Reserved: &vmopv1.VirtualMachineReservedSpec{
@@ -235,18 +327,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 				InstanceUUID:       uuid.NewString(),
 				BiosUUID:           uuid.NewString(),
 				GuestID:            "my-guest-id",
-				Cdrom: []vmopv1.VirtualMachineCdromSpec{
-					{
-						Name: "cdrom1",
-						Image: vmopv1.VirtualMachineImageRef{
-							Name: "my-cdrom-image",
-							Kind: "VirtualMachineImage",
-						},
-						AllowGuestControl: ptrOf(true),
-						Connected:         ptrOf(true),
-					},
-				},
-				PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOffline,
+				PromoteDisksMode:   vmopv1.VirtualMachinePromoteDisksModeOffline,
 				BootOptions: &vmopv1.VirtualMachineBootOptions{
 					Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
 					BootDelay: &metav1.Duration{Duration: time.Second * 10},
@@ -1907,11 +1988,11 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Volumes: []vmopv1.VirtualMachineVolumeStatus{
 						{
 							Name: "vol1",
-							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type: vmopv1.VolumeTypeManaged,
 						},
 						{
 							Name: "vol2",
-							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type: vmopv1.VolumeTypeClassic,
 						},
 					},
 				},
@@ -1924,11 +2005,11 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Volumes: []vmopv1.VirtualMachineVolumeStatus{
 						{
 							Name: "vol1",
-							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type: vmopv1.VolumeTypeManaged,
 						},
 						{
 							Name: "vol2",
-							Type: vmopv1.VirtualMachineStorageDiskTypeClassic,
+							Type: vmopv1.VolumeTypeClassic,
 						},
 					},
 				},
@@ -1973,7 +2054,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Volumes: []vmopv1.VirtualMachineVolumeStatus{
 						{
 							Name: "vol1",
-							Type: vmopv1.VirtualMachineStorageDiskTypeManaged,
+							Type: vmopv1.VolumeTypeManaged,
 						},
 					},
 				},

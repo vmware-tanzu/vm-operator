@@ -3862,6 +3862,7 @@ func autoConvert_v1alpha4_VirtualMachineNetworkInterfaceSpec_To_v1alpha5_Virtual
 	out.Name = in.Name
 	out.Network = (*common.PartialObjectRef)(unsafe.Pointer(in.Network))
 	out.GuestDeviceName = in.GuestDeviceName
+	out.MACAddr = in.MACAddr
 	out.Addresses = *(*[]string)(unsafe.Pointer(&in.Addresses))
 	out.DHCP4 = in.DHCP4
 	out.DHCP6 = in.DHCP6
@@ -3883,6 +3884,7 @@ func autoConvert_v1alpha5_VirtualMachineNetworkInterfaceSpec_To_v1alpha4_Virtual
 	out.Name = in.Name
 	out.Network = (*v1alpha4common.PartialObjectRef)(unsafe.Pointer(in.Network))
 	out.GuestDeviceName = in.GuestDeviceName
+	out.MACAddr = in.MACAddr
 	out.Addresses = *(*[]string)(unsafe.Pointer(&in.Addresses))
 	out.DHCP4 = in.DHCP4
 	out.DHCP6 = in.DHCP6

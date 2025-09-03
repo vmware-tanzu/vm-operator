@@ -16,6 +16,7 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -120,9 +121,10 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 			})
 
 			Context("Matches", func() {
-				const networkName1, networkName2 = "network-1", "network-2"
-				const backing1, backing2 = "dvpg-1", "dvpg-2"
+				const networkName1, networkName2, networkName3 = "network-1", "network-2", "network-3"
+				const backing1, backing2, backing3 = "dvpg-1", "dvpg-2", "dvpg-3"
 				const externalID = "extid-1"
+				const macAddress = "f8:e4:3b:7e:88:ca"
 
 				BeforeEach(func() {
 					dev1 := &vimtypes.VirtualVmxnet3{}
@@ -147,7 +149,15 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 							PortgroupKey: backing2,
 						},
 					}
-					devices = append(devices, dev1, dev2, dev3)
+					dev4 := &vimtypes.VirtualVmxnet3{}
+					dev4.Key = 4003
+					dev4.MacAddress = macAddress
+					dev4.Backing = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+						Port: vimtypes.DistributedVirtualSwitchPortConnection{
+							PortgroupKey: backing3,
+						},
+					}
+					devices = append(devices, dev1, dev2, dev3, dev4)
 
 					netIf1 := &netopv1alpha1.NetworkInterface{
 						ObjectMeta: metav1.ObjectMeta{
@@ -177,7 +187,17 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 							NetworkID:  backing2,
 						},
 					}
-					initObjs = append(initObjs, netIf1, netIf2, netIf3)
+					netIf4 := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vmCtx.VM.Name, networkName3, "eth3", false),
+							Namespace: vmCtx.VM.Namespace,
+						},
+						Status: netopv1alpha1.NetworkInterfaceStatus{
+							NetworkID:  backing3,
+							MacAddress: macAddress,
+						},
+					}
+					initObjs = append(initObjs, netIf1, netIf2, netIf3, netIf4)
 
 					vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
@@ -198,14 +218,22 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 								Name: networkName2,
 							},
 						},
+						{
+							Name: "eth3",
+							Network: &vmopv1common.PartialObjectRef{
+								Name: networkName3,
+							},
+							MACAddr: macAddress,
+						},
 					}
 				})
 
 				It("returns expected mapping", func() {
-					Expect(devKeyToIdx).To(HaveLen(3))
+					Expect(devKeyToIdx).To(HaveLen(4))
 					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4000), 1))
 					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4001), 2))
 					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4002), 0))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4003), 3))
 				})
 			})
 		})

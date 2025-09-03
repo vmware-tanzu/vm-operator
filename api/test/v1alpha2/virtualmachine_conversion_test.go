@@ -125,6 +125,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								Name: "primary",
 							},
 							GuestDeviceName: "eth10",
+							MACAddr:         "00:11:22:33:44:55",
 						},
 						{
 							Name: "ncp-interface",
@@ -136,6 +137,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								Name: "segment1",
 							},
 							GuestDeviceName: "eth20",
+							MACAddr:         "00:11:22:33:44:56",
 						},
 						{
 							Name: "nsx-vpc-subnet-interface",
@@ -147,6 +149,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								Name: "segment-subnet",
 							},
 							GuestDeviceName: "eth30",
+							MACAddr:         "00:11:22:33:44:57",
 						},
 						{
 							Name: "nsx-vpc-subnetset-interface",
@@ -157,6 +160,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 								Name: "segment-subnetset",
 							},
+							MACAddr: "00:11:22:33:44:58",
 						},
 						{
 							Name: "my-interface",
@@ -168,6 +172,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								Name: "secondary",
 							},
 							GuestDeviceName: "eth40",
+							MACAddr:         "00:11:22:33:44:59",
 							Addresses:       []string{"1.1.1.11", "2.2.2.22"},
 							DHCP4:           true,
 							DHCP6:           true,

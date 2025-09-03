@@ -29,6 +29,7 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
+
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -61,7 +62,6 @@ type NetworkInterfaceResult struct {
 	GuestDeviceName string
 	NoIPv4          bool
 	DHCP4           bool
-	NoIPv6          bool
 	DHCP6           bool
 	MTU             int64
 	Nameservers     []string
@@ -144,6 +144,7 @@ func CreateAndWaitForNetworkInterfaces(
 		interfaceSpec := &networkSpec.Interfaces[i]
 
 		var result *NetworkInterfaceResult
+		var isVPC bool
 		var err error
 
 		switch networkType {
@@ -153,6 +154,7 @@ func CreateAndWaitForNetworkInterfaces(
 			result, err = createNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		case pkgcfg.NetworkProviderTypeVPC:
 			result, err = createVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
+			isVPC = true
 		case pkgcfg.NetworkProviderTypeNamed:
 			result, err = createNamedNetworkInterface(vmCtx, finder, interfaceSpec)
 		default:
@@ -169,6 +171,7 @@ func CreateAndWaitForNetworkInterfaces(
 			interfaceSpec,
 			defaultToGlobalNameservers,
 			defaultToGlobalSearchDomains,
+			isVPC,
 			result)
 
 		results = append(results, *result)
@@ -186,16 +189,25 @@ func applyInterfaceSpecToResult(
 	interfaceSpec *vmopv1.VirtualMachineNetworkInterfaceSpec,
 	defaultToGlobalNameservers bool,
 	defaultToGlobalSearchDomains bool,
+	isVPC bool,
 	result *NetworkInterfaceResult) {
+
+	result.Name = interfaceSpec.Name
+	result.GuestDeviceName = interfaceSpec.GuestDeviceName
+	if result.GuestDeviceName == "" {
+		result.GuestDeviceName = result.Name
+	}
+	result.MacAddress = strings.ToLower(result.MacAddress)
 
 	// We don't really support IPv6 yet so don't enable it when the underlying provider didn't return any IPs.
 	dhcp4 := interfaceSpec.DHCP4 || len(result.IPConfigs) == 0
 	dhcp6 := interfaceSpec.DHCP6
 
-	if len(interfaceSpec.Addresses) > 0 {
+	// For VPC we set the interface spec IPs in the SubnetPort so ignore the interface spec addresses here.
+	if !isVPC && len(interfaceSpec.Addresses) > 0 {
 		// The InterfaceSpec takes precedence over what underlying network provider says, so in this case it
 		// likely it did IPAM but we'll ignore those IPs. Providing static IPs via the Addresses field is
-		// probably not very common so override the IPConfigs so bootstrap has only one field to use.
+		// probably not very common so override the IPConfigs so bootstrap can always use this list.
 		result.IPConfigs = make([]NetworkInterfaceIPConfig, 0, len(interfaceSpec.Addresses))
 
 		for _, addr := range interfaceSpec.Addresses {
@@ -211,43 +223,36 @@ func applyInterfaceSpecToResult(
 
 			if ipConfig.IsIPv4 {
 				dhcp4 = false
-				if interfaceSpec.Gateway4 == gatewayIgnored {
-					ipConfig.Gateway = ""
-				} else {
-					ipConfig.Gateway = interfaceSpec.Gateway4
-				}
 			} else {
 				dhcp6 = false
-				if interfaceSpec.Gateway6 == gatewayIgnored {
-					ipConfig.Gateway = ""
-				} else {
-					ipConfig.Gateway = interfaceSpec.Gateway6
-				}
 			}
 
 			result.IPConfigs = append(result.IPConfigs, ipConfig)
 		}
-	} else {
-		gw4Disabled := interfaceSpec.Gateway4 == gatewayIgnored
-		gw6Disabled := interfaceSpec.Gateway6 == gatewayIgnored
-
-		if gw4Disabled || gw6Disabled {
-			for i := range result.IPConfigs {
-				if (gw4Disabled && result.IPConfigs[i].IsIPv4) || (gw6Disabled && !result.IPConfigs[i].IsIPv4) {
-					result.IPConfigs[i].Gateway = ""
-				}
-			}
-		}
-	}
-
-	result.Name = interfaceSpec.Name
-	result.GuestDeviceName = interfaceSpec.GuestDeviceName
-	if result.GuestDeviceName == "" {
-		result.GuestDeviceName = result.Name
 	}
 
 	result.DHCP4 = dhcp4
 	result.DHCP6 = dhcp6
+
+	if gw4, gw6 := interfaceSpec.Gateway4, interfaceSpec.Gateway6; gw4 != "" || gw6 != "" {
+		for i := range result.IPConfigs {
+			if gw4 != "" && result.IPConfigs[i].IsIPv4 {
+				if gw4 == gatewayIgnored {
+					// Clear network provider gateway.
+					result.IPConfigs[i].Gateway = ""
+				} else {
+					result.IPConfigs[i].Gateway = gw4
+				}
+			} else if gw6 != "" && !result.IPConfigs[i].IsIPv4 {
+				if gw6 == gatewayIgnored {
+					// Clear network provider gateway.
+					result.IPConfigs[i].Gateway = ""
+				} else {
+					result.IPConfigs[i].Gateway = gw6
+				}
+			}
+		}
+	}
 
 	if n := interfaceSpec.Nameservers; len(n) > 0 {
 		result.Nameservers = n
@@ -264,6 +269,7 @@ func applyInterfaceSpecToResult(
 	if interfaceSpec.MTU != nil {
 		result.MTU = *interfaceSpec.MTU
 	}
+
 	for _, route := range interfaceSpec.Routes {
 		result.Routes = append(result.Routes, NetworkInterfaceRoute{To: route.To, Via: route.Via, Metric: route.Metric})
 	}
@@ -297,8 +303,9 @@ func createNamedNetworkInterface(
 	}
 
 	return &NetworkInterfaceResult{
-		NetworkID: networkRefName,
-		Backing:   backing,
+		NetworkID:  networkRefName,
+		Backing:    backing,
+		MacAddress: interfaceSpec.MACAddr,
 	}, nil
 }
 
@@ -398,6 +405,14 @@ func createNetOPNetworkInterface(
 		return nil, err
 	}
 
+	// The NetworkInterface does not accept an input MAC address (nor does it ever
+	// generate one to set in the Status) but if the user requested a specific one
+	// assign that here so we'll use it for the device's MAC.
+	// To better really support this, we should add a MAC address field to the Spec.
+	if interfaceSpec.MACAddr != "" {
+		netIf.Status.MacAddress = interfaceSpec.MACAddr
+	}
+
 	return netOpNetIfToResult(vimClient, netIf), nil
 }
 
@@ -423,7 +438,7 @@ func netOpNetIfToResult(
 	return &NetworkInterfaceResult{
 		ObjectName: netIf.Name,
 		IPConfigs:  ipConfigs,
-		MacAddress: netIf.Status.MacAddress, // Not set by NetOP.
+		MacAddress: netIf.Status.MacAddress,
 		ExternalID: netIf.Status.ExternalID,
 		NetworkID:  netIf.Status.NetworkID,
 		Backing:    object.NewDistributedVirtualPortgroup(vimClient, pgObjRef),
@@ -672,6 +687,7 @@ func createVPCNetworkInterface(
 		if err := SetNetworkInterfaceOwnerRef(vmCtx.VM, vpcSubnetPort, client.Scheme()); err != nil {
 			return err
 		}
+
 		if vpcSubnetPort.Labels == nil {
 			vpcSubnetPort.Labels = map[string]string{}
 		}
@@ -682,6 +698,40 @@ func createVPCNetworkInterface(
 			vpcSubnetPort.Annotations = make(map[string]string)
 		}
 		vpcSubnetPort.Annotations[constants.VPCAttachmentRef] = "virtualmachine/" + vmCtx.VM.Name + "/" + interfaceSpec.Name
+
+		// TBD: It doesn't look like VPC actually reconciles if these change.
+		switch {
+		case len(interfaceSpec.Addresses) > 0:
+			for _, ipCidr := range interfaceSpec.Addresses {
+				// Our interface spec IPs include the CIDR but VPC takes just the IP address. This can
+				// lead to funkiness if the user specified an invalid prefix for this network. Here is
+				// what we're going to do: applyInterfaceSpecToResult() will just use whatever comes
+				// back in the SubnetPort Status, ignoring the user prefix. It might be nicer to allow
+				// bare IPs only when using VPC.
+				ip, _, err := net.ParseCIDR(ipCidr)
+				if err != nil || ip == nil {
+					continue
+				}
+
+				vpcSubnetPort.Spec.AddressBindings = []vpcv1alpha1.PortAddressBinding{
+					{
+						IPAddress:  ip.String(),
+						MACAddress: strings.ToLower(interfaceSpec.MACAddr),
+					},
+				}
+			}
+		case interfaceSpec.MACAddr != "":
+			// TBD: VPC will default the MAC when only specifying an IP, but will not do IPAM when
+			// only the specifying the MAC, but they'll have to fix that for no IPAM, right, right?
+			vpcSubnetPort.Spec.AddressBindings = []vpcv1alpha1.PortAddressBinding{
+				{
+					MACAddress: strings.ToLower(interfaceSpec.MACAddr),
+				},
+			}
+		default:
+			vpcSubnetPort.Spec.AddressBindings = nil
+		}
+
 		return nil
 	})
 

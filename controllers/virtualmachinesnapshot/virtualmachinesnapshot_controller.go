@@ -26,7 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -69,7 +69,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 1,
 			SkipNameValidation:      SkipNameValidation,
-			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
 }
@@ -116,7 +116,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	vmSnapshotCtx := &pkgctx.VirtualMachineSnapshotContext{
 		Context:                ctx,
-		Logger:                 pkgutil.FromContextOrDefault(ctx),
+		Logger:                 pkglog.FromContextOrDefault(ctx),
 		VirtualMachineSnapshot: vmSnapshot,
 		StorageClassesToSync:   sets.New[string](),
 	}

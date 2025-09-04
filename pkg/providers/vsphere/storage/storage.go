@@ -13,7 +13,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
@@ -30,7 +30,7 @@ func getStorageClassAndPolicyID(
 
 	sc := storagev1.StorageClass{}
 	if err := client.Get(ctx, ctrlclient.ObjectKey{Name: storageClassName}, &sc); err != nil {
-		pkgutil.FromContextOrDefault(ctx).Error(err, "Failed to get StorageClass", "storageClass", storageClassName)
+		pkglog.FromContextOrDefault(ctx).Error(err, "Failed to get StorageClass", "storageClass", storageClassName)
 		return nil, "", err
 	}
 	policyID, err := kubeutil.GetStoragePolicyID(sc)

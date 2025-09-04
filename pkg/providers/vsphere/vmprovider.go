@@ -45,6 +45,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
@@ -211,7 +212,7 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(
 		return fmt.Errorf("unexpected content library item K8s object type %T", cli)
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx).V(4).WithValues(
+	logger := pkglog.FromContextOrDefault(ctx).V(4).WithValues(
 		"vmiName", vmi.GetName(), "cliName", cli.GetName())
 
 	var allowed bool
@@ -420,7 +421,7 @@ func (vs *vSphereVMProvider) getOvfEnvelope(
 func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx context.Context,
 	contentLibrary, itemName string) (*library.Item, error) {
 
-	pkgutil.FromContextOrDefault(ctx).V(4).Info("Get item from ContentLibrary",
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Get item from ContentLibrary",
 		"UUID", contentLibrary, "item name", itemName)
 
 	client, err := vs.getVcClient(ctx)
@@ -459,7 +460,7 @@ func (vs *vSphereVMProvider) GetItemFromInventoryByName(
 }
 
 func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
-	pkgutil.FromContextOrDefault(ctx).V(4).Info("Update Content Library Item", "itemID", itemID)
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Update Content Library Item", "itemID", itemID)
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -603,7 +604,7 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) 
 	for {
 		nextTasks, err := collector.ReadNextTasks(ctx, taskHistoryCollectorPageSize)
 		if err != nil {
-			pkgutil.FromContextOrDefault(ctx).Error(err, "failed to read next tasks")
+			pkglog.FromContextOrDefault(ctx).Error(err, "failed to read next tasks")
 			return nil, err
 		}
 		if len(nextTasks) == 0 {
@@ -612,7 +613,7 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx context.Context, actID string) 
 		taskList = append(taskList, nextTasks...)
 	}
 
-	pkgutil.FromContextOrDefault(ctx).V(5).Info("found tasks", "actID", actID, "tasks", taskList)
+	pkglog.FromContextOrDefault(ctx).V(5).Info("found tasks", "actID", actID, "tasks", taskList)
 	return taskList, nil
 }
 

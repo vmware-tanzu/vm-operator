@@ -26,6 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 )
@@ -340,7 +341,7 @@ func EncryptionClassToVirtualMachineMapper(
 			panic(fmt.Sprintf("object is %T", o))
 		}
 
-		logger := pkgutil.FromContextOrDefault(ctx).
+		logger := pkglog.FromContextOrDefault(ctx).
 			WithValues("name", o.GetName(), "namespace", o.GetNamespace())
 		logger.V(4).Info("Reconciling all VMs referencing an EncryptionClass")
 
@@ -436,7 +437,7 @@ func GroupToVMsMapperFn(
 		}
 
 		if len(requests) > 0 {
-			pkgutil.FromContextOrDefault(ctx).WithValues(
+			pkglog.FromContextOrDefault(ctx).WithValues(
 				"groupName", group.Name, "groupNamespace", namespace,
 			).V(4).Info(
 				"Reconciling VMs due to their VirtualMachineGroup watch",

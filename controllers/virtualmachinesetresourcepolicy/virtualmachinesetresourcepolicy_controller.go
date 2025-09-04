@@ -21,9 +21,9 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -50,7 +50,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Watches(
 			&topologyv1.Zone{},
 			handler.EnqueueRequestsFromMapFunc(zoneToNamespaceVMSRP(mgr.GetClient()))).
-		WithLogConstructor(pkgutil.ControllerLogConstructor(controlledTypeName, controlledType, mgr.GetScheme())).
+		WithLogConstructor(pkglog.ControllerLogConstructor(controlledTypeName, controlledType, mgr.GetScheme())).
 		Complete(r)
 }
 
@@ -183,7 +183,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	rpCtx := &pkgctx.VirtualMachineSetResourcePolicyContext{
 		Context:        ctx,
-		Logger:         pkgutil.FromContextOrDefault(ctx),
+		Logger:         pkglog.FromContextOrDefault(ctx),
 		ResourcePolicy: rp,
 	}
 

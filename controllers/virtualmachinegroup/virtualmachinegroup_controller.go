@@ -33,7 +33,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -69,7 +69,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			handler.EnqueueRequestsFromMapFunc(MemberToGroupMapperFn(ctx))).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
-			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
 }
@@ -101,7 +101,7 @@ func MemberToGroupMapperFn(ctx context.Context) handler.MapFunc {
 		}
 
 		if len(requests) > 0 {
-			pkgutil.FromContextOrDefault(ctx).WithValues(
+			pkglog.FromContextOrDefault(ctx).WithValues(
 				"memberName", memberObj.GetName(),
 				"memberNamespace", memberObj.GetNamespace(),
 			).V(4).Info(
@@ -156,7 +156,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	vmGroupCtx := &pkgctx.VirtualMachineGroupContext{
 		Context: ctx,
-		Logger:  pkgutil.FromContextOrDefault(ctx),
+		Logger:  pkglog.FromContextOrDefault(ctx),
 		VMGroup: vmGroup,
 	}
 
@@ -541,7 +541,7 @@ func (r *Reconciler) reconcilePlacement(
 	}
 
 	if len(groupPlacements) == 0 {
-		pkgutil.FromContextOrDefault(ctx).V(5).Info("No group members need placement")
+		pkglog.FromContextOrDefault(ctx).V(5).Info("No group members need placement")
 		return nil
 	}
 

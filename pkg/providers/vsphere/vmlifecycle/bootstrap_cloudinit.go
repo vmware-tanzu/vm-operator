@@ -18,6 +18,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
@@ -108,7 +109,7 @@ func BootStrapCloudInit(
 	cloudInitSpec *vmopv1.VirtualMachineBootstrapCloudInitSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling Cloud-Init bootstrap state")
 
 	if bsArgs.NetworkResults.UpdatedEthCards {
@@ -228,7 +229,7 @@ func GetCloudInitPrepCustSpec(
 	config *vimtypes.VirtualMachineConfigInfo,
 	metadata, userdata string) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling Cloud-Init Prep bootstrap state")
 
 	if userdata != "" {
@@ -271,7 +272,7 @@ func GetCloudInitGuestInfoCustSpec(
 	config *vimtypes.VirtualMachineConfigInfo,
 	metadata, userdata string) (*vimtypes.VirtualMachineConfigSpec, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling Cloud-Init GuestInfo bootstrap state")
 
 	encodedMetadata, err := pkgutil.EncodeGzipBase64(metadata)

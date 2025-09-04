@@ -11,7 +11,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 func BootstrapVAppConfig(
@@ -20,7 +20,7 @@ func BootstrapVAppConfig(
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling vApp bootstrap state")
 
 	var (

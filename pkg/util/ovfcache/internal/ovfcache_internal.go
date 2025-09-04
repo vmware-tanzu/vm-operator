@@ -13,6 +13,7 @@ import (
 	"github.com/vmware/govmomi/ovf"
 
 	ctxgen "github.com/vmware-tanzu/vm-operator/pkg/context/generic"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -125,7 +126,7 @@ func GetOVFEnvelope(
 		ctx,
 		contextKeyValue,
 		func(val ContextValueType) {
-			logger := pkgutil.FromContextOrDefault(ctx).
+			logger := pkglog.FromContextOrDefault(ctx).
 				WithValues(
 					"itemID", itemID,
 					"contentVersion", contentVersion,

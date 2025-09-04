@@ -29,10 +29,10 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	imgutil "github.com/vmware-tanzu/vm-operator/pkg/util/image"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -71,7 +71,7 @@ func AddToManager(
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
 			SkipNameValidation:      SkipNameValidation,
-			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledItemType, mgr.GetScheme()),
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledItemType, mgr.GetScheme()),
 		})
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
@@ -128,7 +128,7 @@ func (r *Reconciler) Reconcile(
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 	ctx = ovfcache.JoinContext(ctx, r.Context)
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	var (
 		obj    client.Object

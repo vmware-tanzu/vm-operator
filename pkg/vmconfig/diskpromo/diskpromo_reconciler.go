@@ -18,7 +18,7 @@ import (
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
 
@@ -97,7 +97,7 @@ func (r reconciler) Reconcile(
 
 	var (
 		runningTaskInfo []vimtypes.TaskInfo
-		logger          = pkgutil.FromContextOrDefault(ctx)
+		logger          = pkglog.FromContextOrDefault(ctx)
 	)
 
 	// Check if the VM has any outstanding tasks.

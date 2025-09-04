@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -92,7 +93,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		For(controlledType).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
-			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Watches(&vmopv1.VirtualMachineImage{},
 			handler.EnqueueRequestsFromMapFunc(vmiToVMPubMapperFn(ctx, r.Client))).
@@ -220,7 +221,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	vmPublishCtx := &pkgctx.VirtualMachinePublishRequestContext{
 		Context:          ctx,
-		Logger:           pkgutil.FromContextOrDefault(ctx),
+		Logger:           pkglog.FromContextOrDefault(ctx),
 		VMPublishRequest: vmPublishReq,
 	}
 

@@ -23,7 +23,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
@@ -67,7 +67,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	c, err := controller.New(controllerName, mgr, controller.Options{
 		Reconciler:              r,
 		MaxConcurrentReconciles: 1,
-		LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 	})
 	if err != nil {
 		return err
@@ -131,7 +131,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, r.reconcileVcCreds(ctx)
 	}
 
-	pkgutil.FromContextOrDefault(ctx).Error(nil, "Reconciling unexpected object")
+	pkglog.FromContextOrDefault(ctx).Error(nil, "Reconciling unexpected object")
 	return ctrl.Result{}, nil
 }
 
@@ -141,6 +141,6 @@ func (r *Reconciler) reconcileVcCreds(ctx context.Context) error {
 		return ctrlclient.IgnoreNotFound(err)
 	}
 
-	pkgutil.FromContextOrDefault(ctx).Info("Reconciling updated VM Operator credentials")
+	pkglog.FromContextOrDefault(ctx).Info("Reconciling updated VM Operator credentials")
 	return r.provider.UpdateVcCreds(ctx, secret.Data)
 }

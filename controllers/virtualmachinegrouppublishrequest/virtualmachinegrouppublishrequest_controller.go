@@ -29,10 +29,10 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
@@ -64,7 +64,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Owns(&vmopv1.VirtualMachinePublishRequest{}).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
-			LogConstructor: pkgutil.ControllerLogConstructor(
+			LogConstructor: pkglog.ControllerLogConstructor(
 				controllerNameShort,
 				controlledType,
 				mgr.GetScheme()),
@@ -115,7 +115,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	vmGroupPublishRequestCtx := &pkgctx.VirtualMachineGroupPublishRequestContext{
 		Context:               ctx,
-		Logger:                pkgutil.FromContextOrDefault(ctx),
+		Logger:                pkglog.FromContextOrDefault(ctx),
 		VMGroupPublishRequest: vmGroupPublishRequest,
 	}
 	patchHelper, err := patch.NewHelper(vmGroupPublishRequest, r.Client)

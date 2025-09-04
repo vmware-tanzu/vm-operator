@@ -26,7 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -116,7 +116,7 @@ func lookupChildRPs(
 
 		childRP, err := vcenter.GetChildResourcePool(ctx, rp, childRPName)
 		if err != nil {
-			pkgutil.FromContextOrDefault(ctx).Error(err, "Skipping this resource pool since failed to get child ResourcePool",
+			pkglog.FromContextOrDefault(ctx).Error(err, "Skipping this resource pool since failed to get child ResourcePool",
 				"zone", zoneName, "parentRPMoID", rpMoID, "childRPName", childRPName)
 			continue
 		}
@@ -164,7 +164,7 @@ func getPlacementCandidates(
 			if childRPName != "" {
 				childRPMoIDs := lookupChildRPs(ctx, vcClient, rpMoIDs, zone.Name, childRPName)
 				if len(childRPMoIDs) == 0 {
-					pkgutil.FromContextOrDefault(ctx).Info("Zone had no candidates after looking up children ResourcePools",
+					pkglog.FromContextOrDefault(ctx).Info("Zone had no candidates after looking up children ResourcePools",
 						"zone", zone.Name, "rpMoIDs", rpMoIDs, "childRPName", childRPName)
 					continue
 				}
@@ -220,7 +220,7 @@ func getPlacementCandidates(
 		if childRPName != "" {
 			childRPMoIDs := lookupChildRPs(ctx, vcClient, rpMoIDs, az.Name, childRPName)
 			if len(childRPMoIDs) == 0 {
-				pkgutil.FromContextOrDefault(ctx).Info("AvailabilityZone had no candidates after looking up children ResourcePools",
+				pkglog.FromContextOrDefault(ctx).Info("AvailabilityZone had no candidates after looking up children ResourcePools",
 					"az", az.Name, "rpMoIDs", rpMoIDs, "childRPName", childRPName)
 				continue
 			}

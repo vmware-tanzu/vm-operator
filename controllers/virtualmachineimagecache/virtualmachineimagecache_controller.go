@@ -41,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	clprov "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
@@ -78,7 +79,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		For(controlledType).
 		WithOptions(controller.Options{
 			SkipNameValidation: SkipNameValidation,
-			LogConstructor:     pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+			LogConstructor:     pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		WatchesRawSource(source.Channel(
 			cource.FromContextWithBuffer(ctx, "VirtualMachineImageCache", 100),
@@ -119,7 +120,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			if reterr == nil {
 				reterr = err
 			}
-			pkgutil.FromContextOrDefault(ctx).Error(err, "patch failed")
+			pkglog.FromContextOrDefault(ctx).Error(err, "patch failed")
 		}
 	}()
 
@@ -165,7 +166,7 @@ func (r *reconciler) ReconcileNormal(
 		return pkgerr.NoRequeueError{Message: "spec.providerVersion is empty"}
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues(
+	logger := pkglog.FromContextOrDefault(ctx).WithValues(
 		"providerID", obj.Spec.ProviderID,
 		"providerVersion", obj.Spec.ProviderVersion)
 	ctx = logr.NewContext(ctx, logger)
@@ -364,7 +365,7 @@ func (r *reconciler) cacheFiles(
 		srcFiles[i].DstDir = cacheDir
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Caching files",
 		"dstDatacenter", dstDatacenter.Reference().Value,
 		"srcDatacenter", srcDatacenter.Reference().Value,
@@ -460,7 +461,7 @@ func reconcileOVF(
 				configMap.Data = map[string]string{}
 			}
 
-			logger := pkgutil.FromContextOrDefault(ctx)
+			logger := pkglog.FromContextOrDefault(ctx)
 			logger.Info("Fetching OVF")
 
 			// Get the OVF.
@@ -513,7 +514,7 @@ func reconcileLibraryItem(
 	p clprov.Provider,
 	obj *vmopv1.VirtualMachineImageCache) error {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	// Get the content library item to be cached.
 	item, err := p.GetLibraryItemID(ctx, obj.Spec.ProviderID)

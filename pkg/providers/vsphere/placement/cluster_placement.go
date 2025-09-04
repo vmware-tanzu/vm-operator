@@ -16,6 +16,7 @@ import (
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -226,7 +227,7 @@ func ClusterPlaceVMForCreate(
 	configSpecs []vimtypes.VirtualMachineConfigSpec,
 	needHostPlacement, needDatastorePlacement bool) (map[string][]Recommendation, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	placementSpec := vimtypes.PlaceVmsXClusterSpec{
 		PlacementType:           string(vimtypes.PlaceVmsXClusterSpecPlacementTypeCreateAndPowerOn),
 		ResourcePools:           resourcePoolsMoRefs,

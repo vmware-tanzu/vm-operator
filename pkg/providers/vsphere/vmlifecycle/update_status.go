@@ -35,6 +35,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -460,7 +461,7 @@ func reconcileStatusProbe(
 		}
 
 		// Log the time when the VM changes its readiness condition.
-		pkgutil.FromContextOrDefault(vmCtx).Info(
+		pkglog.FromContextOrDefault(vmCtx).Info(
 			"VM resource readiness probe condition updated",
 			"condition.status", cond.Status,
 			"time", cond.LastTransitionTime,

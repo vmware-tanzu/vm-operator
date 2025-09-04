@@ -32,6 +32,7 @@ import (
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/resize"
@@ -1061,7 +1062,7 @@ func reconcileCrypto(
 	moVM mo.VirtualMachine,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
-	pkgutil.FromContextOrDefault(ctx).V(4).Info("Reconciling crypto")
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling crypto")
 
 	return vmconfcrypto.Reconcile(
 		ctx,
@@ -1080,7 +1081,7 @@ func reconcileDiskPromo(
 	moVM mo.VirtualMachine,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
-	pkgutil.FromContextOrDefault(ctx).V(4).Info("Reconciling disk promotion")
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling disk promotion")
 
 	return vmconfdiskpromo.Reconcile(
 		ctx,
@@ -1099,7 +1100,7 @@ func reconcileAnnotationsToExtraConfig(
 	moVM mo.VirtualMachine,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
 
-	pkgutil.FromContextOrDefault(ctx).V(4).Info("Reconciling annotations-to-extraConfig")
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling annotations-to-extraConfig")
 
 	return vmconfanno2extraconfig.Reconcile(
 		ctx,

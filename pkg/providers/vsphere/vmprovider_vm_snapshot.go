@@ -29,6 +29,7 @@ import (
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -42,7 +43,7 @@ func (vs *vSphereVMProvider) DeleteSnapshot(
 	removeChildren bool,
 	consolidate *bool) (bool, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
@@ -86,7 +87,7 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 	vmSnapshotName string,
 	vm *vmopv1.VirtualMachine) (int64, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
@@ -120,7 +121,7 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 
 // SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.
 func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
@@ -226,7 +227,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertCheckTask(
 	vmCtx pkgctx.VirtualMachineContext,
 	_ *object.VirtualMachine) error {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling snapshot task")
 
 	//
@@ -256,7 +257,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine) error {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling snapshot revert")
 
 	// If no spec.currentSnapshot is specified, nothing to revert to.
@@ -378,7 +379,7 @@ func (vs *vSphereVMProvider) performSnapshotRevert(
 	snapObj *vimtypes.ManagedObjectReference,
 	snapshotName string) error {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 
 	// TODO (AKP): Add support for suppresspoweron option.
 	task, err := vcVM.RevertToSnapshot(vmCtx, snapObj.Value, false)
@@ -460,7 +461,7 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 
 	var (
 		moSnap mo.VirtualMachineSnapshot
-		logger = pkgutil.FromContextOrDefault(vmCtx)
+		logger = pkglog.FromContextOrDefault(vmCtx)
 	)
 
 	// Fetch the config stored with the snapshot.
@@ -500,7 +501,7 @@ func getVMYamlFromSnapshotFromSynthesizedSpec(
 	moSnap mo.VirtualMachineSnapshot,
 	snap *vimtypes.ManagedObjectReference) (string, error) {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 
 	if _, ok := snapCR.Annotations[vmopv1.ImportedSnapshotAnnotation]; !ok {
 		logger.Info("Unsupported revert attempted for snapshot "+
@@ -668,7 +669,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine) error {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 
 	// Find all VirtualMachineSnapshot objects that reference this VM
 	vmSnapshots, err := vs.getVirtualMachineSnapshotsForVM(vmCtx)

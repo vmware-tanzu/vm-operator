@@ -19,7 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto/internal"
@@ -587,7 +587,7 @@ func onEncrypt(
 	ctx context.Context,
 	args reconcileArgs) (Reason, []string, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	reason, msgs, err := validateEncrypt(ctx, args)
 	if reason > 0 || len(msgs) > 0 || err != nil {
@@ -616,7 +616,7 @@ func onRecrypt(
 	ctx context.Context,
 	args reconcileArgs) (Reason, []string, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	reason, msgs, err := validateRecrypt(ctx, args)
 	if reason > 0 || len(msgs) > 0 || err != nil {
@@ -701,7 +701,7 @@ func onUpdateEncrypted(
 	ctx context.Context,
 	args reconcileArgs) (Reason, []string, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	reason, msgs, err := validateUpdateEncrypted(ctx, args)
 	if reason > 0 || len(msgs) > 0 || err != nil {

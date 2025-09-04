@@ -20,7 +20,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 type provider interface {
@@ -67,7 +67,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				},
 			},
 		).
-		WithLogConstructor(pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme())).
+		WithLogConstructor(pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme())).
 		Complete(r)
 }
 
@@ -99,7 +99,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
-	pkgutil.FromContextOrDefault(ctx).Info("Received reconcile request")
+	pkglog.FromContextOrDefault(ctx).Info("Received reconcile request")
 
 	// Update the minimum CPU frequency. This frequency is used to populate the
 	// resource allocation fields in the ConfigSpec for cloning the VM.

@@ -16,7 +16,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/config/crd"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 // UnstructuredBases returns a list of the base CRDs.
@@ -63,7 +63,7 @@ func Install(
 			return fmt.Errorf("failed to get crd name: %w", err)
 		}
 
-		logger := pkgutil.FromContextOrDefault(ctx)
+		logger := pkglog.FromContextOrDefault(ctx)
 		logger.Info("Processing CRD", "kind", k)
 
 		if mutateFn != nil {
@@ -219,7 +219,7 @@ func removeFields(
 	shouldRemoveFields bool,
 	fields ...[]string) error {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	for j := range fields {
 		if !shouldRemoveFields {
@@ -270,7 +270,7 @@ func updateOrDeleteUnstructured(
 		shouldRemoveFields bool) error,
 ) error {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	obj := unstructured.Unstructured{
 		Object: map[string]any{},

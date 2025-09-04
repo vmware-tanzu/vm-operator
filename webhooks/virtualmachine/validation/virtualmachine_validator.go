@@ -934,7 +934,7 @@ func (v validator) validateNetworkSpecWithBootStrap(
 				allErrs = append(allErrs, field.Invalid(
 					networkPath.Child("nameservers"),
 					strings.Join(networkSpec.Nameservers, ","),
-					"nameservers is only available for CloudInit when UseGlobalNameserversAsDefault is true",
+					"nameservers is available only for CloudInit when UseGlobalNameserversAsDefault is true",
 				))
 			}
 		} else if linuxPrep == nil && sysPrep == nil {
@@ -952,7 +952,7 @@ func (v validator) validateNetworkSpecWithBootStrap(
 				allErrs = append(allErrs, field.Invalid(
 					networkPath.Child("searchDomains"),
 					strings.Join(networkSpec.SearchDomains, ","),
-					"searchDomains is only available for CloudInit when UseGlobalSearchDomainsAsDefault is true",
+					"searchDomains is available only for CloudInit when UseGlobalSearchDomainsAsDefault is true",
 				))
 			}
 		} else if linuxPrep == nil && sysPrep == nil {

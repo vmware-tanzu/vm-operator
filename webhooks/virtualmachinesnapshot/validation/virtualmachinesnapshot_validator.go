@@ -134,6 +134,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, validation.ValidateImmutableField(vmSnapshot.Spec.Memory, oldVMSnapshot.Spec.Memory, field.NewPath("spec", "memory"))...)
 	fieldErrs = append(fieldErrs, validation.ValidateImmutableField(vmSnapshot.Spec.Quiesce, oldVMSnapshot.Spec.Quiesce, field.NewPath("spec", "quiesce"))...)
 	fieldErrs = append(fieldErrs, validation.ValidateImmutableField(vmSnapshot.Spec.VMRef, oldVMSnapshot.Spec.VMRef, field.NewPath("spec", "vmRef"))...)
+	fieldErrs = append(fieldErrs, v.validateImmutableVMNameLabel(ctx, vmSnapshot, oldVMSnapshot)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -141,6 +142,27 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+}
+
+// validateImmutableVMNameLabel validates that the label on the
+// VirtualMachineSnapshot resource pointing to the VM can never be
+// changed. This label is set by the mutation webhook during creation
+// of the snapshot resource. This validation is only applicable during
+// an update operation.
+func (v validator) validateImmutableVMNameLabel(
+	ctx *pkgctx.WebhookRequestContext,
+	vmSnapshot, oldVMSnapshot *vmopv1.VirtualMachineSnapshot) field.ErrorList {
+
+	var allErrs field.ErrorList
+	vmNameLabelPath := field.NewPath("metadata", "labels").Key(vmopv1.VMNameForSnapshotLabel)
+
+	// Since this gets called only during an Update, the mutation
+	// webhook is always guaranteed to have set the Labels.
+	newVMNameLabel := vmSnapshot.Labels[vmopv1.VMNameForSnapshotLabel]
+	oldVMNameLabel := oldVMSnapshot.Labels[vmopv1.VMNameForSnapshotLabel]
+
+	return append(allErrs,
+		validation.ValidateImmutableField(newVMNameLabel, oldVMNameLabel, vmNameLabelPath)...)
 }
 
 // validateVMNotVKSNode checks if the referenced VM is a VKS/TKG node and returns an error if it is.

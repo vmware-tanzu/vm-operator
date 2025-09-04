@@ -19,6 +19,12 @@ const (
 	ImportedSnapshotAnnotation = GroupName + "/imported-snapshot"
 )
 
+const (
+	// VMNameForSnapshotLabel label represents the name of the
+	// VirtualMachine for which the snapshot is created.
+	VMNameForSnapshotLabel = "snapshot." + GroupName + "/vm-name"
+)
+
 // VirtualMachineSnapshotSpec defines the desired state of VirtualMachineSnapshot.
 type VirtualMachineSnapshotSpec struct {
 	// +optional

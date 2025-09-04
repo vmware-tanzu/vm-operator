@@ -199,13 +199,15 @@ func unitTestsValidateCreate() {
 
 func unitTestsValidateUpdate() {
 	var (
-		ctx *unitValidatingWebhookContext
+		ctx     *unitValidatingWebhookContext
+		dummyVM = "dummy-vm"
 	)
 
 	type updateArgs struct {
-		updateMemory  bool
-		updateQuiesce bool
-		updateVMRef   bool
+		updateMemory      bool
+		updateQuiesce     bool
+		updateVMRef       bool
+		updateVMNameLabel bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -227,6 +229,11 @@ func unitTestsValidateUpdate() {
 			}
 		}
 
+		if args.updateVMNameLabel {
+			// Try to change the VM name label to a different value
+			metav1.SetMetaDataLabel(&ctx.vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, "different-vm-name")
+		}
+
 		var err error
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmSnapshot)
 		Expect(err).ToNot(HaveOccurred())
@@ -245,6 +252,12 @@ func unitTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
+
+		// Set up both snapshots with the VM name label set by mutation webhook
+		metav1.SetMetaDataLabel(&ctx.oldVMSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, dummyVM)
+
+		// New snapshot should also have the label by default (simulating no change)
+		metav1.SetMetaDataLabel(&ctx.vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, dummyVM)
 	})
 
 	AfterEach(func() {
@@ -267,6 +280,12 @@ func unitTestsValidateUpdate() {
 		),
 		Entry("should not allow updating vmRef",
 			updateArgs{updateVMRef: true},
+			false,
+			"field is immutable",
+			nil,
+		),
+		Entry("should not allow updating VM name label",
+			updateArgs{updateVMNameLabel: true},
 			false,
 			"field is immutable",
 			nil,

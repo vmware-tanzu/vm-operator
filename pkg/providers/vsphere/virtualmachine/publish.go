@@ -40,6 +40,7 @@ func CreateOVF(
 	createSpec := vcenter.CreateSpec{
 		Name:        vmPubReq.Status.TargetRef.Item.Name,
 		Description: descriptionPrefix + vmPubReq.Status.TargetRef.Item.Description,
+		Flags:       []string{"EXTRA_CONFIG"}, // Preserve ExtraConfig
 	}
 
 	source := vcenter.ResourceID{

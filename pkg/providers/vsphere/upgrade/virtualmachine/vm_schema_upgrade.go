@@ -16,8 +16,8 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -51,7 +51,7 @@ func ReconcileSchemaUpgrade(
 		panic("moVM.config is nil")
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM")
 
 	var (
@@ -95,7 +95,7 @@ func reconcileBIOSUUID(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM BIOS UUID")
 
 	if vm.Spec.BiosUUID != "" {
@@ -119,7 +119,7 @@ func reconcileInstanceUUID(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM instance UUID")
 
 	if vm.Spec.InstanceUUID != "" {
@@ -143,7 +143,7 @@ func reconcileCloudInitInstanceUUID(
 	vm *vmopv1.VirtualMachine,
 	_ mo.VirtualMachine) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info(
 		"Reconciling schema upgrade for VM cloud-init instance UUID")
 
@@ -181,7 +181,7 @@ func reconcileControllers(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM controllers")
 
 	for i := range moVM.Config.Hardware.Device {
@@ -224,7 +224,7 @@ func reconcileIDEController(
 	vm *vmopv1.VirtualMachine,
 	dev *vimtypes.VirtualIDEController) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM IDE controller")
 
 	if vm.Spec.Hardware != nil {
@@ -257,7 +257,7 @@ func reconcileNVMEController(
 	vm *vmopv1.VirtualMachine,
 	dev *vimtypes.VirtualNVMEController) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM NVME controller")
 
 	if vm.Spec.Hardware != nil {
@@ -302,7 +302,7 @@ func reconcileSATAController(
 	vm *vmopv1.VirtualMachine,
 	dev *vimtypes.VirtualAHCIController) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM SATA controller")
 
 	if vm.Spec.Hardware != nil {
@@ -341,7 +341,7 @@ func reconcileSCSIController(
 	vm *vmopv1.VirtualMachine,
 	dev vimtypes.BaseVirtualSCSIController) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM SCSI controller")
 
 	baseController := dev.GetVirtualSCSIController()
@@ -399,7 +399,7 @@ func reconcileDevices(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM devices")
 
 	for i := range moVM.Config.Hardware.Device {
@@ -419,7 +419,7 @@ func reconcileVirtualDisk(
 	_ *vmopv1.VirtualMachine,
 	_ *vimtypes.VirtualDisk) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM disk")
 
 }
@@ -429,7 +429,7 @@ func reconcileVirtualCDROM(
 	_ *vmopv1.VirtualMachine,
 	_ *vimtypes.VirtualCdrom) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Reconciling schema upgrade for VM CD-ROM")
 
 }

@@ -22,6 +22,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
@@ -269,7 +270,7 @@ func fastDeployLinked(
 	diskSpecs []*vimtypes.VirtualDeviceConfigSpec,
 	srcDiskPaths []string) (*vimtypes.ManagedObjectReference, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithName("fastDeployLinked")
+	logger := pkglog.FromContextOrDefault(ctx).WithName("fastDeployLinked")
 
 	// Linked clones do not fully support encryption, so remove the possible
 	// crypto information from the VM's disks.
@@ -339,7 +340,7 @@ func fastDeployDirect(
 	dstDiskPaths,
 	srcDiskPaths []string) (*vimtypes.ManagedObjectReference, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithName("fastDeployDirect")
+	logger := pkglog.FromContextOrDefault(ctx).WithName("fastDeployDirect")
 
 	// Copy each disk into the VM directory.
 	if err := fastDeployDirectCopyDisks(

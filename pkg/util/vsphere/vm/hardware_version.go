@@ -13,7 +13,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 const (
@@ -55,7 +55,7 @@ func ReconcileMinHardwareVersion(
 
 	var (
 		configVersion string
-		log           = pkgutil.FromContextOrDefault(ctx)
+		log           = pkglog.FromContextOrDefault(ctx)
 		obj           = object.NewVirtualMachine(client, mo.Self)
 		powerState    = mo.Runtime.PowerState
 	)

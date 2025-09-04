@@ -17,7 +17,7 @@ import (
 
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 const (
@@ -140,7 +140,7 @@ func updateCapabilitiesFeatures[T updateCapTypes](
 
 	var (
 		newFeat pkgcfg.FeatureStates
-		logger  = pkgutil.FromContextOrDefault(ctx).WithValues("dryRun", dryRun)
+		logger  = pkglog.FromContextOrDefault(ctx).WithValues("dryRun", dryRun)
 		oldFeat = pkgcfg.FromContext(ctx).Features
 	)
 

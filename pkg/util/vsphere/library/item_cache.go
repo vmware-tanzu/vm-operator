@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -123,7 +124,7 @@ func copyFile(
 		dstFileName = GetCachedFileName(srcFileName) + srcFileExt
 		dstFilePath = path.Join(srcFile.DstDir, dstFileName)
 		isDisk      = strings.EqualFold(".vmdk", srcFileExt)
-		logger      = pkgutil.FromContextOrDefault(ctx)
+		logger      = pkglog.FromContextOrDefault(ctx)
 	)
 
 	logger = logger.WithValues(

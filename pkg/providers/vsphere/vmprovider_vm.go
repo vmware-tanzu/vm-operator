@@ -60,6 +60,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -144,7 +145,7 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 	vm *vmopv1.VirtualMachine,
 	async bool) (chan error, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.V(4).Info("Entering createOrUpdateVirtualMachine")
 
 	vmNamespacedName := vm.NamespacedName()
@@ -298,7 +299,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 
 	vmCtx := pkgctx.VirtualMachineContext{
 		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "deleteVM")),
-		Logger:  pkgutil.FromContextOrDefault(ctx),
+		Logger:  pkglog.FromContextOrDefault(ctx),
 		VM:      vm,
 	}
 
@@ -325,7 +326,7 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 	cl *imgregv1a1.ContentLibrary,
 	actID string) (string, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues(
+	logger := pkglog.FromContextOrDefault(ctx).WithValues(
 		"vmName", vm.NamespacedName(), "clName", fmt.Sprintf("%s/%s", cl.Namespace, cl.Name))
 	ctx = logr.NewContext(ctx, logger)
 
@@ -382,7 +383,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
@@ -414,7 +415,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineProperties(
 	vm *vmopv1.VirtualMachine,
 	propertyPaths []string) (map[string]any, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
@@ -477,7 +478,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	vm *vmopv1.VirtualMachine,
 	pubKey string) (string, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
@@ -508,7 +509,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine) (vimtypes.HardwareVersion, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
+	logger := pkglog.FromContextOrDefault(ctx).WithValues("vmName", vm.NamespacedName())
 	ctx = logr.NewContext(ctx, logger)
 
 	vmCtx := pkgctx.VirtualMachineContext{
@@ -960,7 +961,7 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 	ctx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (context.Context, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	pc := property.DefaultCollector(vcClient.VimClient())
 
 	// Check if the VM has any recent tasks.

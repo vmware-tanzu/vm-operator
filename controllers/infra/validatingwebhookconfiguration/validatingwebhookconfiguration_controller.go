@@ -27,7 +27,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 )
@@ -51,7 +51,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	c, err := controller.New(controllerNameShort, mgr, controller.Options{
 		Reconciler:     r,
-		LogConstructor: pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+		LogConstructor: pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 	})
 	if err != nil {
 		return err
@@ -106,14 +106,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
 
 	if req.Name != spqutil.ValidatingWebhookConfigName {
-		pkgutil.FromContextOrDefault(ctx).Error(nil, "Reconcile called for unexpected object")
+		pkglog.FromContextOrDefault(ctx).Error(nil, "Reconcile called for unexpected object")
 		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{}, r.ReconcileNormal(ctx, req)
 }
 
 func (r *Reconciler) ReconcileNormal(ctx context.Context, req ctrl.Request) error {
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.Info("Reconciling validating webhook configuration")
 
 	caBundle, err := spqutil.GetWebhookCABundle(ctx, r.Client)

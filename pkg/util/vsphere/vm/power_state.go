@@ -19,7 +19,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm/internal"
 )
 
@@ -220,7 +220,7 @@ func setPowerState(
 
 	var (
 		currentPowerState vimtypes.VirtualMachinePowerState
-		log               = pkgutil.FromContextOrDefault(ctx)
+		log               = pkglog.FromContextOrDefault(ctx)
 		obj               = object.NewVirtualMachine(client, mo.Self)
 	)
 
@@ -322,7 +322,7 @@ func doAndWaitOnHardPowerOp(
 	desiredPowerState vimtypes.VirtualMachinePowerState,
 	powerOpFn func(context.Context) (*object.Task, error)) (PowerOpResult, error) {
 
-	log := pkgutil.FromContextOrDefault(ctx)
+	log := pkglog.FromContextOrDefault(ctx)
 
 	t, err := powerOpFn(ctx)
 	if err != nil {
@@ -370,7 +370,7 @@ func doAndWaitOnSoftPowerOp(
 		timeout = DefaultTrySoftTimeout
 	}
 
-	log := pkgutil.FromContextOrDefault(ctx)
+	log := pkglog.FromContextOrDefault(ctx)
 	log.Info(
 		"Creating context with timeout waiting for power state after soft power op",
 		"desiredPowerState", desiredPowerState,
@@ -466,7 +466,7 @@ func restart(
 		currentLastRestartTimeString string
 		propsToFetch                 []string
 		result                       PowerOpResult
-		log                          = pkgutil.FromContextOrDefault(ctx)
+		log                          = pkglog.FromContextOrDefault(ctx)
 		obj                          = object.NewVirtualMachine(client, mo.Self)
 		desiredLastRestartTimeString = desiredLastRestartTime.Format(time.RFC3339Nano)
 	)
@@ -567,7 +567,7 @@ func doAndWaitOnHardRestart(
 	ctx context.Context,
 	powerOpFn func(context.Context) (*object.Task, error)) (PowerOpResult, error) {
 
-	log := pkgutil.FromContextOrDefault(ctx)
+	log := pkglog.FromContextOrDefault(ctx)
 
 	t, err := powerOpFn(ctx)
 	if err != nil {
@@ -588,7 +588,7 @@ func doAndWaitOnSoftRestart(
 	ctx context.Context,
 	powerOpFn func(context.Context) error) (PowerOpResult, error) {
 
-	log := pkgutil.FromContextOrDefault(ctx)
+	log := pkglog.FromContextOrDefault(ctx)
 
 	// Attempt to get a timeout from the context.
 	timeout, ok := ctx.Value(internal.SoftTimeoutKey).(time.Duration)
@@ -620,7 +620,7 @@ func GetLastRestartTimeFromExtraConfig(
 	ctx context.Context,
 	extraConfig []vimtypes.BaseOptionValue) (*time.Time, error) {
 
-	log := pkgutil.FromContextOrDefault(ctx)
+	log := pkglog.FromContextOrDefault(ctx)
 
 	for i := range extraConfig {
 		bov := extraConfig[i]
@@ -674,7 +674,7 @@ func setLastRestartTimeInExtraConfigAndWait(
 	lastRestartTime time.Time) error {
 
 	var (
-		log                  = pkgutil.FromContextOrDefault(ctx)
+		log                  = pkglog.FromContextOrDefault(ctx)
 		lastRestartTimeEpoch = lastRestartTime.UnixNano()
 	)
 

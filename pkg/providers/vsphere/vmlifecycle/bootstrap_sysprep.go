@@ -13,6 +13,7 @@ import (
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -23,7 +24,7 @@ func BootstrapSysPrep(
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling Sysprep bootstrap state")
 
 	if !vmCtx.IsOffToOn() {

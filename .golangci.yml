@@ -173,6 +173,8 @@ linters:
           pkg: github.com/vmware-tanzu/vm-operator/pkg/errors
         - alias: pkgexit
           pkg: github.com/vmware-tanzu/vm-operator/pkg/exit
+        - alias: pkglog
+          pkg: github.com/vmware-tanzu/vm-operator/pkg/log
         - alias: ctxop
           pkg: github.com/vmware-tanzu/vm-operator/pkg/context/operation
         - alias: pkgmgr

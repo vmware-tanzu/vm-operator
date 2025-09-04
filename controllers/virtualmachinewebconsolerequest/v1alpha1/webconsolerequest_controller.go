@@ -24,9 +24,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1/patch"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr"
 )
 
@@ -57,7 +57,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		For(controlledType).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 1,
-			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
 }
@@ -104,7 +104,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	webConsoleRequestCtx := &pkgctx.WebConsoleRequestContext{
 		Context:           ctx,
-		Logger:            pkgutil.FromContextOrDefault(ctx),
+		Logger:            pkglog.FromContextOrDefault(ctx),
 		WebConsoleRequest: webconsolerequest,
 		VM:                &vmopv1a1.VirtualMachine{},
 	}

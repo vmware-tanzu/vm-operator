@@ -12,7 +12,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 func BootStrapLinuxPrep(
@@ -22,7 +22,7 @@ func BootStrapLinuxPrep(
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
 
-	logger := pkgutil.FromContextOrDefault(vmCtx)
+	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling LinuxPrep bootstrap state")
 
 	if !vmCtx.IsOffToOn() {

@@ -17,7 +17,7 @@ import (
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -69,7 +69,7 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 
 	for _, grpPlacement := range groupPlacements {
 		for _, vm := range grpPlacement.VMMembers {
-			logger := pkgutil.FromContextOrDefault(ctx).WithValues(
+			logger := pkglog.FromContextOrDefault(ctx).WithValues(
 				"childGroupName", grpPlacement.VMGroup.Name,
 				"vm", vm.Name,
 			)

@@ -18,7 +18,7 @@ import (
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;patch
@@ -38,7 +38,7 @@ func Restart(
 		panic("k8sClient is nil")
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	config := pkgcfg.FromContext(ctx)
 
@@ -138,7 +138,7 @@ func NewRestartSignalHandler(
 		d: make(chan struct{}),
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	// Receive the restart signal.
 	signal.Notify(h.c, RestartSignal)

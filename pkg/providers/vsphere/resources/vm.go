@@ -17,6 +17,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
@@ -85,7 +86,7 @@ func (vm *VirtualMachine) Reconfigure(
 
 	ctxop.MarkUpdate(ctx)
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.Info("Reconfiguring VM", "configSpec", pkgutil.SafeConfigSpecToString(configSpec))
 
 	reconfigureTask, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)

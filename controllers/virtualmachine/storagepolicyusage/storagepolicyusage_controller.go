@@ -28,7 +28,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 )
 
@@ -62,7 +62,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	c, err := controller.New(controllerName, mgr, controller.Options{
 		Reconciler:     r,
-		LogConstructor: pkgutil.ControllerLogConstructor(controllerNameShort, &spqv1.StoragePolicyUsage{}, mgr.GetScheme()),
+		LogConstructor: pkglog.ControllerLogConstructor(controllerNameShort, &spqv1.StoragePolicyUsage{}, mgr.GetScheme()),
 	})
 	if err != nil {
 		return err
@@ -410,7 +410,7 @@ func (r *Reconciler) reportReservedForSnapshot(
 		return fmt.Errorf("vmRef is not set")
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	// It's possible that the snapshot's requested capacity is not updated yet,
 	// so we skip the calculation for now
@@ -454,7 +454,7 @@ func (r *Reconciler) reportUsedForSnapshot(
 	// There might be chance that VMSnapshot's marked as CSIVolumeSync completed but VMSnapshot controller
 	// hasn't updated VMSnapshot with used capacity yet. Wait for next reconcile to update the SPU.
 	if vmSnapshot.Status.Storage == nil || vmSnapshot.Status.Storage.Used == nil {
-		logger := pkgutil.FromContextOrDefault(ctx)
+		logger := pkglog.FromContextOrDefault(ctx)
 		logger.V(5).Info("snapshot has no used capacity reported by controller yet, "+
 			"skip calculating used capacity for it", "snapshot", vmSnapshot.Name)
 		return nil

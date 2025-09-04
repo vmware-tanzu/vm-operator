@@ -25,10 +25,10 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -52,7 +52,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		For(controlledType).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 1,
-			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
 }
@@ -93,7 +93,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	vmClassCtx := &pkgctx.VirtualMachineClassContext{
 		Context: ctx,
-		Logger:  pkgutil.FromContextOrDefault(ctx),
+		Logger:  pkglog.FromContextOrDefault(ctx),
 		VMClass: vmClass,
 	}
 

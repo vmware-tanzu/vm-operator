@@ -22,7 +22,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgexit "github.com/vmware-tanzu/vm-operator/pkg/exit"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -45,7 +45,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		For(controlledType).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 1,
-			LogConstructor:          pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
+			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		WithEventFilter(predicate.Funcs{
 			CreateFunc: func(e event.TypedCreateEvent[ctrlclient.Object]) bool {
@@ -90,7 +90,7 @@ func (r *Reconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request) (ctrl.Result, error) {
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 	logger.Info("Reconciling capabilities")
 
 	ctx = pkgcfg.JoinContext(ctx, r.Context)

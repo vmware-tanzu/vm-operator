@@ -23,7 +23,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -49,7 +49,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
-		WithLogConstructor(pkgutil.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme())).
+		WithLogConstructor(pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme())).
 		Complete(r)
 }
 
@@ -107,7 +107,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
-	logger := pkgutil.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx)
 
 	if err := r.ReconcileNormal(ctx, logger, &obj); err != nil {
 		logger.Error(err, "Failed to ReconcileNormal StoragePolicyQuota")

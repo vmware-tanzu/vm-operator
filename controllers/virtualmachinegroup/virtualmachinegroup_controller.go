@@ -30,10 +30,11 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -181,7 +182,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return r.ReconcileDelete(vmGroupCtx)
 	}
 
-	return r.ReconcileNormal(vmGroupCtx)
+	return pkgerr.ResultFromError(r.ReconcileNormal(vmGroupCtx))
 }
 
 func (r *Reconciler) ReconcileDelete(
@@ -197,12 +198,12 @@ func (r *Reconciler) ReconcileDelete(
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineGroupContext) (
-	_ ctrl.Result, reterr error) {
+func (r *Reconciler) ReconcileNormal(
+	ctx *pkgctx.VirtualMachineGroupContext) (reterr error) {
 
 	if !controllerutil.ContainsFinalizer(ctx.VMGroup, finalizerName) {
 		controllerutil.AddFinalizer(ctx.VMGroup, finalizerName)
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	ctx.Logger.Info("Reconciling VirtualMachineGroup")
@@ -223,22 +224,22 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineGroupContext) (
 
 	// Reconcile spec.groupName first as it's required for other reconciles
 	// (e.g. placement and boot order delays) if this group is a nested group.
-	if reterr = r.reconcileGroupName(ctx); reterr != nil {
-		ctx.Logger.Error(reterr, "Failed to reconcile group's spec.groupName")
-		return ctrl.Result{}, reterr
+	if err := r.reconcileGroupName(ctx); err != nil {
+		reterr = fmt.Errorf("failed to reconcile group name: %w", err)
+		return reterr
 	}
 
-	if reterr = r.reconcileMembers(ctx); reterr != nil {
-		ctx.Logger.Error(reterr, "Failed to reconcile group members")
-		return ctrl.Result{}, reterr
+	if err := r.reconcileMembers(ctx); err != nil {
+		reterr = fmt.Errorf("failed to reconcile group members: %w", err)
+		return reterr
 	}
 
-	if reterr = r.reconcilePlacement(ctx); reterr != nil {
-		ctx.Logger.Error(reterr, "Failed to reconcile group placement")
-		return ctrl.Result{}, reterr
+	if err := r.reconcilePlacement(ctx); err != nil {
+		reterr = fmt.Errorf("failed to reconcile group placement: %w", err)
+		return reterr
 	}
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 // reconcileGroupName reconciles the group.spec.groupName field.
@@ -353,7 +354,8 @@ func (r *Reconciler) reconcileMembers(
 	}
 
 	ctx.VMGroup.Status.Members = memberStatuses
-	return apierrorsutil.NewAggregate(memberErrs)
+
+	return aggregateOrNoRequeue(memberErrs)
 }
 
 // reconcileMember reconciles a group member and updates the member's status.
@@ -373,16 +375,12 @@ func (r *Reconciler) reconcileMember(
 		obj = &vmopv1.VirtualMachineGroup{}
 	}
 
-	logger := ctx.Logger.WithValues(
-		"memberKind", member.Kind,
-		"memberName", member.Name,
-	)
+	memberKindAndName := member.Kind + "/" + member.Name
 
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: ctx.VMGroup.Namespace,
 		Name:      member.Name,
 	}, obj); err != nil {
-		logger.Error(err, "Failed to get group member")
 
 		if !apierrors.IsNotFound(err) {
 			conditions.MarkError(
@@ -400,15 +398,21 @@ func (r *Reconciler) reconcileMember(
 			"NotFound",
 			"",
 		)
-		return nil
+		// Do not requeue as the group will be reconciled when the member is
+		// created with the correct group name. Same as below for NotMember.
+		return pkgerr.NoRequeueError{
+			Message: fmt.Sprintf("member %q not found", memberKindAndName),
+		}
 	}
 
 	if groupName := obj.GetGroupName(); groupName != ctx.VMGroup.Name {
 		var groupNameErr error
 		if groupName == "" {
-			groupNameErr = fmt.Errorf("member has no group name")
+			groupNameErr = fmt.Errorf("member %q has no group name",
+				memberKindAndName)
 		} else {
-			groupNameErr = fmt.Errorf("member has a different group name: %q",
+			groupNameErr = fmt.Errorf("member %q has different group name: %q",
+				memberKindAndName,
 				groupName)
 		}
 
@@ -418,12 +422,7 @@ func (r *Reconciler) reconcileMember(
 			"NotMember",
 			groupNameErr,
 		)
-
-		logger.Error(groupNameErr, "Invalid group name for member")
-
-		// Return nil to avoid requeueing the group. It will be requeued as soon
-		// as the member is updated with the correct group name.
-		return nil
+		return pkgerr.NoRequeueError{Message: groupNameErr.Error()}
 	}
 
 	patch := client.MergeFrom(obj.DeepCopyObject().(vmopv1util.VirtualMachineOrGroup))
@@ -433,14 +432,14 @@ func (r *Reconciler) reconcileMember(
 		obj,
 		r.Scheme(),
 	); err != nil {
-		logger.Error(err, "Failed to set owner reference to group member")
 		conditions.MarkError(
 			ms,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 			"SetOwnerRefError",
 			err,
 		)
-		return err
+		return fmt.Errorf("failed to set owner reference to member %q: %w",
+			memberKindAndName, err)
 	}
 
 	if member.Kind == vmKind {
@@ -510,8 +509,8 @@ patchMember:
 				err,
 			)
 		}
-		return fmt.Errorf("failed to patch group member, kind=%s, name=%s: %w",
-			member.Kind, member.Name, err)
+		return fmt.Errorf("failed to patch group member %q: %w",
+			memberKindAndName, err)
 	}
 
 	conditions.MarkTrue(
@@ -843,4 +842,30 @@ func isMemberReady(ms vmopv1.VirtualMachineGroupMemberStatus) (bool, string) {
 	}
 
 	return true, ""
+}
+
+// aggregateOrNoRequeue aggregates the given errors and returns a NoRequeueError
+// if all the errors are NoRequeueError.
+func aggregateOrNoRequeue(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+
+	allNoRequeue := true
+	for _, err := range errs {
+		if !pkgerr.IsNoRequeueError(err) {
+			allNoRequeue = false
+			break
+		}
+	}
+
+	agg := apierrorsutil.NewAggregate(errs)
+
+	if allNoRequeue {
+		return pkgerr.NoRequeueError{
+			Message: agg.Error(),
+		}
+	}
+
+	return agg
 }

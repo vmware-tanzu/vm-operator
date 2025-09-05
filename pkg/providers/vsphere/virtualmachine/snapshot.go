@@ -39,19 +39,19 @@ var (
 func SnapshotVirtualMachine(args SnapshotArgs) (*vimtypes.ManagedObjectReference, error) {
 	snapshotName := args.VMSnapshot.Name
 
+	logger := args.VMCtx.Logger.WithValues("snapshotName", snapshotName)
 	snapMoRef, _ := args.VcVM.FindSnapshot(args.VMCtx, snapshotName) // TODO: Use our FindSnapshot impl and check error?
 	if snapMoRef != nil {
-		args.VMCtx.Logger.Info("Snapshot already exists", "snapshotName", snapshotName)
+		logger.Info("Snapshot already exists")
 		// Return early, snapshot found
 		return snapMoRef, nil
 	}
 
 	// If no snapshot was found, create it
-	args.VMCtx.Logger.Info("Creating Snapshot of VirtualMachine", "snapshotName", snapshotName)
+	logger.Info("Creating Snapshot of VirtualMachine")
 	snapMoRef, err := CreateSnapshot(args)
 	if err != nil {
-		args.VMCtx.Logger.Error(err, "failed to create snapshot for VM", "snapshotName", snapshotName)
-		return nil, err
+		return nil, fmt.Errorf("failed to create snapshot for VM: %w", err)
 	}
 
 	return snapMoRef, nil
@@ -252,8 +252,7 @@ func GetParentSnapshot(vmCtx pkgctx.VirtualMachineContext, vcVM *object.VirtualM
 
 	err := vcVM.Properties(vmCtx, vcVM.Reference(), []string{"snapshot"}, &o)
 	if err != nil {
-		vmCtx.Logger.Error(err, "failed to get snapshot")
-		return nil, err
+		return nil, fmt.Errorf("failed to get snapshot: %w", err)
 	}
 
 	if o.Snapshot == nil || len(o.Snapshot.RootSnapshotList) == 0 {

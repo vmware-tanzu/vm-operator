@@ -6,7 +6,6 @@ package v1alpha4_test
 
 import (
 	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -240,20 +239,6 @@ func TestVirtualMachineConversion(t *testing.T) {
 						BiosUUID:           uuid.NewString(),
 						GuestID:            "my-guest-id",
 						PromoteDisksMode:   vmopv1.VirtualMachinePromoteDisksModeOffline,
-						BootOptions: &vmopv1.VirtualMachineBootOptions{
-							Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
-							BootDelay: &metav1.Duration{Duration: time.Second * 10},
-							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
-								vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
-								vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
-								vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
-							},
-							BootRetry:           vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
-							BootRetryDelay:      &metav1.Duration{Duration: time.Second * 10},
-							EnterBootSetup:      vmopv1.VirtualMachineBootOptionsForceBootEntryDisabled,
-							EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
-							NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
-						},
 						Hardware: &vmopv1.VirtualMachineHardwareSpec{
 							Cdrom: []vmopv1.VirtualMachineCdromSpec{
 								{
@@ -278,49 +263,10 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "spec.bootstrap.cloudInit.waitOnNetwork4",
+				name: "spec.affinity",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
-						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
-							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-								WaitOnNetwork4: ptrOf(true),
-							},
-						},
-					},
-				},
-			},
-			{
-				name: "spec.bootstrap.cloudInit.waitOnNetwork4",
-				hub: &vmopv1.VirtualMachine{
-					Spec: vmopv1.VirtualMachineSpec{
-						GroupName: "my-group",
-					},
-				},
-			},
-			{
-				name: "spec.bootstrap.cloudInit.waitOnNetwork6",
-				hub: &vmopv1.VirtualMachine{
-					Spec: vmopv1.VirtualMachineSpec{
-						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
-							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-								WaitOnNetwork6: ptrOf(true),
-							},
-						},
 						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeOffline,
-						BootOptions: &vmopv1.VirtualMachineBootOptions{
-							Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
-							BootDelay: &metav1.Duration{Duration: time.Second * 10},
-							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
-								vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
-								vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
-								vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
-							},
-							BootRetry:           vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
-							BootRetryDelay:      &metav1.Duration{Duration: time.Second * 10},
-							EnterBootSetup:      vmopv1.VirtualMachineBootOptionsForceBootEntryDisabled,
-							EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
-							NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
-						},
 						Affinity: &vmopv1.VirtualMachineAffinitySpec{
 							ZoneAffinity: &vmopv1.VirtualMachineAffinityZoneAffinitySpec{
 								RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.ZoneSelectorTerm{

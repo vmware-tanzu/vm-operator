@@ -14,6 +14,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
+func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha4_VirtualMachineBootstrapCloudInitSpec(
+	in *vmopv1.VirtualMachineBootstrapCloudInitSpec, out *VirtualMachineBootstrapCloudInitSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha4_VirtualMachineBootstrapCloudInitSpec(in, out, s)
+}
+
 func Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(
 	in *VirtualMachineCdromSpec, out *vmopv1.VirtualMachineCdromSpec, s apiconversion.Scope) error {
 
@@ -97,6 +103,20 @@ func Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCrypt
 	return autoConvert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCryptoStatus(in, out, s)
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if ci := bs.CloudInit; ci != nil {
+			if ci.WaitOnNetwork4 != nil || ci.WaitOnNetwork6 != nil {
+				// Only restore these values if dst still has a CloudInit spec.
+				if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.CloudInit != nil {
+					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork4 = ci.WaitOnNetwork4
+					dst.Spec.Bootstrap.CloudInit.WaitOnNetwork6 = ci.WaitOnNetwork6
+				}
+			}
+		}
+	}
+}
+
 func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
 	if src.Spec.Hardware == nil {
 		// There is nothing to restore so return early.
@@ -150,6 +170,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 
 	// END RESTORE
 

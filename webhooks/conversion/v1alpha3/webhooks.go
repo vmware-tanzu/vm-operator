@@ -43,13 +43,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 	}
 
 	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&vmopv1a3.VirtualMachineImageCache{}).
-		Complete(); err != nil {
-
-		return err
-	}
-
-	if err := ctrl.NewWebhookManagedBy(mgr).
 		For(&vmopv1a3.VirtualMachinePublishRequest{}).
 		Complete(); err != nil {
 

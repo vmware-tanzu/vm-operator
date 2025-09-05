@@ -204,6 +204,7 @@ var _ = Describe("Netplan", func() {
 				np := config.Ethernets[ifName]
 				Expect(np.Match.Macaddress).To(HaveValue(Equal(macAddr1Norm)))
 				Expect(np.SetName).To(HaveValue(Equal(guestDevName)))
+				Expect(np.Addresses).To(BeEmpty())
 				Expect(np.Dhcp4).To(HaveValue(BeTrue()))
 				Expect(np.Dhcp6).To(HaveValue(BeTrue()))
 				Expect(np.AcceptRa).To(HaveValue(BeTrue()))
@@ -211,6 +212,37 @@ var _ = Describe("Netplan", func() {
 				Expect(np.Nameservers.Addresses).To(Equal([]string{dnsServer1}))
 				Expect(np.Nameservers.Search).To(Equal([]string{searchDomain1}))
 				Expect(np.Routes).To(BeEmpty())
+			})
+		})
+
+		Context("NoIPAM", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						MacAddress:      macAddr1,
+						Name:            ifName,
+						GuestDeviceName: guestDevName,
+						NoIPAM:          true,
+						MTU:             9000,
+					},
+				}
+			})
+
+			It("returns success", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(config).ToNot(BeNil())
+				Expect(config.Version).To(Equal(constants.NetPlanVersion))
+
+				Expect(config.Ethernets).To(HaveLen(1))
+				Expect(config.Ethernets).To(HaveKey(ifName))
+
+				np := config.Ethernets[ifName]
+				Expect(np.Match.Macaddress).To(HaveValue(Equal(macAddr1Norm)))
+				Expect(np.SetName).To(HaveValue(Equal(guestDevName)))
+				Expect(np.Addresses).To(BeEmpty())
+				Expect(np.Dhcp4).To(HaveValue(BeFalse()))
+				Expect(np.Dhcp6).To(HaveValue(BeFalse()))
+				Expect(np.AcceptRa).To(HaveValue(BeFalse()))
 			})
 		})
 	})

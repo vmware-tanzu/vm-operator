@@ -37,7 +37,7 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*netplan.Network, err
 		npEth.Dhcp4 = &r.DHCP4
 		npEth.Dhcp6 = &r.DHCP6
 		// Right now we can set the same value as DHCPv6 configuration
-		// and in some future separate/specialize if required
+		// and in some future separate/specialize if required.
 		npEth.AcceptRa = &r.DHCP6
 
 		if !*npEth.Dhcp4 {

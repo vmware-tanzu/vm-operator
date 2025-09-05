@@ -159,5 +159,31 @@ var _ = Describe("GOSC", func() {
 				Expect(ipv6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationDhcpIpV6Generator{}))
 			})
 		})
+
+		Context("NoIPAM", func() {
+			BeforeEach(func() {
+				results.Results = []network.NetworkInterfaceResult{
+					{
+						MacAddress: macAddr1,
+						Name:       "eth0",
+						NoIPAM:     true,
+						MTU:        1500, // AFAIK not support via GOSC
+					},
+				}
+			})
+
+			It("returns success", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(adapterMappings).To(HaveLen(1))
+				mapping := adapterMappings[0]
+
+				adapter := mapping.Adapter
+				Expect(mapping.MacAddress).To(Equal(macAddr1))
+				Expect(adapter.Gateway).To(BeEmpty())
+				Expect(adapter.SubnetMask).To(BeEmpty())
+				Expect(adapter.Ip).To(BeNil())
+				Expect(adapter.IpV6Spec).To(BeNil())
+			})
+		})
 	})
 })

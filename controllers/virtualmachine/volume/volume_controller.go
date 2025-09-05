@@ -35,13 +35,13 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -643,6 +643,9 @@ func (r *Reconciler) processAttachments(
 	var createErrs []error
 	var hasPendingAttachment bool
 
+	// Don't need to check the VM's hardware version if already created attachments for it.
+	checkHWVersion := len(attachments) == 0
+
 	// When creating a VM, try to attach the volumes in the VM Spec.Volumes order since that is a reasonable
 	// expectation and the customization like cloud-init may assume that order. There isn't quite a good way
 	// to determine from here if the VM is being created so use the power state to infer it. This is mostly
@@ -690,15 +693,6 @@ func (r *Reconciler) processAttachments(
 			}
 		}
 
-		// If we're allowing only one pending attachment, we cannot create the next CnsNodeVmAttachment
-		// until the previous ones are attached. This is really only effective when the VM is first being
-		// created, since the volumes could be added anywhere or the same ones reordered in the Spec.Volumes.
-		if onlyAllowOnePendingAttachment && hasPendingAttachment {
-			// Do not create another CnsNodeVmAttachment while one is already pending, but continue
-			// so we build up the Volume Status for any existing volumes.
-			continue
-		}
-
 		// If VM hardware version doesn't meet minimal requirement, don't create CNS attachment.
 		// We only fetch the hardware version when this is the first time to create the CNS attachment.
 		//
@@ -706,7 +700,7 @@ func (r *Reconciler) processAttachments(
 		// We used to deny requests if a PVC is specified in the VM spec while VMI hardware version is not supported.
 		// In this case, no attachments can be created if VM hardware version doesn't meet the requirement.
 		// So if a VM has volume attached, we can safely assume that it has passed the hardware version check.
-		if len(volumeStatuses) == 0 && len(attachments) == 0 {
+		if checkHWVersion {
 			hardwareVersion, err := r.VMProvider.GetVirtualMachineHardwareVersion(ctx, ctx.VM)
 			if err != nil {
 				return fmt.Errorf("failed to get VM hardware version: %w", err)
@@ -721,16 +715,30 @@ func (r *Reconciler) processAttachments(
 				r.recorder.EmitEvent(ctx.VM, "VolumeAttachment", retErr, true)
 				return retErr
 			}
+
+			checkHWVersion = false
+		}
+
+		if err := r.handlePVCWithWFFC(ctx, volume); err != nil {
+			createErrs = append(createErrs, err)
+			// Must mark this as true now so that if a later PVC is bound we do not create the attachment
+			// for it.
+			hasPendingAttachment = true
+			continue
+		}
+
+		// If we're allowing only one pending attachment, we cannot create the next CnsNodeVmAttachment
+		// until the previous ones are attached. This is really only effective when the VM is first being
+		// created, since the volumes could be added anywhere or the same ones reordered in the Spec.Volumes.
+		if onlyAllowOnePendingAttachment && hasPendingAttachment {
+			// Do not create another CnsNodeVmAttachment while one is already pending, but continue
+			// so we build up the Volume Status for any existing volumes.
+			continue
 		}
 
 		// Must mark this as true now even if something below fails in order to try
 		// to keep the volumes attached in order.
 		hasPendingAttachment = true
-
-		if err := r.handlePVCWithWFFC(ctx, volume); err != nil {
-			createErrs = append(createErrs, err)
-			continue
-		}
 
 		if err := r.createCNSAttachment(ctx, attachmentName, volume); err != nil {
 			createErrs = append(createErrs, fmt.Errorf("cannot create CnsNodeVmAttachment: %w", err))

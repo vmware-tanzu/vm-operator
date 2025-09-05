@@ -183,4 +183,31 @@ const (
 	// has completed the sync of the volume. This annotation is set by the CSI driver
 	// when the sync is completed.
 	CSIVSphereVolumeSyncAnnotationValueCompleted = "completed"
+
+	// AsyncQuotaPerformCheckAnnotationKey is the label key indicating that the ContentLibrary
+	// associated with a VirtualMachinePublishRequest is subject to VCFA quota approval. Additionally,
+	// this is used by the VirtualMachinePublishRequest controller as an annotation to indicate
+	// to the controller on subsequent reconciliations that quota validation has been initiated
+	// and is in-progress.
+	AsyncQuotaPerformCheckAnnotationKey = "vmware-system-vcfa-storage-quota"
+
+	// AsyncQuotaCheckRequestedCapacityAnnotationKey is the annotation key added
+	// by the VirtualMachinePublishRequest controller to initiate quota validation. Adding
+	// this annotation will indicate that the controller must provide the requested capacity
+	// and block request fulfillment until further notice.
+	AsyncQuotaCheckRequestedCapacityAnnotationKey = "vcfa.storage.quota.check.vmware.com/requested-capacity"
+
+	// AsyncQuotaCheckStatusAnnotationKey is the annotation that would indicate that
+	// the quota check has failed for this VirtualMachinePublishRequest. This provides
+	// a machine-readable status.
+	AsyncQuotaCheckStatusAnnotationKey = "vcfa.storage.quota.check.vmware.com/status"
+
+	// AsyncQuotaCheckStatusAnnotationValueFailed is the value of the annotation indicating
+	// that the quota check has failed for this VirtualMachinePublishRequest.
+	AsyncQuotaCheckStatusAnnotationValueFailed = "Failed"
+
+	// AsyncQuotaCheckMessageAnnotationKey is the annotation that provides a human-readable,
+	// user-facing message detailing the nature of a failed quota check for a given
+	// VirtualMachinePublishRequest.
+	AsyncQuotaCheckMessageAnnotationKey = "vcfa.storage.quota.check.vmware.com/message"
 )

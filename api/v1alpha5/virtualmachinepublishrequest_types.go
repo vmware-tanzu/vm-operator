@@ -69,6 +69,11 @@ const (
 	// library of the VirtualMachinePublishRequest isn't ready.
 	TargetContentLibraryNotReadyReason = "TargetContentLibraryNotReady"
 
+	// TargetContentLibraryFailedQuotaCheckReason documents that the target
+	// content library of the VirtualMachinePublishRequest failed quota
+	// validation.
+	TargetContentLibraryFailedQuotaCheckReason = "TargetContentLibraryFailedQuotaCheck"
+
 	// TargetItemAlreadyExistsReason documents that an item with the same name
 	// as the VirtualMachinePublishRequest's target item name exists in
 	// the target content library.

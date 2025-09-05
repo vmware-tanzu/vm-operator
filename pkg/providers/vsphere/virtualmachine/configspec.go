@@ -14,6 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -56,6 +57,17 @@ func CreateConfigSpec(
 			Value: vmCtx.VM.NamespacedName(),
 		},
 	)
+
+	// Ensure ExtraConfig contains the className/classInstanceName used to
+	// deploy the VM.
+	if v := vmCtx.VM.ClassAndInstanceName(); v != "" {
+		configSpec.ExtraConfig = util.OptionValues(configSpec.ExtraConfig).Merge(
+			&vimtypes.OptionValue{
+				Key:   pkgconst.ExtraConfigVMClassNameKey,
+				Value: v,
+			},
+		)
+	}
 
 	// Ensure ExtraConfig contains the VM Class's reservation profile ID if set.
 	if id := vmClassSpec.ReservedProfileID; id != "" {

@@ -167,7 +167,7 @@ type VirtualMachineService struct {
 }
 
 func (s *VirtualMachineService) NamespacedName() string {
-	return s.Namespace + "/" + s.Name
+	return NamespacedName(s)
 }
 
 // +kubebuilder:object:root=true

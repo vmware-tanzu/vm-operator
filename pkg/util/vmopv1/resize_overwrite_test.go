@@ -15,6 +15,8 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -69,21 +71,25 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 		return cs
 	}
 
-	configInfoNamespaceName := func(ci ConfigInfo) ConfigInfo {
+	configInfoBase := func(ci ConfigInfo) ConfigInfo {
 		ci.ExtraConfig = pkgutil.OptionValues(ci.ExtraConfig).Merge(
 			&vimtypes.OptionValue{
 				Key:   constants.ExtraConfigVMServiceNamespacedName,
+				Value: "",
+			},
+			&vimtypes.OptionValue{
+				Key:   pkgconst.ExtraConfigVMClassNameKey,
 				Value: "",
 			},
 		)
 		return ci
 	}
 
-	configInfoWithNamespaceName := func() ConfigInfo {
-		return configInfoNamespaceName(ConfigInfo{})
+	configInfoWithBase := func() ConfigInfo {
+		return configInfoBase(ConfigInfo{})
 	}
 	configInfoWithManagedByAndNamespaceName := func() ConfigInfo {
-		return configInfoManagedBy(configInfoWithNamespaceName())
+		return configInfoManagedBy(configInfoWithBase())
 	}
 
 	ctx := context.Background()
@@ -94,12 +100,20 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 		vm.Spec.Advanced = &advSpec
 		// Empty guestID to avoid it being set in the returned ConfigSpec.
 		vm.Spec.GuestID = ""
+		// Empty className and class to avoid them being set in the returned
+		// ConfigSpec.
+		vm.Spec.ClassName = ""
+		vm.Spec.Class = nil
 		return *vm
 	}
 
 	vmGuestID := func(guestID string) vmopv1.VirtualMachine {
 		vm := builder.DummyVirtualMachine()
 		vm.Spec.GuestID = guestID
+		// Empty className and class to avoid them being set in the returned
+		// ConfigSpec.
+		vm.Spec.ClassName = ""
+		vm.Spec.Class = nil
 		return *vm
 	}
 
@@ -135,17 +149,17 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 			ConfigSpec{ChangeTrackingEnabled: truePtr}),
 		Entry("CBT set in VM Spec with same value in ConfigInfo",
 			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{ChangeBlockTracking: truePtr}),
-			configInfoManagedBy(configInfoNamespaceName(ConfigInfo{ChangeTrackingEnabled: truePtr})),
+			configInfoManagedBy(configInfoBase(ConfigInfo{ChangeTrackingEnabled: truePtr})),
 			ConfigSpec{},
 			ConfigSpec{}),
 		Entry("CBT set in ConfigSpec with same value in ConfigInfo",
 			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{}),
-			configInfoManagedBy(configInfoNamespaceName(ConfigInfo{ChangeTrackingEnabled: truePtr})),
+			configInfoManagedBy(configInfoBase(ConfigInfo{ChangeTrackingEnabled: truePtr})),
 			ConfigSpec{ChangeTrackingEnabled: truePtr},
 			ConfigSpec{}),
 		Entry("CBT set in VM Spec with same value in ConfigInfo but different value in ConfigSpec",
 			vmAdvSpec(vmopv1.VirtualMachineAdvancedSpec{ChangeBlockTracking: truePtr}),
-			configInfoManagedBy(configInfoNamespaceName(ConfigInfo{ChangeTrackingEnabled: truePtr})),
+			configInfoManagedBy(configInfoBase(ConfigInfo{ChangeTrackingEnabled: truePtr})),
 			ConfigSpec{ChangeTrackingEnabled: falsePtr},
 			ConfigSpec{}),
 
@@ -166,23 +180,23 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 			ConfigSpec{GuestId: "foo"}),
 		Entry("GuestID set in VM Spec with same value in ConfigInfo",
 			vmGuestID("foo"),
-			configInfoManagedBy(configInfoNamespaceName(ConfigInfo{GuestId: "foo"})),
+			configInfoManagedBy(configInfoBase(ConfigInfo{GuestId: "foo"})),
 			ConfigSpec{},
 			ConfigSpec{}),
 		Entry("GuestID set in ConfigSpec with same value in ConfigInfo",
 			vmGuestID(""),
-			configInfoManagedBy(configInfoNamespaceName(ConfigInfo{GuestId: "foo"})),
+			configInfoManagedBy(configInfoBase(ConfigInfo{GuestId: "foo"})),
 			ConfigSpec{GuestId: "foo"},
 			ConfigSpec{}),
 		Entry("GuestID set in VM Spec with same value in ConfigInfo but different value in ConfigSpec",
 			vmGuestID("foo"),
-			configInfoManagedBy(configInfoNamespaceName(ConfigInfo{GuestId: "foo"})),
+			configInfoManagedBy(configInfoBase(ConfigInfo{GuestId: "foo"})),
 			ConfigSpec{GuestId: "bar"},
 			ConfigSpec{}),
 
 		Entry("ManagedBy not set in ConfigInfo or ConfigSpec",
 			vmopv1.VirtualMachine{},
-			configInfoWithNamespaceName(),
+			configInfoWithBase(),
 			ConfigSpec{},
 			configSpecManagedBy(ConfigSpec{})),
 		Entry("ManagedBy set in ConfigInfo and not in ConfigSpec",
@@ -202,26 +216,40 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 			ConfigSpec{}),
 		Entry("ManagedBy not set in ConfigInfo with wrong value in ConfigSpec",
 			vmopv1.VirtualMachine{},
-			configInfoWithNamespaceName(),
+			configInfoWithBase(),
 			configSpecManagedBy(ConfigSpec{}, "fake", "fake"),
 			configSpecManagedBy(ConfigSpec{})),
 	)
 
 	Context("ExtraConfig", func() {
+
+		const fake = "fake"
+
 		var (
 			vm                vmopv1.VirtualMachine
 			ci                ConfigInfo
 			cs                ConfigSpec
 			namespacedNameVal *vimtypes.OptionValue
+			vmClassNameVal    *vimtypes.OptionValue
 		)
 
 		BeforeEach(func() {
 			vm = *builder.DummyVirtualMachine()
+
+			// Empty className and class to avoid them being set in the returned
+			// ConfigSpec.
+			vm.Spec.ClassName = ""
+			vm.Spec.Class = nil
+
 			namespacedNameVal = &vimtypes.OptionValue{
 				Key:   constants.ExtraConfigVMServiceNamespacedName,
 				Value: "",
 			}
-			ci = configInfoWithNamespaceName()
+			vmClassNameVal = &vimtypes.OptionValue{
+				Key:   pkgconst.ExtraConfigVMClassNameKey,
+				Value: "",
+			}
+			ci = configInfoWithBase()
 			cs = ConfigSpec{}
 		})
 
@@ -232,7 +260,7 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 
 		Context("Namespace and name", func() {
 			BeforeEach(func() {
-				ci.ExtraConfig = nil
+				ci.ExtraConfig = []vimtypes.BaseOptionValue{vmClassNameVal}
 			})
 
 			When("VM already has expected EC values", func() {
@@ -259,7 +287,7 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 			When("VM has different than expected EC values", func() {
 				BeforeEach(func() {
 					ov := *namespacedNameVal
-					ov.Value = "fake/fake"
+					ov.Value = fake + "/" + fake
 					ci.ExtraConfig = append(ci.ExtraConfig, &ov)
 				})
 				It("updates it", func() {
@@ -274,6 +302,126 @@ var _ = Describe("OverwriteResizeConfigSpec", func() {
 
 				It("removes updates", func() {
 					Expect(cs.ExtraConfig).To(BeEmpty())
+				})
+			})
+			When("VM has namespace but empty name", func() {
+				BeforeEach(func() {
+					vm.Namespace = fake
+				})
+
+				It("updates it", func() {
+					namespacedNameVal.Value = fake + "/"
+					Expect(cs.ExtraConfig).To(ConsistOf(namespacedNameVal))
+				})
+			})
+			When("VM has empty namespace but non-empty name", func() {
+				BeforeEach(func() {
+					vm.Name = fake
+				})
+
+				It("updates it", func() {
+					namespacedNameVal.Value = "/" + fake
+					Expect(cs.ExtraConfig).To(ConsistOf(namespacedNameVal))
+				})
+			})
+			When("VM has non-empty namespace and name", func() {
+				BeforeEach(func() {
+					vm.Namespace = fake
+					vm.Name = fake
+				})
+
+				It("updates it", func() {
+					namespacedNameVal.Value = fake + "/" + fake
+					Expect(cs.ExtraConfig).To(ConsistOf(namespacedNameVal))
+				})
+			})
+		})
+
+		Context("VM class name", func() {
+
+			const (
+				myClass1         = "my-class-1"
+				myClassInstance1 = "my-class-instance-1"
+			)
+
+			BeforeEach(func() {
+				ci.ExtraConfig = []vimtypes.BaseOptionValue{namespacedNameVal}
+			})
+
+			When("VM already has expected EC values", func() {
+				BeforeEach(func() {
+					ci.ExtraConfig = append(ci.ExtraConfig, vmClassNameVal)
+				})
+				It("no updates", func() {
+					Expect(cs.ExtraConfig).To(BeEmpty())
+				})
+			})
+			When("VM ConfigSpec already has expected EC values", func() {
+				BeforeEach(func() {
+					cs.ExtraConfig = append(cs.ExtraConfig, vmClassNameVal)
+				})
+				It("same changes", func() {
+					Expect(cs.ExtraConfig).To(ConsistOf(vmClassNameVal))
+				})
+			})
+			When("VM has none of expected EC values", func() {
+				It("adds it", func() {
+					Expect(cs.ExtraConfig).To(ConsistOf(vmClassNameVal))
+				})
+			})
+			When("VM has different than expected EC values", func() {
+				BeforeEach(func() {
+					ov := *vmClassNameVal
+					ov.Value = "fake/fake"
+					ci.ExtraConfig = append(ci.ExtraConfig, &ov)
+				})
+				It("updates it", func() {
+					Expect(cs.ExtraConfig).To(ConsistOf(vmClassNameVal))
+				})
+			})
+			Context("VM and ConfigSpec already have expected values", func() {
+				BeforeEach(func() {
+					ci.ExtraConfig = append(ci.ExtraConfig, vmClassNameVal)
+					cs.ExtraConfig = append(cs.ExtraConfig, vmClassNameVal)
+				})
+
+				It("removes updates", func() {
+					Expect(cs.ExtraConfig).To(BeEmpty())
+				})
+			})
+			When("VM has className but empty class", func() {
+				BeforeEach(func() {
+					vm.Spec.ClassName = myClass1
+				})
+
+				It("updates it", func() {
+					vmClassNameVal.Value = myClass1
+					Expect(cs.ExtraConfig).To(ConsistOf(vmClassNameVal))
+				})
+			})
+			When("VM has empty className but non-empty class", func() {
+				BeforeEach(func() {
+					vm.Spec.Class = &common.LocalObjectRef{
+						Name: myClassInstance1,
+					}
+				})
+
+				It("updates it", func() {
+					vmClassNameVal.Value = "/" + myClassInstance1
+					Expect(cs.ExtraConfig).To(ConsistOf(vmClassNameVal))
+				})
+			})
+			When("VM has non-empty className and class", func() {
+				BeforeEach(func() {
+					vm.Spec.ClassName = myClass1
+					vm.Spec.Class = &common.LocalObjectRef{
+						Name: myClassInstance1,
+					}
+				})
+
+				It("updates it", func() {
+					vmClassNameVal.Value = myClass1 + "/" + myClassInstance1
+					Expect(cs.ExtraConfig).To(ConsistOf(vmClassNameVal))
 				})
 			})
 		})

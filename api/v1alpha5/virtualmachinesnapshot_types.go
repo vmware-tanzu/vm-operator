@@ -171,7 +171,7 @@ type VirtualMachineSnapshot struct {
 }
 
 func (vmSnapshot *VirtualMachineSnapshot) NamespacedName() string {
-	return vmSnapshot.Namespace + "/" + vmSnapshot.Name
+	return NamespacedName(vmSnapshot)
 }
 
 func (vmSnapshot *VirtualMachineSnapshot) GetConditions() []metav1.Condition {

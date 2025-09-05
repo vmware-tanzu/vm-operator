@@ -29,9 +29,9 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -648,6 +648,15 @@ func synthesizeVMSpecForSnapshot(
 		// snapshot state. If user wants to change that, they can specify a
 		// custom boot option (boot order).
 		BootOptions: nil,
+
+		// PowerOffMode is set to the reasonable default of TrySoft.
+		// User can change it post-revert if needed.
+		// If after the revert, the VM switches from being On to Off,
+		// PowerOffMode is required to be set. Otherwise, switching
+		// power state will fail since between restoring the VM spec
+		// and the next power operation, there is no defaulting operation
+		// to set the default.
+		PowerOffMode: vmopv1.VirtualMachinePowerOpModeTrySoft,
 
 		// Used to trigger a revert, so must be empty.
 		CurrentSnapshot: nil,

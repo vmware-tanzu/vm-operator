@@ -3311,7 +3311,7 @@ func vmTests() {
 						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 
 						// Verify the revert operation reverted to the expected values
-						Expect(vm.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpMode("")))
+						Expect(vm.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
 						Expect(vm.Spec.Volumes).To(BeEmpty())
 					})
 				})

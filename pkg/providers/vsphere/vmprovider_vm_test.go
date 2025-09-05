@@ -4700,7 +4700,8 @@ func vmTests() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(conditions.IsTrue(updatedSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
 					Expect(updatedSnapshot.Status.Quiesced).To(BeTrue())
-					Expect(updatedSnapshot.Status.PowerState).To(Equal(vm.Status.PowerState))
+					// Snapshot should be powered off since memory is not included in the snapshot
+					Expect(updatedSnapshot.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 				})
 			})
 

@@ -197,7 +197,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 
 	if vmSnapshot.Status.Storage.Requested == nil {
 		ctx.Logger.V(4).Info("Updating snapshot's status requested capacity")
-		vmSnapshot.Status.Storage.Requested = []vmopv1.VirtualMachineSnapshotStorageStatusRequested{}
 		requested, err := kubeutil.CalculateReservedForSnapshotPerStorageClass(ctx, r.Client, r.Logger, *vmSnapshot)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to calculate requested capacity for snapshot: %w", err)

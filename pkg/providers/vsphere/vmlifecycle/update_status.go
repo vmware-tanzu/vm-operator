@@ -1440,8 +1440,8 @@ func updateSnapshotChildrenStatus(
 		patch := ctrlclient.MergeFrom(curSnapshot.DeepCopy())
 		curSnapshot.Status.Children = children
 		if err := k8sClient.Status().Patch(vmCtx, curSnapshot, patch); err != nil {
-			vmCtx.Logger.Error(err, "Failed to update snapshot children status", "snapshotName", curSnapshot.Name)
-			return nil, err
+			return nil, fmt.Errorf("failed to update snapshot children status %q: %w",
+				curSnapshot.Name, err)
 		}
 	}
 
@@ -1471,9 +1471,8 @@ func getSnapshotCR(
 
 	if err := k8sClient.Get(vmCtx, objKey, vmSnapshot); err != nil {
 		if !apierrors.IsNotFound(err) {
-			vmCtx.Logger.Error(err, "Failed to get VirtualMachineSnapshot",
-				"snapshotName", snapshotName)
-			return nil, err
+			return nil, fmt.Errorf("failed to get VirtualMachineSnapshot %q: %w",
+				snapshotName, err)
 		}
 
 		// TODO (Lubron): We can just store an object with External kind

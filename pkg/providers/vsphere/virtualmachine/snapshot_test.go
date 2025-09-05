@@ -529,13 +529,15 @@ func snapShotTests() {
 
 			When("Get the snapshot size of Snapshot-1", func() {
 				It("returns the size by adding size of file 3, 4, 17, 18", func() {
-					Expect(virtualmachine.GetSnapshotSize(vmCtx, &snapshot1)).To(Equal(int64(0.5*oneGiBInBytes + 500 + 500 + 2*oneGiBInBytes)))
+					Expect(virtualmachine.GetSnapshotSize(vmCtx, &snapshot1)).
+						To(Equal(int64(0.5*oneGiBInBytes + 500 + 500 + 2*oneGiBInBytes)))
 				})
 			})
 
 			When("Get the snapshot size of Snapshot-2", func() {
 				It("returns the size by adding size of file 5, 6, 19", func() {
-					Expect(virtualmachine.GetSnapshotSize(vmCtx, &snapshot2)).To(Equal(int64(1*oneGiBInBytes + 500 + 1*oneGiBInBytes)))
+					Expect(virtualmachine.GetSnapshotSize(vmCtx, &snapshot2)).
+						To(Equal(int64(1*oneGiBInBytes + 500 + 1*oneGiBInBytes)))
 				})
 			})
 		})

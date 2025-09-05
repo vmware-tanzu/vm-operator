@@ -1971,8 +1971,8 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.nameservers: Invalid value: "not-an-ip,8.8.8.8,2001:4860:4860::8888": nameservers is only available for CloudInit when UseGlobalNameserversAsDefault is true`,
-						`spec.network.searchDomains: Invalid value: "dev.local": searchDomains is only available for CloudInit when UseGlobalSearchDomainsAsDefault is true`,
+						`spec.network.nameservers: Invalid value: "not-an-ip,8.8.8.8,2001:4860:4860::8888": nameservers is available only for CloudInit when UseGlobalNameserversAsDefault is true`,
+						`spec.network.searchDomains: Invalid value: "dev.local": searchDomains is available only for CloudInit when UseGlobalSearchDomainsAsDefault is true`,
 						`spec.network.nameservers[0]: Invalid value: "not-an-ip": must be an IPv4 or IPv6 address`,
 					),
 				},

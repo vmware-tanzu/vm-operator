@@ -10,6 +10,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -49,6 +50,7 @@ func OverwriteAlwaysResizeConfigSpec(
 
 	overwriteManagedBy(vm, ci, cs)
 	overwriteExtraConfigNamespaceName(vm, ci, cs)
+	overwriteExtraConfigVMClassName(vm, ci, cs)
 
 	return nil
 }
@@ -74,6 +76,7 @@ func overwriteExtraConfig(
 	var toMerge []vimtypes.BaseOptionValue
 
 	toMerge = append(toMerge, ensureNamespaceName(vm, ci, cs)...)
+	toMerge = append(toMerge, ensureVMClassName(vm, ci, cs)...)
 	toMerge = append(toMerge, overrideMMIOSize(vm, ci, cs)...)
 	toMerge = append(toMerge, clearMMPowerOffEC(vm, ci, cs)...)
 	toMerge = append(toMerge, updateV1Alpha1CompatibleEC(vm, ci, cs)...)
@@ -89,6 +92,18 @@ func overwriteExtraConfigNamespaceName(
 	var toMerge []vimtypes.BaseOptionValue
 
 	toMerge = append(toMerge, ensureNamespaceName(vm, ci, cs)...)
+
+	cs.ExtraConfig = util.OptionValues(cs.ExtraConfig).Merge(toMerge...)
+}
+
+func overwriteExtraConfigVMClassName(
+	vm vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec) {
+
+	var toMerge []vimtypes.BaseOptionValue
+
+	toMerge = append(toMerge, ensureVMClassName(vm, ci, cs)...)
 
 	cs.ExtraConfig = util.OptionValues(cs.ExtraConfig).Merge(toMerge...)
 }
@@ -125,15 +140,33 @@ func ensureNamespaceName(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs *vimtypes.VirtualMachineConfigSpec) []vimtypes.BaseOptionValue {
 
+	return ensureExtraConfigKeyValue(
+		ci,
+		cs,
+		constants.ExtraConfigVMServiceNamespacedName,
+		vm.NamespacedName())
+}
+
+func ensureVMClassName(
+	vm vmopv1.VirtualMachine,
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec) []vimtypes.BaseOptionValue {
+
+	return ensureExtraConfigKeyValue(
+		ci,
+		cs,
+		pkgconst.ExtraConfigVMClassNameKey,
+		vm.ClassAndInstanceName())
+}
+
+func ensureExtraConfigKeyValue(
+	ci vimtypes.VirtualMachineConfigInfo,
+	cs *vimtypes.VirtualMachineConfigSpec,
+	key, val string) []vimtypes.BaseOptionValue {
+
 	outEC := []vimtypes.BaseOptionValue{}
 	curEC := util.OptionValues(ci.ExtraConfig).StringMap()
 	inEC := util.OptionValues(cs.ExtraConfig).StringMap()
-
-	key := constants.ExtraConfigVMServiceNamespacedName
-	val := vm.NamespacedName()
-	if val == "/" {
-		val = ""
-	}
 
 	// Does the VM have the key set in EC?
 	if v, ok := curEC[key]; ok {

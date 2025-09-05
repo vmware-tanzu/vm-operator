@@ -72,7 +72,7 @@ type VirtualMachineSetResourcePolicy struct {
 }
 
 func (p *VirtualMachineSetResourcePolicy) NamespacedName() string {
-	return p.Namespace + "/" + p.Name
+	return NamespacedName(p)
 }
 
 // +kubebuilder:object:root=true

@@ -11,7 +11,10 @@ import (
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
+
+	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
 func Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(
@@ -131,6 +134,36 @@ func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
 
 func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
+}
+
+func Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(
+	in *vmopv1a4common.LocalObjectRef, out *vmopv1.VirtualMachineSnapshotReference, s apiconversion.Scope) error {
+	if in == nil {
+		return nil
+	}
+
+	// Convert LocalObjectRef to the nested SnapshotReference field
+	out.Reference = &vmopv1common.LocalObjectRef{
+		APIVersion: in.APIVersion,
+		Kind:       in.Kind,
+		Name:       in.Name,
+	}
+
+	return nil
+}
+
+func Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(
+	in *vmopv1.VirtualMachineSnapshotReference, out *vmopv1a4common.LocalObjectRef, s apiconversion.Scope) error {
+	if in == nil || in.Reference == nil {
+		return nil
+	}
+
+	// Convert the nested SnapshotReference back to LocalObjectRef
+	out.APIVersion = in.Reference.APIVersion
+	out.Kind = in.Reference.Kind
+	out.Name = in.Reference.Name
+
+	return nil
 }
 
 // ConvertTo converts this VirtualMachine to the Hub version.

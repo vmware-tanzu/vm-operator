@@ -547,8 +547,8 @@ func unitTestsReconcile() {
 				//   L3-n1    L3-n2
 				BeforeEach(func() {
 					vmSnapshotL2.DeletionTimestamp = &now
-					vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)
-					vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)}
+					vm.Status.CurrentSnapshot = vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL2)
+					vm.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)}
 					// assign before the reconcile
 					parent = vmSnapshotL1
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
@@ -556,15 +556,15 @@ func unitTestsReconcile() {
 				JustBeforeEach(func() {
 					fakeVMProvider.SyncVMSnapshotTreeStatusFn = func(_ context.Context, vm *vmopv1.VirtualMachine) error {
 						// update vm status
-						vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)
-						vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)}
+						vm.Status.CurrentSnapshot = vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)
+						vm.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)}
 
 						// update vmSnapshotL1's children
 						vmSnapshotL1Obj := &vmopv1.VirtualMachineSnapshot{}
 						Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshotL1.Name, Namespace: vmSnapshotL1.Namespace}, vmSnapshotL1Obj)).To(Succeed())
-						vmSnapshotL1Obj.Status.Children = []vmopv1common.LocalObjectRef{
-							*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node1),
-							*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node2),
+						vmSnapshotL1Obj.Status.Children = []vmopv1.VirtualMachineSnapshotReference{
+							*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL3Node1),
+							*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL3Node2),
 						}
 						Expect(ctx.Client.Status().Update(ctx, vmSnapshotL1Obj)).To(Succeed())
 						return nil
@@ -584,16 +584,16 @@ func unitTestsReconcile() {
 				})
 				It("returns success, vm current snapshot is updated to root", func() {
 					Expect(err).ToNot(HaveOccurred())
-					Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)))
+					Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)))
 					Expect(vm.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vm.Status.RootSnapshots).To(ContainElement(*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)))
+					Expect(vm.Status.RootSnapshots).To(ContainElement(*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)))
 					// check vmSnapshotL1's children
 					vmSnapshotL1Obj := &vmopv1.VirtualMachineSnapshot{}
 					Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshotL1.Name, Namespace: vmSnapshotL1.Namespace}, vmSnapshotL1Obj)).To(Succeed())
 					Expect(vmSnapshotL1Obj.Status.Children).To(HaveLen(2))
 					Expect(vmSnapshotL1Obj.Status.Children).To(ConsistOf(
-						*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node1),
-						*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node2),
+						*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL3Node1),
+						*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL3Node2),
 					))
 				})
 			})
@@ -610,15 +610,15 @@ func unitTestsReconcile() {
 				//   L3-n1    L3-n2
 				BeforeEach(func() {
 					vmSnapshotL1.DeletionTimestamp = &now
-					vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)
-					vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)}
+					vm.Status.CurrentSnapshot = vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)
+					vm.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)}
 					parent = nil
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 				})
 				JustBeforeEach(func() {
 					fakeVMProvider.SyncVMSnapshotTreeStatusFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 						vm.Status.CurrentSnapshot = nil
-						vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)}
+						vm.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL2)}
 						return nil
 					}
 					_, err = reconciler.Reconcile(cource.WithContext(ctx), reconcile.Request{
@@ -638,7 +638,7 @@ func unitTestsReconcile() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(vm.Status.CurrentSnapshot).To(BeNil())
 					Expect(vm.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vm.Status.RootSnapshots).To(ContainElement(*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
+					Expect(vm.Status.RootSnapshots).To(ContainElement(*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL2)))
 				})
 			})
 			When("leaf snapshot is deleted", func() {
@@ -656,21 +656,21 @@ func unitTestsReconcile() {
 				//       L3-n2
 				BeforeEach(func() {
 					vmSnapshotL3Node1.DeletionTimestamp = &now
-					vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node1)
-					vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)}
+					vm.Status.CurrentSnapshot = vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL3Node1)
+					vm.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)}
 					parent = vmSnapshotL2
 					initObjects = append(initObjects, vm, vmSnapshotL1, vmSnapshotL2, vmSnapshotL3Node1, vmSnapshotL3Node2)
 				})
 				JustBeforeEach(func() {
 					fakeVMProvider.SyncVMSnapshotTreeStatusFn = func(_ context.Context, vm *vmopv1.VirtualMachine) error {
-						vm.Status.CurrentSnapshot = vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)
-						vm.Status.RootSnapshots = []vmopv1common.LocalObjectRef{*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)}
+						vm.Status.CurrentSnapshot = vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL2)
+						vm.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)}
 
 						// update vmSnapshotL2's children
 						vmSnapshotL2Obj := &vmopv1.VirtualMachineSnapshot{}
 						Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshotL2.Name, Namespace: vmSnapshotL2.Namespace}, vmSnapshotL2Obj)).To(Succeed())
-						vmSnapshotL2Obj.Status.Children = []vmopv1common.LocalObjectRef{
-							*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node2),
+						vmSnapshotL2Obj.Status.Children = []vmopv1.VirtualMachineSnapshotReference{
+							*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL3Node2),
 						}
 						Expect(ctx.Client.Status().Update(ctx, vmSnapshotL2Obj)).To(Succeed())
 						return nil
@@ -690,31 +690,34 @@ func unitTestsReconcile() {
 				})
 				It("returns success, vm current snapshot is updated to parent", func() {
 					Expect(err).ToNot(HaveOccurred())
-					Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL2)))
+					Expect(vm.Status.CurrentSnapshot).To(Equal(vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL2)))
 					Expect(vm.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vm.Status.RootSnapshots).To(ContainElement(*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL1)))
+					Expect(vm.Status.RootSnapshots).To(ContainElement(*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL1)))
 
 					// check vmSnapshotL2's children
 					vmSnapshotL2Obj := &vmopv1.VirtualMachineSnapshot{}
 					Expect(ctx.Client.Get(ctx, types.NamespacedName{Name: vmSnapshotL2.Name, Namespace: vmSnapshotL2.Namespace}, vmSnapshotL2Obj)).To(Succeed())
 					Expect(vmSnapshotL2Obj.Status.Children).To(HaveLen(1))
-					Expect(vmSnapshotL2Obj.Status.Children).To(ContainElement(*vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshotL3Node2)))
+					Expect(vmSnapshotL2Obj.Status.Children).To(ContainElement(*vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshotL3Node2)))
 				})
 			})
 		})
 	})
 }
 
-func vmSnapshotCRToLocalObjectRefWithDefaultVersion(vmSnapshot *vmopv1.VirtualMachineSnapshot) *vmopv1common.LocalObjectRef {
-	return &vmopv1common.LocalObjectRef{
-		APIVersion: vmSnapshot.APIVersion,
-		Kind:       vmSnapshot.Kind,
-		Name:       vmSnapshot.Name,
+func vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshot *vmopv1.VirtualMachineSnapshot) *vmopv1.VirtualMachineSnapshotReference {
+	return &vmopv1.VirtualMachineSnapshotReference{
+		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+		Reference: &vmopv1common.LocalObjectRef{
+			APIVersion: vmSnapshot.APIVersion,
+			Kind:       vmSnapshot.Kind,
+			Name:       vmSnapshot.Name,
+		},
 	}
 }
 
 func addSnapshotToChildren(vmSnapshot *vmopv1.VirtualMachineSnapshot, children ...*vmopv1.VirtualMachineSnapshot) {
 	for _, child := range children {
-		vmSnapshot.Status.Children = append(vmSnapshot.Status.Children, *vmSnapshotCRToLocalObjectRefWithDefaultVersion(child))
+		vmSnapshot.Status.Children = append(vmSnapshot.Status.Children, *vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(child))
 	}
 }

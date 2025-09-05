@@ -63,7 +63,7 @@ func relocateSpecToRecommendation(
 func clusterPlacementActionToRecommendation(
 	ctx context.Context,
 	finder *find.Finder,
-	action *vimtypes.ClusterClusterInitialPlacementAction) (*Recommendation, error) {
+	action *vimtypes.ClusterClusterInitialPlacementActionEx) (*Recommendation, error) {
 
 	r := Recommendation{
 		PoolMoRef: action.Pool,
@@ -272,7 +272,7 @@ func ClusterPlaceVMForCreate(
 		}
 
 		for _, a := range info.Recommendation.Action {
-			if ca, ok := a.(*vimtypes.ClusterClusterInitialPlacementAction); ok {
+			if ca, ok := a.(*vimtypes.ClusterClusterInitialPlacementActionEx); ok {
 				r, err := clusterPlacementActionToRecommendation(ctx, finder, ca)
 				if err != nil {
 					return nil, fmt.Errorf("failed to translate placement action to recommendation: %w", err)

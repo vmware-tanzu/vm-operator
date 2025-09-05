@@ -14,8 +14,10 @@ import (
 	"sync/atomic"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -36,6 +38,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
@@ -45,7 +48,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
@@ -457,6 +459,82 @@ func (vs *vSphereVMProvider) GetItemFromInventoryByName(
 	}
 
 	return vm, nil
+}
+
+func (vs *vSphereVMProvider) GetCloneTasksForVM(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	moID, descriptionID string) ([]vimtypes.TaskInfo, error) {
+
+	logger := pkglog.FromContextOrDefault(ctx)
+
+	vmCtx := pkgctx.VirtualMachineContext{
+		Context: context.WithValue(
+			ctx,
+			vimtypes.ID{},
+			vs.getOpID(ctx, vm, "GetCloneTasksForVM"),
+		),
+		Logger: logger,
+		VM:     vm,
+	}
+
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching VM from VC: %w", err)
+	}
+
+	var moVM mo.VirtualMachine
+	if err := vcVM.Properties(ctx, vcVM.Reference(), []string{"recentTask"}, &moVM); err != nil {
+		return nil, fmt.Errorf("error fetching VM properties from VC: %w", err)
+	}
+
+	taskList := make([]vimtypes.TaskInfo, 0)
+	pc := property.DefaultCollector(client.VimClient())
+
+	for _, taskRef := range moVM.RecentTask {
+		var t mo.Task
+		if err := pc.RetrieveOne(ctx, taskRef, []string{"info"}, &t); err != nil {
+			// Tasks go away after 10m of completion.
+			if !fault.Is(err, &vimtypes.ManagedObjectNotFound{}) {
+				return nil, fmt.Errorf("failed to retrieve task info: %w", err)
+			}
+		} else {
+			if t.Info.DescriptionId == descriptionID {
+				if result, ok := t.Info.Result.(vimtypes.ManagedObjectReference); ok {
+					if result.Reference().String() == moID {
+						taskList = append(taskList, t.Info)
+					}
+				}
+			}
+		}
+	}
+
+	return taskList, nil
+}
+
+func (vs *vSphereVMProvider) ContainsExtraConfigEntry(
+	ctx context.Context,
+	objVM *object.VirtualMachine,
+	key, value string) (bool, error) {
+
+	var moVM mo.VirtualMachine
+	if err := objVM.Properties(ctx, objVM.Reference(), []string{"config.extraConfig"}, &moVM); err != nil {
+		return false, err
+	}
+
+	extraConfig := object.OptionValueList(moVM.Config.ExtraConfig).StringMap()
+	if ecValue, ok := extraConfig[key]; ok {
+		if ecValue == value {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {

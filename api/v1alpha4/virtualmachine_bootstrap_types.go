@@ -136,24 +136,6 @@ type VirtualMachineBootstrapCloudInitSpec struct {
 	//
 	// Defaults to true if omitted.
 	UseGlobalSearchDomainsAsDefault *bool `json:"useGlobalSearchDomainsAsDefault,omitempty"`
-
-	// +optional
-
-	// WaitOnNetwork4 indicates whether the cloud-init datasource should wait
-	// for an IPv4 address to be available before writing the instance-data.
-	//
-	// When set to true, the cloud-init datasource will sleep for a second,
-	// check network status, and repeat until an IPv4 address is available.
-	WaitOnNetwork4 *bool `json:"waitOnNetwork4,omitempty"`
-
-	// +optional
-
-	// WaitOnNetwork6 indicates whether the cloud-init datasource should wait
-	// for an IPv6 address to be available before writing the instance-data.
-	//
-	// When set to true, the cloud-init datasource will sleep for a second,
-	// check network status, and repeat until an IPv6 address is available.
-	WaitOnNetwork6 *bool `json:"waitOnNetwork6,omitempty"`
 }
 
 // VirtualMachineBootstrapLinuxPrepSpec describes the LinuxPrep configuration

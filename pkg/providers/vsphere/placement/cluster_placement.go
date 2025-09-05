@@ -272,7 +272,8 @@ func ClusterPlaceVMForCreate(
 		}
 
 		for _, a := range info.Recommendation.Action {
-			if ca, ok := a.(*vimtypes.ClusterClusterInitialPlacementAction); ok {
+			if bca, ok := a.(vimtypes.BaseClusterClusterInitialPlacementAction); ok {
+				ca := bca.GetClusterClusterInitialPlacementAction()
 				r, err := clusterPlacementActionToRecommendation(ctx, finder, ca)
 				if err != nil {
 					return nil, fmt.Errorf("failed to translate placement action to recommendation: %w", err)

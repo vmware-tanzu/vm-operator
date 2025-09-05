@@ -993,6 +993,20 @@ type VirtualMachineSpec struct {
 
 	// Hardware describes the VM's desired hardware.
 	Hardware *VirtualMachineHardwareSpec `json:"hardware,omitempty"`
+
+	// +optional
+
+	// Policies describes a list of policies that should be explicitly applied
+	// to this VM.
+	//
+	// Please note, not all policies may be applied explicitly to a VM. Please
+	// consult a policy to determine if it may be applied directly. For example,
+	// the ComputePolicy object from the vsphere.policy.vmware.com API group
+	// has a field named spec.type. Only ComputePolicy objects with
+	// type=Optional may be applied explicitly to a VM.
+	//
+	// Valid policy types are: ComputePolicy.
+	Policies []PolicySpec `json:"policies,omitempty"`
 }
 
 // VirtualMachineReservedSpec describes a set of VM configuration options
@@ -1208,6 +1222,11 @@ type VirtualMachineStatus struct {
 
 	// Hardware describes the observed state of the VM's hardware.
 	Hardware *VirtualMachineHardwareStatus `json:"hardware,omitempty"`
+
+	// +optional
+
+	// Policies describes the observed policies applied to this VM.
+	Policies []PolicyStatus `json:"policies,omitempty"`
 }
 
 // +kubebuilder:object:root=true

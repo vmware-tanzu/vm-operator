@@ -5,11 +5,12 @@
 package v1alpha4
 
 import (
+	"slices"
+
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
@@ -128,6 +129,10 @@ func restore_v1alpha5_VirtualMachineHardware(dst, src *vmopv1.VirtualMachine) {
 	}
 }
 
+func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -144,6 +149,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	// BEGIN RESTORE
 
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
+	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
 
 	// END RESTORE
 

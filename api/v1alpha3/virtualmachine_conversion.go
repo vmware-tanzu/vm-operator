@@ -5,6 +5,8 @@
 package v1alpha3
 
 import (
+	"slices"
+
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
@@ -259,6 +261,10 @@ func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vm
 	}
 }
 
+func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -280,6 +286,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)
 	restore_v1alpha5_VirtualMachineVolumes(dst, restored)
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
+	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
 
 	// END RESTORE
 

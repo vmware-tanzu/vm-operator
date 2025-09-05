@@ -984,6 +984,27 @@ virtualSystem:
     id: 36
     info: The kind of installed guest operating system
     osType: otherLinuxGuest
+  productSection:
+  - fullVersion: v1.0.0
+    product: Linux
+    property:
+    - default: "1.15"
+      key: vmware-system.tkr.os-version
+      type: string
+    - default: dummy-value
+      key: dummy-key-configurable
+      type: string
+      userConfigurable: true
+    - default: dummy-value
+      key: dummy-key-not-configurable
+      type: string
+      userConfigurable: false
+    - default: dummy-value
+      key: dummy-key-not-configurable
+      type: string
+      userConfigurable: false
+    vendor: LinuxVendor
+    version: v1
   virtualHardwareSection:
   - config:
     - key: firmware
@@ -1004,6 +1025,10 @@ virtualSystem:
     - key: tools.toolsUpgradePolicy
       required: false
       value: upgradeAtPowerCycle
+    extraConfig:
+    - key: vmservice.vmi.labels
+      required: false
+      value: example.com/hello:world,fu.bar:,another.example.com:true
     id: null
     info: Virtual hardware requirements
     item:

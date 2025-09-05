@@ -480,7 +480,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	defer func(beforeVMStatus *vmopv1.VirtualMachineStatus) {
 		if pkgerr.IsNoRequeueError(reterr) {
 			ctx.Logger.V(4).Info(
-				"vm will be re-reconciled by async watcher",
+				"vm will be re-reconciled by cache watch or async watcher",
 				"result", reterr.Error())
 		}
 		// Log the reconcile time using the CR creation time and the time the VM reached the desired state

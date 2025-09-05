@@ -6,18 +6,22 @@ package session_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vapi/tags"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -33,6 +37,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
+	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -1096,6 +1101,324 @@ var _ = Describe("UpdateVirtualMachine", func() {
 					diskCapacityBytes := disks[0].(*vimtypes.VirtualDisk).CapacityInBytes
 					Expect(diskCapacityBytes).To(Equal(oldDiskSizeBytes))
 					// VM is powered on.
+					assertUpdate()
+				})
+			})
+		})
+
+		Context("vSphere Policies", func() {
+
+			var (
+				policyTag1ID string
+				policyTag2ID string
+				policyTag3ID string
+
+				tagMgr *tags.Manager
+			)
+
+			JustBeforeEach(func() {
+				var err error
+
+				tagMgr = tags.NewManager(ctx.RestClient)
+
+				// Create a category for the policy tags
+				categoryID, err := tagMgr.CreateCategory(ctx, &tags.Category{
+					Name:            "my-policy-category",
+					Description:     "Category for policy tags",
+					AssociableTypes: []string{"VirtualMachine"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				policyTag1ID, err = tagMgr.CreateTag(ctx, &tags.Tag{
+					Name:       "my-policy-tag-1",
+					CategoryID: categoryID,
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				policyTag2ID, err = tagMgr.CreateTag(ctx, &tags.Tag{
+					Name:       "my-policy-tag-2",
+					CategoryID: categoryID,
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				policyTag3ID, err = tagMgr.CreateTag(ctx, &tags.Tag{
+					Name:       "my-policy-tag-3",
+					CategoryID: categoryID,
+				})
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			When("Capability is enabled", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VSpherePolicies = true
+					})
+				})
+
+				It("should add policy tags to VM ExtraConfig during update", func() {
+					By("Setting up VM UID for proper PolicyEvaluation naming", func() {
+						vm.UID = "test-vm-update-policy-uid"
+					})
+
+					By("Creating a PolicyEvaluation object with policy results", func() {
+						policyEval := &vspherepolv1.PolicyEvaluation{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace:  vm.Namespace,
+								Name:       "vm-" + vm.Name,
+								Generation: 1,
+								OwnerReferences: []metav1.OwnerReference{
+									{
+										APIVersion:         vmopv1.GroupVersion.String(),
+										Kind:               "VirtualMachine",
+										Name:               vm.Name,
+										UID:                vm.UID,
+										Controller:         ptr.To(true),
+										BlockOwnerDeletion: ptr.To(true),
+									},
+								},
+							},
+							Spec: vspherepolv1.PolicyEvaluationSpec{
+								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
+									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+										//GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
+										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									},
+								},
+							},
+							Status: vspherepolv1.PolicyEvaluationStatus{
+								ObservedGeneration: 1,
+								Policies: []vspherepolv1.PolicyEvaluationResult{
+									{
+										Name: "test-update-active-policy",
+										Kind: "ComputePolicy",
+										Tags: []string{policyTag1ID, policyTag2ID},
+									},
+								},
+							},
+						}
+
+						// Create the PolicyEvaluation in the fake Kubernetes client
+						Expect(ctx.Client.Create(ctx, policyEval)).To(Succeed())
+					})
+
+					By("Updating the VM", func() {
+						// Update the VM
+						err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+						Expect(errors.Is(err, vsphere.ErrReconfigure)).To(BeTrue())
+					})
+
+					By("Verifying policy tags were added to ExtraConfig", func() {
+						// Refresh VM properties
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+						Expect(vmCtx.MoVM.Config).ToNot(BeNil())
+						Expect(vmCtx.MoVM.Config.ExtraConfig).ToNot(BeNil())
+
+						ecMap := pkgutil.OptionValues(vmCtx.MoVM.Config.ExtraConfig).StringMap()
+
+						// Verify active tags are present
+						Expect(ecMap).To(HaveKey(vmconfpolicy.ExtraConfigPolicyTagsKey))
+						activeTags := ecMap[vmconfpolicy.ExtraConfigPolicyTagsKey]
+						Expect(activeTags).To(ContainSubstring(policyTag1ID))
+						Expect(activeTags).To(ContainSubstring(policyTag2ID))
+					})
+
+					assertUpdate()
+				})
+
+				It("should update policy tags when PolicyEvaluation changes", func() {
+					By("Setting up VM UID and initial policy", func() {
+						vm.UID = "test-vm-policy-change-uid"
+
+						// Create initial PolicyEvaluation
+						policyEval := &vspherepolv1.PolicyEvaluation{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace:  vm.Namespace,
+								Name:       "vm-" + vm.Name,
+								Generation: 1,
+								OwnerReferences: []metav1.OwnerReference{
+									{
+										APIVersion:         vmopv1.GroupVersion.String(),
+										Kind:               "VirtualMachine",
+										Name:               vm.Name,
+										UID:                vm.UID,
+										Controller:         ptr.To(true),
+										BlockOwnerDeletion: ptr.To(true),
+									},
+								},
+							},
+							Spec: vspherepolv1.PolicyEvaluationSpec{
+								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
+									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+										//GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
+										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									},
+								},
+							},
+							Status: vspherepolv1.PolicyEvaluationStatus{
+								ObservedGeneration: 1,
+								Policies: []vspherepolv1.PolicyEvaluationResult{
+									{
+										Name: "initial-policy",
+										Kind: "ComputePolicy",
+										Tags: []string{policyTag1ID},
+									},
+								},
+							},
+						}
+
+						Expect(ctx.Client.Create(ctx, policyEval)).To(Succeed())
+					})
+
+					By("Performing initial VM update", func() {
+						// Update the VM
+						err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+						Expect(errors.Is(err, vsphere.ErrReconfigure)).To(BeTrue())
+
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+						ecMap := pkgutil.OptionValues(vmCtx.MoVM.Config.ExtraConfig).StringMap()
+						Expect(ecMap[vmconfpolicy.ExtraConfigPolicyTagsKey]).To(ContainSubstring(policyTag1ID))
+					})
+
+					By("Updating the PolicyEvaluation with new tags", func() {
+						// Get the existing PolicyEvaluation
+						policyEval := &vspherepolv1.PolicyEvaluation{}
+						Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKey{
+							Namespace: vm.Namespace,
+							Name:      "vm-" + vm.Name,
+						}, policyEval)).To(Succeed())
+
+						// Update with new tags
+						policyEval.Generation = 2
+						Expect(ctx.Client.Update(ctx, policyEval)).To(Succeed())
+
+						policyEval.Status.ObservedGeneration = 2
+						policyEval.Status.Policies = []vspherepolv1.PolicyEvaluationResult{
+							{
+								Name: "updated-policy",
+								Kind: "ComputePolicy",
+								Tags: []string{policyTag2ID, policyTag3ID},
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, policyEval)).To(Succeed())
+					})
+
+					By("Updating the VM again", func() {
+						// Update the VM
+						err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+						Expect(errors.Is(err, vsphere.ErrReconfigure)).To(BeTrue())
+					})
+
+					By("Verifying policy tags were updated", func() {
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+						ecMap := pkgutil.OptionValues(vmCtx.MoVM.Config.ExtraConfig).StringMap()
+
+						// Verify updated active tags
+						Expect(ecMap).To(HaveKey(vmconfpolicy.ExtraConfigPolicyTagsKey))
+						activeTags := ecMap[vmconfpolicy.ExtraConfigPolicyTagsKey]
+						Expect(activeTags).To(ContainSubstring(policyTag2ID))
+						Expect(activeTags).To(ContainSubstring(policyTag3ID))
+						Expect(activeTags).ToNot(ContainSubstring(policyTag1ID))
+					})
+
+					assertUpdate()
+				})
+			})
+
+			When("Capability is disabled", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VSpherePolicies = false
+					})
+				})
+
+				It("should not add policy tags to VM ExtraConfig during update", func() {
+					By("Setting up VM UID", func() {
+						vm.UID = "test-vm-no-policy-uid"
+					})
+
+					By("Creating a PolicyEvaluation object (which should be ignored)", func() {
+						policyEval := &vspherepolv1.PolicyEvaluation{
+							ObjectMeta: metav1.ObjectMeta{
+								Namespace:  vm.Namespace,
+								Name:       "vm-" + vm.Name,
+								Generation: 1,
+								OwnerReferences: []metav1.OwnerReference{
+									{
+										APIVersion:         vmopv1.GroupVersion.String(),
+										Kind:               "VirtualMachine",
+										Name:               vm.Name,
+										UID:                vm.UID,
+										Controller:         ptr.To(true),
+										BlockOwnerDeletion: ptr.To(true),
+									},
+								},
+							},
+							Spec: vspherepolv1.PolicyEvaluationSpec{
+								Workload: &vspherepolv1.PolicyEvaluationWorkloadSpec{
+									Guest: &vspherepolv1.PolicyEvaluationGuestSpec{
+										GuestID:     string(vimtypes.VirtualMachineGuestOsIdentifierCentosGuest),
+										GuestFamily: vspherepolv1.GuestFamilyTypeLinux,
+									},
+								},
+							},
+							Status: vspherepolv1.PolicyEvaluationStatus{
+								ObservedGeneration: 1,
+								Policies: []vspherepolv1.PolicyEvaluationResult{
+									{
+										Name: "ignored-policy",
+										Kind: "ComputePolicy",
+										Tags: []string{policyTag1ID, policyTag2ID},
+									},
+								},
+							},
+						}
+
+						// Create the PolicyEvaluation in the fake Kubernetes client
+						Expect(ctx.Client.Create(ctx, policyEval)).To(Succeed())
+					})
+
+					By("Updating the VM", func() {
+						// Update the VM
+						Expect(errors.Is(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs), vsphere.ErrBootstrapCustomize)).To(BeTrue())
+					})
+
+					By("Verifying no policy tags were added to ExtraConfig", func() {
+						// Refresh VM properties
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+						if vmCtx.MoVM.Config != nil && vmCtx.MoVM.Config.ExtraConfig != nil {
+							ecMap := pkgutil.OptionValues(vmCtx.MoVM.Config.ExtraConfig).StringMap()
+
+							// Verify no active tags are present
+							Expect(ecMap).ToNot(HaveKey(vmconfpolicy.ExtraConfigPolicyTagsKey))
+						}
+					})
+
+					assertUpdate()
+				})
+
+				It("should update VM successfully without policy reconciliation", func() {
+					By("Updating the VM without any PolicyEvaluation", func() {
+						// First update
+						Expect(errors.Is(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs), vsphere.ErrBootstrapCustomize)).To(BeTrue())
+
+						// Second update
+						Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+					})
+
+					By("Verifying no policy tags throughout updates", func() {
+						if vmCtx.MoVM.Config != nil && vmCtx.MoVM.Config.ExtraConfig != nil {
+							ecMap := pkgutil.OptionValues(vmCtx.MoVM.Config.ExtraConfig).StringMap()
+
+							// Ensure no policy-related keys exist
+							Expect(ecMap).ToNot(HaveKey(vmconfpolicy.ExtraConfigPolicyTagsKey))
+						}
+					})
+
 					assertUpdate()
 				})
 			})

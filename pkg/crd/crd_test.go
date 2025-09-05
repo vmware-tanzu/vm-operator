@@ -6,6 +6,7 @@ package crd_test
 
 import (
 	"context"
+	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -21,11 +22,103 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
+var (
+	basesNonGated = []string{
+		"clustervirtualmachineimages.vmoperator.vmware.com",
+		"contentlibraryproviders.vmoperator.vmware.com",
+		"contentsourcebindings.vmoperator.vmware.com",
+		"contentsources.vmoperator.vmware.com",
+		"virtualmachineclassbindings.vmoperator.vmware.com",
+		"virtualmachineclasses.vmoperator.vmware.com",
+		"virtualmachineimages.vmoperator.vmware.com",
+		"virtualmachinepublishrequests.vmoperator.vmware.com",
+		"virtualmachinereplicasets.vmoperator.vmware.com",
+		"virtualmachines.vmoperator.vmware.com",
+		"virtualmachineservices.vmoperator.vmware.com",
+		"virtualmachinesetresourcepolicies.vmoperator.vmware.com",
+		"virtualmachinewebconsolerequests.vmoperator.vmware.com",
+		"webconsolerequests.vmoperator.vmware.com",
+	}
+
+	basesVMGroups = []string{
+		"virtualmachinegrouppublishrequests.vmoperator.vmware.com",
+		"virtualmachinegroups.vmoperator.vmware.com",
+	}
+
+	basesSnapshots = []string{
+		"virtualmachinesnapshots.vmoperator.vmware.com",
+	}
+
+	basesFastDeploy = []string{
+		"virtualmachineimagecaches.vmoperator.vmware.com",
+	}
+
+	basesImmutableClasses = []string{
+		"virtualmachineclassinstances.vmoperator.vmware.com",
+	}
+
+	basesAll = slices.Concat(
+		basesNonGated,
+		basesFastDeploy,
+		basesImmutableClasses,
+		basesSnapshots,
+		basesVMGroups,
+	)
+
+	externalBYOK = []string{
+		"encryptionclasses.encryption.vmware.com",
+	}
+
+	externalVSpherePolicy = []string{
+		"computepolicies.vsphere.policy.vmware.com",
+		"policyevaluations.vsphere.policy.vmware.com",
+		"tagpolicies.vsphere.policy.vmware.com",
+	}
+
+	externalAll = slices.Concat(
+		externalBYOK,
+		externalVSpherePolicy,
+	)
+)
+
+func assertCRDsConsistOf[T any](
+	crds []T,
+	expectedNames ...string) {
+
+	ExpectWithOffset(1, expectedNames).To(HaveLen(len(crds)))
+
+	actualNames := make([]string, len(crds))
+	for i := range crds {
+		switch tCRD := (any)(crds[i]).(type) {
+		case unstructured.Unstructured:
+			actualNames[i] = tCRD.GetName()
+		case apiextensionsv1.CustomResourceDefinition:
+			actualNames[i] = tCRD.GetName()
+		case *unstructured.Unstructured:
+			actualNames[i] = tCRD.GetName()
+		case *apiextensionsv1.CustomResourceDefinition:
+			actualNames[i] = tCRD.GetName()
+		}
+
+	}
+
+	ExpectWithOffset(1, actualNames).To(ConsistOf(expectedNames))
+
+}
+
 var _ = Describe("UnstructuredBases", func() {
 	It("should get the expected crds", func() {
 		crds, err := pkgcrd.UnstructuredBases()
 		Expect(err).ToNot(HaveOccurred())
-		Expect(crds).To(HaveLen(19))
+		assertCRDsConsistOf(crds, basesAll...)
+	})
+})
+
+var _ = Describe("UnstructuredExternal", func() {
+	It("should get the expected crds", func() {
+		crds, err := pkgcrd.UnstructuredExternal()
+		Expect(err).ToNot(HaveOccurred())
+		assertCRDsConsistOf(crds, externalAll...)
 	})
 })
 
@@ -94,7 +187,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				Expect(obj.Items).To(HaveLen(14))
+				assertCRDsConsistOf(obj.Items, basesNonGated...)
 			})
 
 			DescribeTable("vm api should not have spec fields",
@@ -109,10 +202,11 @@ var _ = Describe("Install", func() {
 					}
 					assertField(false, fields...)
 				},
-				Entry("spec.bootOptions", "bootOptions"),
-				Entry("spec.class", "class"),
-				Entry("spec.currentSnapshot", "currentSnapshot"),
-				Entry("spec.groupName", "groupName"),
+				Entry("bootOptions", "bootOptions"),
+				Entry("class", "class"),
+				Entry("currentSnapshot", "currentSnapshot"),
+				Entry("groupName", "groupName"),
+				Entry("policies", "policies"),
 			)
 
 			DescribeTable("vm api should not have status fields",
@@ -127,21 +221,35 @@ var _ = Describe("Install", func() {
 					}
 					assertField(false, fields...)
 				},
-				Entry("status.currentSnapshot", "currentSnapshot"),
-				Entry("status.rootSnapshots", "rootSnapshots"),
+				Entry("currentSnapshot", "currentSnapshot"),
+				Entry("rootSnapshots", "rootSnapshots"),
+				Entry("policies", "policies"),
 			)
 		})
 
-		When("groups are enabled", func() {
+		When("byok is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VMGroups = true
+					config.Features.BringYourOwnEncryptionKey = true
 				})
 			})
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				Expect(obj.Items).To(HaveLen(16))
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalBYOK)...)
+			})
+		})
+
+		When("vSphere policies are enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VSpherePolicies = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVSpherePolicy)...)
 			})
 
 			DescribeTable("vm api should have spec fields",
@@ -156,36 +264,7 @@ var _ = Describe("Install", func() {
 					}
 					assertField(true, fields...)
 				},
-				Entry("spec.bootOptions", "bootOptions"),
-				Entry("spec.groupName", "groupName"),
-			)
-		})
-
-		When("snapshots are enabled", func() {
-			BeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VMSnapshots = true
-				})
-			})
-			It("should get the expected crds", func() {
-				var obj apiextensionsv1.CustomResourceDefinitionList
-				Expect(client.List(ctx, &obj)).To(Succeed())
-				Expect(obj.Items).To(HaveLen(15))
-			})
-
-			DescribeTable("vm api should have spec fields",
-				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"spec",
-						"properties",
-						field,
-					}
-					assertField(true, fields...)
-				},
-				Entry("spec.currentSnapshot", "currentSnapshot"),
+				Entry("policies", "policies"),
 			)
 
 			DescribeTable("vm api should have status fields",
@@ -200,8 +279,80 @@ var _ = Describe("Install", func() {
 					}
 					assertField(true, fields...)
 				},
-				Entry("status.currentSnapshot", "currentSnapshot"),
-				Entry("status.rootSnapshots", "rootSnapshots"),
+				Entry("policies", "policies"),
+			)
+		})
+
+		When("groups are enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMGroups = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesVMGroups)...)
+			})
+
+			DescribeTable("vm api should have spec fields",
+				func(field string) {
+					fields := []string{
+						"schema",
+						"openAPIV3Schema",
+						"properties",
+						"spec",
+						"properties",
+						field,
+					}
+					assertField(true, fields...)
+				},
+				Entry("bootOptions", "bootOptions"),
+				Entry("groupName", "groupName"),
+			)
+		})
+
+		When("snapshots are enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMSnapshots = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesSnapshots)...)
+			})
+
+			DescribeTable("vm api should have spec fields",
+				func(field string) {
+					fields := []string{
+						"schema",
+						"openAPIV3Schema",
+						"properties",
+						"spec",
+						"properties",
+						field,
+					}
+					assertField(true, fields...)
+				},
+				Entry("currentSnapshot", "currentSnapshot"),
+			)
+
+			DescribeTable("vm api should have status fields",
+				func(field string) {
+					fields := []string{
+						"schema",
+						"openAPIV3Schema",
+						"properties",
+						"status",
+						"properties",
+						field,
+					}
+					assertField(true, fields...)
+				},
+				Entry("currentSnapshot", "currentSnapshot"),
+				Entry("rootSnapshots", "rootSnapshots"),
 			)
 		})
 
@@ -214,7 +365,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				Expect(obj.Items).To(HaveLen(15))
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesImmutableClasses)...)
 			})
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
@@ -228,7 +379,7 @@ var _ = Describe("Install", func() {
 					}
 					assertField(true, fields...)
 				},
-				Entry("spec.class", "class"),
+				Entry("class", "class"),
 			)
 		})
 
@@ -241,7 +392,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				Expect(obj.Items).To(HaveLen(15))
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesFastDeploy)...)
 			})
 		})
 
@@ -252,12 +403,14 @@ var _ = Describe("Install", func() {
 					config.Features.ImmutableClasses = true
 					config.Features.VMGroups = true
 					config.Features.VMSnapshots = true
+					config.Features.VSpherePolicies = true
+					config.Features.BringYourOwnEncryptionKey = true
 				})
 			})
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				Expect(obj.Items).To(HaveLen(19))
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesAll, externalAll)...)
 			})
 		})
 	})
@@ -288,10 +441,12 @@ var _ = Describe("Install", func() {
 			Expect(pkgcrd.Install(
 				pkgcfg.WithConfig(pkgcfg.Config{
 					Features: pkgcfg.FeatureStates{
-						FastDeploy:       true,
-						ImmutableClasses: true,
-						VMGroups:         true,
-						VMSnapshots:      true,
+						FastDeploy:                true,
+						ImmutableClasses:          true,
+						VMGroups:                  true,
+						VMSnapshots:               true,
+						VSpherePolicies:           true,
+						BringYourOwnEncryptionKey: true,
 					},
 				}),
 				client,
@@ -345,7 +500,7 @@ var _ = Describe("Install", func() {
 			// Verify the CRDs were installed.
 			var obj apiextensionsv1.CustomResourceDefinitionList
 			Expect(client.List(ctx, &obj)).To(Succeed())
-			Expect(obj.Items).To(HaveLen(19))
+			assertCRDsConsistOf(obj.Items, slices.Concat(basesAll, externalAll)...)
 			for i := range obj.Items {
 				ExpectWithOffset(1, obj.Items[i].Spec.Conversion).ToNot(BeNil())
 				ExpectWithOffset(1, *obj.Items[i].Spec.Conversion).To(Equal(crc))
@@ -363,7 +518,7 @@ var _ = Describe("Install", func() {
 				It("should get the expected crds", func() {
 					var obj apiextensionsv1.CustomResourceDefinitionList
 					Expect(client.List(ctx, &obj)).To(Succeed())
-					Expect(obj.Items).To(HaveLen(19))
+					assertCRDsConsistOf(obj.Items, slices.Concat(basesAll, externalAll)...)
 					for i := range obj.Items {
 						ExpectWithOffset(1, obj.Items[i].Spec.Conversion).ToNot(BeNil())
 						ExpectWithOffset(1, *obj.Items[i].Spec.Conversion).To(Equal(crc))
@@ -382,10 +537,11 @@ var _ = Describe("Install", func() {
 						}
 						assertField(true, fields...)
 					},
-					Entry("spec.bootOptions", "bootOptions"),
-					Entry("spec.class", "class"),
-					Entry("spec.currentSnapshot", "currentSnapshot"),
-					Entry("spec.groupName", "groupName"),
+					Entry("bootOptions", "bootOptions"),
+					Entry("class", "class"),
+					Entry("currentSnapshot", "currentSnapshot"),
+					Entry("groupName", "groupName"),
+					Entry("policies", "policies"),
 				)
 
 				DescribeTable("vm api should not have removed status fields",
@@ -400,8 +556,9 @@ var _ = Describe("Install", func() {
 						}
 						assertField(true, fields...)
 					},
-					Entry("status.currentSnapshot", "currentSnapshot"),
-					Entry("status.rootSnapshots", "rootSnapshots"),
+					Entry("currentSnapshot", "currentSnapshot"),
+					Entry("rootSnapshots", "rootSnapshots"),
+					Entry("policies", "policies"),
 				)
 			})
 
@@ -417,7 +574,7 @@ var _ = Describe("Install", func() {
 				It("should get the expected crds", func() {
 					var obj apiextensionsv1.CustomResourceDefinitionList
 					Expect(client.List(ctx, &obj)).To(Succeed())
-					Expect(obj.Items).To(HaveLen(14))
+					assertCRDsConsistOf(obj.Items, basesNonGated...)
 					for i := range obj.Items {
 						ExpectWithOffset(1, obj.Items[i].Spec.Conversion).ToNot(BeNil())
 						ExpectWithOffset(1, *obj.Items[i].Spec.Conversion).To(Equal(crc))
@@ -436,10 +593,11 @@ var _ = Describe("Install", func() {
 						}
 						assertField(false, fields...)
 					},
-					Entry("spec.bootOptions", "bootOptions"),
-					Entry("spec.class", "class"),
-					Entry("spec.currentSnapshot", "currentSnapshot"),
-					Entry("spec.groupName", "groupName"),
+					Entry("bootOptions", "bootOptions"),
+					Entry("class", "class"),
+					Entry("currentSnapshot", "currentSnapshot"),
+					Entry("groupName", "groupName"),
+					Entry("policies", "policies"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
@@ -454,8 +612,9 @@ var _ = Describe("Install", func() {
 						}
 						assertField(false, fields...)
 					},
-					Entry("status.currentSnapshot", "currentSnapshot"),
-					Entry("status.rootSnapshots", "rootSnapshots"),
+					Entry("currentSnapshot", "currentSnapshot"),
+					Entry("rootSnapshots", "rootSnapshots"),
+					Entry("policies", "policies"),
 				)
 
 				When("one of the crds is already deleted", func() {
@@ -471,7 +630,7 @@ var _ = Describe("Install", func() {
 					It("should get the expected crds", func() {
 						var obj apiextensionsv1.CustomResourceDefinitionList
 						Expect(client.List(ctx, &obj)).To(Succeed())
-						Expect(obj.Items).To(HaveLen(14))
+						assertCRDsConsistOf(obj.Items, basesNonGated...)
 						for i := range obj.Items {
 							ExpectWithOffset(1, obj.Items[i].Spec.Conversion).ToNot(BeNil())
 							ExpectWithOffset(1, *obj.Items[i].Spec.Conversion).To(Equal(crc))
@@ -490,10 +649,11 @@ var _ = Describe("Install", func() {
 							}
 							assertField(false, fields...)
 						},
-						Entry("spec.bootOptions", "bootOptions"),
-						Entry("spec.class", "class"),
-						Entry("spec.currentSnapshot", "currentSnapshot"),
-						Entry("spec.groupName", "groupName"),
+						Entry("bootOptions", "bootOptions"),
+						Entry("class", "class"),
+						Entry("currentSnapshot", "currentSnapshot"),
+						Entry("groupName", "groupName"),
+						Entry("policies", "policies"),
 					)
 
 					DescribeTable("vm api should have removed status fields",
@@ -508,13 +668,12 @@ var _ = Describe("Install", func() {
 							}
 							assertField(false, fields...)
 						},
-						Entry("status.currentSnapshot", "currentSnapshot"),
-						Entry("status.rootSnapshots", "rootSnapshots"),
+						Entry("currentSnapshot", "currentSnapshot"),
+						Entry("rootSnapshots", "rootSnapshots"),
+						Entry("policies", "policies"),
 					)
 				})
 			})
 		})
-
 	})
-
 })

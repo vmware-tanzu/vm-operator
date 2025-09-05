@@ -24,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
+	"github.com/vmware-tanzu/vm-operator/controllers/vspherepolicy"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 )
@@ -88,6 +89,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 		if err := virtualmachinegrouppublishrequest.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineGroupPublishRequest controller: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+		if err := vspherepolicy.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize vSphere Policy controllers: %w", err)
 		}
 	}
 

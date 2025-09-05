@@ -160,9 +160,11 @@ linters:
           pkg: github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1
         - alias: appv1a1
           pkg: github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1
+        - alias: vspherepolv1
+          pkg: github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1
+
         - alias: proxyaddr
           pkg: github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr
-
         - alias: pkgcrd
           pkg: github.com/vmware-tanzu/vm-operator/pkg/crd
         - alias: pkgcfg

@@ -7,6 +7,8 @@ config/crd/external-crds/cns.vmware.com_*
 !config/crd/external-crds/cns.vmware.com_storagepolicyquotas.yaml
 !config/crd/external-crds/cns.vmware.com_storagepolicyusages.yaml
 
+coverage*.html
+
 # Created by the VSCode ginkgo plug-in
 ginkgo.report
 

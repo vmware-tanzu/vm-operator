@@ -6,7 +6,9 @@ package crd
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"slices"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,7 +34,37 @@ func UnstructuredBases() ([]unstructured.Unstructured, error) {
 	crds := make([]unstructured.Unstructured, len(files))
 	for i := range files {
 		crds[i].Object = map[string]any{}
-		if err := decode(files[i].Name(), &crds[i]); err != nil {
+		if err := decode(
+			crd.Bases,
+			"bases/"+files[i].Name(),
+			&crds[i]); err != nil {
+
+			return nil, err
+		}
+	}
+
+	return crds, nil
+}
+
+// UnstructuredExternal returns a list of the external CRDs.
+func UnstructuredExternal() ([]unstructured.Unstructured, error) {
+	files, err := crd.External.ReadDir("external-crds")
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to read embedded crd external bases: %w", err)
+	}
+
+	// The following command may be used to list the expected CRD files:
+	//
+	//   /bin/ls ./config/crd/external-crds | xargs -n1 echo | sed 's~^\(.\{1,\}\)~case "external-crds/\1":~g'
+	crds := make([]unstructured.Unstructured, len(files))
+	for i := range files {
+		crds[i].Object = map[string]any{}
+		if err := decode(
+			crd.External,
+			"external-crds/"+files[i].Name(),
+			&crds[i]); err != nil {
+
 			return nil, err
 		}
 	}
@@ -51,10 +83,17 @@ func Install(
 	k8sClient ctrlclient.Client,
 	mutateFn func(kind string, obj *unstructured.Unstructured) error) error {
 
-	crds, err := UnstructuredBases()
+	baseCRDs, err := UnstructuredBases()
 	if err != nil {
 		return fmt.Errorf("failed to read embedded crd bases: %w", err)
 	}
+
+	externalCRDs, err := UnstructuredExternal()
+	if err != nil {
+		return fmt.Errorf("failed to read embedded crd external bases: %w", err)
+	}
+
+	crds := slices.Concat(baseCRDs, externalCRDs)
 
 	for i := range crds {
 		c := &crds[i]
@@ -80,6 +119,30 @@ func Install(
 		// The output from the above command may be pasted directly into the
 		// following "switch" statement in order to keep it up-to-date.
 		switch k {
+		case "ComputePolicy",
+			"PolicyEvaluation",
+			"TagPolicy":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				pkgcfg.FromContext(ctx).Features.VSpherePolicies,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
+		case "EncryptionClass":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
 		// case "ClusterVirtualMachineImage":
 		// case "ContentLibraryProvider":
 		// case "ContentSourceBinding":
@@ -169,6 +232,19 @@ func Install(
 							specFieldPath("currentSnapshot"),
 							statusFieldPath("currentSnapshot"),
 							statusFieldPath("rootSnapshots")); err != nil {
+
+							return err
+						}
+					}
+
+					if !pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("policies"),
+							statusFieldPath("policies")); err != nil {
 
 							return err
 						}
@@ -397,8 +473,8 @@ func updateOrDeleteUnstructured(
 	return nil
 }
 
-func decode(fileName string, dst ctrlclient.Object) error {
-	data, err := crd.Bases.ReadFile("bases/" + fileName)
+func decode(fs embed.FS, fileName string, dst ctrlclient.Object) error {
+	data, err := fs.ReadFile(fileName)
 	if err != nil {
 		return fmt.Errorf("failed to read embedded crd: %w", err)
 	}

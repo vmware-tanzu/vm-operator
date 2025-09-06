@@ -30,12 +30,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -1388,6 +1388,9 @@ func SyncVMSnapshotTreeStatus(
 func updateSnapshotTreeChildrenStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) error {
+
+	vmCtx.Logger.V(4).Info("Updating snapshot tree children status")
+
 	mo := vmCtx.MoVM
 	if mo.Snapshot == nil || len(mo.Snapshot.RootSnapshotList) == 0 {
 		return nil
@@ -1491,7 +1494,7 @@ func updateCurrentSnapshotStatus(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) error {
 
-	vmCtx.Logger.V(5).Info("Updating current snapshot in VM status")
+	vmCtx.Logger.V(4).Info("Updating current snapshot in VM status")
 
 	vm := vmCtx.VM
 

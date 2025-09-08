@@ -83,6 +83,24 @@ func CloneVM(
 		Value: cl.Spec.ID,
 	}
 
+	vm := object.NewVirtualMachine(
+		vimClient,
+		vimtypes.ManagedObjectReference{
+			Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
+			Value: vmCtx.VM.Status.UniqueID,
+		})
+
+	var filteredExtraConfig pkgutil.OptionValues
+	var err error
+	if filteredExtraConfig, err = GetFilteredExtraConfigFromObject(
+		vmCtx, vm, true); err != nil {
+		return "", err
+	}
+	filteredExtraConfig = filteredExtraConfig.Append(&vimtypes.OptionValue{
+		Key:   vmopv1.VirtualMachinePublishRequestUUIDExtraConfigKey,
+		Value: string(vmPubReq.UID),
+	})
+
 	cloneSpec := vimtypes.VirtualMachineCloneSpec{
 		Location: vimtypes.VirtualMachineRelocateSpec{
 			Folder: &folderRef,
@@ -91,13 +109,8 @@ func CloneVM(
 		},
 		Template: true,
 		Config: &vimtypes.VirtualMachineConfigSpec{
-			Annotation: vmPubReq.Status.TargetRef.Item.Description,
-			ExtraConfig: []vimtypes.BaseOptionValue{
-				&vimtypes.OptionValue{
-					Key:   vmopv1.VirtualMachinePublishRequestUUIDLabelKey,
-					Value: string(vmPubReq.UID),
-				},
-			},
+			Annotation:  vmPubReq.Status.TargetRef.Item.Description,
+			ExtraConfig: filteredExtraConfig,
 		},
 	}
 
@@ -113,13 +126,6 @@ func CloneVM(
 		"cloneSpec", cloneSpec,
 		"cloneSource", vmCtx.VM.Status.UniqueID,
 		"cloneTarget", cl.Spec.ID)
-
-	vm := object.NewVirtualMachine(
-		vimClient,
-		vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
-			Value: vmCtx.VM.Status.UniqueID,
-		})
 
 	cloneTask, err := vm.Clone(
 		vmCtx,

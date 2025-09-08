@@ -118,9 +118,9 @@ const (
 	// is created as a part of the VirtualMachineGroupPublishRequest.
 	VirtualMachinePublishRequestManagedByLabelKey = GroupName + "/virtualmachinepublishrequest-managed-by"
 
-	// VirtualMachinePublishRequestUUIDLabelKey is the label key to store UUID of the VirtualMachinePublishRequest that
-	// clones a source virtual machine, as a virtual machine template.
-	VirtualMachinePublishRequestUUIDLabelKey = GroupName + "/virtualmachinepublishrequest-uuid"
+	// VirtualMachinePublishRequestUUIDExtraConfigKey is the ExtraConfig key to store UUID of the
+	// VirtualMachinePublishRequest that clones a source virtual machine, as a virtual machine template.
+	VirtualMachinePublishRequestUUIDExtraConfigKey = "vmservice.vmpub.uuid"
 )
 
 // VirtualMachinePublishRequestSource is the source of a publication request,

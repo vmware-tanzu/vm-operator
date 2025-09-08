@@ -2307,9 +2307,13 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 
 	// Inherit the image's vAppConfig.
 	createArgs.ConfigSpec.VAppConfig = imgConfigSpec.VAppConfig
-
+	
 	// Merge the image's extra config.
-	if srcEC := imgConfigSpec.ExtraConfig; len(srcEC) > 0 {
+	if srcEC, err := virtualmachine.FilteredExtraConfig(
+		imgConfigSpec.ExtraConfig,
+		false); err != nil {
+		return err
+	} else if len(srcEC) > 0 {
 		if dstEC := createArgs.ConfigSpec.ExtraConfig; len(dstEC) == 0 {
 			// The current config spec doesn't have any extra config, so just
 			// set it to use the extra config from the image.

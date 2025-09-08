@@ -23,8 +23,7 @@ import (
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	cnsapis "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
-	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	vmopapi "github.com/vmware-tanzu/vm-operator/api"
@@ -69,6 +68,7 @@ func KnownObjectTypes() []client.Object {
 		&vmopv1.VirtualMachineSnapshot{},
 		&vmopv1a1.WebConsoleRequest{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
+		&cnsv1alpha1.CnsNodeVmBatchAttachment{},
 		&spqv1.StoragePolicyQuota{},
 		&spqv1.StoragePolicyUsage{},
 		&spqv1.StorageQuota{},
@@ -100,7 +100,7 @@ func NewScheme() *runtime.Scheme {
 	_ = byokv1.AddToScheme(scheme)
 	_ = appv1a1.AddToScheme(scheme)
 	_ = ncpv1alpha1.AddToScheme(scheme)
-	_ = cnsapis.AddToScheme(scheme)
+	_ = cnsv1alpha1.AddToScheme(scheme)
 	_ = spqv1.AddToScheme(scheme)
 	_ = netopv1alpha1.AddToScheme(scheme)
 	_ = topologyv1.AddToScheme(scheme)

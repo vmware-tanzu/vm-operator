@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volume"
@@ -482,7 +482,7 @@ func intgTestsReconcile() {
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 				}
-				Expect(ctx.Client.Update(ctx, attachment)).To(Succeed())
+				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})
 
 			By("VM Status.Volume should reflect attached volume", func() {
@@ -591,7 +591,7 @@ func intgTestsReconcile() {
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 				}
-				Expect(ctx.Client.Update(ctx, attachment)).To(Succeed())
+				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})
 
 			By("Simulate CNS attachment for volume2", func() {
@@ -601,7 +601,7 @@ func intgTestsReconcile() {
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID2,
 				}
-				Expect(ctx.Client.Update(ctx, attachment)).To(Succeed())
+				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})
 
 			By("VM Status.Volume should reflect attached volumes", func() {

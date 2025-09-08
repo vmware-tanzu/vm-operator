@@ -10,6 +10,7 @@ replace (
 	github.com/vmware-tanzu/vm-operator/external/ncp => ./external/ncp
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota => ./external/storage-policy-quota
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ./external/tanzu-topology
+	github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver => ./external/vsphere-csi-driver
 	github.com/vmware-tanzu/vm-operator/external/vsphere-policy => ./external/vsphere-policy
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api => ./pkg/backup/api
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ./pkg/constants/testlabels
@@ -24,6 +25,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/vsphere-policy v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000

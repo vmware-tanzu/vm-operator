@@ -18,8 +18,6 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 )
 
 const (
@@ -63,10 +61,9 @@ type CnsNodeVmAttachmentStatus struct {
 	Error string `json:"error,omitempty"`
 }
 
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// +k8s:openapi-gen=true
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=cnsnodevmattachments,scope=Namespaced
+// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // CnsNodeVmAttachment is the Schema for the cnsnodevmattachments API
@@ -78,7 +75,7 @@ type CnsNodeVmAttachment struct {
 	Status CnsNodeVmAttachmentStatus `json:"status,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 
 // CnsNodeVmAttachmentList contains a list of CnsNodeVmAttachment
 type CnsNodeVmAttachmentList struct {
@@ -88,5 +85,5 @@ type CnsNodeVmAttachmentList struct {
 }
 
 func init() {
-	apis.SchemeBuilder.Register(&CnsNodeVmAttachment{}, &CnsNodeVmAttachmentList{})
+	objectTypes = append(objectTypes, &CnsNodeVmAttachment{}, &CnsNodeVmAttachmentList{})
 }

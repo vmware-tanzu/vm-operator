@@ -276,7 +276,16 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 
 	// Skip snapshot revert processing for VKS/TKG nodes.
 	if kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
-		logger.V(4).Info("Skipping revert for VKS node")
+		message := "Skipping snapshot revert for VKS node"
+
+		pkgcnd.MarkFalse(vmCtx.VM,
+			vmopv1.VirtualMachineSnapshotRevertSucceeded,
+			vmopv1.VirtualMachineSnapshotRevertSkippedReason,
+			"%s",
+			message,
+		)
+
+		logger.V(4).Info(message)
 		return nil
 	}
 
@@ -290,24 +299,48 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		},
 		obj); err != nil {
 
-		return fmt.Errorf(
+		err := fmt.Errorf(
 			"failed to get snapshot object %q: %w", desiredSnapshotName, err)
+
+		pkgcnd.MarkError(vmCtx.VM,
+			vmopv1.VirtualMachineSnapshotRevertSucceeded,
+			vmopv1.VirtualMachineSnapshotRevertFailedReason,
+			err,
+		)
+
+		return err
 	}
 
 	// Check if the snapshot is ready.  This is to ensure that the snapshot
 	// as reconciled by VM operator and is not an out-of-band, or in-progress
 	// snapshot.
 	if !pkgcnd.IsTrue(obj, vmopv1.VirtualMachineSnapshotReadyCondition) {
-		return fmt.Errorf(
+		err := fmt.Errorf(
 			"skipping revert for not-ready snapshot %q",
 			desiredSnapshotName)
+
+		pkgcnd.MarkError(vmCtx.VM,
+			vmopv1.VirtualMachineSnapshotRevertSucceeded,
+			vmopv1.VirtualMachineSnapshotRevertSkippedReason,
+			err,
+		)
+
+		return err
 	}
 
 	// Check if the VM has a snapshot by the desired name.
 	ref, err := virtualmachine.FindSnapshot(vmCtx, desiredSnapshotName)
 	if err != nil || ref == nil {
-		return fmt.Errorf("failed to find vSphere snapshot %q: %w",
+		err := fmt.Errorf("failed to find vSphere snapshot %q: %w",
 			desiredSnapshotName, err)
+
+		pkgcnd.MarkError(vmCtx.VM,
+			vmopv1.VirtualMachineSnapshotRevertSucceeded,
+			vmopv1.VirtualMachineSnapshotRevertFailedReason,
+			err,
+		)
+
+		return err
 	}
 
 	logger = logger.WithValues("desiredSnapshotRef", ref.Value)
@@ -330,6 +363,16 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	logger.V(4).Info("Setting revert in progress annotation")
 	vmCtx.VM.SetAnnotation(
 		pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey, "")
+
+	// Set the VM snapshot revert in progress condition.
+	// This condition will be cleared once the revert is successful,
+	// since the Status is wiped out after a revert.
+	pkgcnd.MarkFalse(vmCtx.VM,
+		vmopv1.VirtualMachineSnapshotRevertSucceeded,
+		vmopv1.VirtualMachineSnapshotRevertInProgressReason,
+		"%s",
+		"snapshot revert in progress",
+	)
 
 	// Perform the actual snapshot revert
 	logger.V(4).Info("Starting vSphere snapshot revert operation")
@@ -356,8 +399,16 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	if err := vs.restoreVMSpecFromSnapshot(
 		vmCtx, vcVM, obj, ref); err != nil {
 
-		return fmt.Errorf(
+		err := fmt.Errorf(
 			"failed to restore vm spec and metadata from snapshot: %w", err)
+
+		pkgcnd.MarkError(vmCtx.VM,
+			vmopv1.VirtualMachineSnapshotRevertSucceeded,
+			vmopv1.VirtualMachineSnapshotRevertFailedInvalidVMManifestReason,
+			err,
+		)
+
+		return err
 	}
 
 	logger.V(4).Info("VM spec restoration completed",
@@ -393,6 +444,62 @@ func (vs *vSphereVMProvider) performSnapshotRevert(
 	// Wait for the revert task to complete
 	taskInfo, err := task.WaitForResult(vmCtx)
 	if err != nil {
+		var conditionMessage string
+
+		// taskInfo.Error is of the format:
+		//
+		// {
+		// 	"fault": {
+		//   "faultMessage": [
+		//     {
+		//       "key":"msg.snapshot.vigor.revert.error",
+		//       "arg":[
+		//         {
+		//           "key":"1",
+		//           "value":"msg.snapshot.error-NOTREVERTABLE"
+		//         }
+		//       ],
+		//       "message":"An error occurred while reverting to a
+		// 			snapshot: The specified snapshot is not revertable."
+		//     },
+		//     {
+		//       "key":"msg.snapshot.vigor.revert.errorFcd",
+		//       "message":"The virtual machine cannot be reverted when
+		// 			crossing an Improved-Virtual-Disk snapshot."
+		//      }
+		//   ]
+		// }
+		//
+		// Note: A risk is that if the key strings change in future
+		// vSphere versions, the error parsing will break. However,
+		// this is unlikely to happen without notice.
+		revertErrorMessage := errorMessageFromTaskInfoWithKey(
+			taskInfo, "msg.snapshot.vigor.revert.error",
+		)
+		if revertErrorMessage != "" {
+			conditionMessage += revertErrorMessage
+		}
+
+		// We don't use the fcdErrorMessage directly since it has references
+		// to Improved-Virtual-Disk which may not be clear to users.
+		fcdErrorMessage := errorMessageFromTaskInfoWithKey(
+			taskInfo, "msg.snapshot.vigor.revert.errorFcd",
+		)
+		if fcdErrorMessage != "" {
+			conditionMessage += " The virtual machine cannot be reverted " +
+				"when crossing a CSI VolumeSnapshot. " +
+				"VolumeSnapshots should be deleted before retrying the revert."
+		}
+
+		// The condition reason and message are based on the error
+		// encountered. It would be cleared once the revert is successful.
+		pkgcnd.MarkFalse(vmCtx.VM,
+			vmopv1.VirtualMachineSnapshotRevertSucceeded,
+			vmopv1.VirtualMachineSnapshotRevertTaskFailedReason,
+			"%s",
+			conditionMessage,
+		)
+
 		return fmt.Errorf("failed to revert snapshot %q, taskInfo=%+v: %w",
 			snapshotName, taskInfo, err)
 	}

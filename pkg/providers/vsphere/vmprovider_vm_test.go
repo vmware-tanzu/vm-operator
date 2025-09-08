@@ -3075,6 +3075,13 @@ func vmTests() {
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
 						Expect(err.Error()).To(ContainSubstring("virtualmachinesnapshots.vmoperator.vmware.com \"test-revert-snap\" not found"))
+
+						Expect(conditions.IsFalse(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded,
+						)).To(BeTrue())
+						Expect(conditions.GetReason(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded,
+						)).To(Equal(vmopv1.VirtualMachineSnapshotRevertFailedReason))
 					})
 				})
 
@@ -3087,7 +3094,7 @@ func vmTests() {
 						}
 					})
 
-					It("should fail with snapshot CR not found error", func() {
+					It("should fail with snapshot CR not ready error", func() {
 						// Create snapshot CR but don't mark it as ready.
 						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 
@@ -3102,6 +3109,11 @@ func vmTests() {
 						Expect(err.Error()).To(ContainSubstring(
 							fmt.Sprintf("skipping revert for not-ready snapshot %q",
 								vmSnapshot.Name)))
+						Expect(conditions.IsFalse(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded)).To(BeTrue())
+						Expect(conditions.GetReason(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded,
+						)).To(Equal(vmopv1.VirtualMachineSnapshotRevertSkippedReason))
 					})
 				})
 
@@ -3230,6 +3242,95 @@ func vmTests() {
 						pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 							config.Features.VMImportNewNet = true
 						})
+					})
+					It("should fail the revert if the snapshot wasn't imported", func() {
+						if vm.Labels == nil {
+							vm.Labels = make(map[string]string)
+						}
+
+						// skip creation of backup VMResourceYAMLExtraConfigKey
+						// by setting the CAPV cluster role label
+						vm.Labels[kubeutil.CAPVClusterRoleLabelKey] = ""
+
+						// Create VM first
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						// make sure the VM doesn't have the ExtraConfig stamped
+						var moVM mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+						Expect(moVM.Config.ExtraConfig).ToNot(BeNil())
+						ecMap := pkgutil.OptionValues(moVM.Config.ExtraConfig).StringMap()
+						Expect(ecMap).ToNot(HaveKey(backupapi.VMResourceYAMLExtraConfigKey))
+
+						// Create first snapshot in vCenter
+						task, err := vcVM.CreateSnapshot(
+							ctx, vmSnapshot.Name, "first snapshot", false, false)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(task.Wait(ctx)).To(Succeed())
+
+						// Create first snapshot CR and Mark the snapshot as ready
+						// so that the snapshot workflow doesn't try to create it.
+						conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+						Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+						// Snapshot should be owned by the VM resource.
+						o := vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(
+							ctx, client.ObjectKeyFromObject(vm), &o)).To(Succeed())
+						Expect(controllerutil.SetOwnerReference(
+							&o, vmSnapshot, ctx.Scheme)).To(Succeed())
+						Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
+
+						// mark the snapshot as ready because snapshot workflow
+						// will skip because of the CAPV cluster role label
+						cur := &vmopv1.VirtualMachineSnapshot{}
+						Expect(ctx.Client.Get(
+							ctx, client.ObjectKeyFromObject(vmSnapshot), cur)).To(Succeed())
+						conditions.MarkTrue(cur, vmopv1.VirtualMachineSnapshotReadyCondition)
+						Expect(ctx.Client.Status().Update(ctx, cur)).To(Succeed())
+
+						// we don't need the CAPI label anymore
+						labels := vm.Labels
+						delete(labels, kubeutil.CAPVClusterRoleLabelKey)
+						vm.Labels = labels
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+
+						// modify the VM Spec to tinker with some flag
+						Expect(vm.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeHard))
+						vm.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+
+						// Create second snapshot
+						secondSnapshot = builder.DummyVirtualMachineSnapshot("", "test-second-snap", vm.Name)
+						secondSnapshot.Namespace = nsInfo.Namespace
+
+						task, err = vcVM.CreateSnapshot(ctx, secondSnapshot.Name, "second snapshot", false, false)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(task.Wait(ctx)).To(Succeed())
+
+						// Create second snapshot CR and Mark the snapshot as ready
+						// so that the snapshot workflow doesn't try to create it.
+						conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+						// Snapshot should be owned by the VM resource.
+						Expect(controllerutil.SetOwnerReference(&o, secondSnapshot, ctx.Scheme)).To(Succeed())
+						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
+
+						// Set desired snapshot to first snapshot (perform a revert from second to first)
+						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+							Name:       vmSnapshot.Name,
+						}
+
+						err = createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("no VM YAML in snapshot config"))
+						Expect(conditions.IsFalse(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded)).To(BeTrue())
+						Expect(conditions.GetReason(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded,
+						)).To(Equal(vmopv1.VirtualMachineSnapshotRevertFailedInvalidVMManifestReason))
 					})
 
 					It("should successfully revert to desired snapshot and approximate the VM Spec", func() {
@@ -3416,6 +3517,8 @@ func vmTests() {
 						// VM status should still point to first snapshot because revert was skipped
 						Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 						Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+						Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineSnapshotRevertSucceeded)).To(BeTrue())
+						Expect(conditions.GetReason(vm, vmopv1.VirtualMachineSnapshotRevertSucceeded)).To(Equal(vmopv1.VirtualMachineSnapshotRevertSkippedReason))
 
 						// Verify the snapshot in vCenter is still the original one (no revert happened)
 						var moVM mo.VirtualMachine

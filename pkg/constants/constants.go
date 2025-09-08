@@ -162,6 +162,14 @@ const (
 	// VirtualMachineSnapshotRevertInProgressAnnotationKey is the
 	// annotation key to indicate that a VM snapshot revert is in
 	// progress.
+	//
+	// This annotation is set when a snapshot revert operation is initiated
+	// and is removed once the operation completes successfully.
+	//
+	// If the revert operation fails, this annotation may remain on the VM,
+	// indicating that the revert is still in progress. In such cases, manual
+	// intervention will be required to remove the annotation and retry the
+	// revert operation.
 	VirtualMachineSnapshotRevertInProgressAnnotationKey = "vmoperator.vmware.com/snapshot-revert-in-progress"
 
 	// VirtualMachineImageExtraConfigLabelsKey is the ExtraConfig key

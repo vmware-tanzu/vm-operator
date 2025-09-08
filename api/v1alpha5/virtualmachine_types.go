@@ -59,6 +59,32 @@ const (
 )
 
 const (
+	// VirtualMachineSnapshotRevertSucceeded indicates that the VM
+	// has been reverted to a snapshot.
+	VirtualMachineSnapshotRevertSucceeded = "VirtualMachineSnapshotRevertSucceeded"
+
+	// VirtualMachineSnapshotRevertInProgressReason indicates that the
+	// revert operation is in progress.
+	VirtualMachineSnapshotRevertInProgressReason = "VirtualMachineSnapshotRevertInProgress"
+
+	// VirtualMachineSnapshotRevertTaskFailedReason indicates that the
+	// revert operation is invalid.
+	VirtualMachineSnapshotRevertTaskFailedReason = "VirtualMachineSnapshotRevertTaskFailed"
+
+	// VirtualMachineSnapshotRevertFailedInvalidVMManifestReason indicates
+	// that the revert operation has failed due to invalid VM spec to revert to.
+	VirtualMachineSnapshotRevertFailedInvalidVMManifestReason = "VirtualMachineSnapshotRevertFailedInvalidVMManifest"
+
+	// VirtualMachineSnapshotRevertSkippedReason indicates that the
+	// revert operation was skipped.
+	VirtualMachineSnapshotRevertSkippedReason = "VirtualMachineSnapshotRevertSkipped"
+
+	// VirtualMachineSnapshotRevertFailedReason indicates that the
+	// revert operation failed for some reason.
+	VirtualMachineSnapshotRevertFailedReason = "VirtualMachineSnapshotRevertFailed"
+)
+
+const (
 	// GuestBootstrapCondition exposes the status of guest bootstrap from within
 	// the guest OS, when available.
 	GuestBootstrapCondition = "GuestBootstrap"

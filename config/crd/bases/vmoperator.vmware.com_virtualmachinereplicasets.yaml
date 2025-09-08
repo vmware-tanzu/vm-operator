@@ -8981,6 +8981,48 @@ spec:
                           field. The only value that users may set is the string "now"
                           (case-insensitive).
                         type: string
+                      policies:
+                        description: |-
+                          Policies describes a list of policies that should be explicitly applied
+                          to this VM.
+
+                          Please note, not all policies may be applied explicitly to a VM. Please
+                          consult a policy to determine if it may be applied directly. For example,
+                          the ComputePolicy object from the vsphere.policy.vmware.com API group
+                          has a field named spec.type. Only ComputePolicy objects with
+                          type=Optional may be applied explicitly to a VM.
+
+                          Valid policy types are: ComputePolicy.
+                        items:
+                          description: |-
+                            LocalObjectRef describes a reference to another object in the same
+                            namespace as the referrer.
+                          properties:
+                            apiVersion:
+                              description: |-
+                                APIVersion defines the versioned schema of this representation of an
+                                object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                              type: string
+                            kind:
+                              description: |-
+                                Kind is a string value representing the REST resource this object
+                                represents.
+                                Servers may infer this from the endpoint the client submits requests to.
+                                Cannot be updated.
+                                In CamelCase.
+                                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                              type: string
+                            name:
+                              description: |-
+                                Name refers to a unique resource in the current namespace.
+                                More info: http://kubernetes.io/docs/user-guide/identifiers#names
+                              type: string
+                          required:
+                          - apiVersion
+                          - kind
+                          - name
+                          type: object
+                        type: array
                       powerOffMode:
                         default: TrySoft
                         description: |-

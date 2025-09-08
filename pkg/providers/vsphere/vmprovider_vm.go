@@ -23,6 +23,7 @@ import (
 	"github.com/vmware/govmomi/pbm"
 	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
@@ -46,6 +47,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
@@ -60,7 +62,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -68,6 +69,7 @@ import (
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
+	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 )
 
 var (
@@ -85,6 +87,7 @@ var (
 	ErrCreate                 = pkgerr.NoRequeueNoErr("created vm")
 	ErrUpdate                 = pkgerr.NoRequeueNoErr("updated vm")
 	ErrSnapshotRevert         = pkgerr.RequeueError{Message: "reverted snapshot"}
+	ErrPolicyNotReady         = vmconfpolicy.ErrPolicyNotReady
 )
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
@@ -733,49 +736,37 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 		chanErr <- ErrCreate
 	}
 
-	_, k8sErr := controllerutil.CreateOrPatch(
-		ctx,
-		vs.k8sClient,
-		ctx.VM,
-		func() error {
+	objPatch := ctrlclient.MergeFrom(ctx.VM.DeepCopy())
 
-			if vimErr != nil {
-				pkgcnd.MarkError(
-					ctx.VM,
-					vmopv1.VirtualMachineConditionCreated,
-					"Error",
-					vimErr)
+	if vimErr != nil {
+		pkgcnd.MarkError(
+			ctx.VM,
+			vmopv1.VirtualMachineConditionCreated,
+			"Error",
+			vimErr)
 
-				if pkgcfg.FromContext(ctx).Features.FastDeploy {
-					pkgcnd.MarkError(
-						ctx.VM,
-						vmopv1.VirtualMachineConditionPlacementReady,
-						"Error",
-						vimErr)
-				}
-
-				return nil
+		if pkgcfg.FromContext(ctx).Features.FastDeploy {
+			pkgcnd.MarkError(
+				ctx.VM,
+				vmopv1.VirtualMachineConditionPlacementReady,
+				"Error",
+				vimErr)
+		}
+	} else if pkgcfg.FromContext(ctx).Features.FastDeploy {
+		if zoneName := args.ZoneName; zoneName != "" {
+			if ctx.VM.Labels == nil {
+				ctx.VM.Labels = map[string]string{}
 			}
+			ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+		}
+	}
 
-			if pkgcfg.FromContext(ctx).Features.FastDeploy {
-				if zoneName := args.ZoneName; zoneName != "" {
-					if ctx.VM.Labels == nil {
-						ctx.VM.Labels = map[string]string{}
-					}
-					ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
-				}
-			}
+	ctx.VM.Status.UniqueID = moRef.Reference().Value
+	pkgcnd.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
 
-			ctx.VM.Status.UniqueID = moRef.Reference().Value
-			pkgcnd.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
-
-			return nil
-		},
-	)
-
-	if k8sErr != nil {
-		ctx.Logger.Error(k8sErr, "Failed to patch VM status after create")
-		chanErr <- k8sErr
+	if err := vs.k8sClient.Status().Patch(ctx, ctx.VM, objPatch); err != nil {
+		ctx.Logger.Error(err, "Failed to patch VM status after create")
+		chanErr <- err
 	}
 }
 
@@ -811,13 +802,14 @@ func errOrReconcileErr(reconcileErr, err error) error {
 //
 //  1. Fetch properties
 //  2. Fetch recent tasks
-//  3. Reconcile status
-//  4. Reconcile schema upgrade
-//  5. Reconcile backup state
-//  6. Reconcile snapshot revert
-//  7. Reconcile config
-//  8. Reconcile power state
-//  9. Reconcile snapshot create
+//  3. Fetch attached tags
+//  4. Reconcile status
+//  5. Reconcile schema upgrade
+//  6. Reconcile backup state
+//  7. Reconcile snapshot revert
+//  8. Reconcile config
+//  9. Reconcile power state
+//  10. Reconcile snapshot create
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -849,7 +841,16 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx.Context = ctxWithRecentTaskInfo
 
 	//
-	// 3. Reconcile status
+	// 3. Get the attached tags.
+	//
+	ctxWithAttachedTags, err := vs.getTags(vmCtx, vcClient)
+	if err != nil {
+		return fmt.Errorf("failed to fetch vm tags: %w", err)
+	}
+	vmCtx.Context = ctxWithAttachedTags
+
+	//
+	// 4. Reconcile status
 	//
 	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -859,7 +860,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 4. Reconcile schema upgrade
+	// 5. Reconcile schema upgrade
 	//
 	//    It is important that this step occurs *after* the status is
 	//    reconciled. This is because reconciling the status builds information
@@ -873,7 +874,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 5. Reconcile backup state (VKS nodes excluded)
+	// 6. Reconcile backup state (VKS nodes excluded)
 	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -883,7 +884,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 6. Reconcile snapshot revert
+	// 7. Reconcile snapshot revert
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
@@ -895,7 +896,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 7. Reconcile config
+	// 8. Reconcile config
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -912,7 +913,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 8. Reconcile power state
+	// 9. Reconcile power state
 	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -922,7 +923,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 9. Reconcile snapshot create
+	// 10. Reconcile snapshot create
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
@@ -1020,6 +1021,30 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 
 	if len(rt) > 0 {
 		return pkgctx.WithVMRecentTasks(ctx.Context, rt), nil
+	}
+
+	return ctx.Context, nil
+}
+
+func (vs *vSphereVMProvider) getTags(
+	ctx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client) (context.Context, error) {
+
+	var (
+		logger = pkglog.FromContextOrDefault(ctx)
+		mgr    = tags.NewManager(vcClient.RestClient())
+	)
+
+	list, err := mgr.ListAttachedTags(ctx, ctx.MoVM.Reference())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list vm's attached tags: %w", err)
+	}
+
+	if len(list) > 0 {
+		logger.Info(
+			"Got associated tags for VM",
+			"tags", list)
+		return pkgctx.WithVMTags(ctx.Context, list), nil
 	}
 
 	return ctx.Context, nil
@@ -1351,6 +1376,20 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 				vmopv1.VirtualMachineConditionPlacementReady)
 		}
 	}()
+
+	if pkgcfg.FromContext(vmCtx).Features.VSpherePolicies {
+		if err := vmconfpolicy.Reconcile(
+			pkgctx.WithRestClient(vmCtx, vcClient.RestClient()),
+			vs.k8sClient,
+			vcClient.Client.VimClient(),
+			vmCtx.VM,
+			vmCtx.MoVM,
+			&createArgs.ConfigSpec); err != nil {
+
+			return fmt.Errorf(
+				"failed to reconcile vSphere policies for placement: %w", err)
+		}
+	}
 
 	if pkgcfg.FromContext(vmCtx).Features.VMGroups &&
 		vmCtx.VM.Spec.GroupName != "" {

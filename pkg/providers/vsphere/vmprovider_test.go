@@ -358,7 +358,7 @@ var _ = Describe("SyncVirtualMachineImage", func() {
 						Expect(vmi.Status.OSInfo.Type).To(Equal("otherLinuxGuest"))
 						Expect(vmi.Status.Disks).To(HaveLen(1))
 						Expect(vmi.Status.Disks[0].Capacity.String()).To(Equal("30Mi"))
-						Expect(vmi.Status.Disks[0].Size.String()).To(Equal("18304Ki"))
+						Expect(vmi.Status.Disks[0].Size.String()).To(Equal("18743296"))
 					})
 				})
 
@@ -427,7 +427,7 @@ var _ = Describe("SyncVirtualMachineImage", func() {
 					Expect(vmi.Status.OSInfo.Type).To(Equal("otherLinuxGuest"))
 					Expect(vmi.Status.Disks).To(HaveLen(1))
 					Expect(vmi.Status.Disks[0].Capacity.String()).To(Equal("30Mi"))
-					Expect(vmi.Status.Disks[0].Size.String()).To(Equal("18304Ki"))
+					Expect(vmi.Status.Disks[0].Size.String()).To(Equal("18743296"))
 				})
 			})
 		})

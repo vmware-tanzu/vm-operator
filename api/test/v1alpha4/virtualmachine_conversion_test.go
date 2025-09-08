@@ -267,6 +267,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 							},
 						},
+						Policies: []vmopv1.PolicySpec{
+							{
+								APIVersion: "vsphere.policies.vmware.com/v1alpha1",
+								Kind:       "ComputePolicy",
+								Name:       "my-compute-policy-1",
+							},
+						},
 					},
 				},
 			},

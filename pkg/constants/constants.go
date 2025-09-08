@@ -164,6 +164,21 @@ const (
 	// progress.
 	VirtualMachineSnapshotRevertInProgressAnnotationKey = "vmoperator.vmware.com/snapshot-revert-in-progress"
 
+	// VirtualMachineImageExtraConfigLabelsKey is the ExtraConfig key
+	// whose value is a comma-delimited list of labels that are surfaced on the
+	// VMI:
+	//
+	// For example, if the value in ExtraConfig is:
+	//
+	//     vmservice.vmi.labels=example.com/hello:world,fu.bar:,another.example.com:true
+	//
+	// Then the VMI would have three labels:
+	//
+	//     - example.com/hello: "world"
+	//     - fu.bar: ""
+	//     - another.example.com: "true"
+	VirtualMachineImageExtraConfigLabelsKey = "vmservice.vmi.labels"
+
 	// VMProvKeepDisksExtraConfigKey is set in ExtraConfig with the value a
 	// comma-separated list of the names of disks to keep when a VM is being
 	// deleted or having its disks promoted.

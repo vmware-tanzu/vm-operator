@@ -205,6 +205,33 @@ rules:
   - update
   - watch
 - apiGroups:
+  - placement.vmware.com
+  resources:
+  - computepolicies
+  - tagpolicies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - placement.vmware.com
+  resources:
+  - computepolicies/status
+  - policyevaluations/status
+  - tagpolicies/status
+  verbs:
+  - get
+- apiGroups:
+  - placement.vmware.com
+  resources:
+  - policyevaluations
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - storage.k8s.io
   resources:
   - storageclasses

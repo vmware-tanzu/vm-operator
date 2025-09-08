@@ -25,6 +25,7 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsapis "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	vmopapi "github.com/vmware-tanzu/vm-operator/api"
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
@@ -79,6 +80,9 @@ func KnownObjectTypes() []client.Object {
 		&byokv1.EncryptionClass{},
 		&capv1.Capabilities{},
 		&appv1a1.SupervisorProperties{},
+		&vspherepolv1.ComputePolicy{},
+		&vspherepolv1.PolicyEvaluation{},
+		&vspherepolv1.TagPolicy{},
 	}
 }
 
@@ -103,5 +107,6 @@ func NewScheme() *runtime.Scheme {
 	_ = imgregv1a1.AddToScheme(scheme)
 	_ = imgregv1.AddToScheme(scheme)
 	_ = vpcv1alpha1.AddToScheme(scheme)
+	_ = vspherepolv1.AddToScheme(scheme)
 	return scheme
 }

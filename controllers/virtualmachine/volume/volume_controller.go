@@ -35,13 +35,13 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -844,6 +844,10 @@ func (r *Reconciler) handlePVCWithWFFC(
 
 	if mode := sc.VolumeBindingMode; mode == nil || *mode != storagev1.VolumeBindingWaitForFirstConsumer {
 		return nil
+	}
+
+	if !pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC {
+		return fmt.Errorf("PVC with WFFC storage class support is not enabled")
 	}
 
 	zoneName := ctx.VM.Status.Zone

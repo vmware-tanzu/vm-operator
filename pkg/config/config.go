@@ -195,6 +195,7 @@ type FeatureStates struct {
 	InventoryContentLibrary    bool
 	VMPlacementPolicies        bool
 	VSpherePolicies            bool
+	VMWaitForFirstConsumerPVC  bool
 }
 
 type InstanceStorage struct {

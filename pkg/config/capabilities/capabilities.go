@@ -68,6 +68,11 @@ const (
 	// defined in the Supervisor capabilities CRD for the VM placement policy
 	// capability.
 	CapabilityKeyVMPlacementPolicies = "supports_VM_service_VM_placement_policies"
+
+	// CapabilityKeyVMWaitForFirstConsumerPVC is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the VM WFFC PVC
+	// capability.
+	CapabilityKeyVMWaitForFirstConsumerPVC = "supports_VM_service_WFFC_PVC"
 )
 
 var (
@@ -218,6 +223,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.InventoryContentLibrary = capStatus.Activated
 		case CapabilityKeyVMPlacementPolicies:
 			fs.VMPlacementPolicies = capStatus.Activated
+		case CapabilityKeyVMWaitForFirstConsumerPVC:
+			fs.VMWaitForFirstConsumerPVC = capStatus.Activated
 		}
 
 	}

@@ -686,9 +686,28 @@ func unitTestsReconcile() {
 				vm.Status.Zone = zoneName
 			})
 
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMWaitForFirstConsumerPVC = true
+				})
+			})
+
 			AfterEach(func() {
 				storageClass = nil
 				wffcPVC = nil
+			})
+
+			Context("Feature is disabled", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMWaitForFirstConsumerPVC = false
+					})
+				})
+
+				It("returns error", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(MatchError("PVC with WFFC storage class support is not enabled"))
+				})
 			})
 
 			When("PVC does not exist", func() {

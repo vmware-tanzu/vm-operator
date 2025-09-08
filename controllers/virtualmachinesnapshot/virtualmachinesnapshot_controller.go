@@ -18,15 +18,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -133,7 +133,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 				vmSnapshot.Namespace,
 				sc)
 		}
-		vmSnapshotCtx.Logger.Info("Patching VirtualMachineSnapShot", "snap", vmSnapshot)
+		reconcileSnapshotReadyCondition(vmSnapshot)
+		vmSnapshotCtx.Logger.Info("Patching VirtualMachineSnapshot", "snapshot", vmSnapshot)
 		if err := patchHelper.Patch(ctx, vmSnapshot); err != nil {
 			if reterr == nil {
 				reterr = err
@@ -168,10 +169,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		return ctrl.Result{}, errVMRefNil
 	}
 
-	if conditions.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
-		ensureCSIVolumeSyncAnnotation(vmSnapshot)
-	}
-
 	vm := &vmopv1.VirtualMachine{}
 	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
@@ -190,48 +187,36 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		return ctrl.Result{}, errors.New("VM hasn't been created and has no uniqueID")
 	}
 
-	// Calculate the requested capacity of the snapshot at the beginning only once.
 	if vmSnapshot.Status.Storage == nil {
 		vmSnapshot.Status.Storage = &vmopv1.VirtualMachineSnapshotStorageStatus{}
 	}
 
+	// Calculate the requested capacity of the snapshot at the beginning only once.
 	if vmSnapshot.Status.Storage.Requested == nil {
-		ctx.Logger.V(4).Info("Updating snapshot's status requested capacity")
-		requested, err := kubeutil.CalculateReservedForSnapshotPerStorageClass(ctx, r.Client, r.Logger, *vmSnapshot)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to calculate requested capacity for snapshot: %w", err)
-		}
-		vmSnapshot.Status.Storage.Requested = requested
-		ctx.Logger.V(5).Info("Updated vmSnapshot requested capacity",
-			"requested", vmSnapshot.Status.Storage.Requested)
-		// Enqueue the storage classes to sync corresponding SPU.
-		for _, requested := range vmSnapshot.Status.Storage.Requested {
-			ctx.StorageClassesToSync.Insert(requested.StorageClass)
+		if err := r.calculateRequestedCapacity(ctx); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
-	ctx.Logger.V(5).Info("Updating snapshot's status used capacity")
-	size, err := r.VMProvider.GetSnapshotSize(ctx, vmSnapshot.Name, vm)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get snapshot size: %w", err)
+	// Only start calculating the used capacity and sync CSI volume
+	// after the snapshot is created.
+	if !pkgcnd.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition) {
+		return ctrl.Result{}, nil
 	}
-	// TODO(lubron): Now the format will very likely to fall back to decimalSI
-	// since the size is int64 and it's not a multiple of 1024.
-	// We can think of refactoring to show a more humain readble value without loosing
-	// the precision in the future.
-	total := kubeutil.BytesToResource(size)
 
-	if vmSnapshot.Status.Storage.Used == nil {
-		vmSnapshot.Status.Storage.Used = resource.NewQuantity(0, resource.BinarySI)
-	}
-	vmSnapshot.Status.Storage.Used = total
-	ctx.Logger.V(5).Info("Updated vmSnapshot's status used capacity", "used", total)
+	ensureCSIVolumeSyncAnnotation(vmSnapshot)
 
-	// Enqueue the storage class to sync corresponding SPU only after CSI has completed the sync.
-	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
-		constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
-		ctx.StorageClassesToSync.Insert(vm.Spec.StorageClass)
+	pkgcnd.MarkFalse(
+		vmSnapshot,
+		vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition,
+		vmopv1.VirtualMachineSnapshotCSIVolumeSyncInProgressReason,
+		"Sync CSI volume requested",
+	)
+
+	if err := r.calculateUsedCapacity(ctx); err != nil {
+		return ctrl.Result{}, err
 	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -318,6 +303,85 @@ func ensureCSIVolumeSyncAnnotation(vmSnapshot *vmopv1.VirtualMachineSnapshot) {
 	}
 	// As long as the value is not set to completed by CSI driver, we need to mark it as requested.
 	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] != constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
-		vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = constants.CSIVSphereVolumeSyncAnnotationValueRequest
+		vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = constants.CSIVSphereVolumeSyncAnnotationValueRequested
 	}
+}
+
+func reconcileSnapshotReadyCondition(vmSnapshot *vmopv1.VirtualMachineSnapshot) {
+	// If the snapshot is being deleted, skip setting the condition.
+	if !vmSnapshot.DeletionTimestamp.IsZero() {
+		return
+	}
+
+	created := pkgcnd.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+	synced := pkgcnd.IsTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
+	switch {
+	case !created:
+		pkgcnd.MarkFalse(
+			vmSnapshot,
+			vmopv1.VirtualMachineSnapshotReadyCondition,
+			vmopv1.VirtualMachineSnapshotWaitingForCreationReason,
+			"Snapshot is not ready because it doesn't have created condition",
+		)
+	case !synced:
+		pkgcnd.MarkFalse(
+			vmSnapshot,
+			vmopv1.VirtualMachineSnapshotReadyCondition,
+			vmopv1.VirtualMachineSnapshotWaitingForCSISyncReason,
+			"Snapshot is not ready because CSI volume sync hasn't been completed",
+		)
+	default:
+		// Only when the snapshot is created and the CSI volume sync is completed,
+		// mark the snapshot as ready.
+		pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+	}
+}
+
+func (r *Reconciler) calculateRequestedCapacity(ctx *pkgctx.VirtualMachineSnapshotContext) error {
+	ctx.Logger.V(4).Info("Updating snapshot's status requested capacity")
+	vmSnapshot := ctx.VirtualMachineSnapshot
+	requested, err := kubeutil.CalculateReservedForSnapshotPerStorageClass(ctx, r.Client, r.Logger, *vmSnapshot)
+	if err != nil {
+		return fmt.Errorf("failed to calculate requested capacity for snapshot: %w", err)
+	}
+	vmSnapshot.Status.Storage.Requested = requested
+
+	ctx.Logger.V(5).Info("Updated vmSnapshot requested capacity",
+		"requested", vmSnapshot.Status.Storage.Requested)
+
+	// Enqueue the storage classes to sync corresponding SPU.
+	for _, requested := range vmSnapshot.Status.Storage.Requested {
+		ctx.StorageClassesToSync.Insert(requested.StorageClass)
+	}
+	return nil
+}
+
+func (r *Reconciler) calculateUsedCapacity(ctx *pkgctx.VirtualMachineSnapshotContext) error {
+	ctx.Logger.V(4).Info("Updating snapshot's status used capacity")
+	vmSnapshot := ctx.VirtualMachineSnapshot
+	vm := ctx.VM
+	size, err := r.VMProvider.GetSnapshotSize(ctx, vmSnapshot.Name, vm)
+	if err != nil {
+		return fmt.Errorf("failed to get snapshot size: %w", err)
+	}
+	// TODO(lubron): Now the format will very likely to fall back to decimalSI
+	// since the size is int64 and it's not a multiple of 1024.
+	// We can think of refactoring to show a more human readable value without losing
+	// the precision in the future.
+	total := kubeutil.BytesToResource(size)
+
+	if vmSnapshot.Status.Storage.Used == nil {
+		vmSnapshot.Status.Storage.Used = resource.NewQuantity(0, resource.BinarySI)
+	}
+	vmSnapshot.Status.Storage.Used = total
+	ctx.Logger.V(5).Info("Updated vmSnapshot's status used capacity", "used", total)
+
+	// Enqueue the storage class to sync corresponding SPU only after CSI has completed the sync.
+	// Also mark the CSI volume sync condition as true.
+	if vmSnapshot.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] ==
+		constants.CSIVSphereVolumeSyncAnnotationValueCompleted {
+		pkgcnd.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCSIVolumeSyncedCondition)
+		ctx.StorageClassesToSync.Insert(vm.Spec.StorageClass)
+	}
+	return nil
 }

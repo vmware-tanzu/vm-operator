@@ -108,8 +108,10 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 		return 0, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
 	}
 
-	err = vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &vmCtx.MoVM)
-	if err != nil {
+	if err := vcVM.Properties(
+		ctx, vcVM.Reference(),
+		[]string{"snapshot", "layoutEx", "config.hardware.device"},
+		&vmCtx.MoVM); err != nil {
 		return 0, err
 	}
 
@@ -144,8 +146,7 @@ func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *v
 
 	err = vcVM.Properties(vmCtx, vcVM.Reference(), []string{"snapshot"}, &vmCtx.MoVM)
 	if err != nil {
-		vmCtx.Logger.Error(err, "failed to get snapshot")
-		return err
+		return fmt.Errorf("failed to get snapshot: %w", err)
 	}
 
 	// Sync current and root snapshots status of the VM
@@ -153,15 +154,17 @@ func (vs *vSphereVMProvider) SyncVMSnapshotTreeStatus(ctx context.Context, vm *v
 }
 
 // markSnapshotInProgress marks a snapshot as currently being processed.
-func (vs *vSphereVMProvider) markSnapshotInProgress(vmCtx pkgctx.VirtualMachineContext, vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
+func (vs *vSphereVMProvider) markSnapshotInProgress(
+	vmCtx pkgctx.VirtualMachineContext,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot) error {
 	// Create a patch to set the InProgress condition
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
 
 	// Set the InProgress condition to prevent concurrent operations
 	pkgcnd.MarkFalse(
 		vmSnapshot,
-		vmopv1.VirtualMachineSnapshotReadyCondition,
-		vmopv1.VirtualMachineSnapshotInProgressReason,
+		vmopv1.VirtualMachineSnapshotCreatedCondition,
+		vmopv1.VirtualMachineSnapshotCreationInProgressReason,
 		"snapshot in progress")
 
 	// Use Patch instead of Update to avoid conflicts with snapshot controller
@@ -174,19 +177,25 @@ func (vs *vSphereVMProvider) markSnapshotInProgress(vmCtx pkgctx.VirtualMachineC
 }
 
 // markSnapshotFailed marks a snapshot as failed and clears the in-progress status.
-func (vs *vSphereVMProvider) markSnapshotFailed(vmCtx pkgctx.VirtualMachineContext, vmSnapshot *vmopv1.VirtualMachineSnapshot, err error) {
-	// Create a patch to update the snapshot status
+func (vs *vSphereVMProvider) markSnapshotFailed(vmCtx pkgctx.VirtualMachineContext,
+	vmSnapshot *vmopv1.VirtualMachineSnapshot, err error) error {
+	// Create a patch to update the snapshot status.
 	patch := ctrlclient.MergeFrom(vmSnapshot.DeepCopy())
 
-	// Mark the snapshot as failed
-	pkgcnd.MarkFalse(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition, "SnapshotFailed", "%s", err.Error())
+	// Mark the snapshot as failed.
+	pkgcnd.MarkError(
+		vmSnapshot,
+		vmopv1.VirtualMachineSnapshotCreatedCondition,
+		vmopv1.VirtualMachineSnapshotCreationFailedReason,
+		err)
 
 	// Use Patch instead of Update to avoid conflicts with snapshot controller (best effort)
 	if updateErr := vs.k8sClient.Status().Patch(vmCtx, vmSnapshot, patch); updateErr != nil {
-		vmCtx.Logger.Error(updateErr, "Failed to update snapshot status after failure", "snapshotName", vmSnapshot.Name)
+		return fmt.Errorf("failed to update snapshot status after failure: %w", updateErr)
 	}
 
 	vmCtx.Logger.V(4).Info("Marked snapshot as failed", "snapshotName", vmSnapshot.Name, "error", err.Error())
+	return nil
 }
 
 // getVirtualMachineSnapshotsForVM finds all VirtualMachineSnapshot objects that reference this VM.
@@ -311,7 +320,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		return err
 	}
 
-	// Check if the snapshot is ready.  This is to ensure that the snapshot
+	// Check if the snapshot is ready. This is to ensure that the snapshot
 	// as reconciled by VM operator and is not an out-of-band, or in-progress
 	// snapshot.
 	if !pkgcnd.IsTrue(obj, vmopv1.VirtualMachineSnapshotReadyCondition) {
@@ -819,22 +828,20 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 			&vmSnapshots[j].CreationTimestamp)
 	})
 
-	// Find the first (oldest) snapshot that is not ready
+	// Find the first (oldest) snapshot that is not created
 	// We process snapshots in chronological order, one at a time
 	// Also calculate the total pending snapshots so we can requeue the
 	// request to continue processing other snapshots.
 	var snapshotToProcess *vmopv1.VirtualMachineSnapshot
 	totalPendingSnapshots := 0
-	for i := range vmSnapshots {
+	for _, snapshot := range vmSnapshots {
 
-		snapshot := &vmSnapshots[i]
-
-		// Skip snapshots that are already ready.
+		// Skip snapshots that are already created.
 		if pkgcnd.IsTrue(
-			snapshot,
-			vmopv1.VirtualMachineSnapshotReadyCondition) {
+			&snapshot,
+			vmopv1.VirtualMachineSnapshotCreatedCondition) {
 
-			logger.V(4).Info("Skipping snapshot that is already ready",
+			logger.V(4).Info("Skipping snapshot that is already created",
 				"snapshotName", snapshot.Name)
 			continue
 		}
@@ -845,7 +852,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 
 		// Found the first snapshot that needs processing
 		if snapshotToProcess == nil {
-			snapshotToProcess = snapshot
+			snapshotToProcess = &snapshot
 		}
 	}
 
@@ -884,7 +891,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 	if pkgcnd.GetReason(
 		snapshotToProcess,
 		vmopv1.VirtualMachineSnapshotReadyCondition) ==
-		vmopv1.VirtualMachineSnapshotInProgressReason {
+		vmopv1.VirtualMachineSnapshotCreationInProgressReason {
 
 		logger.V(4).Info("Snapshot is in progress, waiting for completion")
 		return nil
@@ -911,7 +918,9 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 		// taking a snapshot. So, if we are unable to clear the
 		// in-progress condition because status patching fails, we
 		// will forever be waiting.
-		vs.markSnapshotFailed(vmCtx, snapshotToProcess, err)
+		if err := vs.markSnapshotFailed(vmCtx, snapshotToProcess, err); err != nil {
+			return fmt.Errorf("failed to mark snapshot as failed: %w", err)
+		}
 		return fmt.Errorf("failed to create snapshot %q: %w",
 			snapshotToProcess.Name, err)
 	}

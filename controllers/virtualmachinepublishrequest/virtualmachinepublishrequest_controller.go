@@ -27,7 +27,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -39,11 +38,12 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -834,16 +834,13 @@ func (r *Reconciler) isItemCorrelatedWithVMPub(
 
 	switch tItem := item.(type) {
 	case *object.VirtualMachine:
-		var o mo.VirtualMachine
-		if err := tItem.Properties(ctx,
-			tItem.Reference(),
-			[]string{"config.extraConfig"},
-			&o); err != nil {
+		extraConfig, err := virtualmachine.GetExtraConfigFromObject(ctx, tItem)
+		if err != nil {
 			return "", false, err
 		}
-		for _, opt := range o.Config.ExtraConfig {
+		for _, opt := range extraConfig {
 			if optKV := opt.GetOptionValue(); optKV != nil &&
-				optKV.Key == vmopv1.VirtualMachinePublishRequestUUIDLabelKey {
+				optKV.Key == vmopv1.VirtualMachinePublishRequestUUIDExtraConfigKey {
 				if optKV.Value.(string) == string(ctx.VMPublishRequest.UID) {
 					return tItem.Reference().Value, true, nil
 				}

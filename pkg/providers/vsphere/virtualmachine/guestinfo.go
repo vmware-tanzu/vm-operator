@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -9,25 +9,19 @@ import (
 	"strings"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/mo"
 )
 
 func GetExtraConfigGuestInfo(
 	ctx context.Context,
 	vm *object.VirtualMachine) (map[string]string, error) {
-
-	var o mo.VirtualMachine
-	if err := vm.Properties(ctx, vm.Reference(), []string{"config.extraConfig"}, &o); err != nil {
+	extraConfig, err := GetExtraConfigFromObject(ctx, vm)
+	if err != nil {
 		return nil, err
-	}
-
-	if o.Config == nil {
-		return nil, nil
 	}
 
 	giMap := make(map[string]string)
 
-	for _, option := range o.Config.ExtraConfig {
+	for _, option := range extraConfig {
 		if val := option.GetOptionValue(); val != nil {
 			if strings.HasPrefix(val.Key, "guestinfo.") {
 				if str, ok := val.Value.(string); ok {

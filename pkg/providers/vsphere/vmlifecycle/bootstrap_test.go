@@ -143,6 +143,30 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 		})
 	})
 
+	When("CustomizationLinuxPrep", func() {
+		Context("Password", func() {
+			BeforeEach(func() {
+				inCustSpec.Identity = &vimtypes.CustomizationLinuxPrep{
+					Password: &vimtypes.CustomizationPassword{
+						Value: "value",
+					},
+				}
+			})
+
+			It("redacts value", func() {
+				Expect(inCustSpec.Identity).ToNot(BeNil())
+				s := inCustSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(s.Password).ToNot(BeNil())
+				Expect(s.Password.Value).To(Equal("value"))
+
+				Expect(outCustSpec.Identity).ToNot(BeNil())
+				s = outCustSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(s.Password).ToNot(BeNil())
+				Expect(s.Password.Value).To(Equal("***"))
+			})
+		})
+	})
+
 	When("CustomizationSysprepText", func() {
 		BeforeEach(func() {
 			inCustSpec.Identity = &vimtypes.CustomizationSysprepText{

@@ -7687,6 +7687,37 @@ spec:
                                   HardwareClockIsUTC specifies whether the hardware clock is in UTC or
                                   local time.
                                 type: boolean
+                              password:
+                                description: Password sets the root password for the
+                                  machine.
+                                properties:
+                                  password:
+                                    description: |-
+                                      Password is the new root password for the machine.
+
+                                      If the password is in plain text, then plainText must be set to true.
+
+                                      When not explicitly specified, the Key field for the selector defaults to
+                                      `password`.
+                                    properties:
+                                      key:
+                                        default: password
+                                        description: Key is the key in the secret
+                                          that specifies the requested data.
+                                        type: string
+                                      name:
+                                        description: Name is the name of the secret.
+                                        type: string
+                                    required:
+                                    - key
+                                    - name
+                                    type: object
+                                  plainText:
+                                    description: |-
+                                      PlainText indicates whether or not the password is in plain text, rather than
+                                      encrypted.
+                                    type: boolean
+                                type: object
                               timeZone:
                                 description: |-
                                   TimeZone is a case-sensitive timezone, such as Europe/Sofia.

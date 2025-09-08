@@ -452,6 +452,14 @@ func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.Customiza
 		cloudInitPrep := *identity
 		cloudInitPrep.Userdata = redacted
 		cs.Identity = &cloudInitPrep
+	case *vimtypes.CustomizationLinuxPrep:
+		linuxPrep := *identity
+		if linuxPrep.Password != nil {
+			password := *linuxPrep.Password
+			password.Value = redacted
+			linuxPrep.Password = &password
+		}
+		cs.Identity = &linuxPrep
 	case *vimtypes.CustomizationSysprepText:
 		sysPrepText := *identity
 		sysPrepText.Value = redacted

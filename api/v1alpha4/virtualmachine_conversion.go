@@ -166,6 +166,16 @@ func Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(
 	return nil
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if ci := bs.LinuxPrep; ci != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
+				dst.Spec.Bootstrap.LinuxPrep.Password = ci.Password
+			}
+		}
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -183,6 +193,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, restored)
 
 	// END RESTORE
 

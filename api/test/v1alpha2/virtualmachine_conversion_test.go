@@ -78,6 +78,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 					LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
 						HardwareClockIsUTC: ptrOf(true),
 						TimeZone:           "my-tz",
+						Password: &vmopv1.VirtualMachineBootstrapLinuxPrepPassword{
+							Password: vmopv1common.PasswordSecretKeySelector{
+								Name: "bar",
+								Key:  "foo",
+							},
+							PlainText: true,
+						},
 					},
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 						Sysprep: &vmopv1sysprep.Sysprep{

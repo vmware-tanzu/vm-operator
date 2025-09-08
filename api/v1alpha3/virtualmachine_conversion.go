@@ -261,6 +261,16 @@ func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vm
 	}
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if ci := bs.LinuxPrep; ci != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
+				dst.Spec.Bootstrap.LinuxPrep.Password = ci.Password
+			}
+		}
+	}
+}
+
 func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
 }
@@ -281,6 +291,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	// BEGIN RESTORE
 
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, restored)
 	restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
 	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)

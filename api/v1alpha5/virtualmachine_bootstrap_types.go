@@ -177,6 +177,30 @@ type VirtualMachineBootstrapLinuxPrepSpec struct {
 	// Please see https://kb.vmware.com/s/article/2145518 for a list of valid
 	// time zones for Linux systems.
 	TimeZone string `json:"timeZone,omitempty"`
+
+	// +optional
+
+	// Password sets the root password for the machine.
+	Password *VirtualMachineBootstrapLinuxPrepPassword `json:"password,omitempty"`
+}
+
+// VirtualMachineBootstrapLinuxPrepPassword describes the root password for the VM.
+type VirtualMachineBootstrapLinuxPrepPassword struct {
+	// +optional
+
+	// Password is the new root password for the machine.
+	//
+	// If the password is in plain text, then plainText must be set to true.
+	//
+	// When not explicitly specified, the Key field for the selector defaults to
+	// `password`.
+	Password vmopv1common.PasswordSecretKeySelector `json:"password,omitempty"`
+
+	// +optional
+
+	// PlainText indicates whether or not the password is in plain text, rather than
+	// encrypted.
+	PlainText bool `json:"plainText,omitempty"`
 }
 
 // VirtualMachineBootstrapSysprepSpec describes the Sysprep configuration used

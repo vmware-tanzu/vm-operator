@@ -299,6 +299,16 @@ func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vm
 	}
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if ci := bs.LinuxPrep; ci != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
+				dst.Spec.Bootstrap.LinuxPrep.Password = ci.Password
+			}
+		}
+	}
+}
+
 func restore_v1alpha5_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
@@ -370,6 +380,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBiosUUID(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, restored)
 	restore_v1alpha5_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha5_VirtualMachineGuestID(dst, restored)
 	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)

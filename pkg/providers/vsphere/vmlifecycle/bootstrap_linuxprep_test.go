@@ -118,9 +118,33 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			Expect(hostName).To(Equal(bsArgs.HostName))
 			Expect(linuxSpec.TimeZone).To(Equal(linuxPrepSpec.TimeZone))
 			Expect(linuxSpec.HwClockUTC).To(Equal(linuxPrepSpec.HardwareClockIsUTC))
+			Expect(linuxSpec.Password).To(BeNil())
 
 			Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
 			Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
+		})
+
+		When("Password is specified", func() {
+			BeforeEach(func() {
+				linuxPrepSpec.Password = &vmopv1.VirtualMachineBootstrapLinuxPrepPassword{
+					Password: common.PasswordSecretKeySelector{
+						Name: "foo",
+						Key:  "passwd",
+					},
+					PlainText: true,
+				}
+				bsArgs.Data["passwd"] = "my-new-password"
+			})
+
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(linuxSpec.Password).ToNot(BeNil())
+				Expect(linuxSpec.Password.Value).To(Equal("my-new-password"))
+				Expect(linuxSpec.Password.PlainText).To(BeTrue())
+			})
 		})
 
 		Context("when has vAppConfig", func() {

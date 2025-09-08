@@ -11,8 +11,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 )
 
 func BootStrapLinuxPrep(
@@ -35,15 +35,24 @@ func BootStrapLinuxPrep(
 		return nil, nil, fmt.Errorf("failed to create GOSC NIC mappings: %w", err)
 	}
 
-	customSpec := &vimtypes.CustomizationSpec{
-		Identity: &vimtypes.CustomizationLinuxPrep{
-			HostName: &vimtypes.CustomizationFixedName{
-				Name: bsArgs.HostName,
-			},
-			Domain:     bsArgs.DomainName,
-			TimeZone:   linuxPrepSpec.TimeZone,
-			HwClockUTC: linuxPrepSpec.HardwareClockIsUTC,
+	identity := &vimtypes.CustomizationLinuxPrep{
+		HostName: &vimtypes.CustomizationFixedName{
+			Name: bsArgs.HostName,
 		},
+		Domain:     bsArgs.DomainName,
+		TimeZone:   linuxPrepSpec.TimeZone,
+		HwClockUTC: linuxPrepSpec.HardwareClockIsUTC,
+	}
+
+	if linuxPrepSpec.Password != nil {
+		identity.Password = &vimtypes.CustomizationPassword{
+			Value:     bsArgs.Data[linuxPrepSpec.Password.Password.Key],
+			PlainText: linuxPrepSpec.Password.PlainText,
+		}
+	}
+
+	customSpec := &vimtypes.CustomizationSpec{
+		Identity: identity,
 		GlobalIPSettings: vimtypes.CustomizationGlobalIPSettings{
 			DnsSuffixList: bsArgs.SearchSuffixes,
 			DnsServerList: bsArgs.DNSServers,

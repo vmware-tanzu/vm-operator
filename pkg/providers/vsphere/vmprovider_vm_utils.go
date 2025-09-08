@@ -419,6 +419,16 @@ func GetVirtualMachineBootstrap(
 				return vmlifecycle.BootstrapData{}, err
 			}
 		}
+	} else if v := bootstrapSpec.LinuxPrep; v != nil {
+		if p := v.Password; p != nil {
+			var err error
+			data, err = getSecretData(vmCtx, k8sClient, p.Password.Name, p.Password.Key, false)
+			if err != nil {
+				reason, msg := errToConditionReasonAndMessage(err)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
+				return vmlifecycle.BootstrapData{}, err
+			}
+		}
 	}
 
 	// vApp bootstrap can be used alongside LinuxPrep/Sysprep.

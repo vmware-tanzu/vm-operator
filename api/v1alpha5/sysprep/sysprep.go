@@ -6,6 +6,8 @@
 
 package sysprep
 
+import vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+
 // Sysprep describes the object representation of a Windows sysprep.xml answer
 // file.
 //
@@ -42,6 +44,21 @@ type Sysprep struct {
 
 	// UserData is a representation of the Sysprep UserData key.
 	UserData UserData `json:"userData"`
+
+	// +optional
+
+	// ExpirePasswordAfterNextLogin indicates whether or not the local Administrators
+	// group accounts are required to change their password after the next login.
+	ExpirePasswordAfterNextLogin bool `json:"expirePasswordAfterNextLogin,omitempty"`
+
+	// +optional
+
+	// ScriptText describes the script to run before and after customization. The
+	// script must be a Windows batch file.
+	//
+	// Please see https://knowledge.broadcom.com/external/article?legacyId=1026614
+	// for script examples.
+	ScriptText *vmopv1common.ValueOrSecretKeySelector `json:"scriptText,omitempty"`
 }
 
 // GUIRunOnce maps to the GuiRunOnce key in the sysprep.xml answer file.

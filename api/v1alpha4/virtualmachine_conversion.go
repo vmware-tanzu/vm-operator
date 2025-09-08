@@ -34,6 +34,12 @@ func Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpe
 	return autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha4_VirtualMachineBootstrapLinuxPrepSpec(
+	in *vmopv1.VirtualMachineBootstrapLinuxPrepSpec, out *VirtualMachineBootstrapLinuxPrepSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha4_VirtualMachineBootstrapLinuxPrepSpec(in, out, s)
+}
+
 func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(
 	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
 
@@ -183,6 +189,30 @@ func Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(
 	return nil
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if lp := bs.LinuxPrep; lp != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
+				dst.Spec.Bootstrap.LinuxPrep.ExpirePasswordAfterNextLogin = lp.ExpirePasswordAfterNextLogin
+				dst.Spec.Bootstrap.LinuxPrep.Password = lp.Password
+				dst.Spec.Bootstrap.LinuxPrep.ScriptText = lp.ScriptText
+			}
+		}
+	}
+}
+
+func restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if sp := bs.Sysprep; sp != nil && sp.Sysprep != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.Sysprep != nil {
+				if dst.Spec.Bootstrap.Sysprep.Sysprep != nil {
+					dst.Spec.Bootstrap.Sysprep.Sysprep.ExpirePasswordAfterNextLogin = sp.Sysprep.ExpirePasswordAfterNextLogin
+					dst.Spec.Bootstrap.Sysprep.Sysprep.ScriptText = sp.Sysprep.ScriptText
+				}
+			}
+		}
+	}
+}
 
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
@@ -202,6 +232,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)
 
 	// END RESTORE
 

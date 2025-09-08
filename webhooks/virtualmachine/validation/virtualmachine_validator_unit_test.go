@@ -1709,6 +1709,28 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+			Entry("disallow LinuxPrep mixing ScriptText Value From Secret and direct String pointer",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.GuestCustomizationVCDParity = true
+						})
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
+								ScriptText: &common.ValueOrSecretKeySelector{
+									From:  &common.SecretKeySelector{},
+									Value: ptr.To("foo"),
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.linuxPrep.scriptText.value: Invalid value: "value": from and value are mutually exclusive`,
+					),
+				},
+			),
+
 			Entry("disallow Sysprep mixing inline Sysprep identification",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -1791,7 +1813,7 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.bootstrap.vAppConfig.properties.value: Invalid value: "value": from and value is mutually exclusive`,
+						`spec.bootstrap.vAppConfig.properties.value: Invalid value: "value": from and value are mutually exclusive`,
 					),
 				},
 			),
@@ -1833,6 +1855,29 @@ func unitTestsValidateCreate() {
 					validate: doValidateWithMsg(
 						`spec.bootstrap.sysprep.sysprep: Invalid value: "guiUnattended": autoLogon requires autoLogonCount to be specified`,
 						`spec.bootstrap.sysprep.sysprep: Invalid value: "guiUnattended": autoLogon requires password selector to be set`,
+					),
+				},
+			),
+
+			Entry("disallow inline sysPrep ScriptText Value From Secret and direct String pointer",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.GuestCustomizationVCDParity = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									ScriptText: &common.ValueOrSecretKeySelector{
+										From:  &common.SecretKeySelector{},
+										Value: ptr.To("foo"),
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.sysprep.scriptText.value: Invalid value: "value": from and value are mutually exclusive`,
 					),
 				},
 			),

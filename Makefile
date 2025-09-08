@@ -312,6 +312,7 @@ GOLANGCI_LINT_ABS_PATH := $(abspath $(GOLANGCI_LINT))
 GO_MOD_DIRS_TO_LINT := $(GO_MOD_DIRS)
 GO_MOD_DIRS_TO_LINT := $(filter-out ./external%,$(GO_MOD_DIRS_TO_LINT))
 GO_MOD_DIRS_TO_LINT := $(filter-out ./hack/tools%,$(GO_MOD_DIRS_TO_LINT))
+GO_MOD_DIRS_TO_LINT := $(filter-out ./api-docs%,$(GO_MOD_DIRS_TO_LINT))
 GO_LINT_DIR_TARGETS := $(addprefix lint-,$(GO_MOD_DIRS_TO_LINT))
 
 .PHONY: $(GO_LINT_DIR_TARGETS)

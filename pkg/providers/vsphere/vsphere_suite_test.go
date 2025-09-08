@@ -99,8 +99,9 @@ func createOrUpdateVM(
 				errors.Is(err, vsphere.ErrSetPowerState),
 				errors.Is(err, vsphere.ErrUpgradeHardwareVersion),
 				errors.Is(err, vsphere.ErrPromoteDisks),
-				errors.Is(err, vsphere.ErrUpgradeSchema),
-				errors.Is(err, vsphere.ErrSnapshotRevert):
+				errors.Is(err, vsphere.ErrSnapshotRevert),
+				errors.Is(err, vsphere.ErrPolicyNotReady),
+				errors.Is(err, vsphere.ErrUpgradeSchema):
 
 				repeat = true
 			default:

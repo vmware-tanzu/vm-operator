@@ -10,8 +10,23 @@ replace (
 	github.com/vmware-tanzu/vm-operator/external/ncp => ./external/ncp
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota => ./external/storage-policy-quota
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ./external/tanzu-topology
+	github.com/vmware-tanzu/vm-operator/external/vsphere-policy => ./external/vsphere-policy
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api => ./pkg/backup/api
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ./pkg/constants/testlabels
+)
+
+// All replaced modules should be listed below.
+require (
+	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/appplatform v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/capabilities v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/vsphere-policy v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/pkg/backup/api v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000
 )
 
 // The version of Ginkgo must match the version in hack/tools/go.mod and api/go.mod.
@@ -29,15 +44,6 @@ require (
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250624211456-dfc90459c658
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20240523152550-862e2c4eb0e0
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20250813103855-288a237381b5
-	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/appplatform v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/capabilities v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/pkg/backup/api v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels v0.0.0-00010101000000-000000000000
 	github.com/vmware/govmomi v0.53.0-alpha.0.0.20250904165626-3676bbffada5
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	golang.org/x/net v0.42.0 // indirect
@@ -53,8 +59,6 @@ require (
 	sigs.k8s.io/controller-runtime v0.21.0
 	sigs.k8s.io/yaml v1.4.0
 )
-
-require k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -103,6 +107,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
+	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect

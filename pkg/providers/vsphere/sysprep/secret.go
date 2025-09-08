@@ -11,10 +11,11 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 type SecretData struct {
-	ProductID, Password, DomainPassword string
+	ProductID, Password, DomainPassword, ScriptText string
 }
 
 func GetSysprepSecretData(
@@ -24,7 +25,7 @@ func GetSysprepSecretData(
 	in *sysprep.Sysprep) (SecretData, error) {
 
 	var (
-		productID, password, domainPwd string
+		productID, password, domainPwd, scriptText string
 	)
 
 	if in.UserData.ProductID != nil {
@@ -42,7 +43,8 @@ func GetSysprepSecretData(
 	}
 
 	if guiUnattended := in.GUIUnattended; guiUnattended != nil && guiUnattended.AutoLogon {
-		err := util.GetSecretData(ctx,
+		err := util.GetSecretData(
+			ctx,
 			k8sClient,
 			secretNamespace,
 			guiUnattended.Password.Name,
@@ -55,7 +57,8 @@ func GetSysprepSecretData(
 
 	if identification := in.Identification; identification != nil {
 		if dap := identification.DomainAdminPassword; dap != nil && dap.Name != "" {
-			err := util.GetSecretData(ctx,
+			err := util.GetSecretData(
+				ctx,
 				k8sClient,
 				secretNamespace,
 				dap.Name,
@@ -67,10 +70,28 @@ func GetSysprepSecretData(
 		}
 	}
 
+	if st := in.ScriptText; st != nil {
+		if st.From != nil {
+			err := util.GetSecretData(
+				ctx,
+				k8sClient,
+				secretNamespace,
+				st.From.Name,
+				st.From.Key,
+				&scriptText)
+			if err != nil {
+				return SecretData{}, err
+			}
+		} else {
+			scriptText = ptr.DerefWithDefault(st.Value, "")
+		}
+	}
+
 	return SecretData{
 		ProductID:      productID,
 		Password:       password,
 		DomainPassword: domainPwd,
+		ScriptText:     scriptText,
 	}, nil
 }
 

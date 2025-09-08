@@ -27,6 +27,12 @@ func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMa
 	return autoConvert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha2_VirtualMachineBootstrapLinuxPrepSpec(
+	in *vmopv1.VirtualMachineBootstrapLinuxPrepSpec, out *VirtualMachineBootstrapLinuxPrepSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha2_VirtualMachineBootstrapLinuxPrepSpec(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(
 	in *vmopv1.VirtualMachineNetworkConfigDNSStatus, out *VirtualMachineNetworkConfigDNSStatus, s apiconversion.Scope) error {
 
@@ -299,6 +305,29 @@ func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vm
 	}
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if lp := bs.LinuxPrep; lp != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
+				dst.Spec.Bootstrap.LinuxPrep.ExpirePasswordAfterNextLogin = lp.ExpirePasswordAfterNextLogin
+				dst.Spec.Bootstrap.LinuxPrep.Password = lp.Password
+				dst.Spec.Bootstrap.LinuxPrep.ScriptText = lp.ScriptText
+			}
+		}
+	}
+}
+
+func restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if sp := bs.Sysprep; sp != nil && sp.Sysprep != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.Sysprep != nil && dst.Spec.Bootstrap.Sysprep.Sysprep != nil {
+				dst.Spec.Bootstrap.Sysprep.Sysprep.ExpirePasswordAfterNextLogin = sp.Sysprep.ExpirePasswordAfterNextLogin
+				dst.Spec.Bootstrap.Sysprep.Sysprep.ScriptText = sp.Sysprep.ScriptText
+			}
+		}
+	}
+}
+
 func restore_v1alpha5_VirtualMachineGuestID(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.GuestID = src.Spec.GuestID
 }
@@ -370,6 +399,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBiosUUID(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)
 	restore_v1alpha5_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha5_VirtualMachineGuestID(dst, restored)
 	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)

@@ -1,8 +1,8 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudinit_test
+package linuxprep_test
 
 import (
 	"testing"
@@ -17,11 +17,7 @@ var suite = builder.NewTestSuite()
 var _ = BeforeSuite(suite.BeforeSuite)
 var _ = AfterSuite(suite.AfterSuite)
 
-func TestCloudInit(t *testing.T) {
+func TestLinuxPrep(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Util Cloud-Init Suite")
-}
-
-func addrOf[T any](t T) *T {
-	return &t
+	RunSpecs(t, "Util LinuxPrep Suite")
 }

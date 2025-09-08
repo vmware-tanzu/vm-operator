@@ -5,8 +5,6 @@
 package vmlifecycle_test
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -17,6 +15,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
@@ -87,7 +87,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 			}
 
 			vmCtx = pkgctx.VirtualMachineContext{
-				Context: context.Background(),
+				Context: pkgcfg.NewContext(),
 				Logger:  suite.GetLogger(),
 				VM:      vm,
 				MoVM: mo.VirtualMachine{
@@ -115,9 +115,14 @@ var _ = Describe("SysPrep Bootstrap", func() {
 		})
 
 		Context("Inlined Sysprep", func() {
-			autoUsers := int32(5)
-			password, domainPassword, productID := "password_foo", "admin_password_foo", "product_id_foo"
-			hostName := "foo-win-vm"
+
+			const (
+				autoUsers      = int32(5)
+				password       = "password_foo"
+				domainPassword = "admin_password_foo"
+				productID      = "product_id_foo"
+				hostName       = "foo-win-vm"
+			)
 
 			BeforeEach(func() {
 				bsArgs.DomainName = "foo.local"
@@ -148,7 +153,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 					},
 					LicenseFilePrintData: &vmopv1sysprep.LicenseFilePrintData{
 						AutoMode:  vmopv1sysprep.CustomizationLicenseDataModePerServer,
-						AutoUsers: &autoUsers,
+						AutoUsers: ptr.To(autoUsers),
 					},
 				}
 
@@ -190,6 +195,70 @@ var _ = Describe("SysPrep Bootstrap", func() {
 
 				Expect(sysPrep.LicenseFilePrintData.AutoMode).To(Equal(vimtypes.CustomizationLicenseDataModePerServer))
 				Expect(sysPrep.LicenseFilePrintData.AutoUsers).To(Equal(autoUsers))
+
+				Expect(sysPrep.ResetPassword).To(BeNil())
+				Expect(sysPrep.ScriptText).To(BeEmpty())
+				Expect(sysPrep.ExtraConfig).To(BeEmpty())
+			})
+
+			When("GuestCustomizationVCDParity is enabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.GuestCustomizationVCDParity = true
+					})
+				})
+
+				When("Reset password is specified", func() {
+					BeforeEach(func() {
+						sysPrepSpec.Sysprep.ExpirePasswordAfterNextLogin = true
+					})
+
+					It("should return expected customization spec", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(custSpec).ToNot(BeNil())
+
+						sysPrep := custSpec.Identity.(*vimtypes.CustomizationSysprep)
+						Expect(sysPrep.ResetPassword).To(HaveValue(BeTrue()))
+					})
+				})
+
+				When("ScriptText is specified", func() {
+					const text = "@echo off\necho hello"
+
+					BeforeEach(func() {
+						sysPrepSpec.Sysprep.ScriptText = &common.ValueOrSecretKeySelector{}
+						bsArgs.Sysprep.ScriptText = text
+					})
+
+					It("should return expected customization spec", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(custSpec).ToNot(BeNil())
+
+						sysPrep := custSpec.Identity.(*vimtypes.CustomizationSysprep)
+						Expect(sysPrep.ScriptText).To(Equal(text))
+					})
+				})
+
+				When("VCFA ID annotation is specified", func() {
+					BeforeEach(func() {
+						if vm.Annotations == nil {
+							vm.Annotations = make(map[string]string)
+						}
+						vm.Annotations[constants.VCFAIDAnnotationKey] = "foobar"
+					})
+
+					It("should return expected customization spec", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(custSpec).ToNot(BeNil())
+
+						sysPrep := custSpec.Identity.(*vimtypes.CustomizationSysprep)
+						Expect(sysPrep.ExtraConfig).To(HaveLen(1))
+						optVal := sysPrep.ExtraConfig[0].GetOptionValue()
+						Expect(optVal).ToNot(BeNil())
+						Expect(optVal.Key).To(Equal(vmlifecycle.GOSCVCFAHashID))
+						Expect(optVal.Value).To(Equal("foobar"))
+					})
+				})
 			})
 
 			When("no section is set", func() {

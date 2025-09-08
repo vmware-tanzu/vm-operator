@@ -233,4 +233,7 @@ const (
 	// user-facing message detailing the nature of a failed quota check for a given
 	// VirtualMachinePublishRequest.
 	AsyncQuotaCheckMessageAnnotationKey = "vcfa.storage.quota.check.vmware.com/message"
+
+	// VCFAIDAnnotationKey is the annotation key for the VCFA ID for GOSC customization.
+	VCFAIDAnnotationKey = "vmoperator.vmware.com/vcfa-id"
 )

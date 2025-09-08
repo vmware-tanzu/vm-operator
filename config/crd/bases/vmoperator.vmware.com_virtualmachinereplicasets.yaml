@@ -1677,11 +1677,65 @@ spec:
                               This bootstrap provider may not be used in conjunction with the CloudInit
                               or Sysprep bootstrap providers.
                             properties:
+                              expirePasswordAfterNextLogin:
+                                description: |-
+                                  ExpirePasswordAfterNextLogin indicates whether or not the root account is required to
+                                  change their password after the next login.
+                                type: boolean
                               hardwareClockIsUTC:
                                 description: |-
                                   HardwareClockIsUTC specifies whether the hardware clock is in UTC or
                                   local time.
                                 type: boolean
+                              password:
+                                description: |-
+                                  Password is the new root password for the machine.
+
+                                  When not explicitly specified, the Key field for the selector defaults to
+                                  `password`.
+                                properties:
+                                  key:
+                                    default: password
+                                    description: Key is the key in the secret that
+                                      specifies the requested data.
+                                    type: string
+                                  name:
+                                    description: Name is the name of the secret.
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              scriptText:
+                                description: |-
+                                  ScriptText is the script to run before and after customization.
+
+                                  Please see https://knowledge.broadcom.com/external/article?legacyId=1026614
+                                  for script examples.
+                                properties:
+                                  from:
+                                    description: |-
+                                      From is specified to reference a value from a Secret resource.
+
+                                      Please note this field is mutually exclusive with the Value field.
+                                    properties:
+                                      key:
+                                        description: Key is the key in the secret
+                                          that specifies the requested data.
+                                        type: string
+                                      name:
+                                        description: Name is the name of the secret.
+                                        type: string
+                                    required:
+                                    - key
+                                    - name
+                                    type: object
+                                  value:
+                                    description: |-
+                                      Value is used to directly specify a value.
+
+                                      Please note this field is mutually exclusive with the From field.
+                                    type: string
+                                type: object
                               timeZone:
                                 description: |-
                                   TimeZone is a case-sensitive timezone, such as Europe/Sofia.
@@ -1741,6 +1795,11 @@ spec:
 
                                   Please note this field and RawSysprep are mutually exclusive.
                                 properties:
+                                  expirePasswordAfterNextLogin:
+                                    description: |-
+                                      ExpirePasswordAfterNextLogin indicates whether or not the local Administrators
+                                      group accounts are required to change their password after the next login.
+                                    type: boolean
                                   guiRunOnce:
                                     description: GUIRunOnce is a representation of
                                       the Sysprep GuiRunOnce key.
@@ -1893,6 +1952,38 @@ spec:
                                         type: integer
                                     required:
                                     - autoMode
+                                    type: object
+                                  scriptText:
+                                    description: |-
+                                      ScriptText describes the script to run before and after customization. The
+                                      script must be a Windows batch file.
+
+                                      Please see https://knowledge.broadcom.com/external/article?legacyId=1026614
+                                      for script examples.
+                                    properties:
+                                      from:
+                                        description: |-
+                                          From is specified to reference a value from a Secret resource.
+
+                                          Please note this field is mutually exclusive with the Value field.
+                                        properties:
+                                          key:
+                                            description: Key is the key in the secret
+                                              that specifies the requested data.
+                                            type: string
+                                          name:
+                                            description: Name is the name of the secret.
+                                            type: string
+                                        required:
+                                        - key
+                                        - name
+                                        type: object
+                                      value:
+                                        description: |-
+                                          Value is used to directly specify a value.
+
+                                          Please note this field is mutually exclusive with the From field.
+                                        type: string
                                     type: object
                                   userData:
                                     description: UserData is a representation of the

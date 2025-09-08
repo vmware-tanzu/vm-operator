@@ -495,6 +495,10 @@ endif
 
 EXTRA_PEER_DIRS := ./v1alpha2/sysprep/conversion/v1alpha2
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha2/sysprep/conversion/v1alpha5
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/sysprep/conversion/v1alpha3
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/sysprep/conversion/v1alpha5
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha4/sysprep/conversion/v1alpha4
+EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha4/sysprep/conversion/v1alpha5
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/common/conversion/v1alpha3
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha3/common/conversion/v1alpha5
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha4/common/conversion/v1alpha4

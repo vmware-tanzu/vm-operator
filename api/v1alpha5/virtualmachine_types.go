@@ -1283,7 +1283,34 @@ func (vm *VirtualMachine) SetAnnotation(k, v string) {
 }
 
 func (vm VirtualMachine) NamespacedName() string {
-	return vm.Namespace + "/" + vm.Name
+	return NamespacedName(&vm)
+}
+
+// ClassAndInstanceName returns the name of the class and class instance used by
+// this VM in the following format:
+//
+//	(CLASS)?(/CLASS_INSTANCE)?
+//
+// Both the class and instance components are optional. Please refer to the
+// examples for the various output formats.
+func (vm VirtualMachine) ClassAndInstanceName() string {
+	switch {
+	case vm.Spec.ClassName != "" &&
+		vm.Spec.Class != nil &&
+		vm.Spec.Class.Name != "":
+		return vm.Spec.ClassName + "/" + vm.Spec.Class.Name
+
+	case vm.Spec.ClassName != "":
+		// No trailing slash is needed to distinguish a class sans instance.
+		return vm.Spec.ClassName
+
+	case vm.Spec.Class != nil && vm.Spec.Class.Name != "":
+		// Distinguish an instance sans class with a preceding slash.
+		return "/" + vm.Spec.Class.Name
+
+	default:
+		return ""
+	}
 }
 
 func (vm VirtualMachine) GetConditions() []metav1.Condition {

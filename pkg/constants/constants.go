@@ -233,4 +233,15 @@ const (
 	// user-facing message detailing the nature of a failed quota check for a given
 	// VirtualMachinePublishRequest.
 	AsyncQuotaCheckMessageAnnotationKey = "vcfa.storage.quota.check.vmware.com/message"
+
+	// ExtraConfigVMClassNameKey is the extra config key placed on a VM to
+	// indicate the name of the VM Class from which the VM was created.
+	//
+	// The value adheres to the following format:
+	//
+	//     (CLASS)?(/CLASS_INSTANCE)?
+	//
+	// Please refer to the examples in the API package for the possible output
+	// formats.
+	ExtraConfigVMClassNameKey = "vmservice.vmclass.name"
 )

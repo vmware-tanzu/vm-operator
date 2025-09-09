@@ -13057,6 +13057,11 @@ spec:
 
                           Please note this field and RawSysprep are mutually exclusive.
                         properties:
+                          expirePasswordAfterNextLogin:
+                            description: |-
+                              ExpirePasswordAfterNextLogin indicates whether or not the local Administrators
+                              group accounts are required to change their password after the next login.
+                            type: boolean
                           guiRunOnce:
                             description: GUIRunOnce is a representation of the Sysprep
                               GuiRunOnce key.

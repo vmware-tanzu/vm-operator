@@ -190,6 +190,22 @@ var _ = Describe("SysPrep Bootstrap", func() {
 
 				Expect(sysPrep.LicenseFilePrintData.AutoMode).To(Equal(vimtypes.CustomizationLicenseDataModePerServer))
 				Expect(sysPrep.LicenseFilePrintData.AutoUsers).To(Equal(autoUsers))
+
+				Expect(sysPrep.ResetPassword).To(BeNil())
+			})
+
+			When("Reset password is specified", func() {
+				BeforeEach(func() {
+					sysPrepSpec.Sysprep.ExpirePasswordAfterNextLogin = true
+				})
+
+				It("should return expected customization spec", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(custSpec).ToNot(BeNil())
+
+					sysPrep := custSpec.Identity.(*vimtypes.CustomizationSysprep)
+					Expect(sysPrep.ResetPassword).To(HaveValue(BeTrue()))
+				})
 			})
 
 			When("no section is set", func() {

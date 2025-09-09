@@ -42,6 +42,12 @@ type Sysprep struct {
 
 	// UserData is a representation of the Sysprep UserData key.
 	UserData UserData `json:"userData"`
+
+	// +optional
+
+	// ExpirePasswordAfterNextLogin indicates whether or not the local Administrators
+	// group accounts are required to change their password after the next login.
+	ExpirePasswordAfterNextLogin bool `json:"expirePasswordAfterNextLogin,omitempty"`
 }
 
 // GUIRunOnce maps to the GuiRunOnce key in the sysprep.xml answer file.

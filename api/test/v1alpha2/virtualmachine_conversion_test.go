@@ -102,6 +102,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 							UserData: vmopv1sysprep.UserData{
 								FullName: "vmware",
 							},
+							ExpirePasswordAfterNextLogin: true,
 						},
 					},
 					VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{

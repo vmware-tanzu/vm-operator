@@ -12,8 +12,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -36,13 +36,11 @@ func BootstrapSysPrep(
 		data     string
 		identity vimtypes.BaseCustomizationIdentitySettings
 	)
-	key := "unattend"
 
 	if sysPrepSpec.RawSysprep != nil {
-		var err error
-
-		if sysPrepSpec.RawSysprep.Key != "" {
-			key = sysPrepSpec.RawSysprep.Key
+		key := sysPrepSpec.RawSysprep.Key
+		if key == "" {
+			key = "unattend"
 		}
 
 		data = bsArgs.BootstrapData.Data[key]
@@ -51,6 +49,7 @@ func BootstrapSysPrep(
 		}
 
 		// Ensure the data is normalized first to plain-text.
+		var err error
 		data, err = pkgutil.TryToDecodeBase64Gzip([]byte(data))
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoding Sysprep unattend XML failed: %w", err)
@@ -99,9 +98,12 @@ func BootstrapSysPrep(
 
 func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.CustomizationSysprep {
 	bootstrapData := bsArgs.BootstrapData
+
 	sysprepCustomization := &vimtypes.CustomizationSysprep{}
 
-	sysprepCustomization.GuiUnattended = vimtypes.CustomizationGuiUnattended{}
+	if from.ExpirePasswordAfterNextLogin {
+		sysprepCustomization.ResetPassword = vimtypes.NewBool(true)
+	}
 
 	if from.GUIUnattended == nil {
 		// If spec.bootstrap.sysprep.guiUnattended is not set, then default

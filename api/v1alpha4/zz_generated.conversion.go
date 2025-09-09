@@ -15,9 +15,11 @@ import (
 
 	v1alpha4cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha4/cloudinit"
 	common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
-	conversionv1alpha4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common/conversion/v1alpha4"
-	conversionv1alpha5 "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common/conversion/v1alpha5"
+	commonconversionv1alpha4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common/conversion/v1alpha4"
+	commonconversionv1alpha5 "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common/conversion/v1alpha5"
 	v1alpha4sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep"
+	conversionv1alpha4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep/conversion/v1alpha4"
+	conversionv1alpha5 "github.com/vmware-tanzu/vm-operator/api/v1alpha4/sysprep/conversion/v1alpha5"
 	v1alpha5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
 	v1alpha5common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
@@ -2315,7 +2317,15 @@ func autoConvert_v1alpha4_VirtualMachineBootstrapSpec_To_v1alpha5_VirtualMachine
 	} else {
 		out.LinuxPrep = nil
 	}
-	out.Sysprep = (*v1alpha5.VirtualMachineBootstrapSysprepSpec)(unsafe.Pointer(in.Sysprep))
+	if in.Sysprep != nil {
+		in, out := &in.Sysprep, &out.Sysprep
+		*out = new(v1alpha5.VirtualMachineBootstrapSysprepSpec)
+		if err := Convert_v1alpha4_VirtualMachineBootstrapSysprepSpec_To_v1alpha5_VirtualMachineBootstrapSysprepSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Sysprep = nil
+	}
 	out.VAppConfig = (*v1alpha5.VirtualMachineBootstrapVAppConfigSpec)(unsafe.Pointer(in.VAppConfig))
 	return nil
 }
@@ -2336,7 +2346,15 @@ func autoConvert_v1alpha5_VirtualMachineBootstrapSpec_To_v1alpha4_VirtualMachine
 	} else {
 		out.LinuxPrep = nil
 	}
-	out.Sysprep = (*VirtualMachineBootstrapSysprepSpec)(unsafe.Pointer(in.Sysprep))
+	if in.Sysprep != nil {
+		in, out := &in.Sysprep, &out.Sysprep
+		*out = new(VirtualMachineBootstrapSysprepSpec)
+		if err := Convert_v1alpha5_VirtualMachineBootstrapSysprepSpec_To_v1alpha4_VirtualMachineBootstrapSysprepSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Sysprep = nil
+	}
 	out.VAppConfig = (*VirtualMachineBootstrapVAppConfigSpec)(unsafe.Pointer(in.VAppConfig))
 	return nil
 }
@@ -2347,7 +2365,15 @@ func Convert_v1alpha5_VirtualMachineBootstrapSpec_To_v1alpha4_VirtualMachineBoot
 }
 
 func autoConvert_v1alpha4_VirtualMachineBootstrapSysprepSpec_To_v1alpha5_VirtualMachineBootstrapSysprepSpec(in *VirtualMachineBootstrapSysprepSpec, out *v1alpha5.VirtualMachineBootstrapSysprepSpec, s conversion.Scope) error {
-	out.Sysprep = (*sysprep.Sysprep)(unsafe.Pointer(in.Sysprep))
+	if in.Sysprep != nil {
+		in, out := &in.Sysprep, &out.Sysprep
+		*out = new(sysprep.Sysprep)
+		if err := conversionv1alpha4.Convert_sysprep_Sysprep_To_sysprep_Sysprep(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Sysprep = nil
+	}
 	out.RawSysprep = (*v1alpha5common.SecretKeySelector)(unsafe.Pointer(in.RawSysprep))
 	return nil
 }
@@ -2358,7 +2384,15 @@ func Convert_v1alpha4_VirtualMachineBootstrapSysprepSpec_To_v1alpha5_VirtualMach
 }
 
 func autoConvert_v1alpha5_VirtualMachineBootstrapSysprepSpec_To_v1alpha4_VirtualMachineBootstrapSysprepSpec(in *v1alpha5.VirtualMachineBootstrapSysprepSpec, out *VirtualMachineBootstrapSysprepSpec, s conversion.Scope) error {
-	out.Sysprep = (*v1alpha4sysprep.Sysprep)(unsafe.Pointer(in.Sysprep))
+	if in.Sysprep != nil {
+		in, out := &in.Sysprep, &out.Sysprep
+		*out = new(v1alpha4sysprep.Sysprep)
+		if err := conversionv1alpha5.Convert_sysprep_Sysprep_To_sysprep_Sysprep(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Sysprep = nil
+	}
 	out.RawSysprep = (*common.SecretKeySelector)(unsafe.Pointer(in.RawSysprep))
 	return nil
 }
@@ -5271,7 +5305,7 @@ func Convert_v1alpha5_VirtualMachineTemplate_To_v1alpha4_VirtualMachineTemplate(
 }
 
 func autoConvert_v1alpha4_VirtualMachineTemplateSpec_To_v1alpha5_VirtualMachineTemplateSpec(in *VirtualMachineTemplateSpec, out *v1alpha5.VirtualMachineTemplateSpec, s conversion.Scope) error {
-	if err := conversionv1alpha4.Convert_common_ObjectMeta_To_common_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
+	if err := commonconversionv1alpha4.Convert_common_ObjectMeta_To_common_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
 		return err
 	}
 	if err := Convert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(&in.Spec, &out.Spec, s); err != nil {
@@ -5286,7 +5320,7 @@ func Convert_v1alpha4_VirtualMachineTemplateSpec_To_v1alpha5_VirtualMachineTempl
 }
 
 func autoConvert_v1alpha5_VirtualMachineTemplateSpec_To_v1alpha4_VirtualMachineTemplateSpec(in *v1alpha5.VirtualMachineTemplateSpec, out *VirtualMachineTemplateSpec, s conversion.Scope) error {
-	if err := conversionv1alpha5.Convert_common_ObjectMeta_To_common_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
+	if err := commonconversionv1alpha5.Convert_common_ObjectMeta_To_common_ObjectMeta(&in.ObjectMeta, &out.ObjectMeta, s); err != nil {
 		return err
 	}
 	if err := Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(&in.Spec, &out.Spec, s); err != nil {

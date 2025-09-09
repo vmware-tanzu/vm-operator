@@ -159,6 +159,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVMPlacementPolicies: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyVMWaitForFirstConsumerPVC: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -174,6 +177,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMSnapshots = true
 							config.Features.InventoryContentLibrary = true
 							config.Features.VMPlacementPolicies = true
+							config.Features.VMWaitForFirstConsumerPVC = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -205,6 +209,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVMWaitForFirstConsumerPVC, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC).To(BeTrue())
 					})
 				})
 
@@ -238,6 +245,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVMWaitForFirstConsumerPVC, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC).To(BeTrue())
 					})
 				})
 			})
@@ -280,6 +290,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVMPlacementPolicies: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyVMWaitForFirstConsumerPVC: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -314,6 +327,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeFalse())
 					})
+					Specify(capabilities.CapabilityKeyVMWaitForFirstConsumerPVC, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC).To(BeFalse())
+					})
 				})
 
 				When("the capabilities are different", func() {
@@ -324,6 +340,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.WorkloadDomainIsolation = true
 							config.Features.MutableNetworks = true
 							config.Features.VMGroups = true
+							config.Features.VMWaitForFirstConsumerPVC = true
 						})
 					})
 					Specify("capabilities changed", func() {
@@ -355,6 +372,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVMWaitForFirstConsumerPVC, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC).To(BeFalse())
 					})
 				})
 			})
@@ -585,6 +605,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyVMWaitForFirstConsumerPVC, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVMWaitForFirstConsumerPVC] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VMWaitForFirstConsumerPVC=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -628,6 +661,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyVMPlacementPolicies: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVMWaitForFirstConsumerPVC: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -650,6 +686,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMSnapshots = true
 					config.Features.InventoryContentLibrary = true
 					config.Features.VMPlacementPolicies = true
+					config.Features.VMWaitForFirstConsumerPVC = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -683,6 +720,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVMWaitForFirstConsumerPVC, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -695,11 +735,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMGroups = false
 					config.Features.ImmutableClasses = false
 					config.Features.InventoryContentLibrary = false
+					config.Features.VMWaitForFirstConsumerPVC = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMPlacementPolicies=true,VMSnapshots=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMPlacementPolicies=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -727,6 +768,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyVMPlacementPolicies, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMPlacementPolicies).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVMWaitForFirstConsumerPVC, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC).To(BeFalse())
 			})
 		})
 	})

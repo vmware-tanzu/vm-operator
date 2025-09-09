@@ -846,6 +846,10 @@ func (r *Reconciler) handlePVCWithWFFC(
 		return nil
 	}
 
+	if !pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC {
+		return fmt.Errorf("PVC with WFFC storage class support is not enabled")
+	}
+
 	zoneName := ctx.VM.Status.Zone
 	if zoneName == "" {
 		// Fallback to the label value if Status hasn't been updated yet.

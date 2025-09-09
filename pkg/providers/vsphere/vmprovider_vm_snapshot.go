@@ -30,6 +30,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -359,7 +360,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	var currentRef vimtypes.ManagedObjectReference
 	if s := vmCtx.MoVM.Snapshot; s != nil {
 		if c := s.CurrentSnapshot; c != nil {
-			currentRef = ref.Reference()
+			currentRef = c.Reference()
 			logger = logger.WithValues("currentSnapshot", currentRef.Value)
 		}
 	}
@@ -367,6 +368,11 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	vmCtx.Context = logr.NewContext(vmCtx.Context, logger)
 
 	logger.Info("Starting snapshot revert operation")
+
+	// // Disable auto registration before revert.
+	if err := disableAutoRegistration(vmCtx, vcVM); err != nil {
+		return fmt.Errorf("failed to disable auto registration: %w", err)
+	}
 
 	// Set the revert in progress annotation.
 	logger.V(4).Info("Setting revert in progress annotation")
@@ -392,10 +398,6 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 			desiredSnapshotName, err)
 	}
 
-	// TODO (AKP): We will modify the snapshot workflow to always skip the
-	// automatic registration.  Once we do that, we will have to remove that
-	// ExtraConfig key.
-
 	// TODO (AKP): Move the parsing VM spec code above this section so we can
 	// bail out if it's not a VM that we can restore.
 
@@ -418,6 +420,13 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		)
 
 		return err
+	}
+
+	// TODO: (Lubron) Do we really need this step since the key was removed
+	// after the revert?
+	// Enable auto registration after revert.
+	if err := enableAutoRegistration(vmCtx, vcVM); err != nil {
+		return fmt.Errorf("failed to enable auto registration: %w", err)
 	}
 
 	logger.V(4).Info("VM spec restoration completed",
@@ -978,4 +987,72 @@ func (vs *vSphereVMProvider) unmarshalAndConvertVMFromYAML(
 	}
 
 	return vm, nil
+}
+
+func disableAutoRegistration(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine) error {
+
+	logger := pkglog.FromContextOrDefault(vmCtx)
+	logger.V(4).Info("Disabling auto registration")
+
+	if err := vcVM.Properties(
+		vmCtx, vcVM.Reference(),
+		[]string{"config.extraConfig"},
+		&vmCtx.MoVM); err != nil {
+		return err
+	}
+
+	if vmCtx.MoVM.Config.ExtraConfig == nil {
+		vmCtx.MoVM.Config.ExtraConfig = make([]vimtypes.BaseOptionValue, 0)
+	}
+
+	curExCfg := pkgutil.OptionValues(vmCtx.MoVM.Config.ExtraConfig)
+
+	vmCtx.MoVM.Config.ExtraConfig = curExCfg.Merge(&vimtypes.OptionValue{
+		Key:   backupapi.DisableAutoRegistrationExtraConfigKey,
+		Value: "true",
+	})
+
+	configSpec := &vimtypes.VirtualMachineConfigSpec{
+		ExtraConfig: vmCtx.MoVM.Config.ExtraConfig,
+	}
+
+	if _, err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, configSpec); err != nil {
+		return fmt.Errorf("failed to disable auto registration: %w", err)
+	}
+
+	return nil
+}
+
+func enableAutoRegistration(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcVM *object.VirtualMachine) error {
+
+	logger := pkglog.FromContextOrDefault(vmCtx)
+	logger.V(4).Info("Enabling auto registration")
+
+	if err := vcVM.Properties(
+		vmCtx, vcVM.Reference(),
+		[]string{"config.extraConfig"},
+		&vmCtx.MoVM); err != nil {
+		return err
+	}
+
+	if vmCtx.MoVM.Config.ExtraConfig == nil {
+		return nil
+	}
+
+	curExCfg := pkgutil.OptionValues(vmCtx.MoVM.Config.ExtraConfig)
+	ecToUpdate := curExCfg.Delete(backupapi.DisableAutoRegistrationExtraConfigKey)
+
+	configSpec := &vimtypes.VirtualMachineConfigSpec{
+		ExtraConfig: ecToUpdate,
+	}
+
+	if _, err := res.NewVMFromObject(vcVM).Reconfigure(vmCtx, configSpec); err != nil {
+		return fmt.Errorf("failed to enable auto registration: %w", err)
+	}
+
+	return nil
 }

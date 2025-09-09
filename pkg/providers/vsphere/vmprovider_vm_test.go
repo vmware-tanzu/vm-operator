@@ -3258,7 +3258,9 @@ func vmTests() {
 							Expect(task.Wait(ctx)).To(Succeed())
 
 							// Create first snapshot CR
-							// Mark the snapshot as ready so that the snapshot workflow doesn't try to create it.
+							// Mark the snapshot as completed so that the snapshot workflow doesn't try to create it.
+							conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+							// Mark the snapshot as ready so that the revert snapshot workflow can proceed.
 							conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 							Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 
@@ -3285,7 +3287,9 @@ func vmTests() {
 							Expect(task.Wait(ctx)).To(Succeed())
 
 							// Create second snapshot CR
-							// Mark the snapshot as ready so that the snapshot workflow doesn't try to create it.
+							// Mark the snapshot as completed so that the snapshot workflow doesn't try to create it.
+							conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+							// Mark the snapshot as ready so that the revert snapshot workflow can proceed.
 							conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 							// Snapshot should be owned by the VM resource.
 							Expect(controllerutil.SetOwnerReference(vm, secondSnapshot, ctx.Scheme)).To(Succeed())

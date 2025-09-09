@@ -180,6 +180,12 @@ type VirtualMachineBootstrapLinuxPrepSpec struct {
 
 	// +optional
 
+	// ExpirePasswordAfterNextLogin indicates whether or not the root account is required to
+	// change their password after the next login.
+	ExpirePasswordAfterNextLogin bool `json:"expirePasswordAfterNextLogin,omitempty"`
+
+	// +optional
+
 	// Password sets the root password for the machine.
 	Password *VirtualMachineBootstrapLinuxPrepPassword `json:"password,omitempty"`
 }

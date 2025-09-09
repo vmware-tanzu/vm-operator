@@ -29,6 +29,12 @@ func Convert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpe
 	return autoConvert_v1alpha5_VirtualMachineCdromSpec_To_v1alpha4_VirtualMachineCdromSpec(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha4_VirtualMachineBootstrapLinuxPrepSpec(
+	in *vmopv1.VirtualMachineBootstrapLinuxPrepSpec, out *VirtualMachineBootstrapLinuxPrepSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha4_VirtualMachineBootstrapLinuxPrepSpec(in, out, s)
+}
+
 func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(
 	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
 
@@ -166,10 +172,11 @@ func Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(
 	return nil
 }
 
-func restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, src *vmopv1.VirtualMachine) {
+func restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, src *vmopv1.VirtualMachine) {
 	if bs := src.Spec.Bootstrap; bs != nil {
 		if ci := bs.LinuxPrep; ci != nil {
 			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
+				dst.Spec.Bootstrap.LinuxPrep.ExpirePasswordAfterNextLogin = ci.ExpirePasswordAfterNextLogin
 				dst.Spec.Bootstrap.LinuxPrep.Password = ci.Password
 			}
 		}
@@ -193,7 +200,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	restore_v1alpha5_VirtualMachineHardware(dst, restored)
 	restore_v1alpha5_VirtualMachinePolicies(dst, restored)
-	restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 
 	// END RESTORE
 

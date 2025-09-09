@@ -44,6 +44,10 @@ func BootStrapLinuxPrep(
 		HwClockUTC: linuxPrepSpec.HardwareClockIsUTC,
 	}
 
+	if linuxPrepSpec.ExpirePasswordAfterNextLogin {
+		identity.ResetPassword = vimtypes.NewBool(true)
+	}
+
 	if linuxPrepSpec.Password != nil {
 		identity.Password = &vimtypes.CustomizationPassword{
 			Value:     bsArgs.Data[linuxPrepSpec.Password.Password.Key],

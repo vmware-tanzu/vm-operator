@@ -7682,6 +7682,11 @@ spec:
                               This bootstrap provider may not be used in conjunction with the CloudInit
                               or Sysprep bootstrap providers.
                             properties:
+                              expirePasswordAfterNextLogin:
+                                description: |-
+                                  ExpirePasswordAfterNextLogin indicates whether or not the root account is required to
+                                  change their password after the next login.
+                                type: boolean
                               hardwareClockIsUTC:
                                 description: |-
                                   HardwareClockIsUTC specifies whether the hardware clock is in UTC or

@@ -27,6 +27,12 @@ func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMa
 	return autoConvert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha2_VirtualMachineBootstrapCloudInitSpec(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha2_VirtualMachineBootstrapLinuxPrepSpec(
+	in *vmopv1.VirtualMachineBootstrapLinuxPrepSpec, out *VirtualMachineBootstrapLinuxPrepSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha2_VirtualMachineBootstrapLinuxPrepSpec(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineNetworkConfigDNSStatus_To_v1alpha2_VirtualMachineNetworkConfigDNSStatus(
 	in *vmopv1.VirtualMachineNetworkConfigDNSStatus, out *VirtualMachineNetworkConfigDNSStatus, s apiconversion.Scope) error {
 
@@ -299,10 +305,11 @@ func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vm
 	}
 }
 
-func restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, src *vmopv1.VirtualMachine) {
+func restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, src *vmopv1.VirtualMachine) {
 	if bs := src.Spec.Bootstrap; bs != nil {
 		if ci := bs.LinuxPrep; ci != nil {
 			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
+				dst.Spec.Bootstrap.LinuxPrep.ExpirePasswordAfterNextLogin = ci.ExpirePasswordAfterNextLogin
 				dst.Spec.Bootstrap.LinuxPrep.Password = ci.Password
 			}
 		}
@@ -380,7 +387,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha5_VirtualMachineBiosUUID(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitInstanceID(dst, restored)
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
-	restore_v1alpha5_VirtualMachineBootstrapLinuxPrepPassword(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha5_VirtualMachineSpecNetworkDomainName(dst, restored)
 	restore_v1alpha5_VirtualMachineGuestID(dst, restored)
 	restore_v1alpha5_VirtualMachineCryptoSpec(dst, restored)

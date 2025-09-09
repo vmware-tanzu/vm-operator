@@ -64,8 +64,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 								WaitOnNetwork6:                  ptrOf(false),
 							},
 							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-								HardwareClockIsUTC: ptrOf(true),
-								TimeZone:           "my-tz",
+								HardwareClockIsUTC:           ptrOf(true),
+								TimeZone:                     "my-tz",
+								ExpirePasswordAfterNextLogin: true,
 								Password: &vmopv1.VirtualMachineBootstrapLinuxPrepPassword{
 									Password: vmopv1common.PasswordSecretKeySelector{
 										Name: "bar",

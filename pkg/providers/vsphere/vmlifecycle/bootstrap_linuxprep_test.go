@@ -119,9 +119,24 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			Expect(linuxSpec.TimeZone).To(Equal(linuxPrepSpec.TimeZone))
 			Expect(linuxSpec.HwClockUTC).To(Equal(linuxPrepSpec.HardwareClockIsUTC))
 			Expect(linuxSpec.Password).To(BeNil())
+			Expect(linuxSpec.ResetPassword).To(BeNil())
 
 			Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
 			Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
+		})
+
+		When("Reset password is specified", func() {
+			BeforeEach(func() {
+				linuxPrepSpec.ExpirePasswordAfterNextLogin = true
+			})
+
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(linuxSpec.ResetPassword).To(HaveValue(BeTrue()))
+			})
 		})
 
 		When("Password is specified", func() {

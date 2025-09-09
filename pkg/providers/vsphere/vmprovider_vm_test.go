@@ -3209,9 +3209,7 @@ func vmTests() {
 						// Mark the snapshot as ready so that the revert snapshot workflow can proceed.
 						conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
 						// Snapshot should be owned by the VM resource.
-						Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
 						Expect(controllerutil.SetOwnerReference(&o, secondSnapshot, ctx.Scheme)).To(Succeed())
-						Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
 						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to first snapshot (revert from second to first)
@@ -3246,6 +3244,83 @@ func vmTests() {
 						currentSnap := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
 						Expect(currentSnap).ToNot(BeNil())
 						Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
+					})
+
+					Context("and the snapshot was taken when VM was powered on and is now powered off", func() {
+						It("should successfully power on the VM after reverting to a Snapshot in PoweredOn state", func() {
+							// Create VM first
+							vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+							Expect(err).ToNot(HaveOccurred())
+
+							// Create first snapshot in vCenter
+							task, err := vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "first snapshot", false, false)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(task.Wait(ctx)).To(Succeed())
+
+							// Create first snapshot CR
+							// Mark the snapshot as ready so that the snapshot workflow doesn't try to create it.
+							conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+							Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+							// Verify the snapshot is actually current in vCenter
+							var moVM mo.VirtualMachine
+							Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
+							Expect(moVM.Snapshot).ToNot(BeNil())
+
+							// verify that the snapshot's power state is powered off
+							snapshot := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
+							Expect(snapshot).ToNot(BeNil())
+							Expect(snapshot.State).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+
+							// Snapshot should be owned by the VM resource.
+							Expect(controllerutil.SetOwnerReference(vm, vmSnapshot, ctx.Scheme)).To(Succeed())
+							Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
+
+							// Create second snapshot
+							secondSnapshot = builder.DummyVirtualMachineSnapshotWithMemory("", "test-second-snap", vm.Name)
+							secondSnapshot.Namespace = nsInfo.Namespace
+
+							task, err = vcVM.CreateSnapshot(ctx, secondSnapshot.Name, "second snapshot", true, false)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(task.Wait(ctx)).To(Succeed())
+
+							// Create second snapshot CR
+							// Mark the snapshot as ready so that the snapshot workflow doesn't try to create it.
+							conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+							// Snapshot should be owned by the VM resource.
+							Expect(controllerutil.SetOwnerReference(vm, secondSnapshot, ctx.Scheme)).To(Succeed())
+							Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
+
+							// Verify the VM is powered on
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+							state, err := vcVM.PowerState(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(state).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
+
+							// Set desired snapshot to first snapshot (revert from second to first)
+							vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
+								APIVersion: vmSnapshot.APIVersion,
+								Kind:       vmSnapshot.Kind,
+								Name:       vmSnapshot.Name,
+							}
+
+							// Revert to the first snapshot
+							err = createOrUpdateVM(ctx, vmProvider, vm)
+							Expect(err).ToNot(HaveOccurred())
+
+							// Verify VM status reflects the reverted snapshot
+							Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
+							Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+							// Verify the spec.currentSnapshot is cleared.
+							Expect(vm.Spec.CurrentSnapshot).To(BeNil())
+
+							// Verify the VM is powered off
+							Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+							state, err = vcVM.PowerState(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(state).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+						})
 					})
 				})
 

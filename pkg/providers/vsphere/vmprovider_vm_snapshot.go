@@ -560,6 +560,11 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 	// Empty out the status.
 	vmCtx.VM.Status = vmopv1.VirtualMachineStatus{}
 
+	// reconcile the power state of the VM post revert
+	if err := vs.reconcilePostRevertPowerState(vmCtx, snapObj); err != nil {
+		return fmt.Errorf("failed to reconcile power state post revert: %w", err)
+	}
+
 	// Note that since we swapped out the annotations from the
 	// snapshot, it will implicitly remove the "restore-in-progress"
 	// annotation. But go ahead and clean it up again in case the
@@ -598,7 +603,7 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 		// If the Snapshot has ImportedSnapshotAnnotation, then approximate the
 		// VM spec.
 		return getVMYamlFromSnapshotFromSynthesizedSpec(
-			vmCtx, snap, moSnap, snapRef)
+			vmCtx, snap, moSnap)
 	}
 
 	logger.V(4).Info("Found backup data in snapshot config",
@@ -617,8 +622,7 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 func getVMYamlFromSnapshotFromSynthesizedSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	snapCR *vmopv1.VirtualMachineSnapshot,
-	moSnap mo.VirtualMachineSnapshot,
-	snap *vimtypes.ManagedObjectReference) (string, error) {
+	moSnap mo.VirtualMachineSnapshot) (string, error) {
 
 	logger := pkglog.FromContextOrDefault(vmCtx)
 
@@ -651,28 +655,6 @@ func getVMYamlFromSnapshotFromSynthesizedSpec(
 			APIVersion: vmopv1.GroupVersion.String(),
 		},
 		Spec: synthesizeVMSpecForSnapshot(*vmCtx.VM, vmCtx.MoVM, moSnap),
-	}
-
-	// Inferred from the power state of the snapshot
-	// It doesn't matter what the power state of the VM is at the time of
-	// revert.
-	// The VM is always reverted in the same power state as the snapshot.
-	snapshot := vmlifecycle.FindSnapshotInTree(
-		vmCtx.MoVM.Snapshot.RootSnapshotList, snap.Value)
-	if snapshot == nil {
-		// weird situation here
-		// the snapshot being processed doesn't exist in the snapshot tree
-		// this shouldn't be happening
-		return "", fmt.Errorf(
-			"failed to find snapshot %q in tree", snap.Value)
-	}
-
-	// Convert from vimtypes.VirtualMachinePowerState to
-	// vmopv1.VirtualMachinePowerState
-	if snapshot.State == vimtypes.VirtualMachinePowerStatePoweredOn {
-		vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-	} else {
-		vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 	}
 
 	// Number of elements in the spec.network.interfaces list must be same
@@ -978,4 +960,38 @@ func (vs *vSphereVMProvider) unmarshalAndConvertVMFromYAML(
 	}
 
 	return vm, nil
+}
+
+func (vs *vSphereVMProvider) reconcilePostRevertPowerState(
+	vmCtx pkgctx.VirtualMachineContext,
+	snapObj *vimtypes.ManagedObjectReference) error {
+
+	snap := vmlifecycle.FindSnapshotInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, snapObj.Value)
+	if snap == nil {
+		// weird situation here
+		// the snapshot being processed doesn't exist in the snapshot tree
+		// this shouldn't be happening
+		return fmt.Errorf("snapshot %s not found in VM Snapshot Tree", snapObj.Value)
+	}
+
+	// vpxd sets the power state of the snapshot to Off if a VM which is On
+	// is snapshotted without the memory state. We don't need to separately
+	// handle that case here.
+	switch snap.State {
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
+		vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
+		vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+	case vimtypes.VirtualMachinePowerStateSuspended:
+		vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+	default:
+		// Unknown state, log and default to off
+		// this is very very unlikely to happen
+		vmCtx.Logger.Info(
+			"Unknown snapshot power state, defaulting to Off",
+			"snapshotState", snap.State)
+		vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+	}
+
+	return nil
 }

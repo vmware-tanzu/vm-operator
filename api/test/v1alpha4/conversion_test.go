@@ -88,9 +88,6 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineImage{},
 				Spoke:  &vmopv1a4.VirtualMachineImage{},
-				FuzzerFuncs: []fuzzer.FuzzerFuncs{
-					overrideVirtualMachineImageFieldsFuncs,
-				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -111,32 +108,6 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.ClusterVirtualMachineImage{},
 				Spoke:  &vmopv1a4.ClusterVirtualMachineImage{},
-				FuzzerFuncs: []fuzzer.FuzzerFuncs{
-					overrideVirtualMachineImageFieldsFuncs,
-				},
-			}
-		})
-		Context("Spoke-Hub-Spoke", func() {
-			It("should get fuzzy with it", func() {
-				fuzztests.SpokeHubSpoke(input)
-			})
-		})
-		Context("Hub-Spoke-Hub", func() {
-			It("should get fuzzy with it", func() {
-				fuzztests.HubSpokeHub(input)
-			})
-		})
-	})
-
-	Context("VirtualMachineImageCache", func() {
-		BeforeEach(func() {
-			input = fuzztests.FuzzTestFuncInput{
-				Scheme: scheme,
-				Hub:    &vmopv1.VirtualMachineImageCache{},
-				Spoke:  &vmopv1a4.VirtualMachineImageCache{},
-				FuzzerFuncs: []fuzzer.FuzzerFuncs{
-					overrideVirtualMachineImageCacheFieldsFuncs,
-				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -299,32 +270,6 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 		},
 		func(msg *json.RawMessage, c randfill.Continue) {
 			*msg = []byte(`{"foo": "bar"}`)
-		},
-	}
-}
-
-func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
-	return []interface{}{
-		func(vmiStatus *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
-			c.Fill(vmiStatus)
-
-			// Since only VMOP updates the CVMI/VMI's we didn't bother with conversion
-			// when adding this field.
-			vmiStatus.Disks = nil
-		},
-	}
-}
-
-func overrideVirtualMachineImageCacheFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
-	return []interface{}{
-		func(status *vmopv1.VirtualMachineImageCacheStatus, c randfill.Continue) {
-			c.Fill(status)
-
-			for i := range status.Locations {
-				for j := range status.Locations[i].Files {
-					status.Locations[i].Files[j].Type = ""
-				}
-			}
 		},
 	}
 }

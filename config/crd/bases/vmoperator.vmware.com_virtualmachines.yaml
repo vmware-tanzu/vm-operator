@@ -14846,8 +14846,9 @@ spec:
                   of the VirtualMachine.
                 properties:
                   reference:
-                    description: Reference is the reference to the snapshot in the
-                      Supervisor.
+                    description: |-
+                      Reference is the reference to the snapshot in the Supervisor.
+                      This should be set only for Managed snapshots.
                     properties:
                       apiVersion:
                         description: |-
@@ -14876,11 +14877,9 @@ spec:
                   type:
                     default: Managed
                     description: |-
-                      Type is the type of the snapshot reference.
+                      Type describes the type of the snapshot reference.
 
-                      The value can be one of the following:
-                      - Managed
-                      - Unmanaged
+                      Possible values are: Managed, Unmanaged
                     enum:
                     - Managed
                     - Unmanaged
@@ -15716,8 +15715,9 @@ spec:
                 items:
                   properties:
                     reference:
-                      description: Reference is the reference to the snapshot in the
-                        Supervisor.
+                      description: |-
+                        Reference is the reference to the snapshot in the Supervisor.
+                        This should be set only for Managed snapshots.
                       properties:
                         apiVersion:
                           description: |-
@@ -15746,11 +15746,9 @@ spec:
                     type:
                       default: Managed
                       description: |-
-                        Type is the type of the snapshot reference.
+                        Type describes the type of the snapshot reference.
 
-                        The value can be one of the following:
-                        - Managed
-                        - Unmanaged
+                        Possible values are: Managed, Unmanaged
                       enum:
                       - Managed
                       - Unmanaged

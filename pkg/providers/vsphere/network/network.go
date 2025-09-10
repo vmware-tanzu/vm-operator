@@ -390,7 +390,11 @@ func createNetOPNetworkInterface(
 		netIf.Labels[VMNameLabel] = vmCtx.VM.Name
 		netIf.Labels[VMInterfaceNameLabel] = interfaceSpec.Name
 
-		netIf.Spec.NetworkName = networkRefName
+		// NetOp will update the Spec with the default network name so we don't clear that
+		// here if using the default network.
+		if networkRefName != "" {
+			netIf.Spec.NetworkName = networkRefName
+		}
 		// NetOP only defines a VMXNet3 type, but it doesn't really matter for our purposes.
 		netIf.Spec.Type = netopv1alpha1.NetworkInterfaceTypeVMXNet3
 		return nil

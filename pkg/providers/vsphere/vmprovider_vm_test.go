@@ -3680,6 +3680,36 @@ func vmTests() {
 						Expect(err.Error()).To(ContainSubstring("snapshot revert in progress"))
 					})
 				})
+
+				Context("when snapshot revert fails and revert is aborted", func() {
+					It("should clear the revert succeeded condition", func() {
+						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+							Name:       vmSnapshot.Name,
+						}
+
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(
+							ContainSubstring("virtualmachinesnapshots.vmoperator.vmware.com " +
+								"\"test-revert-snap\" not found"))
+
+						Expect(conditions.IsFalse(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded,
+						)).To(BeTrue())
+						Expect(conditions.GetReason(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded,
+						)).To(Equal(vmopv1.VirtualMachineSnapshotRevertFailedReason))
+
+						vm.Spec.CurrentSnapshot = nil
+						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+
+						Expect(conditions.Get(vm,
+							vmopv1.VirtualMachineSnapshotRevertSucceeded),
+						).To(BeNil())
+					})
+				})
 			})
 
 			Context("CNS Volumes", func() {

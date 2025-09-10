@@ -534,7 +534,7 @@ func intgTestsReconcile() {
 				Expect(attachment.Spec.VolumeName).To(Equal(vmVolume1.PersistentVolumeClaim.ClaimName))
 
 				// Add our own finalizer so it hangs around after the delete below.
-				attachment.Finalizers = append(attachment.Finalizers, "test-finalizer")
+				attachment.Finalizers = append(attachment.Finalizers, "vmoperator.vmware.com/test-finalizer")
 				Expect(ctx.Client.Update(ctx, attachment)).To(Succeed())
 			})
 

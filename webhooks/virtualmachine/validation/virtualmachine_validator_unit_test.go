@@ -3461,6 +3461,7 @@ func unitTestsValidateCreate() {
 	})
 }
 
+//nolint:gocyclo
 func unitTestsValidateUpdate() {
 	var (
 		ctx *unitValidatingWebhookContext
@@ -3477,6 +3478,8 @@ func unitTestsValidateUpdate() {
 		assignZoneName              bool
 		changeZoneName              bool
 		unsetZone                   bool
+		hasRestoredAnnotation       bool
+		hasFailedOverAnnotation     bool
 		isSysprepTransportUsed      bool
 		withInstanceStorageVolumes  bool
 		changeInstanceStorageVolume bool
@@ -3542,6 +3545,20 @@ func unitTestsValidateUpdate() {
 			} else {
 				ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName + updateSuffix
 			}
+		}
+
+		if args.hasRestoredAnnotation {
+			if ctx.vm.Annotations == nil {
+				ctx.vm.Annotations = make(map[string]string)
+			}
+			ctx.vm.Annotations[vmopv1.RestoredVMAnnotation] = ""
+		}
+
+		if args.hasFailedOverAnnotation {
+			if ctx.vm.Annotations == nil {
+				ctx.vm.Annotations = make(map[string]string)
+			}
+			ctx.vm.Annotations[vmopv1.FailedOverVMAnnotation] = ""
 		}
 
 		if args.withInstanceStorageVolumes {
@@ -3621,11 +3638,11 @@ func unitTestsValidateUpdate() {
 		Entry("should allow empty instance uuid change", updateArgs{changeInstanceUUID: true}, true, nil, nil),
 		Entry("should allow empty bios uuid change", updateArgs{changeBiosUUID: true}, true, nil, nil),
 		Entry("should allow initial zone assignment", updateArgs{assignZoneName: true}, true, nil, nil),
-		Entry("should deny zone change for non-privileged user", updateArgs{changeZoneName: true}, false,
+		Entry("should deny zone change", updateArgs{changeZoneName: true}, false,
 			field.Invalid(field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey), builder.DummyZoneName+updateSuffix, "field is immutable").Error(), nil),
-		Entry("should allow zone change for privileged user", updateArgs{changeZoneName: true, isServiceUser: true}, true, nil, nil),
 		Entry("should allow zone unset for privileged user", updateArgs{changeZoneName: true, isServiceUser: true, unsetZone: true}, true, nil, nil),
-
+		Entry("should allow zone unset for non-privileged user with restored annotation", updateArgs{changeZoneName: true, unsetZone: true, hasRestoredAnnotation: true}, true, nil, nil),
+		Entry("should allow zone unset for non-privileged user with failed over annotation", updateArgs{changeZoneName: true, unsetZone: true, hasFailedOverAnnotation: true}, true, nil, nil),
 		Entry("should deny instance storage volume name change, when user is SSO user", updateArgs{changeInstanceStorageVolume: true}, false,
 			field.Forbidden(volumesPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
 		Entry("should deny adding new instance storage volume, when user is SSO user", updateArgs{withInstanceStorageVolumes: true}, false,

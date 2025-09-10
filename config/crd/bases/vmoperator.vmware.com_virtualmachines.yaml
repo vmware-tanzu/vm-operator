@@ -14845,29 +14845,48 @@ spec:
                 description: CurrentSnapshot describes the observed working snapshot
                   of the VirtualMachine.
                 properties:
-                  apiVersion:
+                  reference:
+                    description: Reference is the reference to the snapshot in the
+                      Supervisor.
+                    properties:
+                      apiVersion:
+                        description: |-
+                          APIVersion defines the versioned schema of this representation of an
+                          object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                        type: string
+                      kind:
+                        description: |-
+                          Kind is a string value representing the REST resource this object
+                          represents.
+                          Servers may infer this from the endpoint the client submits requests to.
+                          Cannot be updated.
+                          In CamelCase.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name refers to a unique resource in the current namespace.
+                          More info: http://kubernetes.io/docs/user-guide/identifiers#names
+                        type: string
+                    required:
+                    - apiVersion
+                    - kind
+                    - name
+                    type: object
+                  type:
+                    default: Managed
                     description: |-
-                      APIVersion defines the versioned schema of this representation of an
-                      object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
-                    type: string
-                  kind:
-                    description: |-
-                      Kind is a string value representing the REST resource this object
-                      represents.
-                      Servers may infer this from the endpoint the client submits requests to.
-                      Cannot be updated.
-                      In CamelCase.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
-                    description: |-
-                      Name refers to a unique resource in the current namespace.
-                      More info: http://kubernetes.io/docs/user-guide/identifiers#names
+                      Type is the type of the snapshot reference.
+
+                      The value can be one of the following:
+                      - Managed
+                      - Unmanaged
+                    enum:
+                    - Managed
+                    - Unmanaged
                     type: string
                 required:
-                - apiVersion
-                - kind
-                - name
+                - type
                 type: object
               guest:
                 description: Guest describes the observed state of the VM's guest.
@@ -15695,33 +15714,49 @@ spec:
                   used to construct the entire snapshot chain of a virtual
                   machine.
                 items:
-                  description: |-
-                    LocalObjectRef describes a reference to another object in the same
-                    namespace as the referrer.
                   properties:
-                    apiVersion:
+                    reference:
+                      description: Reference is the reference to the snapshot in the
+                        Supervisor.
+                      properties:
+                        apiVersion:
+                          description: |-
+                            APIVersion defines the versioned schema of this representation of an
+                            object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                          type: string
+                        kind:
+                          description: |-
+                            Kind is a string value representing the REST resource this object
+                            represents.
+                            Servers may infer this from the endpoint the client submits requests to.
+                            Cannot be updated.
+                            In CamelCase.
+                            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                          type: string
+                        name:
+                          description: |-
+                            Name refers to a unique resource in the current namespace.
+                            More info: http://kubernetes.io/docs/user-guide/identifiers#names
+                          type: string
+                      required:
+                      - apiVersion
+                      - kind
+                      - name
+                      type: object
+                    type:
+                      default: Managed
                       description: |-
-                        APIVersion defines the versioned schema of this representation of an
-                        object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
-                      type: string
-                    kind:
-                      description: |-
-                        Kind is a string value representing the REST resource this object
-                        represents.
-                        Servers may infer this from the endpoint the client submits requests to.
-                        Cannot be updated.
-                        In CamelCase.
-                        More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                      type: string
-                    name:
-                      description: |-
-                        Name refers to a unique resource in the current namespace.
-                        More info: http://kubernetes.io/docs/user-guide/identifiers#names
+                        Type is the type of the snapshot reference.
+
+                        The value can be one of the following:
+                        - Managed
+                        - Unmanaged
+                      enum:
+                      - Managed
+                      - Unmanaged
                       type: string
                   required:
-                  - apiVersion
-                  - kind
-                  - name
+                  - type
                   type: object
                 type: array
               storage:

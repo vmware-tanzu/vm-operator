@@ -3316,7 +3316,7 @@ var _ = Describe("Snapshot status", func() {
 		When("VM has no snapshots", func() {
 			BeforeEach(func() {
 				vmCtx.MoVM.Snapshot = nil
-				vmCtx.VM.Status.CurrentSnapshot = snapshotLocalRef("old-snapshot")
+				vmCtx.VM.Status.CurrentSnapshot = snapshotRefManaged("old-snapshot")
 			})
 
 			It("should clear the current snapshot status", func() {
@@ -3339,7 +3339,7 @@ var _ = Describe("Snapshot status", func() {
 						},
 					},
 				}
-				vmCtx.VM.Status.CurrentSnapshot = snapshotLocalRef("old-snapshot")
+				vmCtx.VM.Status.CurrentSnapshot = snapshotRefManaged("old-snapshot")
 			})
 
 			It("should clear the current snapshot status", func() {
@@ -3365,7 +3365,7 @@ var _ = Describe("Snapshot status", func() {
 						},
 					},
 				}
-				vmCtx.VM.Status.CurrentSnapshot = snapshotLocalRef("old-snapshot")
+				vmCtx.VM.Status.CurrentSnapshot = snapshotRefManaged("old-snapshot")
 			})
 
 			It("should clear the current snapshot status", func() {
@@ -3415,29 +3415,32 @@ var _ = Describe("Snapshot status", func() {
 				It("should update the current snapshot status to match the found snapshot", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
-					Expect(vmCtx.VM.Status.CurrentSnapshot.APIVersion).To(Equal(vmSnapshot.APIVersion))
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Kind).To(Equal(vmSnapshot.Kind))
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+					Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.APIVersion).To(Equal(vmSnapshot.APIVersion))
+					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Kind).To(Equal(vmSnapshot.Kind))
+					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
 				})
 			})
 
 			When("the snapshot custom resource doesn't exist", func() {
 				BeforeEach(func() {
+					// clear the finalizers to allow for actual deletion of the resource
+					vmSnapshot.Finalizers = []string{}
+					Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
 					Expect(ctx.Client.Delete(ctx, vmSnapshot)).To(Succeed())
 				})
 
-				It("should clear the current snapshot status", func() {
+				It("should mark an Unmanaged snapshot as the current snapshot", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
-					Expect(vmCtx.VM.Status.CurrentSnapshot).To(BeNil())
+					Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
+					Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged))
 				})
 			})
 			When("the snapshot custom resource that is marked for deletion", func() {
 				BeforeEach(func() {
-					// Set a finalizer
-					vmSnapshot.Finalizers = append(vmSnapshot.Finalizers, "random-finalizer")
-					Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
-					// Mark the snapshot for deletion. The finalizer will
-					// make sure the object is not garbage collected.
+					// the vmSnapshot object already has the vmoperator.vmware.com/virtualmachinesnapshot finalizer
+					// it will only be marked for deletion but not actually deleted
 					Expect(ctx.Client.Delete(ctx, vmSnapshot)).To(Succeed())
 				})
 
@@ -3486,7 +3489,9 @@ var _ = Describe("Snapshot status", func() {
 			It("should find and update the current snapshot status for the nested snapshot", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("child-snapshot"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("child-snapshot"))
 			})
 		})
 
@@ -3539,7 +3544,9 @@ var _ = Describe("Snapshot status", func() {
 			It("should find and update the current snapshot status for the deeply nested snapshot", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("deep-snapshot"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("deep-snapshot"))
 			})
 		})
 
@@ -3577,7 +3584,24 @@ var _ = Describe("Snapshot status", func() {
 			It("should find and update the current snapshot status from the second root snapshot", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("snapshot-2"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("snapshot-2"))
+			})
+
+			It("should find and update the correct root snapshots in the status", func() {
+				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
+				Expect(vmCtx.VM.Status).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(2))
+
+				Expect(vmCtx.VM.Status.RootSnapshots[0]).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged))
+				Expect(vmCtx.VM.Status.RootSnapshots[0].Reference).To(BeNil())
+
+				Expect(vmCtx.VM.Status.RootSnapshots[1]).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.RootSnapshots[1].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
+				Expect(vmCtx.VM.Status.RootSnapshots[1].Reference).ToNot(BeNil())
+				Expect(vmCtx.VM.Status.RootSnapshots[1].Reference.Name).To(Equal("snapshot-2"))
 			})
 		})
 
@@ -3588,10 +3612,13 @@ var _ = Describe("Snapshot status", func() {
 				vmSnapshot = builder.DummyVirtualMachineSnapshot(vmCtx.VM.Namespace, "test-snapshot", vmCtx.VM.Name)
 				Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 
-				vmCtx.VM.Status.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot.APIVersion,
-					Kind:       vmSnapshot.Kind,
-					Name:       vmSnapshot.Name,
+				vmCtx.VM.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
+					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+					Reference: &vmopv1common.LocalObjectRef{
+						APIVersion: vmSnapshot.APIVersion,
+						Kind:       vmSnapshot.Kind,
+						Name:       vmSnapshot.Name,
+					},
 				}
 
 				vmCtx.MoVM.Snapshot = &vimtypes.VirtualMachineSnapshotInfo{
@@ -3830,19 +3857,30 @@ var _ = Describe("Snapshot status", func() {
 					Namespace: vmCtx.VM.Namespace,
 					Name:      "snapshot-1",
 				}, vmSnapshot1)).To(Succeed())
-				Expect(vmSnapshot1.Status.Children).To(ContainElements(vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot2.APIVersion,
-					Kind:       vmSnapshot2.Kind,
-					Name:       vmSnapshot2.Name,
-				}, vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot3.APIVersion,
-					Kind:       vmSnapshot3.Kind,
-					Name:       vmSnapshot3.Name,
-				}, vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot4.APIVersion,
-					Kind:       vmSnapshot4.Kind,
-					Name:       vmSnapshot4.Name,
-				}))
+				Expect(vmSnapshot1.Status.Children).To(HaveLen(3))
+				Expect(vmSnapshot1.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
+					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+					Reference: &vmopv1common.LocalObjectRef{
+						APIVersion: vmSnapshot2.APIVersion,
+						Kind:       vmSnapshot2.Kind,
+						Name:       vmSnapshot2.Name,
+					}},
+					vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Reference: &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot3.APIVersion,
+							Kind:       vmSnapshot3.Kind,
+							Name:       vmSnapshot3.Name,
+						},
+					},
+					vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Reference: &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot4.APIVersion,
+							Kind:       vmSnapshot4.Kind,
+							Name:       vmSnapshot4.Name,
+						},
+					}))
 
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3858,10 +3896,14 @@ var _ = Describe("Snapshot status", func() {
 					Namespace: vmCtx.VM.Namespace,
 					Name:      "snapshot-4",
 				}, vmSnapshot4)).To(Succeed())
-				Expect(vmSnapshot4.Status.Children).To(ContainElements(vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot5.APIVersion,
-					Kind:       vmSnapshot5.Kind,
-					Name:       vmSnapshot5.Name,
+				Expect(vmSnapshot4.Status.Children).To(HaveLen(1))
+				Expect(vmSnapshot4.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
+					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+					Reference: &vmopv1common.LocalObjectRef{
+						APIVersion: vmSnapshot5.APIVersion,
+						Kind:       vmSnapshot5.Kind,
+						Name:       vmSnapshot5.Name,
+					},
 				}))
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3872,10 +3914,14 @@ var _ = Describe("Snapshot status", func() {
 					Namespace: vmCtx.VM.Namespace,
 					Name:      "snapshot-6",
 				}, vmSnapshot6)).To(Succeed())
-				Expect(vmSnapshot6.Status.Children).To(ContainElements(vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot7.APIVersion,
-					Kind:       vmSnapshot7.Kind,
-					Name:       vmSnapshot7.Name,
+				Expect(vmSnapshot6.Status.Children).To(HaveLen(1))
+				Expect(vmSnapshot6.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
+					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+					Reference: &vmopv1common.LocalObjectRef{
+						APIVersion: vmSnapshot7.APIVersion,
+						Kind:       vmSnapshot7.Kind,
+						Name:       vmSnapshot7.Name,
+					},
 				}))
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3900,15 +3946,29 @@ var _ = Describe("Snapshot status", func() {
 						Namespace: vmCtx.VM.Namespace,
 						Name:      "snapshot-1",
 					}, vmSnapshot1)).To(Succeed())
-					Expect(vmSnapshot1.Status.Children).To(ContainElements(vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot2.APIVersion,
-						Kind:       vmSnapshot2.Kind,
-						Name:       vmSnapshot2.Name,
-					}, vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot3.APIVersion,
-						Kind:       vmSnapshot3.Kind,
-						Name:       vmSnapshot3.Name,
-					}))
+					Expect(vmSnapshot1.Status.Children).To(HaveLen(3))
+					Expect(vmSnapshot1.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Reference: &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot2.APIVersion,
+							Kind:       vmSnapshot2.Kind,
+							Name:       vmSnapshot2.Name,
+						},
+					},
+						vmopv1.VirtualMachineSnapshotReference{
+							Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+							Reference: &vmopv1common.LocalObjectRef{
+								APIVersion: vmSnapshot3.APIVersion,
+								Kind:       vmSnapshot3.Kind,
+								Name:       vmSnapshot3.Name,
+							},
+						},
+						vmopv1.VirtualMachineSnapshotReference{
+							Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
+							// snapshot-4 is deleted, so it should be marked as Unmanaged
+							Reference: nil,
+						},
+					))
 
 					Expect(ctx.Client.Get(ctx, types.NamespacedName{
 						Namespace: vmCtx.VM.Namespace,
@@ -3929,10 +3989,14 @@ var _ = Describe("Snapshot status", func() {
 						Namespace: vmCtx.VM.Namespace,
 						Name:      "snapshot-6",
 					}, vmSnapshot6)).To(Succeed())
-					Expect(vmSnapshot6.Status.Children).To(ContainElements(vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot7.APIVersion,
-						Kind:       vmSnapshot7.Kind,
-						Name:       vmSnapshot7.Name,
+					Expect(vmSnapshot6.Status.Children).To(HaveLen(1))
+					Expect(vmSnapshot6.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Reference: &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot7.APIVersion,
+							Kind:       vmSnapshot7.Kind,
+							Name:       vmSnapshot7.Name,
+						},
 					}))
 					Expect(ctx.Client.Get(ctx, types.NamespacedName{
 						Namespace: vmCtx.VM.Namespace,
@@ -3980,12 +4044,12 @@ var _ = Describe("Snapshot status", func() {
 		})
 	})
 
-	Context("updateSnapshotTreeChildrenStatus", func() {
+	Context("updateRootSnapshots", func() {
 		When("VM has no snapshots", func() {
 			BeforeEach(func() {
 				vmCtx.MoVM.Snapshot = nil
-				vmCtx.VM.Status.RootSnapshots = []vmopv1common.LocalObjectRef{
-					*snapshotLocalRef("old-snapshot"),
+				vmCtx.VM.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{
+					*snapshotRefManaged("old-snapshot"),
 				}
 			})
 
@@ -4000,8 +4064,8 @@ var _ = Describe("Snapshot status", func() {
 				vmCtx.MoVM.Snapshot = &vimtypes.VirtualMachineSnapshotInfo{
 					RootSnapshotList: []vimtypes.VirtualMachineSnapshotTree{},
 				}
-				vmCtx.VM.Status.RootSnapshots = []vmopv1common.LocalObjectRef{
-					*snapshotLocalRef("old-snapshot"),
+				vmCtx.VM.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{
+					*snapshotRefManaged("old-snapshot"),
 				}
 			})
 
@@ -4028,7 +4092,7 @@ var _ = Describe("Snapshot status", func() {
 						},
 					},
 				}
-				vmCtx.VM.Status.CurrentSnapshot = snapshotLocalRef("old-snapshot")
+				vmCtx.VM.Status.CurrentSnapshot = snapshotRefManaged("old-snapshot")
 			})
 
 			It("should clear the current snapshot status", func() {
@@ -4079,11 +4143,13 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot.APIVersion,
-						Kind:       vmSnapshot.Kind,
-						Name:       vmSnapshot.Name,
-					}))
+					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Reference: &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+							Name:       vmSnapshot.Name,
+						}}))
 				})
 			})
 
@@ -4095,19 +4161,19 @@ var _ = Describe("Snapshot status", func() {
 					Expect(ctx.Client.Delete(ctx, vmSnapshot)).To(Succeed())
 				})
 
-				It("should clear the root snapshots status", func() {
+				It("should mark an Unmanaged snapshot", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
-					Expect(vmCtx.VM.Status.RootSnapshots).To(BeNil())
+					Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(1))
+					Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
+					}))
 				})
 			})
 
 			When("the snapshot custom resource that is marked for deletion", func() {
 				BeforeEach(func() {
-					// Set a finalizer
-					vmSnapshot.Finalizers = append(vmSnapshot.Finalizers, "random-finalizer")
-					Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
-					// Mark the snapshot for deletion. The finalizer will
-					// make sure the object is not garbage collected.
+					// the vmSnapshot object already has the vmoperator.vmware.com/virtualmachinesnapshot finalizer
+					// it will only be marked for deletion but not actually deleted
 					Expect(ctx.Client.Delete(ctx, vmSnapshot)).To(Succeed())
 				})
 
@@ -4115,7 +4181,10 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(*snapshotLocalRef("test-snapshot")))
+					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(vmopv1.VirtualMachineSnapshotReference{
+						Type:      vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Reference: snapshotLocalRef("test-snapshot"),
+					}))
 				})
 			})
 		})
@@ -4157,15 +4226,21 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(2))
-				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot1.APIVersion,
-					Kind:       vmSnapshot1.Kind,
-					Name:       vmSnapshot1.Name,
+				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1.VirtualMachineSnapshotReference{
+					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+					Reference: &vmopv1common.LocalObjectRef{
+						APIVersion: vmSnapshot1.APIVersion,
+						Kind:       vmSnapshot1.Kind,
+						Name:       vmSnapshot1.Name,
+					},
 				}))
-				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1common.LocalObjectRef{
-					APIVersion: vmSnapshot2.APIVersion,
-					Kind:       vmSnapshot2.Kind,
-					Name:       vmSnapshot2.Name,
+				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1.VirtualMachineSnapshotReference{
+					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+					Reference: &vmopv1common.LocalObjectRef{
+						APIVersion: vmSnapshot2.APIVersion,
+						Kind:       vmSnapshot2.Kind,
+						Name:       vmSnapshot2.Name,
+					},
 				}))
 			})
 		})
@@ -4177,11 +4252,14 @@ var _ = Describe("Snapshot status", func() {
 				vmSnapshot = builder.DummyVirtualMachineSnapshot(vmCtx.VM.Namespace, "test-snapshot", vmCtx.VM.Name)
 				Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
 
-				vmCtx.VM.Status.RootSnapshots = []vmopv1common.LocalObjectRef{
+				vmCtx.VM.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{
 					{
-						APIVersion: vmSnapshot.APIVersion,
-						Kind:       vmSnapshot.Kind,
-						Name:       vmSnapshot.Name,
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Reference: &vmopv1common.LocalObjectRef{
+							APIVersion: vmSnapshot.APIVersion,
+							Kind:       vmSnapshot.Kind,
+							Name:       vmSnapshot.Name,
+						},
 					},
 				}
 
@@ -4252,6 +4330,14 @@ func (m *mockClient) Get(ctx context.Context, key ctrlclient.ObjectKey, obj ctrl
 		return m.getError
 	}
 	return m.Client.Get(ctx, key, obj, opts...)
+}
+
+//nolint:unparam
+func snapshotRefManaged(snapshotName string) *vmopv1.VirtualMachineSnapshotReference {
+	return &vmopv1.VirtualMachineSnapshotReference{
+		Type:      vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+		Reference: snapshotLocalRef(snapshotName),
+	}
 }
 
 func snapshotLocalRef(snapshotName string) *vmopv1common.LocalObjectRef {

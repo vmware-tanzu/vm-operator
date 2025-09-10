@@ -1232,7 +1232,7 @@ type VirtualMachineStatus struct {
 	// +optional
 
 	// CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
-	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
+	CurrentSnapshot *VirtualMachineSnapshotReference `json:"currentSnapshot,omitempty"`
 
 	// +optional
 
@@ -1241,7 +1241,7 @@ type VirtualMachineStatus struct {
 	// snapshots, these root snapshot references can effectively be
 	// used to construct the entire snapshot chain of a virtual
 	// machine.
-	RootSnapshots []vmopv1common.LocalObjectRef `json:"rootSnapshots,omitempty"`
+	RootSnapshots []VirtualMachineSnapshotReference `json:"rootSnapshots,omitempty"`
 
 	// Guest describes the observed state of the VM's guest.
 	Guest *VirtualMachineGuestStatus `json:"guest,omitempty"`

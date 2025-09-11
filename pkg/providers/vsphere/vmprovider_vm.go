@@ -1393,12 +1393,33 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 
 	if pkgcfg.FromContext(vmCtx).Features.VMGroups &&
 		vmCtx.VM.Spec.GroupName != "" {
-		vmCtx.Logger.Info(
-			"Getting VM placement result from its group",
-			"groupName", vmCtx.VM.Spec.GroupName,
-		)
 
-		return vs.vmCreateDoPlacementByGroup(vmCtx, vcClient, createArgs)
+		// First update and check if the VM is linked to its group.
+		if err := vmopv1util.UpdateGroupLinkedCondition(
+			vmCtx,
+			vmCtx.VM,
+			vs.k8sClient,
+		); err != nil {
+			return fmt.Errorf("failed to update VM group linked condition: %w", err)
+		}
+
+		if !pkgcnd.IsTrue(
+			vmCtx.VM,
+			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+		) {
+			return fmt.Errorf("VM is not linked to its group")
+		}
+
+		// If the VM has an explicit zone label, skip group placement
+		// and use the regular placement flow to respect the zone override.
+		if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName == "" {
+			vmCtx.Logger.Info(
+				"Getting VM placement result from its group",
+				"groupName", vmCtx.VM.Spec.GroupName,
+			)
+
+			return vs.vmCreateDoPlacementByGroup(vmCtx, vcClient, createArgs)
+		}
 	}
 
 	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
@@ -1444,22 +1465,6 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 	// Should never happen when this function is called, check just in case.
 	if vmCtx.VM.Spec.GroupName == "" {
 		return fmt.Errorf("VM.Spec.GroupName is empty")
-	}
-
-	// First update and check if the VM is linked to its group.
-	if err := vmopv1util.UpdateGroupLinkedCondition(
-		vmCtx,
-		vmCtx.VM,
-		vs.k8sClient,
-	); err != nil {
-		return fmt.Errorf("failed to update VM group linked condition: %w", err)
-	}
-
-	if !pkgcnd.IsTrue(
-		vmCtx.VM,
-		vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-	) {
-		return fmt.Errorf("VM is not linked to its group")
 	}
 
 	var vmg vmopv1.VirtualMachineGroup

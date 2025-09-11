@@ -2496,10 +2496,12 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 
 		} else {
 			// This ConfigSpec Ethernet device does not have a corresponding entry in the VM Spec, so we
-			// won't ever have a backing for it. Remove it from the ConfigSpec since that is the easiest
+			// don't have a working backing for it. Remove it from the ConfigSpec since that is the easiest
 			// thing to do, since extra NICs can cause later complications around GOSC and other customizations.
-			// The downside with this is that if a NIC is added to the VM Spec, it won't necessarily have this
-			// config but the default. Revisit this later if we don't like that behavior.
+			// The downside with this is that if a NIC is added to the VM Spec, it will always have the default
+			// device type.
+			// Revisit this later if we don't like that behavior: the VirtualEthernetCardNetworkBackingInfo
+			// can be used for a placeholder backing.
 			unmatchedEthDevices = append(unmatchedEthDevices, idx-len(unmatchedEthDevices))
 		}
 	}

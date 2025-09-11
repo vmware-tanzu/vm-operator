@@ -121,7 +121,8 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
 				})
 
-				Expect(result.DHCP4).To(BeTrue())
+				Expect(result.DHCP4).To(BeFalse())
+				Expect(result.NoIPAM).To(BeFalse())
 				Expect(result.DHCP6).To(BeTrue()) // Only enabled if explicitly requested (which it is above).
 			})
 
@@ -400,6 +401,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 							},
 						}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						// No NetworkInterface Spec.MacAddress.
 						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
 							{
 								Type:   netopv1alpha1.NetworkInterfaceReady,
@@ -421,6 +423,90 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(results.Results).To(HaveLen(1))
 					result := results.Results[0]
 					Expect(result.MacAddress).To(Equal(macAddress))
+				})
+			})
+
+			When("DHCP is enabled", func() {
+				It("returns success", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NetOP reconcile", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeDHCP
+						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+							{
+								Type:   netopv1alpha1.NetworkInterfaceReady,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.DHCP4).To(BeTrue())
+					Expect(result.DHCP6).To(BeFalse())
+					Expect(result.NoIPAM).To(BeFalse())
+					Expect(result.IPConfigs).To(BeEmpty())
+				})
+			})
+
+			When("No IPAM is enabled", func() {
+				It("returns success", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NetOP reconcile", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						netInterface.Status.IPAssignmentMode = netopv1alpha1.NetworkInterfaceIPAssignmentModeNone
+						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+							{
+								Type:   netopv1alpha1.NetworkInterfaceReady,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.DHCP4).To(BeFalse())
+					Expect(result.DHCP6).To(BeFalse())
+					Expect(result.NoIPAM).To(BeTrue())
+					Expect(result.IPConfigs).To(BeEmpty())
 				})
 			})
 
@@ -940,6 +1026,106 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR))
 					Expect(ipConfig.IsIPv4).To(BeTrue())
 					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+				})
+			})
+
+			Context("DHCP is enabled", func() {
+				It("returns success", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NSX Operator reconcile", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+
+						subnetPort.Status.Attachment.ID = interfaceID
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet = false
+						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
+							{
+								Gateway: "192.168.1.1",
+							},
+						}
+						subnetPort.Status.Conditions = []vpcv1alpha1.Condition{
+							{
+								Type:   vpcv1alpha1.Ready,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.DHCP4).To(BeTrue())
+					Expect(result.DHCP6).To(BeFalse())
+					Expect(result.NoIPAM).To(BeFalse())
+					Expect(result.IPConfigs).To(BeEmpty())
+				})
+			})
+
+			Context("NoIPAM is enabled", func() {
+				It("returns success", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NSX Operator reconcile", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+
+						subnetPort.Status.Attachment.ID = interfaceID
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.DHCPDeactivatedOnSubnet = true
+						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
+							{
+								Gateway: "192.168.1.1",
+							},
+						}
+						subnetPort.Status.Conditions = []vpcv1alpha1.Condition{
+							{
+								Type:   vpcv1alpha1.Ready,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.DHCP4).To(BeFalse())
+					Expect(result.DHCP6).To(BeFalse())
+					Expect(result.NoIPAM).To(BeTrue())
+					Expect(result.IPConfigs).To(BeEmpty())
 				})
 			})
 		})

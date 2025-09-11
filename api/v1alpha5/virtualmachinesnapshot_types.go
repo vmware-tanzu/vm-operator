@@ -175,6 +175,9 @@ type VirtualMachineSnapshotStorageStatus struct {
 	Requested []VirtualMachineSnapshotStorageStatusRequested `json:"requested,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=Managed;Unmanaged
+
+// VirtualMachineSnapshotReferenceType defines the type of the snapshot reference.
 type VirtualMachineSnapshotReferenceType string
 
 const (
@@ -191,19 +194,17 @@ const (
 )
 
 type VirtualMachineSnapshotReference struct {
-	// +kubebuilder:validation:Enum=Managed;Unmanaged
 	// +kubebuilder:default=Managed
 
-	// Type is the type of the snapshot reference.
+	// Type describes the type of the snapshot reference.
 	//
-	// The value can be one of the following:
-	// - Managed
-	// - Unmanaged
+	// Possible values are: Managed, Unmanaged
 	Type VirtualMachineSnapshotReferenceType `json:"type"`
 
 	// +optional
 
 	// Reference is the reference to the snapshot in the Supervisor.
+	// This should be set only for Managed snapshots.
 	Reference *vmopv1common.LocalObjectRef `json:"reference,omitempty"`
 }
 

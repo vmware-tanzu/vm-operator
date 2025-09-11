@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,28 +46,54 @@ var _ = Describe(
 		var (
 			ctx *builder.IntegrationTestContext
 
-			vm1Key, vm2Key           types.NamespacedName
+			vm1Key, vm2Key, vm3Key   types.NamespacedName
+			vm1, vm2, vm3            *vmopv1.VirtualMachine
 			vmGroup1Key, vmGroup2Key types.NamespacedName
 		)
 
+		setupGroupWithMembers := func(groupKey types.NamespacedName, members []vmopv1.VirtualMachineGroupBootOrderGroup, parentGroupName ...string) {
+			GinkgoHelper()
+			group := &vmopv1.VirtualMachineGroup{}
+			Expect(ctx.Client.Get(ctx, groupKey, group)).To(Succeed())
+			groupCopy := group.DeepCopy()
+			groupCopy.Spec.BootOrder = members
+			if len(parentGroupName) > 0 {
+				groupCopy.Spec.GroupName = parentGroupName[0]
+			}
+			Expect(ctx.Client.Patch(ctx, groupCopy, client.MergeFrom(group))).To(Succeed())
+		}
+
+		assignVMToGroup := func(vmKey types.NamespacedName, groupName string) {
+			GinkgoHelper()
+			vm := &vmopv1.VirtualMachine{}
+			Expect(ctx.Client.Get(ctx, vmKey, vm)).To(Succeed())
+			vmCopy := vm.DeepCopy()
+			vmCopy.Spec.GroupName = groupName
+			Expect(ctx.Client.Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
+		}
+
 		BeforeEach(func() {
 			ctx = suite.NewIntegrationTestContext()
-
 			vmGroup1Key = types.NamespacedName{
-				Name:      "vmgroup-1",
+				Name:      "vmg-1-" + uuid.NewString(),
 				Namespace: ctx.Namespace,
 			}
 			vmGroup2Key = types.NamespacedName{
-				Name:      "vmgroup-2",
+				Name:      "vmg-2-" + uuid.NewString(),
 				Namespace: ctx.Namespace,
 			}
 
 			vm1Key = types.NamespacedName{
-				Name:      "vm-1",
+				Name:      "vm-1-" + uuid.NewString(),
 				Namespace: ctx.Namespace,
 			}
 			vm2Key = types.NamespacedName{
-				Name:      "vm-2",
+				Name:      "vm-2-" + uuid.NewString(),
+				Namespace: ctx.Namespace,
+			}
+
+			vm3Key = types.NamespacedName{
+				Name:      "vm-3-" + uuid.NewString(),
 				Namespace: ctx.Namespace,
 			}
 
@@ -79,7 +106,7 @@ var _ = Describe(
 			}
 			Expect(ctx.Client.Create(ctx, vmGroup1)).To(Succeed())
 
-			vm1 := &vmopv1.VirtualMachine{
+			vm1 = &vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: vm1Key.Namespace,
 					Name:      vm1Key.Name,
@@ -92,7 +119,7 @@ var _ = Describe(
 			}
 			Expect(ctx.Client.Create(ctx, vm1)).To(Succeed())
 
-			vm2 := &vmopv1.VirtualMachine{
+			vm2 = &vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: vm2Key.Namespace,
 					Name:      vm2Key.Name,
@@ -104,6 +131,19 @@ var _ = Describe(
 				},
 			}
 			Expect(ctx.Client.Create(ctx, vm2)).To(Succeed())
+
+			vm3 = &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: vm3Key.Namespace,
+					Name:      vm3Key.Name,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					ImageName:    dummyImage,
+					ClassName:    dummyClass,
+					StorageClass: storageClass,
+				},
+			}
+			Expect(ctx.Client.Create(ctx, vm3)).To(Succeed())
 
 			vmGroup2 := &vmopv1.VirtualMachineGroup{
 				ObjectMeta: metav1.ObjectMeta{
@@ -121,6 +161,7 @@ var _ = Describe(
 		})
 
 		Context("MemberToGroupMapperFn", func() {
+
 			It("should enqueue a reconcile for the group when the member is linked", func() {
 				// VM kind member.
 				vm := &vmopv1.VirtualMachine{
@@ -275,24 +316,14 @@ var _ = Describe(
 
 		Context("Members", func() {
 			BeforeEach(func() {
-				vmGroup1 := &vmopv1.VirtualMachineGroup{}
-				Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-				vmGroup1Copy := vmGroup1.DeepCopy()
-				vmGroup1Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
 					{
 						Members: []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: vm1Key.Name,
-							},
-							{
-								Kind: virtualMachineGroupKind,
-								Name: vmGroup2Key.Name,
-							},
+							{Kind: virtualMachineKind, Name: vm1Key.Name},
+							{Kind: virtualMachineGroupKind, Name: vmGroup2Key.Name},
 						},
 					},
-				}
-				Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+				})
 			})
 
 			When("members are not found", func() {
@@ -449,86 +480,74 @@ var _ = Describe(
 				}
 				intgFakeVMProvider.Unlock()
 
-				By("setting up group-1 with members vm-1 and vmgroup-2")
-				vmGroup1 := &vmopv1.VirtualMachineGroup{}
-				Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-				vmGroup1Copy := vmGroup1.DeepCopy()
-				vmGroup1Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
-					{
-						Members: []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: vm1Key.Name,
-							},
-						},
-					},
-					{
-						Members: []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineGroupKind,
-								Name: vmGroup2Key.Name,
-							},
-						},
-					},
+				setVMUniqueID := func(vmKey types.NamespacedName, uniqueID string) {
+					GinkgoHelper()
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vmKey, vm)).To(Succeed())
+					vmCopy := vm.DeepCopy()
+					vmCopy.Status.UniqueID = uniqueID
+					Expect(ctx.Client.Status().Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
 				}
-				Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
 
-				By("setting up group-2 with members vm-2")
-				vmGroup2 := &vmopv1.VirtualMachineGroup{}
-				Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-				vmGroup2Copy := vmGroup2.DeepCopy()
-				vmGroup2Copy.Spec.GroupName = vmGroup1Key.Name
-				vmGroup2Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				By("setting up group-1 with members vm-1, vm-3, and vmgroup-2")
+				setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
 					{
 						Members: []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: vm2Key.Name,
-							},
+							{Kind: virtualMachineKind, Name: vm1Key.Name},
+							{Kind: virtualMachineKind, Name: vm3Key.Name},
 						},
 					},
-				}
-				Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+					{
+						Members: []vmopv1.GroupMember{
+							{Kind: virtualMachineGroupKind, Name: vmGroup2Key.Name},
+						},
+					},
+				})
 
-				By("setting up group name for vm-1")
-				vm1 := &vmopv1.VirtualMachine{}
-				Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-				vm1Copy := vm1.DeepCopy()
-				vm1Copy.Spec.GroupName = vmGroup1Key.Name
-				Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+				By("setting up group-2 with member vm-2")
+				setupGroupWithMembers(vmGroup2Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{
+						Members: []vmopv1.GroupMember{
+							{Kind: virtualMachineKind, Name: vm2Key.Name},
+						},
+					},
+				}, vmGroup1Key.Name)
 
-				By("setting up group name for vm-2")
-				vm2 := &vmopv1.VirtualMachine{}
-				Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
-				vm2Copy := vm2.DeepCopy()
-				vm2Copy.Spec.GroupName = vmGroup2Key.Name
-				Expect(ctx.Client.Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
+				By("assigning VMs to groups")
+				assignVMToGroup(vm1Key, vmGroup1Key.Name)
+				assignVMToGroup(vm3Key, vmGroup1Key.Name)
+				assignVMToGroup(vm2Key, vmGroup2Key.Name)
+
+				By("setting up existing VMs")
+				setVMUniqueID(vm3Key, "vm-345")
+				setVMUniqueID(vm2Key, "vm-123")
 			})
 
 			It("should update groups with placement ready condition", func() {
-				Eventually(func(g Gomega) {
-					By("all group members should have expected placement ready condition state")
 
-					vmGroup2 := &vmopv1.VirtualMachineGroup{}
-					g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-					g.Expect(vmGroup2.Status.Members).To(HaveLen(1))
-					vm2MS := vmGroup2.Status.Members[0]
-					g.Expect(vm2MS.Name).To(Equal("vm-2"))
-					g.Expect(vm2MS.Kind).To(Equal("VirtualMachine"))
-					g.Expect(conditions.IsTrue(&vm2MS, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
+				expectPlacementCondition := func(g Gomega, groupKey types.NamespacedName, vmName, expectedReason string) {
+					group := &vmopv1.VirtualMachineGroup{}
+					g.Expect(ctx.Client.Get(ctx, groupKey, group)).To(Succeed())
 
-					vmGroup1 := &vmopv1.VirtualMachineGroup{}
-					g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-					found := false
-					for _, ms := range vmGroup1.Status.Members {
-						if ms.Name == "vm-1" && ms.Kind == "VirtualMachine" {
-							g.Expect(conditions.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
-							found = true
+					var member *vmopv1.VirtualMachineGroupMemberStatus
+					for i := range group.Status.Members {
+						if group.Status.Members[i].Name == vmName && group.Status.Members[i].Kind == "VirtualMachine" {
+							member = &group.Status.Members[i]
 							break
 						}
 					}
-					g.Expect(found).To(BeTrue(), "vm-1 in vmgroup-1 should have placement ready condition")
+					g.Expect(member).ToNot(BeNil())
+					g.Expect(conditions.IsTrue(member, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
+					if expectedReason != "" {
+						c := conditions.Get(member, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+						g.Expect(c.Reason).To(Equal(expectedReason))
+					}
+				}
 
+				Eventually(func(g Gomega) {
+					expectPlacementCondition(g, vmGroup2Key, vm2Key.Name, vmopv1.VirtualMachineGroupMemberAlreadyPlacedReason)
+					expectPlacementCondition(g, vmGroup1Key, vm1Key.Name, "") // No AlreadyExists reason if VM was placed through regular group controller driven placement.
+					expectPlacementCondition(g, vmGroup1Key, vm3Key.Name, vmopv1.VirtualMachineGroupMemberAlreadyPlacedReason)
 				}, "5s", "100ms").Should(Succeed())
 			})
 		})
@@ -539,53 +558,33 @@ var _ = Describe(
 			BeforeEach(func() {
 				// Set the time earlier to be able to compare with the status time.
 				updateGroupPowerStateTime = time.Now().Add(-5 * time.Minute)
+
 				By("setting up group-1 with members vm-1 and vmgroup-2")
-				vmGroup1 := &vmopv1.VirtualMachineGroup{}
-				Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-				vmGroup1Copy := vmGroup1.DeepCopy()
-				vmGroup1Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
 					{
 						Members: []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: vm1Key.Name,
-							},
+							{Kind: virtualMachineKind, Name: vm1Key.Name},
 						},
 					},
 					{
 						Members: []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineGroupKind,
-								Name: vmGroup2Key.Name,
-							},
+							{Kind: virtualMachineGroupKind, Name: vmGroup2Key.Name},
 						},
 					},
-				}
-				Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+				})
 
 				By("setting up group-2 with members vm-2")
-				vmGroup2 := &vmopv1.VirtualMachineGroup{}
-				Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-				vmGroup2Copy := vmGroup2.DeepCopy()
-				vmGroup2Copy.Spec.GroupName = vmGroup1Key.Name
-				vmGroup2Copy.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{
+				setupGroupWithMembers(vmGroup2Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
 					{
 						Members: []vmopv1.GroupMember{
-							{
-								Kind: virtualMachineKind,
-								Name: vm2Key.Name,
-							},
+							{Kind: virtualMachineKind, Name: vm2Key.Name},
 						},
 					},
-				}
-				Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+				}, vmGroup1Key.Name)
 
 				By("setting up group name and group linked condition for vm-1 to enqueue its group reconciliation")
-				vm1 := &vmopv1.VirtualMachine{}
-				Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-				vm1Copy := vm1.DeepCopy()
-				vm1Copy.Spec.GroupName = vmGroup1Key.Name
-				Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+				assignVMToGroup(vm1Key, vmGroup1Key.Name)
+
 				vm1Updated := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, vm1Key, vm1Updated)).To(Succeed())
 				vm1UpdatedCopy := vm1Updated.DeepCopy()
@@ -593,11 +592,8 @@ var _ = Describe(
 				Expect(ctx.Client.Status().Patch(ctx, vm1UpdatedCopy, client.MergeFrom(vm1Updated))).To(Succeed())
 
 				By("setting up group name and group linked condition for vm-2 to enqueue its group reconciliation")
-				vm2 := &vmopv1.VirtualMachine{}
-				Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
-				vm2Copy := vm2.DeepCopy()
-				vm2Copy.Spec.GroupName = vmGroup2Key.Name
-				Expect(ctx.Client.Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
+				assignVMToGroup(vm2Key, vmGroup2Key.Name)
+
 				vm2Updated := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, vm2Key, vm2Updated)).To(Succeed())
 				vm2UpdatedCopy := vm2Updated.DeepCopy()

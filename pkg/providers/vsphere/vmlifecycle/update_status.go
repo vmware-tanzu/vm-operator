@@ -35,6 +35,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -254,7 +255,8 @@ func reconcileStatusPowerState(
 	_ *object.VirtualMachine,
 	_ ReconcileStatusData) []error { //nolint:unparam
 
-	vmCtx.VM.Status.PowerState = convertPowerState(vmCtx.MoVM.Runtime.PowerState)
+	vmCtx.VM.Status.PowerState = vmopv1util.ConvertPowerState(vmCtx.Logger,
+		vmCtx.MoVM.Runtime.PowerState)
 
 	return nil
 }
@@ -539,18 +541,6 @@ func guestIPStackInfoToIPStackStatus(guestIPStack *vimtypes.GuestStackInfo) vmop
 	status.KernelConfig = convertKeyValueSlice(guestIPStack.IpStackConfig)
 
 	return status
-}
-
-func convertPowerState(powerState vimtypes.VirtualMachinePowerState) vmopv1.VirtualMachinePowerState {
-	switch powerState {
-	case vimtypes.VirtualMachinePowerStatePoweredOff:
-		return vmopv1.VirtualMachinePowerStateOff
-	case vimtypes.VirtualMachinePowerStatePoweredOn:
-		return vmopv1.VirtualMachinePowerStateOn
-	case vimtypes.VirtualMachinePowerStateSuspended:
-		return vmopv1.VirtualMachinePowerStateSuspended
-	}
-	return ""
 }
 
 func convertNetIPConfigInfoIPAddresses(ipAddresses []vimtypes.NetIpConfigInfoIpAddress) []vmopv1.VirtualMachineNetworkInterfaceIPAddrStatus {
@@ -1527,8 +1517,8 @@ func updateCurrentSnapshotStatus(
 	currentSnapMoref := vmCtx.MoVM.Snapshot.CurrentSnapshot
 
 	// Find the snapshot name by traversing the snapshot tree.
-	snapshot := FindSnapshotInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, currentSnapMoref.Value)
-	if snapshot == nil {
+	snapshot, err := virtualmachine.FindSnapshot(vmCtx.MoVM, currentSnapMoref.Value)
+	if err != nil || snapshot == nil {
 		vmCtx.Logger.V(4).Info("Could not find snapshot name in tree",
 			"snapshotRef", currentSnapMoref.Value)
 		// Clear the status if we can't find the snapshot name.
@@ -1578,24 +1568,6 @@ func updateCurrentSnapshotStatus(
 	// need to be updated exactly.
 	vm.Status.CurrentSnapshot = currentSnapshot
 
-	return nil
-}
-
-// FindSnapshotInTree recursively searches the snapshot tree for a
-// snapshot with the given reference value.
-// TODO: AKP: Replace this with a Govmomi helper once merged.
-func FindSnapshotInTree(snapshots []vimtypes.VirtualMachineSnapshotTree, targetRef string) *vimtypes.VirtualMachineSnapshotTree {
-	for _, snapshot := range snapshots {
-		// Check if this snapshot matches the target reference.
-		if snapshot.Snapshot.Value == targetRef {
-			return &snapshot
-		}
-
-		// Recursively search child snapshots.
-		if child := FindSnapshotInTree(snapshot.ChildSnapshotList, targetRef); child != nil {
-			return child
-		}
-	}
 	return nil
 }
 

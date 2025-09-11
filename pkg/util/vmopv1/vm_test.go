@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -1052,7 +1053,7 @@ var _ = Describe("GroupToVMsMapperFn", func() {
 					Status: vmopv1.VirtualMachineStatus{
 						Conditions: []metav1.Condition{
 							linkedTrueCondition,
-							metav1.Condition{
+							{
 								Type:   vmopv1.VirtualMachineConditionPlacementReady,
 								Status: metav1.ConditionFalse,
 							},
@@ -1085,7 +1086,7 @@ var _ = Describe("GroupToVMsMapperFn", func() {
 					Status: vmopv1.VirtualMachineStatus{
 						Conditions: []metav1.Condition{
 							linkedTrueCondition,
-							metav1.Condition{
+							{
 								Type:   vmopv1.VirtualMachineConditionPlacementReady,
 								Status: metav1.ConditionTrue,
 							},
@@ -1168,5 +1169,34 @@ var _ = DescribeTable("GetContextWithWorkloadDomainIsolation",
 			},
 		},
 		true,
+	),
+)
+
+var _ = DescribeTable("ConvertPowerState",
+	func(
+		powerState vimtypes.VirtualMachinePowerState,
+		expected vmopv1.VirtualMachinePowerState,
+	) {
+		Ω(vmopv1util.ConvertPowerState(logr.Discard(), powerState)).Should(Equal(expected))
+	},
+	Entry(
+		"powered on",
+		vimtypes.VirtualMachinePowerStatePoweredOn,
+		vmopv1.VirtualMachinePowerStateOn,
+	),
+	Entry(
+		"powered off",
+		vimtypes.VirtualMachinePowerStatePoweredOff,
+		vmopv1.VirtualMachinePowerStateOff,
+	),
+	Entry(
+		"suspended",
+		vimtypes.VirtualMachinePowerStateSuspended,
+		vmopv1.VirtualMachinePowerStateSuspended,
+	),
+	Entry(
+		"unknown",
+		vimtypes.VirtualMachinePowerState("unknown"),
+		vmopv1.VirtualMachinePowerStateOff,
 	),
 )

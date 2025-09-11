@@ -359,7 +359,6 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 										b.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{}
 									}
 								}
-
 							}
 
 							// Expect no task when no child disks that are not

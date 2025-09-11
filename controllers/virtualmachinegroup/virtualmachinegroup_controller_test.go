@@ -315,7 +315,7 @@ var _ = Describe(
 		})
 
 		Context("Members", func() {
-			BeforeEach(func() {
+			JustBeforeEach(func() {
 				setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
 					{
 						Members: []vmopv1.GroupMember{

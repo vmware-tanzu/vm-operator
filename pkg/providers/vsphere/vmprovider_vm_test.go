@@ -3978,6 +3978,89 @@ func vmTests() {
 			})
 		})
 
+		Context("Zone Label Override for VM Groups", func() {
+			var (
+				vm       *vmopv1.VirtualMachine
+				vmGroup  *vmopv1.VirtualMachineGroup
+				vmClass  *vmopv1.VirtualMachineClass
+				zoneName string
+			)
+
+			BeforeEach(func() {
+				vmClass = builder.DummyVirtualMachineClassGenName()
+				vm = builder.DummyBasicVirtualMachine("test-vm-zone-override", "")
+				vmGroup = &vmopv1.VirtualMachineGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-group-zone-override",
+					},
+					Spec: vmopv1.VirtualMachineGroupSpec{
+						BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: "VirtualMachine", Name: vm.ObjectMeta.Name},
+								},
+							},
+						},
+					},
+				}
+			})
+
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMGroups = true
+				})
+
+				vmClass.Namespace = nsInfo.Namespace
+				Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+
+				vmGroup.Namespace = nsInfo.Namespace
+				Expect(ctx.Client.Create(ctx, vmGroup)).To(Succeed())
+
+				clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, clusterVMImage)).To(Succeed())
+
+				vm.Namespace = nsInfo.Namespace
+				vm.Spec.ClassName = vmClass.Name
+				vm.Spec.ImageName = clusterVMImage.Name
+				vm.Spec.Image.Kind = cvmiKind
+				vm.Spec.Image.Name = clusterVMImage.Name
+				vm.Spec.StorageClass = ctx.StorageClassName
+
+				vm.Spec.GroupName = vmGroup.Name
+
+				zoneName = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+				vm.Labels = map[string]string{
+					topology.KubernetesTopologyZoneLabelKey: zoneName,
+				}
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+			})
+
+			Context("when VM has explicit zone label and is part of group", func() {
+				It("should create VM in specified zone, not using group placement", func() {
+					err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+					Expect(err).To(MatchError(vsphere.ErrCreate))
+
+					// Verify VM was created
+					Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+				})
+			})
+
+			Context("when VM has explicit zone label but is not linked to group", func() {
+				BeforeEach(func() {
+					vmGroup.Spec.BootOrder = []vmopv1.VirtualMachineGroupBootOrderGroup{}
+				})
+
+				It("should fail to create VM", func() {
+					err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
+				})
+			})
+		})
+
 		Context("Create/Update/Delete ISO backed VirtualMachine", func() {
 			var (
 				vm      *vmopv1.VirtualMachine

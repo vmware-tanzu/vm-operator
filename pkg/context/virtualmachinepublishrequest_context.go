@@ -11,6 +11,7 @@ import (
 	"github.com/go-logr/logr"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
@@ -18,11 +19,13 @@ import (
 // VirtualMachinePublishRequestContext is the context used for VirtualMachinePublishRequestControllers.
 type VirtualMachinePublishRequestContext struct {
 	context.Context
-	Logger           logr.Logger
-	VMPublishRequest *vmopv1.VirtualMachinePublishRequest
-	VM               *vmopv1.VirtualMachine
-	ContentLibrary   *imgregv1a1.ContentLibrary
-	ItemID           string
+	Logger             logr.Logger
+	VMPublishRequest   *vmopv1.VirtualMachinePublishRequest
+	VM                 *vmopv1.VirtualMachine
+	ContentLibrary     *imgregv1a1.ContentLibrary
+	ContentLibraryV1A2 *imgregv1.ContentLibrary
+	ContentLibraryType imgregv1.LibraryType
+	ItemID             string
 	// SkipPatch indicates whether we should skip patching the object after reconcile
 	// because Status is updated separately in the publishing case due to CL API limitations.
 	SkipPatch bool

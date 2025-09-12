@@ -138,7 +138,7 @@ func intgTestsReconcile() {
 					intgFakeVMProvider.Lock()
 					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
 						task := vimtypes.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateQueued,
 						}
 						return []vimtypes.TaskInfo{task}, nil
@@ -168,7 +168,7 @@ func intgTestsReconcile() {
 					intgFakeVMProvider.Lock()
 					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
 						task := vimtypes.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateRunning,
 						}
 						return []vimtypes.TaskInfo{task}, nil
@@ -200,7 +200,7 @@ func intgTestsReconcile() {
 					intgFakeVMProvider.Lock()
 					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) ([]vimtypes.TaskInfo, error) {
 						task := vimtypes.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateSuccess,
 							Result:        vimtypes.ManagedObjectReference{Type: "ContentLibraryItem", Value: fmt.Sprintf("clibitem-%s", itemID)},
 						}

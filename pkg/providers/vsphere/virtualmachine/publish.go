@@ -88,9 +88,6 @@ func CloneVM(
 			Folder: &folderRef,
 			// Causes a linked clone to be unlinked and consolidated
 			DiskMoveType: string(vimtypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndDisallowSharing),
-			Profile: []vimtypes.BaseVirtualMachineProfileSpec{
-				&vimtypes.VirtualMachineDefinedProfileSpec{ProfileId: storagePolicyID},
-			},
 		},
 		Template: true,
 		Config: &vimtypes.VirtualMachineConfigSpec{
@@ -102,6 +99,12 @@ func CloneVM(
 				},
 			},
 		},
+	}
+
+	if storagePolicyID != "" {
+		cloneSpec.Location.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
+			&vimtypes.VirtualMachineDefinedProfileSpec{ProfileId: storagePolicyID},
+		}
 	}
 
 	vmCtx.Logger.Info("Publishing VM as template",

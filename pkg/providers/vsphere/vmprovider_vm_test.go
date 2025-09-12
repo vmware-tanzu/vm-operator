@@ -4140,7 +4140,7 @@ func vmTests() {
 								}).Reference()
 
 								vmRef := vimtypes.ManagedObjectReference{
-									Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+									Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
 									Value: vm.Status.UniqueID,
 								}
 
@@ -4304,7 +4304,7 @@ func vmTests() {
 								}).Reference()
 
 								vmRef := vimtypes.ManagedObjectReference{
-									Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+									Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
 									Value: vm.Status.UniqueID,
 								}
 
@@ -4432,7 +4432,7 @@ func vmTests() {
 								}).Reference()
 
 								vmRef := vimtypes.ManagedObjectReference{
-									Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+									Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
 									Value: vm.Status.UniqueID,
 								}
 

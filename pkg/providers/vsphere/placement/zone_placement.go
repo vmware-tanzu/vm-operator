@@ -23,10 +23,10 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -110,7 +110,7 @@ func lookupChildRPs(
 
 	for _, rpMoID := range rpMoIDs {
 		rp := object.NewResourcePool(vcClient, vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesResourcePool),
+			Type:  string(vimtypes.ManagedObjectTypeResourcePool),
 			Value: rpMoID,
 		})
 
@@ -265,7 +265,7 @@ func getPlacementRecommendations(
 	for zoneName, rpMoIDs := range candidates {
 		for _, rpMoID := range rpMoIDs {
 			rpMoRef := vimtypes.ManagedObjectReference{
-				Type:  string(vimtypes.ManagedObjectTypesResourcePool),
+				Type:  string(vimtypes.ManagedObjectTypeResourcePool),
 				Value: rpMoID,
 			}
 
@@ -319,7 +319,7 @@ func getZonalPlacementRecommendations(
 	for _, rpMoIDs := range candidates {
 		for _, rpMoID := range rpMoIDs {
 			rpMoRef := vimtypes.ManagedObjectReference{
-				Type:  string(vimtypes.ManagedObjectTypesResourcePool),
+				Type:  string(vimtypes.ManagedObjectTypeResourcePool),
 				Value: rpMoID,
 			}
 			candidateRPMoRefs = append(candidateRPMoRefs, rpMoRef)

@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apivalidation "k8s.io/apimachinery/pkg/api/validation"
@@ -2779,11 +2780,12 @@ func unitTestsValidateCreate() {
 			Entry("disallow greater than max valid hardware version",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.MinHardwareVersion = 22
+						ctx.vm.Spec.MinHardwareVersion = int32(vimtypes.MaxValidHardwareVersion + 1)
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 					},
 					validate: doValidateWithMsg(
-						`spec.minHardwareVersion: Invalid value: 22: should be less than or equal to 21`,
+						fmt.Sprintf(`spec.minHardwareVersion: Invalid value: %d: should be less than or equal to %d`,
+							int32(vimtypes.MaxValidHardwareVersion+1), int32(vimtypes.MaxValidHardwareVersion)),
 					),
 					expectAllowed: false,
 				},
@@ -4710,11 +4712,12 @@ func unitTestsValidateUpdate() {
 			Entry("disallow greater than max valid hardware version",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.MinHardwareVersion = 22
+						ctx.vm.Spec.MinHardwareVersion = int32(vimtypes.MaxValidHardwareVersion + 1)
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 					},
 					validate: doValidateWithMsg(
-						`spec.minHardwareVersion: Invalid value: 22: should be less than or equal to 21`,
+						fmt.Sprintf(`spec.minHardwareVersion: Invalid value: %d: should be less than or equal to %d`,
+							int32(vimtypes.MaxValidHardwareVersion+1), int32(vimtypes.MaxValidHardwareVersion)),
 					),
 					expectAllowed: false,
 				},

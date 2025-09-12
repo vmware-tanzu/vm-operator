@@ -101,7 +101,7 @@ func fastDeploy(
 	datacenter := object.NewDatacenter(
 		vimClient,
 		vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesDatacenter),
+			Type:  string(vimtypes.ManagedObjectTypeDatacenter),
 			Value: createArgs.DatacenterMoID,
 		})
 	logger.Info("Got datacenter", "datacenter", datacenter.Reference())

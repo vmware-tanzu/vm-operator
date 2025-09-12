@@ -265,7 +265,7 @@ var _ = Describe(
 
 				// Get the info for the VM-backed image.
 				vms := vcSimCtx.SimulatorContext().Map.All(
-					string(vimtypes.ManagedObjectTypesVirtualMachine))
+					string(vimtypes.ManagedObjectTypeVirtualMachine))
 				for i := range vms {
 					if vms[i].Entity().Name == vmName {
 						itemIDVM = vms[i].Reference().Value

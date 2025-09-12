@@ -1,8 +1,12 @@
 module github.com/vmware-tanzu/vm-operator/api
 
-go 1.24.0
-
-toolchain go1.24.4
+//
+// DO NOT UPGRADE
+//
+// This is kept as low as possible to be compatible for consumers. Please speak
+// with akutz before touching this or any dependencies in this file. Thanks!
+//
+go 1.23.0
 
 require (
 	k8s.io/api v0.31.0

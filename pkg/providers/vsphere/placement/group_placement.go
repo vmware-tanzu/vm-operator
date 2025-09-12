@@ -77,7 +77,7 @@ func getGroupPlacementRecommendations(
 	for _, rpMoIDs := range candidates {
 		for _, rpMoID := range rpMoIDs {
 			rpMoRef := vimtypes.ManagedObjectReference{
-				Type:  string(vimtypes.ManagedObjectTypesResourcePool),
+				Type:  string(vimtypes.ManagedObjectTypeResourcePool),
 				Value: rpMoID,
 			}
 			candidateRPMoRefs = append(candidateRPMoRefs, rpMoRef)

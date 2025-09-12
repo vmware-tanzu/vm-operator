@@ -36,6 +36,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
@@ -45,7 +46,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	vsclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
@@ -367,7 +367,7 @@ func (vs *vSphereVMProvider) syncVirtualMachineImageFastDeployVM(
 	vm := object.NewVirtualMachine(
 		vcClient.VimClient(),
 		vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+			Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
 			Value: vmMoID,
 		})
 
@@ -447,7 +447,7 @@ func (vs *vSphereVMProvider) GetItemFromInventoryByName(
 	searchIndex := object.NewSearchIndex(c)
 
 	folderRef := vimtypes.ManagedObjectReference{
-		Type:  string(vimtypes.ManagedObjectTypesFolder),
+		Type:  string(vimtypes.ManagedObjectTypeFolder),
 		Value: contentLibrary,
 	}
 

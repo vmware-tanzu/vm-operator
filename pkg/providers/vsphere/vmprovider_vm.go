@@ -1509,14 +1509,14 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 
 	if placementStatus.Node != "" {
 		result.HostMoRef = &vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesHostSystem),
+			Type:  string(vimtypes.ManagedObjectTypeHostSystem),
 			Value: placementStatus.Node,
 		}
 	}
 
 	if placementStatus.Pool != "" {
 		result.PoolMoRef = vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesResourcePool),
+			Type:  string(vimtypes.ManagedObjectTypeResourcePool),
 			Value: placementStatus.Pool,
 		}
 	}
@@ -1529,7 +1529,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		}
 
 		result.Datastores[i].MoRef = vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesDatastore),
+			Type:  string(vimtypes.ManagedObjectTypeDatastore),
 			Value: ds.ID,
 		}
 
@@ -2380,7 +2380,7 @@ func (vs *vSphereVMProvider) getConfigSpecFromVM(
 	vm := object.NewVirtualMachine(
 		vcClient.VimClient(),
 		vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+			Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
 			Value: vmiCache.Spec.ProviderID,
 		})
 

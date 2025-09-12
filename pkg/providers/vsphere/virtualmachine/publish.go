@@ -79,7 +79,7 @@ func CloneVM(
 	targetName := vmPubReq.Status.TargetRef.Item.Name
 
 	folderRef := vimtypes.ManagedObjectReference{
-		Type:  string(vimtypes.ManagedObjectTypesFolder),
+		Type:  string(vimtypes.ManagedObjectTypeFolder),
 		Value: cl.Spec.ID,
 	}
 
@@ -114,7 +114,7 @@ func CloneVM(
 	vm := object.NewVirtualMachine(
 		vimClient,
 		vimtypes.ManagedObjectReference{
-			Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+			Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
 			Value: vmCtx.VM.Status.UniqueID,
 		})
 

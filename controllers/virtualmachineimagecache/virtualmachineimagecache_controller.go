@@ -37,11 +37,11 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	clprov "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
@@ -614,7 +614,7 @@ func getSourceFilePathsForVM(
 	itemID string) ([]clsutil.SourceFile, error) {
 
 	vm := object.NewVirtualMachine(c, vimtypes.ManagedObjectReference{
-		Type:  string(vimtypes.ManagedObjectTypesVirtualMachine),
+		Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
 		Value: itemID,
 	})
 

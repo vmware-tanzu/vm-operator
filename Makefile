@@ -75,6 +75,7 @@ export KUBEBUILDER_ASSETS := $(abspath $(TOOLS_BIN_DIR))
 # Binaries
 MANAGER                := $(BIN_DIR)/manager
 WEB_CONSOLE_VALIDATOR  := $(BIN_DIR)/web-console-validator
+VMCLASS                := $(BIN_DIR)/vmclass
 
 # Tooling binaries
 CRD_REF_DOCS       := $(TOOLS_BIN_DIR)/crd-ref-docs
@@ -260,6 +261,11 @@ $(WEB_CONSOLE_VALIDATOR):
 
 .PHONY: web-console-validator
 web-console-validator: prereqs generate lint-go web-console-validator-only ## Build web-console-validator binary
+
+vmclass: $(VMCLASS) ## Build vmclass binary
+$(VMCLASS): cmd/vmclass/main.go
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=$(CGO_ENABLED) go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/vmclass/main.go
+
 
 ## --------------------------------------
 ## Tooling Binaries

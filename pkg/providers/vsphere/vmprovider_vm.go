@@ -1212,14 +1212,8 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 
 	// Translate the VM's current power state into the VM Op power state
 	// value.
-	switch vmCtx.MoVM.Summary.Runtime.PowerState {
-	case vimtypes.VirtualMachinePowerStatePoweredOn:
-		currentPowerState = vmopv1.VirtualMachinePowerStateOn
-	case vimtypes.VirtualMachinePowerStatePoweredOff:
-		currentPowerState = vmopv1.VirtualMachinePowerStateOff
-	case vimtypes.VirtualMachinePowerStateSuspended:
-		currentPowerState = vmopv1.VirtualMachinePowerStateSuspended
-	}
+	currentPowerState = kubeutil.ConvertPowerState(vmCtx.Logger,
+		vmCtx.MoVM.Summary.Runtime.PowerState)
 
 	switch desiredPowerState {
 

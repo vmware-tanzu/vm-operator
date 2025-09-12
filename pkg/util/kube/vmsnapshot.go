@@ -12,11 +12,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcnd "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // CalculateReservedForSnapshotPerStorageClass calculates the reserved capacity for a snapshot.
@@ -147,18 +147,17 @@ func CalculateReservedForSnapshotPerStorageClass(
 // of the snapshot operation.
 func PatchSnapshotSuccessStatus(
 	ctx context.Context,
+	logger logr.Logger,
 	k8sClient ctrlclient.Client,
 	snap *vmopv1.VirtualMachineSnapshot,
-	snapRef *vimtypes.ManagedObjectReference,
+	snapNode *vimtypes.VirtualMachineSnapshotTree,
 	vmPowerState vmopv1.VirtualMachinePowerState) error {
 
 	snapPatch := ctrlclient.MergeFrom(snap.DeepCopy())
-	snap.Status.UniqueID = snapRef.Reference().Value
+	snap.Status.UniqueID = snapNode.Snapshot.Reference().Value
 	snap.Status.Quiesced = snap.Spec.Quiesce != nil
 	snap.Status.PowerState = vmPowerState
-	if !snap.Spec.Memory {
-		snap.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
-	}
+	snap.Status.PowerState = ConvertPowerState(logger, snapNode.State)
 
 	pkgcnd.MarkTrue(snap, vmopv1.VirtualMachineSnapshotCreatedCondition)
 
@@ -169,4 +168,20 @@ func PatchSnapshotSuccessStatus(
 	}
 
 	return nil
+}
+
+func ConvertPowerState(logger logr.Logger,
+	powerState vimtypes.VirtualMachinePowerState) vmopv1.VirtualMachinePowerState {
+	switch powerState {
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
+		return vmopv1.VirtualMachinePowerStateOn
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
+		return vmopv1.VirtualMachinePowerStateOff
+	case vimtypes.VirtualMachinePowerStateSuspended:
+		return vmopv1.VirtualMachinePowerStateSuspended
+	default:
+		logger.Info("Unknown snapshot power state, defaulting to Off",
+			"powerState", powerState)
+		return vmopv1.VirtualMachinePowerStateOff
+	}
 }

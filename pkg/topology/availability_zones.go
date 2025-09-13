@@ -15,16 +15,6 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
-const (
-	// KubernetesTopologyZoneLabelKey is the label used to specify the
-	// availability zone for a VM.
-	KubernetesTopologyZoneLabelKey = "topology.kubernetes.io/zone"
-
-	// KubernetesTopologyHostLabelKey is the label used to specify the
-	// host for a VM.
-	KubernetesTopologyHostLabelKey = "kubernetes.io/hostname"
-)
-
 var (
 	// ErrNoAvailabilityZones occurs when no availability zones are detected.
 	ErrNoAvailabilityZones = errors.New("no availability zones")

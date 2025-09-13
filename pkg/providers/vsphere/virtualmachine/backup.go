@@ -29,7 +29,6 @@ import (
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	res "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -309,7 +308,7 @@ func trimBackupFields(obj client.Object) {
 		// Remove the zone label from the VM. When a VM is restored /
 		// failed over, VM operator detects the VM's resource pool and
 		// retroactively populates the VM's zone label.
-		delete(labels, topology.KubernetesTopologyZoneLabelKey)
+		delete(labels, corev1.LabelTopologyZone)
 		obj.SetLabels(labels)
 	}
 

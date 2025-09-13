@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/exp/maps"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -69,7 +70,7 @@ type DatastoreResult struct {
 func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
 	res.ZonePlacement = true
 
-	if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
+	if zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]; zoneName != "" {
 		// Zone has already been selected.
 		res.ZoneName = zoneName
 	} else {
@@ -385,7 +386,7 @@ func Placement(
 		vmCtx,
 		client,
 		vcClient,
-		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey],
+		vmCtx.VM.Labels[corev1.LabelTopologyZone],
 		vmCtx.VM.Namespace,
 		constraints.ChildRPName)
 	if err != nil {

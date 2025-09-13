@@ -35,7 +35,6 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -313,7 +312,7 @@ func unitTestsValidateCreate() {
 			Entry("should allow when VM specifies no availability zone, there are availability zones and zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+						delete(ctx.vm.Labels, corev1.LabelTopologyZone)
 					},
 					expectAllowed: true,
 				},
@@ -321,7 +320,7 @@ func unitTestsValidateCreate() {
 			Entry("should allow when VM specifies no availability zone, there are no availability zones or zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+						delete(ctx.vm.Labels, corev1.LabelTopologyZone)
 						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
@@ -332,7 +331,7 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 					},
 					expectAllowed: true,
 				},
@@ -345,7 +344,7 @@ func unitTestsValidateCreate() {
 						})
 						zoneName := builder.DummyZoneName
 						ctx.vm.Labels[vmopv1util.KubernetesNodeLabelKey] = ""
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
 					expectAllowed: true,
@@ -356,7 +355,7 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
 						ctx.vm.Labels[vmopv1util.KubernetesNodeLabelKey] = ""
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
 					expectAllowed: false,
@@ -366,7 +365,7 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
 					expectAllowed: false,
@@ -379,7 +378,7 @@ func unitTestsValidateCreate() {
 							config.Features.WorkloadDomainIsolation = true
 						})
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						zone := &topologyv1.Zone{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
 						zone.Finalizers = []string{"test"}
@@ -397,7 +396,7 @@ func unitTestsValidateCreate() {
 							ctx.IsPrivilegedAccount = true
 						})
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						zone := &topologyv1.Zone{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
 						zone.Finalizers = []string{"test"}
@@ -415,7 +414,7 @@ func unitTestsValidateCreate() {
 							ctx.UserInfo.Username = "system:serviceaccount:svc-tkg-domain-c52:default"
 						})
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						zone := &topologyv1.Zone{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
 						zone.Finalizers = []string{"test"}
@@ -429,7 +428,7 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						zoneName := builder.DummyZoneName
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
 						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
@@ -439,7 +438,7 @@ func unitTestsValidateCreate() {
 			Entry("should deny when VM specifies invalid availability zone, there are availability zones and zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
+						ctx.vm.Labels[corev1.LabelTopologyZone] = "invalid"
 					},
 					expectAllowed: false,
 				},
@@ -447,7 +446,7 @@ func unitTestsValidateCreate() {
 			Entry("should deny when VM specifies invalid availability zone, there are no availability zones or zones",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
+						ctx.vm.Labels[corev1.LabelTopologyZone] = "invalid"
 						Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 						Expect(ctx.Client.Delete(ctx, builder.DummyZone(dummyNamespaceName))).To(Succeed())
 					},
@@ -3534,15 +3533,15 @@ func unitTestsValidateUpdate() {
 			ctx.vm.Spec.Reserved.ResourcePolicyName = "policy" + updateSuffix
 		}
 		if args.assignZoneName {
-			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName
+			ctx.vm.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName
 		}
 		if args.changeZoneName {
-			ctx.oldVM.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName
+			ctx.oldVM.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName
 			if args.unsetZone {
 				// Remove the zone label to test unsetting zone
-				delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				delete(ctx.vm.Labels, corev1.LabelTopologyZone)
 			} else {
-				ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyZoneName + updateSuffix
+				ctx.vm.Labels[corev1.LabelTopologyZone] = builder.DummyZoneName + updateSuffix
 			}
 		}
 
@@ -3624,7 +3623,7 @@ func unitTestsValidateUpdate() {
 		Entry("should allow empty bios uuid change", updateArgs{changeBiosUUID: true}, true, nil, nil),
 		Entry("should allow initial zone assignment", updateArgs{assignZoneName: true}, true, nil, nil),
 		Entry("should deny zone change for non-privileged user", updateArgs{changeZoneName: true}, false,
-			field.Invalid(field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey), builder.DummyZoneName+updateSuffix, "field is immutable").Error(), nil),
+			field.Invalid(field.NewPath("metadata", "labels").Key(corev1.LabelTopologyZone), builder.DummyZoneName+updateSuffix, "field is immutable").Error(), nil),
 		Entry("should allow zone change for privileged user", updateArgs{changeZoneName: true, isServiceUser: true}, true, nil, nil),
 		Entry("should allow zone unset for privileged user", updateArgs{changeZoneName: true, isServiceUser: true, unsetZone: true}, true, nil, nil),
 

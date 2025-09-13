@@ -1586,12 +1586,12 @@ func (v validator) validateAvailabilityZone(
 
 	var allErrs field.ErrorList
 
-	zoneLabelPath := field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey)
+	zoneLabelPath := field.NewPath("metadata", "labels").Key(corev1.LabelTopologyZone)
 
 	if oldVM != nil {
 		// Once the zone has been set then make sure the field is immutable.
-		if oldVal := oldVM.Labels[topology.KubernetesTopologyZoneLabelKey]; oldVal != "" {
-			newVal := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+		if oldVal := oldVM.Labels[corev1.LabelTopologyZone]; oldVal != "" {
+			newVal := vm.Labels[corev1.LabelTopologyZone]
 
 			// Privileged accounts are allowed to update the
 			// availability zone label on the VM. This is used during
@@ -1608,7 +1608,7 @@ func (v validator) validateAvailabilityZone(
 	}
 
 	// Validate the name of the provided availability zone.
-	if zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
+	if zoneName := vm.Labels[corev1.LabelTopologyZone]; zoneName != "" {
 		if pkgcfg.FromContext(ctx).Features.WorkloadDomainIsolation {
 			// Validate the name of the provided zone. It is the same name as az.
 			zone, err := topology.GetZone(ctx.Context, v.client, zoneName, vm.Namespace)
@@ -2167,9 +2167,9 @@ func (v validator) validateVMAffinity(
 					}
 				}
 
-				if rs.TopologyKey != topology.KubernetesTopologyZoneLabelKey {
+				if rs.TopologyKey != corev1.LabelTopologyZone {
 					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{topology.KubernetesTopologyZoneLabelKey}))
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
 				}
 			}
 		}
@@ -2202,9 +2202,9 @@ func (v validator) validateVMAffinity(
 					}
 				}
 
-				if rs.TopologyKey != topology.KubernetesTopologyZoneLabelKey {
+				if rs.TopologyKey != corev1.LabelTopologyZone {
 					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{topology.KubernetesTopologyZoneLabelKey}))
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
 				}
 			}
 		}
@@ -2239,9 +2239,9 @@ func (v validator) validateVMAffinity(
 					}
 				}
 
-				if rs.TopologyKey != topology.KubernetesTopologyZoneLabelKey {
+				if rs.TopologyKey != corev1.LabelTopologyZone {
 					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{topology.KubernetesTopologyZoneLabelKey}))
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
 				}
 			}
 		}
@@ -2272,9 +2272,9 @@ func (v validator) validateVMAffinity(
 					}
 				}
 
-				if rs.TopologyKey != "" && rs.TopologyKey != topology.KubernetesTopologyHostLabelKey {
+				if rs.TopologyKey != "" && rs.TopologyKey != corev1.LabelHostname {
 					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{"", topology.KubernetesTopologyHostLabelKey}))
+						p.Child("topologyKey"), rs.TopologyKey, []string{"", corev1.LabelHostname}))
 				}
 			}
 		}

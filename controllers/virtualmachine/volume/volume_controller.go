@@ -41,7 +41,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -861,7 +860,7 @@ func (r *Reconciler) handlePVCWithWFFC(
 	zoneName := ctx.VM.Status.Zone
 	if zoneName == "" {
 		// Fallback to the label value if Status hasn't been updated yet.
-		zoneName = ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
+		zoneName = ctx.VM.Labels[corev1.LabelTopologyZone]
 		if zoneName == "" {
 			return fmt.Errorf("VM does not have Zone set")
 		}

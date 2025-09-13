@@ -22,7 +22,6 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -231,7 +230,7 @@ var _ = Describe("CreateConfigSpec", func() {
 											},
 										},
 									},
-									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						},
@@ -305,7 +304,7 @@ var _ = Describe("CreateConfigSpec", func() {
 											},
 										},
 									},
-									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						},
@@ -379,7 +378,7 @@ var _ = Describe("CreateConfigSpec", func() {
 											},
 										},
 									},
-									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 								{
 									LabelSelector: &metav1.LabelSelector{
@@ -387,7 +386,7 @@ var _ = Describe("CreateConfigSpec", func() {
 											"environment": "prod",
 										},
 									},
-									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						},
@@ -455,7 +454,7 @@ var _ = Describe("CreateConfigSpec", func() {
 											"environment": "prod",
 										},
 									},
-									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						},
@@ -496,7 +495,7 @@ var _ = Describe("CreateConfigSpec", func() {
 											},
 										},
 									},
-									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						},
@@ -537,7 +536,7 @@ var _ = Describe("CreateConfigSpec", func() {
 											},
 										},
 									},
-									TopologyKey: topology.KubernetesTopologyZoneLabelKey,
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						},

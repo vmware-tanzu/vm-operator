@@ -702,7 +702,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 			if ctx.VM.Labels == nil {
 				ctx.VM.Labels = map[string]string{}
 			}
-			ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+			ctx.VM.Labels[corev1.LabelTopologyZone] = zoneName
 		}
 	}
 
@@ -757,7 +757,7 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 			if ctx.VM.Labels == nil {
 				ctx.VM.Labels = map[string]string{}
 			}
-			ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+			ctx.VM.Labels[corev1.LabelTopologyZone] = zoneName
 		}
 	}
 
@@ -1608,7 +1608,7 @@ func processPlacementResult(
 			}
 			// Note if the VM create fails for some reason, but this label gets updated on the k8s VM,
 			// then this is the pre-assigned zone on later create attempts.
-			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = result.ZoneName
+			vmCtx.VM.Labels[corev1.LabelTopologyZone] = result.ZoneName
 		}
 	}
 
@@ -1625,7 +1625,7 @@ func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
 		// We did not do placement so find this namespace/zone ResourcePool and Folder.
 
 		nsFolderMoID, rpMoID, err := topology.GetNamespaceFolderAndRPMoID(vmCtx, vs.k8sClient,
-			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey], vmCtx.VM.Namespace)
+			vmCtx.VM.Labels[corev1.LabelTopologyZone], vmCtx.VM.Namespace)
 		if err != nil {
 			return err
 		}

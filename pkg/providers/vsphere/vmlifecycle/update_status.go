@@ -19,6 +19,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vmdk"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -292,7 +293,7 @@ func reconcileStatusZone(
 
 	var errs []error
 
-	zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]
+	zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]
 	if zoneName == "" {
 		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(
 			vmCtx, vcVM.Client(), vmCtx.MoVM.ResourcePool.Value)
@@ -307,7 +308,7 @@ func reconcileStatusZone(
 				if vmCtx.VM.Labels == nil {
 					vmCtx.VM.Labels = map[string]string{}
 				}
-				vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				vmCtx.VM.Labels[corev1.LabelTopologyZone] = zoneName
 			}
 		}
 	}

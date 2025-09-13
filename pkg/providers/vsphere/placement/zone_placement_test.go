@@ -12,6 +12,7 @@ import (
 
 	"github.com/vmware/govmomi/simulator"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,7 +23,6 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -117,7 +117,7 @@ func vcSimPlacement() {
 				zone := &topologyv1.Zone{}
 
 				JustBeforeEach(func() {
-					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+					vm.Labels[corev1.LabelTopologyZone] = zoneName
 					obj := &topologyv1.Zone{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace:  vm.Namespace,
@@ -136,7 +136,7 @@ func vcSimPlacement() {
 					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(Equal(zoneName))
 					Expect(result.HostMoRef).To(BeNil())
-					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+					Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
 
 					// Current contract is the caller must look this up based on the pre-assigned zone but
 					// we might want to change that later.
@@ -262,7 +262,7 @@ func vcSimPlacement() {
 					const hostMoID = "foobar-host-42"
 
 					BeforeEach(func() {
-						vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "my-zone"
+						vm.Labels[corev1.LabelTopologyZone] = "my-zone"
 						vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
 					})
 
@@ -335,7 +335,7 @@ func vcSimPlacement() {
 				zoneName := "in the zone"
 
 				JustBeforeEach(func() {
-					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+					vm.Labels[corev1.LabelTopologyZone] = zoneName
 				})
 
 				It("returns success with same zone", func() {
@@ -345,7 +345,7 @@ func vcSimPlacement() {
 					Expect(result.ZonePlacement).To(BeTrue())
 					Expect(result.ZoneName).To(Equal(zoneName))
 					Expect(result.HostMoRef).To(BeNil())
-					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+					Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
 
 					// Current contract is the caller must look this up based on the pre-assigned zone but
 					// we might want to change that later.
@@ -454,7 +454,7 @@ func vcSimPlacement() {
 				const hostMoID = "foobar-host-42"
 
 				BeforeEach(func() {
-					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "my-zone"
+					vm.Labels[corev1.LabelTopologyZone] = "my-zone"
 					vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
 				})
 

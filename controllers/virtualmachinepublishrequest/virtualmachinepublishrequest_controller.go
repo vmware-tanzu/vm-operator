@@ -868,7 +868,7 @@ func (r *Reconciler) isItemCorrelatedWithVMPub(
 		if exists, err := r.VMProvider.ContainsExtraConfigEntry(
 			ctx,
 			tItem,
-			vmopv1.VirtualMachinePublishRequestUUIDLabelKey,
+			vmopv1.VirtualMachinePublishRequestUUIDExtraConfigKey,
 			string(ctx.VMPublishRequest.UID)); err != nil || !exists {
 			return "", false, err
 		}

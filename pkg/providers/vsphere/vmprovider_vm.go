@@ -753,17 +753,19 @@ func (vs *vSphereVMProvider) createVirtualMachineAsync(
 				"Error",
 				vimErr)
 		}
-	} else if pkgcfg.FromContext(ctx).Features.FastDeploy {
-		if zoneName := args.ZoneName; zoneName != "" {
-			if ctx.VM.Labels == nil {
-				ctx.VM.Labels = map[string]string{}
+	} else {
+		if pkgcfg.FromContext(ctx).Features.FastDeploy {
+			if zoneName := args.ZoneName; zoneName != "" {
+				if ctx.VM.Labels == nil {
+					ctx.VM.Labels = map[string]string{}
+				}
+				ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 			}
-			ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
-	}
 
-	ctx.VM.Status.UniqueID = moRef.Reference().Value
-	pkgcnd.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
+		ctx.VM.Status.UniqueID = moRef.Reference().Value
+		pkgcnd.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
+	}
 
 	if err := vs.k8sClient.Status().Patch(ctx, ctx.VM, objPatch); err != nil {
 		ctx.Logger.Error(err, "Failed to patch VM status after create")

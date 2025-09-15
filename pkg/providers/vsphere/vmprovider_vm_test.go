@@ -1831,6 +1831,34 @@ func vmTests() {
 					})
 				})
 
+				When("there is an error creating the VM", func() {
+					JustBeforeEach(func() {
+						ctx.SimulatorContext().Map.Handler = func(
+							ctx *simulator.Context,
+							m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
+
+							if m.Name == "ImportVApp" {
+								return nil, &vimtypes.InvalidRequest{}
+							}
+							return nil, nil
+						}
+					})
+
+					It("should fail to create the VM without an NPE", func() {
+						err := createOrUpdateVM(ctx, vmProvider, vm)
+						Expect(err).To(HaveOccurred())
+						Eventually(func(g Gomega) {
+							g.Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), vm)).To(Succeed())
+							g.Expect(vm.Status.UniqueID).To(BeEmpty())
+							c := conditions.Get(vm, vmopv1.VirtualMachineConditionCreated)
+							g.Expect(c).ToNot(BeNil())
+							g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+							g.Expect(c.Reason).To(Equal("Error"))
+							g.Expect(c.Message).To(Equal("deploy error: ServerFaultCode: InvalidRequest"))
+						}).Should(Succeed())
+					})
+				})
+
 				// Please note this test uses FlakeAttempts(5) due to the
 				// validation of some predictable-over-time behavior.
 				When("there is a reconcile in progress", FlakeAttempts(5), func() {

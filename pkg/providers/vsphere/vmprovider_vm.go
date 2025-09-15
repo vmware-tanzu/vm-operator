@@ -356,21 +356,22 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 		}
 
 		if v1a2contentLibrary.Spec.Type == imgregv1.LibraryTypeInventory {
+			var (
+				storagePolicyID string
+				err             error
+			)
 
 			storageClassName := v1a2contentLibrary.Spec.StorageClass
-			if storageClassName == "" {
-				return "", fmt.Errorf("storage class is not specified in content library")
-			}
+			if storageClassName != "" {
+				sc := storagev1.StorageClass{}
+				if err := vs.k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: storageClassName}, &sc); err != nil {
+					return "", fmt.Errorf("failed to get storage class %q: %w", storageClassName, err)
+				}
+				storagePolicyID, err = kubeutil.GetStoragePolicyID(sc)
 
-			sc := storagev1.StorageClass{}
-			if err := vs.k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: storageClassName}, &sc); err != nil {
-				vmCtx.Logger.Error(err, "Failed to get StorageClass", "storageClass", storageClassName)
-				return "", err
-			}
-			storagePolicyID, err := kubeutil.GetStoragePolicyID(sc)
-
-			if err != nil {
-				return "", err
+				if err != nil {
+					return "", err
+				}
 			}
 			logger.V(4).Info("Publishing VM as cloned template")
 

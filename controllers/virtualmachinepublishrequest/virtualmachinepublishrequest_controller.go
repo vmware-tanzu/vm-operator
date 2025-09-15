@@ -27,7 +27,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -39,18 +38,19 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 const (
-	finalizerName           = "vmoperator.vmware.com/virtualmachinepublishrequest"
-	deprecatedFinalizerName = "virtualmachinepublishrequest.vmoperator.vmware.com"
-	TaskDescriptionID       = "com.vmware.ovfs.LibraryItem.capture"
+	finalizerName               = "vmoperator.vmware.com/virtualmachinepublishrequest"
+	deprecatedFinalizerName     = "virtualmachinepublishrequest.vmoperator.vmware.com"
+	OVFCaptureTaskDescriptionID = "com.vmware.ovfs.LibraryItem.capture"
+	CloneTaskDescriptionID      = "VirtualMachine.clone"
 
 	// waitForTaskTimeout represents the timeout to wait for task existence in task manager.
 	// When calling `CreateOVF` API, there is no guarantee that we can get its task info due to
@@ -370,23 +370,24 @@ func (r *Reconciler) removeVMPubResourceFromCluster(ctx *pkgctx.VirtualMachinePu
 // doesn't exist, or is not in Created phase.
 func (r *Reconciler) checkIsSourceValid(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
 	vmPubReq := ctx.VMPublishRequest
-	vm := &vmopv1.VirtualMachine{}
-	objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
-	err := r.Get(ctx, objKey, vm)
-	if err != nil {
-		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
-		if apierrors.IsNotFound(err) {
-			conditions.MarkError(vmPubReq,
-				vmopv1.VirtualMachinePublishRequestConditionSourceValid,
-				vmopv1.SourceVirtualMachineNotExistReason,
-				err)
+	if ctx.VM == nil {
+		vm := &vmopv1.VirtualMachine{}
+		objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
+		err := r.Get(ctx, objKey, vm)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				conditions.MarkError(vmPubReq,
+					vmopv1.VirtualMachinePublishRequestConditionSourceValid,
+					vmopv1.SourceVirtualMachineNotExistReason,
+					err)
+			}
+			return fmt.Errorf("failed to get VirtualMachine %v: %w", objKey, err)
 		}
-		return err
+		ctx.VM = vm
 	}
-	ctx.VM = vm
 
-	if vm.Status.UniqueID == "" {
-		err = errors.New("VM hasn't been created and has no uniqueID")
+	if ctx.VM.Status.UniqueID == "" {
+		err := errors.New("VM hasn't been created and has no uniqueID")
 		conditions.MarkError(vmPubReq,
 			vmopv1.VirtualMachinePublishRequestConditionSourceValid,
 			vmopv1.SourceVirtualMachineNotCreatedReason,
@@ -402,20 +403,14 @@ func (r *Reconciler) checkIsSourceValid(ctx *pkgctx.VirtualMachinePublishRequest
 // It is invalid if the content library doesn't exist, an item with the same name in the CL exists.
 func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
 	vmPubReq := ctx.VMPublishRequest
-	contentLibrary := &imgregv1a1.ContentLibrary{}
-	targetLocationName := vmPubReq.Spec.Target.Location.Name
-	targetItemName := vmPubReq.Status.TargetRef.Item.Name
-	objKey := client.ObjectKey{Name: targetLocationName, Namespace: vmPubReq.Namespace}
-	if err := r.Get(ctx, objKey, contentLibrary); err != nil {
-		ctx.Logger.Error(err, "failed to get ContentLibrary", "cl", objKey)
-		if apierrors.IsNotFound(err) {
-			conditions.MarkError(vmPubReq,
-				vmopv1.VirtualMachinePublishRequestConditionTargetValid,
-				vmopv1.TargetContentLibraryNotExistReason,
-				err)
+
+	if ctx.ContentLibrary == nil {
+		if err := r.getTargetLibrary(ctx); err != nil {
+			return err
 		}
-		return err
 	}
+	contentLibrary := ctx.ContentLibrary
+	targetItemName := vmPubReq.Status.TargetRef.Item.Name
 
 	if !contentLibrary.Spec.Writable {
 		err := fmt.Errorf("target location %s is not writable", contentLibrary.Status.Name)
@@ -444,42 +439,23 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 		return err
 	}
 
-	ctx.ContentLibrary = contentLibrary
-
-	contentLibraryType := imgregv1.LibraryTypeContentLibrary
-	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
-		contentLibraryV1A2 := &imgregv1.ContentLibrary{}
-		if err := r.Get(ctx, objKey, contentLibraryV1A2); err != nil {
-			ctx.Logger.Error(err, "failed to get v1alpha2 ContentLibrary", "cl", objKey)
-			if apierrors.IsNotFound(err) {
-				conditions.MarkError(vmPubReq,
-					vmopv1.VirtualMachinePublishRequestConditionTargetValid,
-					vmopv1.TargetContentLibraryNotExistReason,
-					err)
-			}
-			return err
-		}
-		contentLibraryType = contentLibraryV1A2.Spec.Type
-
-		if contentLibraryType == imgregv1.LibraryTypeInventory {
-			// Check if quota validation is needed
-			if metav1.HasLabel(contentLibraryV1A2.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
-
-				if err := r.checkContentLibraryQuota(ctx); err != nil {
-					return err
-				}
+	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
+		// Check if quota validation is needed
+		if metav1.HasLabel(ctx.ContentLibraryV1A2.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
+			if err := r.checkContentLibraryQuota(ctx); err != nil {
+				return err
 			}
 		}
 	}
-	ctx.Logger.Info("target location type", "LibraryType", contentLibraryType)
 
-	item, err := r.getItemByName(ctx, contentLibraryType, string(ctx.ContentLibrary.Spec.UUID), targetItemName)
+	item, err := r.getItemByName(ctx)
 
 	if err != nil {
 		return fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
 
 	if !pkgutil.IsNil(item) {
+		objKey := client.ObjectKey{Name: vmPubReq.Spec.Target.Location.Name, Namespace: vmPubReq.Namespace}
 		ctx.Logger.Info("target item already exists in the content library",
 			"library", objKey, "itemName", targetItemName)
 		// If item already exists in the content library and attempt is not zero,
@@ -515,12 +491,15 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 	return nil
 }
 
-func (r *Reconciler) getItemByName(ctx *pkgctx.VirtualMachinePublishRequestContext, libraryType imgregv1.LibraryType, contentLibrary, itemName string) (any, error) {
-	if libraryType == imgregv1.LibraryTypeInventory {
-		return r.VMProvider.GetItemFromInventoryByName(ctx, contentLibrary, itemName)
+func (r *Reconciler) getItemByName(ctx *pkgctx.VirtualMachinePublishRequestContext) (any, error) {
+	targetItemName := ctx.VMPublishRequest.Status.TargetRef.Item.Name
+	contentLibrary := string(ctx.ContentLibrary.Spec.UUID)
+
+	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
+		return r.VMProvider.GetItemFromInventoryByName(ctx, contentLibrary, targetItemName)
 	}
 
-	return r.VMProvider.GetItemFromLibraryByName(ctx, contentLibrary, itemName)
+	return r.VMProvider.GetItemFromLibraryByName(ctx, contentLibrary, targetItemName)
 }
 
 func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
@@ -548,7 +527,6 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 	if metav1.HasAnnotation(vmPubReq.ObjectMeta, pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey) {
 		return pkgerr.NoRequeueNoErr("quota validation has not completed for this request")
 	}
-
 	// Check for the existence of the quota check status annotation. If this annotation is present, and the
 	// requested-quota annotation is not present, then this signifies that the quota check is complete. We
 	// expect a value of 'Failed' with the presence of this annotation.
@@ -569,7 +547,6 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 			Message: fmt.Sprintf("quota validation has completed with an unexpected status: %s", status),
 		}
 	}
-
 	// Quota check has completed successfully. Continue processing as normal.
 	return nil
 }
@@ -651,8 +628,16 @@ func (r *Reconciler) checkIsComplete(ctx *pkgctx.VirtualMachinePublishRequestCon
 	return true
 }
 
-// getPublishRequestTask gets task with description id com.vmware.ovfs.LibraryItem.capture and specified actid in taskManager.
 func (r *Reconciler) getPublishRequestTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
+	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
+		return r.getCloneVMTask(ctx)
+	}
+
+	return r.getCreateOVFTask(ctx)
+}
+
+// getCreateOVFTask gets task with description id com.vmware.ovfs.LibraryItem.capture and specified actid in taskManager.
+func (r *Reconciler) getCreateOVFTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
 	actID := getPublishRequestActID(ctx.VMPublishRequest)
 	logger := ctx.Logger.WithValues("activationID", actID)
 
@@ -663,7 +648,7 @@ func (r *Reconciler) getPublishRequestTask(ctx *pkgctx.VirtualMachinePublishRequ
 	}
 
 	if len(tasks) == 0 {
-		logger.V(5).Info("task doesn't exist", "actID", actID, "descriptionID", TaskDescriptionID)
+		logger.V(5).Info("task doesn't exist", "actID", actID, "descriptionID", OVFCaptureTaskDescriptionID)
 		return nil, nil
 	}
 
@@ -671,13 +656,59 @@ func (r *Reconciler) getPublishRequestTask(ctx *pkgctx.VirtualMachinePublishRequ
 	// We would never send multiple CreateOvf requests with the same actID,
 	// so that we should never get multiple tasks.
 	publishTask := &tasks[0]
-	if publishTask.DescriptionId != TaskDescriptionID {
-		err = fmt.Errorf("failed to find expected task %s, found %s instead", TaskDescriptionID, publishTask.DescriptionId)
-		logger.Error(err, "task doesn't exist")
-		return nil, err
+	if publishTask.DescriptionId != OVFCaptureTaskDescriptionID {
+		return nil, fmt.Errorf("failed to find expected task %s, found %s instead",
+			OVFCaptureTaskDescriptionID,
+			publishTask.DescriptionId)
 	}
 
 	return publishTask, nil
+}
+
+// getCloneVMTask gets task with description id VirtualMachine.clone and whose result.Value is the MOID of the target
+// template.
+func (r *Reconciler) getCloneVMTask(ctx *pkgctx.VirtualMachinePublishRequestContext) (*vimtypes.TaskInfo, error) {
+	vmPubReq := ctx.VMPublishRequest
+	targetItemName := vmPubReq.Status.TargetRef.Item.Name
+
+	if ctx.VM == nil {
+		vm := &vmopv1.VirtualMachine{}
+		objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
+		err := r.Get(ctx, objKey, vm)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				conditions.MarkError(vmPubReq,
+					vmopv1.VirtualMachinePublishRequestConditionSourceValid,
+					vmopv1.SourceVirtualMachineNotExistReason,
+					err)
+			}
+			return nil, fmt.Errorf("failed to get VirtualMachine %v: %w", objKey, err)
+		}
+		ctx.VM = vm
+	}
+
+	targetObjRef, err := r.VMProvider.GetItemFromInventoryByName(ctx, ctx.ContentLibraryV1A2.Spec.ID, targetItemName)
+	if err != nil {
+		return nil, fmt.Errorf("error getting item %q from inventory: %w", targetItemName, err)
+	}
+
+	if targetObjRef == nil {
+		ctx.Logger.V(4).Info("could not locate item in inventory", "itemName", targetItemName)
+		return nil, nil
+	}
+	targetMOID := targetObjRef.Reference().Value
+
+	tasks, err := r.VMProvider.GetCloneTasksForVM(ctx, ctx.VM, targetMOID, CloneTaskDescriptionID)
+	if err != nil {
+		return nil, fmt.Errorf("error getting recent clone tasks for VM %q: %w", ctx.VM.NamespacedName(), err)
+	}
+
+	if len(tasks) == 0 {
+		ctx.Logger.V(4).Info("failed to find recent clone task for VM", "VM", ctx.VM.NamespacedName())
+		return nil, nil
+	}
+
+	return &tasks[0], nil
 }
 
 // checkPubReqStatusAndShouldRepublish checks the publish request task status, mark Uploaded condition
@@ -700,7 +731,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 	}
 
 	actID := getPublishRequestActID(ctx.VMPublishRequest)
-	logger := ctx.Logger.WithValues("actID", actID, "descriptionID", TaskDescriptionID)
+	logger := ctx.Logger.WithValues("actID", actID, "descriptionID", OVFCaptureTaskDescriptionID)
 
 	task, err := r.getPublishRequestTask(ctx)
 	if err != nil {
@@ -728,7 +759,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 		if time.Since(ctx.VMPublishRequest.Status.LastAttemptTime.Time) > waitForTaskTimeout {
 			// CreateOvf API failed to submit this task for some reason. In this case, retry VM publish.
 			ctx.Logger.Info("failed to create task, retry publishing this VM",
-				"taskName", TaskDescriptionID,
+				"taskName", OVFCaptureTaskDescriptionID,
 				"lastAttemptTime", ctx.VMPublishRequest.Status.LastAttemptTime.String())
 			return true, nil
 		}
@@ -834,22 +865,14 @@ func (r *Reconciler) isItemCorrelatedWithVMPub(
 
 	switch tItem := item.(type) {
 	case *object.VirtualMachine:
-		var o mo.VirtualMachine
-		if err := tItem.Properties(ctx,
-			tItem.Reference(),
-			[]string{"config.extraConfig"},
-			&o); err != nil {
+		if exists, err := r.VMProvider.ContainsExtraConfigEntry(
+			ctx,
+			tItem,
+			vmopv1.VirtualMachinePublishRequestUUIDLabelKey,
+			string(ctx.VMPublishRequest.UID)); err != nil || !exists {
 			return "", false, err
 		}
-		for _, opt := range o.Config.ExtraConfig {
-			if optKV := opt.GetOptionValue(); optKV != nil &&
-				optKV.Key == vmopv1.VirtualMachinePublishRequestUUIDLabelKey {
-				if optKV.Value.(string) == string(ctx.VMPublishRequest.UID) {
-					return tItem.Reference().Value, true, nil
-				}
-				return "", false, nil
-			}
-		}
+		return tItem.Reference().Value, true, nil
 	case *library.Item:
 		if tItem.Description != nil {
 			descriptions := itemDescriptionReg.FindStringSubmatch(*tItem.Description)
@@ -867,27 +890,13 @@ func (r *Reconciler) isItemCorrelatedWithVMPub(
 // findCorrelatedItemIDByName finds the published item ID in the VC by target item name.
 func (r *Reconciler) findCorrelatedItemIDByName(ctx *pkgctx.VirtualMachinePublishRequestContext) (string, error) {
 	targetItemName := ctx.VMPublishRequest.Status.TargetRef.Item.Name
-	// We only get ContentLibrary when checking TargetValid condition,
-	// so this ctx.ContentLibrary can be nil in other cases.
-	// Usually we won't fall into this corner cases, don't put this ContentLibrary Get in Reconcile
-	// to avoid unnecessary reads.
-	if ctx.ContentLibrary == nil {
-		contentLibrary := &imgregv1a1.ContentLibrary{}
-		targetLocationName := ctx.VMPublishRequest.Spec.Target.Location.Name
-		objKey := client.ObjectKey{Name: targetLocationName, Namespace: ctx.VMPublishRequest.Namespace}
-		if err := r.Get(ctx, objKey, contentLibrary); err != nil {
-			ctx.Logger.Error(err, "failed to get ContentLibrary", "cl", objKey)
-			return "", err
-		}
-		ctx.ContentLibrary = contentLibrary
-	}
 
-	item, err := r.VMProvider.GetItemFromLibraryByName(ctx, string(ctx.ContentLibrary.Spec.UUID), targetItemName)
+	item, err := r.getItemByName(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to find item from VC by its name %q: %w", targetItemName, err)
+		return "", fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
 
-	if item != nil {
+	if !pkgutil.IsNil(item) {
 		// Item already exists in the content library, check if it is created from
 		// this VirtualMachinePublishRequest from its description.
 		// If VC forgets the task, or the task hadn't proceeded far enough to be submitted to VC
@@ -944,19 +953,59 @@ func getPublishRequestActID(vmPub *vmopv1.VirtualMachinePublishRequest) string {
 
 // parseItemIDFromTaskResult returns the content library item UUID from the task result.
 func parseItemIDFromTaskResult(result vimtypes.AnyType) (string, error) {
-	clItem, ok := result.(vimtypes.ManagedObjectReference)
+	item, ok := result.(vimtypes.ManagedObjectReference)
 	if !ok {
 		return "", fmt.Errorf("failed to cast task result to ManagedObjectReference")
 	}
 
-	if clItem.Type != "ContentLibraryItem" {
-		return "", fmt.Errorf("expect task result type to be ContentLibraryItem, get %s instead", clItem.Type)
+	switch item.Type {
+	case "ContentLibraryItem":
+		if !strings.HasPrefix(item.Value, clItemPrefix) {
+			return "", fmt.Errorf("content library item UUID is invalid, value: %s", item.Value)
+		}
+		return item.Value[len(clItemPrefix):], nil
+	case "VirtualMachine":
+		return item.Value, nil
+	default:
+		return "", fmt.Errorf("expect task result type to be ContentLibraryItem or VirtualMachine, got %s instead", item.Type)
+	}
+}
+
+func (r *Reconciler) getTargetLibrary(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
+	vmPubReq := ctx.VMPublishRequest
+	targetLocationName := vmPubReq.Status.TargetRef.Location.Name
+	objKey := client.ObjectKey{Name: targetLocationName, Namespace: vmPubReq.Namespace}
+
+	contentLibrary := &imgregv1a1.ContentLibrary{}
+	if err := r.Get(ctx, objKey, contentLibrary); err != nil {
+		if apierrors.IsNotFound(err) {
+			conditions.MarkError(vmPubReq,
+				vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+				vmopv1.TargetContentLibraryNotExistReason,
+				err)
+		}
+		return fmt.Errorf("failed to get ContentLibrary %v: %w", objKey, err)
+	}
+	ctx.ContentLibrary = contentLibrary
+	ctx.ContentLibraryType = imgregv1.LibraryTypeContentLibrary
+
+	if pkgcfg.FromContext(ctx).Features.InventoryContentLibrary {
+		contentLibraryV1A2 := &imgregv1.ContentLibrary{}
+		if err := r.Get(ctx, objKey, contentLibraryV1A2); err != nil {
+			ctx.Logger.Error(err, "failed to get v1alpha2 ContentLibrary", "cl", objKey)
+			if apierrors.IsNotFound(err) {
+				conditions.MarkError(vmPubReq,
+					vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+					vmopv1.TargetContentLibraryNotExistReason,
+					err)
+			}
+			return fmt.Errorf("failed to get v1alpha2 ContentLibrary %v: %w", objKey, err)
+		}
+		ctx.ContentLibraryV1A2 = contentLibraryV1A2
+		ctx.ContentLibraryType = contentLibraryV1A2.Spec.Type
 	}
 
-	if !strings.HasPrefix(clItem.Value, clItemPrefix) {
-		return "", fmt.Errorf("content library item UUID is invalid, value: %s", clItem.Value)
-	}
-	return clItem.Value[len(clItemPrefix):], nil
+	return nil
 }
 
 func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestContext) (_ ctrl.Result, reterr error) {
@@ -1012,6 +1061,13 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 
 	r.updateSourceAndTargetRef(ctx)
 
+	// There are two types of target Content Libraries that we can publish to. The full processing
+	// of the request is dependent on the type of Content Library. So, we fetch the Content Library
+	// here, instead of waiting until later to do so during target validation.
+	if err := r.getTargetLibrary(ctx); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	shouldPublish, err := r.checkPubReqStatusAndShouldRepublish(ctx)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -1029,12 +1085,16 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		return ctrl.Result{}, err
 	}
 
-	// Update published item description to remove vmPub UUID from it.
-	// Update the description after all conditions except Complete is set,
-	// otherwise we may lose track of the item if this update fails.
-	if err := r.updatePublishedItemDescription(ctx); err != nil {
-		r.Recorder.EmitEvent(vmPublishReq, "Publish", err, true)
-		return ctrl.Result{}, err
+	// For a cloned VM there is not description to update. So, this is only
+	// done of OVFs.
+	if ctx.ContentLibraryType == imgregv1.LibraryTypeContentLibrary {
+		// Update published item description to remove vmPub UUID from it.
+		// Update the description after all conditions except Complete is set,
+		// otherwise we may lose track of the item if this update fails.
+		if err := r.updatePublishedItemDescription(ctx); err != nil {
+			r.Recorder.EmitEvent(vmPublishReq, "Publish", err, true)
+			return ctrl.Result{}, err
+		}
 	}
 
 	if isComplete = r.checkIsComplete(ctx); isComplete {

@@ -129,7 +129,15 @@ func unitTestsReconcile() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vmpubCtx.VMPublishRequest.GetFinalizers()).To(ContainElement(finalizerName))
 
-			_, err = reconciler.ReconcileNormal(vmpubCtx)
+			differentVMpubCtx := &pkgctx.VirtualMachinePublishRequestContext{
+				Context:          ctx,
+				Logger:           ctx.Logger.WithName(vmpub.Name),
+				VMPublishRequest: vmpub,
+				VM:               vm,
+				ContentLibrary:   cl,
+			}
+
+			_, err = reconciler.ReconcileNormal(differentVMpubCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vmpubCtx.VMPublishRequest.GetFinalizers()).To(ContainElement(finalizerName))
 		})
@@ -162,6 +170,10 @@ func unitTestsReconcile() {
 				initObjects = []client.Object{cl, vmpub}
 			})
 
+			JustBeforeEach(func() {
+				vmpubCtx.VM = nil
+			})
+
 			It("returns error if source VM doesn't exist", func() {
 				_, err := reconciler.ReconcileNormal(vmpubCtx)
 				Expect(err).To(HaveOccurred())
@@ -175,6 +187,10 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					vm.Status.UniqueID = ""
 					initObjects = append(initObjects, vm)
+				})
+
+				JustBeforeEach(func() {
+					vmpubCtx.VM = vm
 				})
 
 				It("should return error and retry", func() {
@@ -542,7 +558,7 @@ func unitTestsReconcile() {
 				When("task succeeded but failed to parse item ID", func() {
 					JustBeforeEach(func() {
 						task = &vimtypes.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateSuccess,
 							QueueTime:     time.Now().Add(time.Minute),
 						}
@@ -595,7 +611,7 @@ func unitTestsReconcile() {
 						fakeVMProvider.Lock()
 						fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 							task := vimtypes.TaskInfo{
-								DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+								DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 								State:         vimtypes.TaskInfoStateSuccess,
 								QueueTime:     time.Now().Add(time.Minute),
 								Result: vimtypes.ManagedObjectReference{Type: "ContentLibraryItem",
@@ -611,7 +627,7 @@ func unitTestsReconcile() {
 							fakeVMProvider.Lock()
 							fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 								task := vimtypes.TaskInfo{
-									DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+									DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 									State:         vimtypes.TaskInfoStateSuccess,
 									QueueTime:     time.Now().Add(time.Minute),
 									Result: vimtypes.ManagedObjectReference{Type: "ContentLibrary",
@@ -718,6 +734,134 @@ func unitTestsReconcile() {
 						})
 					})
 				})
+
+				When("library type is inventory", func() {
+					When("task is nil", func() {
+						BeforeEach(func() {
+							itemID = "vm-123"
+							clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+
+							initObjects = append(initObjects, clv1a2)
+						})
+						JustBeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.InventoryContentLibrary = true
+							})
+							fakeVMProvider.GetItemFromInventoryByNameFn = func(
+								ctx context.Context,
+								contentLibrary, itemName string) (object.Reference, error) {
+
+								return &object.VirtualMachine{}, nil
+							}
+						})
+						When("target already exists in the inventory", func() {
+							It("should mark target invalid", func() {
+								_, err := reconciler.ReconcileNormal(vmpubCtx)
+								Expect(err).NotTo(HaveOccurred())
+
+								Expect(conditions.IsFalse(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+							})
+						})
+						When("target does not exist in the inventory", func() {
+							JustBeforeEach(func() {
+								fakeVMProvider.ContainsExtraConfigEntryFn = func(
+									ctx context.Context,
+									objVM *object.VirtualMachine,
+									key, value string) (bool, error) {
+
+									return true, nil
+								}
+							})
+							It("should mark target valid, uploaded, and should not call publish", func() {
+								_, err := reconciler.ReconcileNormal(vmpubCtx)
+								Expect(err).NotTo(HaveOccurred())
+
+								Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
+
+								Expect(conditions.IsTrue(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+								Expect(conditions.IsTrue(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+							})
+						})
+					})
+					When("task is succeeded", func() {
+						BeforeEach(func() {
+							itemID = "vm-123"
+							clv1a2 := builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+
+							initObjects = append(initObjects, clv1a2)
+						})
+						JustBeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.InventoryContentLibrary = true
+							})
+
+							fakeVMProvider.GetCloneTasksForVMFn = func(
+								ctx context.Context,
+								vm *vmopv1.VirtualMachine,
+								moID, descriptionID string) ([]vimtypes.TaskInfo, error) {
+
+								task := vimtypes.TaskInfo{
+									DescriptionId: virtualmachinepublishrequest.CloneTaskDescriptionID,
+									State:         vimtypes.TaskInfoStateSuccess,
+									QueueTime:     time.Now().Add(time.Minute),
+									Result: vimtypes.ManagedObjectReference{Type: "VirtualMachine",
+										Value: itemID},
+								}
+								return []vimtypes.TaskInfo{task}, nil
+							}
+							fakeVMProvider.GetItemFromInventoryByNameFn = func(
+								ctx context.Context,
+								contentLibrary, itemName string) (object.Reference, error) {
+
+								return object.VirtualMachine{}, nil
+							}
+						})
+
+						When("VirtualMachineImage is available", func() {
+							JustBeforeEach(func() {
+								vmi := builder.DummyVirtualMachineImage("dummy-image")
+								vmi.Namespace = vmpub.Namespace
+								Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
+								vmi.Status.ProviderItemID = itemID
+								Expect(ctx.Client.Status().Update(ctx, vmi)).To(Succeed())
+							})
+
+							It("Complete condition is true, not send a second publish VM request and return success", func() {
+								_, err := reconciler.ReconcileNormal(vmpubCtx)
+								Expect(err).NotTo(HaveOccurred())
+
+								Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
+
+								Expect(conditions.IsTrue(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+								Expect(conditions.IsTrue(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
+								Expect(vmpub.Status.ImageName).To(Equal("dummy-image"))
+								Expect(conditions.IsTrue(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+								Expect(vmpub.Status.Ready).To(BeTrue())
+							})
+						})
+						When("VirtualMachineImage is unavailable", func() {
+							It("ImageAvailable condition is false, not send a second publish VM request and return success", func() {
+								_, err := reconciler.ReconcileNormal(vmpubCtx)
+								Expect(err).NotTo(HaveOccurred())
+
+								Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
+								Expect(conditions.IsTrue(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+								Expect(conditions.IsTrue(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeFalse())
+								Expect(conditions.IsTrue(vmpub,
+									vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
+								Expect(vmpub.Status.Ready).To(BeFalse())
+							})
+						})
+					})
+				})
 			})
 
 			When("Previous request failed", func() {
@@ -725,7 +869,7 @@ func unitTestsReconcile() {
 					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						currentTime := time.Now()
 						task := vimtypes.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateError,
 							StartTime:     &currentTime,
 						}
@@ -755,7 +899,7 @@ func unitTestsReconcile() {
 				JustBeforeEach(func() {
 					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						task := vimtypes.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateQueued,
 							QueueTime:     time.Now().Add(time.Minute),
 						}
@@ -780,7 +924,7 @@ func unitTestsReconcile() {
 				JustBeforeEach(func() {
 					fakeVMProvider.GetTasksByActIDFn = func(ctx context.Context, actID string) (tasksInfo []vimtypes.TaskInfo, retErr error) {
 						task := vimtypes.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: virtualmachinepublishrequest.OVFCaptureTaskDescriptionID,
 							State:         vimtypes.TaskInfoStateRunning,
 							QueueTime:     time.Now(),
 						}

@@ -122,13 +122,13 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 	}
 
 	sysprepCustomization.UserData = vimtypes.CustomizationUserData{
-		// This is a mandatory field
+		// These are mandatory fields.
+		FullName: from.UserData.FullName,
+		OrgName:  from.UserData.OrgName,
 		ComputerName: &vimtypes.CustomizationFixedName{
 			Name: bsArgs.HostName,
 		},
 	}
-	sysprepCustomization.UserData.FullName = from.UserData.FullName
-	sysprepCustomization.UserData.OrgName = from.UserData.OrgName
 	// In the case of a VMI with volume license key, this might not be set.
 	// Hence, add a check to see if the productID is set to empty.
 	if bootstrapData.Sysprep != nil && bootstrapData.Sysprep.ProductID != "" {

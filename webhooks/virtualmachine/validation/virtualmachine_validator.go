@@ -91,6 +91,7 @@ const (
 	invalidClassInstanceReference              = "must specify a valid reference to a VirtualMachineClassInstance object"
 	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
 	invalidClassInstanceReferenceOwnerMismatch = "VirtualMachineClassInstance must be an instance of the VM Class specified by spec.class"
+	labelSelectorCanNotContainVMOperatorLabels = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha5,name=default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -2155,6 +2156,10 @@ func (v validator) validateVMAffinity(
 						allErrs = append(allErrs, field.Forbidden(p, "label selector must match VM"))
 					}
 
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
 					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
 						p := p.Child("matchExpressions").Index(exprIdx)
 
@@ -2163,6 +2168,8 @@ func (v validator) validateVMAffinity(
 								p.Child("operator"),
 								expr.Operator,
 								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
 						}
 					}
 				}
@@ -2190,6 +2197,10 @@ func (v validator) validateVMAffinity(
 						allErrs = append(allErrs, field.Forbidden(p, "label selector must match VM"))
 					}
 
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
 					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
 						p := p.Child("matchExpressions").Index(exprIdx)
 
@@ -2198,6 +2209,8 @@ func (v validator) validateVMAffinity(
 								p.Child("operator"),
 								expr.Operator,
 								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
 						}
 					}
 				}
@@ -2227,6 +2240,10 @@ func (v validator) validateVMAffinity(
 				if rs.LabelSelector != nil {
 					p := p.Child("labelSelector")
 
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
 					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
 						p := p.Child("matchExpressions").Index(exprIdx)
 
@@ -2235,6 +2252,8 @@ func (v validator) validateVMAffinity(
 								p.Child("operator"),
 								expr.Operator,
 								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
 						}
 					}
 				}
@@ -2260,6 +2279,10 @@ func (v validator) validateVMAffinity(
 				if rs.LabelSelector != nil {
 					p := p.Child("labelSelector")
 
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
 					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
 						p := p.Child("matchExpressions").Index(exprIdx)
 
@@ -2268,6 +2291,8 @@ func (v validator) validateVMAffinity(
 								p.Child("operator"),
 								expr.Operator,
 								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
 						}
 					}
 				}

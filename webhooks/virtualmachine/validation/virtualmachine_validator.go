@@ -1593,16 +1593,28 @@ func (v validator) validateAvailabilityZone(
 		if oldVal := oldVM.Labels[topology.KubernetesTopologyZoneLabelKey]; oldVal != "" {
 			newVal := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
 
-			// Privileged accounts are allowed to update the
-			// availability zone label on the VM. This is used during
+			// Zone label is being unset on the VM.  This is used during
 			// restore, or a fail-over where the restored environment
 			// may not have access to the zone from backup.
-			//
-			// All other modifications are rejected.
-			if ctx.IsPrivilegedAccount {
-				return allErrs
+			if newVal == "" {
+				// Privileged accounts are allowed to unset the
+				// availability zone label on the VM.
+				//
+				// The annotation checks here are not ideal since
+				// these are applied on the restored / registered VMs
+				// and may stay there forever potentially allowing
+				// constant modifications to a VM's zone by any user.
+				// But since this is just unsetting the zone, there's
+				// no potential harm.
+				if ctx.IsPrivilegedAccount ||
+					metav1.HasAnnotation(vm.ObjectMeta, vmopv1.RestoredVMAnnotation) ||
+					metav1.HasAnnotation(vm.ObjectMeta, vmopv1.FailedOverVMAnnotation) {
+
+					return allErrs
+				}
 			}
 
+			// All other modifications are rejected.
 			return append(allErrs, validation.ValidateImmutableField(newVal, oldVal, zoneLabelPath)...)
 		}
 	}

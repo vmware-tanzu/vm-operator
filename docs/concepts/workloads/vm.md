@@ -84,6 +84,16 @@ kubectl get -n <NAMESPACE> encryptionclass
 
 For more information on `EncryptionClass` resources, please see the [Encryption](#encryption) section below.
 
+### VirtualMachineGroup
+
+A `VirtualMachineGroup` is a namespace-scoped resource that groups VMs together for coordinated management of power states, boot ordering, and placement decisions. VMs can join a group by setting their `spec.groupName` field. The following command may be used to discover a namespace's available `VirtualMachineGroup` resources:
+
+```shell
+kubectl get -n <NAMESPACE> virtualmachinegroup
+```
+
+For more information on `VirtualMachineGroup` resources, please see the [VirtualMachine Groups](#virtualmachine-groups) section below.
+
 ## Hardware
 
 ### Configuration
@@ -128,6 +138,7 @@ It is possible to update parts of an existing `VirtualMachine` resource. Some fi
 | `spec.imageName` | The name of the `VirtualMachineImage` that supplies the VM's disk(s) | ✗ | ✗ | _NA_ |
 | `spec.className` | The name of the `VirtualMachineClass` that supplies the VM's virtual hardware | ✓ | ✓ | _NA_ |
 | `spec.powerState` | The VM's desired power state | ✓ | ✓ | _NA_ |
+| `spec.groupName` | The name of the `VirtualMachineGroup` this VM belongs to | ✓ | ✓ | _NA_ |
 | `metadata.labels.topology.kubernetes.io/zone` | The desired availability zone in which to schedule the VM | x | x | ✓ |
 | `spec.hardware.cdrom[].name` | The name of the CD-ROM device to mount ISO in the VM | x | ✓ | _NA_ |
 | `spec.hardware.cdrom[].image` | The reference to an ISO type `VirtualMachineImage` or `ClusterVirtualMachineImage` to mount in the VM | x | ✓ | _NA_ |
@@ -1001,6 +1012,8 @@ For more information on the ISO VM workflow, please refer to the [Deploy a VM wi
 
 The optional field `spec.affinity` that may be used to define a set of affinity/anti-affinity scheduling rules for VMs.
 
+**Important**: The `spec.affinity` field can only be used by VMs that belong to a VirtualMachineGroup. To use affinity rules, the VM must have a non-empty `spec.groupName` value that references a valid VirtualMachineGroup in the same namespace.
+
 ### Zone Affinity/Anti-affinity
 
 The `spec.affinity.zoneAffinity` and `spec.affinity.zoneAntiAffinity` fields are used to define scheduling rules related to zones.
@@ -1044,9 +1057,11 @@ The above affinity/anti-affinity settings are available with the following rules
 * When topology key is in the context of a host, the only supported verbs are PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution for VM-VM node-level anti-affinity scheduling.
 
 
-### Example
+### Examples
 
-The following is an example of VM AF that uses the topologyKey field to indicate the VM AF rule applies to the Zone scope:
+#### Zone Affinity
+
+The following is an example of VM affinity that uses the topologyKey field to indicate the VM affinity rule applies to the Zone scope:
 
 ```yaml
 apiVersion: vmoperator.vmware.com/v1alpha5
@@ -1057,6 +1072,7 @@ metadata:
   labels:
     app: my-app-1
 spec:
+  groupName: my-vm-group  # VM must belong to a group to use affinity
   affinity:
     vmAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -1066,9 +1082,212 @@ spec:
         # The topology key is what designates the scope of the rule.
         # For example, "topologyKey: kubernetes.io/hostname" would
         # indicate the rule applies to nodes and not zones.
-        # For more detail, please refer to 
+        # For more detail, please refer to
         # https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/.
         topologyKey: topology.kubernetes.io/zone
 ```
+
+#### VM Anti-Affinity
+
+The following example shows VM anti-affinity at the host level, ensuring VMs with the label `tier: database` are distributed across different hosts:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: database-vm-1
+  namespace: my-namespace-1
+  labels:
+    tier: database
+spec:
+  groupName: database-group  # Required for affinity rules
+  affinity:
+    vmAntiAffinity:
+      requiredDuringSchedulingPreferredDuringExecution:
+        labelSelector:
+        - matchLabels:
+            tier: database
+        topologyKey: kubernetes.io/hostname
+```
+
+## VirtualMachine Groups
+
+VirtualMachine Groups provide a way to manage multiple VMs as a single unit, enabling coordinated operations and advanced placement capabilities.
+
+### Group Membership
+
+A VM becomes a member of a group by setting its `spec.groupName` field to the name of a VirtualMachineGroup in the same namespace:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: web-server-1
+  namespace: my-namespace
+spec:
+  groupName: web-tier-group  # Join the web-tier-group
+  className: my-vm-class
+  imageName: ubuntu-22.04
+  storageClass: my-storage-class
+```
+
+When a VM joins a group:
+- An owner reference to the group is automatically added to the VM
+- The VM appears in the group's `status.members` list
+- The VM inherits the group's power state management
+- The VM can use affinity rules (when `spec.groupName` is set)
+
+### VirtualMachineGroup Resource
+
+The VirtualMachineGroup resource defines how a collection of VMs should be managed:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha4
+kind: VirtualMachineGroup
+metadata:
+  name: web-tier-group
+  namespace: my-namespace
+spec:
+  # Optional: This group can itself belong to another group
+  groupName: application-group
+
+  # Power state management for all group members
+  powerState: PoweredOn
+
+  # Boot order defines startup sequence
+  bootOrder:
+  - members:
+    - name: database-vm
+      kind: VirtualMachine
+    delay: 10s  # Wait 10 seconds before next group
+  - members:
+    - name: app-server-1
+      kind: VirtualMachine
+    - name: app-server-2
+      kind: VirtualMachine
+    delay: 5s
+  - members:
+    - name: web-server-1
+      kind: VirtualMachine
+    - name: web-server-2
+      kind: VirtualMachine
+```
+
+### Boot Ordering
+
+Boot ordering allows you to control the startup sequence of VMs within a group:
+
+- **Boot groups**: VMs are organized into sequential boot groups
+- **Parallel startup**: All members within a boot group start simultaneously
+- **Delays**: Optional delays between boot groups ensure dependencies are ready
+- **Power off**: When powering off, all members stop immediately without delays
+
+Example use cases:
+- Starting database servers before application servers
+- Ensuring infrastructure services are ready before dependent workloads
+- Implementing multi-tier application startup sequences
+
+### Nested Groups
+
+VirtualMachineGroups can be hierarchical - a group can belong to another group by setting its own `spec.groupName` field:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha4
+kind: VirtualMachineGroup
+metadata:
+  name: database-group
+  namespace: my-namespace
+spec:
+  groupName: application-group  # This group belongs to application-group
+  powerState: PoweredOn
+```
+
+This enables:
+- Multi-level organizational structures
+- Cascading power management
+- Complex application topologies
+
+### Power State Management
+
+Groups provide coordinated power state control:
+
+- **Group power state**: Setting `spec.powerState` on a group affects all members
+- **Synchronized operations**: Members are powered on/off according to boot order
+- **State inheritance**: New members added to a powered-on group will be powered on
+
+### Placement Decisions
+
+Groups can influence VM placement through:
+
+- **Affinity rules**: VMs in a group can define affinity/anti-affinity rules (requires `spec.groupName` to be set)
+- **Placement status**: The group's `status.members[].placement` shows placement recommendations
+- **Datastore recommendations**: Optimal datastore placement for group members
+
+### Group Status
+
+The VirtualMachineGroup status provides visibility into:
+
+```yaml
+status:
+  members:
+  - name: web-server-1
+    kind: VirtualMachine
+    conditions:
+    - type: GroupLinked
+      status: "True"
+    - type: PowerStateSynced
+      status: "True"
+    - type: PlacementReady
+      status: "True"
+    placement:
+      datastores:
+      - name: datastore1
+        id: datastore-123
+  - name: database-vm
+    kind: VirtualMachine
+    conditions:
+    - type: GroupLinked
+      status: "True"
+  lastUpdatedPowerStateTime: "2024-01-15T10:30:00Z"
+  conditions:
+  - type: Ready
+    status: "True"
+```
+
+### Conditions
+
+Groups and their members report various conditions:
+
+**Group Conditions**:
+- `Ready`: The group and all its members are in the desired state
+
+**Member Conditions**:
+- `GroupLinked`: Member exists and has `spec.groupName` set to this group
+- `PowerStateSynced`: Member's power state matches the group's desired state
+- `PlacementReady`: Placement decision is available for this member
+
+### Best Practices
+
+1. **Naming conventions**: Use descriptive group names that indicate purpose (e.g., `web-tier-group`, `database-cluster`)
+
+2. **Boot order design**:
+   - Place independent services in the same boot group
+   - Use delays sparingly to avoid slow startup times
+   - Test boot sequences to ensure dependencies are met
+
+3. **Affinity planning**:
+   - Only VMs with `spec.groupName` set can use affinity rules
+   - Design affinity rules at the group level for consistency
+   - Consider both zone and host-level distribution
+
+4. **Power management**:
+   - Avoid setting individual VM power states when using groups
+   - Use group power state for coordinated control
+   - Monitor member conditions to ensure synchronization
+
+5. **Group hierarchy**:
+   - Keep nesting levels reasonable (2-3 levels max)
+   - Use hierarchy to model real application relationships
+   - Ensure parent groups account for child group dependencies
 
 

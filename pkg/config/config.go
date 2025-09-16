@@ -196,6 +196,7 @@ type FeatureStates struct {
 	VMPlacementPolicies        bool
 	VSpherePolicies            bool
 	VMWaitForFirstConsumerPVC  bool
+	VMSharedDisks              bool
 }
 
 type InstanceStorage struct {

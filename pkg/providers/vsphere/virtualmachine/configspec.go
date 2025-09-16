@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -16,7 +17,6 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
@@ -177,7 +177,7 @@ func genConfigSpecAffinityPolicies(
 			// in the VM affinity policy.  Not additional labels.
 			// Note that the validation webhook will ensure that the VM also has the label that it specifies in the affinity policy.
 			for _, affinityTerm := range affinity.VMAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
-				if affinityTerm.TopologyKey == topology.KubernetesTopologyZoneLabelKey {
+				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
 					// Generate a tag name using the key value pair specified in the label selector.
 					for key, value := range affinityTerm.LabelSelector.MatchLabels {
 						// TODO: there should be a more concrete way generate the tag name.
@@ -208,7 +208,7 @@ func genConfigSpecAffinityPolicies(
 			}
 
 			for _, affinityTerm := range affinity.VMAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-				if affinityTerm.TopologyKey == topology.KubernetesTopologyZoneLabelKey {
+				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
 					// Generate a tag name using the key value pair specified in the label selector.
 					for key, value := range affinityTerm.LabelSelector.MatchLabels {
 						// TODO: there should be a more concrete way generate the tag name.
@@ -246,7 +246,7 @@ func genConfigSpecAffinityPolicies(
 
 			// Handle PreferredDuringSchedulingIgnoredDuringExecution terms
 			for _, affinityTerm := range affinity.VMAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-				if affinityTerm.TopologyKey == topology.KubernetesTopologyZoneLabelKey {
+				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
 					labels, err := extractLabelsFromSelector(affinityTerm.LabelSelector)
 					if err != nil {
 						vmCtx.Logger.Error(err, "Anti-affinity policy specifies an invalid label selector")

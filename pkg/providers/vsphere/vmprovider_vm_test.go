@@ -53,7 +53,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -1288,7 +1287,7 @@ func vmTests() {
 			JustBeforeEach(func() {
 				zoneName = ctx.GetFirstZoneName()
 				// Explicitly place the VM into one of the zones that the test context will create.
-				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				vm.Labels[corev1.LabelTopologyZone] = zoneName
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
@@ -1382,7 +1381,7 @@ func vmTests() {
 								// Ensure the group zone is different to verify the placement actually from group.
 								Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
 								groupZone = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
-								for groupZone == vm.Labels[topology.KubernetesTopologyZoneLabelKey] {
+								for groupZone == vm.Labels[corev1.LabelTopologyZone] {
 									groupZone = ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
 								}
 
@@ -2561,15 +2560,15 @@ func vmTests() {
 
 			When("vm has explicit zone", func() {
 				JustBeforeEach(func() {
-					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+					delete(vm.Labels, corev1.LabelTopologyZone)
 				})
 
 				It("creates VM in placement selected zone", func() {
-					Expect(vm.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
+					Expect(vm.Labels).ToNot(HaveKey(corev1.LabelTopologyZone))
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 					Expect(err).ToNot(HaveOccurred())
 
-					azName, ok := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+					azName, ok := vm.Labels[corev1.LabelTopologyZone]
 					Expect(ok).To(BeTrue())
 					Expect(azName).To(BeElementOf(ctx.ZoneNames))
 
@@ -2586,7 +2585,7 @@ func vmTests() {
 			It("creates VM in assigned zone", func() {
 				Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
 				azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
-				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = azName
+				vm.Labels[corev1.LabelTopologyZone] = azName
 
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
@@ -2625,7 +2624,7 @@ func vmTests() {
 					azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
 
 					// Make sure we do placement.
-					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+					delete(vm.Labels, corev1.LabelTopologyZone)
 
 					pvc1 := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
@@ -3773,12 +3772,12 @@ func vmTests() {
 				_, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+				Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
 				Expect(vm.Status.Zone).To(Equal(zoneName))
-				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				delete(vm.Labels, corev1.LabelTopologyZone)
 
 				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
-				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+				Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
 				Expect(vm.Status.Zone).To(Equal(zoneName))
 			})
 		})
@@ -3833,7 +3832,7 @@ func vmTests() {
 					Expect(err).ToNot(HaveOccurred())
 					childRP := ctx.GetResourcePoolForNamespace(
 						nsInfo.Namespace,
-						vm.Labels[topology.KubernetesTopologyZoneLabelKey],
+						vm.Labels[corev1.LabelTopologyZone],
 						resourcePolicy.Spec.ResourcePool.Name)
 					Expect(childRP).ToNot(BeNil())
 					Expect(rp.Reference().Value).To(Equal(childRP.Reference().Value))
@@ -3868,7 +3867,7 @@ func vmTests() {
 
 			BeforeEach(func() {
 				// Explicitly place the VM into one of the zones that the test context will create.
-				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				vm.Labels[corev1.LabelTopologyZone] = zoneName
 			})
 
 			JustBeforeEach(func() {
@@ -3912,7 +3911,7 @@ func vmTests() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				delete(vm.Labels, corev1.LabelTopologyZone)
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 			})
 
@@ -3923,8 +3922,8 @@ func vmTests() {
 				uniqueID := vm.Status.UniqueID
 				Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
 
-				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
-				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				Expect(vm.Labels).To(HaveKeyWithValue(corev1.LabelTopologyZone, zoneName))
+				delete(vm.Labels, corev1.LabelTopologyZone)
 
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 				Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())

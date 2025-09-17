@@ -31,6 +31,7 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
 )
 
 const (
@@ -48,6 +49,7 @@ type BootstrapData struct {
 
 	CloudConfig *cloudinit.CloudConfigSecretData
 	Sysprep     *sysprep.SecretData
+	LinuxPrep   *linuxprep.SecretData
 }
 
 type TemplateRenderFunc func(string, string) string
@@ -458,6 +460,9 @@ func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.Customiza
 			password := *linuxPrep.Password
 			password.Value = redacted
 			linuxPrep.Password = &password
+		}
+		if linuxPrep.ScriptText != "" {
+			linuxPrep.ScriptText = redacted
 		}
 		cs.Identity = &linuxPrep
 	case *vimtypes.CustomizationSysprepText:

@@ -27,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/paused"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -374,6 +375,7 @@ func GetVirtualMachineBootstrap(
 	var vAppExData map[string]map[string]string
 	var cloudConfigSecretData *cloudinit.CloudConfigSecretData
 	var sysprepSecretData *sysprep.SecretData
+	var linuxPrepSecretData *linuxprep.SecretData
 
 	if v := bootstrapSpec.CloudInit; v != nil {
 		if cooked := v.CloudConfig; cooked != nil {
@@ -420,15 +422,17 @@ func GetVirtualMachineBootstrap(
 			}
 		}
 	} else if v := bootstrapSpec.LinuxPrep; v != nil {
-		if p := v.Password; p != nil {
-			var err error
-			data, err = getSecretData(vmCtx, k8sClient, p.Password.Name, p.Password.Key, false)
-			if err != nil {
-				reason, msg := errToConditionReasonAndMessage(err)
-				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
-				return vmlifecycle.BootstrapData{}, err
-			}
+		out, err := linuxprep.GetLinuxPrepSecretData(
+			vmCtx,
+			k8sClient,
+			vmCtx.VM.Namespace,
+			v)
+		if err != nil {
+			reason, msg := errToConditionReasonAndMessage(err)
+			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, "%s", msg)
+			return vmlifecycle.BootstrapData{}, err
 		}
+		linuxPrepSecretData = &out
 	}
 
 	// vApp bootstrap can be used alongside LinuxPrep/Sysprep.
@@ -483,6 +487,7 @@ func GetVirtualMachineBootstrap(
 		VAppExData:  vAppExData,
 		CloudConfig: cloudConfigSecretData,
 		Sysprep:     sysprepSecretData,
+		LinuxPrep:   linuxPrepSecretData,
 	}, nil
 }
 

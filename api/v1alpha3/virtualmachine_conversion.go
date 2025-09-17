@@ -273,6 +273,7 @@ func restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, src *vmopv1.VirtualM
 			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
 				dst.Spec.Bootstrap.LinuxPrep.ExpirePasswordAfterNextLogin = ci.ExpirePasswordAfterNextLogin
 				dst.Spec.Bootstrap.LinuxPrep.Password = ci.Password
+				dst.Spec.Bootstrap.LinuxPrep.ScriptText = ci.ScriptText
 			}
 		}
 	}

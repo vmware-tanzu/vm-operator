@@ -86,6 +86,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 							},
 							PlainText: true,
 						},
+						ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+							From: &vmopv1common.SecretKeySelector{
+								Name: "bar",
+								Key:  "foo",
+							},
+							Value: ptrOf("my-inline-script"),
+						},
 					},
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 						Sysprep: &vmopv1sysprep.Sysprep{

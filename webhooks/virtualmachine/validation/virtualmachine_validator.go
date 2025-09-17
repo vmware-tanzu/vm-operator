@@ -329,6 +329,13 @@ func (v validator) validateBootstrap(
 			allErrs = append(allErrs, field.Forbidden(p,
 				"LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers"))
 		}
+
+		if linuxPrep.ScriptText != nil {
+			if sc := linuxPrep.ScriptText; sc.From != nil && sc.Value != nil {
+				allErrs = append(allErrs, field.Invalid(p.Child("scriptText").Child("value"), "value",
+					"from and value are mutually exclusive"))
+			}
+		}
 	}
 
 	if sysPrep != nil {
@@ -372,7 +379,7 @@ func (v validator) validateBootstrap(
 			}
 			if value := property.Value; value.From != nil && value.Value != nil {
 				allErrs = append(allErrs, field.Invalid(p.Child("properties").Child("value"), "value",
-					"from and value is mutually exclusive"))
+					"from and value are mutually exclusive"))
 			}
 		}
 

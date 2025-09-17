@@ -2042,6 +2042,7 @@ func autoConvert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha3_Virtu
 	out.TimeZone = in.TimeZone
 	// WARNING: in.ExpirePasswordAfterNextLogin requires manual conversion: does not exist in peer-type
 	// WARNING: in.Password requires manual conversion: does not exist in peer-type
+	// WARNING: in.ScriptText requires manual conversion: does not exist in peer-type
 	return nil
 }
 

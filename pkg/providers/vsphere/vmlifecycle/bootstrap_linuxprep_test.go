@@ -19,6 +19,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -142,13 +143,12 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 		When("Password is specified", func() {
 			BeforeEach(func() {
 				linuxPrepSpec.Password = &vmopv1.VirtualMachineBootstrapLinuxPrepPassword{
-					Password: common.PasswordSecretKeySelector{
-						Name: "foo",
-						Key:  "passwd",
-					},
+					Password:  common.PasswordSecretKeySelector{},
 					PlainText: true,
 				}
-				bsArgs.Data["passwd"] = "my-new-password"
+				bsArgs.LinuxPrep = &linuxprep.SecretData{
+					Password: "my-new-password",
+				}
 			})
 
 			It("should return expected customization spec", func() {
@@ -159,6 +159,23 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 				Expect(linuxSpec.Password).ToNot(BeNil())
 				Expect(linuxSpec.Password.Value).To(Equal("my-new-password"))
 				Expect(linuxSpec.Password.PlainText).To(BeTrue())
+			})
+		})
+
+		When("ScriptText is specified", func() {
+			BeforeEach(func() {
+				linuxPrepSpec.ScriptText = &common.ValueOrSecretKeySelector{}
+				bsArgs.LinuxPrep = &linuxprep.SecretData{
+					ScriptText: "my-script-text",
+				}
+			})
+
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(linuxSpec.ScriptText).To(Equal("my-script-text"))
 			})
 		})
 

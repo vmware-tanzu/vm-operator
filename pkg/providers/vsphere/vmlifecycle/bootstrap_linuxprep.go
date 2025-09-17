@@ -48,11 +48,15 @@ func BootStrapLinuxPrep(
 		identity.ResetPassword = vimtypes.NewBool(true)
 	}
 
-	if linuxPrepSpec.Password != nil {
-		identity.Password = &vimtypes.CustomizationPassword{
-			Value:     bsArgs.Data[linuxPrepSpec.Password.Password.Key],
-			PlainText: linuxPrepSpec.Password.PlainText,
+	if bsArgs.LinuxPrep != nil {
+		if bsArgs.LinuxPrep.Password != "" {
+			identity.Password = &vimtypes.CustomizationPassword{
+				Value:     bsArgs.LinuxPrep.Password,
+				PlainText: linuxPrepSpec.Password.PlainText,
+			}
 		}
+
+		identity.ScriptText = bsArgs.LinuxPrep.ScriptText
 	}
 
 	customSpec := &vimtypes.CustomizationSpec{

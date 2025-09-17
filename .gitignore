@@ -27,6 +27,8 @@ integration-cover.out
 integration-cover.xml
 merged-cover.out
 merged-cover.xml
+test-logs-full.txt
+test-summary.md
 
 # Build artifacts
 bin/

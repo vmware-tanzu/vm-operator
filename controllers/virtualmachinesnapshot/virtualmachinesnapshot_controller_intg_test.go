@@ -92,11 +92,6 @@ func intgTestsReconcile() {
 		Expect(vcSimCtx).ToNot(BeNil())
 
 		vcSimCtx.BeforeEach()
-
-		snapshotObjKey = types.NamespacedName{
-			Name:      vmSnapshot.Name,
-			Namespace: vmSnapshot.Namespace,
-		}
 	})
 
 	AfterEach(func() {
@@ -108,13 +103,17 @@ func intgTestsReconcile() {
 			BeforeEach(func() {
 				initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
 					By("create vm in k8s")
-					vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
-					Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+					vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.NSInfo.Namespace)
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 					vm.Status.UniqueID = uniqueVMID
-					Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+					Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 					By("create snapshot in k8s")
-					vmSnapshot = builder.DummyVirtualMachineSnapshot(vcSimCtx.NSInfo.Namespace, "snap-1", vm.Name)
-					Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
+					vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.NSInfo.Namespace, "snap-1", vm.Name)
+					snapshotObjKey = types.NamespacedName{
+						Name:      vmSnapshot.Name,
+						Namespace: vmSnapshot.Namespace,
+					}
+					Expect(ctx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
 				}
 			})
 
@@ -139,13 +138,17 @@ func intgTestsReconcile() {
 			BeforeEach(func() {
 				initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
 					By("create vm in k8s")
-					vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
-					Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+					vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.NSInfo.Namespace)
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 					vm.Status.UniqueID = uniqueVMID
-					Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+					Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 					By("create snapshot in k8s")
-					vmSnapshot = builder.DummyVirtualMachineSnapshot(vcSimCtx.NSInfo.Namespace, "snap-1", vm.Name)
-					Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
+					vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.NSInfo.Namespace, "snap-1", vm.Name)
+					snapshotObjKey = types.NamespacedName{
+						Name:      vmSnapshot.Name,
+						Namespace: vmSnapshot.Namespace,
+					}
+					Expect(ctx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
 				}
 			})
 			JustBeforeEach(func() {
@@ -158,7 +161,7 @@ func intgTestsReconcile() {
 			It("returns success, and set the csi volume sync annotation to requested", func() {
 				Eventually(func(g Gomega) {
 					vmSnapshotObj := &vmopv1.VirtualMachineSnapshot{}
-					Expect(vcSimCtx.Client.Get(ctx, snapshotObjKey, vmSnapshotObj)).To(Succeed())
+					g.Expect(vcSimCtx.Client.Get(ctx, snapshotObjKey, vmSnapshotObj)).To(Succeed())
 					g.Expect(vmSnapshotObj.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey]).
 						To(Equal(constants.CSIVSphereVolumeSyncAnnotationValueRequested))
 					g.Expect(conditions.IsFalse(vmSnapshotObj,
@@ -201,13 +204,17 @@ func intgTestsReconcile() {
 			BeforeEach(func() {
 				initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
 					By("create vm and snapshot in k8s")
-					vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
-					vmSnapshot = builder.DummyVirtualMachineSnapshot(vcSimCtx.NSInfo.Namespace, "snap-1", vm.Name)
-					Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
-					Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+					vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.NSInfo.Namespace)
+					vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.NSInfo.Namespace, "snap-1", vm.Name)
+					snapshotObjKey = types.NamespacedName{
+						Name:      vmSnapshot.Name,
+						Namespace: vmSnapshot.Namespace,
+					}
+					Expect(ctx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 					vm.Status.UniqueID = uniqueVMID
 					vm.Status.CurrentSnapshot = newManagedSnapshotRefWithSnapshotName(vmSnapshot.Name)
-					Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+					Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 				}
 
 				provider.Lock()
@@ -311,8 +318,13 @@ func intgTestsReconcile() {
 				BeforeEach(func() {
 					initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
 						By("only create snapshot in k8s")
-						vmSnapshot = builder.DummyVirtualMachineSnapshot(vcSimCtx.NSInfo.Namespace, "snap-1", vm.Name)
-						Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
+						vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.NSInfo.Namespace)
+						vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.NSInfo.Namespace, "snap-1", vm.Name)
+						snapshotObjKey = types.NamespacedName{
+							Name:      vmSnapshot.Name,
+							Namespace: vmSnapshot.Namespace,
+						}
+						Expect(ctx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
 					}
 				})
 				It("snapshot is deleted", func() {
@@ -335,15 +347,19 @@ func intgTestsReconcile() {
 				BeforeEach(func() {
 					initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
 						By("create vm and snapshot in k8s")
-						vm = builder.DummyBasicVirtualMachine("dummy-vm", vcSimCtx.NSInfo.Namespace)
-						vmSnapshot = builder.DummyVirtualMachineSnapshot(vcSimCtx.NSInfo.Namespace, "snap-1", vm.Name)
+						vm = builder.DummyBasicVirtualMachine("dummy-vm", ctx.NSInfo.Namespace)
+						vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.NSInfo.Namespace, "snap-1", vm.Name)
+						snapshotObjKey = types.NamespacedName{
+							Name:      vmSnapshot.Name,
+							Namespace: vmSnapshot.Namespace,
+						}
 						By("set snapshot's vmref to nil")
 						vmSnapshot.Spec.VMRef = nil
-						Expect(vcSimCtx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
-						Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+						Expect(ctx.Client.Create(ctx, vmSnapshot.DeepCopy())).To(Succeed())
+						Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 						vm.Status.UniqueID = uniqueVMID
 						vm.Status.CurrentSnapshot = newManagedSnapshotRefWithSnapshotName(vmSnapshot.Name)
-						Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+						Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 
 						vmObjKey := types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
 						Eventually(func(g Gomega) {
@@ -412,18 +428,18 @@ func intgTestsReconcile() {
 					vmSnapshotL3Node1 = builder.DummyVirtualMachineSnapshot(ctx.NSInfo.Namespace, vmSnapshotL3Node1Name, vm.Name)
 					vmSnapshotL3Node2 = builder.DummyVirtualMachineSnapshot(ctx.NSInfo.Namespace, vmSnapshotL3Node2Name, vm.Name)
 
-					Expect(vcSimCtx.Client.Create(ctx, vm)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 					// Update the current snapshot after creation. Otherwise will run into "failed to get informer from cache"
 					vm.Status.UniqueID = uniqueVMID
 					// Update the root snapshots
 					vm.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{*newManagedSnapshotRefWithSnapshotName(vmSnapshotL1.Name)}
-					Expect(vcSimCtx.Client.Status().Update(ctx, vm)).To(Succeed())
+					Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 
 					// // Create the object here so that it can be customized in each BeforeEach
-					Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL1)).To(Succeed())
-					Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL2)).To(Succeed())
-					Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL3Node1.DeepCopy())).To(Succeed())
-					Expect(vcSimCtx.Client.Create(ctx, vmSnapshotL3Node2.DeepCopy())).To(Succeed())
+					Expect(ctx.Client.Create(ctx, vmSnapshotL1)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, vmSnapshotL2)).To(Succeed())
+					Expect(ctx.Client.Create(ctx, vmSnapshotL3Node1.DeepCopy())).To(Succeed())
+					Expect(ctx.Client.Create(ctx, vmSnapshotL3Node2.DeepCopy())).To(Succeed())
 					// Mark the snapshot as ready so that they won't update CurrentSnapshot
 					markVMSnapshotReady(vcSimCtx, vmSnapshotL1)
 					markVMSnapshotReady(vcSimCtx, vmSnapshotL2)

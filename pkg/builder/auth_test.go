@@ -81,7 +81,7 @@ var _ = DescribeTable("IsPrivilegedAccount",
 	),
 )
 
-var _ = Describe("VerifyWebhookRequest", func() {
+var _ = Describe("VerifyWebhookRequest", Serial, func() {
 	BeforeEach(func() {
 		dir := filepath.Dir(caFilePath)
 		Expect(os.MkdirAll(dir, 0755)).To(Succeed())
@@ -89,7 +89,7 @@ var _ = Describe("VerifyWebhookRequest", func() {
 	})
 
 	AfterEach(func() {
-		Expect(os.Remove(caFilePath)).To(Succeed())
+		Expect(os.RemoveAll(caFilePath)).To(Succeed())
 		Expect(os.RemoveAll("/tmp/k8s-webhook-server")).To(Succeed())
 	})
 

@@ -1089,14 +1089,14 @@ func cdromTests() {
 	Context("UpdateConfigSpecCdromDeviceConnection", func() {
 
 		var (
-			ctx        *builder.TestContextForVCSim
-			vmCtx      pkgctx.VirtualMachineContext
-			restClient *rest.Client
-			k8sClient  ctrlclient.Client
-			configInfo *vimtypes.VirtualMachineConfigInfo
-			configSpec *vimtypes.VirtualMachineConfigSpec
-
-			updateErr error
+			ctx         *builder.TestContextForVCSim
+			vmCtx       pkgctx.VirtualMachineContext
+			restClient  *rest.Client
+			k8sClient   ctrlclient.Client
+			configInfo  *vimtypes.VirtualMachineConfigInfo
+			configSpec  *vimtypes.VirtualMachineConfigSpec
+			k8sInitObjs []ctrlclient.Object
+			updateErr   error
 		)
 
 		BeforeEach(func() {
@@ -1118,6 +1118,7 @@ func cdromTests() {
 		})
 
 		JustBeforeEach(func() {
+			k8sClient = builder.NewFakeClient(k8sInitObjs...)
 			updateErr = virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, restClient, k8sClient, configInfo, configSpec)
 		})
 
@@ -1125,9 +1126,8 @@ func cdromTests() {
 
 			BeforeEach(func() {
 				// Create a fake K8s client with both namespace & cluster scope ISO type images and their content library item objects.
-				k8sInitObjs := builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, resource.MustParse("100Mi"), true, true, imgregv1a1.ContentLibraryItemTypeIso)
+				k8sInitObjs = builder.DummyImageAndItemObjectsForCdromBacking(vmiName, ns, vmiKind, vmiFileName, ctx.ContentLibraryIsoItemID, true, true, resource.MustParse("100Mi"), true, true, imgregv1a1.ContentLibraryItemTypeIso)
 				k8sInitObjs = append(k8sInitObjs, builder.DummyImageAndItemObjectsForCdromBacking(cvmiName, "", cvmiKind, cvmiFileName, ctx.ContentLibraryIsoItemID, true, true, resource.MustParse("100Mi"), true, true, imgregv1a1.ContentLibraryItemTypeIso)...)
-				k8sClient = builder.NewFakeClient(k8sInitObjs...)
 			})
 
 			When("VM.Spec.Cdrom has no changes", func() {

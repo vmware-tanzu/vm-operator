@@ -13,10 +13,18 @@ set -x
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-GO_TEST_FLAGS+=("-v")           # verbose
-GO_TEST_FLAGS+=("-r")           # recursive
-GO_TEST_FLAGS+=("--race")       # check for possible races
-GO_TEST_FLAGS+=("--keep-going") # do not fail on the first error
+GO_TEST_FLAGS+=("-p")               # parallel
+GO_TEST_FLAGS+=("-r")               # recursive
+GO_TEST_FLAGS+=("-v")               # verbose
+GO_TEST_FLAGS+=("--race")           # check for possible races
+GO_TEST_FLAGS+=("--keep-going")     # do not fail on the first error
+GO_TEST_FLAGS+=("--randomize-all")  # random order
+GO_TEST_FLAGS+=("--force-newlines") # always print empty line after test cases
+
+# Use the GitHub output option if the tests are run as part of a GitHub action.
+if [ -n "${GITHUB_RUN_ID:-}" ]; then
+  GO_TEST_FLAGS+=("--github-output")
+fi
 
 # Only run tests that match given labels if LABEL_FILTER is non-empty.
 if [ -n "${LABEL_FILTER:-}" ]; then

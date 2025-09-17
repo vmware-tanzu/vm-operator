@@ -483,6 +483,15 @@ func testVMRequestedCapacityHandlerHandle() {
 		operation admissionv1.Operation
 	)
 
+	BeforeEach(func() {
+		vm, oldVM = nil, nil
+		obj, oldObj = nil, nil
+		handler = nil
+		req = admission.Request{}
+		resp = validation.CapacityResponse{}
+		operation = admissionv1.Operation("")
+	})
+
 	Context("Handle", func() {
 		BeforeEach(func() {
 			sc := builder.DummyStorageClass()
@@ -1097,6 +1106,16 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 
 		resp, expected validation.CapacityResponse
 	)
+
+	BeforeEach(func() {
+		vm, oldVM = nil, nil
+		obj, oldObj = nil, nil
+		interceptors = interceptor.Funcs{}
+		dummyConverter = nil
+		dummyDecoder = nil
+		resp = validation.CapacityResponse{}
+		expected = validation.CapacityResponse{}
+	})
 
 	When("HandleUpdate is called", func() {
 

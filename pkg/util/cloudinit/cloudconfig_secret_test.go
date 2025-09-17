@@ -184,7 +184,14 @@ var _ = Describe("CloudConfig GetCloudConfigSecretData", func() {
 
 	When("CloudConfig has a file that references data from a secret", func() {
 		BeforeEach(func() {
-			cloudConfig.WriteFiles[0].Content = []byte(`{"name":"my-bootstrap-data","key":"file-hello"}`)
+			cloudConfig = vmopv1cloudinit.CloudConfig{
+				WriteFiles: []vmopv1cloudinit.WriteFile{
+					{
+						Path:    "/hello",
+						Content: []byte(`{"name":"my-bootstrap-data","key":"file-hello"}`),
+					},
+				},
+			}
 		})
 		When("The secret does not exist", func() {
 			It("Should return an error", func() {

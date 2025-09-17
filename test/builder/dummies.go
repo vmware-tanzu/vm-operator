@@ -527,6 +527,7 @@ func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, cl
 			Finalizers: []string{"vmoperator.vmware.com/virtualmachinepublishrequest"},
 		},
 		Spec: vmopv1.VirtualMachinePublishRequestSpec{
+			BackoffLimit: 3,
 			Source: vmopv1.VirtualMachinePublishRequestSource{
 				Name:       sourceName,
 				APIVersion: "vmoperator.vmware.com/v1alpha2",

@@ -274,6 +274,13 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	// If no spec.currentSnapshot is specified, nothing to revert to.
 	if vmCtx.VM.Spec.CurrentSnapshot == nil {
 		logger.V(4).Info("Skipping revert for empty spec.currentSnapshot")
+
+		// Clear any existing snapshot revert condition.
+		// This handles the case where a previous revert
+		// failed and the user removed spec.currentSnapshot
+		// to abort the revert.
+		pkgcnd.Delete(vmCtx.VM, vmopv1.VirtualMachineSnapshotRevertSucceeded)
+
 		return nil
 	}
 

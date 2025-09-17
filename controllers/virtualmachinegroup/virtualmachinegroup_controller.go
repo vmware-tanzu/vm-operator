@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -65,54 +64,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		Watches(&vmopv1.VirtualMachineGroup{},
-			handler.EnqueueRequestsFromMapFunc(MemberToGroupMapperFn(ctx))).
+			handler.EnqueueRequestsFromMapFunc(vmopv1util.GroupToMembersMapperFn(ctx, r.Client, vmgKind))).
+		Watches(&vmopv1.VirtualMachineGroup{},
+			handler.EnqueueRequestsFromMapFunc(vmopv1util.MemberToGroupMapperFn(ctx))).
 		Watches(&vmopv1.VirtualMachine{},
-			handler.EnqueueRequestsFromMapFunc(MemberToGroupMapperFn(ctx))).
+			handler.EnqueueRequestsFromMapFunc(vmopv1util.MemberToGroupMapperFn(ctx))).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.MaxConcurrentReconciles,
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
 		}).
 		Complete(r)
-}
-
-// MemberToGroupMapperFn returns a MapFunc that reconciles a VirtualMachineGroup
-// when a linked member (VM or VMGroup) changes. This ensures the group's status
-// is updated in time to reflect the current member latest state (e.g. ready
-// condition for VMGroup kind members or power state for VM kind members).
-func MemberToGroupMapperFn(ctx context.Context) handler.MapFunc {
-
-	return func(ctx context.Context, o client.Object) []reconcile.Request {
-		memberObj, ok := o.(vmopv1util.VirtualMachineOrGroup)
-		if !ok {
-			panic(fmt.Sprintf("Expected VirtualMachineOrGroup, but got %T", o))
-		}
-
-		var requests []reconcile.Request
-
-		if memberObj.GetGroupName() != "" && conditions.IsTrue(
-			memberObj,
-			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-		) {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: client.ObjectKey{
-					Namespace: memberObj.GetNamespace(),
-					Name:      memberObj.GetGroupName(),
-				},
-			})
-		}
-
-		if len(requests) > 0 {
-			pkglog.FromContextOrDefault(ctx).WithValues(
-				"memberName", memberObj.GetName(),
-				"memberNamespace", memberObj.GetNamespace(),
-			).V(4).Info(
-				"Reconciling VirtualMachineGroup due to its member watch",
-				"requests", requests,
-			)
-		}
-
-		return requests
-	}
 }
 
 // NewReconciler returns a new reconciler for VirtualMachineGroup objects.

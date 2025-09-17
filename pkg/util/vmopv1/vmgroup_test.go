@@ -5,6 +5,7 @@
 package vmopv1_test
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -527,5 +529,335 @@ var _ = Describe("RemoveStaleGroupOwnerRef", func() {
 				Expect(newVMG.OwnerReferences).To(BeEmpty())
 			})
 		})
+	})
+})
+
+var _ = Describe("GroupToMembersMapperFn", func() {
+	const (
+		namespaceName  = "fake-namespace"
+		groupName      = "group-name"
+		childGroupName = "child-group-name"
+		vmName         = "vm-name"
+		vmKind         = "VirtualMachine"
+		groupKind      = "VirtualMachineGroup"
+	)
+	var (
+		ctx                 context.Context
+		k8sClient           ctrlclient.Client
+		groupObj            *vmopv1.VirtualMachineGroup
+		withObjs            []ctrlclient.Object
+		reqs                []reconcile.Request
+		linkedTrueCondition = metav1.Condition{
+			Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+			Status: metav1.ConditionTrue,
+		}
+	)
+	BeforeEach(func() {
+		ctx = context.Background()
+		withObjs = nil
+		groupObj = &vmopv1.VirtualMachineGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespaceName,
+				Name:      groupName,
+			},
+		}
+	})
+	JustBeforeEach(func() {
+		k8sClient = builder.NewFakeClient(withObjs...)
+	})
+	Context("Group to VirtualMachine kind members", func() {
+		JustBeforeEach(func() {
+			reqs = vmopv1util.GroupToMembersMapperFn(ctx, k8sClient, vmKind)(ctx, groupObj)
+		})
+		When("group status has no linked VM kind members", func() {
+			Specify("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+		When("group status has linked VM kind member", func() {
+			BeforeEach(func() {
+				groupObj.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
+					{
+						Kind:       vmKind,
+						Name:       vmName,
+						Conditions: []metav1.Condition{linkedTrueCondition},
+					},
+				}
+			})
+			When("VM has a different group name", func() {
+				BeforeEach(func() {
+					vmObj := &vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      vmName,
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							GroupName: "different-group",
+						},
+					}
+					withObjs = append(withObjs, vmObj)
+				})
+				Specify("no reconcile requests should be returned", func() {
+					Expect(reqs).To(BeEmpty())
+				})
+			})
+			When("VM status has both linked and placement ready conditions true", func() {
+				BeforeEach(func() {
+					vmObj := &vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      vmName,
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							GroupName: groupName,
+						},
+						Status: vmopv1.VirtualMachineStatus{
+							Conditions: []metav1.Condition{
+								linkedTrueCondition,
+								metav1.Condition{
+									Type:   vmopv1.VirtualMachineConditionPlacementReady,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					}
+					withObjs = append(withObjs, vmObj)
+				})
+				Specify("no reconcile requests should be returned", func() {
+					Expect(reqs).To(BeEmpty())
+				})
+			})
+			When("VM status has neither linked nor placement ready conditions", func() {
+				BeforeEach(func() {
+					vmObj := &vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      vmName,
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							GroupName: groupName,
+						},
+						Status: vmopv1.VirtualMachineStatus{
+							Conditions: []metav1.Condition{},
+						},
+					}
+					withObjs = append(withObjs, vmObj)
+				})
+				Specify("one reconcile request should be returned", func() {
+					Expect(reqs).To(HaveExactElements(
+						reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Namespace: namespaceName,
+								Name:      vmName,
+							},
+						},
+					))
+				})
+			})
+			When("VM status has linked condition true and placement ready condition false", func() {
+				BeforeEach(func() {
+					vmObj := &vmopv1.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      vmName,
+						},
+						Spec: vmopv1.VirtualMachineSpec{
+							GroupName: groupName,
+						},
+						Status: vmopv1.VirtualMachineStatus{
+							Conditions: []metav1.Condition{
+								linkedTrueCondition,
+								metav1.Condition{
+									Type:   vmopv1.VirtualMachineConditionPlacementReady,
+									Status: metav1.ConditionFalse,
+								},
+							},
+						},
+					}
+					withObjs = append(withObjs, vmObj)
+				})
+				Specify("one reconcile request should be returned", func() {
+					Expect(reqs).To(HaveExactElements(
+						reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Namespace: namespaceName,
+								Name:      vmName,
+							},
+						},
+					))
+				})
+			})
+		})
+	})
+	Context("Group to VirtualMachineGroup kind members", func() {
+		JustBeforeEach(func() {
+			reqs = vmopv1util.GroupToMembersMapperFn(ctx, k8sClient, groupKind)(ctx, groupObj)
+		})
+		When("parent group status has no linked VMGroup kind members", func() {
+			Specify("no reconcile requests should be returned", func() {
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+		When("parent group status has linked VMGroup kind member", func() {
+			BeforeEach(func() {
+				groupObj.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
+					{
+						Kind:       groupKind,
+						Name:       childGroupName,
+						Conditions: []metav1.Condition{linkedTrueCondition},
+					},
+				}
+			})
+			When("child group member has a different parent group name", func() {
+				BeforeEach(func() {
+					childGroupObj := &vmopv1.VirtualMachineGroup{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      childGroupName,
+						},
+						Spec: vmopv1.VirtualMachineGroupSpec{
+							GroupName: "different-group",
+						},
+					}
+					withObjs = append(withObjs, childGroupObj)
+				})
+				Specify("no reconcile requests should be returned", func() {
+					Expect(reqs).To(BeEmpty())
+				})
+			})
+			When("child group member has linked condition true", func() {
+				BeforeEach(func() {
+					childGroupObj := &vmopv1.VirtualMachineGroup{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      childGroupName,
+						},
+						Spec: vmopv1.VirtualMachineGroupSpec{
+							GroupName: groupName,
+						},
+						Status: vmopv1.VirtualMachineGroupStatus{
+							Conditions: []metav1.Condition{
+								linkedTrueCondition,
+								metav1.Condition{
+									Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					}
+					withObjs = append(withObjs, childGroupObj)
+				})
+				Specify("no reconcile requests should be returned", func() {
+					Expect(reqs).To(BeEmpty())
+				})
+			})
+			When("child group member has linked condition false", func() {
+				BeforeEach(func() {
+					childGroupObj := &vmopv1.VirtualMachineGroup{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: namespaceName,
+							Name:      childGroupName,
+						},
+						Spec: vmopv1.VirtualMachineGroupSpec{
+							GroupName: groupName,
+						},
+						Status: vmopv1.VirtualMachineGroupStatus{
+							Conditions: []metav1.Condition{
+								metav1.Condition{
+									Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+									Status: metav1.ConditionFalse,
+								},
+							},
+						},
+					}
+					withObjs = append(withObjs, childGroupObj)
+				})
+				Specify("one reconcile request should be returned", func() {
+					Expect(reqs).To(HaveExactElements(
+						reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Namespace: namespaceName,
+								Name:      childGroupName,
+							},
+						},
+					))
+				})
+			})
+		})
+	})
+})
+
+var _ = Describe("MemberToGroupMapperFn", func() {
+	var (
+		ctx      context.Context
+		groupKey types.NamespacedName
+		vmKey    types.NamespacedName
+		vmgKey   types.NamespacedName
+	)
+	BeforeEach(func() {
+		ctx = context.Background()
+		nsName := "fake-namespace"
+		groupKey = types.NamespacedName{
+			Namespace: nsName,
+			Name:      "group-name",
+		}
+		vmKey = types.NamespacedName{
+			Namespace: nsName,
+			Name:      "vm-name",
+		}
+		vmgKey = types.NamespacedName{
+			Namespace: nsName,
+			Name:      "vmg-name",
+		}
+	})
+
+	It("should enqueue a reconcile from a linked VM kind member to its group", func() {
+		vm := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: vmKey.Namespace,
+				Name:      vmKey.Name,
+			},
+		}
+		reqs := vmopv1util.MemberToGroupMapperFn(ctx)(ctx, vm)
+		Expect(reqs).To(BeEmpty())
+
+		vm.Spec.GroupName = groupKey.Name
+		reqs = vmopv1util.MemberToGroupMapperFn(ctx)(ctx, vm)
+		Expect(reqs).To(BeEmpty())
+
+		vm.Status.Conditions = []metav1.Condition{
+			{
+				Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+				Status: metav1.ConditionTrue,
+			},
+		}
+		reqs = vmopv1util.MemberToGroupMapperFn(ctx)(ctx, vm)
+		Expect(reqs).To(HaveLen(1))
+		Expect(reqs[0].NamespacedName).To(Equal(groupKey))
+	})
+
+	It("should enqueue a reconcile from a linked VMGroup kind member to its group", func() {
+		vmg := &vmopv1.VirtualMachineGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: vmgKey.Namespace,
+				Name:      vmgKey.Name,
+			},
+		}
+		reqs := vmopv1util.MemberToGroupMapperFn(ctx)(ctx, vmg)
+		Expect(reqs).To(BeEmpty())
+
+		vmg.Spec.GroupName = groupKey.Name
+		reqs = vmopv1util.MemberToGroupMapperFn(ctx)(ctx, vmg)
+		Expect(reqs).To(BeEmpty())
+
+		vmg.Status.Conditions = []metav1.Condition{
+			{
+				Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+				Status: metav1.ConditionTrue,
+			},
+		}
+		reqs = vmopv1util.MemberToGroupMapperFn(ctx)(ctx, vmg)
+		Expect(reqs).To(HaveLen(1))
+		Expect(reqs[0].NamespacedName).To(Equal(groupKey))
 	})
 })

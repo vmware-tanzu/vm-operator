@@ -485,6 +485,9 @@ func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.Customiza
 			}
 			sysPrep.Identification.DomainAdminPassword = &password
 		}
+		if sysPrep.ScriptText != "" {
+			sysPrep.ScriptText = redacted
+		}
 		cs.Identity = &sysPrep
 	}
 

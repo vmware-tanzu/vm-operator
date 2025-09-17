@@ -322,6 +322,7 @@ func restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, src *vmopv1.VirtualMac
 		if sp := bs.Sysprep; sp != nil && sp.Sysprep != nil {
 			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.Sysprep != nil && dst.Spec.Bootstrap.Sysprep.Sysprep != nil {
 				dst.Spec.Bootstrap.Sysprep.Sysprep.ExpirePasswordAfterNextLogin = sp.Sysprep.ExpirePasswordAfterNextLogin
+				dst.Spec.Bootstrap.Sysprep.Sysprep.ScriptText = sp.Sysprep.ScriptText
 			}
 		}
 	}

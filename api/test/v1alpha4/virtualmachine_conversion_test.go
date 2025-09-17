@@ -98,6 +98,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 										FullName: "vmware",
 									},
 									ExpirePasswordAfterNextLogin: true,
+									ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+										From: &vmopv1common.SecretKeySelector{
+											Name: "bar",
+											Key:  "foo",
+										},
+										Value: ptrOf("my-inline-script"),
+									},
 								},
 							},
 							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{

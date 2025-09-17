@@ -17,8 +17,10 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 var _ = Describe("GetSysprepSecretData", func() {
@@ -214,6 +216,73 @@ var _ = Describe("GetSysprepSecretData", func() {
 			It("returns an error", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal(fmt.Sprintf(`secrets "%s" not found`, pwdSecretName)))
+			})
+		})
+	})
+
+	Context("for ScriptText", func() {
+		scriptSecretName := "script_text_secret"
+
+		BeforeEach(func() {
+			inlineSysprep = vmopv1sysprep.Sysprep{
+				ScriptText: &vmopv1common.ValueOrSecretKeySelector{},
+			}
+		})
+
+		Context("ScriptText is from Secret", func() {
+			BeforeEach(func() {
+				inlineSysprep.ScriptText.From = &vmopv1common.SecretKeySelector{
+					Name: scriptSecretName,
+					Key:  "script_text",
+				}
+			})
+
+			When("secret is present", func() {
+				BeforeEach(func() {
+					initialObjects = append(initialObjects, &corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      scriptSecretName,
+							Namespace: secretNamespace,
+						},
+						Data: map[string][]byte{
+							"script_text": []byte("echo Hello, World!"),
+						},
+					})
+				})
+
+				It("returns success", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(sysprepSecretData.ScriptText).To(Equal("echo Hello, World!"))
+				})
+
+				When("key from selector is not present", func() {
+					BeforeEach(func() {
+						inlineSysprep.ScriptText.From.Key = anotherKey
+					})
+
+					It("returns an error", func() {
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(Equal(fmt.Sprintf(`no data found for key "%s" for secret default/%s`, anotherKey, scriptSecretName)))
+					})
+				})
+			})
+
+			When("secret is not present", func() {
+				It("returns an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(Equal(fmt.Sprintf(`secrets "%s" not found`, scriptSecretName)))
+				})
+			})
+		})
+
+		Context("ScriptText is inline", func() {
+			BeforeEach(func() {
+				inlineSysprep.ScriptText.Value = ptr.To("echo Hello, Inlined World!")
+			})
+
+			It("returns success", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sysprepSecretData.ScriptText).To(Equal("echo Hello, Inlined World!"))
 			})
 		})
 	})

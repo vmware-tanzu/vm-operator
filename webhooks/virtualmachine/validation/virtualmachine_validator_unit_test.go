@@ -1854,6 +1854,26 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+
+			Entry("disallow inline sysPrep ScriptText Value From Secret and direct String pointer",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									ScriptText: &common.ValueOrSecretKeySelector{
+										From:  &common.SecretKeySelector{},
+										Value: ptr.To("foo"),
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.sysprep.scriptText.value: Invalid value: "value": from and value are mutually exclusive`,
+					),
+				},
+			),
 		)
 	})
 

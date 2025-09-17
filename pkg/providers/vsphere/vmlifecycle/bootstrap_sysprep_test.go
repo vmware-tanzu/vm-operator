@@ -115,9 +115,15 @@ var _ = Describe("SysPrep Bootstrap", func() {
 		})
 
 		Context("Inlined Sysprep", func() {
-			autoUsers := int32(5)
-			password, domainPassword, productID := "password_foo", "admin_password_foo", "product_id_foo"
-			hostName := "foo-win-vm"
+
+			const (
+				autoUsers      = int32(5)
+				password       = "password_foo"
+				domainPassword = "admin_password_foo"
+				productID      = "product_id_foo"
+				scriptText     = "echo script text foo"
+				hostName       = "foo-win-vm"
+			)
 
 			BeforeEach(func() {
 				bsArgs.DomainName = "foo.local"
@@ -148,7 +154,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 					},
 					LicenseFilePrintData: &vmopv1sysprep.LicenseFilePrintData{
 						AutoMode:  vmopv1sysprep.CustomizationLicenseDataModePerServer,
-						AutoUsers: &autoUsers,
+						AutoUsers: ptr.To(autoUsers),
 					},
 				}
 
@@ -157,6 +163,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 					ProductID:      productID,
 					Password:       password,
 					DomainPassword: domainPassword,
+					ScriptText:     scriptText,
 				}
 				bsArgs.HostName = hostName
 			})
@@ -192,6 +199,8 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				Expect(sysPrep.LicenseFilePrintData.AutoUsers).To(Equal(autoUsers))
 
 				Expect(sysPrep.ResetPassword).To(BeNil())
+
+				Expect(sysPrep.ScriptText).To(Equal(scriptText))
 			})
 
 			When("Reset password is specified", func() {

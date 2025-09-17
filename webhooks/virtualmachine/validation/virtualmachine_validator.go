@@ -435,6 +435,13 @@ func (v validator) validateInlineSysprep(
 		}
 	}
 
+	if scriptText := sysprep.ScriptText; scriptText != nil {
+		if scriptText.From != nil && scriptText.Value != nil {
+			allErrs = append(allErrs, field.Invalid(s.Child("scriptText").Child("value"), "value",
+				"from and value are mutually exclusive"))
+		}
+	}
+
 	return allErrs
 }
 

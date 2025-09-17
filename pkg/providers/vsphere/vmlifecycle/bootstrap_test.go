@@ -202,6 +202,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 						Value: "value",
 					},
 				},
+				ScriptText: "value",
 			}
 		})
 
@@ -214,6 +215,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 			Expect(s.Identification.DomainAdmin).To(Equal("admin"))
 			Expect(s.Identification.DomainAdminPassword).ToNot(BeNil())
 			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("value"))
+			Expect(s.ScriptText).To(Equal("value"))
 
 			Expect(outCustSpec.Identity).ToNot(BeNil())
 			s = outCustSpec.Identity.(*vimtypes.CustomizationSysprep)
@@ -223,6 +225,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 			Expect(s.Identification.DomainAdmin).To(Equal("admin"))
 			Expect(s.Identification.DomainAdminPassword).ToNot(BeNil())
 			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("***"))
+			Expect(s.ScriptText).To(Equal("***"))
 		})
 	})
 })

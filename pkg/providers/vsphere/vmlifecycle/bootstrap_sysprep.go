@@ -162,6 +162,10 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 		sysprepCustomization.LicenseFilePrintData = convertLicenseFilePrintDataTo(from.LicenseFilePrintData)
 	}
 
+	if bootstrapData.Sysprep != nil {
+		sysprepCustomization.ScriptText = bootstrapData.Sysprep.ScriptText
+	}
+
 	return sysprepCustomization
 }
 

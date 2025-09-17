@@ -287,6 +287,7 @@ func (r *Reconciler) updateSourceAndTargetRef(ctx *pkgctx.VirtualMachinePublishR
 // publishVirtualMachine checks if source VM and target is valid. Publish a VM if all requirements are met.
 func (r *Reconciler) publishVirtualMachine(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
 	vmPublishReq := ctx.VMPublishRequest
+
 	// Check if the source and target is valid
 	if err := r.checkIsSourceValid(ctx); err != nil {
 		return fmt.Errorf("failed to check if source is valid: %w", err)
@@ -303,6 +304,18 @@ func (r *Reconciler) publishVirtualMachine(ctx *pkgctx.VirtualMachinePublishRequ
 
 	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionSourceValid) &&
 		conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionTargetValid) {
+
+		if vmPublishReq.Spec.BackoffLimit != 0 && vmPublishReq.Status.Attempts >= vmPublishReq.Spec.BackoffLimit {
+			err := pkgerr.NoRequeueError{
+				Message: "publish attempts limit has been reached",
+			}
+			conditions.MarkError(vmPublishReq,
+				vmopv1.VirtualMachinePublishRequestConditionComplete,
+				vmopv1.FatalReason,
+				err)
+
+			return err
+		}
 
 		vmPublishReq.Status.Attempts++
 		vmPublishReq.Status.LastAttemptTime = metav1.Now()
@@ -531,21 +544,25 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 	// requested-quota annotation is not present, then this signifies that the quota check is complete. We
 	// expect a value of 'Failed' with the presence of this annotation.
 	if status, ok := vmPubReq.Annotations[pkgconst.AsyncQuotaCheckStatusAnnotationKey]; ok {
+		err := pkgerr.NoRequeueError{}
 		if status == pkgconst.AsyncQuotaCheckStatusAnnotationValueFailed {
 			message := vmPubReq.Annotations[pkgconst.AsyncQuotaCheckMessageAnnotationKey]
-			err := pkgerr.NoRequeueError{
-				Message: fmt.Sprintf("quota validation has failed with message %q", message),
-			}
-			conditions.MarkError(vmPubReq,
-				vmopv1.VirtualMachinePublishRequestConditionTargetValid,
-				vmopv1.TargetContentLibraryFailedQuotaCheckReason,
-				err)
+			err.Message = fmt.Sprintf("quota validation has failed with message %q", message)
+		} else {
+			err.Message = fmt.Sprintf("quota validation has completed with an unexpected status: %s", status)
+		}
 
-			return err
-		}
-		return pkgerr.NoRequeueError{
-			Message: fmt.Sprintf("quota validation has completed with an unexpected status: %s", status),
-		}
+		conditions.MarkError(vmPubReq,
+			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+			vmopv1.TargetContentLibraryFailedQuotaCheckReason,
+			err)
+
+		conditions.MarkError(vmPubReq,
+			vmopv1.VirtualMachinePublishRequestConditionComplete,
+			vmopv1.FatalReason,
+			err)
+
+		return err
 	}
 	// Quota check has completed successfully. Continue processing as normal.
 	return nil
@@ -1048,7 +1065,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 	}()
 
 	// In case the .spec.ttlSecondsAfterFinished is not set, we can return early and no need to do any reconcile.
-	isComplete = conditions.IsTrue(vmPublishReq, vmopv1.VirtualMachinePublishRequestConditionComplete)
+	isComplete = conditions.IsTrue(vmPublishReq, vmopv1.VirtualMachinePublishRequestConditionComplete) ||
+		(conditions.GetReason(vmPublishReq, vmopv1.VirtualMachinePublishRequestConditionComplete) == vmopv1.FatalReason)
 	if isComplete {
 		requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
 		isDeleted = deleted

@@ -40,8 +40,7 @@ func CreateOVF(
 	createSpec := vcenter.CreateSpec{
 		Name:        vmPubReq.Status.TargetRef.Item.Name,
 		Description: descriptionPrefix + vmPubReq.Status.TargetRef.Item.Description,
-		// TODO: (abaruni) uncomment once work to sanitize ExtraConfig during create is completed and verified
-		//Flags:       []string{"EXTRA_CONFIG"}, // Preserve ExtraConfig
+		Flags:       []string{"EXTRA_CONFIG"}, // Preserve ExtraConfig
 	}
 
 	source := vcenter.ResourceID{

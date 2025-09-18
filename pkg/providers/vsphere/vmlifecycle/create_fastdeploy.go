@@ -66,7 +66,7 @@ func fastDeploy(
 	}
 	logger.Info("Got destination file paths", "dstFilePaths", dstFilePaths)
 
-	// Collect the disks and remove the storage profile from them.
+	// Collect the disks.
 	var (
 		disks     []*vimtypes.VirtualDisk
 		diskSpecs []*vimtypes.VirtualDeviceConfigSpec
@@ -334,21 +334,7 @@ func fastDeployDirect(
 
 	logger := pkglog.FromContextOrDefault(ctx).WithName("fastDeployDirect")
 
-	// Copy each disk into the VM directory.
-	if err := fastDeployDirectCopyDisks(
-		ctx,
-		logger,
-		datacenter,
-		configSpec,
-		srcDiskPaths,
-		dstDiskPaths,
-		diskFormat); err != nil {
-
-		return nil, err
-	}
-
-	_, isVMEncrypted := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
-
+	diskCopySpecs := make([]vimtypes.FileBackedVirtualDiskSpec, len(dstDiskPaths))
 	for i := range diskSpecs {
 		ds := diskSpecs[i]
 
@@ -356,17 +342,39 @@ func fastDeployDirect(
 		// exists.
 		ds.FileOperation = ""
 
-		if isVMEncrypted {
-			// If the VM is to be encrypted, then the disks need to be updated
-			// so they are not marked as encrypted upon VM creation. This is
-			// because it is not possible to change the encryption state of VM
-			// disks when they are being attached. Instead the disks must be
-			// encrypted after they are attached to the VM.
-			ds.Profile = nil
-			if ds.Backing != nil {
-				ds.Backing.Crypto = nil
-			}
+		profile := ds.Profile
+		if len(profile) == 0 {
+			profile = configSpec.VmProfile
 		}
+
+		diskCopySpecs[i] = vimtypes.FileBackedVirtualDiskSpec{
+			VirtualDiskSpec: vimtypes.VirtualDiskSpec{
+				AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
+				DiskType:    string(vimtypes.VirtualDiskTypeThin),
+			},
+			SectorFormat: string(diskFormat),
+			Profile:      profile,
+		}
+
+		// If the disk has a crypto spec then use it in the copy spec.
+		if ds.Backing != nil && ds.Backing.Crypto != nil {
+			diskCopySpecs[i].Crypto = ds.Backing.Crypto
+		}
+		if profile != nil && diskCopySpecs[i].Crypto == nil {
+			diskCopySpecs[i].Crypto = configSpec.Crypto
+		}
+	}
+
+	// Copy each disk into the VM directory.
+	if err := fastDeployDirectCopyDisks(
+		ctx,
+		logger,
+		datacenter,
+		srcDiskPaths,
+		dstDiskPaths,
+		diskCopySpecs); err != nil {
+
+		return nil, err
 	}
 
 	return fastDeployCreateVM(ctx, logger, folder, pool, host, configSpec)
@@ -410,35 +418,27 @@ func fastDeployDirectCopyDisks(
 	ctx context.Context,
 	logger logr.Logger,
 	datacenter *object.Datacenter,
-	configSpec vimtypes.VirtualMachineConfigSpec,
 	srcDiskPaths,
 	dstDiskPaths []string,
-	diskFormat vimtypes.DatastoreSectorFormat) error {
+	dstDiskSpecs []vimtypes.FileBackedVirtualDiskSpec) error {
 
 	var (
 		wg            sync.WaitGroup
 		copyDiskTasks = make([]*object.Task, len(srcDiskPaths))
 		copyDiskErrs  = make(chan error, len(srcDiskPaths))
-		copyDiskSpec  = vimtypes.FileBackedVirtualDiskSpec{
-			VirtualDiskSpec: vimtypes.VirtualDiskSpec{
-				AdapterType: string(vimtypes.VirtualDiskAdapterTypeLsiLogic),
-				DiskType:    string(vimtypes.VirtualDiskTypeThin),
-			},
-			SectorFormat: string(diskFormat),
-			Profile:      configSpec.VmProfile,
-		}
-		diskManager = object.NewVirtualDiskManager(datacenter.Client())
+		diskManager   = object.NewVirtualDiskManager(datacenter.Client())
 	)
 
 	for i := range srcDiskPaths {
 		s := srcDiskPaths[i]
 		d := dstDiskPaths[i]
+		c := dstDiskSpecs[i]
 
 		logger.Info(
 			"Copying disk",
 			"dstDiskPath", d,
 			"srcDiskPath", s,
-			"copyDiskSpec", copyDiskSpec)
+			"dstDiskSpec", c)
 
 		t, err := diskManager.CopyVirtualDisk(
 			ctx,
@@ -446,7 +446,7 @@ func fastDeployDirectCopyDisks(
 			datacenter,
 			d,
 			datacenter,
-			&copyDiskSpec,
+			&c,
 			false)
 		if err != nil {
 			logger.Error(err, "failed to copy disk, cancelling other tasks")

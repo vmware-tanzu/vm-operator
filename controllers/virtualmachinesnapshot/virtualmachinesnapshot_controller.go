@@ -139,14 +139,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			if reterr == nil {
 				reterr = err
 			}
-			vmSnapshotCtx.Logger.Error(err, "patch failed")
 		}
 	}()
 
 	if !vmSnapshot.DeletionTimestamp.IsZero() {
 		if err := r.ReconcileDelete(vmSnapshotCtx); err != nil {
-			vmSnapshotCtx.Logger.Error(err, "Failed to delete VirtualMachineSnapshot")
-			return ctrl.Result{}, err
+			return ctrl.Result{},
+				fmt.Errorf("failed to delete VirtualMachineSnapshot: %w", err)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -172,8 +171,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 	vm := &vmopv1.VirtualMachine{}
 	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
-		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to get VirtualMachine %q: %w", objKey, err)
 	}
 
 	ctx.VM = vm
@@ -243,8 +241,7 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 			// We don't sync SPU since we don't know which StorageClass of the VM.
 			return nil
 		}
-		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
-		return err
+		return fmt.Errorf("failed to get VirtualMachine %q: %w", objKey, err)
 	}
 
 	// Enqueue the storage class to sync corresponding SPU.

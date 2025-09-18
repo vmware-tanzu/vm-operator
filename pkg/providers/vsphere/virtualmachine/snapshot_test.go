@@ -70,7 +70,10 @@ func snapShotTests() {
 			VM:      vm,
 		}
 
-		Expect(vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)).To(Succeed())
+		Expect(vcVM.Properties(
+			vmCtx,
+			vcVM.Reference(),
+			vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -88,48 +91,104 @@ func snapShotTests() {
 				VcVM:       vcVM,
 			}
 
-			snapMo, err := virtualmachine.SnapshotVirtualMachine(args)
+			snapNode, err := virtualmachine.SnapshotVirtualMachine(args)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(snapMo).ToNot(BeNil())
+			Expect(snapNode).ToNot(BeNil())
 
-			moVM := mo.VirtualMachine{}
-			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
-			Expect(moVM.Snapshot).ToNot(BeNil())
-			Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
-			Expect(moVM.Snapshot.CurrentSnapshot.Value).To(Equal(snapMo.Value))
-			Expect(moVM.Snapshot.RootSnapshotList).To(HaveLen(1))
-			Expect(moVM.Snapshot.RootSnapshotList[0].Name).To(Equal(args.VMSnapshot.Name))
+			mo := &args.VMCtx.MoVM
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, mo)).To(Succeed())
+			Expect(mo.Snapshot).ToNot(BeNil())
+			Expect(mo.Snapshot.CurrentSnapshot).ToNot(BeNil())
+			Expect(mo.Snapshot.CurrentSnapshot.Value).To(Equal(snapNode.Snapshot.Value))
+			Expect(mo.Snapshot.RootSnapshotList).To(HaveLen(1))
+			Expect(mo.Snapshot.RootSnapshotList[0].Name).To(Equal(args.VMSnapshot.Name))
 
 			// retry the same snapshot again, no-op (ie) no child snapshot created.
-			snapMoDup, err := virtualmachine.SnapshotVirtualMachine(args)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(snapMo).ToNot(BeNil())
-			Expect(snapMo).To(Equal(snapMoDup))
+			snapNodeDup, err := virtualmachine.SnapshotVirtualMachine(args)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(snapNodeDup).ToNot(BeNil())
+			Expect(snapNodeDup).To(Equal(snapNode))
 
-			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
-			Expect(moVM.Snapshot).ToNot(BeNil())
-			Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, mo)).To(Succeed())
+			Expect(mo.Snapshot).ToNot(BeNil())
+			Expect(mo.Snapshot.CurrentSnapshot).ToNot(BeNil())
 			/// should point to the same one.
-			Expect(moVM.Snapshot.CurrentSnapshot.Value).To(Equal(snapMoDup.Value))
-			Expect(moVM.Snapshot.RootSnapshotList).To(HaveLen(1))
-			Expect(moVM.Snapshot.RootSnapshotList[0].Name).To(Equal(args.VMSnapshot.Name))
+			Expect(mo.Snapshot.CurrentSnapshot.Value).To(Equal(snapNodeDup.Snapshot.Value))
+			Expect(mo.Snapshot.RootSnapshotList).To(HaveLen(1))
+			Expect(mo.Snapshot.RootSnapshotList[0].Name).To(Equal(args.VMSnapshot.Name))
 			// zero child snapshots
-			Expect(moVM.Snapshot.RootSnapshotList[0].ChildSnapshotList).To(HaveLen(0))
+			Expect(mo.Snapshot.RootSnapshotList[0].ChildSnapshotList).To(HaveLen(0))
 
 			// Create a new snapshot with a different name, child snapshot created.
 			args.VMSnapshot.Name = "snap-2"
-			snapMo2, err := virtualmachine.SnapshotVirtualMachine(args)
+			snapNode2, err := virtualmachine.SnapshotVirtualMachine(args)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(snapMo2).ToNot(BeNil())
+			Expect(snapNode2).ToNot(BeNil())
 
-			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
-			Expect(moVM.Snapshot).ToNot(BeNil())
-			Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
-			Expect(moVM.Snapshot.CurrentSnapshot.Value).To(Equal(snapMo2.Value))
-			Expect(moVM.Snapshot.RootSnapshotList).To(HaveLen(1))
-			Expect(moVM.Snapshot.RootSnapshotList[0].Name).To(Equal("snap-1"))
-			Expect(moVM.Snapshot.RootSnapshotList[0].ChildSnapshotList).To(HaveLen(1))
-			Expect(moVM.Snapshot.RootSnapshotList[0].ChildSnapshotList[0].Name).To(Equal(args.VMSnapshot.Name))
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, mo)).To(Succeed())
+			Expect(mo.Snapshot).ToNot(BeNil())
+			Expect(mo.Snapshot.CurrentSnapshot).ToNot(BeNil())
+			Expect(mo.Snapshot.CurrentSnapshot.Value).To(Equal(snapNode2.Snapshot.Value))
+			Expect(mo.Snapshot.RootSnapshotList).To(HaveLen(1))
+			Expect(mo.Snapshot.RootSnapshotList[0].Name).To(Equal("snap-1"))
+			Expect(mo.Snapshot.RootSnapshotList[0].ChildSnapshotList).To(HaveLen(1))
+			Expect(mo.Snapshot.RootSnapshotList[0].ChildSnapshotList[0].Name).To(Equal(args.VMSnapshot.Name))
+		})
+	})
+
+	Context("FindSnapshot", func() {
+		When("snapshot not found", func() {
+			It("fails", func() {
+				snapNode, err := virtualmachine.FindSnapshot(vmCtx.MoVM, "snap-1")
+				Expect(err).To(HaveOccurred())
+				Expect(snapNode).To(BeNil())
+			})
+		})
+
+		When("snapshot found", func() {
+			JustBeforeEach(func() {
+				args := virtualmachine.SnapshotArgs{
+					VMCtx:      vmCtx,
+					VMSnapshot: vmSnapshot,
+					VcVM:       vcVM,
+				}
+				snapNode, err := virtualmachine.CreateSnapshot(args)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(snapNode).ToNot(BeNil())
+				// Fetch the newest snapshot tree.
+				Expect(vcVM.Properties(
+					vmCtx,
+					vcVM.Reference(),
+					vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)).To(Succeed())
+			})
+			It("succeeds", func() {
+				snapNode, err := virtualmachine.FindSnapshot(vmCtx.MoVM, "snap-1")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(snapNode).ToNot(BeNil())
+			})
+			When("There are nested snapshots tree", func() {
+				JustBeforeEach(func() {
+					vmSnapshot.Name = "snap-2"
+					args := virtualmachine.SnapshotArgs{
+						VMCtx:      vmCtx,
+						VMSnapshot: vmSnapshot,
+						VcVM:       vcVM,
+					}
+					snapNode, err := virtualmachine.CreateSnapshot(args)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(snapNode).ToNot(BeNil())
+					// Fetch the newest snapshot tree.
+					Expect(vcVM.Properties(
+						vmCtx,
+						vcVM.Reference(),
+						vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)).To(Succeed())
+				})
+				It("succeeds", func() {
+					snapNode, err := virtualmachine.FindSnapshot(vmCtx.MoVM, "snap-2")
+					Expect(err).ToNot(HaveOccurred())
+					Expect(snapNode).ToNot(BeNil())
+				})
+			})
 		})
 	})
 
@@ -141,14 +200,14 @@ func snapShotTests() {
 				VcVM:       vcVM,
 			}
 
-			snapMo, err := virtualmachine.CreateSnapshot(args)
+			snapNode, err := virtualmachine.CreateSnapshot(args)
 			Expect(err).To(BeNil())
-			Expect(snapMo).ToNot(BeNil())
+			Expect(snapNode).ToNot(BeNil())
 			moVM := mo.VirtualMachine{}
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
 			Expect(moVM.Snapshot).ToNot(BeNil())
 			Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
-			Expect(moVM.Snapshot.CurrentSnapshot.Value).To(Equal(snapMo.Value))
+			Expect(moVM.Snapshot.CurrentSnapshot.Value).To(Equal(snapNode.Snapshot.Value))
 			Expect(moVM.Snapshot.RootSnapshotList).To(HaveLen(1))
 			Expect(moVM.Snapshot.RootSnapshotList[0].Name).To(Equal("snap-1"))
 		})
@@ -270,12 +329,13 @@ func snapShotTests() {
 			})
 
 			It("succeeds", func() {
-				Expect(virtualmachine.GetSnapshotSize(vmCtx, moVM.Snapshot.CurrentSnapshot)).To(Equal(sum))
+				Expect(virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)).To(Equal(sum))
 			})
 
 			When("the snapshot is nil", func() {
 				It("returns 0", func() {
-					size := virtualmachine.GetSnapshotSize(vmCtx, nil)
+					size, err := virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, nil)
+					Expect(err).To(HaveOccurred())
 					Expect(size).To(Equal(int64(0)))
 				})
 			})
@@ -283,7 +343,8 @@ func snapShotTests() {
 			When("the moVM.layoutEx is nil", func() {
 				It("returns 0", func() {
 					vmCtx.MoVM.LayoutEx = nil
-					size := virtualmachine.GetSnapshotSize(vmCtx, moVM.Snapshot.CurrentSnapshot)
+					size, err := virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)
+					Expect(err).To(HaveOccurred())
 					Expect(size).To(Equal(int64(0)))
 				})
 			})
@@ -291,7 +352,9 @@ func snapShotTests() {
 			When("the moVM.config.hardware.device is empty", func() {
 				It("returns snapshot size", func() {
 					vmCtx.MoVM.Config.Hardware.Device = nil
-					Expect(virtualmachine.GetSnapshotSize(vmCtx, moVM.Snapshot.CurrentSnapshot)).To(Equal(sum))
+					size, err := virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(size).To(Equal(sum))
 				})
 			})
 		})
@@ -529,73 +592,17 @@ func snapShotTests() {
 
 			When("Get the snapshot size of Snapshot-1", func() {
 				It("returns the size by adding size of file 3, 4, 17, 18", func() {
-					Expect(virtualmachine.GetSnapshotSize(vmCtx, &snapshot1)).
+					Expect(virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, &snapshot1)).
 						To(Equal(int64(0.5*oneGiBInBytes + 500 + 500 + 2*oneGiBInBytes)))
 				})
 			})
 
 			When("Get the snapshot size of Snapshot-2", func() {
 				It("returns the size by adding size of file 5, 6, 19", func() {
-					Expect(virtualmachine.GetSnapshotSize(vmCtx, &snapshot2)).
+					Expect(virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, &snapshot2)).
 						To(Equal(int64(1*oneGiBInBytes + 500 + 1*oneGiBInBytes)))
 				})
 			})
 		})
 	})
-
-	Describe("GetParentSnapshot", func() {
-		var childSnapshot *vmopv1.VirtualMachineSnapshot
-
-		JustBeforeEach(func() {
-			By("Creating parent snapshot")
-			args := virtualmachine.SnapshotArgs{
-				VMCtx:      vmCtx,
-				VMSnapshot: vmSnapshot,
-				VcVM:       vcVM,
-			}
-			snapMo, err := virtualmachine.CreateSnapshot(args)
-			Expect(err).To(BeNil())
-			Expect(snapMo).ToNot(BeNil())
-
-			By("Creating child snapshot")
-			childSnapshot = builder.DummyVirtualMachineSnapshot(vm.Namespace, "snap-2", vm.Name)
-			args = virtualmachine.SnapshotArgs{
-				VMCtx:      vmCtx,
-				VMSnapshot: *childSnapshot,
-				VcVM:       vcVM,
-			}
-			snapMo2, err := virtualmachine.CreateSnapshot(args)
-			Expect(err).To(BeNil())
-			Expect(snapMo2).ToNot(BeNil())
-			moVM := mo.VirtualMachine{}
-			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
-			Expect(moVM.Snapshot).ToNot(BeNil())
-			vmCtx.MoVM = moVM
-		})
-
-		It("should return the parent snapshot of the child snapshot", func() {
-			parent, err := virtualmachine.GetParentSnapshot(vmCtx, vcVM, childSnapshot.Name)
-			Expect(err).To(BeNil())
-			Expect(parent).ToNot(BeNil())
-			Expect(parent.Name).To(Equal(vmSnapshot.Name))
-		})
-
-		When("there is no parent snapshot", func() {
-			It("should return nil", func() {
-				parent, err := virtualmachine.GetParentSnapshot(vmCtx, vcVM, vmSnapshot.Name)
-				Expect(err).To(BeNil())
-				Expect(parent).To(BeNil())
-			})
-		})
-
-		When("snapshot doesn't exist", func() {
-			It("should return nil", func() {
-				childSnapshot.Name = ""
-				parent, err := virtualmachine.GetParentSnapshot(vmCtx, vcVM, childSnapshot.Name)
-				Expect(err).To(BeNil())
-				Expect(parent).To(BeNil())
-			})
-		})
-	})
-
 }

@@ -52,7 +52,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -3365,7 +3364,8 @@ func vmTests() {
 						Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
 
 						// Find the snapshot name in the tree to verify it matches
-						currentSnap := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
+						currentSnap, err := virtualmachine.FindSnapshot(moVM, moVM.Snapshot.CurrentSnapshot.Value)
+						Expect(err).ToNot(HaveOccurred())
 						Expect(currentSnap).ToNot(BeNil())
 						Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
 					})
@@ -3394,9 +3394,10 @@ func vmTests() {
 							Expect(moVM.Snapshot).ToNot(BeNil())
 
 							// verify that the snapshot's power state is powered off
-							snapshot := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
-							Expect(snapshot).ToNot(BeNil())
-							Expect(snapshot.State).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
+							currentSnapshot, err := virtualmachine.FindSnapshot(moVM, moVM.Snapshot.CurrentSnapshot.Value)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(currentSnapshot).ToNot(BeNil())
+							Expect(currentSnapshot.State).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 
 							// Snapshot should be owned by the VM resource.
 							Expect(controllerutil.SetOwnerReference(vm, vmSnapshot, ctx.Scheme)).To(Succeed())
@@ -3766,7 +3767,9 @@ func vmTests() {
 						Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
 
 						// The current snapshot name should still be the original
-						currentSnap := vmlifecycle.FindSnapshotInTree(moVM.Snapshot.RootSnapshotList, moVM.Snapshot.CurrentSnapshot.Value)
+						currentSnap, err := virtualmachine.FindSnapshot(moVM, moVM.Snapshot.CurrentSnapshot.Value)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(currentSnap).ToNot(BeNil())
 						Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
 					})
 				})

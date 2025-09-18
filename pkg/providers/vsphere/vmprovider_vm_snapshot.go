@@ -34,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 // DeleteSnapshot deletes the snapshot from the VM.
@@ -108,19 +109,20 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 		return 0, fmt.Errorf("failed to get VirtualMachine %q: %w", vmCtx.VM.Name, err)
 	}
 
+	moVM := mo.VirtualMachine{}
 	if err := vcVM.Properties(
 		ctx, vcVM.Reference(),
 		[]string{"snapshot", "layoutEx", "config.hardware.device"},
-		&vmCtx.MoVM); err != nil {
+		&moVM); err != nil {
 		return 0, err
 	}
 
-	vmSnapshot, err := virtualmachine.FindSnapshot(vmCtx, vmSnapshotName)
+	vmSnapshot, err := virtualmachine.FindSnapshot(moVM, vmSnapshotName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to find snapshot %q: %w", vmSnapshotName, err)
 	}
 
-	return virtualmachine.GetSnapshotSize(vmCtx, vmSnapshot), nil
+	return virtualmachine.GetSnapshotSize(logger, moVM, &vmSnapshot.Snapshot)
 }
 
 // SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.
@@ -345,8 +347,8 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	}
 
 	// Check if the VM has a snapshot by the desired name.
-	ref, err := virtualmachine.FindSnapshot(vmCtx, desiredSnapshotName)
-	if err != nil || ref == nil {
+	snapNode, err := virtualmachine.FindSnapshot(vmCtx.MoVM, desiredSnapshotName)
+	if err != nil || snapNode == nil {
 		err := fmt.Errorf("failed to find vSphere snapshot %q: %w",
 			desiredSnapshotName, err)
 
@@ -358,6 +360,8 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 
 		return err
 	}
+
+	ref := &snapNode.Snapshot
 
 	logger = logger.WithValues("desiredSnapshotRef", ref.Value)
 	vmCtx.Context = logr.NewContext(vmCtx.Context, logger)
@@ -413,7 +417,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		"beforeRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshot)
 
 	if err := vs.restoreVMSpecFromSnapshot(
-		vmCtx, vcVM, obj, ref); err != nil {
+		vmCtx, vcVM, obj, snapNode); err != nil {
 
 		err := fmt.Errorf(
 			"failed to restore vm spec and metadata from snapshot: %w", err)
@@ -529,9 +533,12 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	snapCR *vmopv1.VirtualMachineSnapshot,
-	snapObj *vimtypes.ManagedObjectReference) error {
+	snapNode *vimtypes.VirtualMachineSnapshotTree) error {
+	if snapNode == nil {
+		return fmt.Errorf("snapshot node is nil")
+	}
 
-	vmYAML, err := vs.getVMYamlFromSnapshot(vmCtx, vcVM, snapCR, snapObj)
+	vmYAML, err := vs.getVMYamlFromSnapshot(vmCtx, vcVM, snapCR, snapNode.Snapshot)
 	if err != nil {
 		return fmt.Errorf("failed to parse VM spec from snapshot: %w", err)
 	}
@@ -543,7 +550,7 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 
 	vmCtx.Logger.V(5).Info("Restoring VM spec from snapshot", "vmYAML", vmYAML)
 	// Unmarshal and convert VM from yaml in snapshot based on API version
-	vm, err := vs.unmarshalAndConvertVMFromYAML(vmCtx, vmYAML)
+	vm, err := vs.unmarshalAndConvertVMFromYAML(vmYAML)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal and convert VM from snapshot: %w", err)
 	}
@@ -567,10 +574,11 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 	// Empty out the status.
 	vmCtx.VM.Status = vmopv1.VirtualMachineStatus{}
 
-	// reconcile the power state of the VM post revert
-	if err := vs.reconcilePostRevertPowerState(vmCtx, snapObj); err != nil {
-		return fmt.Errorf("failed to reconcile power state post revert: %w", err)
-	}
+	// Reconcile the power state of the VM post revert.
+	// vpxd sets the power state of the snapshot to Off if a VM which is On
+	// is snapshotted without the memory state. We don't need to separately
+	// handle that case here.
+	vmCtx.VM.Spec.PowerState = vmopv1util.ConvertPowerState(vmCtx.Logger, snapNode.State)
 
 	// Note that since we swapped out the annotations from the
 	// snapshot, it will implicitly remove the "restore-in-progress"
@@ -588,7 +596,7 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	snap *vmopv1.VirtualMachineSnapshot,
-	snapRef *vimtypes.ManagedObjectReference) (string, error) {
+	snapRef vimtypes.ManagedObjectReference) (string, error) {
 
 	var (
 		moSnap mo.VirtualMachineSnapshot
@@ -597,7 +605,7 @@ func (vs *vSphereVMProvider) getVMYamlFromSnapshot(
 
 	// Fetch the config stored with the snapshot.
 	if err := vcVM.Properties(
-		vmCtx, *snapRef, []string{"config"}, &moSnap); err != nil {
+		vmCtx, snapRef, []string{"config"}, &moSnap); err != nil {
 
 		return "", fmt.Errorf("failed to fetch snapshot config: %w", err)
 	}
@@ -900,7 +908,7 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 	}
 
 	logger.Info("Creating snapshot on vSphere")
-	snapMoRef, err := virtualmachine.SnapshotVirtualMachine(snapArgs)
+	snapNode, err := virtualmachine.SnapshotVirtualMachine(snapArgs)
 	if err != nil {
 		// Mark the snapshot as failed and clear in-progress status
 		// TODO: we wait for in-progress snapshots to complete when
@@ -917,9 +925,10 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 	// Update the snapshot status with the successful result
 	if err = kubeutil.PatchSnapshotSuccessStatus(
 		vmCtx,
+		logger,
 		vs.k8sClient,
 		snapshotToProcess,
-		snapMoRef,
+		snapNode,
 		vmCtx.VM.Spec.PowerState); err != nil {
 
 		return fmt.Errorf("failed to update snapshot %q status: %w",
@@ -947,15 +956,13 @@ func (vs *vSphereVMProvider) reconcileCurrentSnapshot(
 // unmarshalAndConvertVMFromYAML unmarshals VM YAML from snapshot and converts it
 // to the latest version of VirtualMachine.
 func (vs *vSphereVMProvider) unmarshalAndConvertVMFromYAML(
-	vmCtx pkgctx.VirtualMachineContext,
 	vmYAML string) (*vmopv1.VirtualMachine, error) {
 
 	decUnstructured := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
 
 	unstructuredObj := &unstructured.Unstructured{}
 	if _, _, err := decUnstructured.Decode([]byte(vmYAML), nil, unstructuredObj); err != nil {
-		vmCtx.Logger.Error(err, "failed to decode VM YAML in to Unstructured object")
-		return nil, err
+		return nil, fmt.Errorf("failed to decode VM YAML in to Unstructured object: %w", err)
 	}
 
 	// Convert it to newest version of VirtualMachine.
@@ -967,38 +974,4 @@ func (vs *vSphereVMProvider) unmarshalAndConvertVMFromYAML(
 	}
 
 	return vm, nil
-}
-
-func (vs *vSphereVMProvider) reconcilePostRevertPowerState(
-	vmCtx pkgctx.VirtualMachineContext,
-	snapObj *vimtypes.ManagedObjectReference) error {
-
-	snap := vmlifecycle.FindSnapshotInTree(vmCtx.MoVM.Snapshot.RootSnapshotList, snapObj.Value)
-	if snap == nil {
-		// weird situation here
-		// the snapshot being processed doesn't exist in the snapshot tree
-		// this shouldn't be happening
-		return fmt.Errorf("snapshot %s not found in VM Snapshot Tree", snapObj.Value)
-	}
-
-	// vpxd sets the power state of the snapshot to Off if a VM which is On
-	// is snapshotted without the memory state. We don't need to separately
-	// handle that case here.
-	switch snap.State {
-	case vimtypes.VirtualMachinePowerStatePoweredOn:
-		vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-	case vimtypes.VirtualMachinePowerStatePoweredOff:
-		vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-	case vimtypes.VirtualMachinePowerStateSuspended:
-		vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
-	default:
-		// Unknown state, log and default to off
-		// this is very very unlikely to happen
-		vmCtx.Logger.Info(
-			"Unknown snapshot power state, defaulting to Off",
-			"snapshotState", snap.State)
-		vmCtx.VM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-	}
-
-	return nil
 }

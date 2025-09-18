@@ -297,7 +297,7 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 	Context("PatchSnapshotStatus", func() {
 		var (
 			vmSnapshot *vmopv1.VirtualMachineSnapshot
-			snapMoRef  *vimtypes.ManagedObjectReference
+			snapNode   *vimtypes.VirtualMachineSnapshotTree
 		)
 
 		BeforeEach(func() {
@@ -330,8 +330,10 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 					UniqueID: "dummyID",
 				}
 
-				snapMoRef = &vimtypes.ManagedObjectReference{
-					Value: "snap-103",
+				snapNode = &vimtypes.VirtualMachineSnapshotTree{
+					Snapshot: vimtypes.ManagedObjectReference{
+						Value: "snap-103",
+					},
 				}
 
 				initObjects = append(initObjects, vmSnapshot)
@@ -340,15 +342,21 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 			It("succeeds", func() {
 				err := kubeutil.PatchSnapshotSuccessStatus(
 					vmCtx,
+					logr.Discard(),
 					k8sClient,
 					vmSnapshot,
-					snapMoRef,
+					snapNode,
 					vmCtx.VM.Spec.PowerState)
 				Expect(err).ToNot(HaveOccurred())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
-				Expect(k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: vmSnapshot.Name, Namespace: vmSnapshot.Namespace}, snapObj)).To(Succeed())
-				Expect(snapObj.Status.UniqueID).To(Equal(snapMoRef.Value))
+				Expect(k8sClient.Get(
+					vmCtx,
+					ctrlclient.ObjectKey{
+						Name:      vmSnapshot.Name,
+						Namespace: vmSnapshot.Namespace},
+					snapObj)).To(Succeed())
+				Expect(snapObj.Status.UniqueID).To(Equal(snapNode.Snapshot.Value))
 				Expect(snapObj.Status.Quiesced).To(BeTrue())
 				Expect(snapObj.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 				Expect(conditions.IsTrue(snapObj, vmopv1.VirtualMachineSnapshotCreatedCondition)).To(BeTrue())
@@ -361,11 +369,21 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 
 				if memory {
 					vmSnapshot.Spec.Memory = true
+					// When a VM is off, can't take snapshot with memory on VC UI.
+					if powerState == vmopv1.VirtualMachinePowerStateOn {
+						snapNode.State = vimtypes.VirtualMachinePowerStatePoweredOn
+					}
 				} else {
 					vmSnapshot.Spec.Memory = false
+					snapNode.State = vimtypes.VirtualMachinePowerStatePoweredOff
 				}
 
-				Expect(kubeutil.PatchSnapshotSuccessStatus(vmCtx, k8sClient, vmSnapshot, snapMoRef, powerState)).To(Succeed())
+				Expect(kubeutil.PatchSnapshotSuccessStatus(vmCtx,
+					logr.Discard(),
+					k8sClient,
+					vmSnapshot,
+					snapNode,
+					powerState)).To(Succeed())
 
 				snapObj := &vmopv1.VirtualMachineSnapshot{}
 				Expect(k8sClient.Get(vmCtx,

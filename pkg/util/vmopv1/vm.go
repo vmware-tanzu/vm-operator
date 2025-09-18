@@ -487,3 +487,21 @@ func GetContextWithWorkloadDomainIsolation(
 	// line in the call stack will use the updated value.
 	return pkgcfg.WithContext(ctx, cfg)
 }
+
+// ConvertPowerState converts a govomomi type power state to a
+// VM Operator type power state.
+func ConvertPowerState(logger logr.Logger,
+	powerState vimtypes.VirtualMachinePowerState) vmopv1.VirtualMachinePowerState {
+	switch powerState {
+	case vimtypes.VirtualMachinePowerStatePoweredOn:
+		return vmopv1.VirtualMachinePowerStateOn
+	case vimtypes.VirtualMachinePowerStatePoweredOff:
+		return vmopv1.VirtualMachinePowerStateOff
+	case vimtypes.VirtualMachinePowerStateSuspended:
+		return vmopv1.VirtualMachinePowerStateSuspended
+	default:
+		logger.Info("Unknown snapshot power state, defaulting to Off",
+			"powerState", powerState)
+		return vmopv1.VirtualMachinePowerStateOff
+	}
+}

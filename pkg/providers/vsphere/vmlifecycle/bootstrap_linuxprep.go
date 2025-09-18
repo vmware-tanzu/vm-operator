@@ -10,9 +10,11 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 func BootStrapLinuxPrep(
@@ -57,6 +59,15 @@ func BootStrapLinuxPrep(
 		}
 
 		identity.ScriptText = bsArgs.LinuxPrep.ScriptText
+	}
+
+	if id, ok := vmCtx.VM.Annotations[pkgconst.VCFAIDAnnotationKey]; ok {
+		identity.ExtraConfig = pkgutil.OptionValues(identity.ExtraConfig).Merge(
+			&vimtypes.OptionValue{
+				Key:   GOSCVCFAHashID,
+				Value: id,
+			},
+		)
 	}
 
 	customSpec := &vimtypes.CustomizationSpec{

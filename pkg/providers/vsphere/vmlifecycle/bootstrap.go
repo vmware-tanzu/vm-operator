@@ -39,6 +39,9 @@ const (
 	// GuestInfo. The other valid type is "iso".
 	OvfEnvironmentTransportGuestInfo = "com.vmware.guestInfo"
 
+	// GOSCVCFAHashID is the VCFA ID key name ExtraConfig of GSOC customization spec.
+	GOSCVCFAHashID = "vcfaVmHashKey"
+
 	redacted = "***"
 )
 

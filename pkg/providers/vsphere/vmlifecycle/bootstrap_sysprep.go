@@ -11,6 +11,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
@@ -63,7 +64,7 @@ func BootstrapSysPrep(
 			Value: data,
 		}
 	} else if sysPrep := sysPrepSpec.Sysprep; sysPrep != nil {
-		identity = convertTo(sysPrep, bsArgs)
+		identity = convertTo(vmCtx.VM, sysPrep, bsArgs)
 	} else {
 		return nil, nil, fmt.Errorf("no Sysprep data")
 	}
@@ -96,7 +97,11 @@ func BootstrapSysPrep(
 	return configSpec, customSpec, err
 }
 
-func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.CustomizationSysprep {
+func convertTo(
+	vm *vmopv1.VirtualMachine,
+	from *vmopv1sysprep.Sysprep,
+	bsArgs *BootstrapArgs) *vimtypes.CustomizationSysprep {
+
 	bootstrapData := bsArgs.BootstrapData
 
 	sysprepCustomization := &vimtypes.CustomizationSysprep{}
@@ -164,6 +169,15 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 
 	if bootstrapData.Sysprep != nil {
 		sysprepCustomization.ScriptText = bootstrapData.Sysprep.ScriptText
+	}
+
+	if id, ok := vm.Annotations[pkgconst.VCFAIDAnnotationKey]; ok {
+		sysprepCustomization.ExtraConfig = pkgutil.OptionValues(sysprepCustomization.ExtraConfig).Merge(
+			&vimtypes.OptionValue{
+				Key:   GOSCVCFAHashID,
+				Value: id,
+			},
+		)
 	}
 
 	return sysprepCustomization

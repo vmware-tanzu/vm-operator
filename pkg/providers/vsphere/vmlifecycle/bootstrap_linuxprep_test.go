@@ -16,6 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
@@ -176,6 +177,27 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 
 				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
 				Expect(linuxSpec.ScriptText).To(Equal("my-script-text"))
+			})
+		})
+
+		When("VCFA ID annotation is specified", func() {
+			BeforeEach(func() {
+				if vm.Annotations == nil {
+					vm.Annotations = make(map[string]string)
+				}
+				vm.Annotations[constants.VCFAIDAnnotationKey] = "foobar"
+			})
+
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(linuxSpec.ExtraConfig).To(HaveLen(1))
+				optVal := linuxSpec.ExtraConfig[0].GetOptionValue()
+				Expect(optVal).ToNot(BeNil())
+				Expect(optVal.Key).To(Equal(vmlifecycle.GOSCVCFAHashID))
+				Expect(optVal.Value).To(Equal("foobar"))
 			})
 		})
 

@@ -3100,10 +3100,8 @@ func unitTestsValidateCreate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
+						ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
+							Name: vmSnapshot.Name,
 						}
 					},
 					expectAllowed: false,
@@ -6153,10 +6151,9 @@ func unitTestsValidateUpdate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
+						ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
+							// Kind: vmSnapshot.Kind,
+							Name: vmSnapshot.Name,
 						}
 					},
 					expectAllowed: true,
@@ -6171,7 +6168,7 @@ func unitTestsValidateUpdate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+						ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
 							Name:       vmSnapshot.Name,
 							APIVersion: "foobar.com/v1/v2",
 							Kind:       vmSnapshot.Kind,
@@ -6192,7 +6189,7 @@ func unitTestsValidateUpdate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+						ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
 							Name:       vmSnapshot.Name,
 							APIVersion: "foobar.com/v99",
 							Kind:       vmSnapshot.Kind,
@@ -6204,7 +6201,7 @@ func unitTestsValidateUpdate() {
 					expectAllowed: false,
 				},
 			),
-			Entry("when the currentSnapshot Kind is invalid",
+			Entry("when the currentSnapshot Kind is non-empty and is invalid",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						vmSnapshot := builder.DummyVirtualMachineSnapshot(
@@ -6213,7 +6210,7 @@ func unitTestsValidateUpdate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+						ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
 							Name:       vmSnapshot.Name,
 							APIVersion: vmSnapshot.APIVersion,
 							Kind:       "VMSnapshot",
@@ -6228,16 +6225,8 @@ func unitTestsValidateUpdate() {
 			Entry("when the currentSnapshot Name is empty",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						vmSnapshot := builder.DummyVirtualMachineSnapshot(
-							ctx.vm.Namespace,
-							"dummy-vm-snapshot",
-							ctx.vm.Name,
-						)
-
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       "",
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
+						ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
+							Name: "",
 						}
 					},
 					validate: doValidateWithMsg(
@@ -6261,10 +6250,8 @@ func unitTestsValidateUpdate() {
 						}
 						ctx.vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
+						ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
+							Name: vmSnapshot.Name,
 						}
 					},
 					validate: doValidateWithMsg(
@@ -6276,10 +6263,11 @@ func unitTestsValidateUpdate() {
 			Entry("when a VM is being reverted to a snapshot, revert should be rejected",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+						ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
 							Name: "new-snap",
 						}
-						ctx.oldVM.Spec.CurrentSnapshot = &common.LocalObjectRef{
+
+						ctx.oldVM.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
 							Name: "old-snap",
 						}
 					},

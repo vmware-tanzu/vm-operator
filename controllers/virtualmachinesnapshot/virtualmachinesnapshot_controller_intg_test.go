@@ -19,7 +19,6 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -276,7 +275,8 @@ func intgTestsReconcile() {
 							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
 							g.Expect(vmObj).ToNot(BeNil())
 							g.Expect(vmObj.Status.CurrentSnapshot).To(Not(BeNil()))
-							g.Expect(*vmObj.Status.CurrentSnapshot).To(Equal(*newManagedSnapshotRefWithSnapshotName(vmSnapshot.Name)))
+							g.Expect(vmObj.Status.CurrentSnapshot).To(Equal(
+								newManagedSnapshotRefWithSnapshotName(vmSnapshot.Name)))
 						}).Should(Succeed())
 					})
 				})
@@ -300,7 +300,8 @@ func intgTestsReconcile() {
 						Consistently(func(g Gomega) {
 							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
 							g.Expect(vmObj).ToNot(BeNil())
-							g.Expect(vmObj.Status.CurrentSnapshot).To(Equal(newManagedSnapshotRefWithSnapshotName(vmSnapshot.Name)))
+							g.Expect(vmObj.Status.CurrentSnapshot).To(Equal(
+								newManagedSnapshotRefWithSnapshotName(vmSnapshot.Name)))
 							g.Expect(vmObj.Status.RootSnapshots).To(BeNil())
 						}).Should(Succeed())
 					})
@@ -350,9 +351,8 @@ func intgTestsReconcile() {
 							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
 							g.Expect(vmObj).ToNot(BeNil())
 							g.Expect(vmObj.Status.CurrentSnapshot).ToNot(BeNil())
-							g.Expect(vmObj.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-							g.Expect(vmObj.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-							g.Expect(vmObj.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+							g.Expect(vmObj.Status.CurrentSnapshot).To(Equal(
+								newManagedSnapshotRefWithSnapshotName(vmSnapshot.Name)))
 						}).Should(Succeed(), "waiting current snapshot to be set on virtualmachine")
 					}
 				})
@@ -571,7 +571,9 @@ func intgTestsReconcile() {
 						Eventually(func(g Gomega) {
 							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
 							g.Expect(vmObj.Status.RootSnapshots).To(HaveLen(1))
-							g.Expect(vmObj.Status.RootSnapshots).To(ContainElement(*newManagedSnapshotRefWithSnapshotName(vmSnapshotL2Name)))
+							g.Expect(vmObj.Status.RootSnapshots).To(ContainElement(
+								*newManagedSnapshotRefWithSnapshotName(vmSnapshotL2Name),
+							))
 						}).Should(Succeed(), "waiting for vm root snapshots to be updated")
 					})
 				})
@@ -631,14 +633,18 @@ func intgTestsReconcile() {
 							vmSnapshotL2Obj := getVirtualMachineSnapshot(vcSimCtx, types.NamespacedName{Name: vmSnapshotL2.Name, Namespace: vmSnapshotL2.Namespace})
 							g.Expect(vmSnapshotL2Obj).ToNot(BeNil())
 							g.Expect(vmSnapshotL2Obj.Status.Children).To(HaveLen(1))
-							g.Expect(vmSnapshotL2Obj.Status.Children).To(ContainElement(*newManagedSnapshotRefWithSnapshotName(vmSnapshotL3Node2.Name)))
+							g.Expect(vmSnapshotL2Obj.Status.Children).To(ContainElement(
+								*newManagedSnapshotRefWithSnapshotName(vmSnapshotL3Node2.Name),
+							))
 						}).Should(Succeed(), "waiting for vmSnapshotL2's children to be updated")
 
 						By("check vm root snapshots should be updated")
 						Eventually(func(g Gomega) {
 							vmObj := getVirtualMachine(vcSimCtx, vmObjKey)
 							g.Expect(vmObj.Status.RootSnapshots).To(HaveLen(1))
-							g.Expect(vmObj.Status.RootSnapshots).To(ContainElement(*newManagedSnapshotRefWithSnapshotName(vmSnapshotL1.Name)))
+							g.Expect(vmObj.Status.RootSnapshots).To(ContainElement(
+								*newManagedSnapshotRefWithSnapshotName(vmSnapshotL1.Name),
+							))
 						}).Should(Succeed(), "waiting for vm root snapshots to be updated")
 					})
 				})
@@ -664,10 +670,9 @@ func newManagedSnapshotRefWithSnapshotName(name string) *vmopv1.VirtualMachineSn
 
 // This is a workaround when controller-runtime doesn't set the version and kind if the
 // object is created by ctrlClient.Get().
-func newLocalObjectRefWithSnapshotName(name string) *vmopv1common.LocalObjectRef {
-	return &vmopv1common.LocalObjectRef{
-		APIVersion: "vmoperator.vmware.com/v1alpha5",
-		Kind:       "VirtualMachineSnapshot",
-		Name:       name,
+func newLocalObjectRefWithSnapshotName(name string) *vmopv1.VirtualMachineSnapshotPartialRef {
+	return &vmopv1.VirtualMachineSnapshotPartialRef{
+		Kind: "VirtualMachineSnapshot",
+		Name: name,
 	}
 }

@@ -2035,7 +2035,7 @@ func (v validator) validateBootOptions(
 }
 
 func (v validator) validateSnapshot(
-	ctx *pkgctx.WebhookRequestContext,
+	_ *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine,
 	oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
@@ -2073,7 +2073,8 @@ func (v validator) validateSnapshot(
 		}
 	}
 
-	if vm.Spec.CurrentSnapshot.Kind != vmSnapshotKind {
+	// if Kind is non-empty, it must be "VirtualMachineSnapshot"
+	if vm.Spec.CurrentSnapshot.Kind != "" && vm.Spec.CurrentSnapshot.Kind != vmSnapshotKind {
 		allErrs = append(allErrs, field.NotSupported(
 			snapshotPath.Child("kind"), vm.Spec.CurrentSnapshot.Kind, []string{vmSnapshotKind},
 		))

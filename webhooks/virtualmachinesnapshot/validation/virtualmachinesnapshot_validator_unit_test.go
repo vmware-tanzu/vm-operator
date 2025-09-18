@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -222,10 +221,8 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.updateVMRef {
-			ctx.vmSnapshot.Spec.VMRef = &common.LocalObjectRef{
-				Name:       "another-vm",
-				Kind:       "VirtualMachine",
-				APIVersion: "vmoperator.vmware.com/v1alpha5",
+			ctx.vmSnapshot.Spec.VMRef = &vmopv1.VirtualMachinePartialRef{
+				Name: "another-vm",
 			}
 		}
 

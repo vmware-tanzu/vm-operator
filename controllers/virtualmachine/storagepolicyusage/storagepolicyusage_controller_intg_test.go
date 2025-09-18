@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -252,10 +251,8 @@ func intgTestsReconcile() {
 						},
 					},
 					Spec: vmopv1.VirtualMachineSnapshotSpec{
-						VMRef: &vmopv1common.LocalObjectRef{
-							APIVersion: vmopv1.GroupVersion.String(),
-							Kind:       spqutil.VirtualMachineKind,
-							Name:       "vm-1",
+						VMRef: &vmopv1.VirtualMachinePartialRef{
+							Name: "vm-1",
 						},
 					},
 					Status: vmopv1.VirtualMachineSnapshotStatus{
@@ -279,10 +276,8 @@ func intgTestsReconcile() {
 						},
 					},
 					Spec: vmopv1.VirtualMachineSnapshotSpec{
-						VMRef: &vmopv1common.LocalObjectRef{
-							APIVersion: vmopv1.GroupVersion.String(),
-							Kind:       spqutil.VirtualMachineKind,
-							Name:       "vm-2",
+						VMRef: &vmopv1.VirtualMachinePartialRef{
+							Name: "vm-2",
 						},
 					},
 					Status: vmopv1.VirtualMachineSnapshotStatus{

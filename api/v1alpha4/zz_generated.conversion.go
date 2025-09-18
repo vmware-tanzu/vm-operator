@@ -4812,7 +4812,7 @@ func autoConvert_v1alpha4_VirtualMachineSnapshotSpec_To_v1alpha5_VirtualMachineS
 	out.Memory = in.Memory
 	out.Quiesce = (*v1alpha5.QuiesceSpec)(unsafe.Pointer(in.Quiesce))
 	out.Description = in.Description
-	out.VMRef = (*v1alpha5common.LocalObjectRef)(unsafe.Pointer(in.VMRef))
+	out.VMRef = (*v1alpha5.VirtualMachinePartialRef)(unsafe.Pointer(in.VMRef))
 	return nil
 }
 
@@ -4964,7 +4964,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	out.GuestID = in.GuestID
 	out.PromoteDisksMode = v1alpha5.VirtualMachinePromoteDisksMode(in.PromoteDisksMode)
 	out.BootOptions = (*v1alpha5.VirtualMachineBootOptions)(unsafe.Pointer(in.BootOptions))
-	out.CurrentSnapshot = (*v1alpha5common.LocalObjectRef)(unsafe.Pointer(in.CurrentSnapshot))
+	out.CurrentSnapshot = (*v1alpha5.VirtualMachineSnapshotPartialRef)(unsafe.Pointer(in.CurrentSnapshot))
 	out.GroupName = in.GroupName
 	return nil
 }

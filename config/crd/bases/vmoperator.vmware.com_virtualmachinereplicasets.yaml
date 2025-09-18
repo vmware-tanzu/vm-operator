@@ -8183,27 +8183,19 @@ spec:
                           VirtualMachineSpec.
                         properties:
                           apiVersion:
+                            default: vmoperator.vmware.com/v1alpha5
                             description: |-
                               APIVersion defines the versioned schema of this representation of an
                               object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
                             type: string
                           kind:
-                            description: |-
-                              Kind is a string value representing the REST resource this object
-                              represents.
-                              Servers may infer this from the endpoint the client submits requests to.
-                              Cannot be updated.
-                              In CamelCase.
-                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                            default: VirtualMachineSnapshot
+                            description: Kind represents the kind of the snapshot.
                             type: string
                           name:
-                            description: |-
-                              Name refers to a unique resource in the current namespace.
-                              More info: http://kubernetes.io/docs/user-guide/identifiers#names
+                            description: Name represents the name of the snapshot.
                             type: string
                         required:
-                        - apiVersion
-                        - kind
                         - name
                         type: object
                       groupName:

@@ -19,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesnapshot"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -708,10 +707,9 @@ func unitTestsReconcile() {
 func vmSnapshotCRToManagedSnapshotRefWithDefaultVersion(vmSnapshot *vmopv1.VirtualMachineSnapshot) *vmopv1.VirtualMachineSnapshotReference {
 	return &vmopv1.VirtualMachineSnapshotReference{
 		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: &vmopv1common.LocalObjectRef{
-			APIVersion: vmSnapshot.APIVersion,
-			Kind:       vmSnapshot.Kind,
-			Name:       vmSnapshot.Name,
+		Reference: &vmopv1.VirtualMachineSnapshotPartialRef{
+			Kind: "VirtualMachineSnapshot",
+			Name: vmSnapshot.Name,
 		},
 	}
 }

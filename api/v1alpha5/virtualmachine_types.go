@@ -998,7 +998,7 @@ type VirtualMachineSpec struct {
 	// the power state from the snapshot (i.e., powered on). This can
 	// be overridden by specifying the PowerState to PoweredOff in the
 	// VirtualMachineSpec.
-	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
+	CurrentSnapshot *VirtualMachineSnapshotPartialRef `json:"currentSnapshot,omitempty"`
 
 	// +optional
 
@@ -1253,6 +1253,24 @@ type VirtualMachineStatus struct {
 
 	// Policies describes the observed policies applied to this VM.
 	Policies []PolicyStatus `json:"policies,omitempty"`
+}
+
+type VirtualMachinePartialRef struct {
+	// +optional
+	// +kubebuilder:default=vmoperator.vmware.com/v1alpha5
+
+	// APIVersion defines the versioned schema of this representation of an
+	// object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+	APIVersion string `json:"apiVersion"`
+
+	// +optional
+	// +kubebuilder:default=VirtualMachine
+
+	// Kind represents the kind of the virtual machine.
+	Kind string `json:"kind,omitempty"`
+
+	// Name represents the name of the virtual machine.
+	Name string `json:"name"`
 }
 
 // +kubebuilder:object:root=true

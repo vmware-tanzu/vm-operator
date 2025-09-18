@@ -165,6 +165,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeySharedDisks: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyGuestCustomizationVCDParity: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -182,6 +185,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMPlacementPolicies = true
 							config.Features.VMWaitForFirstConsumerPVC = true
 							config.Features.VMSharedDisks = true
+							config.Features.GuestCustomizationVCDParity = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -219,6 +223,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeySharedDisks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMSharedDisks).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeTrue())
 					})
 				})
 
@@ -258,6 +265,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeySharedDisks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMSharedDisks).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeTrue())
 					})
 				})
 			})
@@ -306,6 +316,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeySharedDisks: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyGuestCustomizationVCDParity: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -346,6 +359,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeySharedDisks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMSharedDisks).To(BeFalse())
 					})
+					Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeFalse())
+					})
 				})
 
 				When("the capabilities are different", func() {
@@ -358,6 +374,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMGroups = true
 							config.Features.VMWaitForFirstConsumerPVC = true
 							config.Features.VMSharedDisks = true
+							config.Features.GuestCustomizationVCDParity = true
 						})
 					})
 					Specify("capabilities changed", func() {
@@ -395,6 +412,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeySharedDisks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMSharedDisks).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeFalse())
 					})
 				})
 			})
@@ -651,6 +671,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMSharedDisks).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyGuestCustomizationVCDParity] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("GuestCustomizationVCDParity=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -700,6 +733,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeySharedDisks: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyGuestCustomizationVCDParity: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -724,6 +760,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMPlacementPolicies = true
 					config.Features.VMWaitForFirstConsumerPVC = true
 					config.Features.VMSharedDisks = true
+					config.Features.GuestCustomizationVCDParity = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -763,6 +800,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeySharedDisks, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMSharedDisks).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -777,11 +817,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.InventoryContentLibrary = false
 					config.Features.VMWaitForFirstConsumerPVC = false
 					config.Features.VMSharedDisks = false
+					config.Features.GuestCustomizationVCDParity = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -815,6 +856,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeySharedDisks, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMSharedDisks).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeFalse())
 			})
 		})
 	})

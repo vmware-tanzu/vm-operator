@@ -69,7 +69,7 @@ func intgTestsMutating() {
 				By("verifying the VM name label")
 				snap := &vmopv1.VirtualMachineSnapshot{}
 				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmSnapshot), snap)).To(Succeed())
-				Expect(snap.Labels).To(HaveKeyWithValue(vmopv1.VMNameForSnapshotLabel, vmSnapshot.Spec.VMRef.Name))
+				Expect(snap.Labels).To(HaveKeyWithValue(vmopv1.VMNameForSnapshotLabel, vmSnapshot.Spec.VMName))
 			})
 
 			It("should allow updating snapshots", func() {

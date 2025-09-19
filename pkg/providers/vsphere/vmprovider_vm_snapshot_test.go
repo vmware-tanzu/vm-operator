@@ -179,12 +179,10 @@ func vmSnapshotTests() {
 			Expect(vmProvider.SyncVMSnapshotTreeStatus(ctx, vm)).To(Succeed())
 			Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 			Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-			Expect(vm.Status.RootSnapshots[0].Reference).ToNot(BeNil())
-			Expect(vm.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+			Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 			Expect(vm.Status.RootSnapshots).To(HaveLen(1))
+			Expect(vm.Status.RootSnapshots[0].Name).To(Equal(vmSnapshot.Name))
 			Expect(vm.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-			Expect(vm.Status.RootSnapshots[0].Reference).ToNot(BeNil())
-			Expect(vm.Status.RootSnapshots[0].Reference.Name).To(Equal(vmSnapshot.Name))
 		})
 
 		When("VM is not found", func() {

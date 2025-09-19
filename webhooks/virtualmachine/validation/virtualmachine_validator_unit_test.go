@@ -3088,7 +3088,7 @@ func unitTestsValidateCreate() {
 	})
 
 	Context("Snapshots", func() {
-		snapshotPath := field.NewPath("spec", "currentSnapshot")
+		snapshotPath := field.NewPath("spec", "currentSnapshotName")
 
 		DescribeTable("currentSnapshot", doTest,
 			Entry("when a VM is created with a currentSnapshot",
@@ -3100,11 +3100,7 @@ func unitTestsValidateCreate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
@@ -6357,7 +6353,7 @@ func unitTestsValidateUpdate() {
 	)
 
 	Context("Snapshots", func() {
-		snapshotPath := field.NewPath("spec", "currentSnapshot")
+		snapshotPath := field.NewPath("spec", "currentSnapshotName")
 
 		DescribeTable("currentSnapshot", doTest,
 			Entry("when the VirtualSnapshot exists",
@@ -6369,11 +6365,7 @@ func unitTestsValidateUpdate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.ObjectMeta.Name
 					},
 					expectAllowed: true,
 				},
@@ -6387,79 +6379,37 @@ func unitTestsValidateUpdate() {
 							ctx.vm.Name,
 						)
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: "foobar.com/v1/v2",
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 					},
-					validate: doValidateWithMsg(
-						field.Invalid(snapshotPath.Child("apiVersion"), "foobar.com/v1/v2", "must be valid group version").Error(),
-					),
-					expectAllowed: false,
+					validate:      nil,
+					expectAllowed: true,
 				},
 			),
 			Entry("when the currentSnapshot APIVersion is non-empty and group is invalid",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						vmSnapshot := builder.DummyVirtualMachineSnapshot(
-							ctx.vm.Namespace,
-							"dummy-vm-snapshot",
-							ctx.vm.Name,
-						)
-
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: "foobar.com/v99",
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = "snap-1"
 					},
-					validate: doValidateWithMsg(
-						field.Invalid(snapshotPath.Child("apiVersion"), "foobar.com/v99", fmt.Sprintf("group must be %q", vmopv1.GroupName)).Error(),
-					),
-					expectAllowed: false,
+					validate:      nil, // CurrentSnapshot is now just a string, no APIVersion validation
+					expectAllowed: true,
 				},
 			),
 			Entry("when the currentSnapshot Kind is invalid",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						vmSnapshot := builder.DummyVirtualMachineSnapshot(
-							ctx.vm.Namespace,
-							"dummy-vm-snapshot",
-							ctx.vm.Name,
-						)
-
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       "VMSnapshot",
-						}
+						ctx.vm.Spec.CurrentSnapshotName = "snap-1"
 					},
-					validate: doValidateWithMsg(
-						field.NotSupported(snapshotPath.Child("kind"), "VMSnapshot", []string{"VirtualMachineSnapshot"}).Error(),
-					),
-					expectAllowed: false,
+					validate:      nil, // CurrentSnapshot is now just a string, no complex validation
+					expectAllowed: true,
 				},
 			),
 			Entry("when the currentSnapshot Name is empty",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						vmSnapshot := builder.DummyVirtualMachineSnapshot(
-							ctx.vm.Namespace,
-							"dummy-vm-snapshot",
-							ctx.vm.Name,
-						)
-
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       "",
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = ""
 					},
-					validate: doValidateWithMsg(
-						field.Required(snapshotPath.Child("name"), "").Error(),
-					),
-					expectAllowed: false,
+					validate:      nil, // Empty string is valid for CurrentSnapshot (means no revert)
+					expectAllowed: true,
 				},
 			),
 			Entry("when the VM is a VKS node attempting snapshot revert",
@@ -6477,11 +6427,7 @@ func unitTestsValidateUpdate() {
 						}
 						ctx.vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
 
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name:       vmSnapshot.Name,
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-						}
+						ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(snapshotPath, "snapshot revert is not allowed for VKS nodes").Error(),
@@ -6492,12 +6438,8 @@ func unitTestsValidateUpdate() {
 			Entry("when a VM is being reverted to a snapshot, revert should be rejected",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name: "new-snap",
-						}
-						ctx.oldVM.Spec.CurrentSnapshot = &common.LocalObjectRef{
-							Name: "old-snap",
-						}
+						ctx.vm.Spec.CurrentSnapshotName = "new-snap"
+						ctx.oldVM.Spec.CurrentSnapshotName = "old-snap"
 					},
 					validate: doValidateWithMsg(
 						field.Forbidden(snapshotPath, "a snapshot revert is already in progress").Error(),

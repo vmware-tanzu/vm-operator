@@ -27,8 +27,8 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 )
 
@@ -406,8 +406,8 @@ func (r *Reconciler) reportReservedForSnapshot(
 	total *resource.Quantity,
 	storageClass string) error {
 
-	if vmSnapshot.Spec.VMRef == nil {
-		return fmt.Errorf("vmRef is not set")
+	if vmSnapshot.Spec.VMName == "" {
+		return fmt.Errorf("vmName is not set")
 	}
 
 	logger := pkglog.FromContextOrDefault(ctx)
@@ -441,11 +441,11 @@ func (r *Reconciler) reportUsedForSnapshot(
 	total *resource.Quantity,
 	vmNames sets.Set[string]) error {
 
-	if vmSnapshot.Spec.VMRef == nil {
-		return fmt.Errorf("vmRef is not set")
+	if vmSnapshot.Spec.VMName == "" {
+		return fmt.Errorf("vmName is not set")
 	}
 
-	if !vmNames.Has(vmSnapshot.Spec.VMRef.Name) {
+	if !vmNames.Has(vmSnapshot.Spec.VMName) {
 		// The VMs listed are filtered by their StorageClass, so this means this snapshot is not
 		// for this SPU's StorageClass.
 		return nil

@@ -19,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
@@ -28,8 +27,6 @@ import (
 
 const (
 	webHookName = "default"
-
-	virtualMachineKind = "VirtualMachine"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachinesnapshot,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinesnapshots,versions=v1alpha5,name=default.validating.virtualmachinesnapshot.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -73,35 +70,15 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	var fieldErrs field.ErrorList
 
-	vmRefField := field.NewPath("spec", "vmRef")
+	vmNameField := field.NewPath("spec", "vmName")
 
-	if vmSnapshot.Spec.VMRef != nil {
-		if vmSnapshot.Spec.VMRef.Kind != virtualMachineKind {
-			fieldErrs = append(fieldErrs, field.Invalid(vmRefField.Child("kind"),
-				vmSnapshot.Spec.VMRef.Kind, fmt.Sprintf("must be %q", virtualMachineKind)))
-		}
-
-		if vmSnapshot.Spec.VMRef.APIVersion != "" {
-			gv, err := schema.ParseGroupVersion(vmSnapshot.Spec.VMRef.APIVersion)
-			if err != nil {
-				fieldErrs = append(fieldErrs, field.Invalid(vmRefField.Child("apiVersion"),
-					vmSnapshot.Spec.VMRef.APIVersion, "must be valid group version"))
-			} else if gv.Group != vmopv1.GroupName {
-				fieldErrs = append(fieldErrs, field.Invalid(vmRefField.Child("apiVersion"),
-					vmSnapshot.Spec.VMRef.APIVersion, fmt.Sprintf("group must be %q", vmopv1.GroupName)))
-			}
-		}
-
-		if vmSnapshot.Spec.VMRef.Name == "" {
-			fieldErrs = append(fieldErrs, field.Required(vmRefField.Child("name"), "name must be provided"))
-		} else {
-			// Check if the referenced VM is a VKS/TKG node and prevent snapshot
-			if err := v.validateVMNotVKSNode(ctx, vmSnapshot.Spec.VMRef, vmSnapshot.Namespace); err != nil {
-				fieldErrs = append(fieldErrs, field.Forbidden(vmRefField, err.Error()))
-			}
-		}
+	if vmSnapshot.Spec.VMName == "" {
+		fieldErrs = append(fieldErrs, field.Required(vmNameField, "vmName must be provided"))
 	} else {
-		fieldErrs = append(fieldErrs, field.Required(vmRefField, "vmRef must be provided"))
+		// Check if the referenced VM is a VKS/TKG node and prevent snapshot
+		if err := v.validateVMNotVKSNode(ctx, vmSnapshot.Spec.VMName, vmSnapshot.Namespace); err != nil {
+			fieldErrs = append(fieldErrs, field.Forbidden(vmNameField, err.Error()))
+		}
 	}
 
 	validationErrs := make([]string, 0)
@@ -133,7 +110,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	fieldErrs = append(fieldErrs, validation.ValidateImmutableField(vmSnapshot.Spec.Memory, oldVMSnapshot.Spec.Memory, field.NewPath("spec", "memory"))...)
 	fieldErrs = append(fieldErrs, validation.ValidateImmutableField(vmSnapshot.Spec.Quiesce, oldVMSnapshot.Spec.Quiesce, field.NewPath("spec", "quiesce"))...)
-	fieldErrs = append(fieldErrs, validation.ValidateImmutableField(vmSnapshot.Spec.VMRef, oldVMSnapshot.Spec.VMRef, field.NewPath("spec", "vmRef"))...)
+	fieldErrs = append(fieldErrs, validation.ValidateImmutableField(vmSnapshot.Spec.VMName, oldVMSnapshot.Spec.VMName, field.NewPath("spec", "vmName"))...)
 	fieldErrs = append(fieldErrs, v.validateImmutableVMNameLabel(ctx, vmSnapshot, oldVMSnapshot)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
@@ -166,18 +143,18 @@ func (v validator) validateImmutableVMNameLabel(
 }
 
 // validateVMNotVKSNode checks if the referenced VM is a VKS/TKG node and returns an error if it is.
-func (v validator) validateVMNotVKSNode(ctx *pkgctx.WebhookRequestContext, vmRef *vmopv1common.LocalObjectRef, namespace string) error {
+func (v validator) validateVMNotVKSNode(ctx *pkgctx.WebhookRequestContext, vmName, namespace string) error {
 	// Get the referenced VM
 	vm := &vmopv1.VirtualMachine{}
 	vmKey := client.ObjectKey{
-		Name:      vmRef.Name,
+		Name:      vmName,
 		Namespace: namespace,
 	}
 
 	if err := v.client.Get(ctx, vmKey, vm); err != nil {
 		// If we can't get the VM, let the snapshot creation proceed
 		// The actual snapshot process will handle missing VMs appropriately
-		ctx.Logger.V(4).Info("Unable to get VM for VKS validation, allowing snapshot", "vmName", vmRef.Name, "error", err)
+		ctx.Logger.V(4).Info("Unable to get VM for VKS validation, allowing snapshot", "vmName", vmName, "error", err)
 		return nil
 	}
 

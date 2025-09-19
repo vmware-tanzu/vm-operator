@@ -211,10 +211,10 @@ func (vs *vSphereVMProvider) getVirtualMachineSnapshotsForVM(
 	}
 
 	// Filter snapshots that reference this VM. We do this by checking
-	// the VMRef, and by filtering the snapshots owned by this VM.
+	// the VMName, and by filtering the snapshots owned by this VM.
 	var vmSnapshots []vmopv1.VirtualMachineSnapshot
 	for _, snapshot := range snapshotList.Items {
-		if snapshot.Spec.VMRef != nil && snapshot.Spec.VMRef.Name == vmCtx.VM.Name {
+		if snapshot.Spec.VMName == vmCtx.VM.Name {
 			vmSnapshots = append(vmSnapshots, snapshot)
 		}
 	}
@@ -274,7 +274,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	logger.V(4).Info("Reconciling snapshot revert")
 
 	// If no spec.currentSnapshot is specified, nothing to revert to.
-	if vmCtx.VM.Spec.CurrentSnapshot == nil {
+	if vmCtx.VM.Spec.CurrentSnapshotName == "" {
 		logger.V(4).Info("Skipping revert for empty spec.currentSnapshot")
 
 		// Clear any existing snapshot revert condition.
@@ -286,10 +286,10 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		return nil
 	}
 
-	desiredSnapshotName := vmCtx.VM.Spec.CurrentSnapshot.Name
+	desiredSnapshotName := vmCtx.VM.Spec.CurrentSnapshotName
 	logger = logger.WithValues(
 		"desiredSnapshotName",
-		vmCtx.VM.Spec.CurrentSnapshot.Name)
+		vmCtx.VM.Spec.CurrentSnapshotName)
 	vmCtx.Context = logr.NewContext(vmCtx.Context, logger)
 
 	// Skip snapshot revert processing for VKS/TKG nodes.
@@ -414,7 +414,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	logger.Info("Starting VM spec and metadata restoration from snapshot",
 		"beforeRestoreAnnotations", vmCtx.VM.Annotations,
 		"beforeRestoreLabels", vmCtx.VM.Labels,
-		"beforeRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshot)
+		"beforeRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshotName)
 
 	if err := vs.restoreVMSpecFromSnapshot(
 		vmCtx, vcVM, obj, snapNode); err != nil {
@@ -434,7 +434,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	logger.V(4).Info("VM spec restoration completed",
 		"afterRestoreAnnotations", vmCtx.VM.Annotations,
 		"afterRestoreLabels", vmCtx.VM.Labels,
-		"afterRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshot)
+		"afterRestoreSpecCurrentSnapshot", vmCtx.VM.Spec.CurrentSnapshotName)
 
 	logger.Info("Successfully completed reverted snapshot")
 
@@ -564,7 +564,7 @@ func (vs *vSphereVMProvider) restoreVMSpecFromSnapshot(
 	// currentSnapshot is only set during a revert operation. However,
 	// in the off-chance that a snapshot was taken _during_ a revert,
 	// clear it out.
-	vmCtx.VM.Spec.CurrentSnapshot = nil
+	vmCtx.VM.Spec.CurrentSnapshotName = ""
 
 	// TODO: AKP: We need to merge (and skip) some labels so that we
 	// are not simply reverting to the previous labels. Otherwise, we
@@ -772,7 +772,7 @@ func synthesizeVMSpecForSnapshot(
 		PowerOffMode: vmopv1.VirtualMachinePowerOpModeTrySoft,
 
 		// Used to trigger a revert, so must be empty.
-		CurrentSnapshot: nil,
+		CurrentSnapshotName: "",
 
 		// Group name is overridden to the VM's current group.
 		// We can't know (or guess) what the group the VM was when the

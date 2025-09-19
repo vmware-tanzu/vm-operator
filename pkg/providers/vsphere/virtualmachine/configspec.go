@@ -7,6 +7,7 @@ package virtualmachine
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -158,6 +159,7 @@ func CreateConfigSpec(
 	// Populate the affinity policy for the VM.
 	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
 		genConfigSpecAffinityPolicies(vmCtx, &configSpec)
+		genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec)
 	}
 
 	return configSpec
@@ -260,9 +262,6 @@ func genConfigSpecAffinityPolicies(
 			// Create a single effective VmToVmGroupsAntiAffinity policy if we have any labels
 			if len(allAntiAffinityLabels) > 0 {
 				placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
-					VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-						// TagsToAttach will be set later with all VM labels
-					},
 					AntiAffinedVmGroupTags: allAntiAffinityLabels,
 					PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
 					PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
@@ -275,15 +274,42 @@ func genConfigSpecAffinityPolicies(
 	if len(placementPols) > 0 {
 		configSpec.VmPlacementPolicies = placementPols
 	}
+}
 
-	if configSpec.VmPlacementPolicies == nil {
-		configSpec.VmPlacementPolicies = []vimtypes.BaseVmPlacementPolicy{
-			&vimtypes.VmPlacementPolicy{},
-		}
+func genConfigSpecTagSpecsFromVMLabels(
+	vmCtx pkgctx.VirtualMachineContext,
+	configSpec *vimtypes.VirtualMachineConfigSpec) {
+
+	filteredLabels := kubeutil.RemoveVMOperatorLabels(vmCtx.VM.Labels)
+	if len(filteredLabels) == 0 {
+		return
 	}
 
-	// Attach all VM labels as tags to the placement policies
-	attachVMLabelsToPolicy(vmCtx.VM.Labels, configSpec.VmPlacementPolicies)
+	tagsToAdd := make([]vimtypes.TagSpec, 0, len(filteredLabels))
+
+	// Any label on the VM can participate in an affinity/anti-affinity policy.
+	// It does not matter if a label is not participating in any policy.
+	// It could be specified by this, or any other VM's placement policy later.
+	for key, value := range filteredLabels {
+		tagsToAdd = append(tagsToAdd, vimtypes.TagSpec{
+			ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
+				Operation: vimtypes.ArrayUpdateOperationAdd,
+			},
+			Id: vimtypes.TagId{
+				NameId: &vimtypes.TagIdNameId{
+					Tag:      key + ":" + value,
+					Category: vmCtx.VM.Namespace,
+				},
+			},
+		})
+	}
+
+	// Sort the tags to maintain consistent ordering.
+	slices.SortFunc(tagsToAdd, func(a, b vimtypes.TagSpec) int {
+		return strings.Compare(a.Id.NameId.Tag, b.Id.NameId.Tag)
+	})
+
+	configSpec.TagSpecs = tagsToAdd
 }
 
 // CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for
@@ -461,31 +487,4 @@ func extractLabelsFromSelector(selector *metav1.LabelSelector) ([]string, error)
 	slices.Sort(labels)
 
 	return labels, nil
-}
-
-// attachVMLabelsToPolicy converts VM labels to tags and attaches them
-// to the first policy. All tags will be assigned to the VM regardless
-// of which policy they're attached to.
-func attachVMLabelsToPolicy(labels map[string]string, placementPols []vimtypes.BaseVmPlacementPolicy) {
-	if len(placementPols) == 0 {
-		return // No policies to attach to
-	}
-
-	tagsToAttach := make([]string, 0, len(labels))
-
-	// Any label on the VM can participate in an affinity/anti-affinity policy.
-	// It does not matter if a label is not participating in any policy.
-	// It could be specified by this, or any other VM's placement policy in future.
-	for key, value := range kubeutil.RemoveVMOperatorLabels(labels) {
-		label := fmt.Sprintf("%s:%s", key, value)
-		tagsToAttach = append(tagsToAttach, label)
-	}
-
-	// Sort the labels to maintain consistent ordering.
-	slices.Sort(tagsToAttach)
-
-	// This is a little weird that we are sending all tags to the "first"
-	// policy. But it doesn't matter _which_ policy we send all the tags to.
-	// All tags specified here will be assigned to the VM.
-	placementPols[0].GetVmPlacementPolicy().TagsToAttach = tagsToAttach
 }

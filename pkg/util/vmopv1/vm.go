@@ -391,64 +391,6 @@ func EncryptionClassToVirtualMachineMapper(
 	}
 }
 
-// GroupToVMsMapperFn returns a mapper function that can be used to queue
-// reconcile requests for all the currently linked VirtualMachine kind members
-// in response to an event on the VirtualMachineGroup resource.
-func GroupToVMsMapperFn(
-	ctx context.Context,
-	k8sClient client.Client) handler.MapFunc {
-
-	return func(ctx context.Context, o client.Object) []reconcile.Request {
-
-		var (
-			group     = o.(*vmopv1.VirtualMachineGroup)
-			namespace = group.Namespace
-			requests  = make([]reconcile.Request, 0, len(group.Status.Members))
-		)
-
-		for _, m := range group.Status.Members {
-			if m.Kind == "VirtualMachine" &&
-				conditions.IsTrue(&m, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) {
-				vmName := m.Name
-				vm := &vmopv1.VirtualMachine{}
-				key := client.ObjectKey{Namespace: namespace, Name: vmName}
-				if err := k8sClient.Get(ctx, key, vm); err != nil {
-					continue
-				}
-
-				// Check VM.Spec.GroupName still points to current group in case
-				// it changed while the current group hasn't been reconciled.
-				if vm.Spec.GroupName != group.Name {
-					continue
-				}
-
-				// Only trigger a reconcile if the VM condition doesn't have
-				// the group linked condition true, or if the VM is not placed.
-				if !conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked) ||
-					!conditions.IsTrue(vm, vmopv1.VirtualMachineConditionPlacementReady) {
-					requests = append(requests, reconcile.Request{
-						NamespacedName: client.ObjectKey{
-							Namespace: namespace,
-							Name:      vmName,
-						},
-					})
-				}
-			}
-		}
-
-		if len(requests) > 0 {
-			pkglog.FromContextOrDefault(ctx).WithValues(
-				"groupName", group.Name, "groupNamespace", namespace,
-			).V(4).Info(
-				"Reconciling VMs due to their VirtualMachineGroup watch",
-				"requests", requests,
-			)
-		}
-
-		return requests
-	}
-}
-
 // KubernetesNodeLabelKey is the name of the label key used to identify a
 // Kubernetes cluster node.
 const KubernetesNodeLabelKey = "cluster.x-k8s.io/cluster-name"

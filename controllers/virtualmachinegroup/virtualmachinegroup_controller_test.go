@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -70,6 +69,20 @@ var _ = Describe(
 			vmCopy := vm.DeepCopy()
 			vmCopy.Spec.GroupName = groupName
 			Expect(ctx.Client.Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
+		}
+
+		reconcileVMG := func(vmgKey types.NamespacedName) {
+			GinkgoHelper()
+			vmg := &vmopv1.VirtualMachineGroup{}
+			Expect(ctx.Client.Get(ctx, vmgKey, vmg)).To(Succeed())
+
+			// Add a random annotation to trigger reconciliation of the group.
+			vmgCopy := vmg.DeepCopy()
+			if vmgCopy.Annotations == nil {
+				vmgCopy.Annotations = map[string]string{}
+			}
+			vmgCopy.Annotations["test/trigger-reconcile"] = time.Now().Format(time.RFC3339Nano)
+			Expect(ctx.Client.Patch(ctx, vmgCopy, client.MergeFrom(vmg))).To(Succeed())
 		}
 
 		BeforeEach(func() {
@@ -158,57 +171,6 @@ var _ = Describe(
 			ctx.AfterEach()
 			ctx = nil
 			intgFakeVMProvider.Reset()
-		})
-
-		Context("MemberToGroupMapperFn", func() {
-
-			It("should enqueue a reconcile for the group when the member is linked", func() {
-				// VM kind member.
-				vm := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: vm1Key.Namespace,
-						Name:      vm1Key.Name,
-					},
-				}
-				reqs := virtualmachinegroup.MemberToGroupMapperFn(ctx)(ctx, vm)
-				Expect(reqs).To(BeEmpty())
-
-				vm.Spec.GroupName = vmGroup1Key.Name
-				reqs = virtualmachinegroup.MemberToGroupMapperFn(ctx)(ctx, vm)
-				Expect(reqs).To(BeEmpty())
-
-				vm.Status.Conditions = []metav1.Condition{
-					{
-						Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-						Status: metav1.ConditionTrue,
-					},
-				}
-				reqs = virtualmachinegroup.MemberToGroupMapperFn(ctx)(ctx, vm)
-				Expect(reqs).To(HaveLen(1))
-				Expect(reqs[0].NamespacedName).To(Equal(vmGroup1Key))
-
-				// VMGroup kind member.
-				vmg := &vmopv1.VirtualMachineGroup{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: vmGroup1Key.Namespace,
-						Name:      vmGroup1Key.Name,
-					},
-					Spec: vmopv1.VirtualMachineGroupSpec{
-						GroupName: vmGroup2Key.Name,
-					},
-					Status: vmopv1.VirtualMachineGroupStatus{
-						Conditions: []metav1.Condition{
-							{
-								Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-								Status: metav1.ConditionTrue,
-							},
-						},
-					},
-				}
-				reqs = virtualmachinegroup.MemberToGroupMapperFn(ctx)(ctx, vmg)
-				Expect(reqs).To(HaveLen(1))
-				Expect(reqs[0].NamespacedName).To(Equal(vmGroup2Key))
-			})
 		})
 
 		Context("Finalizer", func() {
@@ -339,6 +301,9 @@ var _ = Describe(
 
 				It("should mark the group not ready and the member condition as false", func() {
 					Eventually(func(g Gomega) {
+						// Manually trigger reconcile to ensure the group member status is updated after member deletion.
+						reconcileVMG(vmGroup1Key)
+
 						vmGroup1 := &vmopv1.VirtualMachineGroup{}
 						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
 						g.Expect(vmGroup1.Status.Conditions).To(HaveLen(1))
@@ -376,6 +341,9 @@ var _ = Describe(
 
 				It("should mark the group not ready and the member condition as false", func() {
 					Eventually(func(g Gomega) {
+						// Manually trigger reconcile to ensure the group member status is updated after member's spec.groupName update.
+						reconcileVMG(vmGroup1Key)
+
 						vmGroup1 := &vmopv1.VirtualMachineGroup{}
 						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
 						g.Expect(vmGroup1.Status.Conditions).To(HaveLen(1))
@@ -413,6 +381,9 @@ var _ = Describe(
 
 				It("should mark the group ready, member condition as true, and owner reference set to the group", func() {
 					Eventually(func(g Gomega) {
+						// No need to manually trigger reconcile of the group because it's requeued
+						// when a member is updated with spec.groupName set to that group.
+
 						vmGroup1 := &vmopv1.VirtualMachineGroup{}
 						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
 						g.Expect(vmGroup1.Status.Conditions).To(HaveLen(1))

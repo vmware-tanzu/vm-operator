@@ -245,6 +245,11 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 				return admission.Denied(err.Error())
 			}
 		}
+		if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+			if _, err := SetPVCVolumeDefaultsOnCreate(ctx, m.client, modified); err != nil {
+				return admission.Denied(err.Error())
+			}
+		}
 	case admissionv1.Update:
 		oldVM, err := m.vmFromUnstructured(ctx.OldObj)
 		if err != nil {
@@ -863,4 +868,43 @@ func CleanupApplyPowerStateChangeTimeAnno(
 	}
 
 	return false
+}
+
+// SetPVCVolumeDefaultsOnCreate sets the default PVC volume based on
+// application type for a PVC volume on create.
+// TODO: (Lubron) Suppport updating application type in the future.
+func SetPVCVolumeDefaultsOnCreate(
+	ctx *pkgctx.WebhookRequestContext,
+	c ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) (bool, error) {
+
+	var wasMutated bool
+	for i, v := range vm.Spec.Volumes {
+		if v.PersistentVolumeClaim == nil {
+			continue
+		}
+
+		switch v.PersistentVolumeClaim.ApplicationType {
+		case vmopv1.VolumeApplicationTypeOracleRAC:
+			v.PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+			v.PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+			wasMutated = true
+		case vmopv1.VolumeApplicationTypeMicrosoftWSFC:
+			v.PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+			wasMutated = true
+		case "":
+		// skip
+		default:
+			return false, field.NotSupported(
+				field.NewPath("spec").Index(i).
+					Child("persistentVolumeClaim").
+					Child("applicationType"),
+				v.PersistentVolumeClaim.ApplicationType,
+				[]string{
+					string(vmopv1.VolumeApplicationTypeOracleRAC),
+					string(vmopv1.VolumeApplicationTypeMicrosoftWSFC),
+				})
+		}
+	}
+	return wasMutated, nil
 }

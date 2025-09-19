@@ -448,6 +448,8 @@ func unitTestsReconcileSPUForVM() {
 	)
 
 	BeforeEach(func() {
+		vm1 = nil
+		vm2 = nil
 		withObjects = nil
 		withFuncs = interceptor.Funcs{}
 		inNamespace = namespace
@@ -1010,6 +1012,11 @@ func unitTestsReconcileSPUForVMSnapshot() {
 		withObjects = nil
 		inNamespace = namespace
 		inName = name
+		vm1 = nil
+		vm2 = nil
+		vmSnapshot1 = nil
+		vmSnapshot2 = nil
+
 	})
 
 	JustBeforeEach(func() {

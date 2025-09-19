@@ -23,6 +23,7 @@ import (
 func intgTests() {
 	Describe(
 		"Reconcile",
+		Serial,
 		Label(
 			testlabels.Controller,
 			testlabels.EnvTest,

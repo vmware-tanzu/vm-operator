@@ -29,7 +29,7 @@ import (
 	pkgctxfake "github.com/vmware-tanzu/vm-operator/pkg/context/fake"
 )
 
-var _ = Describe("NewValidatingWebhook", func() {
+var _ = Describe("NewValidatingWebhook", Serial, func() {
 
 	var (
 		err        error
@@ -153,7 +153,7 @@ var _ = Describe("NewValidatingWebhook", func() {
 				})
 
 				AfterEach(func() {
-					err := os.Remove(caFilePath)
+					err := os.RemoveAll(caFilePath)
 					Expect(err).NotTo(HaveOccurred())
 
 					err = os.RemoveAll("/tmp/k8s-webhook-server")

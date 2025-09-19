@@ -44,7 +44,7 @@ func intgTestsReconcile() {
 		vmClass = &vmopv1.VirtualMachineClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "small",
-				Namespace: "default",
+				Namespace: ctx.Namespace,
 			},
 			Spec: vmopv1.VirtualMachineClassSpec{
 				Hardware: vmopv1.VirtualMachineClassHardware{

@@ -109,6 +109,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				},
 			}
 			globalExtraConfig = make(map[string]string)
+			ecMap = nil
 		})
 
 		JustBeforeEach(func() {
@@ -232,6 +233,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		var vmSpec vmopv1.VirtualMachineSpec
 
 		BeforeEach(func() {
+			vmSpec = vmopv1.VirtualMachineSpec{}
 			config.ChangeTrackingEnabled = nil
 		})
 

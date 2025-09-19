@@ -79,6 +79,10 @@ const (
 	// for shared disks. This capability is introduced as a part of Oracle RAC
 	// and Microsoft WSFC workloads support.
 	CapabilityKeySharedDisks = "supports_shared_disks_with_VM_service_VMs"
+
+	// CapabilityKeyGuestCustomizationVCDParity is the name of the capability key
+	// defined in the Supervisor capabilities CRD for guest customization VCD parity.
+	CapabilityKeyGuestCustomizationVCDParity = "supports_guest_customization_vcd_parity"
 )
 
 var (
@@ -233,6 +237,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMWaitForFirstConsumerPVC = capStatus.Activated
 		case CapabilityKeySharedDisks:
 			fs.VMSharedDisks = capStatus.Activated
+		case CapabilityKeyGuestCustomizationVCDParity:
+			fs.GuestCustomizationVCDParity = capStatus.Activated
 		}
 
 	}

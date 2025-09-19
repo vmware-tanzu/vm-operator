@@ -10,9 +10,11 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 func BootStrapLinuxPrep(
@@ -35,15 +37,41 @@ func BootStrapLinuxPrep(
 		return nil, nil, fmt.Errorf("failed to create GOSC NIC mappings: %w", err)
 	}
 
-	customSpec := &vimtypes.CustomizationSpec{
-		Identity: &vimtypes.CustomizationLinuxPrep{
-			HostName: &vimtypes.CustomizationFixedName{
-				Name: bsArgs.HostName,
-			},
-			Domain:     bsArgs.DomainName,
-			TimeZone:   linuxPrepSpec.TimeZone,
-			HwClockUTC: linuxPrepSpec.HardwareClockIsUTC,
+	identity := &vimtypes.CustomizationLinuxPrep{
+		HostName: &vimtypes.CustomizationFixedName{
+			Name: bsArgs.HostName,
 		},
+		Domain:     bsArgs.DomainName,
+		TimeZone:   linuxPrepSpec.TimeZone,
+		HwClockUTC: linuxPrepSpec.HardwareClockIsUTC,
+	}
+
+	if linuxPrepSpec.ExpirePasswordAfterNextLogin {
+		identity.ResetPassword = vimtypes.NewBool(true)
+	}
+
+	if bsArgs.LinuxPrep != nil {
+		if bsArgs.LinuxPrep.Password != "" {
+			identity.Password = &vimtypes.CustomizationPassword{
+				Value:     bsArgs.LinuxPrep.Password,
+				PlainText: linuxPrepSpec.Password.PlainText,
+			}
+		}
+
+		identity.ScriptText = bsArgs.LinuxPrep.ScriptText
+	}
+
+	if id, ok := vmCtx.VM.Annotations[pkgconst.VCFAIDAnnotationKey]; ok {
+		identity.ExtraConfig = pkgutil.OptionValues(identity.ExtraConfig).Merge(
+			&vimtypes.OptionValue{
+				Key:   GOSCVCFAHashID,
+				Value: id,
+			},
+		)
+	}
+
+	customSpec := &vimtypes.CustomizationSpec{
+		Identity: identity,
 		GlobalIPSettings: vimtypes.CustomizationGlobalIPSettings{
 			DnsSuffixList: bsArgs.SearchSuffixes,
 			DnsServerList: bsArgs.DNSServers,

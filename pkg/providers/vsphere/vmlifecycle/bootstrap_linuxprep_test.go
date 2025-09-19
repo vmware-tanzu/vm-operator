@@ -16,9 +16,11 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -118,9 +120,85 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 			Expect(hostName).To(Equal(bsArgs.HostName))
 			Expect(linuxSpec.TimeZone).To(Equal(linuxPrepSpec.TimeZone))
 			Expect(linuxSpec.HwClockUTC).To(Equal(linuxPrepSpec.HardwareClockIsUTC))
+			Expect(linuxSpec.Password).To(BeNil())
+			Expect(linuxSpec.ResetPassword).To(BeNil())
 
 			Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
 			Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
+		})
+
+		When("Reset password is specified", func() {
+			BeforeEach(func() {
+				linuxPrepSpec.ExpirePasswordAfterNextLogin = true
+			})
+
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(linuxSpec.ResetPassword).To(HaveValue(BeTrue()))
+			})
+		})
+
+		When("Password is specified", func() {
+			BeforeEach(func() {
+				linuxPrepSpec.Password = &vmopv1.VirtualMachineBootstrapLinuxPrepPassword{
+					Password:  common.PasswordSecretKeySelector{},
+					PlainText: true,
+				}
+				bsArgs.LinuxPrep = &linuxprep.SecretData{
+					Password: "my-new-password",
+				}
+			})
+
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(linuxSpec.Password).ToNot(BeNil())
+				Expect(linuxSpec.Password.Value).To(Equal("my-new-password"))
+				Expect(linuxSpec.Password.PlainText).To(BeTrue())
+			})
+		})
+
+		When("ScriptText is specified", func() {
+			BeforeEach(func() {
+				linuxPrepSpec.ScriptText = &common.ValueOrSecretKeySelector{}
+				bsArgs.LinuxPrep = &linuxprep.SecretData{
+					ScriptText: "my-script-text",
+				}
+			})
+
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(linuxSpec.ScriptText).To(Equal("my-script-text"))
+			})
+		})
+
+		When("VCFA ID annotation is specified", func() {
+			BeforeEach(func() {
+				if vm.Annotations == nil {
+					vm.Annotations = make(map[string]string)
+				}
+				vm.Annotations[constants.VCFAIDAnnotationKey] = "foobar"
+			})
+
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				linuxSpec := custSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+				Expect(linuxSpec.ExtraConfig).To(HaveLen(1))
+				optVal := linuxSpec.ExtraConfig[0].GetOptionValue()
+				Expect(optVal).ToNot(BeNil())
+				Expect(optVal.Key).To(Equal(vmlifecycle.GOSCVCFAHashID))
+				Expect(optVal.Value).To(Equal("foobar"))
+			})
 		})
 
 		Context("when has vAppConfig", func() {

@@ -64,8 +64,23 @@ func TestVirtualMachineConversion(t *testing.T) {
 								WaitOnNetwork6:                  ptrOf(false),
 							},
 							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-								HardwareClockIsUTC: ptrOf(true),
-								TimeZone:           "my-tz",
+								HardwareClockIsUTC:           ptrOf(true),
+								TimeZone:                     "my-tz",
+								ExpirePasswordAfterNextLogin: true,
+								Password: &vmopv1.VirtualMachineBootstrapLinuxPrepPassword{
+									Password: vmopv1common.PasswordSecretKeySelector{
+										Name: "bar",
+										Key:  "foo",
+									},
+									PlainText: true,
+								},
+								ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+									From: &vmopv1common.SecretKeySelector{
+										Name: "bar",
+										Key:  "foo",
+									},
+									Value: ptrOf("my-inline-script"),
+								},
 							},
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &vmopv1sysprep.Sysprep{
@@ -81,6 +96,14 @@ func TestVirtualMachineConversion(t *testing.T) {
 									},
 									UserData: vmopv1sysprep.UserData{
 										FullName: "vmware",
+									},
+									ExpirePasswordAfterNextLogin: true,
+									ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+										From: &vmopv1common.SecretKeySelector{
+											Name: "bar",
+											Key:  "foo",
+										},
+										Value: ptrOf("my-inline-script"),
 									},
 								},
 							},

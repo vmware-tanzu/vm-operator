@@ -11,9 +11,10 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -36,13 +37,11 @@ func BootstrapSysPrep(
 		data     string
 		identity vimtypes.BaseCustomizationIdentitySettings
 	)
-	key := "unattend"
 
 	if sysPrepSpec.RawSysprep != nil {
-		var err error
-
-		if sysPrepSpec.RawSysprep.Key != "" {
-			key = sysPrepSpec.RawSysprep.Key
+		key := sysPrepSpec.RawSysprep.Key
+		if key == "" {
+			key = "unattend"
 		}
 
 		data = bsArgs.BootstrapData.Data[key]
@@ -51,6 +50,7 @@ func BootstrapSysPrep(
 		}
 
 		// Ensure the data is normalized first to plain-text.
+		var err error
 		data, err = pkgutil.TryToDecodeBase64Gzip([]byte(data))
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoding Sysprep unattend XML failed: %w", err)
@@ -64,7 +64,7 @@ func BootstrapSysPrep(
 			Value: data,
 		}
 	} else if sysPrep := sysPrepSpec.Sysprep; sysPrep != nil {
-		identity = convertTo(sysPrep, bsArgs)
+		identity = convertTo(vmCtx.VM, sysPrep, bsArgs)
 	} else {
 		return nil, nil, fmt.Errorf("no Sysprep data")
 	}
@@ -97,11 +97,18 @@ func BootstrapSysPrep(
 	return configSpec, customSpec, err
 }
 
-func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.CustomizationSysprep {
+func convertTo(
+	vm *vmopv1.VirtualMachine,
+	from *vmopv1sysprep.Sysprep,
+	bsArgs *BootstrapArgs) *vimtypes.CustomizationSysprep {
+
 	bootstrapData := bsArgs.BootstrapData
+
 	sysprepCustomization := &vimtypes.CustomizationSysprep{}
 
-	sysprepCustomization.GuiUnattended = vimtypes.CustomizationGuiUnattended{}
+	if from.ExpirePasswordAfterNextLogin {
+		sysprepCustomization.ResetPassword = vimtypes.NewBool(true)
+	}
 
 	if from.GUIUnattended == nil {
 		// If spec.bootstrap.sysprep.guiUnattended is not set, then default
@@ -158,6 +165,19 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimtypes.Cus
 
 	if from.LicenseFilePrintData != nil {
 		sysprepCustomization.LicenseFilePrintData = convertLicenseFilePrintDataTo(from.LicenseFilePrintData)
+	}
+
+	if bootstrapData.Sysprep != nil {
+		sysprepCustomization.ScriptText = bootstrapData.Sysprep.ScriptText
+	}
+
+	if id, ok := vm.Annotations[pkgconst.VCFAIDAnnotationKey]; ok {
+		sysprepCustomization.ExtraConfig = pkgutil.OptionValues(sysprepCustomization.ExtraConfig).Merge(
+			&vimtypes.OptionValue{
+				Key:   GOSCVCFAHashID,
+				Value: id,
+			},
+		)
 	}
 
 	return sysprepCustomization

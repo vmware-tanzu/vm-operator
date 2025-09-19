@@ -177,6 +177,42 @@ type VirtualMachineBootstrapLinuxPrepSpec struct {
 	// Please see https://kb.vmware.com/s/article/2145518 for a list of valid
 	// time zones for Linux systems.
 	TimeZone string `json:"timeZone,omitempty"`
+
+	// +optional
+
+	// ExpirePasswordAfterNextLogin indicates whether or not the root account is required to
+	// change their password after the next login.
+	ExpirePasswordAfterNextLogin bool `json:"expirePasswordAfterNextLogin,omitempty"`
+
+	// +optional
+
+	// Password sets the root password for the machine.
+	Password *VirtualMachineBootstrapLinuxPrepPassword `json:"password,omitempty"`
+
+	// +optional
+
+	// ScriptText is the script to run before and after customization.
+	//
+	// Please see https://knowledge.broadcom.com/external/article?legacyId=1026614
+	// for script examples.
+	ScriptText *vmopv1common.ValueOrSecretKeySelector `json:"scriptText,omitempty"`
+}
+
+// VirtualMachineBootstrapLinuxPrepPassword describes the root password for the VM.
+type VirtualMachineBootstrapLinuxPrepPassword struct {
+	// Password is the new root password for the machine.
+	//
+	// If the password is in plain text, then plainText must be set to true.
+	//
+	// When not explicitly specified, the Key field for the selector defaults to
+	// `password`.
+	Password vmopv1common.PasswordSecretKeySelector `json:"password"`
+
+	// +optional
+
+	// PlainText indicates whether or not the password is in plain text, rather than
+	// encrypted.
+	PlainText bool `json:"plainText,omitempty"`
 }
 
 // VirtualMachineBootstrapSysprepSpec describes the Sysprep configuration used

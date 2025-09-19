@@ -12,7 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesnapshot/mutation"
@@ -89,10 +88,10 @@ func unitTestsMutating() {
 			})
 		})
 
-		Context("when creating snapshot without vmRef", func() {
+		Context("when creating snapshot without vmName", func() {
 			It("should not set VM name label", func() {
-				// Remove the vmRef
-				ctx.vmSnapshot.Spec.VMRef = nil
+				// Remove the vmName
+				ctx.vmSnapshot.Spec.VMName = ""
 
 				wasMutated := mutation.SetVMNameLabel(ctx.vmSnapshot)
 				Expect(wasMutated).To(BeFalse())
@@ -102,14 +101,10 @@ func unitTestsMutating() {
 			})
 		})
 
-		Context("when creating snapshot with empty vmRef name", func() {
+		Context("when creating snapshot with empty vmName", func() {
 			It("should not set VM name label", func() {
-				// Set empty vmRef name
-				ctx.vmSnapshot.Spec.VMRef = &common.LocalObjectRef{
-					APIVersion: "vmoperator.vmware.com/v1alpha5",
-					Kind:       "VirtualMachine",
-					Name:       "",
-				}
+				// Set empty vmName
+				ctx.vmSnapshot.Spec.VMName = ""
 
 				wasMutated := mutation.SetVMNameLabel(ctx.vmSnapshot)
 				Expect(wasMutated).To(BeFalse())

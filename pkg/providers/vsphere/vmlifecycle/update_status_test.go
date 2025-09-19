@@ -3416,10 +3416,7 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.APIVersion).To(Equal(vmSnapshot.APIVersion))
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Kind).To(Equal(vmSnapshot.Kind))
-					Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal(vmSnapshot.Name))
+					Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
 				})
 			})
 
@@ -3490,8 +3487,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("child-snapshot"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("child-snapshot"))
 			})
 		})
 
@@ -3545,8 +3541,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("deep-snapshot"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("deep-snapshot"))
 			})
 		})
 
@@ -3585,8 +3580,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.CurrentSnapshot).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.CurrentSnapshot.Reference.Name).To(Equal("snapshot-2"))
+				Expect(vmCtx.VM.Status.CurrentSnapshot.Name).To(Equal("snapshot-2"))
 			})
 
 			It("should find and update the correct root snapshots in the status", func() {
@@ -3596,12 +3590,11 @@ var _ = Describe("Snapshot status", func() {
 
 				Expect(vmCtx.VM.Status.RootSnapshots[0]).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.RootSnapshots[0].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged))
-				Expect(vmCtx.VM.Status.RootSnapshots[0].Reference).To(BeNil())
+				// RootSnapshots[0] is unmanaged, so it doesn't have a corresponding snapshot name.
 
 				Expect(vmCtx.VM.Status.RootSnapshots[1]).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.RootSnapshots[1].Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
-				Expect(vmCtx.VM.Status.RootSnapshots[1].Reference).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.RootSnapshots[1].Reference.Name).To(Equal("snapshot-2"))
+				Expect(vmCtx.VM.Status.RootSnapshots[1].Name).To(Equal("snapshot-2"))
 			})
 		})
 
@@ -3614,11 +3607,7 @@ var _ = Describe("Snapshot status", func() {
 
 				vmCtx.VM.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
 					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot.APIVersion,
-						Kind:       vmSnapshot.Kind,
-						Name:       vmSnapshot.Name,
-					},
+					Name: vmSnapshot.Name,
 				}
 
 				vmCtx.MoVM.Snapshot = &vimtypes.VirtualMachineSnapshotInfo{
@@ -3858,29 +3847,20 @@ var _ = Describe("Snapshot status", func() {
 					Name:      "snapshot-1",
 				}, vmSnapshot1)).To(Succeed())
 				Expect(vmSnapshot1.Status.Children).To(HaveLen(3))
-				Expect(vmSnapshot1.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
-					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot2.APIVersion,
-						Kind:       vmSnapshot2.Kind,
-						Name:       vmSnapshot2.Name,
-					}},
+				Expect(vmSnapshot1.Status.Children).To(ContainElements(
 					vmopv1.VirtualMachineSnapshotReference{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot3.APIVersion,
-							Kind:       vmSnapshot3.Kind,
-							Name:       vmSnapshot3.Name,
-						},
+						Name: vmSnapshot2.Name,
 					},
 					vmopv1.VirtualMachineSnapshotReference{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot4.APIVersion,
-							Kind:       vmSnapshot4.Kind,
-							Name:       vmSnapshot4.Name,
-						},
-					}))
+						Name: vmSnapshot3.Name,
+					},
+					vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Name: vmSnapshot4.Name,
+					},
+				))
 
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3899,11 +3879,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmSnapshot4.Status.Children).To(HaveLen(1))
 				Expect(vmSnapshot4.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
 					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot5.APIVersion,
-						Kind:       vmSnapshot5.Kind,
-						Name:       vmSnapshot5.Name,
-					},
+					Name: vmSnapshot5.Name,
 				}))
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3917,11 +3893,7 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmSnapshot6.Status.Children).To(HaveLen(1))
 				Expect(vmSnapshot6.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
 					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot7.APIVersion,
-						Kind:       vmSnapshot7.Kind,
-						Name:       vmSnapshot7.Name,
-					},
+					Name: vmSnapshot7.Name,
 				}))
 				Expect(ctx.Client.Get(ctx, types.NamespacedName{
 					Namespace: vmCtx.VM.Namespace,
@@ -3949,24 +3921,16 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmSnapshot1.Status.Children).To(HaveLen(3))
 					Expect(vmSnapshot1.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot2.APIVersion,
-							Kind:       vmSnapshot2.Kind,
-							Name:       vmSnapshot2.Name,
-						},
+						Name: vmSnapshot2.Name,
 					},
 						vmopv1.VirtualMachineSnapshotReference{
 							Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-							Reference: &vmopv1common.LocalObjectRef{
-								APIVersion: vmSnapshot3.APIVersion,
-								Kind:       vmSnapshot3.Kind,
-								Name:       vmSnapshot3.Name,
-							},
+							Name: vmSnapshot3.Name,
 						},
 						vmopv1.VirtualMachineSnapshotReference{
 							Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
 							// snapshot-4 is deleted, so it should be marked as Unmanaged
-							Reference: nil,
+							Name: "",
 						},
 					))
 
@@ -3992,11 +3956,7 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmSnapshot6.Status.Children).To(HaveLen(1))
 					Expect(vmSnapshot6.Status.Children).To(ContainElements(vmopv1.VirtualMachineSnapshotReference{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot7.APIVersion,
-							Kind:       vmSnapshot7.Kind,
-							Name:       vmSnapshot7.Name,
-						},
+						Name: vmSnapshot7.Name,
 					}))
 					Expect(ctx.Client.Get(ctx, types.NamespacedName{
 						Namespace: vmCtx.VM.Namespace,
@@ -4143,13 +4103,12 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(vmopv1.VirtualMachineSnapshotReference{
-						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}}))
+					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(
+						vmopv1.VirtualMachineSnapshotReference{
+							Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+							Name: vmSnapshot.Name,
+						},
+					))
 				})
 			})
 
@@ -4181,10 +4140,12 @@ var _ = Describe("Snapshot status", func() {
 					Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 					Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(1))
-					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(vmopv1.VirtualMachineSnapshotReference{
-						Type:      vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: snapshotLocalRef("test-snapshot"),
-					}))
+					Expect(vmCtx.VM.Status.RootSnapshots[0]).To(Equal(
+						vmopv1.VirtualMachineSnapshotReference{
+							Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+							Name: "test-snapshot",
+						},
+					))
 				})
 			})
 		})
@@ -4226,22 +4187,18 @@ var _ = Describe("Snapshot status", func() {
 				Expect(vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)).To(Succeed())
 				Expect(vmCtx.VM.Status.RootSnapshots).ToNot(BeNil())
 				Expect(vmCtx.VM.Status.RootSnapshots).To(HaveLen(2))
-				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1.VirtualMachineSnapshotReference{
-					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot1.APIVersion,
-						Kind:       vmSnapshot1.Kind,
-						Name:       vmSnapshot1.Name,
+				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(
+					vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Name: vmSnapshot1.Name,
 					},
-				}))
-				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(vmopv1.VirtualMachineSnapshotReference{
-					Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-					Reference: &vmopv1common.LocalObjectRef{
-						APIVersion: vmSnapshot2.APIVersion,
-						Kind:       vmSnapshot2.Kind,
-						Name:       vmSnapshot2.Name,
+				))
+				Expect(vmCtx.VM.Status.RootSnapshots).To(ContainElement(
+					vmopv1.VirtualMachineSnapshotReference{
+						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+						Name: vmSnapshot2.Name,
 					},
-				}))
+				))
 			})
 		})
 
@@ -4255,11 +4212,7 @@ var _ = Describe("Snapshot status", func() {
 				vmCtx.VM.Status.RootSnapshots = []vmopv1.VirtualMachineSnapshotReference{
 					{
 						Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-						Reference: &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						},
+						Name: vmSnapshot.Name,
 					},
 				}
 
@@ -4335,15 +4288,7 @@ func (m *mockClient) Get(ctx context.Context, key ctrlclient.ObjectKey, obj ctrl
 //nolint:unparam
 func snapshotRefManaged(snapshotName string) *vmopv1.VirtualMachineSnapshotReference {
 	return &vmopv1.VirtualMachineSnapshotReference{
-		Type:      vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: snapshotLocalRef(snapshotName),
-	}
-}
-
-func snapshotLocalRef(snapshotName string) *vmopv1common.LocalObjectRef {
-	return &vmopv1common.LocalObjectRef{
-		APIVersion: "vmoperator.vmware.com/v1alpha5",
-		Kind:       "VirtualMachineSnapshot",
-		Name:       snapshotName,
+		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+		Name: snapshotName,
 	}
 }

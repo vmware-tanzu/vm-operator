@@ -5,7 +5,6 @@
 package validation_test
 
 import (
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -17,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -90,38 +88,18 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidVMRef                bool
-		invalidVMRefKind            bool
-		invalidVMRefAPIVersion      bool
-		invalidVMRefAPIVersionGroup bool
-		emptyVMRefName              bool
-		createVKSNode               bool
+		emptyVMName   bool
+		createVKSNode bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
-		if args.invalidVMRef {
-			ctx.vmSnapshot.Spec.VMRef = nil
-		}
-
-		if args.invalidVMRefKind {
-			ctx.vmSnapshot.Spec.VMRef.Kind = "VMVM"
-		}
-
-		if args.invalidVMRefAPIVersion {
-			ctx.vmSnapshot.Spec.VMRef.APIVersion = "foobar.com/v1/v2"
-		}
-
-		if args.invalidVMRefAPIVersionGroup {
-			ctx.vmSnapshot.Spec.VMRef.APIVersion = "foobar.com/v99"
-		}
-
-		if args.emptyVMRefName {
-			ctx.vmSnapshot.Spec.VMRef.Name = ""
+		if args.emptyVMName {
+			ctx.vmSnapshot.Spec.VMName = ""
 		}
 
 		if args.createVKSNode {
 			// Create a VM with CAPI labels to simulate a VKS/TKG node
-			vm := builder.DummyBasicVirtualMachine(ctx.vmSnapshot.Spec.VMRef.Name, ctx.vmSnapshot.Namespace)
+			vm := builder.DummyBasicVirtualMachine(ctx.vmSnapshot.Spec.VMName, ctx.vmSnapshot.Namespace)
 			vm.Labels = map[string]string{
 				kubeutil.CAPWClusterRoleLabelKey: "worker",
 			}
@@ -149,7 +127,7 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
-	vmRefField := field.NewPath("spec", "vmRef")
+	vmNameField := field.NewPath("spec", "vmName")
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid",
@@ -158,40 +136,16 @@ func unitTestsValidateCreate() {
 			nil,
 			nil,
 		),
-		Entry("should deny nil vmRef",
-			createArgs{invalidVMRef: true},
+		Entry("should deny empty vmName",
+			createArgs{emptyVMName: true},
 			false,
-			field.Required(vmRefField, "vmRef must be provided").Error(),
-			nil,
-		),
-		Entry("should deny a non-empty vmRef, with Kind other than VirtualMachine",
-			createArgs{invalidVMRefKind: true},
-			false,
-			field.Invalid(vmRefField.Child("kind"), "VMVM", "must be \"VirtualMachine\"").Error(),
-			nil,
-		),
-		Entry("should deny a non-empty vmRef, with invalid APIVersion",
-			createArgs{invalidVMRefAPIVersion: true},
-			false,
-			field.Invalid(vmRefField.Child("apiVersion"), "foobar.com/v1/v2", "must be valid group version").Error(),
-			nil,
-		),
-		Entry("should deny a non-empty vmRef, with invalid APIVersion Group",
-			createArgs{invalidVMRefAPIVersionGroup: true},
-			false,
-			field.Invalid(vmRefField.Child("apiVersion"), "foobar.com/v99", fmt.Sprintf("group must be %q", vmopv1.GroupName)).Error(),
-			nil,
-		),
-		Entry("should deny a non-empty vmRef, with no Name specified",
-			createArgs{emptyVMRefName: true},
-			false,
-			field.Required(vmRefField.Child("name"), "name must be provided").Error(),
+			field.Required(vmNameField, "vmName must be provided").Error(),
 			nil,
 		),
 		Entry("should deny snapshot for VKS/TKG node",
 			createArgs{createVKSNode: true},
 			false,
-			field.Forbidden(vmRefField, "snapshots are not allowed for VKS/TKG nodes").Error(),
+			field.Forbidden(vmNameField, "snapshots are not allowed for VKS/TKG nodes").Error(),
 			nil,
 		),
 	)
@@ -222,11 +176,7 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.updateVMRef {
-			ctx.vmSnapshot.Spec.VMRef = &common.LocalObjectRef{
-				Name:       "another-vm",
-				Kind:       "VirtualMachine",
-				APIVersion: "vmoperator.vmware.com/v1alpha5",
-			}
+			ctx.vmSnapshot.Spec.VMName = "another-vm"
 		}
 
 		if args.updateVMNameLabel {

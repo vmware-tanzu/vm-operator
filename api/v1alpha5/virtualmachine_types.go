@@ -975,15 +975,14 @@ type VirtualMachineSpec struct {
 
 	// +optional
 
-	// CurrentSnapshot represents the desired snapshot that the VM
+	// CurrentSnapshotName represents the desired snapshot that the VM
 	// should point to. This field can be specified to revert the VM
 	// to a given snapshot. Once the virtual machine has been
 	// successfully reverted to the desired snapshot, the value of
 	// this field is cleared.
 	//
-	// The value of this field must be an existing object of
-	// VirtualMachineSnapshot kind that exists on the API server. All
-	// other values are invalid.
+	// The value of this field must be the name of an existing
+	// VirtualMachineSnapshot resource in the same namespace.
 	//
 	// Reverting a virtual machine to a snapshot rolls back the data
 	// and the configuration of the virtual machine to that of the
@@ -998,7 +997,7 @@ type VirtualMachineSpec struct {
 	// the power state from the snapshot (i.e., powered on). This can
 	// be overridden by specifying the PowerState to PoweredOff in the
 	// VirtualMachineSpec.
-	CurrentSnapshot *vmopv1common.LocalObjectRef `json:"currentSnapshot,omitempty"`
+	CurrentSnapshotName string `json:"currentSnapshotName,omitempty"`
 
 	// +optional
 
@@ -1232,6 +1231,7 @@ type VirtualMachineStatus struct {
 	// +optional
 
 	// CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
+	// This field contains the name of the current snapshot.
 	CurrentSnapshot *VirtualMachineSnapshotReference `json:"currentSnapshot,omitempty"`
 
 	// +optional

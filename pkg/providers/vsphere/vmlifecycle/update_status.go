@@ -1446,10 +1446,8 @@ func updateSnapshotChildrenStatus(
 	// Return this node's reference to the parent.
 	curSnapshotRef := &vmopv1.VirtualMachineSnapshotReference{
 		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: &common.LocalObjectRef{
-			APIVersion: curSnapshot.APIVersion,
-			Kind:       curSnapshot.Kind,
-			Name:       curSnapshot.Name,
+		Reference: &vmopv1.VirtualMachineSnapshotPartialRef{
+			Name: curSnapshot.Name,
 		},
 	}
 
@@ -1557,10 +1555,8 @@ func updateCurrentSnapshotStatus(
 	// Update the status to reflect the current snapshot custom resource.
 	currentSnapshot := &vmopv1.VirtualMachineSnapshotReference{
 		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: &common.LocalObjectRef{
-			APIVersion: vmSnapshot.APIVersion,
-			Kind:       vmSnapshot.Kind,
-			Name:       vmSnapshot.Name,
+		Reference: &vmopv1.VirtualMachineSnapshotPartialRef{
+			Name: vmSnapshot.Name,
 		},
 	}
 
@@ -1616,10 +1612,8 @@ func updateRootSnapshots(
 
 		newRootSnapshots = append(newRootSnapshots, vmopv1.VirtualMachineSnapshotReference{
 			Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-			Reference: &common.LocalObjectRef{
-				APIVersion: rootSnapshotCR.APIVersion,
-				Kind:       rootSnapshotCR.Kind,
-				Name:       rootSnapshotCR.Name,
+			Reference: &vmopv1.VirtualMachineSnapshotPartialRef{
+				Name: rootSnapshotCR.Name,
 			},
 		})
 	}

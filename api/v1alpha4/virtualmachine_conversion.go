@@ -14,7 +14,6 @@ import (
 
 	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
 func Convert_v1alpha4_VirtualMachineCdromSpec_To_v1alpha5_VirtualMachineCdromSpec(
@@ -143,7 +142,7 @@ func Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(
 	}
 
 	// Convert LocalObjectRef to the nested SnapshotReference field
-	out.Reference = &vmopv1common.LocalObjectRef{
+	out.Reference = &vmopv1.VirtualMachineSnapshotPartialRef{
 		APIVersion: in.APIVersion,
 		Kind:       in.Kind,
 		Name:       in.Name,

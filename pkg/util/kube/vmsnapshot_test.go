@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -312,10 +311,8 @@ var _ = Describe("PatchSnapshotSuccessStatus", func() {
 					Namespace: vmCtx.VM.Namespace,
 				},
 				Spec: vmopv1.VirtualMachineSnapshotSpec{
-					VMRef: &vmopv1common.LocalObjectRef{
-						APIVersion: vmCtx.VM.APIVersion,
-						Kind:       vmCtx.VM.Kind,
-						Name:       vmCtx.VM.Name,
+					VMRef: &vmopv1.VirtualMachinePartialRef{
+						Name: vmCtx.VM.Name,
 					},
 					Quiesce: &vmopv1.QuiesceSpec{
 						Timeout: &metav1.Duration{Duration: timeout},

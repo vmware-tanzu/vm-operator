@@ -254,7 +254,7 @@ func intgTestsValidateUpdate() {
 			BeforeEach(func() {
 				vmSnapshot := builder.DummyVirtualMachineSnapshot(ctx.vm.Namespace, "dummy-vm-snapshot", ctx.vm.Name)
 
-				ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+				ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
 					Kind:       "VirtualMachineSnapshot",
 					APIVersion: "vmoperator.vmware.com/v1alpha5",
 					Name:       vmSnapshot.Name,
@@ -267,7 +267,7 @@ func intgTestsValidateUpdate() {
 		})
 		When("snapshot ref is invalid", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
+				ctx.vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
 					Kind:       "VMSnapshot",
 					APIVersion: "",
 					Name:       "",

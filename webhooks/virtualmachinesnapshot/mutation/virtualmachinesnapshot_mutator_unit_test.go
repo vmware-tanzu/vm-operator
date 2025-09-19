@@ -12,7 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesnapshot/mutation"
@@ -105,10 +104,8 @@ func unitTestsMutating() {
 		Context("when creating snapshot with empty vmRef name", func() {
 			It("should not set VM name label", func() {
 				// Set empty vmRef name
-				ctx.vmSnapshot.Spec.VMRef = &common.LocalObjectRef{
-					APIVersion: "vmoperator.vmware.com/v1alpha5",
-					Kind:       "VirtualMachine",
-					Name:       "",
+				ctx.vmSnapshot.Spec.VMRef = &vmopv1.VirtualMachinePartialRef{
+					Name: "",
 				}
 
 				wasMutated := mutation.SetVMNameLabel(ctx.vmSnapshot)

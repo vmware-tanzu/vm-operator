@@ -3134,11 +3134,7 @@ func vmTests() {
 						Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
 						Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
 
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 
 						// This should return an error because findDesiredSnapshot should return an error
 						// when there are multiple snapshots with the same name
@@ -3153,11 +3149,7 @@ func vmTests() {
 
 				Context("when VM has no snapshots", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 					})
 
 					It("should not trigger a revert (new snapshot workflow)", func() {
@@ -3179,11 +3171,7 @@ func vmTests() {
 
 				Context("when desired snapshot CR doesn't exist", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 					})
 
 					It("should fail with snapshot CR not found error", func() {
@@ -3202,11 +3190,7 @@ func vmTests() {
 
 				Context("when desired snapshot CR is not ready", func() {
 					BeforeEach(func() {
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 					})
 
 					JustBeforeEach(func() {
@@ -3265,11 +3249,7 @@ func vmTests() {
 						Expect(ctx.Client.Status().Update(ctx, vmSnapshot)).To(Succeed())
 
 						// Set desired snapshot to point to the above snapshot.
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 
 						Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
@@ -3332,12 +3312,7 @@ func vmTests() {
 						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to first snapshot (revert from second to first)
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
-
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
 
@@ -3427,11 +3402,7 @@ func vmTests() {
 							Expect(state).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 
 							// Set desired snapshot to first snapshot (revert from second to first)
-							vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-								APIVersion: vmSnapshot.APIVersion,
-								Kind:       vmSnapshot.Kind,
-								Name:       vmSnapshot.Name,
-							}
+							vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 
 							// Revert to the first snapshot
 							err = createOrUpdateVM(ctx, vmProvider, vm)
@@ -3545,11 +3516,7 @@ func vmTests() {
 						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to first snapshot (perform a revert from second to first)
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
@@ -3634,11 +3601,7 @@ func vmTests() {
 						Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to first snapshot (perform a revert from second to first)
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
@@ -3743,11 +3706,7 @@ func vmTests() {
 						Expect(ctx.Client.Update(ctx, secondSnapshot)).To(Succeed())
 
 						// Set desired snapshot to trigger a revert to the first snapshot.
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 
 						err = createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).ToNot(HaveOccurred())
@@ -3802,11 +3761,7 @@ func vmTests() {
 
 				Context("when snapshot revert fails and revert is aborted", func() {
 					It("should clear the revert succeeded condition", func() {
-						vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-							APIVersion: vmSnapshot.APIVersion,
-							Kind:       vmSnapshot.Kind,
-							Name:       vmSnapshot.Name,
-						}
+						vm.Spec.CurrentSnapshot = snapshotPartialRef(vmSnapshot.Name)
 
 						err := createOrUpdateVM(ctx, vmProvider, vm)
 						Expect(err).To(HaveOccurred())
@@ -5828,4 +5783,10 @@ func getDVPG(
 	ExpectWithOffset(1, ok).To(BeTrue())
 
 	return network, dvpg
+}
+
+func snapshotPartialRef(snapshotName string) *vmopv1.VirtualMachineSnapshotPartialRef {
+	return &vmopv1.VirtualMachineSnapshotPartialRef{
+		Name: snapshotName,
+	}
 }

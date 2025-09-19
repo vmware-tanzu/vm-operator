@@ -21,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -360,7 +359,7 @@ func intgTestsValidateCreateVMSnapshot() {
 		vm.Name = dummyVMName
 		vm.Namespace = ctx.Namespace
 		vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.Namespace, dummyVMSnapshotName, dummyVMName)
-		vmSnapshot.Spec.VMRef = &common.LocalObjectRef{
+		vmSnapshot.Spec.VMRef = &vmopv1.VirtualMachinePartialRef{
 			Name: vm.Name,
 		}
 		ar = &admissionv1.AdmissionReview{

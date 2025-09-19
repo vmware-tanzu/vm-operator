@@ -19,7 +19,6 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
@@ -57,10 +56,8 @@ func snapShotTests() {
 		vmSnapshot.Spec.Memory = true
 		vmSnapshot.Spec.Description = "This is a dummy-snap"
 
-		vm.Spec.CurrentSnapshot = &vmopv1common.LocalObjectRef{
-			APIVersion: vmSnapshot.APIVersion,
-			Kind:       vmSnapshot.Kind,
-			Name:       vmSnapshot.Name,
+		vm.Spec.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotPartialRef{
+			Name: vmSnapshot.Name,
 		}
 
 		logger := testutil.GinkgoLogr(5)

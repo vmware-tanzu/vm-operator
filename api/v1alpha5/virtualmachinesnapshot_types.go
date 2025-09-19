@@ -7,8 +7,6 @@ package v1alpha5
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
 const (
@@ -61,7 +59,7 @@ type VirtualMachineSnapshotSpec struct {
 
 	// VMRef represents the name of the virtual machine for which the
 	// snapshot is requested.
-	VMRef *vmopv1common.LocalObjectRef `json:"vmRef,omitempty"`
+	VMRef *VirtualMachinePartialRef `json:"vmRef,omitempty"`
 }
 
 // QuiesceSpec represents specifications that will be used to quiesce
@@ -175,6 +173,24 @@ type VirtualMachineSnapshotStorageStatus struct {
 	Requested []VirtualMachineSnapshotStorageStatusRequested `json:"requested,omitempty"`
 }
 
+type VirtualMachineSnapshotPartialRef struct {
+	// +optional
+	// +kubebuilder:default=vmoperator.vmware.com/v1alpha5
+
+	// APIVersion defines the versioned schema of this representation of an
+	// object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+	APIVersion string `json:"apiVersion"`
+
+	// +optional
+	// +kubebuilder:default=VirtualMachineSnapshot
+
+	// Kind represents the kind of the snapshot.
+	Kind string `json:"kind,omitempty"`
+
+	// Name represents the name of the snapshot.
+	Name string `json:"name"`
+}
+
 // +kubebuilder:validation:Enum=Managed;Unmanaged
 
 // VirtualMachineSnapshotReferenceType defines the type of the snapshot reference.
@@ -205,7 +221,7 @@ type VirtualMachineSnapshotReference struct {
 
 	// Reference is the reference to the snapshot in the Supervisor.
 	// This should be set only for Managed snapshots.
-	Reference *vmopv1common.LocalObjectRef `json:"reference,omitempty"`
+	Reference *VirtualMachineSnapshotPartialRef `json:"reference,omitempty"`
 }
 
 // VirtualMachineSnapshotStorageStatusRequested describes the observed amount of

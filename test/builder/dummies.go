@@ -622,10 +622,8 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
-			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: vmopv1.GroupVersion.String(),
-				Kind:       "VirtualMachine",
-				Name:       vmName,
+			VMRef: &vmopv1.VirtualMachinePartialRef{
+				Name: vmName,
 			},
 			Quiesce: &vmopv1.QuiesceSpec{
 				Timeout: &metav1.Duration{
@@ -637,33 +635,11 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 }
 
 func DummyVirtualMachineSnapshotWithMemory(namespace, name, vmName string) *vmopv1.VirtualMachineSnapshot {
-	return &vmopv1.VirtualMachineSnapshot{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "VirtualMachineSnapshot",
-			APIVersion: "vmoperator.vmware.com/v1alpha5",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Finalizers: []string{
-				"vmoperator.vmware.com/virtualmachinesnapshot",
-			},
-			Annotations: map[string]string{},
-		},
-		Spec: vmopv1.VirtualMachineSnapshotSpec{
-			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: "vmoperator.vmware.com/v1alpha5",
-				Kind:       "VirtualMachine",
-				Name:       vmName,
-			},
-			Memory: true,
-			Quiesce: &vmopv1.QuiesceSpec{
-				Timeout: &metav1.Duration{
-					Duration: 10 * time.Minute,
-				},
-			},
-		},
-	}
+	dummyBase := DummyVirtualMachineSnapshot(namespace, name, vmName)
+	// Add memory to the snapshot spec.
+	dummyBase.Spec.Memory = true
+
+	return dummyBase
 }
 
 func DummyImageAndItemObjectsForCdromBacking(

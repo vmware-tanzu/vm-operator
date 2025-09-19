@@ -3195,7 +3195,7 @@ func unitTestsValidateCreate() {
 									TopologyKey: "",
 								},
 								{
-									TopologyKey: "kubernetes.io/hostname",
+									TopologyKey: corev1.LabelHostname,
 								},
 								{
 									LabelSelector: &metav1.LabelSelector{
@@ -3205,7 +3205,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
@@ -3213,7 +3213,7 @@ func unitTestsValidateCreate() {
 									TopologyKey: "",
 								},
 								{
-									TopologyKey: "kubernetes.io/hostname",
+									TopologyKey: corev1.LabelHostname,
 								},
 								{
 									LabelSelector: &metav1.LabelSelector{
@@ -3223,7 +3223,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						}
@@ -3248,7 +3248,7 @@ func unitTestsValidateCreate() {
 									TopologyKey: "",
 								},
 								{
-									TopologyKey: "kubernetes.io/hostname",
+									TopologyKey: corev1.LabelHostname,
 								},
 								{
 									LabelSelector: &metav1.LabelSelector{
@@ -3263,7 +3263,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
@@ -3271,7 +3271,7 @@ func unitTestsValidateCreate() {
 									TopologyKey: "",
 								},
 								{
-									TopologyKey: "kubernetes.io/hostname",
+									TopologyKey: corev1.LabelHostname,
 								},
 								{
 									LabelSelector: &metav1.LabelSelector{
@@ -3286,7 +3286,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						}
@@ -3322,7 +3322,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
@@ -3339,12 +3339,128 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						}
 					},
 					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow VM Affinity RequiredDuringSchedulingIgnoredDuringExecution with VM operator labels in MatchLabels",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels = map[string]string{
+							"foo":                          "bar",
+							"vmoperator.vmware.com/paused": "true",
+						}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo":                          "bar",
+											"vmoperator.vmware.com/paused": "true",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Affinity RequiredDuringSchedulingIgnoredDuringExecution with VM operator labels in MatchExpressions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels = map[string]string{
+							"foo":                          "bar",
+							"vmoperator.vmware.com/paused": "true",
+						}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "vmoperator.vmware.com/paused",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"true"},
+											},
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].key: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Affinity PreferredDuringSchedulingIgnoredDuringExecution with VM operator labels in MatchLabels",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels = map[string]string{
+							"foo":                            "bar",
+							"vmicache.vmoperator.vmware.com": "ready",
+						}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo":                            "bar",
+											"vmicache.vmoperator.vmware.com": "ready",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Affinity PreferredDuringSchedulingIgnoredDuringExecution with VM operator labels in MatchExpressions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Labels = map[string]string{
+							"foo":                            "bar",
+							"vmicache.vmoperator.vmware.com": "ready",
+						}
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VirtualMachineAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "vmicache.vmoperator.vmware.com",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"ready"},
+											},
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].key: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
 				},
 			),
 
@@ -3378,7 +3494,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
@@ -3406,7 +3522,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "kubernetes.io/hostname",
+									TopologyKey: corev1.LabelHostname,
 								},
 							},
 						}
@@ -3431,7 +3547,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "kubernetes.io/hostname",
+									TopologyKey: corev1.LabelHostname,
 								},
 							},
 							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
@@ -3446,7 +3562,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 							},
 						}
@@ -3456,6 +3572,106 @@ func unitTestsValidateCreate() {
 						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`,
 						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "topology.kubernetes.io/zone": supported values: "", "kubernetes.io/hostname"`,
 						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`),
+				},
+			),
+
+			Entry("disallow VM Anti Affinity PreferredDuringSchedulingIgnoredDuringExecution with VM operator labels in MatchLabels",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo":                          "bar",
+											"vmoperator.vmware.com/paused": "true",
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Anti Affinity PreferredDuringSchedulingIgnoredDuringExecution with VM operator labels in MatchExpressions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "vmoperator.vmware.com/paused",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"true"},
+											},
+										},
+									},
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].key: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Anti Affinity PreferredDuringSchedulingPreferredDuringExecution with VM operator labels in MatchLabels",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo":                            "bar",
+											"vmicache.vmoperator.vmware.com": "ready",
+										},
+									},
+									TopologyKey: "",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchLabels: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
+				},
+			),
+
+			Entry("disallow VM Anti Affinity PreferredDuringSchedulingPreferredDuringExecution with VM operator labels in MatchExpressions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"foo": "bar",
+										},
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "vmicache.vmoperator.vmware.com",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"ready"},
+											},
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchExpressions[0].key: Forbidden: label selector can not contain VM Operator managed labels (vmoperator.vmware.com)`),
 				},
 			),
 		)

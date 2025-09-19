@@ -18,6 +18,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -475,8 +476,7 @@ func attachVMLabelsToPolicy(labels map[string]string, placementPols []vimtypes.B
 	// Any label on the VM can participate in an affinity/anti-affinity policy.
 	// It does not matter if a label is not participating in any policy.
 	// It could be specified by this, or any other VM's placement policy in future.
-	for key, value := range labels {
-		// TODO: We should skip labels that are added by VM operator.
+	for key, value := range kubeutil.RemoveVMOperatorLabels(labels) {
 		label := fmt.Sprintf("%s:%s", key, value)
 		tagsToAttach = append(tagsToAttach, label)
 	}

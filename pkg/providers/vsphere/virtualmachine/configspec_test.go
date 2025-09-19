@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine_test
@@ -204,9 +204,10 @@ var _ = Describe("CreateConfigSpec", func() {
 					})
 
 					vmCtx.VM.Labels = map[string]string{
-						"app":  "db",
-						"env":  "prod",
-						"zone": "us-west",
+						"app":                          "db",
+						"env":                          "prod",
+						"zone":                         "us-west",
+						"vmoperator.vmware.com/paused": "true", // should be filtered out
 					}
 
 					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
@@ -244,7 +245,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					pols := []vimtypes.BaseVmPlacementPolicy{
 						&vimtypes.VmVmAffinity{
 							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-								// Sorted list of tags
+								// Sorted list of tags without VM Operator managed labels.
 								TagsToAttach: []string{
 									fmt.Sprintf("%s:%s", "app", "db"),
 									fmt.Sprintf("%s:%s", "env", "prod"),
@@ -278,9 +279,10 @@ var _ = Describe("CreateConfigSpec", func() {
 					})
 
 					vmCtx.VM.Labels = map[string]string{
-						"env":  "prod",
-						"app":  "db",
-						"zone": "us-east",
+						"env":                          "prod",
+						"app":                          "db",
+						"zone":                         "us-east",
+						"vmoperator.vmware.com/paused": "true", // should be filtered out
 					}
 
 					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
@@ -318,7 +320,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					pols := []vimtypes.BaseVmPlacementPolicy{
 						&vimtypes.VmVmAffinity{
 							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-								// Sorted list of tags
+								// Sorted list of tags without VM Operator managed labels.
 								TagsToAttach: []string{
 									fmt.Sprintf("%s:%s", "app", "db"),
 									fmt.Sprintf("%s:%s", "env", "prod"),
@@ -355,8 +357,9 @@ var _ = Describe("CreateConfigSpec", func() {
 
 				// Add some labels to the VM to be used for tagging
 				vmCtx.VM.Labels = map[string]string{
-					"vm-label1": "vm-value1",
-					"vm-label2": "vm-value2",
+					"vm-label1":                    "vm-value1",
+					"vm-label2":                    "vm-value2",
+					"vmoperator.vmware.com/paused": "true", // should be filtered out
 				}
 			})
 
@@ -399,11 +402,11 @@ var _ = Describe("CreateConfigSpec", func() {
 					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmToVmGroupsAntiAffinity)
 					Expect(ok).To(BeTrue())
 
-					// Validate AntiAffinedVmGroupTags contains all labels from selectors
+					// Validate AntiAffinedVmGroupTags contains all labels from selectors.
 					expectedAntiAffinityLabels := []string{"component:web", "tier:frontend", "tier:backend", "environment:prod"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					// Validate TagsToAttach contains all VM labels (set later in the flow)
+					// Validate TagsToAttach contains only non-VM Operator managed labels.
 					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
 					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
 
@@ -436,7 +439,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmPlacementPolicy)
 					Expect(ok).To(BeTrue())
 
-					// VM tags should still be attached even though anti-affinity policy failed
+					// VM tags should still be attached (without VM Operator managed labels) even though anti-affinity policy failed.
 					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
 					Expect(policy.TagsToAttach).To(ConsistOf(expectedVMTags))
 				})
@@ -471,7 +474,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					expectedAntiAffinityLabels := []string{"tier:frontend", "environment:prod"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					// Validate TagsToAttach contains VM labels
+					// Validate TagsToAttach contains only non-VM Operator managed labels.
 					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
 					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
 
@@ -508,11 +511,11 @@ var _ = Describe("CreateConfigSpec", func() {
 					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmToVmGroupsAntiAffinity)
 					Expect(ok).To(BeTrue())
 
-					// Validate AntiAffinedVmGroupTags contains all expanded labels
+					// Validate AntiAffinedVmGroupTags contains all expanded labels.
 					expectedAntiAffinityLabels := []string{"tier:frontend", "tier:backend", "tier:middleware"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					// Validate TagsToAttach contains VM labels
+					// Validate TagsToAttach contains only non-VM Operator managed labels.
 					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
 					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
 
@@ -549,7 +552,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmPlacementPolicy)
 					Expect(ok).To(BeTrue())
 
-					// VM tags should still be attached even though selector was invalid
+					// VM tags should still be attached (without VM Operator managed labels) even though selector was invalid.
 					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
 					Expect(policy.TagsToAttach).To(ConsistOf(expectedVMTags))
 				})

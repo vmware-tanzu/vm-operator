@@ -111,6 +111,10 @@ const (
 	// hasn't been completed because the expected VirtualMachineImage resource
 	// isn't available yet.
 	ImageUnavailableReason = "ImageUnavailable"
+
+	// FatalReason documents that the outcome of the VirtualMachinePublishRequest
+	// will not be retried.
+	FatalReason = "Fatal"
 )
 
 const (
@@ -268,6 +272,14 @@ type VirtualMachinePublishRequestSpec struct {
 	// automatically deleted. If this field is set to zero then the request
 	// resource is eligible for deletion immediately after it finishes.
 	TTLSecondsAfterFinished *int64 `json:"ttlSecondsAfterFinished,omitempty"`
+
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=0
+
+	// BackoffLimit is the number of status.attempts that should be allowed
+	// before failing the VirtualMachinePublishRequest and halting any
+	// future processing.
+	BackoffLimit int64 `json:"backoffLimit,omitempty"`
 }
 
 // VirtualMachinePublishRequestStatus defines the observed state of a

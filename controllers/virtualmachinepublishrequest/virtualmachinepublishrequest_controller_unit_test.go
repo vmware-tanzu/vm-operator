@@ -6,6 +6,7 @@ package virtualmachinepublishrequest_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -364,11 +366,36 @@ func unitTestsReconcile() {
 					}
 				})
 
-				It("should mark the target as invalid", func() {
+				It("should mark the target as invalid and complete with a fatal reason", func() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).To(HaveOccurred())
 					Expect(conditions.IsFalse(vmpub,
 						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+					Expect(conditions.GetReason(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionComplete)).To(Equal(vmopv1.FatalReason))
+				})
+			})
+
+			When("validation has completed with a unexpected status", func() {
+				BeforeEach(func() {
+					vmpub.Annotations = map[string]string{
+						pkgconst.AsyncQuotaPerformCheckAnnotationKey: "true",
+						pkgconst.AsyncQuotaCheckStatusAnnotationKey:  "Unknown",
+						pkgconst.AsyncQuotaCheckMessageAnnotationKey: "yada yada yada",
+					}
+				})
+
+				It("should mark the target as invalid and complete with a fatal reason", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+					Expect(conditions.GetReason(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionComplete)).To(Equal(vmopv1.FatalReason))
 				})
 			})
 
@@ -892,6 +919,44 @@ func unitTestsReconcile() {
 					Eventually(func() vimtypes.TaskInfoState {
 						return fakeVMProvider.GetVMPublishRequestResult(vmpub)
 					}).Should(Equal(vimtypes.TaskInfoStateSuccess))
+				})
+
+				When("backoffLimit is exhausted", func() {
+					BeforeEach(func() {
+						vmpub.Status.Attempts = 3
+					})
+
+					It("should mark complete with a fatal reason and not requeue", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).To(HaveOccurred())
+						Expect(errors.As(err, &pkgerr.NoRequeueError{})).To(BeTrue())
+
+						Expect(conditions.IsFalse(vmpub,
+							vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+						Expect(conditions.GetReason(vmpub,
+							vmopv1.VirtualMachinePublishRequestConditionComplete)).To(Equal(vmopv1.FatalReason))
+					})
+				})
+
+				When("backoffLimit is set to 0 and status.attempts exceeds backoffLimit", func() {
+					initialAttempts := int64(2)
+					BeforeEach(func() {
+						vmpub.Status.Attempts = initialAttempts
+						vmpub.Spec.BackoffLimit = 0
+					})
+
+					It("should not return an error attempt to publish again", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						Eventually(func() bool {
+							return fakeVMProvider.IsPublishVMCalled()
+						}).Should(BeTrue())
+
+						Expect(vmpub.Status.Attempts).To(Equal(initialAttempts + 1))
+						Expect(conditions.IsFalse(vmpub,
+							vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
+					})
 				})
 			})
 

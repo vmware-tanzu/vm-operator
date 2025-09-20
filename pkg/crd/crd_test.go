@@ -336,7 +336,7 @@ var _ = Describe("Install", func() {
 					}
 					assertField(true, fields...)
 				},
-				Entry("currentSnapshot", "currentSnapshot"),
+				Entry("currentSnapshotName", "currentSnapshotName"),
 			)
 
 			DescribeTable("vm api should have status fields",
@@ -539,7 +539,7 @@ var _ = Describe("Install", func() {
 					},
 					Entry("bootOptions", "bootOptions"),
 					Entry("class", "class"),
-					Entry("currentSnapshot", "currentSnapshot"),
+					Entry("currentSnapshotName", "currentSnapshotName"),
 					Entry("groupName", "groupName"),
 					Entry("policies", "policies"),
 				)

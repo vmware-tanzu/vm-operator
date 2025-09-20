@@ -92,14 +92,14 @@ func (m mutator) vmSnapshotFromUnstructured(obj runtime.Unstructured) (*vmopv1.V
 // SetVMNameLabel sets the VM name label on the snapshot if it has a vmRef.
 // Returns true if the snapshot was mutated, false otherwise.
 func SetVMNameLabel(vmSnapshot *vmopv1.VirtualMachineSnapshot) bool {
-	// Only set the label if there's a vmRef with a name.
-	if vmSnapshot.Spec.VMRef == nil || vmSnapshot.Spec.VMRef.Name == "" {
+	// Only set the label if there's a vmName.
+	if vmSnapshot.Spec.VMName == "" {
 		return false
 	}
 
 	// Add the label if it does not exist.
 	if _, exists := vmSnapshot.Labels[vmopv1.VMNameForSnapshotLabel]; !exists {
-		vmName := vmSnapshot.Spec.VMRef.Name
+		vmName := vmSnapshot.Spec.VMName
 		metav1.SetMetaDataLabel(&vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, vmName)
 
 		return true

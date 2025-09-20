@@ -1799,9 +1799,9 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 			})
 		})
 
-		When("virtual machine snapshot's vm ref is not set", func() {
+		When("virtual machine snapshot's vm name is not set", func() {
 			BeforeEach(func() {
-				vmSnapshot.Spec.VMRef = nil
+				vmSnapshot.Spec.VMName = ""
 				withObjects = []ctrlclient.Object{vmSnapshot}
 			})
 
@@ -1809,7 +1809,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				Expect(resp.Allowed).To(BeFalse())
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
 				Expect(resp.RequestedCapacities).To(HaveLen(0))
-				Expect(resp.Result.Message).To(ContainSubstring("vmRef is not set"))
+				Expect(resp.Result.Message).To(ContainSubstring("vmName is not set"))
 			})
 		})
 

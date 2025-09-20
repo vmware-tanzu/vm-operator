@@ -288,7 +288,7 @@ func SnapshotToVMMapperFn(
 		logger := logger.WithValues("snapshotName", snapshot.Name, "namespace", snapshot.Namespace)
 
 		// Only process snapshots that reference a VM
-		if snapshot.Spec.VMRef == nil {
+		if snapshot.Spec.VMName == "" {
 			logger.V(4).Info("Skipping snapshot with no VM reference")
 			return nil
 		}
@@ -299,14 +299,14 @@ func SnapshotToVMMapperFn(
 			return nil
 		}
 
-		logger.V(4).Info("Queuing VM reconciliation due to snapshot event", "vmName", snapshot.Spec.VMRef.Name)
+		logger.V(4).Info("Queuing VM reconciliation due to snapshot event", "vmName", snapshot.Spec.VMName)
 
 		// Queue reconciliation for the referenced VM
 		return []reconcile.Request{
 			{
 				NamespacedName: client.ObjectKey{
 					Namespace: snapshot.Namespace,
-					Name:      snapshot.Spec.VMRef.Name,
+					Name:      snapshot.Spec.VMName,
 				},
 			},
 		}

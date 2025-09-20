@@ -2042,46 +2042,31 @@ func (v validator) validateSnapshot(
 
 	var allErrs field.ErrorList
 
-	snapshotPath := field.NewPath("spec", "currentSnapshot")
+	snapshotPath := field.NewPath("spec", "currentSnapshotName")
 
 	// validate a create request
-	if oldVM == nil && vm.Spec.CurrentSnapshot != nil {
+	if oldVM == nil && vm.Spec.CurrentSnapshotName != "" {
 		allErrs = append(allErrs, field.Forbidden(snapshotPath, "creating VM with current snapshot is not allowed"))
 
 		return allErrs
 	}
 
-	// the Update request has no currentSnapshot. nothing to validate here
-	if vm.Spec.CurrentSnapshot == nil {
+	// the Update request has no currentSnapshotName. nothing to validate here
+	if vm.Spec.CurrentSnapshotName == "" {
+		return allErrs
+	}
+
+	// Validate that currentSnapshotName is not empty string if provided
+	if strings.TrimSpace(vm.Spec.CurrentSnapshotName) == "" {
+		allErrs = append(allErrs, field.Invalid(snapshotPath, vm.Spec.CurrentSnapshotName, "currentSnapshotName cannot be empty"))
 		return allErrs
 	}
 
 	// If a revert is in progress, we don't allow a new revert.
-	if oldVM != nil && oldVM.Spec.CurrentSnapshot != nil {
-		if oldVM.Spec.CurrentSnapshot.Name != vm.Spec.CurrentSnapshot.Name {
+	if oldVM != nil && oldVM.Spec.CurrentSnapshotName != "" {
+		if oldVM.Spec.CurrentSnapshotName != vm.Spec.CurrentSnapshotName {
 			allErrs = append(allErrs, field.Forbidden(snapshotPath, "a snapshot revert is already in progress"))
 		}
-	}
-
-	if vm.Spec.CurrentSnapshot.APIVersion != "" {
-		gv, err := schema.ParseGroupVersion(vm.Spec.CurrentSnapshot.APIVersion)
-		if err != nil {
-			allErrs = append(allErrs, field.Invalid(snapshotPath.Child("apiVersion"),
-				vm.Spec.CurrentSnapshot.APIVersion, "must be valid group version"))
-		} else if gv.Group != vmopv1.GroupName {
-			allErrs = append(allErrs, field.Invalid(snapshotPath.Child("apiVersion"),
-				vm.Spec.CurrentSnapshot.APIVersion, fmt.Sprintf("group must be %q", vmopv1.GroupName)))
-		}
-	}
-
-	if vm.Spec.CurrentSnapshot.Kind != vmSnapshotKind {
-		allErrs = append(allErrs, field.NotSupported(
-			snapshotPath.Child("kind"), vm.Spec.CurrentSnapshot.Kind, []string{vmSnapshotKind},
-		))
-	}
-
-	if vm.Spec.CurrentSnapshot.Name == "" {
-		allErrs = append(allErrs, field.Required(snapshotPath.Child("name"), ""))
 	}
 
 	// Check if the VM is a VKS node and prevent snapshot revert

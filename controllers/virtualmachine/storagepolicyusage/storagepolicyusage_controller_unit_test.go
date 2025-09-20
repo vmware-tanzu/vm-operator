@@ -1144,9 +1144,9 @@ func unitTestsReconcileSPUForVMSnapshot() {
 					})
 				})
 
-				When("VMRef of the VirtualMachineSnapshot is not set", func() {
+				When("VMName of the VirtualMachineSnapshot is not set", func() {
 					BeforeEach(func() {
-						vmSnapshot1.Spec.VMRef = nil
+						vmSnapshot1.Spec.VMName = ""
 					})
 					It("should return an error", func() {
 						Expect(err).To(HaveOccurred())
@@ -1174,9 +1174,9 @@ func unitTestsReconcileSPUForVMSnapshot() {
 					assertReportedTotalsWithOffset(spu, err, nil, zeroQuantity, size10GB, 1)
 				})
 
-				When("VMRef of the VirtualMachineSnapshot is not set", func() {
+				When("VMName of the VirtualMachineSnapshot is not set", func() {
 					BeforeEach(func() {
-						vmSnapshot1.Spec.VMRef = nil
+						vmSnapshot1.Spec.VMName = ""
 					})
 					It("should return an error", func() {
 						Expect(err).To(HaveOccurred())

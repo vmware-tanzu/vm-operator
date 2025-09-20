@@ -14,6 +14,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/storageclass"
 	spq "github.com/vmware-tanzu/vm-operator/controllers/storagepolicyquota"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegroup"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegrouppublishrequest"
@@ -95,6 +96,12 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
 		if err := vspherepolicy.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize vSphere Policy controllers: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		if err := volumebatch.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize Volume Batch controller: %w", err)
 		}
 	}
 

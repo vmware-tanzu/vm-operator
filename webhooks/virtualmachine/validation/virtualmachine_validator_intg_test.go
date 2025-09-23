@@ -254,30 +254,20 @@ func intgTestsValidateUpdate() {
 			BeforeEach(func() {
 				vmSnapshot := builder.DummyVirtualMachineSnapshot(ctx.vm.Namespace, "dummy-vm-snapshot", ctx.vm.Name)
 
-				ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-					Kind:       "VirtualMachineSnapshot",
-					APIVersion: "vmoperator.vmware.com/v1alpha5",
-					Name:       vmSnapshot.Name,
-				}
+				ctx.vm.Spec.CurrentSnapshotName = vmSnapshot.Name
 			})
 
 			It("should allow the request", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 		})
-		When("snapshot ref is invalid", func() {
+		When("currentSnapshotName is empty", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.CurrentSnapshot = &common.LocalObjectRef{
-					Kind:       "VMSnapshot",
-					APIVersion: "",
-					Name:       "",
-				}
+				ctx.vm.Spec.CurrentSnapshotName = ""
 			})
 
-			It("should not allow the request", func() {
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("spec.currentSnapshot.name: Required value"))
-				Expect(err.Error()).To(ContainSubstring("Unsupported value: \"VMSnapshot\": supported values: \"VirtualMachineSnapshot\""))
+			It("should allow the request", func() {
+				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 	})

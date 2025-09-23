@@ -31,13 +31,13 @@ func CalculateReservedForSnapshotPerStorageClass(
 	logger logr.Logger,
 	vmSnapshot vmopv1.VirtualMachineSnapshot) ([]vmopv1.VirtualMachineSnapshotStorageStatusRequested, error) {
 
-	if vmSnapshot.Spec.VMRef == nil {
-		return nil, fmt.Errorf("vmRef is not set")
+	if vmSnapshot.Spec.VMName == "" {
+		return nil, fmt.Errorf("vmName is not set")
 	}
 
 	vm := &vmopv1.VirtualMachine{}
-	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vmSnapshot.Spec.VMRef.Name}, vm); err != nil {
-		return nil, fmt.Errorf("failed to get VM %s: %w", vmSnapshot.Spec.VMRef.Name, err)
+	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSnapshot.Namespace, Name: vmSnapshot.Spec.VMName}, vm); err != nil {
+		return nil, fmt.Errorf("failed to get VM %s: %w", vmSnapshot.Spec.VMName, err)
 	}
 
 	requestedMap := make(map[string]*resource.Quantity)

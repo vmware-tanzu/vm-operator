@@ -14,7 +14,6 @@ import (
 
 	vmopv1a4common "github.com/vmware-tanzu/vm-operator/api/v1alpha4/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 )
 
 func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha4_VirtualMachineBootstrapCloudInitSpec(
@@ -162,29 +161,28 @@ func Convert_common_LocalObjectRef_To_v1alpha5_VirtualMachineSnapshotReference(
 		return nil
 	}
 
-	// Convert LocalObjectRef to the nested SnapshotReference field
-	out.Reference = &vmopv1common.LocalObjectRef{
-		APIVersion: in.APIVersion,
-		Kind:       in.Kind,
-		Name:       in.Name,
-	}
+	// Convert LocalObjectRef to simplified VirtualMachineSnapshotReference
+	out.Type = vmopv1.VirtualMachineSnapshotReferenceTypeManaged
+	out.Name = in.Name
 
 	return nil
 }
 
 func Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(
 	in *vmopv1.VirtualMachineSnapshotReference, out *vmopv1a4common.LocalObjectRef, s apiconversion.Scope) error {
-	if in == nil || in.Reference == nil {
+	if in == nil {
 		return nil
 	}
 
-	// Convert the nested SnapshotReference back to LocalObjectRef
-	out.APIVersion = in.Reference.APIVersion
-	out.Kind = in.Reference.Kind
-	out.Name = in.Reference.Name
+	// Convert simplified VirtualMachineSnapshotReference back to LocalObjectRef
+	// For managed snapshots, assume it's a VirtualMachineSnapshot resource
+	out.APIVersion = "vmoperator.vmware.com/v1alpha5"
+	out.Kind = "VirtualMachineSnapshot"
+	out.Name = in.Name
 
 	return nil
 }
+
 
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {

@@ -1446,11 +1446,7 @@ func updateSnapshotChildrenStatus(
 	// Return this node's reference to the parent.
 	curSnapshotRef := &vmopv1.VirtualMachineSnapshotReference{
 		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: &common.LocalObjectRef{
-			APIVersion: curSnapshot.APIVersion,
-			Kind:       curSnapshot.Kind,
-			Name:       curSnapshot.Name,
-		},
+		Name: curSnapshot.Name,
 	}
 
 	return curSnapshotRef, nil
@@ -1554,19 +1550,11 @@ func updateCurrentSnapshotStatus(
 		return nil
 	}
 
-	// Update the status to reflect the current snapshot custom resource.
-	currentSnapshot := &vmopv1.VirtualMachineSnapshotReference{
+	// Update the status to reflect the current snapshot name.
+	vm.Status.CurrentSnapshot = &vmopv1.VirtualMachineSnapshotReference{
 		Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-		Reference: &common.LocalObjectRef{
-			APIVersion: vmSnapshot.APIVersion,
-			Kind:       vmSnapshot.Kind,
-			Name:       vmSnapshot.Name,
-		},
+		Name: vmSnapshot.Name,
 	}
-
-	// Update the status. Let patch helper figure out which fields
-	// need to be updated exactly.
-	vm.Status.CurrentSnapshot = currentSnapshot
 
 	return nil
 }
@@ -1616,11 +1604,7 @@ func updateRootSnapshots(
 
 		newRootSnapshots = append(newRootSnapshots, vmopv1.VirtualMachineSnapshotReference{
 			Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
-			Reference: &common.LocalObjectRef{
-				APIVersion: rootSnapshotCR.APIVersion,
-				Kind:       rootSnapshotCR.Kind,
-				Name:       rootSnapshotCR.Name,
-			},
+			Name: rootSnapshotCR.Name,
 		})
 	}
 

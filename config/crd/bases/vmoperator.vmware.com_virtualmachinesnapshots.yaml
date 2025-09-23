@@ -75,35 +75,11 @@ spec:
                       can not be less than 5 minutes or more than 240 minutes.
                     type: string
                 type: object
-              vmRef:
+              vmName:
                 description: |-
-                  VMRef represents the name of the virtual machine for which the
+                  VMName represents the name of the virtual machine for which the
                   snapshot is requested.
-                properties:
-                  apiVersion:
-                    description: |-
-                      APIVersion defines the versioned schema of this representation of an
-                      object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
-                    type: string
-                  kind:
-                    description: |-
-                      Kind is a string value representing the REST resource this object
-                      represents.
-                      Servers may infer this from the endpoint the client submits requests to.
-                      Cannot be updated.
-                      In CamelCase.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
-                  name:
-                    description: |-
-                      Name refers to a unique resource in the current namespace.
-                      More info: http://kubernetes.io/docs/user-guide/identifiers#names
-                    type: string
-                required:
-                - apiVersion
-                - kind
-                - name
-                type: object
+                type: string
             type: object
           status:
             description: VirtualMachineSnapshotStatus defines the observed state of
@@ -115,35 +91,11 @@ spec:
                   the parent.
                 items:
                   properties:
-                    reference:
+                    name:
                       description: |-
-                        Reference is the reference to the snapshot in the Supervisor.
-                        This should be set only for Managed snapshots.
-                      properties:
-                        apiVersion:
-                          description: |-
-                            APIVersion defines the versioned schema of this representation of an
-                            object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
-                          type: string
-                        kind:
-                          description: |-
-                            Kind is a string value representing the REST resource this object
-                            represents.
-                            Servers may infer this from the endpoint the client submits requests to.
-                            Cannot be updated.
-                            In CamelCase.
-                            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                          type: string
-                        name:
-                          description: |-
-                            Name refers to a unique resource in the current namespace.
-                            More info: http://kubernetes.io/docs/user-guide/identifiers#names
-                          type: string
-                      required:
-                      - apiVersion
-                      - kind
-                      - name
-                      type: object
+                        Name is the name of the snapshot resource.  This field is only set
+                        for managed snapshots.
+                      type: string
                     type:
                       default: Managed
                       description: |-
@@ -155,6 +107,7 @@ spec:
                       - Unmanaged
                       type: string
                   required:
+                  - name
                   - type
                   type: object
                 type: array

@@ -622,11 +622,7 @@ func DummyVirtualMachineSnapshot(namespace, name, vmName string) *vmopv1.Virtual
 			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
-			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: vmopv1.GroupVersion.String(),
-				Kind:       "VirtualMachine",
-				Name:       vmName,
-			},
+			VMName: vmName,
 			Quiesce: &vmopv1.QuiesceSpec{
 				Timeout: &metav1.Duration{
 					Duration: 10 * time.Minute,
@@ -651,11 +647,7 @@ func DummyVirtualMachineSnapshotWithMemory(namespace, name, vmName string) *vmop
 			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSnapshotSpec{
-			VMRef: &vmopv1common.LocalObjectRef{
-				APIVersion: "vmoperator.vmware.com/v1alpha5",
-				Kind:       "VirtualMachine",
-				Name:       vmName,
-			},
+			VMName: vmName,
 			Memory: true,
 			Quiesce: &vmopv1.QuiesceSpec{
 				Timeout: &metav1.Duration{

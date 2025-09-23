@@ -63,7 +63,7 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 
 	ctx.vmSnapshot = builder.DummyVirtualMachineSnapshot(ctx.Namespace, "dummy-vm-snapshot", "dummy-vm")
 	// Set the label on the snapshot manually since the mutation webhook is not running.
-	metav1.SetMetaDataLabel(&ctx.vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, ctx.vmSnapshot.Spec.VMRef.Name)
+	metav1.SetMetaDataLabel(&ctx.vmSnapshot.ObjectMeta, vmopv1.VMNameForSnapshotLabel, ctx.vmSnapshot.Spec.VMName)
 
 	return ctx
 }

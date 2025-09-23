@@ -37,7 +37,7 @@ const (
 )
 
 var (
-	errVMRefNil = pkgerr.NoRequeueNoErr("VirtualMachineSnapshot VMRef is nil")
+	errVMNameEmpty = pkgerr.NoRequeueNoErr("VirtualMachineSnapshot VMName is empty")
 )
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
@@ -164,12 +164,12 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineSnapshotContext) 
 	vmSnapshot := ctx.VirtualMachineSnapshot
 	ctx.Logger.Info("Fetching VirtualMachine from snapshot object")
 
-	if vmSnapshot.Spec.VMRef == nil {
-		return ctrl.Result{}, errVMRefNil
+	if vmSnapshot.Spec.VMName == "" {
+		return ctrl.Result{}, errors.New("vmName is required")
 	}
 
 	vm := &vmopv1.VirtualMachine{}
-	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
+	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMName, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get VirtualMachine %q: %w", objKey, err)
 	}
@@ -227,12 +227,12 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineSnapshotContext) 
 		return nil
 	}
 
-	if vmSnapshot.Spec.VMRef == nil {
-		return errVMRefNil
+	if vmSnapshot.Spec.VMName == "" {
+		return errVMNameEmpty
 	}
 
 	vm := &vmopv1.VirtualMachine{}
-	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMRef.Name, Namespace: vmSnapshot.Namespace}
+	objKey := client.ObjectKey{Name: vmSnapshot.Spec.VMName, Namespace: vmSnapshot.Namespace}
 	if err := r.Get(ctx, objKey, vm); err != nil {
 		if apierrors.IsNotFound(err) {
 			ctx.Logger.V(5).Info("VirtualMachine not found, assuming the " +

@@ -32,9 +32,12 @@ type SnapshotArgs struct {
 
 // Snapshot related errors.
 var (
-	ErrNoSnapshots       = errors.New("no snapshots for this VM")
-	ErrSnapshotNotFound  = errors.New("snapshot not found")
-	ErrMultipleSnapshots = errors.New("multiple snapshots found")
+	ErrSnapshotNotFound        = errors.New("snapshot not found")
+	errNoSnapshots             = errors.New("no snapshots for this VM")
+	errMultipleSnapshots       = errors.New("multiple snapshots found")
+	errSnapshotMoRefNilOrEmpty = errors.New("snapshotMoRef is nil or empty")
+	errMoVMLayoutExNil         = errors.New("moVM.LayoutEx is nil")
+	errMoVMConfigNil           = errors.New("moVM.Config is nil")
 )
 
 func SnapshotVirtualMachine(
@@ -43,9 +46,9 @@ func SnapshotVirtualMachine(
 
 	logger := args.VMCtx.Logger.WithValues("snapshotName", snapshotName)
 	snapNode, err := FindSnapshot(args.VMCtx.MoVM, snapshotName)
-	// If it's other error except ErrMultipleSnapshots, that means it's either
-	// ErrSnapshotNotFound or ErrNoSnapshots, continue.
-	if errors.Is(err, ErrMultipleSnapshots) {
+	// If it's other error except errMultipleSnapshots, that means it's either
+	// ErrSnapshotNotFound or errNoSnapshots, continue.
+	if errors.Is(err, errMultipleSnapshots) {
 		return nil, err
 	}
 
@@ -131,7 +134,7 @@ func DeleteSnapshot(args SnapshotArgs) error {
 	}
 
 	if err := t.Wait(args.VMCtx); err != nil {
-		args.VMCtx.Logger.V(5).Error(err, "delete snapshot task failed")
+		args.VMCtx.Logger.V(4).Error(err, "delete snapshot task failed")
 		return err
 	}
 
@@ -147,7 +150,7 @@ func FindSnapshot(
 	snapshotName string) (*vimtypes.VirtualMachineSnapshotTree, error) {
 
 	if moVM.Snapshot == nil || len(moVM.Snapshot.RootSnapshotList) == 0 {
-		return nil, ErrNoSnapshots
+		return nil, errNoSnapshots
 	}
 
 	m := make(snapshotMap)
@@ -162,7 +165,7 @@ func FindSnapshot(
 		return &s[0], nil
 	default:
 		return nil, fmt.Errorf("%q resolves to %d snapshots: %w",
-			snapshotName, len(s), ErrMultipleSnapshots)
+			snapshotName, len(s), errMultipleSnapshots)
 	}
 }
 
@@ -188,25 +191,24 @@ func (m snapshotMap) add(parent string, tree []vimtypes.VirtualMachineSnapshotTr
 	}
 }
 
-// GetSnapshotSize calculates the size of a given snapshot in bytes. It includes
-// the memory file, the vmdk files, and the vmsn file, and excludes FCDs.
-// The algorithm use almost the same logic as how VC UI calculates the snapshot size.
-// The only difference is that this function does not include the size of FCDs,
-// and returns an error if the snapshot is not found.
-func GetSnapshotSize(logger logr.Logger,
+// GetSnapshotSize calculates the size of a given snapshot in bytes. It returns
+// two sizes, first one includes the memory file, the vmdk files, and the vmsn
+// file, excludes FCDs. Second one only includes FCDs.
+// The algorithm use almost the same logic as how VC UI calculates the snapshot
+// size. The only difference is that this function returns the size of FCDs
+// as a different variable, and returns an error if the snapshot is not found.
+func GetSnapshotSize(
+	logger logr.Logger,
 	moVM mo.VirtualMachine,
-	vmSnapshot *vimtypes.ManagedObjectReference) (int64, error) {
-	if vmSnapshot == nil || vmSnapshot.Value == "" {
-		return 0, fmt.Errorf("moSnapshot is nil or empty")
-	}
+	vmSnapshot *vimtypes.ManagedObjectReference) (total, fcdTotal int64, _ error) {
 
-	if moVM.Config == nil {
-		return 0, fmt.Errorf("moVM.Config is nil")
+	if vmSnapshot == nil || vmSnapshot.Value == "" {
+		return 0, 0, errSnapshotMoRefNilOrEmpty
 	}
 
 	vmLayout := moVM.LayoutEx
 	if vmLayout == nil {
-		return 0, fmt.Errorf("moVM.LayoutEx is nil")
+		return 0, 0, errMoVMLayoutExNil
 	}
 
 	var snapshot *vimtypes.VirtualMachineFileLayoutExSnapshotLayout
@@ -218,60 +220,99 @@ func GetSnapshotSize(logger logr.Logger,
 	}
 
 	if snapshot == nil {
-		return 0, fmt.Errorf("snapshot with reference %q"+
-			" not found in vmLayout.Snapshot", vmSnapshot.Value)
+		return 0, 0, fmt.Errorf("snapshot ref %q not found in vmLayout.Snapshot",
+			vmSnapshot.Value)
 	}
 
-	fcdDeviceKeySet := getFCDDeviceKeySet(moVM)
+	fcdDeviceKeySet, err := getFCDDeviceKeySet(moVM.Config)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get FCD device key set: %w", err)
+	}
+
 	fileKeyMap := make(map[int32]int64)
 	for _, file := range vmLayout.File {
 		fileKeyMap[file.Key] = file.Size
 	}
 
-	var total int64
-
-	// Add the file key for the snapshot memory (.vmem) file if present.
+	// Add the file key for the snapshot memory (vmem) file if present.
 	if snapshot.MemoryKey != -1 {
-		logger.V(5).Info("Adding memoryKey", "memoryKey", snapshot.MemoryKey)
+		logger.V(4).Info("Adding memoryKey", "memoryKey", snapshot.MemoryKey)
 		total += fileKeyMap[snapshot.MemoryKey]
 	}
 
-	logger.V(5).Info("Adding the file key for snapshot (.vmsn) file", "dataKey", snapshot.DataKey)
+	logger.V(4).Info("Adding the file key for snapshot (vmsn) file",
+		"dataKey", snapshot.DataKey)
 	total += fileKeyMap[snapshot.DataKey]
 
 	// Add the disk files for the child most delta disk which is the last item in the disk chain.
 	for _, disk := range snapshot.Disk {
-		if fcdDeviceKeySet.Has(disk.Key) {
-			// A VM snapshot creates a delta disk for all disks of a VM -- including PVCs that are
-			// backed by FCDs. Since the usage of the delta disks created on PVCs will already be
-			// reported by the VolumeSnapshot SPU, we skip those here to avoid double counting.
-			logger.V(5).Info("Skipping the disk file of the FCD", "diskKey", disk.Key)
-			continue
-		}
-
 		if len(disk.Chain) == 0 {
-			logger.V(5).Info("Skipping the disk since its chain is empty", "diskKey", disk.Key)
+			logger.V(4).Info("Skipping the disk since its chain is empty", "diskKey", disk.Key)
 			continue
 		}
 
 		// File keys for the child most delta disk
 		childMostFileKeys := disk.Chain[len(disk.Chain)-1].FileKey
 		if len(childMostFileKeys) > 0 {
-			logger.V(5).Info("Adding file key for the child most delta disk of the snapshot",
+			logger.V(4).Info("Adding file key for the child most delta disk of the snapshot",
 				"fileKey", childMostFileKeys)
+			var curDiskTotal int64
 			for _, fileKey := range childMostFileKeys {
-				total += fileKeyMap[fileKey]
+				curDiskTotal += fileKeyMap[fileKey]
+			}
+
+			if fcdDeviceKeySet.Has(disk.Key) {
+				// A VM snapshot creates a delta disk for all disks of a VM --
+				// including PVCs that are backed by FCDs. Since the usage of
+				// the delta disks created on PVCs will already be
+				// reported by the VolumeSnapshot SPU, we skip adding those to
+				// the total size, which will be used by calculating the usage of
+				// the VirtualMachineSnapshot SPU.
+				// But we return the FCD's total separately for other usage.
+				logger.V(4).Info("Current disk is FCD", "diskKey", disk.Key)
+				fcdTotal += curDiskTotal
+			} else {
+				total += curDiskTotal
 			}
 		}
 	}
 
-	return total, nil
+	return total, fcdTotal, nil
+}
+
+// GetAllSnapshotSize calculates the size of a all snapshots of the VM in bytes.
+// It returns two sizes, first one includes the memory file, the vmdk files,
+// and the vmsn file, excludes FCDs. Second one only includes FCDs.
+func GetAllSnapshotSize(
+	logger logr.Logger,
+	moVM mo.VirtualMachine) (total, fcdTotal int64, _ error) {
+
+	vmLayout := moVM.LayoutEx
+	if vmLayout == nil {
+		return 0, 0, errMoVMLayoutExNil
+	}
+
+	for _, snap := range vmLayout.Snapshot {
+		t, ft, err := GetSnapshotSize(logger, moVM, &snap.Key)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to calculate total size"+
+				" for snapshot %q: %w", snap.Key.Value, err)
+		}
+		total += t
+		fcdTotal += ft
+	}
+	return total, fcdTotal, nil
 }
 
 // getFCDDeviceKeySet returns a set of device keys of disk devices that are FCDs.
-func getFCDDeviceKeySet(moVM mo.VirtualMachine) sets.Set[int32] {
+func getFCDDeviceKeySet(conf *vimtypes.VirtualMachineConfigInfo) (sets.Set[int32], error) {
 	deviceKeysSet := sets.Set[int32]{}
-	device := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+
+	if conf == nil {
+		return nil, errMoVMConfigNil
+	}
+
+	device := object.VirtualDeviceList(conf.Hardware.Device)
 	for _, d := range device.SelectByType(&vimtypes.VirtualDisk{}) {
 		disk := d.(*vimtypes.VirtualDisk)
 		if disk.VDiskId == nil || disk.VDiskId.Id == "" { // FCDs have VDiskId.
@@ -281,5 +322,5 @@ func getFCDDeviceKeySet(moVM mo.VirtualMachine) sets.Set[int32] {
 		deviceKeysSet.Insert(disk.Key)
 	}
 
-	return deviceKeysSet
+	return deviceKeysSet, nil
 }

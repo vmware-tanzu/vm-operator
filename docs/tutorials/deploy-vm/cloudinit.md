@@ -62,4 +62,4 @@ The example below illustrates a `VirtualMachine` resource that specifies a Cloud
         My super secret message.
     ```
 
-For more information, please refer to the documentation [documentation](./../../concepts/workloads/guest.md#cloud-init) for the Cloud-Init bootstrap provider.
+For more information, please refer to the [documentation](./../../concepts/workloads/guest.md#cloud-init) for the Cloud-Init bootstrap provider.

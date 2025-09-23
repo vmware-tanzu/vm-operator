@@ -183,7 +183,7 @@ type VirtualMachineStorageStatus struct {
 
 	// Total describes the total storage space used by a VirtualMachine that
 	// counts against the Namespace's storage quota.
-	// This value is a sum of requested.disks + used.other.
+	// This value is a sum of requested.disks and used.other.
 	Total *resource.Quantity `json:"total,omitempty"`
 
 	// +optional

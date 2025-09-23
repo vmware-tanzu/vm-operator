@@ -5,7 +5,7 @@
 package virtualmachine_test
 
 import (
-	"strings"
+	"path/filepath"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -25,6 +25,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
+
+const oneGiBInBytes = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
 
 func snapShotTests() {
 	var (
@@ -301,7 +303,7 @@ func snapShotTests() {
 	Context("GetSnapshotSize", func() {
 		Context("With VCSim", func() {
 			var moVM mo.VirtualMachine
-			var sum int64
+			var total int64
 			JustBeforeEach(func() {
 				args := virtualmachine.SnapshotArgs{
 					VMCtx:      vmCtx,
@@ -311,293 +313,419 @@ func snapShotTests() {
 				snapMo, err := virtualmachine.CreateSnapshot(args)
 				Expect(err).To(BeNil())
 				Expect(snapMo).ToNot(BeNil())
-				Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM)).To(Succeed())
+				Expect(vcVM.Properties(
+					ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM)).
+					To(Succeed())
 				Expect(moVM.Snapshot).ToNot(BeNil())
 				vmCtx.MoVM = moVM
 
-				sum = 0
+				total = 0
 				for _, file := range moVM.LayoutEx.File {
-					if strings.HasSuffix(file.Name, ".vmdk") || strings.HasSuffix(file.Name, ".vmsn") || strings.HasSuffix(file.Name, ".vmem") {
-						sum += file.Size
+					switch filepath.Ext(file.Name) {
+					case ".vmdk", ".vmsn", ".vmem":
+						total += file.Size
 					}
 				}
 			})
 
 			It("succeeds", func() {
-				Expect(virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)).To(Equal(sum))
+				total, fcdTotal, err := virtualmachine.GetSnapshotSize(
+					vmCtx, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(total).To(Equal(total))
+				Expect(fcdTotal).To(BeZero())
 			})
 
 			When("the snapshot is nil", func() {
 				It("returns 0", func() {
-					size, err := virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, nil)
+					total, fcdTotal, err := virtualmachine.GetSnapshotSize(vmCtx, vmCtx.MoVM, nil)
 					Expect(err).To(HaveOccurred())
-					Expect(size).To(Equal(int64(0)))
+					Expect(total).To(BeZero())
+					Expect(fcdTotal).To(BeZero())
 				})
 			})
 
 			When("the moVM.layoutEx is nil", func() {
 				It("returns 0", func() {
 					vmCtx.MoVM.LayoutEx = nil
-					size, err := virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)
-					Expect(err).To(HaveOccurred())
-					Expect(size).To(Equal(int64(0)))
+					total, fcdTotal, err := virtualmachine.GetSnapshotSize(
+						vmCtx, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(total).To(BeZero())
+					Expect(fcdTotal).To(BeZero())
 				})
 			})
 
 			When("the moVM.config.hardware.device is empty", func() {
 				It("returns snapshot size", func() {
 					vmCtx.MoVM.Config.Hardware.Device = nil
-					size, err := virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)
+					total, fcdTotal, err := virtualmachine.GetSnapshotSize(
+						vmCtx, vmCtx.MoVM, moVM.Snapshot.CurrentSnapshot)
 					Expect(err).NotTo(HaveOccurred())
-					Expect(size).To(Equal(sum))
+					Expect(total).To(Equal(total))
+					Expect(fcdTotal).To(BeZero())
 				})
 			})
 		})
 
 		Context("Mock VM with two snapshots, 1 disk and 1 FCD", func() {
-			const oneGiBInBytes = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
 			var snapshot1, snapshot2 vimtypes.ManagedObjectReference
 			JustBeforeEach(func() {
-				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
-					Hardware: vimtypes.VirtualHardware{
-						Device: []vimtypes.BaseVirtualDevice{
-							// classic
-							&vimtypes.VirtualDisk{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
-										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-											FileName: "[datastore] vm/my-disk-101.vmdk",
-										},
-										Uuid: "101",
-									},
-									Key: 100,
-								},
-								CapacityInBytes: 1 * oneGiBInBytes,
-							},
-							// managed
-							&vimtypes.VirtualDisk{
-								VirtualDevice: vimtypes.VirtualDevice{
-									Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
-										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-											FileName: "[datastore] vm/my-disk-105.vmdk",
-										},
-										Uuid: "105",
-										KeyId: &vimtypes.CryptoKeyId{
-											KeyId: "my-key-id",
-											ProviderId: &vimtypes.KeyProviderId{
-												Id: "my-provider-id",
-											},
-										},
-									},
-									Key: 101,
-								},
-								CapacityInBytes: 5 * oneGiBInBytes,
-								VDiskId: &vimtypes.ID{
-									Id: "my-fcd-1",
-								},
-							},
-						},
-					},
-				}
-				vmCtx.MoVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
-					Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
-						{
-							Key: 100,
-							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-								{
-									FileKey: []int32{1, 2},
-								},
-								{
-									FileKey: []int32{3, 4},
-								},
-								{
-									FileKey: []int32{5, 6},
-								},
-							},
-						},
-						{
-							Key: 101,
-							Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-								{
-									FileKey: []int32{11, 12},
-								},
-								{
-									FileKey: []int32{13, 14},
-								},
-								{
-									FileKey: []int32{15, 16},
-								},
-							},
-						},
-					},
-					File: []vimtypes.VirtualMachineFileLayoutExFileInfo{
-						{
-							Key:        1,
-							Size:       500,
-							UniqueSize: 500,
-						},
-						{
-							Key:        2,
-							Size:       2 * oneGiBInBytes,
-							UniqueSize: 1 * oneGiBInBytes,
-						},
-
-						{
-							Key:        3,
-							Size:       500,
-							UniqueSize: 500,
-						},
-						{
-							Key:        4,
-							Size:       0.5 * oneGiBInBytes,
-							UniqueSize: 0.25 * oneGiBInBytes,
-						},
-
-						{
-							Key:        5,
-							Size:       500,
-							UniqueSize: 500,
-						},
-						{
-							Key:        6,
-							Size:       1 * oneGiBInBytes,
-							UniqueSize: 0.5 * oneGiBInBytes,
-						},
-
-						{
-							Key:        11,
-							Size:       500,
-							UniqueSize: 500,
-						},
-						{
-							Key:        12,
-							Size:       2 * oneGiBInBytes,
-							UniqueSize: 1 * oneGiBInBytes,
-						},
-						{
-							Key:        13,
-							Size:       500,
-							UniqueSize: 500,
-						},
-						{
-							Key:        14,
-							Size:       0.5 * oneGiBInBytes,
-							UniqueSize: 0.25 * oneGiBInBytes,
-						},
-						{
-							Key:        15,
-							Size:       500,
-							UniqueSize: 500,
-						},
-						{
-							Key:        16,
-							Size:       1 * oneGiBInBytes,
-							UniqueSize: 0.5 * oneGiBInBytes,
-						},
-						{
-							Key:        17,
-							Size:       500,
-							UniqueSize: 500,
-							Name:       ".vmem",
-						},
-						{
-							Key:        18,
-							Size:       2 * oneGiBInBytes,
-							UniqueSize: 3 * oneGiBInBytes,
-							Name:       ".vmsn",
-						},
-						{
-							Key:        19,
-							Size:       1 * oneGiBInBytes,
-							UniqueSize: 0.5 * oneGiBInBytes,
-							Name:       ".vmsn",
-						},
-					},
-					Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
-						{
-							Key: vimtypes.ManagedObjectReference{
-								Type:  "Snapshot",
-								Value: "Snapshot-1",
-							},
-							MemoryKey: 17,
-							Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
-								{
-									Key: 100,
-									Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-										{
-											FileKey: []int32{3, 4},
-										},
-									},
-								},
-								{
-									Key: 101,
-									Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-										{
-											FileKey: []int32{13, 14},
-										},
-									},
-								},
-							},
-							DataKey: 18,
-						},
-						{
-							Key: vimtypes.ManagedObjectReference{
-								Type:  "Snapshot",
-								Value: "Snapshot-2",
-							},
-							MemoryKey: -1,
-							Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
-								{
-									Key: 100,
-									Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-										{
-											FileKey: []int32{3, 4},
-										},
-										{
-											FileKey: []int32{5, 6},
-										},
-									},
-								},
-								{
-									Key: 101,
-									Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
-										{
-											FileKey: []int32{13, 14},
-										},
-										{
-											FileKey: []int32{15, 16},
-										},
-									},
-								},
-							},
-							DataKey: 19,
-						},
-					},
-				}
-
-				snapshot1 = vimtypes.ManagedObjectReference{
-					Type:  "Snapshot",
-					Value: "Snapshot-1",
-				}
-				snapshot2 = vimtypes.ManagedObjectReference{
-					Type:  "Snapshot",
-					Value: "Snapshot-2",
-				}
+				snapshot1, snapshot2 = mockVMWithSnapshotAndPVCs(&vmCtx)
 			})
 
 			When("Get the snapshot size of Snapshot-1", func() {
-				It("returns the size by adding size of file 3, 4, 17, 18", func() {
-					Expect(virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, &snapshot1)).
-						To(Equal(int64(0.5*oneGiBInBytes + 500 + 500 + 2*oneGiBInBytes)))
+				It("returns the size", func() {
+					total, fcdTotal, err := virtualmachine.GetSnapshotSize(
+						vmCtx, vmCtx.MoVM, &snapshot1)
+					Expect(err).NotTo(HaveOccurred())
+					// 3, 4, 17, 18
+					Expect(total).To(Equal(int64(0.5*oneGiBInBytes + 500 + 500 + 2*oneGiBInBytes)))
+					// 13, 14
+					Expect(fcdTotal).To(Equal(int64(500 + 0.5*oneGiBInBytes)))
+				})
+				When("moVM.Config is nil", func() {
+					JustBeforeEach(func() {
+						vmCtx.MoVM.Config = nil
+					})
+					It("return the wrong size, since it can't filter FCD", func() {
+						total, fcdTotal, err := virtualmachine.GetSnapshotSize(
+							vmCtx, vmCtx.MoVM, &snapshot1)
+						Expect(err).NotTo(HaveOccurred())
+						// 3, 4, 17, 18, 13, 14
+						Expect(total).To(Equal(int64(0.5*oneGiBInBytes + 500 + 500 + 2*oneGiBInBytes +
+							0.5*oneGiBInBytes + 500)))
+						Expect(fcdTotal).To(BeZero())
+					})
 				})
 			})
 
 			When("Get the snapshot size of Snapshot-2", func() {
-				It("returns the size by adding size of file 5, 6, 19", func() {
-					Expect(virtualmachine.GetSnapshotSize(vmCtx.Logger, vmCtx.MoVM, &snapshot2)).
-						To(Equal(int64(1*oneGiBInBytes + 500 + 1*oneGiBInBytes)))
+				It("returns the size", func() {
+					total, fcdTotal, err := virtualmachine.GetSnapshotSize(
+						vmCtx, vmCtx.MoVM, &snapshot2)
+					Expect(err).NotTo(HaveOccurred())
+					// 5, 6, 19
+					Expect(total).To(Equal(int64(1*oneGiBInBytes + 500 + 1*oneGiBInBytes)))
+					// 15, 16
+					Expect(fcdTotal).To(Equal(int64(1*oneGiBInBytes + 500)))
+				})
+			})
+
+		})
+	})
+
+	// Mocking the moVM since vcsim doesn't support adding PVCs
+	Context("GetAllSnapshotSize", func() {
+		Context("With VCSim", func() {
+			var moVM mo.VirtualMachine
+			var total int64
+			JustBeforeEach(func() {
+				args := virtualmachine.SnapshotArgs{
+					VMCtx:      vmCtx,
+					VMSnapshot: vmSnapshot,
+					VcVM:       vcVM,
+				}
+				snapMo, err := virtualmachine.CreateSnapshot(args)
+				Expect(err).To(BeNil())
+				Expect(snapMo).ToNot(BeNil())
+				Expect(vcVM.Properties(
+					ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM)).
+					To(Succeed())
+				Expect(moVM.Snapshot).ToNot(BeNil())
+				vmCtx.MoVM = moVM
+
+				total = 0
+				for _, file := range moVM.LayoutEx.File {
+					switch filepath.Ext(file.Name) {
+					case ".vmdk", ".vmsn", ".vmem":
+						total += file.Size
+					}
+				}
+			})
+			It("succeeds", func() {
+				total, fcdTotal, err := virtualmachine.GetAllSnapshotSize(
+					vmCtx, vmCtx.MoVM)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(total).To(Equal(total))
+				Expect(fcdTotal).To(BeZero())
+			})
+
+			When("the snapshot is nil", func() {
+				JustBeforeEach(func() {
+					vmCtx.MoVM.LayoutEx.Snapshot = nil
+				})
+				It("returns 0", func() {
+					total, fcdTotal, err := virtualmachine.GetAllSnapshotSize(vmCtx, vmCtx.MoVM)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(total).To(BeZero())
+					Expect(fcdTotal).To(BeZero())
+				})
+			})
+
+			When("the moVM.layoutEx is nil", func() {
+				JustBeforeEach(func() {
+					vmCtx.MoVM.LayoutEx = nil
+				})
+				It("returns 0", func() {
+					total, fcdTotal, err := virtualmachine.GetAllSnapshotSize(vmCtx, vmCtx.MoVM)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(total).To(BeZero())
+					Expect(fcdTotal).To(BeZero())
+				})
+			})
+
+		})
+
+		Context("mocking the moVM", func() {
+			Context("Mock VM with two snapshots, 1 disk and 1 FCD", func() {
+				JustBeforeEach(func() {
+					mockVMWithSnapshotAndPVCs(&vmCtx)
+				})
+
+				When("Get the snapshot size of both Snapshot-1 and Snapshot-2", func() {
+					It("return correct total", func() {
+						total, fcdTotal, err := virtualmachine.GetAllSnapshotSize(vmCtx, vmCtx.MoVM)
+						Expect(err).NotTo(HaveOccurred())
+						// (5, 6, 19), (3, 4, 17, 18)
+						Expect(total).To(Equal(
+							int64(1*oneGiBInBytes + 500 + 1*oneGiBInBytes +
+								0.5*oneGiBInBytes + 500 + 500 + 2*oneGiBInBytes)))
+						// (13, 14), (15, 16)
+						Expect(fcdTotal).To(Equal(int64(1*oneGiBInBytes + 500 + 500 + 0.5*oneGiBInBytes)))
+					})
 				})
 			})
 		})
 	})
+
+}
+
+func mockVMWithSnapshotAndPVCs(
+	vmCtx *pkgctx.VirtualMachineContext,
+) (vimtypes.ManagedObjectReference, vimtypes.ManagedObjectReference) {
+	vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+		Hardware: vimtypes.VirtualHardware{
+			Device: []vimtypes.BaseVirtualDevice{
+				// classic
+				&vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore] vm/my-disk-101.vmdk",
+							},
+							Uuid: "101",
+						},
+						Key: 100,
+					},
+					CapacityInBytes: 1 * oneGiBInBytes,
+				},
+				// managed
+				&vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[datastore] vm/my-disk-105.vmdk",
+							},
+							Uuid: "105",
+							KeyId: &vimtypes.CryptoKeyId{
+								KeyId: "my-key-id",
+								ProviderId: &vimtypes.KeyProviderId{
+									Id: "my-provider-id",
+								},
+							},
+						},
+						Key: 101,
+					},
+					CapacityInBytes: 5 * oneGiBInBytes,
+					VDiskId: &vimtypes.ID{
+						Id: "my-fcd-1",
+					},
+				},
+			},
+		},
+	}
+	vmCtx.MoVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
+		Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+			{
+				Key: 100,
+				Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+					{
+						FileKey: []int32{1, 2},
+					},
+					{
+						FileKey: []int32{3, 4},
+					},
+					{
+						FileKey: []int32{5, 6},
+					},
+				},
+			},
+			{
+				Key: 101,
+				Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+					{
+						FileKey: []int32{11, 12},
+					},
+					{
+						FileKey: []int32{13, 14},
+					},
+					{
+						FileKey: []int32{15, 16},
+					},
+				},
+			},
+		},
+		File: []vimtypes.VirtualMachineFileLayoutExFileInfo{
+			{
+				Key:        1,
+				Size:       500,
+				UniqueSize: 500,
+			},
+			{
+				Key:        2,
+				Size:       2 * oneGiBInBytes,
+				UniqueSize: 1 * oneGiBInBytes,
+			},
+
+			{
+				Key:        3,
+				Size:       500,
+				UniqueSize: 500,
+			},
+			{
+				Key:        4,
+				Size:       0.5 * oneGiBInBytes,
+				UniqueSize: 0.25 * oneGiBInBytes,
+			},
+
+			{
+				Key:        5,
+				Size:       500,
+				UniqueSize: 500,
+			},
+			{
+				Key:        6,
+				Size:       1 * oneGiBInBytes,
+				UniqueSize: 0.5 * oneGiBInBytes,
+			},
+
+			{
+				Key:        11,
+				Size:       500,
+				UniqueSize: 500,
+			},
+			{
+				Key:        12,
+				Size:       2 * oneGiBInBytes,
+				UniqueSize: 1 * oneGiBInBytes,
+			},
+			{
+				Key:        13,
+				Size:       500,
+				UniqueSize: 500,
+			},
+			{
+				Key:        14,
+				Size:       0.5 * oneGiBInBytes,
+				UniqueSize: 0.25 * oneGiBInBytes,
+			},
+			{
+				Key:        15,
+				Size:       500,
+				UniqueSize: 500,
+			},
+			{
+				Key:        16,
+				Size:       1 * oneGiBInBytes,
+				UniqueSize: 0.5 * oneGiBInBytes,
+			},
+			{
+				Key:        17,
+				Size:       500,
+				UniqueSize: 500,
+				Name:       ".vmem",
+			},
+			{
+				Key:        18,
+				Size:       2 * oneGiBInBytes,
+				UniqueSize: 3 * oneGiBInBytes,
+				Name:       ".vmsn",
+			},
+			{
+				Key:        19,
+				Size:       1 * oneGiBInBytes,
+				UniqueSize: 0.5 * oneGiBInBytes,
+				Name:       ".vmsn",
+			},
+		},
+		Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+			{
+				Key: vimtypes.ManagedObjectReference{
+					Type:  "Snapshot",
+					Value: "Snapshot-1",
+				},
+				MemoryKey: 17,
+				Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+					{
+						Key: 100,
+						Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+							{
+								FileKey: []int32{3, 4},
+							},
+						},
+					},
+					{
+						Key: 101,
+						Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+							{
+								FileKey: []int32{13, 14},
+							},
+						},
+					},
+				},
+				DataKey: 18,
+			},
+			{
+				Key: vimtypes.ManagedObjectReference{
+					Type:  "Snapshot",
+					Value: "Snapshot-2",
+				},
+				MemoryKey: -1,
+				Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+					{
+						Key: 100,
+						Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+							{
+								FileKey: []int32{3, 4},
+							},
+							{
+								FileKey: []int32{5, 6},
+							},
+						},
+					},
+					{
+						Key: 101,
+						Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+							{
+								FileKey: []int32{13, 14},
+							},
+							{
+								FileKey: []int32{15, 16},
+							},
+						},
+					},
+				},
+				DataKey: 19,
+			},
+		},
+	}
+	return vimtypes.ManagedObjectReference{
+			Type:  "Snapshot",
+			Value: "Snapshot-1",
+		},
+		vimtypes.ManagedObjectReference{
+			Type:  "Snapshot",
+			Value: "Snapshot-2",
+		}
 }

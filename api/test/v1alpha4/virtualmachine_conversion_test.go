@@ -443,6 +443,28 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
+				name: "status.storage.used.snapshot",
+				hub: &vmopv1.VirtualMachine{
+					Status: vmopv1.VirtualMachineStatus{
+						Storage: &vmopv1.VirtualMachineStorageStatus{
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
+								Snapshots: &vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{
+									VM:     ptrOf(resource.MustParse("5.5Gi")),
+									Volume: ptrOf(resource.MustParse("5.5Gi")),
+								},
+							},
+						},
+					},
+				},
+				exp: &vmopv1a4.VirtualMachine{
+					Status: vmopv1a4.VirtualMachineStatus{
+						Storage: &vmopv1a4.VirtualMachineStorageStatus{
+							Used: &vmopv1a4.VirtualMachineStorageStatusUsed{},
+						},
+					},
+				},
+			},
+			{
 				name: "status.storage",
 				hub: &vmopv1.VirtualMachine{
 					Status: vmopv1.VirtualMachineStatus{

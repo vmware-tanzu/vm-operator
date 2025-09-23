@@ -385,11 +385,14 @@ func reconcileStatusStorage(
 	_ *object.VirtualMachine,
 	_ ReconcileStatusData) []error { //nolint:unparam
 
+	var errs []error
 	updateChangeBlockTracking(vmCtx.VM, vmCtx.MoVM)
-	updateVolumeStatus(vmCtx.VM, vmCtx.MoVM)
-	updateStorageUsage(vmCtx.VM, vmCtx.MoVM)
+	updateVolumeStatus(vmCtx)
+	if err := updateStorageUsage(vmCtx); err != nil {
+		errs = append(errs, err)
+	}
 
-	return nil
+	return errs
 }
 
 func reconcileStatusNodeName(
@@ -1072,12 +1075,20 @@ func updateChangeBlockTracking(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine
 	}
 }
 
-func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
+func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) error {
 
 	var (
-		other     int64
-		disksUsed int64
-		disksReqd int64
+		other           int64
+		disksUsed       int64
+		disksReqd       int64
+		vmSnapshotUsed  int64
+		volSnapshotUsed int64
+
+		err error
+
+		moVM        = vmCtx.MoVM
+		vm          = vmCtx.VM
+		snapEnabled = pkgcfg.FromContext(vmCtx).Features.VMSnapshots
 	)
 	// Get the storage consumed by non-disks.
 	if moVM.LayoutEx != nil {
@@ -1094,7 +1105,13 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 				vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotMemory,
 				vimtypes.VirtualMachineFileLayoutExFileTypeSnapshotData:
 
-				// Skip snapshot related non-disk files
+				// Storage consumed by snapshots is tracked separately from
+				// the VM's files if VM Service vmsnapshot feature is enabled.
+				// So, only include snapshot files in the VM's total usage
+				// if vmsnapshot feature is enabled.
+				if !snapEnabled {
+					other += f.UniqueSize
+				}
 			default:
 				other += f.UniqueSize
 			}
@@ -1116,8 +1133,20 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		}
 	}
 
-	if disksReqd == 0 && disksUsed == 0 && other == 0 {
-		return
+	// Get the storage consumed by snapshots.
+	if snapEnabled {
+		vmSnapshotUsed, volSnapshotUsed, err = virtualmachine.GetAllSnapshotSize(vmCtx, moVM)
+		if err != nil {
+			return err
+		}
+	}
+
+	if disksReqd == 0 &&
+		disksUsed == 0 &&
+		other == 0 &&
+		vmSnapshotUsed == 0 &&
+		volSnapshotUsed == 0 {
+		return nil
 	}
 
 	if vm.Status.Storage == nil {
@@ -1149,10 +1178,30 @@ func updateStorageUsage(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 		vm.Status.Storage.Used.Other = kubeutil.BytesToResource(other)
 	}
 
+	if vmSnapshotUsed > 0 || volSnapshotUsed > 0 {
+		if vm.Status.Storage.Used.Snapshots == nil {
+			vm.Status.Storage.Used.Snapshots =
+				&vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{}
+		}
+		if vmSnapshotUsed > 0 {
+			vm.Status.Storage.Used.Snapshots.VM = kubeutil.BytesToResource(vmSnapshotUsed)
+		}
+		if volSnapshotUsed > 0 {
+			vm.Status.Storage.Used.Snapshots.Volume = kubeutil.BytesToResource(volSnapshotUsed)
+		}
+	}
+
 	vm.Status.Storage.Total = kubeutil.BytesToResource(disksReqd + other)
+
+	return nil
 }
 
-func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
+func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
+	var (
+		moVM        = vmCtx.MoVM
+		vm          = vmCtx.VM
+		snapEnabled = pkgcfg.FromContext(vmCtx).Features.VMSnapshots
+	)
 	if moVM.Config == nil ||
 		moVM.LayoutEx == nil ||
 		len(moVM.LayoutEx.Disk) == 0 ||
@@ -1215,10 +1264,10 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 			// existing status with the usage information.
 			di, _ := vmdk.GetVirtualDiskInfoByUUID(
 				ctx,
-				nil,   /* the client is not needed since props aren't refetched */
-				moVM,  /* use props from this object */
-				false, /* do not refetch props */
-				true,  /* exclude disks related to snapshots */
+				nil,         /* the client is not needed since props aren't refetched */
+				moVM,        /* use props from this object */
+				false,       /* do not refetch props */
+				snapEnabled, /* exclude disks related to snapshots */
 				diskUUID)
 			vm.Status.Volumes[diskIndex].Used = kubeutil.BytesToResource(di.UniqueSize)
 			if di.CryptoKey.ProviderID != "" || di.CryptoKey.KeyID != "" {
@@ -1232,10 +1281,10 @@ func updateVolumeStatus(vm *vmopv1.VirtualMachine, moVM mo.VirtualMachine) {
 			// volume statuses.
 			di, _ := vmdk.GetVirtualDiskInfoByUUID(
 				ctx,
-				nil,   /* the client is not needed since props aren't refetched */
-				moVM,  /* use props from this object */
-				false, /* do not refetch props */
-				true,  /* exclude disks related to snapshots */
+				nil,         /* the client is not needed since props aren't refetched */
+				moVM,        /* use props from this object */
+				false,       /* do not refetch props */
+				snapEnabled, /* exclude disks related to snapshots */
 				diskUUID)
 			dp := diskPath.Path
 			volStatus := vmopv1.VirtualMachineVolumeStatus{

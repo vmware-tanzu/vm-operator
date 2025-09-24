@@ -171,7 +171,7 @@ func reconcileStatusHardware(
 	}
 
 	var (
-		memTotal       = config.Hardware.MemoryMB
+		memTotal       = int64(config.Hardware.MemoryMB)
 		memReservation int64
 	)
 	if a := config.MemoryAllocation; a != nil {
@@ -188,7 +188,7 @@ func reconcileStatusHardware(
 
 		if r := memTotal; r > 0 {
 			b := r * 1000 * 1000
-			q := kubeutil.BytesToResource(int64(b))
+			q := kubeutil.BytesToResource(b)
 			vmCtx.VM.Status.Hardware.Memory.Total = q
 		}
 		if r := memReservation; r > 0 {

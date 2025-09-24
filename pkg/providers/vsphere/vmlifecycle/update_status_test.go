@@ -7,6 +7,7 @@ package vmlifecycle_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -2959,6 +2960,18 @@ var _ = Describe("Hardware status", func() {
 
 					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
 					Expect(vmCtx.VM.Status.Hardware.Memory.Total).To(BeNil())
+				})
+			})
+
+			When("memory is larger than math.MaxInt32 bytes", func() {
+				BeforeEach(func() {
+					vmCtx.MoVM.Config.Hardware.MemoryMB = math.MaxInt32/(1000*1000) + 1
+				})
+
+				It("should set the memory status", func() {
+					err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmCtx.VM.Status.Hardware.Memory.Total.String()).To(Equal("2148M"))
 				})
 			})
 		})

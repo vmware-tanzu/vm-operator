@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,10 +28,13 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	volumebatchutils "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch/utils"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
@@ -51,6 +55,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName("volumebatch"),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		ctx.VMProvider,
 	)
 
 	c, err := controller.New(controllerName, mgr, controller.Options{
@@ -92,12 +97,14 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
-	recorder record.Recorder) *Reconciler {
+	recorder record.Recorder,
+	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
-		Context:  ctx,
-		Client:   client,
-		logger:   logger,
-		recorder: recorder,
+		Context:    ctx,
+		Client:     client,
+		logger:     logger,
+		recorder:   recorder,
+		VMProvider: vmProvider,
 	}
 }
 
@@ -105,9 +112,10 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
-	Context  context.Context
-	logger   logr.Logger
-	recorder record.Recorder
+	Context    context.Context
+	logger     logr.Logger
+	recorder   record.Recorder
+	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
@@ -260,7 +268,7 @@ func (r *Reconciler) processBatchAttachment(
 
 	// Handle WFFC for each PVC volume
 	for _, vol := range pvcVolumes {
-		if err := r.handlePVCWithWFFC(ctx, vol); err != nil {
+		if err := r.HandlePVCWithWFFC(ctx, vol); err != nil {
 			ctx.Logger.Error(err, "Failed to handle WFFC for volume", "volume", vol.Name)
 			// Continue processing other volumes
 		}
@@ -590,17 +598,90 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(_ *pkgctx.VolumeContext) (bool
 	return true, nil
 }
 
-// handlePVCWithWFFC handles PVCs with WaitForFirstConsumer binding mode.
+// HandlePVCWithWFFC handles PVCs with WaitForFirstConsumer binding mode.
 // This ensures proper node selection for storage classes requiring it.
-func (r *Reconciler) handlePVCWithWFFC(_ *pkgctx.VolumeContext, _ vmopv1.VirtualMachineVolume) error {
-	// TODO: Implement WFFC (WaitForFirstConsumer) handling
-	// This method should:
-	// - Check storage class binding mode
-	// - Set selected node annotations for unbound PVCs
-	// - Handle node selection for proper PVC binding
-	// - Validate node availability and zone constraints
+func (r *Reconciler) HandlePVCWithWFFC(ctx *pkgctx.VolumeContext, volume vmopv1.VirtualMachineVolume) error {
+
+	if volume.PersistentVolumeClaim == nil || volume.PersistentVolumeClaim.InstanceVolumeClaim != nil {
+		return nil
+	}
+
+	pvc := corev1.PersistentVolumeClaim{}
+	pvcKey := client.ObjectKey{
+		Namespace: ctx.VM.Namespace,
+		Name:      volume.PersistentVolumeClaim.ClaimName,
+	}
+
+	if err := r.Get(ctx, pvcKey, &pvc); err != nil {
+		return fmt.Errorf("cannot get PVC: %w", err)
+	}
+
+	if pvc.Status.Phase == corev1.ClaimBound {
+		// Regardless of the StorageClass binding mode there is nothing to done if already bound.
+		return nil
+	}
+
+	if pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] != "" {
+		// Try fetch the node object to check if it still exists. and the zone
+		// matches the VM's Zone.
+		node := &corev1.Node{}
+		nodeKey := client.ObjectKey{
+			Name: pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey],
+		}
+		if err := r.Get(ctx, nodeKey, node); err != nil {
+			return fmt.Errorf("cannot get Node %q: %w", nodeKey.Name, err)
+		}
+
+		if node.Labels[corev1.LabelTopologyZone] != ctx.VM.Status.Zone {
+			return fmt.Errorf("node %q is not in the VM's zone %q, but in zone %q",
+				node.Name, ctx.VM.Status.Zone, node.Labels[corev1.LabelTopologyZone])
+		}
+
+		return nil
+	}
+
+	scName := pvc.Spec.StorageClassName
+	if scName == nil {
+		return fmt.Errorf("PVC %s does not have StorageClassName set", pvc.Name)
+	} else if *scName == "" {
+		return nil
+	}
+
+	sc := &storagev1.StorageClass{}
+	if err := r.Get(ctx, client.ObjectKey{Name: *scName}, sc); err != nil {
+		return fmt.Errorf("cannot get StorageClass for PVC %s: %w", pvc.Name, err)
+	}
+
+	if mode := sc.VolumeBindingMode; mode == nil ||
+		*mode != storagev1.VolumeBindingWaitForFirstConsumer {
+		return nil
+	}
+
+	if !pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC {
+		return fmt.Errorf("PVC with WFFC storage class support is not enabled")
+	}
+
+	zoneName := ctx.VM.Status.Zone
+	if zoneName == "" {
+		// Fallback to the label value if Status hasn't been updated yet.
+		zoneName = ctx.VM.Labels[corev1.LabelTopologyZone]
+		if zoneName == "" {
+			return fmt.Errorf("VM does not have Zone set")
+		}
+	}
+
+	if pvc.Annotations == nil {
+		pvc.Annotations = map[string]string{}
+	}
+	pvc.Annotations[volumebatchutils.CNSSelectedNodeIsZoneAnnotationKey] = "true"
+	pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] = zoneName
+
+	if err := r.Client.Update(ctx, &pvc); err != nil {
+		return fmt.Errorf("cannot update PVC to add selected-node annotation: %w", err)
+	}
 
 	return nil
+
 }
 
 // cleanupOrphanedVolumes removes volumes that are no longer in the VM spec.

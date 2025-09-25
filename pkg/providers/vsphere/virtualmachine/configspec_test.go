@@ -6,6 +6,7 @@ package virtualmachine_test
 
 import (
 	"fmt"
+	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -244,14 +245,6 @@ var _ = Describe("CreateConfigSpec", func() {
 
 					pols := []vimtypes.BaseVmPlacementPolicy{
 						&vimtypes.VmVmAffinity{
-							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-								// Sorted list of tags without VM Operator managed labels.
-								TagsToAttach: []string{
-									fmt.Sprintf("%s:%s", "app", "db"),
-									fmt.Sprintf("%s:%s", "env", "prod"),
-									fmt.Sprintf("%s:%s", "zone", "us-west"),
-								},
-							},
 							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 							AffinedVmsTagName: fmt.Sprintf("%s:%s", "env", "prod"),
@@ -269,6 +262,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					}
 
 					Expect(configSpec.VmPlacementPolicies).To(ContainElements(pols))
+					assertVMTags(configSpec, []string{"env:prod", "app:db", "zone:us-west"}, vm.Namespace)
 				})
 			})
 
@@ -319,14 +313,6 @@ var _ = Describe("CreateConfigSpec", func() {
 
 					pols := []vimtypes.BaseVmPlacementPolicy{
 						&vimtypes.VmVmAffinity{
-							VmPlacementPolicy: vimtypes.VmPlacementPolicy{
-								// Sorted list of tags without VM Operator managed labels.
-								TagsToAttach: []string{
-									fmt.Sprintf("%s:%s", "app", "db"),
-									fmt.Sprintf("%s:%s", "env", "prod"),
-									fmt.Sprintf("%s:%s", "zone", "us-east"),
-								},
-							},
 							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 							AffinedVmsTagName: fmt.Sprintf("%s:%s", "env", "prod"),
@@ -344,6 +330,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					}
 
 					Expect(configSpec.VmPlacementPolicies).To(ContainElements(pols))
+					assertVMTags(configSpec, []string{"env:prod", "app:db", "zone:us-east"}, vm.Namespace)
 				})
 			})
 
@@ -406,12 +393,10 @@ var _ = Describe("CreateConfigSpec", func() {
 					expectedAntiAffinityLabels := []string{"component:web", "tier:frontend", "tier:backend", "environment:prod"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					// Validate TagsToAttach contains only non-VM Operator managed labels.
-					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
-					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
-
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
+
+					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vm.Namespace)
 				})
 			})
 
@@ -434,14 +419,10 @@ var _ = Describe("CreateConfigSpec", func() {
 				})
 
 				It("creates a minimal policy with VM tags but no anti-affinity rules", func() {
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
-
-					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmPlacementPolicy)
-					Expect(ok).To(BeTrue())
+					Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
 
 					// VM tags should still be attached (without VM Operator managed labels) even though anti-affinity policy failed.
-					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
-					Expect(policy.TagsToAttach).To(ConsistOf(expectedVMTags))
+					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vm.Namespace)
 				})
 			})
 
@@ -474,12 +455,10 @@ var _ = Describe("CreateConfigSpec", func() {
 					expectedAntiAffinityLabels := []string{"tier:frontend", "environment:prod"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					// Validate TagsToAttach contains only non-VM Operator managed labels.
-					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
-					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
-
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
+
+					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vm.Namespace)
 				})
 			})
 
@@ -515,12 +494,10 @@ var _ = Describe("CreateConfigSpec", func() {
 					expectedAntiAffinityLabels := []string{"tier:frontend", "tier:backend", "tier:middleware"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					// Validate TagsToAttach contains only non-VM Operator managed labels.
-					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
-					Expect(policy.VmPlacementPolicy.TagsToAttach).To(ConsistOf(expectedVMTags))
-
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
+
+					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vm.Namespace)
 				})
 			})
 
@@ -547,14 +524,10 @@ var _ = Describe("CreateConfigSpec", func() {
 				})
 
 				It("creates a minimal policy with VM tags but no anti-affinity rules", func() {
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(1))
-
-					policy, ok := configSpec.VmPlacementPolicies[0].(*vimtypes.VmPlacementPolicy)
-					Expect(ok).To(BeTrue())
+					Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
 
 					// VM tags should still be attached (without VM Operator managed labels) even though selector was invalid.
-					expectedVMTags := []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}
-					Expect(policy.TagsToAttach).To(ConsistOf(expectedVMTags))
+					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vm.Namespace)
 				})
 			})
 		})
@@ -1065,4 +1038,23 @@ func assertInstanceStorageDeviceChange(
 	profile, ok := dc.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec)
 	Expect(ok).To(BeTrue())
 	Expect(profile.ProfileId).To(Equal(expectedStoragePolicyID))
+}
+
+func assertVMTags(configSpec vimtypes.VirtualMachineConfigSpec, expectedTagNames []string, vmNamespace string) {
+	slices.Sort(expectedTagNames)
+	tagSpecs := []vimtypes.TagSpec{}
+	for _, tagName := range expectedTagNames {
+		tagSpecs = append(tagSpecs, vimtypes.TagSpec{
+			ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
+				Operation: vimtypes.ArrayUpdateOperationAdd,
+			},
+			Id: vimtypes.TagId{
+				NameId: &vimtypes.TagIdNameId{
+					Tag:      tagName,
+					Category: vmNamespace,
+				},
+			},
+		})
+	}
+	Expect(configSpec.TagSpecs).To(ConsistOf(tagSpecs))
 }

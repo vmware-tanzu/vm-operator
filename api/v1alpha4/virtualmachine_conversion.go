@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha4
@@ -44,6 +44,10 @@ func Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolum
 	in *vmopv1.VirtualMachineVolumeStatus, out *VirtualMachineVolumeStatus, s apiconversion.Scope) error {
 
 	return autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha4_VirtualMachineVolumeStatus(in, out, s)
+}
+
+func Convert_v1alpha5_VirtualMachineStorageStatusUsed_To_v1alpha4_VirtualMachineStorageStatusUsed(in *vmopv1.VirtualMachineStorageStatusUsed, out *VirtualMachineStorageStatusUsed, s apiconversion.Scope) error {
+	return autoConvert_v1alpha5_VirtualMachineStorageStatusUsed_To_v1alpha4_VirtualMachineStorageStatusUsed(in, out, s)
 }
 
 func Convert_v1alpha5_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(
@@ -182,7 +186,6 @@ func Convert_v1alpha5_VirtualMachineSnapshotReference_To_common_LocalObjectRef(
 
 	return nil
 }
-
 
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {

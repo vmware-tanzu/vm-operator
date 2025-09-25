@@ -6,6 +6,7 @@ package vmlifecycle
 
 import (
 	"errors"
+	"fmt"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -70,7 +71,11 @@ func GetOVFVAppConfigForConfigSpec(
 	if templateRenderFn != nil {
 		// If we have a templating func, apply it to whatever data we have, regardless of the source.
 		for k, v := range vAppData {
-			vAppData[k] = templateRenderFn(k, v)
+			rendered, err := templateRenderFn(k, v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to render template for key %q: %w", k, err)
+			}
+			vAppData[k] = rendered
 		}
 	}
 

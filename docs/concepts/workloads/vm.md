@@ -84,6 +84,16 @@ kubectl get -n <NAMESPACE> encryptionclass
 
 For more information on `EncryptionClass` resources, please see the [Encryption](#encryption) section below.
 
+### vSphere Policies
+
+A `ComputePolicy` is a namespace-scoped resource from the `vsphere.policy.vmware.com/v1alpha1` API group that defines vSphere compute policies that can be applied to VMs. These policies control various aspects of VM placement, resource allocation, and operational behavior. The following command may be used to discover a namespace's available `ComputePolicy` resources:
+
+```shell
+kubectl get -n <NAMESPACE> computepolicy
+```
+
+For more information on vSphere policies and how to apply them to VMs, please see the [vSphere Policies](#vsphere-policies-1) section below.
+
 ## Hardware
 
 ### Configuration
@@ -128,6 +138,7 @@ It is possible to update parts of an existing `VirtualMachine` resource. Some fi
 | `spec.imageName` | The name of the `VirtualMachineImage` that supplies the VM's disk(s) | ✗ | ✗ | _NA_ |
 | `spec.className` | The name of the `VirtualMachineClass` that supplies the VM's virtual hardware | ✓ | ✓ | _NA_ |
 | `spec.powerState` | The VM's desired power state | ✓ | ✓ | _NA_ |
+| `spec.policies` | The list of vSphere policies to apply to the VM | ✓ | ✓ | _NA_ |
 | `metadata.labels.topology.kubernetes.io/zone` | The desired availability zone in which to schedule the VM | x | x | ✓ |
 | `spec.hardware.cdrom[].name` | The name of the CD-ROM device to mount ISO in the VM | x | ✓ | _NA_ |
 | `spec.hardware.cdrom[].image` | The reference to an ISO type `VirtualMachineImage` or `ClusterVirtualMachineImage` to mount in the VM | x | ✓ | _NA_ |
@@ -996,6 +1007,80 @@ The `spec.hardware.cdrom[].connected` field controls the connection state of the
 The `spec.hardware.cdrom[].allowGuestControl` field controls the guest OS's ability to connect/disconnect the CD-ROM device. If set to `true` (default value), a web console connection may be used to connect/disconnect the CD-ROM device from within the guest OS.
 
 For more information on the ISO VM workflow, please refer to the [Deploy a VM with ISO](../../../tutorials/deploy-vm/iso/) tutorial.
+
+## vSphere Policies
+
+vSphere policies provide a way to apply compute and tag policies to VMs. These policies can control placement, resource allocation, and operational behavior of VMs in a vSphere environment.
+
+### Configuration
+
+The field `spec.policies` may be used to specify one or more policies to apply to a VM. Each policy reference includes the API version, kind, and name of the policy object:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha5
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className: my-vm-class
+  imageName: vmi-0a0044d7c690bcbea
+  storageClass: my-storage-class
+  policies:
+  - apiVersion: vsphere.policy.vmware.com/v1alpha1
+    kind: ComputePolicy
+    name: my-compute-policy
+```
+
+Only `ComputePolicy` objects with `spec.enforcementMode: Optional` can be explicitly applied to VMs through the `spec.policies` field. Mandatory policies are automatically applied based on their match criteria and do not need to be specified.
+
+### Status
+
+Information about the policies applied to a VM can be found in `status.policies`. This includes both explicitly requested policies and any mandatory policies that were automatically applied:
+
+```yaml
+status:
+  policies:
+  - apiVersion: vsphere.policy.vmware.com/v1alpha1
+    kind: ComputePolicy
+    name: my-compute-policy
+    generation: 2
+  - apiVersion: vsphere.policy.vmware.com/v1alpha1
+    kind: ComputePolicy
+    name: namespace-default-policy
+    generation: 1
+```
+
+The `generation` field indicates the observed generation of the policy when it was applied to the VM, which helps track whether the VM is using the latest version of a policy.
+
+### Policy Types
+
+#### ComputePolicy
+
+A `ComputePolicy` defines compute-related policies for VMs, such as placement rules, resource allocations, and operational constraints. These policies can be:
+
+- **Mandatory**: Automatically applied to VMs based on match criteria
+- **Optional**: Must be explicitly referenced in the VM's `spec.policies` field
+
+The policy may include references to `TagPolicy` objects that define vSphere tags to be applied to activate the policy.
+
+#### TagPolicy
+
+A `TagPolicy` defines vSphere tags that should be applied to workloads. These are typically referenced by `ComputePolicy` objects and are not directly applied to VMs.
+
+### Policy Evaluation
+
+When a VM is created or updated, the system evaluates which policies should be applied based on:
+
+1. **Explicit policies**: Those listed in `spec.policies`
+2. **Mandatory policies**: Those with `spec.enforcementMode: Mandatory` that match the VM
+3. **Match criteria**: Policies can specify match criteria based on:
+   - Workload labels
+   - Image name and labels
+   - Guest operating system (ID and family)
+   - Workload kind (Pod or VirtualMachine)
+
+The evaluation results are reflected in `status.policies`, showing all policies that have been applied to the VM.
 
 ## Affinity
 

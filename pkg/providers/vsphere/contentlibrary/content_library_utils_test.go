@@ -53,8 +53,9 @@ func assertImage(image *vmopv1.VirtualMachineImage) {
 	ExpectWithOffset(1, conditions.Has(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeFalse())
 
 	ExpectWithOffset(1, image.Status.Disks).To(HaveLen(1))
-	ExpectWithOffset(1, image.Status.Disks[0].Size.String()).To(Equal("18743296"))
-	ExpectWithOffset(1, image.Status.Disks[0].Capacity.String()).To(Equal("30Mi"))
+	ExpectWithOffset(1, image.Status.Disks[0].Name).ToNot(BeEmpty())
+	ExpectWithOffset(1, image.Status.Disks[0].Requested.String()).To(Equal("18743296"))
+	ExpectWithOffset(1, image.Status.Disks[0].Limit.String()).To(Equal("30Mi"))
 
 	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("example.com/hello", "world"))
 	ExpectWithOffset(1, image.Labels).To(HaveKeyWithValue("fu.bar", ""))

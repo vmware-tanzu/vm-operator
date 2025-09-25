@@ -83,6 +83,10 @@ const (
 	// CapabilityKeyGuestCustomizationVCDParity is the name of the capability key
 	// defined in the Supervisor capabilities CRD for guest customization VCD parity.
 	CapabilityKeyGuestCustomizationVCDParity = "supports_guest_customization_vcd_parity"
+
+	// CapabilityKeyAllDisksArePVCs is the name of the capability key defined in
+	// the Supervisor capabilities CRD for enabling all disks as PVCs in VM Op.
+	CapabilityKeyAllDisksArePVCs = "supports_vm_service_all_disks_are_pvcs"
 )
 
 var (
@@ -239,6 +243,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMSharedDisks = capStatus.Activated
 		case CapabilityKeyGuestCustomizationVCDParity:
 			fs.GuestCustomizationVCDParity = capStatus.Activated
+		case CapabilityKeyAllDisksArePVCs:
+			fs.AllDisksArePVCs = capStatus.Activated
 		}
 
 	}

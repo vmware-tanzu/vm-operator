@@ -1372,23 +1372,31 @@ spec:
                     VirtualMachineImageDiskInfo describes information about any disks associated with
                     this image.
                   properties:
-                    capacity:
+                    limit:
                       anyOf:
                       - type: integer
                       - type: string
-                      description: Capacity is the virtual disk capacity in bytes.
+                      description: Limit is the total virtual disk capacity.
                       pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                       x-kubernetes-int-or-string: true
-                    size:
+                    name:
+                      description: Name is the unique identifier for the virtual disk.
+                      type: string
+                    requested:
                       anyOf:
                       - type: integer
                       - type: string
-                      description: Size is the estimated populated size of the virtual
-                        disk in bytes.
+                      description: Requested is the minimum storage requirements for
+                        the virtual disk.
                       pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                       x-kubernetes-int-or-string: true
+                  required:
+                  - name
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               firmware:
                 description: Firmware describe the firmware type used by this image,
                   ex. BIOS, EFI.

@@ -429,6 +429,15 @@ func (v validator) validateInlineSysprep(
 		}
 	}
 
+	if sysprep.UserData.FullName == "" {
+		p := s.Child("userData", "fullName")
+		allErrs = append(allErrs, field.Required(p, ""))
+	}
+	if sysprep.UserData.OrgName == "" {
+		p := s.Child("userData", "orgName")
+		allErrs = append(allErrs, field.Required(p, ""))
+	}
+
 	return allErrs
 }
 

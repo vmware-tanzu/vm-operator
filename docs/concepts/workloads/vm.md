@@ -36,6 +36,21 @@ The VM remains on that `Node` until the VM resource is deleted or, if supported 
 
 The name of a VM must be a valid [DNS subdomain](https://kubernetes.io/docs/concepts/overview/working-with-objects/names#dns-subdomain-names) value, but this can produce unexpected results for the VM's host name. For best compatibility, the name should follow the more restrictive rules for a [DNS label](https://kubernetes.io/docs/concepts/overview/working-with-objects/names#dns-label-names).
 
+### VM Placement
+
+When a VM is created, the placement system determines the optimal location for the workload based on available resources, policies, and constraints. The placement process considers:
+
+* **Zone placement** for availability zone assignment
+* **Host placement** for instance storage requirements
+* **Datastore placement** for storage optimization
+
+The placement system uses different strategies depending on requirements:
+* Single-cluster placement for detailed host and datastore selection
+* Multi-cluster placement for zone-level decisions across clusters
+* Implied placement when only one viable option exists
+
+For detailed information about VM placement, including configuration options, troubleshooting, and advanced topics, see [VirtualMachine Placement](./vm-placement.md).
+
 ### VM Image
 
 The `VirtualMachineImage` is a namespace-scoped resource from which a VM's disk image(s) is/are derived. This is why the name of a `VirtualMachineImage` resource must be specified when creating a new VM from OVF. It is also possible to deploy a new VM with the cluster-scoped `ClusterVirtualMachineImage` resource. The following commands may be used to discover the available images:

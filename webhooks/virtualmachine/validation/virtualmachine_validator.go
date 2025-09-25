@@ -92,6 +92,7 @@ const (
 	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
 	invalidClassInstanceReferenceOwnerMismatch = "VirtualMachineClassInstance must be an instance of the VM Class specified by spec.class"
 	labelSelectorCanNotContainVMOperatorLabels = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
+	bootstrapProviderTypeCannotBeChanged       = "bootstrap provider type cannot be changed"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha5,name=default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -258,6 +259,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	// of whether the update is allowed or not.
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateBootstrapProviderImmutable(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
@@ -282,6 +284,38 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	}
 
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+}
+
+func (v validator) validateBootstrapProviderImmutable(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var fieldErrs field.ErrorList
+	p := field.NewPath("spec", "bootstrap")
+
+	bs := vm.Spec.Bootstrap
+	oldBS := oldVM.Spec.Bootstrap
+
+	if oldBS == nil {
+		return fieldErrs
+	}
+
+	if bs == nil {
+		return append(fieldErrs, field.Forbidden(p, bootstrapProviderTypeCannotBeChanged))
+	}
+
+	// vApp can be combined with LinuxPrep and Sysprep, or used standalone, so don't
+	// worry about that here.
+	switch {
+	case oldBS.CloudInit != nil && bs.CloudInit == nil:
+		return append(fieldErrs, field.Forbidden(p.Child("cloudInit"), bootstrapProviderTypeCannotBeChanged))
+	case oldBS.LinuxPrep != nil && bs.LinuxPrep == nil:
+		return append(fieldErrs, field.Forbidden(p.Child("linuxPrep"), bootstrapProviderTypeCannotBeChanged))
+	case oldBS.Sysprep != nil && bs.Sysprep == nil:
+		return append(fieldErrs, field.Forbidden(p.Child("sysprep"), bootstrapProviderTypeCannotBeChanged))
+	}
+
+	return nil
 }
 
 func (v validator) validateBootstrap(
@@ -1354,30 +1388,12 @@ func (v validator) validatePowerStateOnUpdate(
 	return allErrs
 }
 
-func isBootstrapCloudInit(vm *vmopv1.VirtualMachine) bool {
-	if vm.Spec.Bootstrap == nil {
-		return false
-	}
-	return vm.Spec.Bootstrap.CloudInit != nil
-}
-
 func (v validator) validateUpdatesWhenPoweredOn(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
-
-	// Permit upgrade of existing VM's instanceID, regardless of powerState
-	if isBootstrapCloudInit(oldVM) && isBootstrapCloudInit(vm) {
-		if oldVM.Spec.Bootstrap.CloudInit.InstanceID == "" {
-			oldVM.Spec.Bootstrap.CloudInit.InstanceID = vm.Spec.Bootstrap.CloudInit.InstanceID
-		}
-	}
-
-	if !equality.Semantic.DeepEqual(vm.Spec.Bootstrap, oldVM.Spec.Bootstrap) {
-		allErrs = append(allErrs, field.Forbidden(specPath.Child("bootstrap"), updatesNotAllowedWhenPowerOn))
-	}
 
 	if vm.Spec.GuestID != oldVM.Spec.GuestID {
 		allErrs = append(allErrs, field.Forbidden(specPath.Child("guestID"), updatesNotAllowedWhenPowerOn))

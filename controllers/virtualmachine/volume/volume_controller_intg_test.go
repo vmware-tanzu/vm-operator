@@ -16,12 +16,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	storagehelpers "k8s.io/component-helpers/storage/volume"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volume"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -204,7 +204,7 @@ func intgTestsReconcile() {
 
 				isClaim := vol.PersistentVolumeClaim.InstanceVolumeClaim
 				g.Expect(pvc.Labels).To(HaveKey(constants.InstanceStorageLabelKey))
-				g.Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, dummySelectedNode))
+				g.Expect(pvc.Annotations).To(HaveKeyWithValue(storagehelpers.AnnSelectedNode, dummySelectedNode))
 				g.Expect(pvc.Spec.StorageClassName).To(HaveValue(Equal(isClaim.StorageClass)))
 				g.Expect(pvc.Spec.Resources.Requests).To(HaveKeyWithValue(corev1.ResourceStorage, isClaim.Size))
 				g.Expect(pvc.Spec.AccessModes).To(ConsistOf(corev1.ReadWriteOnce))
@@ -480,7 +480,7 @@ func intgTestsReconcile() {
 				attachment.Status.Attached = true
 				attachment.Status.Error = errMsg
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 				}
 				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})
@@ -589,7 +589,7 @@ func intgTestsReconcile() {
 				Expect(attachment).ToNot(BeNil())
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 				}
 				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})
@@ -599,7 +599,7 @@ func intgTestsReconcile() {
 				Expect(attachment).ToNot(BeNil())
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID2,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID2,
 				}
 				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})

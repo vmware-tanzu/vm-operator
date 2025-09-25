@@ -6,15 +6,19 @@ package volumebatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	storagehelpers "k8s.io/component-helpers/storage/volume"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -28,9 +32,12 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 )
@@ -51,6 +58,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName("volumebatch"),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		ctx.VMProvider,
 	)
 
 	c, err := controller.New(controllerName, mgr, controller.Options{
@@ -70,6 +78,8 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		return fmt.Errorf("failed to start VirtualMachine watch: %w", err)
 	}
 
+	// TODO (Oracle RAC): Update any comment or log message that includes
+	// CnsNodeVmBatchAttachment to new format once the API format is changed.
 	// Watch for changes to CnsNodeVmBatchAttachment, and enqueue a
 	// request to the owner VirtualMachine.
 	if err := c.Watch(source.Kind(
@@ -92,12 +102,14 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	logger logr.Logger,
-	recorder record.Recorder) *Reconciler {
+	recorder record.Recorder,
+	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
-		Context:  ctx,
-		Client:   client,
-		logger:   logger,
-		recorder: recorder,
+		Context:    ctx,
+		Client:     client,
+		logger:     logger,
+		recorder:   recorder,
+		VMProvider: vmProvider,
 	}
 }
 
@@ -105,9 +117,10 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
-	Context  context.Context
-	logger   logr.Logger
-	recorder record.Recorder
+	Context    context.Context
+	logger     logr.Logger
+	recorder   record.Recorder
+	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
@@ -156,8 +169,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 	}()
 
 	if !vm.DeletionTimestamp.IsZero() {
-		// TODO: Handle deletion/detachment in future iterations
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.ReconcileDelete(volCtx)
 	}
 
 	if err := r.ReconcileNormal(volCtx); err != nil {
@@ -192,46 +204,40 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		return nil
 	}
 
-	// Add hardware version validation
-	if err := r.validateHardwareVersion(ctx); err != nil {
-		return fmt.Errorf("hardware version validation failed: %w", err)
-	}
-
 	// Get existing batch attachment for this VM
-	batchAttachment, err := r.GetBatchAttachmentForVM(ctx)
+	batchAttachment, err := r.getBatchAttachmentForVM(ctx)
 	if err != nil {
-		ctx.Logger.Error(err, "Error getting existing CnsNodeVmBatchAttachment for VM")
-		return err
+		return fmt.Errorf("error getting existing CnsNodeVmBatchAttachment for VM: %w", err)
 	}
 
-	// Handle existing batch attachment conflicts
-	if batchAttachment != nil {
-		if err := r.handleExistingBatchAttachment(ctx, batchAttachment); err != nil {
-			return fmt.Errorf("failed to handle existing batch attachment: %w", err)
+	// Only need to validate the hardware for once during the first time of
+	// creating the batchAttachment.
+	if batchAttachment == nil && len(ctx.VM.Spec.Volumes) > 0 {
+		if err := r.validateHardwareVersion(ctx); err != nil {
+			return fmt.Errorf("hardware version validation failed: %w", err)
 		}
 	}
 
 	// Process volumes and create/update batch attachment
 	if err := r.processBatchAttachment(ctx, batchAttachment); err != nil {
-		ctx.Logger.Error(err, "Error processing CnsNodeVmBatchAttachment")
-		return err
+		return fmt.Errorf("error processing CnsNodeVmBatchAttachment: %w", err)
 	}
 
 	return nil
 }
 
-// GetBatchAttachmentForVM returns the CnsNodeVmBatchAttachment
-// resource for the VM. We assume that the name of the resource
-// matches the name of the VM.
-func (r *Reconciler) GetBatchAttachmentForVM(ctx *pkgctx.VolumeContext) (*cnsv1alpha1.CnsNodeVmBatchAttachment, error) {
+// getBatchAttachmentForVM returns the CnsNodeVmBatchAttachment resource for the
+// VM. We assume that the name of the resource matches the name of the VM.
+// Returns nil if no CNSNodeVMBatchAttachment resource exists for the VM.
+func (r *Reconciler) getBatchAttachmentForVM(ctx *pkgctx.VolumeContext) (*cnsv1alpha1.CnsNodeVmBatchAttachment, error) {
 	attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{}
 
 	if err := r.Client.Get(ctx, client.ObjectKey{
-		Name:      ctx.VM.Name,
+		Name:      pkgutil.CNSBatchAttachmentNameForVolume(ctx.VM.Name),
 		Namespace: ctx.VM.Namespace,
 	}, attachment); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return nil, err
+			return nil, fmt.Errorf("failed to find CnsNodeVmBatchAttachment: %w", err)
 		}
 
 		return nil, nil
@@ -258,31 +264,38 @@ func (r *Reconciler) processBatchAttachment(
 		}
 	}
 
-	// Handle WFFC for each PVC volume
-	for _, vol := range pvcVolumes {
-		if err := r.handlePVCWithWFFC(ctx, vol); err != nil {
-			ctx.Logger.Error(err, "Failed to handle WFFC for volume", "volume", vol.Name)
-			// Continue processing other volumes
-		}
-	}
-
-	// Handle orphaned volume cleanup
-	if existingAttachment != nil {
-		if err := r.cleanupOrphanedVolumes(ctx, pvcVolumes); err != nil {
-			ctx.Logger.Error(err, "Failed to cleanup orphaned volumes")
-			// Continue with processing
-		}
-	}
-
 	if len(pvcVolumes) == 0 {
 		// No PVC volumes to process
 		if existingAttachment != nil {
-			// TODO: AKP: Delete existing CnsNodeVmBatchAttachmet or
-			// CnsNodeVmAttachment resource(s) when no volumes.
 			ctx.Logger.Info("Delete existing CnsNodeVmBatchAttachment",
-				"attachment", existingAttachment.Name)
+				"batchAttachment", existingAttachment.Name,
+				"namespace", existingAttachment.Namespace)
+			err := r.Client.Delete(ctx, existingAttachment)
+			if err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete CnsNodeVmBatchAttachment: %w", err)
+			}
 		}
 		return nil
+	}
+
+	curVolumeAttachSpecMap := make(map[string]cnsv1alpha1.VolumeSpec)
+	if existingAttachment != nil {
+		for _, volSpec := range existingAttachment.Spec.Volumes {
+			curVolumeAttachSpecMap[volSpec.Name] = volSpec
+		}
+	}
+	var createErrs []error
+	for _, vol := range pvcVolumes {
+		if err := r.handlePVCWithWFFC(ctx, vol, curVolumeAttachSpecMap); err != nil {
+			createErrs = append(createErrs, err)
+		}
+	}
+
+	// Return early if the WFFC handling has error.
+	// TODO (Oracle RAC): Do we reflect this as part of volume status for better
+	// visibility to the user? Looks like old logic doesn't do it.
+	if len(createErrs) > 0 {
+		return apierrorsutil.NewAggregate(createErrs)
 	}
 
 	// Use robust error handling for volume processing
@@ -303,9 +316,9 @@ func (r *Reconciler) createBatchAttachment(
 	ctx *pkgctx.VolumeContext,
 	volumes []vmopv1.VirtualMachineVolume) error {
 
-	attachmentName := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, "batch")
+	attachmentName := pkgutil.CNSBatchAttachmentNameForVolume(ctx.VM.Name)
 
-	volumeSpecs, err := r.BuildVolumeSpecs(ctx, volumes)
+	volumeSpecs, err := r.buildVolumeSpecs(volumes)
 	if err != nil {
 		return fmt.Errorf("failed to build volume specs: %w", err)
 	}
@@ -343,12 +356,13 @@ func (r *Reconciler) updateBatchAttachment(
 	existing *cnsv1alpha1.CnsNodeVmBatchAttachment,
 	volumes []vmopv1.VirtualMachineVolume) error {
 
-	volumeSpecs, err := r.BuildVolumeSpecs(ctx, volumes)
+	volumeSpecs, err := r.buildVolumeSpecs(volumes)
 	if err != nil {
 		return fmt.Errorf("failed to build volume specs: %w", err)
 	}
 
-	// Check if update is needed
+	// TODO (Oracle RAC): this should not just be called when the spec differs.
+	// Check if update is needed.
 	if r.volumeSpecsEqual(existing.Spec.Volumes, volumeSpecs) {
 		// No update needed, just update VM status from existing attachment
 		return r.updateVMStatusFromBatchAttachment(ctx, existing)
@@ -364,10 +378,9 @@ func (r *Reconciler) updateBatchAttachment(
 	return nil
 }
 
-// BuildVolumeSpecs builds a volume spec that will be used to create
+// buildVolumeSpecs builds a volume spec that will be used to create
 // the CnsNodeVmBatchAttachment object.
-func (r *Reconciler) BuildVolumeSpecs(
-	ctx *pkgctx.VolumeContext,
+func (r *Reconciler) buildVolumeSpecs(
 	volumes []vmopv1.VirtualMachineVolume) ([]cnsv1alpha1.VolumeSpec, error) {
 
 	volumeSpecs := make([]cnsv1alpha1.VolumeSpec, 0, len(volumes))
@@ -415,7 +428,7 @@ func (r *Reconciler) BuildVolumeSpecs(
 
 		// Map controller key (combination of controller type and bus number)
 		if pvcSpec.ControllerType != "" || pvcSpec.ControllerBusNumber != nil {
-			controllerKey := r.BuildControllerKey(pvcSpec.ControllerType, pvcSpec.ControllerBusNumber)
+			controllerKey := pkgutil.BuildControllerKey(pvcSpec.ControllerType, pvcSpec.ControllerBusNumber)
 			cnsVolumeSpec.PersistentVolumeClaim.ControllerKey = controllerKey
 		}
 
@@ -456,19 +469,8 @@ func (r *Reconciler) applyApplicationTypePresets(
 	return nil
 }
 
-func (r *Reconciler) BuildControllerKey(controllerType vmopv1.VirtualControllerType, busNumber *int32) string {
-	// Build a controller key that CNS can understand
-	// Format: <type>:<busNumber> or just <type> if bus number not specified
-	if busNumber != nil {
-		return fmt.Sprintf("%s:%d", controllerType, *busNumber)
-	}
-	if controllerType != "" {
-		return string(controllerType)
-	}
-	return ""
-}
-
 func (r *Reconciler) volumeSpecsEqual(existing, desired []cnsv1alpha1.VolumeSpec) bool {
+
 	if len(existing) != len(desired) {
 		return false
 	}
@@ -565,14 +567,12 @@ func (r *Reconciler) updateVolumeStatusWithPVCInfo(
 	return nil
 }
 
-// ReconcileDelete handles cleanup when a VirtualMachine is being deleted.
-// This method ensures proper cleanup of batch attachments and related resources.
-func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VolumeContext) error {
-	// TODO: Implement VM deletion cleanup logic
-	// This method should:
-	// - Clean up CnsNodeVmBatchAttachment resources
-	// - Handle any pending volume operations
-	// - Ensure proper resource cleanup on VM deletion
+func (r *Reconciler) ReconcileDelete(_ *pkgctx.VolumeContext) error {
+	// Do nothing here since we depend on the Garbage Collector to do the
+	// deletion of the dependent CNSNodeVMBatchAttachment objects when their
+	// owning VM is deleted.
+	// We require the Volume provider to handle the situation where the VM is
+	// deleted before the volumes are detached & removed.
 
 	return nil
 }
@@ -592,26 +592,82 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(_ *pkgctx.VolumeContext) (bool
 
 // handlePVCWithWFFC handles PVCs with WaitForFirstConsumer binding mode.
 // This ensures proper node selection for storage classes requiring it.
-func (r *Reconciler) handlePVCWithWFFC(_ *pkgctx.VolumeContext, _ vmopv1.VirtualMachineVolume) error {
-	// TODO: Implement WFFC (WaitForFirstConsumer) handling
-	// This method should:
-	// - Check storage class binding mode
-	// - Set selected node annotations for unbound PVCs
-	// - Handle node selection for proper PVC binding
-	// - Validate node availability and zone constraints
+func (r *Reconciler) handlePVCWithWFFC(
+	ctx *pkgctx.VolumeContext,
+	volume vmopv1.VirtualMachineVolume,
+	curVolumeAttachSpecMap map[string]cnsv1alpha1.VolumeSpec,
+) error {
 
-	return nil
-}
+	if volume.PersistentVolumeClaim == nil || volume.PersistentVolumeClaim.InstanceVolumeClaim != nil {
+		return nil
+	}
 
-// cleanupOrphanedVolumes removes volumes that are no longer in the VM spec.
-// This handles the cleanup of volumes that have been removed from the desired state.
-func (r *Reconciler) cleanupOrphanedVolumes(_ *pkgctx.VolumeContext, _ []vmopv1.VirtualMachineVolume) error {
-	// TODO: Implement orphaned volume cleanup
-	// This method should:
-	// - Identify volumes in batch attachment but not in VM spec
-	// - Remove orphaned volumes from batch attachment
-	// - Preserve status information during cleanup
-	// - Handle cleanup errors gracefully
+	if s, ok := curVolumeAttachSpecMap[volume.PersistentVolumeClaim.ClaimName]; ok &&
+		volume.PersistentVolumeClaim.ClaimName == s.PersistentVolumeClaim.ClaimName {
+		// Skip the volumes that's already in BatchAttachment spec and still
+		// points to the same PVC.
+		return nil
+	}
+
+	pvc := corev1.PersistentVolumeClaim{}
+	pvcKey := client.ObjectKey{
+		Namespace: ctx.VM.Namespace,
+		Name:      volume.PersistentVolumeClaim.ClaimName,
+	}
+
+	if err := r.Get(ctx, pvcKey, &pvc); err != nil {
+		return fmt.Errorf("cannot get PVC: %w", err)
+	}
+
+	if pvc.Status.Phase == corev1.ClaimBound {
+		// Regardless of the StorageClass binding mode there is nothing to done if already bound.
+		return nil
+	}
+
+	if pvc.Annotations[storagehelpers.AnnSelectedNode] != "" {
+		// Once set, this annotation cannot really be changed so just keep going.
+		return nil
+	}
+
+	scName := pvc.Spec.StorageClassName
+	if scName == nil {
+		return fmt.Errorf("PVC %s does not have StorageClassName set", pvc.Name)
+	} else if *scName == "" {
+		return nil
+	}
+
+	sc := &storagev1.StorageClass{}
+	if err := r.Get(ctx, client.ObjectKey{Name: *scName}, sc); err != nil {
+		return fmt.Errorf("cannot get StorageClass for PVC %s: %w", pvc.Name, err)
+	}
+
+	if mode := sc.VolumeBindingMode; mode == nil ||
+		*mode != storagev1.VolumeBindingWaitForFirstConsumer {
+		return nil
+	}
+
+	if !pkgcfg.FromContext(ctx).Features.VMWaitForFirstConsumerPVC {
+		return errors.New("PVC with WFFC storage class support is not enabled")
+	}
+
+	zoneName := ctx.VM.Status.Zone
+	if zoneName == "" {
+		// Fallback to the label value if Status hasn't been updated yet.
+		zoneName = ctx.VM.Labels[corev1.LabelTopologyZone]
+		if zoneName == "" {
+			return errors.New("VM does not have Zone set")
+		}
+	}
+
+	if pvc.Annotations == nil {
+		pvc.Annotations = map[string]string{}
+	}
+	pvc.Annotations[constants.CNSSelectedNodeIsZoneAnnotationKey] = "true"
+	pvc.Annotations[storagehelpers.AnnSelectedNode] = zoneName
+
+	if err := r.Client.Update(ctx, &pvc); err != nil {
+		return fmt.Errorf("cannot update PVC to add selected-node annotation: %w", err)
+	}
 
 	return nil
 }
@@ -635,28 +691,24 @@ func (r *Reconciler) processVolumesWithErrorHandling(_ *pkgctx.VolumeContext, _ 
 	return nil
 }
 
-// handleExistingBatchAttachment handles conflicts with existing batch attachments.
-// This ensures proper behavior when batch attachments already exist.
-func (r *Reconciler) handleExistingBatchAttachment(_ *pkgctx.VolumeContext, _ *cnsv1alpha1.CnsNodeVmBatchAttachment) error {
-	// TODO: Implement existing batch attachment conflict resolution
-	// This method should:
-	// - Handle cases where batch attachment already exists
-	// - Resolve conflicts between desired and existing state
-	// - Manage concurrent updates to batch attachments
-	// - Ensure idempotent behavior
-
-	return nil
-}
-
 // validateHardwareVersion validates that the VM hardware version supports requested features.
 // This ensures compatibility between VM hardware version and volume features.
-func (r *Reconciler) validateHardwareVersion(_ *pkgctx.VolumeContext) error {
-	// TODO: Implement hardware version validation
-	// This method should:
-	// - Check VM hardware version from ConfigInfo
-	// - Validate compatibility with requested volume features
-	// - Ensure controller types are supported by hardware version
-	// - Return appropriate errors for unsupported combinations
+func (r *Reconciler) validateHardwareVersion(ctx *pkgctx.VolumeContext) error {
+	hardwareVersion, err := r.VMProvider.GetVirtualMachineHardwareVersion(ctx, ctx.VM)
+	if err != nil {
+		return fmt.Errorf("failed to get VM hardware version: %w", err)
+	}
+
+	// If hardware version is 0, which means we failed to parse the version
+	// from VM, then just assume that it is above minimal requirement.
+	if hardwareVersion.IsValid() && hardwareVersion < pkgconst.MinSupportedHWVersionForPVC {
+		retErr := fmt.Errorf("vm has an unsupported "+
+			"hardware version %d for PersistentVolumes. "+
+			"Minimum supported hardware version %d",
+			hardwareVersion, pkgconst.MinSupportedHWVersionForPVC)
+		r.recorder.EmitEvent(ctx.VM, "VolumeAttachment", retErr, true)
+		return retErr
+	}
 
 	return nil
 }

@@ -45,9 +45,10 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 	Context("BootStrapLinuxPrep", func() {
 
 		var (
-			configSpec *vimtypes.VirtualMachineConfigSpec
-			custSpec   *vimtypes.CustomizationSpec
-			err        error
+			configSpec         *vimtypes.VirtualMachineConfigSpec
+			custSpec           *vimtypes.CustomizationSpec
+			customizationLatch *bool
+			err                error
 
 			vmCtx          pkgctx.VirtualMachineContext
 			vm             *vmopv1.VirtualMachine
@@ -97,7 +98,7 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 		})
 
 		JustBeforeEach(func() {
-			configSpec, custSpec, err = vmlifecycle.BootStrapLinuxPrep(
+			configSpec, custSpec, customizationLatch, err = vmlifecycle.BootStrapLinuxPrep(
 				vmCtx,
 				configInfo,
 				linuxPrepSpec,
@@ -109,6 +110,7 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 		It("should return expected customization spec", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(configSpec).To(BeNil())
+			Expect(customizationLatch).To(BeNil())
 
 			Expect(custSpec).ToNot(BeNil())
 			Expect(custSpec.GlobalIPSettings.DnsServerList).To(Equal(bsArgs.DNSServers))
@@ -204,6 +206,34 @@ var _ = Describe("LinuxPrep Bootstrap", func() {
 					Expect(optVal).ToNot(BeNil())
 					Expect(optVal.Key).To(Equal(vmlifecycle.GOSCVCFAHashID))
 					Expect(optVal.Value).To(Equal("foobar"))
+				})
+			})
+		})
+
+		Context("when has power on customization latch", func() {
+			Context("latch is false", func() {
+				BeforeEach(func() {
+					linuxPrepSpec.CustomizeAtNextPowerOn = vimtypes.NewBool(false)
+				})
+
+				It("should return no specs", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(configSpec).To(BeNil())
+					Expect(custSpec).To(BeNil())
+					Expect(customizationLatch).To(Equal(linuxPrepSpec.CustomizeAtNextPowerOn))
+				})
+			})
+
+			Context("latch is true", func() {
+				BeforeEach(func() {
+					linuxPrepSpec.CustomizeAtNextPowerOn = vimtypes.NewBool(true)
+				})
+
+				It("should return customization spec", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(configSpec).To(BeNil())
+					Expect(custSpec).ToNot(BeNil())
+					Expect(customizationLatch).To(Equal(linuxPrepSpec.CustomizeAtNextPowerOn))
 				})
 			})
 		})

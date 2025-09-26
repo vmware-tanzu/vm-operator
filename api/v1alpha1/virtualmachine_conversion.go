@@ -906,6 +906,9 @@ func restore_v1alpha5_VirtualMachineBootstrapSpec(
 		if srcLinuxPrep := srcBootstrap.LinuxPrep; srcLinuxPrep != nil {
 			dstLinuxPrep.HardwareClockIsUTC = srcLinuxPrep.HardwareClockIsUTC
 			dstLinuxPrep.TimeZone = srcLinuxPrep.TimeZone
+			dstLinuxPrep.ExpirePasswordAfterNextLogin = srcLinuxPrep.ExpirePasswordAfterNextLogin
+			dstLinuxPrep.Password = srcLinuxPrep.Password
+			dstLinuxPrep.ScriptText = srcLinuxPrep.ScriptText
 		}
 	}
 

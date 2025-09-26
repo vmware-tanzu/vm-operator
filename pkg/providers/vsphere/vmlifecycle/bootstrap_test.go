@@ -143,6 +143,31 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 		})
 	})
 
+	When("CustomizationLinuxPrep", func() {
+		BeforeEach(func() {
+			inCustSpec.Identity = &vimtypes.CustomizationLinuxPrep{
+				Password: &vimtypes.CustomizationPassword{
+					Value: "value",
+				},
+				ScriptText: "value",
+			}
+		})
+
+		It("redacts fields", func() {
+			Expect(inCustSpec.Identity).ToNot(BeNil())
+			s := inCustSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+			Expect(s.Password).ToNot(BeNil())
+			Expect(s.Password.Value).To(Equal("value"))
+			Expect(s.ScriptText).To(Equal("value"))
+
+			Expect(outCustSpec.Identity).ToNot(BeNil())
+			s = outCustSpec.Identity.(*vimtypes.CustomizationLinuxPrep)
+			Expect(s.Password).ToNot(BeNil())
+			Expect(s.Password.Value).To(Equal("***"))
+			Expect(s.ScriptText).To(Equal("***"))
+		})
+	})
+
 	When("CustomizationSysprepText", func() {
 		BeforeEach(func() {
 			inCustSpec.Identity = &vimtypes.CustomizationSysprepText{
@@ -177,6 +202,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 						Value: "value",
 					},
 				},
+				ScriptText: "value",
 			}
 		})
 
@@ -189,6 +215,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 			Expect(s.Identification.DomainAdmin).To(Equal("admin"))
 			Expect(s.Identification.DomainAdminPassword).ToNot(BeNil())
 			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("value"))
+			Expect(s.ScriptText).To(Equal("value"))
 
 			Expect(outCustSpec.Identity).ToNot(BeNil())
 			s = outCustSpec.Identity.(*vimtypes.CustomizationSysprep)
@@ -198,6 +225,7 @@ var _ = Describe("SanitizeCustomizationSpec", func() {
 			Expect(s.Identification.DomainAdmin).To(Equal("admin"))
 			Expect(s.Identification.DomainAdminPassword).ToNot(BeNil())
 			Expect(s.Identification.DomainAdminPassword.Value).To(Equal("***"))
+			Expect(s.ScriptText).To(Equal("***"))
 		})
 	})
 })

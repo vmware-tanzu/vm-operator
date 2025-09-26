@@ -458,6 +458,75 @@ func vmUtilTests() {
 			}
 		})
 
+		When("Bootstrap via LinuxPrep", func() {
+			Context("Password is set", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+					}
+					vmCtx.VM.Spec.Bootstrap.LinuxPrep.Password = &common.PasswordSecretKeySelector{
+						Name: "foobar",
+					}
+				})
+
+				It("return an error when resources does not exist", func() {
+					_, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+					Expect(err).To(HaveOccurred())
+					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
+				})
+
+				When("Secret exists", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, bootstrapSecret)
+						vmCtx.VM.Spec.Bootstrap.LinuxPrep.Password.Name = bootstrapSecret.Name
+						vmCtx.VM.Spec.Bootstrap.LinuxPrep.Password.Key = "foo1"
+					})
+
+					It("returns success", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsData.LinuxPrep).ToNot(BeNil())
+						Expect(bsData.LinuxPrep.Password).To(Equal("bar1"))
+						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+					})
+				})
+			})
+
+			Context("ScriptText is set", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+					}
+					vmCtx.VM.Spec.Bootstrap.LinuxPrep.ScriptText = &common.ValueOrSecretKeySelector{}
+					vmCtx.VM.Spec.Bootstrap.LinuxPrep.ScriptText.From = &common.SecretKeySelector{}
+					vmCtx.VM.Spec.Bootstrap.LinuxPrep.ScriptText.From.Name = "foobar"
+					vmCtx.VM.Spec.Bootstrap.LinuxPrep.ScriptText.From.Key = ""
+				})
+
+				It("return an error when resources does not exist", func() {
+					_, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+					Expect(err).To(HaveOccurred())
+					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
+				})
+
+				When("Secret exists", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, bootstrapSecret)
+						vmCtx.VM.Spec.Bootstrap.LinuxPrep.ScriptText.From.Name = bootstrapSecret.Name
+						vmCtx.VM.Spec.Bootstrap.LinuxPrep.ScriptText.From.Key = "foo1"
+					})
+
+					It("returns success", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsData.LinuxPrep).ToNot(BeNil())
+						Expect(bsData.LinuxPrep.ScriptText).To(Equal("bar1"))
+						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+					})
+				})
+			})
+		})
+
 		When("Bootstrap via CloudInit", func() {
 			BeforeEach(func() {
 				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{

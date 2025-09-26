@@ -10,9 +10,13 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 func BootStrapLinuxPrep(
@@ -35,15 +39,43 @@ func BootStrapLinuxPrep(
 		return nil, nil, fmt.Errorf("failed to create GOSC NIC mappings: %w", err)
 	}
 
-	customSpec := &vimtypes.CustomizationSpec{
-		Identity: &vimtypes.CustomizationLinuxPrep{
-			HostName: &vimtypes.CustomizationFixedName{
-				Name: bsArgs.HostName,
-			},
-			Domain:     bsArgs.DomainName,
-			TimeZone:   linuxPrepSpec.TimeZone,
-			HwClockUTC: linuxPrepSpec.HardwareClockIsUTC,
+	identity := &vimtypes.CustomizationLinuxPrep{
+		HostName: &vimtypes.CustomizationFixedName{
+			Name: bsArgs.HostName,
 		},
+		Domain:     bsArgs.DomainName,
+		TimeZone:   linuxPrepSpec.TimeZone,
+		HwClockUTC: linuxPrepSpec.HardwareClockIsUTC,
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.GuestCustomizationVCDParity {
+		if linuxPrepSpec.ExpirePasswordAfterNextLogin {
+			identity.ResetPassword = ptr.To(true)
+		}
+
+		if bsArgs.LinuxPrep != nil {
+			if bsArgs.LinuxPrep.Password != "" {
+				identity.Password = &vimtypes.CustomizationPassword{
+					Value:     bsArgs.LinuxPrep.Password,
+					PlainText: true,
+				}
+			}
+
+			identity.ScriptText = bsArgs.LinuxPrep.ScriptText
+		}
+
+		if id := vmCtx.VM.Annotations[pkgconst.VCFAIDAnnotationKey]; id != "" {
+			identity.ExtraConfig = pkgutil.OptionValues(identity.ExtraConfig).Merge(
+				&vimtypes.OptionValue{
+					Key:   GOSCVCFAHashID,
+					Value: id,
+				},
+			)
+		}
+	}
+
+	customSpec := &vimtypes.CustomizationSpec{
+		Identity: identity,
 		GlobalIPSettings: vimtypes.CustomizationGlobalIPSettings{
 			DnsSuffixList: bsArgs.SearchSuffixes,
 			DnsServerList: bsArgs.DNSServers,

@@ -92,6 +92,7 @@ const (
 	invalidClassInstanceReferenceNotActive     = "must specify a reference to a VirtualMachineClassInstance object that is active"
 	invalidClassInstanceReferenceOwnerMismatch = "VirtualMachineClassInstance must be an instance of the VM Class specified by spec.class"
 	labelSelectorCanNotContainVMOperatorLabels = "label selector can not contain VM Operator managed labels (vmoperator.vmware.com)"
+	guestCustomizationVCDParityNotEnabled      = "VC guest customization VCD parity capability is not enabled"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha5,name=default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -284,8 +285,9 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
+//nolint:gocyclo
 func (v validator) validateBootstrap(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
@@ -330,6 +332,25 @@ func (v validator) validateBootstrap(
 			allErrs = append(allErrs, field.Forbidden(p,
 				"LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers"))
 		}
+
+		if pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity {
+			if linuxPrep.ScriptText != nil {
+				if sc := linuxPrep.ScriptText; sc.From != nil && sc.Value != nil {
+					allErrs = append(allErrs, field.Invalid(p.Child("scriptText").Child("value"), "value",
+						"from and value are mutually exclusive"))
+				}
+			}
+		} else {
+			if linuxPrep.ExpirePasswordAfterNextLogin {
+				allErrs = append(allErrs, field.Forbidden(p.Child("expirePasswordAfterNextLogin"),
+					guestCustomizationVCDParityNotEnabled))
+			}
+
+			if linuxPrep.ScriptText != nil {
+				allErrs = append(allErrs, field.Forbidden(p.Child("scriptText"),
+					guestCustomizationVCDParityNotEnabled))
+			}
+		}
 	}
 
 	if sysPrep != nil {
@@ -349,7 +370,7 @@ func (v validator) validateBootstrap(
 		}
 
 		if sysPrep.Sysprep != nil {
-			allErrs = append(allErrs, v.validateInlineSysprep(p, vm, sysPrep.Sysprep)...)
+			allErrs = append(allErrs, v.validateInlineSysprep(ctx, p, vm, sysPrep.Sysprep)...)
 		}
 	}
 
@@ -373,7 +394,7 @@ func (v validator) validateBootstrap(
 			}
 			if value := property.Value; value.From != nil && value.Value != nil {
 				allErrs = append(allErrs, field.Invalid(p.Child("properties").Child("value"), "value",
-					"from and value is mutually exclusive"))
+					"from and value are mutually exclusive"))
 			}
 		}
 
@@ -383,6 +404,7 @@ func (v validator) validateBootstrap(
 }
 
 func (v validator) validateInlineSysprep(
+	ctx *pkgctx.WebhookRequestContext,
 	p *field.Path,
 	vm *vmopv1.VirtualMachine,
 	sysprep *sysprep.Sysprep) field.ErrorList {
@@ -426,6 +448,25 @@ func (v validator) validateInlineSysprep(
 				allErrs = append(allErrs, field.Invalid(s, "identification",
 					"joinWorkgroup and domainAdmin/domainAdminPassword/domainOU are mutually exclusive"))
 			}
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity {
+		if scriptText := sysprep.ScriptText; scriptText != nil {
+			if scriptText.From != nil && scriptText.Value != nil {
+				allErrs = append(allErrs, field.Invalid(s.Child("scriptText").Child("value"), "value",
+					"from and value are mutually exclusive"))
+			}
+		}
+	} else {
+		if sysprep.ExpirePasswordAfterNextLogin {
+			allErrs = append(allErrs, field.Forbidden(p.Child("expirePasswordAfterNextLogin"),
+				guestCustomizationVCDParityNotEnabled))
+		}
+
+		if sysprep.ScriptText != nil {
+			allErrs = append(allErrs, field.Forbidden(p.Child("scriptText"),
+				guestCustomizationVCDParityNotEnabled))
 		}
 	}
 

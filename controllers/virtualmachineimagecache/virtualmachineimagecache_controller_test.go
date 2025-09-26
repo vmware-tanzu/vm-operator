@@ -1,5 +1,5 @@
 // // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineimagecache_test
@@ -102,12 +102,14 @@ var _ = Describe(
 			g.ExpectWithOffset(1, pkgcond.Get(o, t)).To(BeNil())
 		}
 
-		assertCondTrue := func(g Gomega, o pkgcond.Getter, t string) {
+		assertCondTrue := func(g Gomega, o pkgcond.Getter, t string) *metav1.Condition {
 			c := pkgcond.Get(o, t)
 			g.ExpectWithOffset(1, c).ToNot(BeNil())
 			g.ExpectWithOffset(1, c.Message).To(BeEmpty())
 			g.ExpectWithOffset(1, c.Reason).To(Equal(string(metav1.ConditionTrue)))
 			g.ExpectWithOffset(1, c.Status).To(Equal(metav1.ConditionTrue))
+			g.ExpectWithOffset(1, c.LastTransitionTime.IsZero()).To(BeFalse())
+			return c
 		}
 
 		assertCondFalse := func(g Gomega, o pkgcond.Getter, t, reason, message string) {
@@ -116,6 +118,7 @@ var _ = Describe(
 			g.ExpectWithOffset(1, c.Message).To(HavePrefix(message))
 			g.ExpectWithOffset(1, c.Reason).To(Equal(reason))
 			g.ExpectWithOffset(1, c.Status).To(Equal(metav1.ConditionFalse))
+			g.ExpectWithOffset(1, c.LastTransitionTime.IsZero()).To(BeFalse())
 		}
 
 		assertConfigMapOVF := func(g Gomega, key ctrlclient.ObjectKey) {
@@ -356,7 +359,34 @@ var _ = Describe(
 
 								// Verify the files are cached and ready.
 								g.Expect(obj.Status.Locations).To(HaveLen(1))
-								assertCondTrue(g, obj.Status.Locations[0], cndRdyReady)
+								var ltt metav1.Time
+								if c := assertCondTrue(
+									g,
+									obj.Status.Locations[0],
+									cndRdyReady); c != nil {
+
+									ltt = c.LastTransitionTime
+								}
+
+								if !ltt.IsZero() {
+									// Verify that adding an annotation to the obj
+									// does not cause the ready condition to have a
+									// different LastTransitionTime.
+									if obj.Annotations == nil {
+										obj.Annotations = map[string]string{}
+									}
+									obj.Annotations["hello"] = "world"
+									g.Expect(vcSimCtx.Client.Update(ctx, &obj)).To(Succeed())
+
+									Consistently(func(g Gomega) {
+										var obj vmopv1.VirtualMachineImageCache
+										g.Expect(vcSimCtx.Client.Get(ctx, key, &obj)).To(Succeed())
+										g.Expect(obj.Status.Locations).To(HaveLen(1))
+										c := pkgcond.Get(obj.Status.Locations[0], cndRdyReady)
+										g.Expect(c.LastTransitionTime).To(Equal(ltt))
+									}, 3*time.Second, 1*time.Second).Should(Succeed())
+
+								}
 
 								if isOVF {
 									assertLocationOVF(g, obj, 0)

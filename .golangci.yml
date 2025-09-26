@@ -197,6 +197,7 @@ linters:
           - "!$test"
           - "!**/test/builder/*.go"
           - "!**/matcher.go"
+          - "!**/test_utils.go"
           allow:
           - $gostd
           - github.com/go-logr/logr
@@ -307,6 +308,8 @@ linters:
     - path: test/builder/vcsim_test_context.go
       text: should not use dot imports
     - path: _test.go
+      text: should not use dot imports
+    - path: test_utils.go
       text: should not use dot imports
 
     # All of our webhooks follow the pattern of passing the webhook context

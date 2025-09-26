@@ -32,6 +32,7 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	volumebatchutils "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch/utils"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -43,14 +44,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
-)
-
-const (
-	AttributeFirstClassDiskUUID = "diskUUID"
-
-	// CNSSelectedNodeIsZoneAnnotationKey is used to indicate to CNS that the selected-node annotation
-	// is the name of the VM's Zone instead of a Node in the zone.
-	CNSSelectedNodeIsZoneAnnotationKey = "cns.vmware.com/selected-node-is-zone"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -869,7 +862,7 @@ func (r *Reconciler) handlePVCWithWFFC(
 	if pvc.Annotations == nil {
 		pvc.Annotations = map[string]string{}
 	}
-	pvc.Annotations[CNSSelectedNodeIsZoneAnnotationKey] = "true"
+	pvc.Annotations[volumebatchutils.CNSSelectedNodeIsZoneAnnotationKey] = "true"
 	pvc.Annotations[constants.KubernetesSelectedNodeAnnotationKey] = zoneName
 
 	if err := r.Client.Update(ctx, &pvc); err != nil {
@@ -940,7 +933,7 @@ func (r *Reconciler) preserveOrphanedAttachmentStatus(
 
 	uuidAttachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachments))
 	for _, attachment := range orphanedAttachments {
-		if uuid := attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID]; uuid != "" {
+		if uuid := attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID]; uuid != "" {
 			uuidAttachments[uuid] = attachment
 		}
 	}
@@ -1029,7 +1022,7 @@ func attachmentToVolumeStatus(
 	return vmopv1.VirtualMachineVolumeStatus{
 		Name:     volumeName, // Name of the volume as in the Spec
 		Attached: attachment.Status.Attached,
-		DiskUUID: attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],
+		DiskUUID: attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID],
 		Error:    sanitizeCNSErrorMessage(attachment.Status.Error),
 		Type:     vmopv1.VolumeTypeManaged,
 	}

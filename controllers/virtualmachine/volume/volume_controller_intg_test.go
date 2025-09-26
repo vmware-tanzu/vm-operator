@@ -21,7 +21,6 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volume"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -480,7 +479,7 @@ func intgTestsReconcile() {
 				attachment.Status.Attached = true
 				attachment.Status.Error = errMsg
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 				}
 				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})
@@ -589,7 +588,7 @@ func intgTestsReconcile() {
 				Expect(attachment).ToNot(BeNil())
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 				}
 				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})
@@ -599,7 +598,7 @@ func intgTestsReconcile() {
 				Expect(attachment).ToNot(BeNil())
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
-					volume.AttributeFirstClassDiskUUID: dummyDiskUUID2,
+					cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID2,
 				}
 				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
 			})

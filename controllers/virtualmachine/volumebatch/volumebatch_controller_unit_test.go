@@ -5,49 +5,99 @@
 package volumebatch_test
 
 import (
-	"context"
-	"testing"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch"
+	volumebatchutils "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch/utils"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
-func TestVolumeBatch(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Volume Batch Controller")
+func unitTests() {
+	Describe(
+		"Volume Batch Controller",
+		Label(
+			testlabels.Controller,
+			testlabels.API,
+		),
+		unitTestsReconcile,
+	)
 }
 
-var _ = Describe("Volume Batch Controller", func() {
-
+func unitTestsReconcile() {
+	const ns = "dummy-ns"
 	var (
-		reconciler *volumebatch.Reconciler
+		reconciler  *volumebatch.Reconciler
+		initObjects []client.Object
+		withFuncs   interceptor.Funcs
+		ctx         *builder.UnitTestContextForController
 	)
 
-	BeforeEach(func() {
+	JustBeforeEach(func() {
+		ctx = suite.NewUnitTestContextForController()
+
+		// Replace the fake client with our own that has the expected index.
+		ctx.Client = fake.NewClientBuilder().
+			WithScheme(ctx.Client.Scheme()).
+			WithObjects(initObjects...).
+			WithInterceptorFuncs(withFuncs).
+			WithStatusSubresource(builder.KnownObjectTypes()...).
+			Build()
+
 		reconciler = volumebatch.NewReconciler(
-			context.Background(),
-			nil, // client not needed for unit tests
-			log.Log,
-			record.New(nil),
+			ctx,
+			ctx.Client,
+			ctx.Logger,
+			ctx.Recorder,
+			ctx.VMProvider,
 		)
 	})
 
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+		initObjects = nil
+		withFuncs = interceptor.Funcs{}
+		reconciler = nil
+	})
+
 	Context("BuildVolumeSpecs", func() {
+		var (
+			vm     *vmopv1.VirtualMachine
+			volCtx *pkgctx.VolumeContext
+		)
+
+		BeforeEach(func() {
+			vm = &vmopv1.VirtualMachine{}
+			volCtx = &pkgctx.VolumeContext{
+				Context: ctx,
+				Logger:  log.Log,
+				VM:      vm,
+			}
+		})
+
+		AfterEach(func() {
+			vm = nil
+			volCtx = nil
+		})
 
 		It("should handle basic PVC volume", func() {
 			volumes := []vmopv1.VirtualMachineVolume{
@@ -61,13 +111,6 @@ var _ = Describe("Volume Batch Controller", func() {
 						},
 					},
 				},
-			}
-
-			vm := &vmopv1.VirtualMachine{}
-			volCtx := &pkgctx.VolumeContext{
-				Context: context.Background(),
-				Logger:  log.Log,
-				VM:      vm,
 			}
 
 			specs, err := reconciler.BuildVolumeSpecs(volCtx, volumes)
@@ -92,13 +135,6 @@ var _ = Describe("Volume Batch Controller", func() {
 				},
 			}
 
-			vm := &vmopv1.VirtualMachine{}
-			volCtx := &pkgctx.VolumeContext{
-				Context: context.Background(),
-				Logger:  log.Log,
-				VM:      vm,
-			}
-
 			specs, err := reconciler.BuildVolumeSpecs(volCtx, volumes)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(specs).To(HaveLen(1))
@@ -119,13 +155,6 @@ var _ = Describe("Volume Batch Controller", func() {
 						},
 					},
 				},
-			}
-
-			vm := &vmopv1.VirtualMachine{}
-			volCtx := &pkgctx.VolumeContext{
-				Context: context.Background(),
-				Logger:  log.Log,
-				VM:      vm,
 			}
 
 			specs, err := reconciler.BuildVolumeSpecs(volCtx, volumes)
@@ -151,13 +180,6 @@ var _ = Describe("Volume Batch Controller", func() {
 				},
 			}
 
-			vm := &vmopv1.VirtualMachine{}
-			volCtx := &pkgctx.VolumeContext{
-				Context: context.Background(),
-				Logger:  log.Log,
-				VM:      vm,
-			}
-
 			specs, err := reconciler.BuildVolumeSpecs(volCtx, volumes)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(specs).To(HaveLen(1))
@@ -180,13 +202,6 @@ var _ = Describe("Volume Batch Controller", func() {
 						},
 					},
 				},
-			}
-
-			vm := &vmopv1.VirtualMachine{}
-			volCtx := &pkgctx.VolumeContext{
-				Context: context.Background(),
-				Logger:  log.Log,
-				VM:      vm,
 			}
 
 			specs, err := reconciler.BuildVolumeSpecs(volCtx, volumes)
@@ -220,141 +235,339 @@ var _ = Describe("Volume Batch Controller", func() {
 		})
 	})
 
-	Context("getBatchAttachmentForVM", func() {
+	Context("GetBatchAttachmentForVM", func() {
 		var (
-			scheme     *runtime.Scheme
-			fakeClient client.Client
-			vm         *vmopv1.VirtualMachine
-			volCtx     *pkgctx.VolumeContext
+			vm     *vmopv1.VirtualMachine
+			volCtx *pkgctx.VolumeContext
 		)
 
 		BeforeEach(func() {
-			scheme = runtime.NewScheme()
-			Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
-			Expect(cnsv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 			vm = &vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-vm",
-					Namespace: "test-namespace",
+					Namespace: ns,
 					UID:       types.UID("test-vm-uid"),
 				},
 			}
 
 			volCtx = &pkgctx.VolumeContext{
-				Context: context.Background(),
+				Context: ctx,
 				Logger:  log.Log,
 				VM:      vm,
 			}
 		})
 
-		It("should return nil when attachment does not exist", func() {
-			fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-			reconciler := volumebatch.NewReconciler(
-				context.Background(),
-				fakeClient,
-				log.Log,
-				record.New(nil),
-			)
+		AfterEach(func() {
+			vm = nil
+			volCtx = nil
+		})
 
+		It("should return nil when attachment does not exist", func() {
 			attachment, err := reconciler.GetBatchAttachmentForVM(volCtx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(attachment).To(BeNil())
 		})
 
-		It("should return attachment when it exists and is owned by VM", func() {
-			attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-vm",
-					Namespace: "test-namespace",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion:         vmopv1.GroupVersion.String(),
-							Kind:               "VirtualMachine",
-							Name:               vm.Name,
-							UID:                vm.UID,
-							Controller:         ptr.To(true),
-							BlockOwnerDeletion: ptr.To(true),
+		When("attachment exists and is owned by VM", func() {
+			BeforeEach(func() {
+				attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-vm",
+						Namespace: ns,
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion:         vmopv1.GroupVersion.String(),
+								Kind:               "VirtualMachine",
+								Name:               vm.Name,
+								UID:                vm.UID,
+								Controller:         ptr.To(true),
+								BlockOwnerDeletion: ptr.To(true),
+							},
 						},
 					},
-				},
-			}
+				}
+				initObjects = append(initObjects, attachment)
+			})
 
-			fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(attachment).Build()
-			reconciler := volumebatch.NewReconciler(
-				context.Background(),
-				fakeClient,
-				log.Log,
-				record.New(nil),
-			)
-
-			result, err := reconciler.GetBatchAttachmentForVM(volCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
-			Expect(result.Name).To(Equal("test-vm"))
+			It("should return attachment when it exists and is owned by VM", func() {
+				result, err := reconciler.GetBatchAttachmentForVM(volCtx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).ToNot(BeNil())
+				Expect(result.Name).To(Equal("test-vm"))
+			})
 		})
 
-		It("should return error when attachment exists but is not owned by VM", func() {
-			otherVM := &vmopv1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "other-vm",
-					Namespace: "test-namespace",
-					UID:       types.UID("other-vm-uid"),
-				},
-			}
-
-			attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-vm",
-					Namespace: "test-namespace",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion:         vmopv1.GroupVersion.String(),
-							Kind:               "VirtualMachine",
-							Name:               otherVM.Name,
-							UID:                otherVM.UID,
-							Controller:         ptr.To(true),
-							BlockOwnerDeletion: ptr.To(true),
+		When("attachment exists but is not owned by VM", func() {
+			BeforeEach(func() {
+				otherVM := &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "other-vm",
+						Namespace: ns,
+						UID:       types.UID("other-vm-uid"),
+					},
+				}
+				attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-vm",
+						Namespace: ns,
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion:         vmopv1.GroupVersion.String(),
+								Kind:               "VirtualMachine",
+								Name:               otherVM.Name,
+								UID:                otherVM.UID,
+								Controller:         ptr.To(true),
+								BlockOwnerDeletion: ptr.To(true),
+							},
 						},
 					},
-				},
-			}
+				}
+				initObjects = append(initObjects, attachment)
+			})
 
-			fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(attachment).Build()
-			reconciler := volumebatch.NewReconciler(
-				context.Background(),
-				fakeClient,
-				log.Log,
-				record.New(nil),
-			)
-
-			result, err := reconciler.GetBatchAttachmentForVM(volCtx)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("has a different controlling owner"))
-			Expect(result).To(BeNil())
+			It("should return error", func() {
+				result, err := reconciler.GetBatchAttachmentForVM(volCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("has a different controlling owner"))
+				Expect(result).To(BeNil())
+			})
 		})
 
-		It("should return error when attachment exists but has no owner references", func() {
-			attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-vm",
-					Namespace: "test-namespace",
-					// No owner references
-				},
-			}
+		When("attachment exists but has no owner references", func() {
+			BeforeEach(func() {
+				attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-vm",
+						Namespace: ns,
+						// No owner references
+					},
+				}
+				initObjects = append(initObjects, attachment)
+			})
 
-			fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(attachment).Build()
-			reconciler := volumebatch.NewReconciler(
-				context.Background(),
-				fakeClient,
-				log.Log,
-				record.New(nil),
-			)
-
-			result, err := reconciler.GetBatchAttachmentForVM(volCtx)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("has a different controlling owner"))
-			Expect(result).To(BeNil())
+			It("should return error", func() {
+				result, err := reconciler.GetBatchAttachmentForVM(volCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("has a different controlling owner"))
+				Expect(result).To(BeNil())
+			})
 		})
 	})
-})
+
+	Context("HandlePVCWithWFFC", func() {
+		var (
+			vm               *vmopv1.VirtualMachine
+			volCtx           *pkgctx.VolumeContext
+			boundPVC1        *corev1.PersistentVolumeClaim
+			vmVolumeWithPVC1 *vmopv1.VirtualMachineVolume
+			vmVol            *vmopv1.VirtualMachineVolume
+		)
+
+		BeforeEach(func() {
+			vm = &vmopv1.VirtualMachine{}
+			vmVolumeWithPVC1 = &vmopv1.VirtualMachineVolume{
+				Name: "cns-volume-1",
+				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "pvc-volume-1",
+						},
+					},
+				},
+			}
+
+			boundPVC1 = &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      vmVolumeWithPVC1.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
+					Namespace: ns,
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimBound,
+				},
+			}
+		})
+
+		JustBeforeEach(func() {
+			volCtx = &pkgctx.VolumeContext{
+				Context: ctx,
+				Logger:  log.Log,
+				VM:      vm,
+			}
+		})
+
+		AfterEach(func() {
+			vm = nil
+			volCtx = nil
+			vmVol = nil
+			vmVolumeWithPVC1 = nil
+			boundPVC1 = nil
+		})
+
+		When("VM Spec.Volumes has CNS volume that references WFFC StorageClass", func() {
+			const zoneName = "my-zone"
+
+			var storageClass *storagev1.StorageClass
+			var wffcPVC *corev1.PersistentVolumeClaim
+
+			BeforeEach(func() {
+				storageClass = builder.DummyStorageClass()
+				storageClass.VolumeBindingMode = ptr.To(storagev1.VolumeBindingWaitForFirstConsumer)
+				initObjects = append(initObjects, storageClass)
+
+				wffcPVC = boundPVC1.DeepCopy()
+				wffcPVC.Spec.StorageClassName = &storageClass.Name
+				wffcPVC.Status.Phase = corev1.ClaimPending
+				initObjects = append(initObjects, wffcPVC)
+
+				vmVol = vmVolumeWithPVC1
+				vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVol)
+				vm.Status.Zone = zoneName
+				vm.Namespace = ns
+			})
+
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMWaitForFirstConsumerPVC = true
+				})
+			})
+
+			AfterEach(func() {
+				storageClass = nil
+				wffcPVC = nil
+			})
+
+			Context("Feature is disabled", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMWaitForFirstConsumerPVC = false
+					})
+				})
+
+				It("returns error", func() {
+					fmt.Println(initObjects)
+					err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+					Expect(err).To(MatchError("PVC with WFFC storage class support is not enabled"))
+				})
+			})
+
+			When("PVC does not exist", func() {
+				BeforeEach(func() {
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "bogus"
+				})
+
+				It("returns error", func() {
+					err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("cannot get PVC"))
+				})
+			})
+
+			When("PVC StorageClassName is unset", func() {
+				BeforeEach(func() {
+					wffcPVC.Spec.StorageClassName = nil
+				})
+
+				It("returns error", func() {
+					err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("does not have StorageClassName set"))
+				})
+			})
+
+			When("PVC has KubernetesSelectedNodeAnnotationKey annotation", func() {
+				var node *corev1.Node
+				BeforeEach(func() {
+					wffcPVC.Annotations = map[string]string{
+						constants.KubernetesSelectedNodeAnnotationKey: "node1",
+					}
+				})
+
+				When("Node does not exist", func() {
+					It("returns error", func() {
+						err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(
+							ContainSubstring("cannot get Node \"node1\": nodes \"node1\" not found"))
+					})
+				})
+
+				When("Node's zone doesn't match the VM's zone", func() {
+					BeforeEach(func() {
+						node = &corev1.Node{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "node1",
+								Labels: map[string]string{
+									corev1.LabelTopologyZone: "node2",
+								},
+							},
+						}
+						initObjects = append(initObjects, node)
+					})
+
+					It("returns error", func() {
+						err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(
+							ContainSubstring("node \"node1\" is not in the VM's zone \"my-zone\", but in zone \"node2\""))
+					})
+				})
+
+				When("Node exists and is in the VM's zone", func() {
+					BeforeEach(func() {
+						node = &corev1.Node{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "node1",
+								Labels: map[string]string{
+									corev1.LabelTopologyZone: zoneName,
+								},
+							},
+						}
+						initObjects = append(initObjects, node)
+					})
+
+					It("returns success", func() {
+						err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+						Expect(err).ToNot(HaveOccurred())
+					})
+				})
+			})
+
+			When("StorageClass does not exist", func() {
+				BeforeEach(func() {
+					wffcPVC.Spec.StorageClassName = ptr.To("bogus")
+				})
+
+				It("returns error", func() {
+					err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("cannot get StorageClass for PVC"))
+				})
+			})
+
+			When("VM does not have Zone assigned", func() {
+				BeforeEach(func() {
+					vm.Status.Zone = ""
+				})
+
+				It("returns error", func() {
+					err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("VM does not have Zone set"))
+				})
+			})
+
+			It("returns success", func() {
+				err := reconciler.HandlePVCWithWFFC(volCtx, *vmVol)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Adds node-is-zone and selected-node annotation to PVC", func() {
+					pvc := &corev1.PersistentVolumeClaim{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(wffcPVC), pvc)).To(Succeed())
+					Expect(pvc.Annotations).To(HaveKeyWithValue(volumebatchutils.CNSSelectedNodeIsZoneAnnotationKey, "true"))
+					Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, zoneName))
+				})
+			})
+		})
+	})
+}

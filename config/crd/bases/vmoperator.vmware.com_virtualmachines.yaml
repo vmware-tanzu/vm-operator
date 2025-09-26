@@ -14561,6 +14561,15 @@ spec:
                           - name
                           - type
                           x-kubernetes-list-type: map
+                        scsiType:
+                          description: SCSIType describes the observed type of SCSI
+                            controller.
+                          enum:
+                          - ParaVirtual
+                          - BusLogic
+                          - LsiLogic
+                          - LsiLogicSAS
+                          type: string
                         type:
                           description: Type describes the observed type of the controller.
                           enum:

@@ -163,6 +163,11 @@ type VirtualControllerStatus struct {
 	Type VirtualControllerType `json:"type"`
 
 	// +optional
+
+	// SCSIType describes the observed type of SCSI controller.
+	SCSIType SCSIControllerType `json:"scsiType,omitempty"`
+
+	// +optional
 	// +listType=map
 	// +listMapKey=name
 	// +listMapKey=type

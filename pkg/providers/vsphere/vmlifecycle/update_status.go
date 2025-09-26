@@ -1653,13 +1653,8 @@ func reconcileStatusController(
 		vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
 	}
 
-	var (
-		// Map controllers to device key and to their busNumber+type.
-		controllerKeyMap = make(map[int32]*vmopv1.VirtualControllerStatus)
-		controllerMap    = make(map[string]*vmopv1.VirtualControllerStatus)
-	)
-
 	// Collect all the controllers.
+	controllerKeyMap := make(map[int32]*vmopv1.VirtualControllerStatus)
 	for _, device := range moVM.Config.Hardware.Device {
 		var cs *vmopv1.VirtualControllerStatus
 
@@ -1670,15 +1665,15 @@ func reconcileStatusController(
 				Type:      vmopv1.VirtualControllerTypeIDE,
 			}
 
-		case *vimtypes.VirtualSCSIController:
+		case vimtypes.BaseVirtualSCSIController:
 			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
+				BusNumber: ctrl.GetVirtualSCSIController().BusNumber,
 				Type:      vmopv1.VirtualControllerTypeSCSI,
 			}
 
-		case *vimtypes.VirtualSATAController:
+		case vimtypes.BaseVirtualSATAController:
 			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
+				BusNumber: ctrl.GetVirtualSATAController().BusNumber,
 				Type:      vmopv1.VirtualControllerTypeSATA,
 			}
 
@@ -1690,10 +1685,22 @@ func reconcileStatusController(
 		}
 
 		if cs != nil {
+
+			if cs.Type == vmopv1.VirtualControllerTypeSCSI {
+				switch device.(type) {
+				case *vimtypes.ParaVirtualSCSIController:
+					cs.SCSIType = vmopv1.SCSIControllerTypeParaVirtualSCSI
+				case *vimtypes.VirtualBusLogicController:
+					cs.SCSIType = vmopv1.SCSIControllerTypeBusLogic
+				case *vimtypes.VirtualLsiLogicController:
+					cs.SCSIType = vmopv1.SCSIControllerTypeLsiLogic
+				case *vimtypes.VirtualLsiLogicSASController:
+					cs.SCSIType = vmopv1.SCSIControllerTypeLsiLogicSAS
+				}
+			}
+
 			deviceKey := device.GetVirtualDevice().Key
 			controllerKeyMap[deviceKey] = cs
-			displayKey := fmt.Sprintf("%d-%s", cs.BusNumber, cs.Type)
-			controllerMap[displayKey] = cs
 		}
 	}
 
@@ -1706,18 +1713,28 @@ func reconcileStatusController(
 
 		switch dev := device.(type) {
 		case *vimtypes.VirtualDisk:
+			name := vmopv1util.GetVirtualDiskName(dev)
+			if name == "" {
+				continue
+			}
 			deviceStatus := vmopv1.VirtualDeviceStatus{
 				Type:       vmopv1.VirtualDeviceTypeDisk,
 				UnitNumber: unitNumber,
+				Name:       name,
 			}
 			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
 				c.Devices = append(c.Devices, deviceStatus)
 			}
 
 		case *vimtypes.VirtualCdrom:
+			name := vmopv1util.GetVirtualCdromName(dev)
+			if name == "" {
+				continue
+			}
 			deviceStatus := vmopv1.VirtualDeviceStatus{
 				Type:       vmopv1.VirtualDeviceTypeCDROM,
 				UnitNumber: unitNumber,
+				Name:       name,
 			}
 			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
 				c.Devices = append(c.Devices, deviceStatus)
@@ -1728,9 +1745,9 @@ func reconcileStatusController(
 	// Convert map to slice and sort for consistent output.
 	var (
 		ctlStatusesIndex int
-		ctlStatuses      = make([]vmopv1.VirtualControllerStatus, len(controllerMap))
+		ctlStatuses      = make([]vmopv1.VirtualControllerStatus, len(controllerKeyMap))
 	)
-	for _, cs := range controllerMap {
+	for _, cs := range controllerKeyMap {
 
 		// Sort the device statuses by type and unit number.
 		slices.SortFunc(cs.Devices, func(a, b vmopv1.VirtualDeviceStatus) int {

@@ -189,7 +189,9 @@ export BUILD_BRANCH
 export BUILD_COMMIT
 export BUILD_VERSION
 
-CGO_ENABLED ?= 0
+# Enable CGO to use BoringCrypto for Go FIPS compliance on Linux.
+CGO_ENABLED ?= 1
+GOEXPERIMENT ?= boringcrypto
 
 BUILDINFO_LDFLAGS = "\
 -X $(PROJECT_SLUG)/pkg.BuildVersion=$(BUILD_VERSION) \

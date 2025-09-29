@@ -1298,10 +1298,10 @@ func unitTestsMutating() {
 			It("should add the created-at annotations", func() {
 				Expect(vm.Annotations).ToNot(HaveKey(constants.CreatedAtBuildVersionAnnotationKey))
 				Expect(vm.Annotations).ToNot(HaveKey(constants.CreatedAtSchemaVersionAnnotationKey))
-				mutation.SetCreatedAtAnnotations(
-					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-						config.BuildVersion = "v1"
-					}), vm)
+				pkgcfg.UpdateContext(ctx.Context, func(config *pkgcfg.Config) {
+					config.BuildVersion = "v1"
+				})
+				_, _ = mutation.SetCreatedAtAnnotations(&ctx.WebhookRequestContext, nil, vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
@@ -1310,10 +1310,10 @@ func unitTestsMutating() {
 		When("vm does have some existing annotations", func() {
 			It("should add the created-at annotations", func() {
 				vm.Annotations = map[string]string{"k1": "v1", "k2": "v2"}
-				mutation.SetCreatedAtAnnotations(
-					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-						config.BuildVersion = "v1"
-					}), vm)
+				pkgcfg.UpdateContext(ctx.Context, func(config *pkgcfg.Config) {
+					config.BuildVersion = "v1"
+				})
+				_, _ = mutation.SetCreatedAtAnnotations(&ctx.WebhookRequestContext, nil, vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
@@ -1325,10 +1325,10 @@ func unitTestsMutating() {
 					constants.CreatedAtBuildVersionAnnotationKey:  "fake-build-version",
 					constants.CreatedAtSchemaVersionAnnotationKey: "fake-schema-version",
 				}
-				mutation.SetCreatedAtAnnotations(
-					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-						config.BuildVersion = "v1"
-					}), vm)
+				pkgcfg.UpdateContext(ctx.Context, func(config *pkgcfg.Config) {
+					config.BuildVersion = "v1"
+				})
+				_, _ = mutation.SetCreatedAtAnnotations(&ctx.WebhookRequestContext, nil, vm)
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
 				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.GroupVersion.Version))
 			})
@@ -1475,7 +1475,7 @@ func unitTestsMutating() {
 		})
 
 		It("should set the default image kind if previously set to default", func() {
-			mutation.SetDefaultCdromImgKindOnUpdate(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+			_, _ = mutation.SetDefaultCdromImgKindOnUpdate(&ctx.WebhookRequestContext, nil, ctx.vm, oldVM)
 			Expect(ctx.vm.Spec.Hardware.Cdrom[0].Image.Kind).To(Equal("VirtualMachineImage"))
 			Expect(ctx.vm.Spec.Hardware.Cdrom[1].Image.Kind).To(BeEmpty())
 		})

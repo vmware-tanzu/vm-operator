@@ -31,12 +31,16 @@ import (
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
 )
 
 const (
 	// OvfEnvironmentTransportGuestInfo is the OVF transport type that uses
 	// GuestInfo. The other valid type is "iso".
 	OvfEnvironmentTransportGuestInfo = "com.vmware.guestInfo"
+
+	// GOSCVCFAHashID is the VCFA ID key name in the GOSC customization extra config.
+	GOSCVCFAHashID = "vcfaVmHashKey"
 
 	redacted = "***"
 )
@@ -48,6 +52,7 @@ type BootstrapData struct {
 
 	CloudConfig *cloudinit.CloudConfigSecretData
 	Sysprep     *sysprep.SecretData
+	LinuxPrep   *linuxprep.SecretData
 }
 
 type TemplateRenderFunc func(string, string) string
@@ -452,6 +457,17 @@ func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.Customiza
 		cloudInitPrep := *identity
 		cloudInitPrep.Userdata = redacted
 		cs.Identity = &cloudInitPrep
+	case *vimtypes.CustomizationLinuxPrep:
+		linuxPrep := *identity
+		if linuxPrep.Password != nil {
+			password := *linuxPrep.Password
+			password.Value = redacted
+			linuxPrep.Password = &password
+		}
+		if linuxPrep.ScriptText != "" {
+			linuxPrep.ScriptText = redacted
+		}
+		cs.Identity = &linuxPrep
 	case *vimtypes.CustomizationSysprepText:
 		sysPrepText := *identity
 		sysPrepText.Value = redacted
@@ -471,6 +487,9 @@ func SanitizeCustomizationSpec(cs vimtypes.CustomizationSpec) vimtypes.Customiza
 				password.Value = redacted
 			}
 			sysPrep.Identification.DomainAdminPassword = &password
+		}
+		if sysPrep.ScriptText != "" {
+			sysPrep.ScriptText = redacted
 		}
 		cs.Identity = &sysPrep
 	}

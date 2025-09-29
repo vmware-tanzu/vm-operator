@@ -17,7 +17,7 @@ var suite = builder.NewTestSuite()
 var _ = BeforeSuite(suite.BeforeSuite)
 var _ = AfterSuite(suite.AfterSuite)
 
-func TestCloudInit(t *testing.T) {
+func TestSysprep(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "vSphere Provider Sysprep Suite")
 }

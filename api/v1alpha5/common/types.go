@@ -108,6 +108,18 @@ type NameValuePair struct {
 	Value string `json:"value,omitempty"`
 }
 
+// PasswordSecretKeySelector references the password value from a Secret resource.
+type PasswordSecretKeySelector struct {
+	// Name is the name of the secret.
+	Name string `json:"name"`
+
+	// +optional
+	// +kubebuilder:default=password
+
+	// Key is the key in the secret that specifies the requested data.
+	Key string `json:"key,omitempty"`
+}
+
 // ObjectMeta is metadata that all persisted resources must have, which includes
 // all objects users must create. This is a copy of customizable fields from
 // metav1.ObjectMeta.

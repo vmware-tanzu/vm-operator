@@ -97,6 +97,12 @@ func Convert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMa
 	return autoConvert_v1alpha5_VirtualMachineBootstrapCloudInitSpec_To_v1alpha3_VirtualMachineBootstrapCloudInitSpec(in, out, s)
 }
 
+func Convert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha3_VirtualMachineBootstrapLinuxPrepSpec(
+	in *vmopv1.VirtualMachineBootstrapLinuxPrepSpec, out *VirtualMachineBootstrapLinuxPrepSpec, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha5_VirtualMachineBootstrapLinuxPrepSpec_To_v1alpha3_VirtualMachineBootstrapLinuxPrepSpec(in, out, s)
+}
+
 func Convert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha3_PersistentVolumeClaimVolumeSource(
 	in *vmopv1.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s apiconversion.Scope) error {
 
@@ -261,6 +267,31 @@ func restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, src *vm
 	}
 }
 
+func restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if lp := bs.LinuxPrep; lp != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.LinuxPrep != nil {
+				dst.Spec.Bootstrap.LinuxPrep.ExpirePasswordAfterNextLogin = lp.ExpirePasswordAfterNextLogin
+				dst.Spec.Bootstrap.LinuxPrep.Password = lp.Password
+				dst.Spec.Bootstrap.LinuxPrep.ScriptText = lp.ScriptText
+			}
+		}
+	}
+}
+
+func restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, src *vmopv1.VirtualMachine) {
+	if bs := src.Spec.Bootstrap; bs != nil {
+		if sp := bs.Sysprep; sp != nil && sp.Sysprep != nil {
+			if dst.Spec.Bootstrap != nil && dst.Spec.Bootstrap.Sysprep != nil {
+				if dst.Spec.Bootstrap.Sysprep.Sysprep != nil {
+					dst.Spec.Bootstrap.Sysprep.Sysprep.ExpirePasswordAfterNextLogin = sp.Sysprep.ExpirePasswordAfterNextLogin
+					dst.Spec.Bootstrap.Sysprep.Sysprep.ScriptText = sp.Sysprep.ScriptText
+				}
+			}
+		}
+	}
+}
+
 func restore_v1alpha5_VirtualMachinePolicies(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Policies = slices.Clone(src.Spec.Policies)
 }
@@ -281,6 +312,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	// BEGIN RESTORE
 
 	restore_v1alpha5_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapLinuxPrep(dst, restored)
+	restore_v1alpha5_VirtualMachineBootstrapSysprep(dst, restored)
 	restore_v1alpha5_VirtualMachinePromoteDisksMode(dst, restored)
 	restore_v1alpha5_VirtualMachineBootOptions(dst, restored)
 	restore_v1alpha5_VirtualMachineAffinitySpec(dst, restored)

@@ -1653,106 +1653,149 @@ func reconcileStatusController(
 		vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
 	}
 
-	var (
-		// Map controllers to device key and to their busNumber+type.
-		controllerKeyMap = make(map[int32]*vmopv1.VirtualControllerStatus)
-		controllerMap    = make(map[string]*vmopv1.VirtualControllerStatus)
-	)
+	// Collect all the controllers by type and build controller key map
+	ideControllers := make(map[int32]*vmopv1.IDEControllerStatus)
+	nvmeControllers := make(map[int32]*vmopv1.NVMEControllerStatus)
+	sataControllers := make(map[int32]*vmopv1.SATAControllerStatus)
+	scsiControllers := make(map[int32]*vmopv1.SCSIControllerStatus)
+	controllerKeyMap := make(map[int32]vmopv1.VirtualControllerType)
+	controllerKeyToBusNumber := make(map[int32]int32)
 
-	// Collect all the controllers.
 	for _, device := range moVM.Config.Hardware.Device {
-		var cs *vmopv1.VirtualControllerStatus
+		deviceKey := device.GetVirtualDevice().Key
 
 		switch ctrl := device.(type) {
 		case *vimtypes.VirtualIDEController:
-			cs = &vmopv1.VirtualControllerStatus{
+			ideControllers[ctrl.BusNumber] = &vmopv1.IDEControllerStatus{
 				BusNumber: ctrl.BusNumber,
-				Type:      vmopv1.VirtualControllerTypeIDE,
+				DeviceKey: deviceKey,
+			}
+			controllerKeyMap[deviceKey] = vmopv1.VirtualControllerTypeIDE
+			controllerKeyToBusNumber[deviceKey] = ctrl.BusNumber
+
+		case vimtypes.BaseVirtualSCSIController:
+			scsiCtrl := ctrl.GetVirtualSCSIController()
+			var scsiType vmopv1.SCSIControllerType
+			switch device.(type) {
+			case *vimtypes.ParaVirtualSCSIController:
+				scsiType = vmopv1.SCSIControllerTypeParaVirtualSCSI
+			case *vimtypes.VirtualBusLogicController:
+				scsiType = vmopv1.SCSIControllerTypeBusLogic
+			case *vimtypes.VirtualLsiLogicController:
+				scsiType = vmopv1.SCSIControllerTypeLsiLogic
+			case *vimtypes.VirtualLsiLogicSASController:
+				scsiType = vmopv1.SCSIControllerTypeLsiLogicSAS
 			}
 
-		case *vimtypes.VirtualSCSIController:
-			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
-				Type:      vmopv1.VirtualControllerTypeSCSI,
+			// Map sharing mode from vSphere API
+			var sharingMode vmopv1.VirtualControllerSharingMode
+			switch scsiCtrl.SharedBus {
+			case vimtypes.VirtualSCSISharingNoSharing:
+				sharingMode = vmopv1.VirtualControllerSharingModeNone
+			case vimtypes.VirtualSCSISharingPhysicalSharing:
+				sharingMode = vmopv1.VirtualControllerSharingModePhysical
+			case vimtypes.VirtualSCSISharingVirtualSharing:
+				sharingMode = vmopv1.VirtualControllerSharingModeVirtual
 			}
 
-		case *vimtypes.VirtualSATAController:
-			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
-				Type:      vmopv1.VirtualControllerTypeSATA,
+			scsiControllers[scsiCtrl.BusNumber] = &vmopv1.SCSIControllerStatus{
+				BusNumber:   scsiCtrl.BusNumber,
+				Type:        scsiType,
+				DeviceKey:   deviceKey,
+				SharingMode: sharingMode,
 			}
+			controllerKeyMap[deviceKey] = vmopv1.VirtualControllerTypeSCSI
+			controllerKeyToBusNumber[deviceKey] = scsiCtrl.BusNumber
+
+		case vimtypes.BaseVirtualSATAController:
+			sataCtrl := ctrl.GetVirtualSATAController()
+			sataControllers[sataCtrl.BusNumber] = &vmopv1.SATAControllerStatus{
+				BusNumber: sataCtrl.BusNumber,
+				DeviceKey: deviceKey,
+			}
+			controllerKeyMap[deviceKey] = vmopv1.VirtualControllerTypeSATA
+			controllerKeyToBusNumber[deviceKey] = sataCtrl.BusNumber
 
 		case *vimtypes.VirtualNVMEController:
-			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
-				Type:      vmopv1.VirtualControllerTypeNVME,
+			// Map sharing mode from vSphere API
+			var sharingMode vmopv1.VirtualControllerSharingMode
+			switch ctrl.SharedBus {
+			case string(vimtypes.VirtualNVMEControllerSharingNoSharing):
+				sharingMode = vmopv1.VirtualControllerSharingModeNone
+			case string(vimtypes.VirtualNVMEControllerSharingPhysicalSharing):
+				sharingMode = vmopv1.VirtualControllerSharingModePhysical
 			}
-		}
 
-		if cs != nil {
-			deviceKey := device.GetVirtualDevice().Key
-			controllerKeyMap[deviceKey] = cs
-			displayKey := fmt.Sprintf("%d-%s", cs.BusNumber, cs.Type)
-			controllerMap[displayKey] = cs
+			nvmeControllers[ctrl.BusNumber] = &vmopv1.NVMEControllerStatus{
+				BusNumber:   ctrl.BusNumber,
+				DeviceKey:   deviceKey,
+				SharingMode: sharingMode,
+			}
+			controllerKeyMap[deviceKey] = vmopv1.VirtualControllerTypeNVME
+			controllerKeyToBusNumber[deviceKey] = ctrl.BusNumber
 		}
 	}
 
 	// Collect all devices attached to controllers.
 	for _, device := range moVM.Config.Hardware.Device {
-		var unitNumber int32
+		var (
+			unitNumber    int32
+			deviceName    string
+			deviceType    vmopv1.VirtualDeviceType
+			controllerKey int32
+		)
 		if u := device.GetVirtualDevice().UnitNumber; u != nil {
 			unitNumber = *u
 		}
 
 		switch dev := device.(type) {
 		case *vimtypes.VirtualDisk:
-			deviceStatus := vmopv1.VirtualDeviceStatus{
-				Type:       vmopv1.VirtualDeviceTypeDisk,
-				UnitNumber: unitNumber,
-			}
-			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
-				c.Devices = append(c.Devices, deviceStatus)
-			}
+			deviceName = vmopv1util.GetVirtualDiskName(dev)
+			deviceType = vmopv1.VirtualDeviceTypeDisk
+			controllerKey = dev.ControllerKey
 
 		case *vimtypes.VirtualCdrom:
-			deviceStatus := vmopv1.VirtualDeviceStatus{
-				Type:       vmopv1.VirtualDeviceTypeCDROM,
-				UnitNumber: unitNumber,
-			}
-			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
-				c.Devices = append(c.Devices, deviceStatus)
-			}
+			deviceName = vmopv1util.GetVirtualCdromName(dev)
+			deviceType = vmopv1.VirtualDeviceTypeCDROM
+			controllerKey = dev.ControllerKey
+		}
+
+		if deviceName == "" {
+			continue
+		}
+
+		controllerType, exists := controllerKeyMap[controllerKey]
+		if !exists {
+			continue
+		}
+
+		busNumber, exists := controllerKeyToBusNumber[controllerKey]
+		if !exists {
+			continue
+		}
+
+		deviceStatus := vmopv1.VirtualDeviceStatus{
+			Type:       deviceType,
+			UnitNumber: unitNumber,
+			Name:       deviceName,
+		}
+		switch controllerType {
+		case vmopv1.VirtualControllerTypeIDE:
+			ideControllers[busNumber].Devices = append(ideControllers[busNumber].Devices, deviceStatus)
+		case vmopv1.VirtualControllerTypeNVME:
+			nvmeControllers[busNumber].Devices = append(nvmeControllers[busNumber].Devices, deviceStatus)
+		case vmopv1.VirtualControllerTypeSATA:
+			sataControllers[busNumber].Devices = append(sataControllers[busNumber].Devices, deviceStatus)
+		case vmopv1.VirtualControllerTypeSCSI:
+			scsiControllers[busNumber].Devices = append(scsiControllers[busNumber].Devices, deviceStatus)
 		}
 	}
 
-	// Convert map to slice and sort for consistent output.
-	var (
-		ctlStatusesIndex int
-		ctlStatuses      = make([]vmopv1.VirtualControllerStatus, len(controllerMap))
-	)
-	for _, cs := range controllerMap {
-
-		// Sort the device statuses by type and unit number.
-		slices.SortFunc(cs.Devices, func(a, b vmopv1.VirtualDeviceStatus) int {
-			if a.Type != b.Type {
-				return strings.Compare(string(a.Type), string(b.Type))
-			}
-			return int(a.UnitNumber - b.UnitNumber)
-		})
-
-		ctlStatuses[ctlStatusesIndex] = *cs
-		ctlStatusesIndex++
-	}
-
-	// Sort controllers by type and then by bus number
-	slices.SortFunc(ctlStatuses, func(a, b vmopv1.VirtualControllerStatus) int {
-		if a.Type != b.Type {
-			return strings.Compare(string(a.Type), string(b.Type))
-		}
-		return int(a.BusNumber - b.BusNumber)
-	})
-
-	vm.Status.Hardware.Controllers = ctlStatuses
+	// Sort devices within each controller and populate the status arrays
+	vm.Status.Hardware.IDEControllers = vmopv1util.ConvertControllersGeneric(ideControllers)
+	vm.Status.Hardware.NVMEControllers = vmopv1util.ConvertControllersGeneric(nvmeControllers)
+	vm.Status.Hardware.SATAControllers = vmopv1util.ConvertControllersGeneric(sataControllers)
+	vm.Status.Hardware.SCSIControllers = vmopv1util.ConvertControllersGeneric(scsiControllers)
 
 	return nil
 }

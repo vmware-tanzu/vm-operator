@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -44,6 +46,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
 const (
@@ -408,6 +411,27 @@ func (r *Reconciler) checkIsSourceValid(ctx *pkgctx.VirtualMachinePublishRequest
 		return err
 	}
 
+	// Ensure that the source VM does not have a mix of encrypted and unencrypted disks
+	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory && ctx.VM.Status.Crypto != nil {
+		if slices.Contains(ctx.VM.Status.Crypto.Encrypted, vmopv1.VirtualMachineEncryptionTypeDisks) {
+			for _, v := range ctx.VM.Status.Volumes {
+				// If we find a disk which is unencrypted, then we have a mix of encrypted
+				// and unencrypted disks, which is invalid for publishing to inventory.
+				if v.Crypto == nil {
+					err := pkgerr.NoRequeueError{
+						Message: "source VM contains both encrypted and unencrypted disks",
+					}
+					conditions.MarkError(vmPubReq,
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid,
+						vmopv1.SourceVirtualMachineUnsupportedEncryptionReason,
+						err)
+
+					return err
+				}
+			}
+		}
+	}
+
 	conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionSourceValid)
 	return nil
 }
@@ -453,6 +477,15 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 	}
 
 	if ctx.ContentLibraryType == imgregv1.LibraryTypeInventory {
+		// Is this an encrypted VM? If so, ensure we are not publishing to a
+		// content library whose storage policy does not support encryption, and
+		// ensure that the VM does not contain a mix of encrypted and unencrypted
+		// disks.
+		if ctx.VM.Status.Crypto != nil {
+			if err := r.checkIsTargetEncryptionValid(ctx); err != nil {
+				return err
+			}
+		}
 		// Check if quota validation is needed
 		if metav1.HasLabel(ctx.ContentLibraryV1A2.ObjectMeta, pkgconst.AsyncQuotaPerformCheckAnnotationKey) {
 			if err := r.checkContentLibraryQuota(ctx); err != nil {
@@ -565,6 +598,52 @@ func (r *Reconciler) checkContentLibraryQuota(ctx *pkgctx.VirtualMachinePublishR
 		return err
 	}
 	// Quota check has completed successfully. Continue processing as normal.
+	return nil
+}
+
+// checkIsTargetEncryptionValid checks if the encryption status of the source VM's disks is compatible with
+// the target Content Library's storage profile. A source VM with encrypted disks cannot be published to
+// a Content Library whose storage profile does not support encryption. Additionally, ensure that the source VM
+// does not contain a mix of encrypted and unencrypted disks. This check is only performed if the target
+// ContentLibrary LibraryType is "Inventory".
+func (r *Reconciler) checkIsTargetEncryptionValid(ctx *pkgctx.VirtualMachinePublishRequestContext) error {
+
+	storageClassName := ctx.ContentLibraryV1A2.Spec.StorageClass
+	// This is not an error condition. If the storage class is not specified on
+	// the Content Library, then we specify no storage profile when cloning the
+	// source VM, and the clone operation will cause the target template to have
+	// the same storage policy as the source VM.
+	if storageClassName == "" {
+		return nil
+	}
+
+	sc := storagev1.StorageClass{}
+	if err := r.Get(ctx, client.ObjectKey{Name: storageClassName}, &sc); err != nil {
+		return fmt.Errorf("failed to get storageClass %q: %w", storageClassName, err)
+	}
+
+	storagePolicyID, err := kubeutil.GetStoragePolicyID(sc)
+	if err != nil {
+		return err
+	}
+
+	isEncryptedProfile, err := r.VMProvider.DoesProfileSupportEncryption(ctx, storagePolicyID)
+	if err != nil {
+		return err
+	}
+
+	if !isEncryptedProfile {
+		err := pkgerr.NoRequeueError{
+			Message: "source VM is encrypted, but target storage class does not support encryption",
+		}
+		conditions.MarkError(ctx.VMPublishRequest,
+			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+			vmopv1.TargetContentLibraryIncompatibleStorageClassReason,
+			err)
+
+		return err
+	}
+
 	return nil
 }
 

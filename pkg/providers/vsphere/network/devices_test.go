@@ -310,8 +310,9 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 			})
 
 			Context("Matches", func() {
-				const networkName1, networkName2 = "network-1", "network-2"
+				const networkName1, networkName2, networkName3 = "network-1", "network-2", "network-3"
 				const externalID1, macAddress2 = "extid-1", "macaddr-2"
+				const externalID3, macAddress3 = "extid-3", "macaddr-3"
 
 				BeforeEach(func() {
 					dev1 := &vimtypes.VirtualVmxnet3{}
@@ -320,7 +321,11 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 					dev2 := &vimtypes.VirtualE1000e{}
 					dev2.Key = 4001
 					dev2.MacAddress = macAddress2
-					devices = append(devices, dev1, dev2)
+					dev3 := &vimtypes.VirtualE1000e{}
+					dev3.Key = 4002
+					dev3.ExternalId = externalID3
+					dev3.MacAddress = macAddress3
+					devices = append(devices, dev1, dev2, dev3)
 
 					netIf1 := &vpcv1alpha1.SubnetPort{
 						ObjectMeta: metav1.ObjectMeta{
@@ -344,13 +349,30 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 							},
 						},
 					}
-					initObjs = append(initObjs, netIf1, netIf2)
+					netIf3 := &vpcv1alpha1.SubnetPort{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.VPCCRName(vmCtx.VM.Name, networkName3, "eth2"),
+							Namespace: vmCtx.VM.Namespace,
+						},
+						Status: vpcv1alpha1.SubnetPortStatus{
+							Attachment: vpcv1alpha1.PortAttachment{
+								ID: externalID3,
+							},
+						},
+					}
+					initObjs = append(initObjs, netIf1, netIf2, netIf3)
 
 					vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name: "eth1",
 							Network: &vmopv1common.PartialObjectRef{
 								Name: networkName2,
+							},
+						},
+						{
+							Name: "eth2",
+							Network: &vmopv1common.PartialObjectRef{
+								Name: networkName3,
 							},
 						},
 						{
@@ -363,9 +385,54 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 				})
 
 				It("returns expected mapping", func() {
-					Expect(devKeyToIdx).To(HaveLen(2))
-					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4000), 1))
+					Expect(devKeyToIdx).To(HaveLen(3))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4000), 2))
 					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4001), 0))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4002), 1))
+				})
+			})
+
+			Context("With VPC ignore MAC address", func() {
+				const networkName = "network-1"
+				const externalID = "extid-1"
+				const devMacAddress = "00:50:56:00:00:01"
+
+				BeforeEach(func() {
+					dev1 := &vimtypes.VirtualVmxnet3{}
+					dev1.Key = 4000
+					dev1.ExternalId = externalID
+					dev1.MacAddress = devMacAddress
+					devices = append(devices, dev1)
+
+					netIf1 := &vpcv1alpha1.SubnetPort{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.VPCCRName(vmCtx.VM.Name, networkName, "eth0"),
+							Namespace: vmCtx.VM.Namespace,
+						},
+						Status: vpcv1alpha1.SubnetPortStatus{
+							Attachment: vpcv1alpha1.PortAttachment{
+								ID: externalID,
+							},
+							NetworkInterfaceConfig: vpcv1alpha1.NetworkInterfaceConfig{
+								MACAddress: "00:00:00:00:00:00",
+							},
+						},
+					}
+					initObjs = append(initObjs, netIf1)
+
+					vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+							Network: &vmopv1common.PartialObjectRef{
+								Name: networkName,
+							},
+						},
+					}
+				})
+
+				It("returns expected mapping", func() {
+					Expect(devKeyToIdx).To(HaveLen(1))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4000), 0))
 				})
 			})
 		})

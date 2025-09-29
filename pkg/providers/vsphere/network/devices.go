@@ -274,10 +274,15 @@ func findMatchingEthCardVPCSubnetPort(
 			continue
 		}
 
-		// TODO: Relax this to check for just MacAddress during VPC backup/restore.
 		ethCard := bEthCard.GetVirtualEthernetCard()
-		if ethCard.ExternalId == subnetPort.Status.Attachment.ID &&
-			strings.EqualFold(ethCard.MacAddress, subnetPort.Status.NetworkInterfaceConfig.MACAddress) {
+		if macAddress := subnetPort.Status.NetworkInterfaceConfig.MACAddress; macAddress != "" {
+			if !strings.EqualFold(macAddress, ethCard.MacAddress) {
+				continue
+			}
+		}
+
+		// TODO: Relax this to check during VPC backup/restore.
+		if ethCard.ExternalId == subnetPort.Status.Attachment.ID {
 			return i
 		}
 	}

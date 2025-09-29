@@ -14,6 +14,25 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
+func Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha3_VirtualMachineImageDiskInfo(
+	in *vmopv1.VirtualMachineImageDiskInfo, out *VirtualMachineImageDiskInfo, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha3_VirtualMachineImageDiskInfo(in, out, s); err != nil {
+		return err
+	}
+
+	out.Capacity = in.Limit
+	out.Size = in.Requested
+
+	return nil
+}
+
+func Convert_v1alpha3_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo(
+	in *VirtualMachineImageDiskInfo, out *vmopv1.VirtualMachineImageDiskInfo, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha3_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo(in, out, s)
+}
+
 func Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha3_VirtualMachineCryptoStatus(
 	in *vmopv1.VirtualMachineCryptoStatus, out *VirtualMachineCryptoStatus, s apiconversion.Scope) error {
 

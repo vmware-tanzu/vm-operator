@@ -4383,27 +4383,106 @@ func unitTestsValidateUpdate() {
 
 	Context("Bootstrap", func() {
 		DescribeTable("update", doTest,
-			Entry("disallow bootstrap update if VM is desired powered on",
+
+			Entry("allow no bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = nil
+						ctx.vm.Spec.Bootstrap = nil
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow setting bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = nil
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow setting specific bootstrap provider",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
-						ctx.oldVM.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
-								Sysprep: &sysprep.Sysprep{
-									UserData: sysprep.UserData{},
-								},
-							},
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
 						}
-						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
-					expectAllowed: false,
-					validate: doValidateWithMsg(
-						`spec.bootstrap: Forbidden: updates to this field is not allowed when VM power is on`,
-					),
+					expectAllowed: true,
 				},
 			),
+			Entry("disallow clearing all bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+						ctx.vm.Spec.Bootstrap = nil
+					},
+					validate: doValidateWithMsg(`spec.bootstrap: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("disallow unsetting CloudInit",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+					},
+					validate: doValidateWithMsg(`spec.bootstrap.cloudInit: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("disallow unsetting LinuxPrep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+					},
+					validate: doValidateWithMsg(`spec.bootstrap.linuxPrep: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("disallow unsetting Sysprep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+					},
+					validate: doValidateWithMsg(`spec.bootstrap.sysprep: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("disallow changing bootstrap providers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
+					},
+					validate: doValidateWithMsg(`spec.bootstrap.linuxPrep: Forbidden: bootstrap provider type cannot be changed`),
+				},
+			),
+			Entry("allow changing bootstrap providers if privileged",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
 			Entry("allow bootstrap update if VM is desired powered on with halt annotation",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

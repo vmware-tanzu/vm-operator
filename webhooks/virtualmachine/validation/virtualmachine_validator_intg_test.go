@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -275,43 +274,6 @@ func intgTestsValidateUpdate() {
 	Context("VirtualMachine update while VM is powered on", func() {
 		BeforeEach(func() {
 			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-		})
-
-		When("Bootstrap is updated", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-						RawCloudConfig: &common.SecretKeySelector{},
-					},
-				}
-			})
-
-			It("rejects the request", func() {
-				expectedReason := field.Forbidden(field.NewPath("spec", "bootstrap"),
-					"updates to this field is not allowed when VM power is on").Error()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(expectedReason))
-			})
-		})
-
-		When("Network is updated", func() {
-			BeforeEach(func() {
-				ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-					HostName: "my-new-name",
-					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
-						{
-							Name: "eth100",
-						},
-					},
-				}
-			})
-
-			It("rejects the request", func() {
-				expectedReason := field.Forbidden(field.NewPath("spec", "network", "interfaces").Index(0).Child("name"),
-					"field is immutable").Error()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(expectedReason))
-			})
 		})
 
 		When("Volume for PVC is added", func() {

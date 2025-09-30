@@ -16,3 +16,4 @@ This section provides information about workload resources, such as:
 In addition to the workload resources themselves, there is documentation related to broader topics related to workloads:
 
 * [Customizing a Guest](./guest.md)
+* [vSphere Policies](./vsphere-policies.md)

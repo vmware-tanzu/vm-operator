@@ -6,6 +6,7 @@ package v1alpha2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -159,9 +160,6 @@ type VirtualMachineGroupPlacementDatastoreStatus struct {
 }
 
 type VirtualMachinePlacementStatus struct {
-	// Name is the name of VirtualMachine member of this group.
-	Name string `json:"name"`
-
 	// +optional
 
 	// Zone describes the recommended zone for this VM.
@@ -196,6 +194,11 @@ type VirtualMachineGroupMemberStatus struct {
 	// Kind is the kind of this member, which can be either VirtualMachine or
 	// VirtualMachineGroup.
 	Kind string `json:"kind"`
+
+	// +optional
+
+	// UID is the K8s metadata UID of this current member object.
+	UID types.UID `json:"uid,omitempty"`
 
 	// +optional
 

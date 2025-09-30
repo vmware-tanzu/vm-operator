@@ -155,7 +155,6 @@ func vmGroupTests() {
 		ExpectWithOffset(1, ms.Kind).To(Equal("VirtualMachine"), "Unexpected Kind")
 		ExpectWithOffset(1, ms.Placement).ToNot(BeNil(), "Missing Placement")
 		ExpectWithOffset(1, pkgcond.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue(), "No placement ready condition")
-		ExpectWithOffset(1, ms.Placement.Name).ToNot(BeEmpty(), "Missing Placement Name")
 		ExpectWithOffset(1, ms.Placement.Zone).ToNot(BeEmpty(), "Missing Placement Zone")
 		ExpectWithOffset(1, ms.Placement.Pool).ToNot(BeEmpty(), "Missing Placement Pool")
 		ExpectWithOffset(1, ms.Placement.Node).To(BeEmpty(), "Has Placement Node")

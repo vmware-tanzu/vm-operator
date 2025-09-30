@@ -24,6 +24,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
+	types "k8s.io/apimachinery/pkg/types"
 )
 
 func init() {
@@ -2344,6 +2345,7 @@ func Convert_v1alpha5_VirtualMachineGroupList_To_v1alpha3_VirtualMachineGroupLis
 func autoConvert_v1alpha3_VirtualMachineGroupMemberStatus_To_v1alpha5_VirtualMachineGroupMemberStatus(in *VirtualMachineGroupMemberStatus, out *v1alpha5.VirtualMachineGroupMemberStatus, s conversion.Scope) error {
 	out.Name = in.Name
 	out.Kind = in.Kind
+	out.UID = types.UID(in.UID)
 	out.Placement = (*v1alpha5.VirtualMachinePlacementStatus)(unsafe.Pointer(in.Placement))
 	out.PowerState = (*v1alpha5.VirtualMachinePowerState)(unsafe.Pointer(in.PowerState))
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
@@ -2358,6 +2360,7 @@ func Convert_v1alpha3_VirtualMachineGroupMemberStatus_To_v1alpha5_VirtualMachine
 func autoConvert_v1alpha5_VirtualMachineGroupMemberStatus_To_v1alpha3_VirtualMachineGroupMemberStatus(in *v1alpha5.VirtualMachineGroupMemberStatus, out *VirtualMachineGroupMemberStatus, s conversion.Scope) error {
 	out.Name = in.Name
 	out.Kind = in.Kind
+	out.UID = types.UID(in.UID)
 	out.Placement = (*VirtualMachinePlacementStatus)(unsafe.Pointer(in.Placement))
 	out.PowerState = (*VirtualMachinePowerState)(unsafe.Pointer(in.PowerState))
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
@@ -3234,7 +3237,6 @@ func Convert_v1alpha5_VirtualMachineNetworkStatus_To_v1alpha3_VirtualMachineNetw
 }
 
 func autoConvert_v1alpha3_VirtualMachinePlacementStatus_To_v1alpha5_VirtualMachinePlacementStatus(in *VirtualMachinePlacementStatus, out *v1alpha5.VirtualMachinePlacementStatus, s conversion.Scope) error {
-	out.Name = in.Name
 	out.Zone = in.Zone
 	out.Node = in.Node
 	out.Pool = in.Pool
@@ -3248,7 +3250,6 @@ func Convert_v1alpha3_VirtualMachinePlacementStatus_To_v1alpha5_VirtualMachinePl
 }
 
 func autoConvert_v1alpha5_VirtualMachinePlacementStatus_To_v1alpha3_VirtualMachinePlacementStatus(in *v1alpha5.VirtualMachinePlacementStatus, out *VirtualMachinePlacementStatus, s conversion.Scope) error {
-	out.Name = in.Name
 	out.Zone = in.Zone
 	out.Node = in.Node
 	out.Pool = in.Pool

@@ -375,7 +375,7 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 			}
 			logger.V(4).Info("Publishing VM as cloned template")
 
-			return virtualmachine.CloneVM(vmCtx, client.VimClient(), vmPub, v1a2contentLibrary, storagePolicyID, actID)
+			return virtualmachine.CloneVM(vmCtx, client.VimClient(), vmPub, v1a2contentLibrary, storagePolicyID)
 		}
 	}
 	logger.V(4).Info("Publishing VM as OVF")

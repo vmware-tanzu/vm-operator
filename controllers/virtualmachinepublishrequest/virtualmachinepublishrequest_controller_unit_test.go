@@ -25,6 +25,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	imgregv1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha2"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
@@ -35,6 +36,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -409,6 +411,125 @@ func unitTestsReconcile() {
 				It("should not return an error to allow continued processing", func() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+		})
+
+		When("source VM is encrypted", func() {
+			const oneGiBInBytes = 1 /* B */ * 1024 /* KiB */ * 1024 /* MiB */ * 1024 /* GiB */
+
+			var clv1a2 *imgregv1.ContentLibrary
+			BeforeEach(func() {
+				clv1a2 = builder.DummyContentLibraryV1A2("dummy-cl", vm.Namespace, "dummy-id")
+				initObjects = append(initObjects, clv1a2)
+
+				vm.Status.Crypto = &vmopv1.VirtualMachineCryptoStatus{
+					Encrypted: []vmopv1.VirtualMachineEncryptionType{vmopv1.VirtualMachineEncryptionTypeDisks},
+				}
+				vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+					{
+						Name:     "my-disk-100",
+						DiskUUID: "100",
+						Type:     vmopv1.VolumeTypeClassic,
+						Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+							ProviderID: "my-provider-id",
+							KeyID:      "my-key-id",
+						},
+						Attached:  true,
+						Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+					},
+					{
+						Name:     "my-disk-101",
+						DiskUUID: "100",
+						Type:     vmopv1.VolumeTypeClassic,
+						Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+							ProviderID: "my-provider-id",
+							KeyID:      "my-key-id",
+						},
+						Attached:  true,
+						Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+					},
+				}
+			})
+
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.InventoryContentLibrary = true
+				})
+			})
+
+			When("source VM has only encrypted disks", func() {
+				It("should not return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			When("source VM has encrypted and unencrypted disks", func() {
+				BeforeEach(func() {
+					vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
+						Name:      "my-disk-102",
+						DiskUUID:  "100",
+						Type:      vmopv1.VolumeTypeClassic,
+						Attached:  true,
+						Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+						Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+					})
+				})
+
+				It("should return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid)).To(BeTrue())
+					Expect(conditions.GetReason(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid)).To(Equal(
+						vmopv1.SourceVirtualMachineUnsupportedEncryptionReason))
+				})
+			})
+
+			When("target content library's storage class is empty", func() {
+				It("should not return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			When("target content library's storage class doesn't exist", func() {
+				BeforeEach(func() {
+					clv1a2.Spec.StorageClass = builder.DummyStorageClassName
+				})
+
+				It("should return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(ContainSubstring("failed to get storageClass")))
+				})
+			})
+
+			When("target content library's storage class does not support encryption", func() {
+				BeforeEach(func() {
+					sc := builder.DummyStorageClass()
+					clv1a2.Spec.StorageClass = builder.DummyStorageClassName
+
+					initObjects = append(initObjects, sc)
+				})
+
+				It("should return an error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+
+					Expect(conditions.IsFalse(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+					Expect(conditions.GetReason(vmpub,
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(Equal(
+						vmopv1.TargetContentLibraryIncompatibleStorageClassReason))
 				})
 			})
 		})

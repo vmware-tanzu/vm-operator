@@ -120,7 +120,7 @@ func publishTests() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(t.Wait(ctx)).To(Succeed())
 
-			itemID, err := virtualmachine.CloneVM(vmCtx, ctx.VCClient.Client, vmPub, clv1a2, "1234", "")
+			itemID, err := virtualmachine.CloneVM(vmCtx, ctx.VCClient.Client, vmPub, clv1a2, "1234")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(itemID).NotTo(BeNil())
 		})
@@ -130,7 +130,7 @@ func publishTests() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(state).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 
-			itemID, err := virtualmachine.CloneVM(vmCtx, ctx.VCClient.Client, vmPub, clv1a2, "1234", "")
+			itemID, err := virtualmachine.CloneVM(vmCtx, ctx.VCClient.Client, vmPub, clv1a2, "1234")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(itemID).NotTo(BeNil())
 		})

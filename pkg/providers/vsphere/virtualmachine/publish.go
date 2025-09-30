@@ -11,6 +11,7 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -74,7 +75,7 @@ func CloneVM(
 	vimClient *vim25.Client,
 	vmPubReq *vmopv1.VirtualMachinePublishRequest,
 	cl *imgregv1.ContentLibrary,
-	storagePolicyID, actID string) (string, error) {
+	storagePolicyID string) (string, error) {
 
 	targetName := vmPubReq.Status.TargetRef.Item.Name
 
@@ -83,6 +84,7 @@ func CloneVM(
 		Value: cl.Spec.ID,
 	}
 
+	var moVM mo.VirtualMachine
 	vm := object.NewVirtualMachine(
 		vimClient,
 		vimtypes.ManagedObjectReference{
@@ -90,12 +92,15 @@ func CloneVM(
 			Value: vmCtx.VM.Status.UniqueID,
 		})
 
-	var filteredExtraConfig pkgutil.OptionValues
-	var err error
-	if filteredExtraConfig, err = GetFilteredExtraConfigFromObject(
-		vmCtx, vm, true); err != nil {
+	if err := vm.Properties(vmCtx, vm.Reference(), []string{"config.extraConfig", "config.hardware.device"}, &moVM); err != nil {
 		return "", err
 	}
+
+	filteredExtraConfig, err := FilteredExtraConfig(moVM.Config.ExtraConfig, true)
+	if err != nil {
+		return "", err
+	}
+
 	filteredExtraConfig = filteredExtraConfig.Append(&vimtypes.OptionValue{
 		Key:   vmopv1.VirtualMachinePublishRequestUUIDExtraConfigKey,
 		Value: string(vmPubReq.UID),
@@ -118,10 +123,33 @@ func CloneVM(
 		cloneSpec.Location.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
 			&vimtypes.VirtualMachineDefinedProfileSpec{ProfileId: storagePolicyID},
 		}
+
+		if vmCtx.VM.Status.Crypto != nil {
+			virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+			currentDisks := virtualDevices.SelectByType((*vimtypes.VirtualDisk)(nil))
+
+			var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+
+			for _, vmDevice := range currentDisks {
+				vmDisk, ok := vmDevice.(*vimtypes.VirtualDisk)
+				if !ok {
+					continue
+				}
+
+				deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
+					Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+					Device:    vmDisk,
+					Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+						&vimtypes.VirtualMachineDefinedProfileSpec{ProfileId: storagePolicyID},
+					},
+				})
+			}
+
+			cloneSpec.Config.DeviceChange = deviceChanges
+		}
 	}
 
 	vmCtx.Logger.Info("Publishing VM as template",
-		"actId", actID,
 		"targetName", targetName,
 		"cloneSpec", cloneSpec,
 		"cloneSource", vmCtx.VM.Status.UniqueID,

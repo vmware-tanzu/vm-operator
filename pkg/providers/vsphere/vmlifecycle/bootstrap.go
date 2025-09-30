@@ -55,7 +55,7 @@ type BootstrapData struct {
 	LinuxPrep   *linuxprep.SecretData
 }
 
-type TemplateRenderFunc func(string, string) string
+type TemplateRenderFunc func(string, string) (string, error)
 
 type BootstrapArgs struct {
 	BootstrapData

@@ -647,7 +647,7 @@ func GetAdditionalResourcesForBackup(
 	vmCtx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client) ([]ctrlclient.Object, error) {
 	var objects []ctrlclient.Object
-	// Get bootstrap related objects from CloudInit or Sysprep (mutually exclusive).
+
 	if bootstrapSpec := vmCtx.VM.Spec.Bootstrap; bootstrapSpec != nil {
 		if v := bootstrapSpec.CloudInit; v != nil {
 			if cooked := v.CloudConfig; cooked != nil {
@@ -687,6 +687,17 @@ func GetAdditionalResourcesForBackup(
 				}
 				objects = append(objects, obj)
 			}
+		} else if v := bootstrapSpec.LinuxPrep; v != nil {
+			out, err := linuxprep.GetSecretResources(vmCtx, k8sClient, vmCtx.VM.Namespace, v)
+			if err != nil {
+				return nil, err
+			}
+			// GVK is dropped when getting a core K8s resource from client.
+			// Add it in backup so that the resource can be applied successfully during restore.
+			for i := range out {
+				out[i].GetObjectKind().SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
+			}
+			objects = append(objects, out...)
 		}
 
 		// Get bootstrap related objects from vAppConfig (can be used alongside LinuxPrep/Sysprep).

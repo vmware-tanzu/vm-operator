@@ -84,7 +84,7 @@ var _ = Describe("GetLinuxPrepSecretData", func() {
 
 				It("returns an error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("does not contain required password key"))
+					Expect(err.Error()).To(ContainSubstring("no data found for key "))
 				})
 			})
 
@@ -149,7 +149,7 @@ var _ = Describe("GetLinuxPrepSecretData", func() {
 
 					It("returns an error", func() {
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("does not contain required script text key"))
+						Expect(err.Error()).To(ContainSubstring("no data found for key "))
 					})
 				})
 
@@ -158,6 +158,145 @@ var _ = Describe("GetLinuxPrepSecretData", func() {
 					Expect(linuxPrepSecretData.ScriptText).To(Equal("my-secret-script"))
 				})
 			})
+		})
+	})
+})
+
+var _ = Describe("GetSecretResources", func() {
+	const namespace = "linux-prep-secret-ns"
+
+	var (
+		ctx           context.Context
+		linuxPrepSpec *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
+		k8sClient     ctrlclient.Client
+		initObjects   []ctrlclient.Object
+		secrets       []ctrlclient.Object
+		err           error
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		linuxPrepSpec = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+	})
+
+	JustBeforeEach(func() {
+		k8sClient = builder.NewFakeClient(initObjects...)
+		secrets, err = linuxprep.GetSecretResources(ctx, k8sClient, namespace, linuxPrepSpec)
+	})
+
+	AfterEach(func() {
+		err = nil
+		initObjects = nil
+	})
+
+	Context("Password", func() {
+		const key = "passwd"
+		var secret *corev1.Secret
+
+		BeforeEach(func() {
+			secret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "password-secret",
+					Namespace: namespace,
+				},
+			}
+			linuxPrepSpec.Password = &vmopv1common.PasswordSecretKeySelector{
+				Name: secret.Name,
+				Key:  key,
+			}
+		})
+
+		Context("Secret does not exist", func() {
+			It("returns an error", func() {
+				Expect(err).To(HaveOccurred())
+			})
+		})
+
+		Context("Secret exists", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, secret)
+			})
+
+			It("returns success", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(secrets).To(HaveLen(1))
+				Expect(secrets[0].GetName()).To(Equal(secret.Name))
+			})
+		})
+	})
+
+	Context("ScriptText", func() {
+		const key = "text"
+		var secret *corev1.Secret
+
+		BeforeEach(func() {
+			secret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "script-text",
+					Namespace: namespace,
+				},
+			}
+			linuxPrepSpec.ScriptText = &vmopv1common.ValueOrSecretKeySelector{}
+		})
+
+		Context("From Secret value", func() {
+			BeforeEach(func() {
+				linuxPrepSpec.ScriptText.From = &vmopv1common.SecretKeySelector{
+					Name: secret.Name,
+					Key:  key,
+				}
+			})
+
+			Context("Secret does not exist", func() {
+				It("returns an error", func() {
+					Expect(err).To(HaveOccurred())
+				})
+			})
+
+			Context("Secret exists", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, secret)
+				})
+
+				It("returns success", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(secrets).To(HaveLen(1))
+					Expect(secrets[0].GetName()).To(Equal(secret.Name))
+				})
+			})
+		})
+	})
+
+	Context("when same secret name is used for all selectors", func() {
+		secretName := "same-secret"
+
+		BeforeEach(func() {
+			linuxPrepSpec = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
+				Password: &vmopv1common.PasswordSecretKeySelector{
+					Name: secretName,
+					Key:  "password",
+				},
+				ScriptText: &vmopv1common.ValueOrSecretKeySelector{
+					From: &vmopv1common.SecretKeySelector{
+						Name: secretName,
+						Key:  "text",
+					},
+				},
+			}
+
+			initObjects = append(initObjects, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: namespace,
+				},
+			})
+		})
+
+		It("returns a single secret", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(secrets).To(HaveLen(1))
+			Expect(secrets[0].GetName()).To(Equal(secretName))
+			Expect(secrets[0].GetNamespace()).To(Equal(namespace))
 		})
 	})
 })

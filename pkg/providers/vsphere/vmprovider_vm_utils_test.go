@@ -1335,6 +1335,33 @@ func vmUtilTests() {
 			})
 		})
 
+		When("VM spec has bootstrap in LinuxPrep referencing a Secret object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
+						Password: &common.PasswordSecretKeySelector{
+							Name: "dummy-linuxprep-secret",
+						},
+					},
+				}
+				initObjects = append(initObjects, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-linuxprep-secret",
+					},
+				})
+			})
+
+			It("Should return the Secret object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-linuxprep-secret"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("Secret")))
+			})
+		})
+
 		When("VM spec has bootstrap in VAppConfig Properties referencing a Secret object", func() {
 
 			BeforeEach(func() {

@@ -211,9 +211,9 @@ var _ = Describe("CreateConfigSpec", func() {
 						"vmoperator.vmware.com/paused": "true", // should be filtered out
 					}
 
-					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-						VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-							RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAffinity: &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -245,17 +245,17 @@ var _ = Describe("CreateConfigSpec", func() {
 
 					pols := []vimtypes.BaseVmPlacementPolicy{
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 							AffinedVmsTagName: fmt.Sprintf("%s:%s", "env", "prod"),
 						},
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 							AffinedVmsTagName: fmt.Sprintf("%s:%s", "app", "db"),
 						},
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 							AffinedVmsTagName: fmt.Sprintf("%s:%s", "zone", "us-west"),
 						},
@@ -279,9 +279,9 @@ var _ = Describe("CreateConfigSpec", func() {
 						"vmoperator.vmware.com/paused": "true", // should be filtered out
 					}
 
-					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-						VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAffinity: &vmopv1.VMAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -313,17 +313,17 @@ var _ = Describe("CreateConfigSpec", func() {
 
 					pols := []vimtypes.BaseVmPlacementPolicy{
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 							AffinedVmsTagName: fmt.Sprintf("%s:%s", "env", "prod"),
 						},
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 							AffinedVmsTagName: fmt.Sprintf("%s:%s", "app", "db"),
 						},
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 							AffinedVmsTagName: fmt.Sprintf("%s:%s", "zone", "us-east"),
 						},
@@ -352,9 +352,9 @@ var _ = Describe("CreateConfigSpec", func() {
 
 			Context("with both MatchLabels and MatchExpressions", func() {
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -393,7 +393,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					expectedAntiAffinityLabels := []string{"component:web", "tier:frontend", "tier:backend", "environment:prod"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
+					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
 
 					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vm.Namespace)
@@ -402,9 +402,9 @@ var _ = Describe("CreateConfigSpec", func() {
 
 			Context("with unsupported topology key", func() {
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -428,9 +428,9 @@ var _ = Describe("CreateConfigSpec", func() {
 
 			Context("with simple MatchLabels case", func() {
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
@@ -455,7 +455,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					expectedAntiAffinityLabels := []string{"tier:frontend", "environment:prod"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
+					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
 
 					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vm.Namespace)
@@ -464,9 +464,9 @@ var _ = Describe("CreateConfigSpec", func() {
 
 			Context("with MatchExpressions multiple values", func() {
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchExpressions: []metav1.LabelSelectorRequirement{
@@ -494,7 +494,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					expectedAntiAffinityLabels := []string{"tier:frontend", "tier:backend", "tier:middleware"}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
-					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution)))
+					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))
 					Expect(policy.PolicyTopology).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone)))
 
 					assertVMTags(configSpec, []string{"vm-label1:vm-value1", "vm-label2:vm-value2"}, vm.Namespace)
@@ -503,9 +503,9 @@ var _ = Describe("CreateConfigSpec", func() {
 
 			Context("with invalid label selector", func() {
 				BeforeEach(func() {
-					vmCtx.VM.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-						VMAntiAffinity: &vmopv1.VirtualMachineAntiAffinityVMAffinitySpec{
-							PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 								{
 									LabelSelector: &metav1.LabelSelector{
 										MatchExpressions: []metav1.LabelSelectorRequirement{

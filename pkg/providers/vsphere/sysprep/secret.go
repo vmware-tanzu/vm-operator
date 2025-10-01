@@ -42,7 +42,7 @@ func GetSysprepSecretData(
 		}
 	}
 
-	if guiUnattended := in.GUIUnattended; guiUnattended != nil && guiUnattended.AutoLogon {
+	if guiUnattended := in.GUIUnattended; guiUnattended != nil && guiUnattended.Password != nil {
 		err := util.GetSecretData(
 			ctx,
 			k8sClient,
@@ -124,7 +124,7 @@ func GetSecretResources(
 		captureSecret(s, in.UserData.ProductID.Name)
 	}
 
-	if guiUnattended := in.GUIUnattended; guiUnattended != nil && guiUnattended.AutoLogon {
+	if guiUnattended := in.GUIUnattended; guiUnattended != nil && guiUnattended.Password != nil {
 		s, err := util.GetSecretResource(
 			ctx,
 			k8sClient,
@@ -147,6 +147,20 @@ func GetSecretResources(
 				return nil, err
 			}
 			captureSecret(s, dap.Name)
+		}
+	}
+
+	if st := in.ScriptText; st != nil {
+		if st.From != nil && st.From.Name != "" {
+			s, err := util.GetSecretResource(
+				ctx,
+				k8sClient,
+				secretNamespace,
+				st.From.Name)
+			if err != nil {
+				return nil, err
+			}
+			captureSecret(s, st.From.Name)
 		}
 	}
 

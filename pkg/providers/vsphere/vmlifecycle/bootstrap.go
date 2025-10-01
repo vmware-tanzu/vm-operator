@@ -28,11 +28,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/resources"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 )
 
 const (

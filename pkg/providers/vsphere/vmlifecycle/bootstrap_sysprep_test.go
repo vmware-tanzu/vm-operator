@@ -19,7 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/sysprep"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )

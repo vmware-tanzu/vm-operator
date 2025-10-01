@@ -12,6 +12,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -20,49 +21,88 @@ type SecretData struct {
 	ScriptText string
 }
 
+func getLinuxPrepSecretsImpl(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	secretNamespace string,
+	in *vmopv1.VirtualMachineBootstrapLinuxPrepSpec,
+	setData bool) (SecretData, map[string]*corev1.Secret, error) {
+
+	secretData := SecretData{}
+	secrets := map[string]*corev1.Secret{}
+
+	getSecret := func(name, key string, outData *string) error {
+		if name == "" {
+			return nil
+		}
+
+		// Our ctrl-runtime client does not cache secrets, so avoid repeated
+		// fetches of the same secret.
+		secret, ok := secrets[name]
+		if !ok {
+			var err error
+			secret, err = util.GetSecretResource(ctx, k8sClient, secretNamespace, name)
+			if err != nil {
+				return err
+			}
+			secrets[name] = secret
+		}
+
+		if setData {
+			data := secret.Data[key]
+			if len(data) == 0 {
+				return fmt.Errorf("no data found for key %q for secret %s/%s", key, secretNamespace, name)
+			}
+			*outData = string(data)
+		}
+
+		return nil
+	}
+
+	if pw := in.Password; pw != nil {
+		if err := getSecret(pw.Name, pw.Key, &secretData.Password); err != nil {
+			return SecretData{}, nil, err
+		}
+	}
+
+	if scriptText := in.ScriptText; scriptText != nil {
+		if scriptText.From != nil {
+			if err := getSecret(scriptText.From.Name, scriptText.From.Key, &secretData.ScriptText); err != nil {
+				return SecretData{}, nil, err
+			}
+		} else if setData {
+			secretData.ScriptText = ptr.DerefWithDefault(scriptText.Value, "")
+		}
+	}
+
+	return secretData, secrets, nil
+}
+
 func GetLinuxPrepSecretData(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
 	secretNamespace string,
 	linuxPrep *vmopv1.VirtualMachineBootstrapLinuxPrepSpec) (SecretData, error) {
 
-	data := SecretData{}
+	secretData, _, err := getLinuxPrepSecretsImpl(ctx, k8sClient, secretNamespace, linuxPrep, true)
+	return secretData, err
+}
 
-	if pw := linuxPrep.Password; pw != nil {
-		key := ctrlclient.ObjectKey{Name: pw.Name, Namespace: secretNamespace}
-		secret := &corev1.Secret{}
-		if err := k8sClient.Get(ctx, key, secret); err != nil {
-			return SecretData{}, fmt.Errorf("failed to get secret for password: %w", err)
-		}
+func GetSecretResources(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	secretNamespace string,
+	in *vmopv1.VirtualMachineBootstrapLinuxPrepSpec) ([]ctrlclient.Object, error) {
 
-		password, ok := secret.Data[pw.Key]
-		if !ok {
-			err := fmt.Errorf("secret %s does not contain required password key %q", key.Name, pw.Key)
-			return SecretData{}, err
-		}
-
-		data.Password = string(password)
+	_, secrets, err := getLinuxPrepSecretsImpl(ctx, k8sClient, secretNamespace, in, false)
+	if err != nil {
+		return nil, err
 	}
 
-	if st := linuxPrep.ScriptText; st != nil {
-		if st.From != nil {
-			key := ctrlclient.ObjectKey{Name: st.From.Name, Namespace: secretNamespace}
-			secret := &corev1.Secret{}
-			if err := k8sClient.Get(ctx, key, secret); err != nil {
-				return SecretData{}, fmt.Errorf("failed to get secret for script text: %w", err)
-			}
-
-			text, ok := secret.Data[st.From.Key]
-			if !ok {
-				err := fmt.Errorf("secret %q does not contain required script text key %q", key, st.From.Key)
-				return SecretData{}, err
-			}
-
-			data.ScriptText = string(text)
-		} else {
-			data.ScriptText = ptr.DerefWithDefault(st.Value, "")
-		}
+	objs := make([]ctrlclient.Object, 0, len(secrets))
+	for _, s := range secrets {
+		objs = append(objs, s)
 	}
 
-	return data, nil
+	return objs, nil
 }

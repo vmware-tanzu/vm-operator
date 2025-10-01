@@ -77,6 +77,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 									},
 									Value: ptrOf("my-inline-script"),
 								},
+								CustomizeAtNextPowerOn: ptrOf(true),
 							},
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &vmopv1sysprep.Sysprep{
@@ -102,6 +103,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 										Value: ptrOf("my-inline-script"),
 									},
 								},
+								CustomizeAtNextPowerOn: ptrOf(true),
 							},
 							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
 								Properties: []vmopv1common.KeyValueOrSecretKeySelectorPair{

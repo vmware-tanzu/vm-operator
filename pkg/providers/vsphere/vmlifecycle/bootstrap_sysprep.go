@@ -25,14 +25,20 @@ func BootstrapSysPrep(
 	config *vimtypes.VirtualMachineConfigInfo,
 	sysPrepSpec *vmopv1.VirtualMachineBootstrapSysprepSpec,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
-	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
+	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, *bool, error) {
 
 	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling Sysprep bootstrap state")
 
 	if !vmCtx.IsOffToOn() {
 		vmCtx.Logger.V(4).Info("Skipping Sysprep since VM is not powering on")
-		return nil, nil, nil
+		return nil, nil, nil, nil
+	}
+
+	customizeAtNextPowerOn := sysPrepSpec.CustomizeAtNextPowerOn
+	if customizeAtNextPowerOn != nil && !*customizeAtNextPowerOn {
+		vmCtx.Logger.V(4).Info("Skipping Sysprep since customization at next power on is false")
+		return nil, nil, customizeAtNextPowerOn, nil
 	}
 
 	var identity vimtypes.BaseCustomizationIdentitySettings
@@ -45,13 +51,13 @@ func BootstrapSysPrep(
 
 		data := bsArgs.BootstrapData.Data[key]
 		if data == "" {
-			return nil, nil, fmt.Errorf("no Sysprep XML data with key %q", key)
+			return nil, nil, nil, fmt.Errorf("no Sysprep XML data with key %q", key)
 		}
 
 		// Ensure the data is normalized first to plain-text.
 		data, err := pkgutil.TryToDecodeBase64Gzip([]byte(data))
 		if err != nil {
-			return nil, nil, fmt.Errorf("decoding Sysprep unattend XML failed: %w", err)
+			return nil, nil, nil, fmt.Errorf("decoding Sysprep unattend XML failed: %w", err)
 		}
 
 		if bsArgs.TemplateRenderFn != nil {
@@ -64,12 +70,12 @@ func BootstrapSysPrep(
 	} else if sysPrep := sysPrepSpec.Sysprep; sysPrep != nil {
 		identity = convertTo(vmCtx, sysPrep, bsArgs)
 	} else {
-		return nil, nil, fmt.Errorf("no Sysprep data")
+		return nil, nil, nil, fmt.Errorf("no Sysprep data")
 	}
 
 	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create GOSC adapter mappings: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create GOSC adapter mappings: %w", err)
 	}
 
 	customSpec := &vimtypes.CustomizationSpec{
@@ -92,7 +98,7 @@ func BootstrapSysPrep(
 			bsArgs.TemplateRenderFn)
 	}
 
-	return configSpec, customSpec, err
+	return configSpec, customSpec, customizeAtNextPowerOn, err
 }
 
 func convertTo(

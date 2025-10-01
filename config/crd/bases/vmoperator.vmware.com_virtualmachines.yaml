@@ -12622,6 +12622,20 @@ spec:
                       This bootstrap provider may not be used in conjunction with the CloudInit
                       or Sysprep bootstrap providers.
                     properties:
+                      customizeAtNextPowerOn:
+                        description: |-
+                          CustomizeAtNextPowerOn describes when customization is performed on the VM.
+
+                          When set to false, the VM will not be customized at the next power on. When
+                          set to true, the VM will be customized at the next power on, and after the
+                          customization this field will be set to false. This allows for when
+                          customization is done explicitly requested, i.e. so that changes made in the
+                          VM are not overridden by a later customization.
+
+                          When not set, the VM will only be customized at every power on when the hash
+                          of the previous customization specification is different from the current
+                          specification.
+                        type: boolean
                       expirePasswordAfterNextLogin:
                         description: |-
                           ExpirePasswordAfterNextLogin indicates whether or not the root account is required to
@@ -12708,6 +12722,20 @@ spec:
                       This bootstrap provider may not be used in conjunction with the CloudInit
                       or LinuxPrep bootstrap providers.
                     properties:
+                      customizeAtNextPowerOn:
+                        description: |-
+                          CustomizeAtNextPowerOn describes when customization is performed on the VM.
+
+                          When set to false, the VM will not be customized at the next power on. When
+                          set to true, the VM will be customized at the next power on, and after the
+                          customization this field will be set to false. This allows for when
+                          customization is done explicitly requested, i.e. so that changes made in the
+                          VM are not overridden by a later customization.
+
+                          When not set, the VM will only be customized at every power on when the hash
+                          of the previous customization specification is different from the current
+                          specification.
+                        type: boolean
                       rawSysprep:
                         description: |-
                           RawSysprep describes a key in a Secret resource that contains an XML

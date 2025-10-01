@@ -47,9 +47,10 @@ var _ = Describe("SysPrep Bootstrap", func() {
 		const unattendXML = "dummy-unattend-xml"
 
 		var (
-			configSpec *vimtypes.VirtualMachineConfigSpec
-			custSpec   *vimtypes.CustomizationSpec
-			err        error
+			configSpec         *vimtypes.VirtualMachineConfigSpec
+			custSpec           *vimtypes.CustomizationSpec
+			customizationLatch *bool
+			err                error
 
 			vmCtx          pkgctx.VirtualMachineContext
 			vm             *vmopv1.VirtualMachine
@@ -99,7 +100,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 		})
 
 		JustBeforeEach(func() {
-			configSpec, custSpec, err = vmlifecycle.BootstrapSysPrep(
+			configSpec, custSpec, customizationLatch, err = vmlifecycle.BootstrapSysPrep(
 				vmCtx,
 				configInfo,
 				sysPrepSpec,
@@ -169,6 +170,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 			It("should return expected customization spec", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(custSpec).ToNot(BeNil())
+				Expect(customizationLatch).To(BeNil())
 
 				sysPrep, ok := custSpec.Identity.(*vimtypes.CustomizationSysprep)
 				Expect(ok).To(BeTrue())
@@ -261,6 +263,34 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				})
 			})
 
+			Context("when has power on customization latch", func() {
+				Context("latch is false", func() {
+					BeforeEach(func() {
+						sysPrepSpec.CustomizeAtNextPowerOn = vimtypes.NewBool(false)
+					})
+
+					It("should return no specs", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec).To(BeNil())
+						Expect(custSpec).To(BeNil())
+						Expect(customizationLatch).To(Equal(sysPrepSpec.CustomizeAtNextPowerOn))
+					})
+				})
+
+				Context("latch is true", func() {
+					BeforeEach(func() {
+						sysPrepSpec.CustomizeAtNextPowerOn = vimtypes.NewBool(true)
+					})
+
+					It("should return customization spec", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec).To(BeNil())
+						Expect(custSpec).ToNot(BeNil())
+						Expect(customizationLatch).To(Equal(sysPrepSpec.CustomizeAtNextPowerOn))
+					})
+				})
+			})
+
 			When("no section is set", func() {
 
 				BeforeEach(func() {
@@ -295,6 +325,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 			It("should return expected customization spec", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(configSpec).To(BeNil())
+				Expect(customizationLatch).To(BeNil())
 
 				Expect(custSpec).ToNot(BeNil())
 				Expect(custSpec.GlobalIPSettings.DnsServerList).To(Equal(bsArgs.DNSServers))
@@ -305,6 +336,34 @@ var _ = Describe("SysPrep Bootstrap", func() {
 
 				Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
 				Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
+			})
+
+			Context("when has power on customization latch", func() {
+				Context("latch is false", func() {
+					BeforeEach(func() {
+						sysPrepSpec.CustomizeAtNextPowerOn = vimtypes.NewBool(false)
+					})
+
+					It("should return no specs", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec).To(BeNil())
+						Expect(custSpec).To(BeNil())
+						Expect(customizationLatch).To(Equal(sysPrepSpec.CustomizeAtNextPowerOn))
+					})
+				})
+
+				Context("latch is true", func() {
+					BeforeEach(func() {
+						sysPrepSpec.CustomizeAtNextPowerOn = vimtypes.NewBool(true)
+					})
+
+					It("should return customization spec", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec).To(BeNil())
+						Expect(custSpec).ToNot(BeNil())
+						Expect(customizationLatch).To(Equal(sysPrepSpec.CustomizeAtNextPowerOn))
+					})
+				})
 			})
 
 			Context("when has vAppConfig", func() {

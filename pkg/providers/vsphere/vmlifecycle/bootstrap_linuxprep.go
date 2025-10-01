@@ -24,19 +24,25 @@ func BootStrapLinuxPrep(
 	config *vimtypes.VirtualMachineConfigInfo,
 	linuxPrepSpec *vmopv1.VirtualMachineBootstrapLinuxPrepSpec,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
-	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, error) {
+	bsArgs *BootstrapArgs) (*vimtypes.VirtualMachineConfigSpec, *vimtypes.CustomizationSpec, *bool, error) {
 
 	logger := pkglog.FromContextOrDefault(vmCtx)
 	logger.V(4).Info("Reconciling LinuxPrep bootstrap state")
 
 	if !vmCtx.IsOffToOn() {
 		vmCtx.Logger.V(4).Info("Skipping LinuxPrep since VM is not powering on")
-		return nil, nil, nil
+		return nil, nil, nil, nil
+	}
+
+	customizeAtNextPowerOn := linuxPrepSpec.CustomizeAtNextPowerOn
+	if customizeAtNextPowerOn != nil && !*customizeAtNextPowerOn {
+		vmCtx.Logger.V(4).Info("Skipping LinuxPrep since customization at next power on is false")
+		return nil, nil, customizeAtNextPowerOn, nil
 	}
 
 	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create GOSC NIC mappings: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create GOSC NIC mappings: %w", err)
 	}
 
 	identity := &vimtypes.CustomizationLinuxPrep{
@@ -94,5 +100,5 @@ func BootStrapLinuxPrep(
 			bsArgs.TemplateRenderFn)
 	}
 
-	return configSpec, customSpec, err
+	return configSpec, customSpec, customizeAtNextPowerOn, err
 }

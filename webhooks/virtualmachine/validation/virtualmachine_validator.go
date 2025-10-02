@@ -382,6 +382,11 @@ func (v validator) validateBootstrap(
 					guestCustomizationVCDParityNotEnabled))
 			}
 
+			if linuxPrep.Password != nil {
+				allErrs = append(allErrs, field.Forbidden(p.Child("password"),
+					guestCustomizationVCDParityNotEnabled))
+			}
+
 			if linuxPrep.ScriptText != nil {
 				allErrs = append(allErrs, field.Forbidden(p.Child("scriptText"),
 					guestCustomizationVCDParityNotEnabled))

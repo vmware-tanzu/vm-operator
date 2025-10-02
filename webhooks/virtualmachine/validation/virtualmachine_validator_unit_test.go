@@ -1730,6 +1730,28 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+			Entry("disallow LinuxPrep VCD parity fields when capability is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.GuestCustomizationVCDParity = false
+						})
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
+								ExpirePasswordAfterNextLogin: true,
+								Password:                     &common.PasswordSecretKeySelector{},
+								ScriptText:                   &common.ValueOrSecretKeySelector{},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.linuxPrep.expirePasswordAfterNextLogin: Forbidden: VC guest customization VCD parity capability is not enabled`,
+						`spec.bootstrap.linuxPrep.password: Forbidden: VC guest customization VCD parity capability is not enabled`,
+						`spec.bootstrap.linuxPrep.scriptText: Forbidden: VC guest customization VCD parity capability is not enabled`,
+					),
+				},
+			),
 
 			Entry("disallow Sysprep mixing inline Sysprep identification",
 				testParams{
@@ -1879,6 +1901,28 @@ func unitTestsValidateCreate() {
 					validate: doValidateWithMsg(
 						`spec.bootstrap.sysprep.sysprep.scriptText.value: Invalid value: "value": from and value are mutually exclusive`,
 					),
+				},
+			),
+
+			Entry("disallow Sysprep VCD parity fields when capability is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.GuestCustomizationVCDParity = false
+						})
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									ExpirePasswordAfterNextLogin: true,
+									ScriptText:                   &common.ValueOrSecretKeySelector{},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.expirePasswordAfterNextLogin: Forbidden: VC guest customization VCD parity capability is not enabled`,
+						`spec.bootstrap.sysprep.scriptText: Forbidden: VC guest customization VCD parity capability is not enabled`),
 				},
 			),
 		)

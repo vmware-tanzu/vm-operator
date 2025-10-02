@@ -149,6 +149,12 @@ type VirtualDeviceStatus struct {
 
 	// UnitNumber describes the observed unit number of the device.
 	UnitNumber int32 `json:"unitNumber"`
+
+	// +optional
+
+	// DiskUUID represents the underlying virtual disk UUID and is present when
+	// attachment succeeds.
+	DiskUUID string `json:"diskUUID,omitempty"`
 }
 
 // IDEControllerStatus describes the observed state of an IDE controller.

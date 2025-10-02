@@ -1741,6 +1741,7 @@ func reconcileStatusController(
 		var (
 			unitNumber    int32
 			deviceName    string
+			deviceUUID    string
 			deviceType    vmopv1.VirtualDeviceType
 			controllerKey int32
 		)
@@ -1750,7 +1751,7 @@ func reconcileStatusController(
 
 		switch dev := device.(type) {
 		case *vimtypes.VirtualDisk:
-			deviceName = vmopv1util.GetVirtualDiskName(dev)
+			deviceName, deviceUUID = vmopv1util.GetVirtualDiskNameAndUUID(dev)
 			deviceType = vmopv1.VirtualDeviceTypeDisk
 			controllerKey = dev.ControllerKey
 
@@ -1778,24 +1779,33 @@ func reconcileStatusController(
 			Type:       deviceType,
 			UnitNumber: unitNumber,
 			Name:       deviceName,
+			DiskUUID:   deviceUUID,
 		}
 		switch controllerType {
 		case vmopv1.VirtualControllerTypeIDE:
-			ideControllers[busNumber].Devices = append(ideControllers[busNumber].Devices, deviceStatus)
+			ideControllers[busNumber].Devices = append(
+				ideControllers[busNumber].Devices, deviceStatus)
 		case vmopv1.VirtualControllerTypeNVME:
-			nvmeControllers[busNumber].Devices = append(nvmeControllers[busNumber].Devices, deviceStatus)
+			nvmeControllers[busNumber].Devices = append(
+				nvmeControllers[busNumber].Devices, deviceStatus)
 		case vmopv1.VirtualControllerTypeSATA:
-			sataControllers[busNumber].Devices = append(sataControllers[busNumber].Devices, deviceStatus)
+			sataControllers[busNumber].Devices = append(
+				sataControllers[busNumber].Devices, deviceStatus)
 		case vmopv1.VirtualControllerTypeSCSI:
-			scsiControllers[busNumber].Devices = append(scsiControllers[busNumber].Devices, deviceStatus)
+			scsiControllers[busNumber].Devices = append(
+				scsiControllers[busNumber].Devices, deviceStatus)
 		}
 	}
 
 	// Sort devices within each controller and populate the status arrays
-	vm.Status.Hardware.IDEControllers = vmopv1util.ConvertControllersGeneric(ideControllers)
-	vm.Status.Hardware.NVMEControllers = vmopv1util.ConvertControllersGeneric(nvmeControllers)
-	vm.Status.Hardware.SATAControllers = vmopv1util.ConvertControllersGeneric(sataControllers)
-	vm.Status.Hardware.SCSIControllers = vmopv1util.ConvertControllersGeneric(scsiControllers)
+	vm.Status.Hardware.IDEControllers = vmopv1util.ConvertControllersGeneric(
+		ideControllers)
+	vm.Status.Hardware.NVMEControllers = vmopv1util.ConvertControllersGeneric(
+		nvmeControllers)
+	vm.Status.Hardware.SATAControllers = vmopv1util.ConvertControllersGeneric(
+		sataControllers)
+	vm.Status.Hardware.SCSIControllers = vmopv1util.ConvertControllersGeneric(
+		scsiControllers)
 
 	return nil
 }

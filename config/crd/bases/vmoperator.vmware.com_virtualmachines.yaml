@@ -14555,6 +14555,11 @@ spec:
                             to the controller.
                           items:
                             properties:
+                              diskUUID:
+                                description: |-
+                                  DiskUUID represents the underlying virtual disk UUID and is present when
+                                  attachment succeeds.
+                                type: string
                               name:
                                 description: Name describes the name of the virtual
                                   device.
@@ -14632,6 +14637,11 @@ spec:
                             to the controller.
                           items:
                             properties:
+                              diskUUID:
+                                description: |-
+                                  DiskUUID represents the underlying virtual disk UUID and is present when
+                                  attachment succeeds.
+                                type: string
                               name:
                                 description: Name describes the name of the virtual
                                   device.
@@ -14697,6 +14707,11 @@ spec:
                             to the controller.
                           items:
                             properties:
+                              diskUUID:
+                                description: |-
+                                  DiskUUID represents the underlying virtual disk UUID and is present when
+                                  attachment succeeds.
+                                type: string
                               name:
                                 description: Name describes the name of the virtual
                                   device.
@@ -14754,6 +14769,11 @@ spec:
                             to the controller.
                           items:
                             properties:
+                              diskUUID:
+                                description: |-
+                                  DiskUUID represents the underlying virtual disk UUID and is present when
+                                  attachment succeeds.
+                                type: string
                               name:
                                 description: Name describes the name of the virtual
                                   device.

@@ -5,14 +5,17 @@
 package vmopv1
 
 import (
+	"fmt"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 )
 
 // GetVirtualDiskFileNameAndUUID extracts the file name and disk UUID from a
@@ -82,13 +85,13 @@ func GetVirtualCdromName(vd *vimtypes.VirtualCdrom) (name string) {
 	return
 }
 
-// GetVirtualDiskName returns a human-readable name for a VirtualDisk device.
-// It extracts the base filename without extension from the disk's backing
-// store.
-func GetVirtualDiskName(vd *vimtypes.VirtualDisk) (name string) {
-	fileName, _ := GetVirtualDiskFileNameAndUUID(vd)
-	name = fileNameToName(fileName)
-	return
+// GetVirtualDiskNameAndUUID returns a human-readable name and UUID for a
+// VirtualDisk device. It extracts the base filename without extension from
+// the disk's backing store.
+func GetVirtualDiskNameAndUUID(vd *vimtypes.VirtualDisk) (string, string) {
+	fileName, uuid := GetVirtualDiskFileNameAndUUID(vd)
+	name := fileNameToName(fileName)
+	return name, uuid
 }
 
 // ControllerWithDevices interface for controllers that have devices.
@@ -120,4 +123,22 @@ func ConvertControllersGeneric[T ControllerWithDevices](
 	})
 
 	return controllers
+}
+
+// ParseNumericFields parses unit number and controller key from strings
+func ParseNumericFields(pvcSpec cnsv1alpha1.PersistentVolumeClaimSpec) (
+	int32, int32, error) {
+	unitNumber, err := strconv.ParseInt(pvcSpec.UnitNumber, 10, 32)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid unit number %s: %w",
+			pvcSpec.UnitNumber, err)
+	}
+
+	ctrlKey, err := strconv.ParseInt(pvcSpec.ControllerKey, 10, 32)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid controller key %s: %w",
+			pvcSpec.ControllerKey, err)
+	}
+
+	return int32(unitNumber), int32(ctrlKey), nil
 }

@@ -35,6 +35,16 @@ func init() {
 // RegisterConversions adds conversion functions to the given scheme.
 // Public to allow building arbitrary schemes.
 func RegisterConversions(s *runtime.Scheme) error {
+	if err := s.AddGeneratedConversionFunc((*AffinitySpec)(nil), (*v1alpha5.AffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha2_AffinitySpec_To_v1alpha5_AffinitySpec(a.(*AffinitySpec), b.(*v1alpha5.AffinitySpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1alpha5.AffinitySpec)(nil), (*AffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_AffinitySpec_To_v1alpha2_AffinitySpec(a.(*v1alpha5.AffinitySpec), b.(*AffinitySpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*ClusterVirtualMachineImage)(nil), (*v1alpha5.ClusterVirtualMachineImage)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_ClusterVirtualMachineImage_To_v1alpha5_ClusterVirtualMachineImage(a.(*ClusterVirtualMachineImage), b.(*v1alpha5.ClusterVirtualMachineImage), scope)
 	}); err != nil {
@@ -220,6 +230,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*VMAffinitySpec)(nil), (*v1alpha5.VMAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha2_VMAffinitySpec_To_v1alpha5_VMAffinitySpec(a.(*VMAffinitySpec), b.(*v1alpha5.VMAffinitySpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1alpha5.VMAffinitySpec)(nil), (*VMAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_VMAffinitySpec_To_v1alpha2_VMAffinitySpec(a.(*v1alpha5.VMAffinitySpec), b.(*VMAffinitySpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*VMAffinityTerm)(nil), (*v1alpha5.VMAffinityTerm)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_VMAffinityTerm_To_v1alpha5_VMAffinityTerm(a.(*VMAffinityTerm), b.(*v1alpha5.VMAffinityTerm), scope)
 	}); err != nil {
@@ -227,6 +247,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1alpha5.VMAffinityTerm)(nil), (*VMAffinityTerm)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VMAffinityTerm_To_v1alpha2_VMAffinityTerm(a.(*v1alpha5.VMAffinityTerm), b.(*VMAffinityTerm), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VMAntiAffinitySpec)(nil), (*v1alpha5.VMAntiAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha2_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec(a.(*VMAntiAffinitySpec), b.(*v1alpha5.VMAntiAffinitySpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1alpha5.VMAntiAffinitySpec)(nil), (*VMAntiAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_VMAntiAffinitySpec_To_v1alpha2_VMAntiAffinitySpec(a.(*v1alpha5.VMAntiAffinitySpec), b.(*VMAntiAffinitySpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -257,56 +287,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineAdvancedSpec)(nil), (*VirtualMachineAdvancedSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineAdvancedSpec_To_v1alpha2_VirtualMachineAdvancedSpec(a.(*v1alpha5.VirtualMachineAdvancedSpec), b.(*VirtualMachineAdvancedSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineAffinitySpec)(nil), (*v1alpha5.VirtualMachineAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_VirtualMachineAffinitySpec_To_v1alpha5_VirtualMachineAffinitySpec(a.(*VirtualMachineAffinitySpec), b.(*v1alpha5.VirtualMachineAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineAffinitySpec)(nil), (*VirtualMachineAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineAffinitySpec_To_v1alpha2_VirtualMachineAffinitySpec(a.(*v1alpha5.VirtualMachineAffinitySpec), b.(*VirtualMachineAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineAffinityVMAffinitySpec)(nil), (*v1alpha5.VirtualMachineAffinityVMAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_VirtualMachineAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAffinityVMAffinitySpec(a.(*VirtualMachineAffinityVMAffinitySpec), b.(*v1alpha5.VirtualMachineAffinityVMAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineAffinityVMAffinitySpec)(nil), (*VirtualMachineAffinityVMAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAffinityVMAffinitySpec(a.(*v1alpha5.VirtualMachineAffinityVMAffinitySpec), b.(*VirtualMachineAffinityVMAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineAffinityZoneAffinitySpec)(nil), (*v1alpha5.VirtualMachineAffinityZoneAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAffinityZoneAffinitySpec(a.(*VirtualMachineAffinityZoneAffinitySpec), b.(*v1alpha5.VirtualMachineAffinityZoneAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineAffinityZoneAffinitySpec)(nil), (*VirtualMachineAffinityZoneAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAffinityZoneAffinitySpec(a.(*v1alpha5.VirtualMachineAffinityZoneAffinitySpec), b.(*VirtualMachineAffinityZoneAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineAntiAffinityVMAffinitySpec)(nil), (*v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec(a.(*VirtualMachineAntiAffinityVMAffinitySpec), b.(*v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec)(nil), (*VirtualMachineAntiAffinityVMAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec(a.(*v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec), b.(*VirtualMachineAntiAffinityVMAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineAntiAffinityZoneAffinitySpec)(nil), (*v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec(a.(*VirtualMachineAntiAffinityZoneAffinitySpec), b.(*v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec)(nil), (*VirtualMachineAntiAffinityZoneAffinitySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec(a.(*v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec), b.(*VirtualMachineAntiAffinityZoneAffinitySpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -1020,26 +1000,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*ZoneSelectorRequirement)(nil), (*v1alpha5.ZoneSelectorRequirement)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_ZoneSelectorRequirement_To_v1alpha5_ZoneSelectorRequirement(a.(*ZoneSelectorRequirement), b.(*v1alpha5.ZoneSelectorRequirement), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.ZoneSelectorRequirement)(nil), (*ZoneSelectorRequirement)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_ZoneSelectorRequirement_To_v1alpha2_ZoneSelectorRequirement(a.(*v1alpha5.ZoneSelectorRequirement), b.(*ZoneSelectorRequirement), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*ZoneSelectorTerm)(nil), (*v1alpha5.ZoneSelectorTerm)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha2_ZoneSelectorTerm_To_v1alpha5_ZoneSelectorTerm(a.(*ZoneSelectorTerm), b.(*v1alpha5.ZoneSelectorTerm), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.ZoneSelectorTerm)(nil), (*ZoneSelectorTerm)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_ZoneSelectorTerm_To_v1alpha2_ZoneSelectorTerm(a.(*v1alpha5.ZoneSelectorTerm), b.(*ZoneSelectorTerm), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddConversionFunc((*VirtualMachineStatus)(nil), (*v1alpha5.VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(a.(*VirtualMachineStatus), b.(*v1alpha5.VirtualMachineStatus), scope)
 	}); err != nil {
@@ -1116,6 +1076,28 @@ func RegisterConversions(s *runtime.Scheme) error {
 		return err
 	}
 	return nil
+}
+
+func autoConvert_v1alpha2_AffinitySpec_To_v1alpha5_AffinitySpec(in *AffinitySpec, out *v1alpha5.AffinitySpec, s conversion.Scope) error {
+	out.VMAffinity = (*v1alpha5.VMAffinitySpec)(unsafe.Pointer(in.VMAffinity))
+	out.VMAntiAffinity = (*v1alpha5.VMAntiAffinitySpec)(unsafe.Pointer(in.VMAntiAffinity))
+	return nil
+}
+
+// Convert_v1alpha2_AffinitySpec_To_v1alpha5_AffinitySpec is an autogenerated conversion function.
+func Convert_v1alpha2_AffinitySpec_To_v1alpha5_AffinitySpec(in *AffinitySpec, out *v1alpha5.AffinitySpec, s conversion.Scope) error {
+	return autoConvert_v1alpha2_AffinitySpec_To_v1alpha5_AffinitySpec(in, out, s)
+}
+
+func autoConvert_v1alpha5_AffinitySpec_To_v1alpha2_AffinitySpec(in *v1alpha5.AffinitySpec, out *AffinitySpec, s conversion.Scope) error {
+	out.VMAffinity = (*VMAffinitySpec)(unsafe.Pointer(in.VMAffinity))
+	out.VMAntiAffinity = (*VMAntiAffinitySpec)(unsafe.Pointer(in.VMAntiAffinity))
+	return nil
+}
+
+// Convert_v1alpha5_AffinitySpec_To_v1alpha2_AffinitySpec is an autogenerated conversion function.
+func Convert_v1alpha5_AffinitySpec_To_v1alpha2_AffinitySpec(in *v1alpha5.AffinitySpec, out *AffinitySpec, s conversion.Scope) error {
+	return autoConvert_v1alpha5_AffinitySpec_To_v1alpha2_AffinitySpec(in, out, s)
 }
 
 func autoConvert_v1alpha2_ClusterVirtualMachineImage_To_v1alpha5_ClusterVirtualMachineImage(in *ClusterVirtualMachineImage, out *v1alpha5.ClusterVirtualMachineImage, s conversion.Scope) error {
@@ -1575,6 +1557,28 @@ func Convert_v1alpha5_VGPUDevice_To_v1alpha2_VGPUDevice(in *v1alpha5.VGPUDevice,
 	return autoConvert_v1alpha5_VGPUDevice_To_v1alpha2_VGPUDevice(in, out, s)
 }
 
+func autoConvert_v1alpha2_VMAffinitySpec_To_v1alpha5_VMAffinitySpec(in *VMAffinitySpec, out *v1alpha5.VMAffinitySpec, s conversion.Scope) error {
+	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
+	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	return nil
+}
+
+// Convert_v1alpha2_VMAffinitySpec_To_v1alpha5_VMAffinitySpec is an autogenerated conversion function.
+func Convert_v1alpha2_VMAffinitySpec_To_v1alpha5_VMAffinitySpec(in *VMAffinitySpec, out *v1alpha5.VMAffinitySpec, s conversion.Scope) error {
+	return autoConvert_v1alpha2_VMAffinitySpec_To_v1alpha5_VMAffinitySpec(in, out, s)
+}
+
+func autoConvert_v1alpha5_VMAffinitySpec_To_v1alpha2_VMAffinitySpec(in *v1alpha5.VMAffinitySpec, out *VMAffinitySpec, s conversion.Scope) error {
+	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
+	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	return nil
+}
+
+// Convert_v1alpha5_VMAffinitySpec_To_v1alpha2_VMAffinitySpec is an autogenerated conversion function.
+func Convert_v1alpha5_VMAffinitySpec_To_v1alpha2_VMAffinitySpec(in *v1alpha5.VMAffinitySpec, out *VMAffinitySpec, s conversion.Scope) error {
+	return autoConvert_v1alpha5_VMAffinitySpec_To_v1alpha2_VMAffinitySpec(in, out, s)
+}
+
 func autoConvert_v1alpha2_VMAffinityTerm_To_v1alpha5_VMAffinityTerm(in *VMAffinityTerm, out *v1alpha5.VMAffinityTerm, s conversion.Scope) error {
 	out.LabelSelector = (*v1.LabelSelector)(unsafe.Pointer(in.LabelSelector))
 	out.TopologyKey = in.TopologyKey
@@ -1595,6 +1599,28 @@ func autoConvert_v1alpha5_VMAffinityTerm_To_v1alpha2_VMAffinityTerm(in *v1alpha5
 // Convert_v1alpha5_VMAffinityTerm_To_v1alpha2_VMAffinityTerm is an autogenerated conversion function.
 func Convert_v1alpha5_VMAffinityTerm_To_v1alpha2_VMAffinityTerm(in *v1alpha5.VMAffinityTerm, out *VMAffinityTerm, s conversion.Scope) error {
 	return autoConvert_v1alpha5_VMAffinityTerm_To_v1alpha2_VMAffinityTerm(in, out, s)
+}
+
+func autoConvert_v1alpha2_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec(in *VMAntiAffinitySpec, out *v1alpha5.VMAntiAffinitySpec, s conversion.Scope) error {
+	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
+	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	return nil
+}
+
+// Convert_v1alpha2_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec is an autogenerated conversion function.
+func Convert_v1alpha2_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec(in *VMAntiAffinitySpec, out *v1alpha5.VMAntiAffinitySpec, s conversion.Scope) error {
+	return autoConvert_v1alpha2_VMAntiAffinitySpec_To_v1alpha5_VMAntiAffinitySpec(in, out, s)
+}
+
+func autoConvert_v1alpha5_VMAntiAffinitySpec_To_v1alpha2_VMAntiAffinitySpec(in *v1alpha5.VMAntiAffinitySpec, out *VMAntiAffinitySpec, s conversion.Scope) error {
+	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
+	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
+	return nil
+}
+
+// Convert_v1alpha5_VMAntiAffinitySpec_To_v1alpha2_VMAntiAffinitySpec is an autogenerated conversion function.
+func Convert_v1alpha5_VMAntiAffinitySpec_To_v1alpha2_VMAntiAffinitySpec(in *v1alpha5.VMAntiAffinitySpec, out *VMAntiAffinitySpec, s conversion.Scope) error {
+	return autoConvert_v1alpha5_VMAntiAffinitySpec_To_v1alpha2_VMAntiAffinitySpec(in, out, s)
 }
 
 func autoConvert_v1alpha2_VSphereClusterModuleStatus_To_v1alpha5_VSphereClusterModuleStatus(in *VSphereClusterModuleStatus, out *v1alpha5.VSphereClusterModuleStatus, s conversion.Scope) error {
@@ -1687,124 +1713,6 @@ func autoConvert_v1alpha5_VirtualMachineAdvancedSpec_To_v1alpha2_VirtualMachineA
 // Convert_v1alpha5_VirtualMachineAdvancedSpec_To_v1alpha2_VirtualMachineAdvancedSpec is an autogenerated conversion function.
 func Convert_v1alpha5_VirtualMachineAdvancedSpec_To_v1alpha2_VirtualMachineAdvancedSpec(in *v1alpha5.VirtualMachineAdvancedSpec, out *VirtualMachineAdvancedSpec, s conversion.Scope) error {
 	return autoConvert_v1alpha5_VirtualMachineAdvancedSpec_To_v1alpha2_VirtualMachineAdvancedSpec(in, out, s)
-}
-
-func autoConvert_v1alpha2_VirtualMachineAffinitySpec_To_v1alpha5_VirtualMachineAffinitySpec(in *VirtualMachineAffinitySpec, out *v1alpha5.VirtualMachineAffinitySpec, s conversion.Scope) error {
-	out.ZoneAffinity = (*v1alpha5.VirtualMachineAffinityZoneAffinitySpec)(unsafe.Pointer(in.ZoneAffinity))
-	out.ZoneAntiAffinity = (*v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec)(unsafe.Pointer(in.ZoneAntiAffinity))
-	out.VMAffinity = (*v1alpha5.VirtualMachineAffinityVMAffinitySpec)(unsafe.Pointer(in.VMAffinity))
-	out.VMAntiAffinity = (*v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec)(unsafe.Pointer(in.VMAntiAffinity))
-	return nil
-}
-
-// Convert_v1alpha2_VirtualMachineAffinitySpec_To_v1alpha5_VirtualMachineAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha2_VirtualMachineAffinitySpec_To_v1alpha5_VirtualMachineAffinitySpec(in *VirtualMachineAffinitySpec, out *v1alpha5.VirtualMachineAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha2_VirtualMachineAffinitySpec_To_v1alpha5_VirtualMachineAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha5_VirtualMachineAffinitySpec_To_v1alpha2_VirtualMachineAffinitySpec(in *v1alpha5.VirtualMachineAffinitySpec, out *VirtualMachineAffinitySpec, s conversion.Scope) error {
-	out.ZoneAffinity = (*VirtualMachineAffinityZoneAffinitySpec)(unsafe.Pointer(in.ZoneAffinity))
-	out.ZoneAntiAffinity = (*VirtualMachineAntiAffinityZoneAffinitySpec)(unsafe.Pointer(in.ZoneAntiAffinity))
-	out.VMAffinity = (*VirtualMachineAffinityVMAffinitySpec)(unsafe.Pointer(in.VMAffinity))
-	out.VMAntiAffinity = (*VirtualMachineAntiAffinityVMAffinitySpec)(unsafe.Pointer(in.VMAntiAffinity))
-	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineAffinitySpec_To_v1alpha2_VirtualMachineAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineAffinitySpec_To_v1alpha2_VirtualMachineAffinitySpec(in *v1alpha5.VirtualMachineAffinitySpec, out *VirtualMachineAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineAffinitySpec_To_v1alpha2_VirtualMachineAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha2_VirtualMachineAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAffinityVMAffinitySpec(in *VirtualMachineAffinityVMAffinitySpec, out *v1alpha5.VirtualMachineAffinityVMAffinitySpec, s conversion.Scope) error {
-	out.RequiredDuringSchedulingIgnoredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingIgnoredDuringExecution))
-	out.PreferredDuringSchedulingIgnoredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingIgnoredDuringExecution))
-	return nil
-}
-
-// Convert_v1alpha2_VirtualMachineAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAffinityVMAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha2_VirtualMachineAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAffinityVMAffinitySpec(in *VirtualMachineAffinityVMAffinitySpec, out *v1alpha5.VirtualMachineAffinityVMAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha2_VirtualMachineAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAffinityVMAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha5_VirtualMachineAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAffinityVMAffinitySpec(in *v1alpha5.VirtualMachineAffinityVMAffinitySpec, out *VirtualMachineAffinityVMAffinitySpec, s conversion.Scope) error {
-	out.RequiredDuringSchedulingIgnoredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingIgnoredDuringExecution))
-	out.PreferredDuringSchedulingIgnoredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingIgnoredDuringExecution))
-	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAffinityVMAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAffinityVMAffinitySpec(in *v1alpha5.VirtualMachineAffinityVMAffinitySpec, out *VirtualMachineAffinityVMAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAffinityVMAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha2_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAffinityZoneAffinitySpec(in *VirtualMachineAffinityZoneAffinitySpec, out *v1alpha5.VirtualMachineAffinityZoneAffinitySpec, s conversion.Scope) error {
-	out.RequiredDuringSchedulingIgnoredDuringExecution = *(*[]v1alpha5.ZoneSelectorTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingIgnoredDuringExecution))
-	out.PreferredDuringSchedulingIgnoredDuringExecution = *(*[]v1alpha5.ZoneSelectorTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingIgnoredDuringExecution))
-	return nil
-}
-
-// Convert_v1alpha2_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAffinityZoneAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha2_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAffinityZoneAffinitySpec(in *VirtualMachineAffinityZoneAffinitySpec, out *v1alpha5.VirtualMachineAffinityZoneAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha2_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAffinityZoneAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha5_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAffinityZoneAffinitySpec(in *v1alpha5.VirtualMachineAffinityZoneAffinitySpec, out *VirtualMachineAffinityZoneAffinitySpec, s conversion.Scope) error {
-	out.RequiredDuringSchedulingIgnoredDuringExecution = *(*[]ZoneSelectorTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingIgnoredDuringExecution))
-	out.PreferredDuringSchedulingIgnoredDuringExecution = *(*[]ZoneSelectorTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingIgnoredDuringExecution))
-	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAffinityZoneAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAffinityZoneAffinitySpec(in *v1alpha5.VirtualMachineAffinityZoneAffinitySpec, out *VirtualMachineAffinityZoneAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAffinityZoneAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec(in *VirtualMachineAntiAffinityVMAffinitySpec, out *v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec, s conversion.Scope) error {
-	out.RequiredDuringSchedulingIgnoredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingIgnoredDuringExecution))
-	out.PreferredDuringSchedulingIgnoredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingIgnoredDuringExecution))
-	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
-	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]v1alpha5.VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
-	return nil
-}
-
-// Convert_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec(in *VirtualMachineAntiAffinityVMAffinitySpec, out *v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec(in *v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec, out *VirtualMachineAntiAffinityVMAffinitySpec, s conversion.Scope) error {
-	out.RequiredDuringSchedulingIgnoredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingIgnoredDuringExecution))
-	out.PreferredDuringSchedulingIgnoredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingIgnoredDuringExecution))
-	out.RequiredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingPreferredDuringExecution))
-	out.PreferredDuringSchedulingPreferredDuringExecution = *(*[]VMAffinityTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingPreferredDuringExecution))
-	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec(in *v1alpha5.VirtualMachineAntiAffinityVMAffinitySpec, out *VirtualMachineAntiAffinityVMAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineAntiAffinityVMAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityVMAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec(in *VirtualMachineAntiAffinityZoneAffinitySpec, out *v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec, s conversion.Scope) error {
-	out.RequiredDuringSchedulingIgnoredDuringExecution = *(*[]v1alpha5.ZoneSelectorTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingIgnoredDuringExecution))
-	out.PreferredDuringSchedulingIgnoredDuringExecution = *(*[]v1alpha5.ZoneSelectorTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingIgnoredDuringExecution))
-	return nil
-}
-
-// Convert_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec(in *VirtualMachineAntiAffinityZoneAffinitySpec, out *v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec(in, out, s)
-}
-
-func autoConvert_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec(in *v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec, out *VirtualMachineAntiAffinityZoneAffinitySpec, s conversion.Scope) error {
-	out.RequiredDuringSchedulingIgnoredDuringExecution = *(*[]ZoneSelectorTerm)(unsafe.Pointer(&in.RequiredDuringSchedulingIgnoredDuringExecution))
-	out.PreferredDuringSchedulingIgnoredDuringExecution = *(*[]ZoneSelectorTerm)(unsafe.Pointer(&in.PreferredDuringSchedulingIgnoredDuringExecution))
-	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec(in *v1alpha5.VirtualMachineAntiAffinityZoneAffinitySpec, out *VirtualMachineAntiAffinityZoneAffinitySpec, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineAntiAffinityZoneAffinitySpec_To_v1alpha2_VirtualMachineAntiAffinityZoneAffinitySpec(in, out, s)
 }
 
 func autoConvert_v1alpha2_VirtualMachineBootstrapCloudInitSpec_To_v1alpha5_VirtualMachineBootstrapCloudInitSpec(in *VirtualMachineBootstrapCloudInitSpec, out *v1alpha5.VirtualMachineBootstrapCloudInitSpec, s conversion.Scope) error {
@@ -3756,7 +3664,7 @@ func Convert_v1alpha5_VirtualMachineSetResourcePolicyStatus_To_v1alpha2_VirtualM
 func autoConvert_v1alpha2_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *VirtualMachineSpec, out *v1alpha5.VirtualMachineSpec, s conversion.Scope) error {
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
-	out.Affinity = (*v1alpha5.VirtualMachineAffinitySpec)(unsafe.Pointer(in.Affinity))
+	out.Affinity = (*v1alpha5.AffinitySpec)(unsafe.Pointer(in.Affinity))
 	out.StorageClass = in.StorageClass
 	if in.Bootstrap != nil {
 		in, out := &in.Bootstrap, &out.Bootstrap
@@ -3810,7 +3718,7 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type
-	out.Affinity = (*VirtualMachineAffinitySpec)(unsafe.Pointer(in.Affinity))
+	out.Affinity = (*AffinitySpec)(unsafe.Pointer(in.Affinity))
 	// WARNING: in.Crypto requires manual conversion: does not exist in peer-type
 	out.StorageClass = in.StorageClass
 	if in.Bootstrap != nil {
@@ -4168,50 +4076,4 @@ func autoConvert_v1alpha5_VirtualMachineWebConsoleRequestStatus_To_v1alpha2_Virt
 // Convert_v1alpha5_VirtualMachineWebConsoleRequestStatus_To_v1alpha2_VirtualMachineWebConsoleRequestStatus is an autogenerated conversion function.
 func Convert_v1alpha5_VirtualMachineWebConsoleRequestStatus_To_v1alpha2_VirtualMachineWebConsoleRequestStatus(in *v1alpha5.VirtualMachineWebConsoleRequestStatus, out *VirtualMachineWebConsoleRequestStatus, s conversion.Scope) error {
 	return autoConvert_v1alpha5_VirtualMachineWebConsoleRequestStatus_To_v1alpha2_VirtualMachineWebConsoleRequestStatus(in, out, s)
-}
-
-func autoConvert_v1alpha2_ZoneSelectorRequirement_To_v1alpha5_ZoneSelectorRequirement(in *ZoneSelectorRequirement, out *v1alpha5.ZoneSelectorRequirement, s conversion.Scope) error {
-	out.Key = in.Key
-	out.Operator = v1alpha5.ZoneSelectorOperator(in.Operator)
-	out.Values = *(*[]string)(unsafe.Pointer(&in.Values))
-	return nil
-}
-
-// Convert_v1alpha2_ZoneSelectorRequirement_To_v1alpha5_ZoneSelectorRequirement is an autogenerated conversion function.
-func Convert_v1alpha2_ZoneSelectorRequirement_To_v1alpha5_ZoneSelectorRequirement(in *ZoneSelectorRequirement, out *v1alpha5.ZoneSelectorRequirement, s conversion.Scope) error {
-	return autoConvert_v1alpha2_ZoneSelectorRequirement_To_v1alpha5_ZoneSelectorRequirement(in, out, s)
-}
-
-func autoConvert_v1alpha5_ZoneSelectorRequirement_To_v1alpha2_ZoneSelectorRequirement(in *v1alpha5.ZoneSelectorRequirement, out *ZoneSelectorRequirement, s conversion.Scope) error {
-	out.Key = in.Key
-	out.Operator = ZoneSelectorOperator(in.Operator)
-	out.Values = *(*[]string)(unsafe.Pointer(&in.Values))
-	return nil
-}
-
-// Convert_v1alpha5_ZoneSelectorRequirement_To_v1alpha2_ZoneSelectorRequirement is an autogenerated conversion function.
-func Convert_v1alpha5_ZoneSelectorRequirement_To_v1alpha2_ZoneSelectorRequirement(in *v1alpha5.ZoneSelectorRequirement, out *ZoneSelectorRequirement, s conversion.Scope) error {
-	return autoConvert_v1alpha5_ZoneSelectorRequirement_To_v1alpha2_ZoneSelectorRequirement(in, out, s)
-}
-
-func autoConvert_v1alpha2_ZoneSelectorTerm_To_v1alpha5_ZoneSelectorTerm(in *ZoneSelectorTerm, out *v1alpha5.ZoneSelectorTerm, s conversion.Scope) error {
-	out.MatchExpressions = *(*[]v1alpha5.ZoneSelectorRequirement)(unsafe.Pointer(&in.MatchExpressions))
-	out.MatchFields = *(*[]v1alpha5.ZoneSelectorRequirement)(unsafe.Pointer(&in.MatchFields))
-	return nil
-}
-
-// Convert_v1alpha2_ZoneSelectorTerm_To_v1alpha5_ZoneSelectorTerm is an autogenerated conversion function.
-func Convert_v1alpha2_ZoneSelectorTerm_To_v1alpha5_ZoneSelectorTerm(in *ZoneSelectorTerm, out *v1alpha5.ZoneSelectorTerm, s conversion.Scope) error {
-	return autoConvert_v1alpha2_ZoneSelectorTerm_To_v1alpha5_ZoneSelectorTerm(in, out, s)
-}
-
-func autoConvert_v1alpha5_ZoneSelectorTerm_To_v1alpha2_ZoneSelectorTerm(in *v1alpha5.ZoneSelectorTerm, out *ZoneSelectorTerm, s conversion.Scope) error {
-	out.MatchExpressions = *(*[]ZoneSelectorRequirement)(unsafe.Pointer(&in.MatchExpressions))
-	out.MatchFields = *(*[]ZoneSelectorRequirement)(unsafe.Pointer(&in.MatchFields))
-	return nil
-}
-
-// Convert_v1alpha5_ZoneSelectorTerm_To_v1alpha2_ZoneSelectorTerm is an autogenerated conversion function.
-func Convert_v1alpha5_ZoneSelectorTerm_To_v1alpha2_ZoneSelectorTerm(in *v1alpha5.ZoneSelectorTerm, out *ZoneSelectorTerm, s conversion.Scope) error {
-	return autoConvert_v1alpha5_ZoneSelectorTerm_To_v1alpha2_ZoneSelectorTerm(in, out, s)
 }

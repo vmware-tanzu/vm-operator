@@ -725,7 +725,7 @@ type VirtualMachineSpec struct {
 	// +optional
 
 	// Affinity describes the VM's scheduling constraints.
-	Affinity *VirtualMachineAffinitySpec `json:"affinity,omitempty"`
+	Affinity *AffinitySpec `json:"affinity,omitempty"`
 
 	// +optional
 

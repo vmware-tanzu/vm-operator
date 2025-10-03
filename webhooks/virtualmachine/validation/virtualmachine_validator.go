@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -2177,33 +2176,17 @@ func (v validator) validateVMAffinity(
 
 	path := field.NewPath("spec", "affinity")
 
-	if affinity.ZoneAffinity != nil {
-		allErrs = append(allErrs, field.Forbidden(path.Child("zoneAffinity"), "zone affinity is not allowed"))
-	}
-
-	if affinity.ZoneAntiAffinity != nil {
-		allErrs = append(allErrs, field.Forbidden(path.Child("zoneAntiAffinity"), "zone anti-affinity is not allowed"))
-	}
-
 	if a := affinity.VMAffinity; a != nil {
 		p := path.Child("vmAffinity")
-		vmLabelSet := labels.Set(vm.Labels)
 
-		if len(a.RequiredDuringSchedulingIgnoredDuringExecution) > 0 {
-			p := p.Child("requiredDuringSchedulingIgnoredDuringExecution")
+		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
+			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
 
-			for idx, rs := range a.RequiredDuringSchedulingIgnoredDuringExecution {
+			for idx, rs := range a.RequiredDuringSchedulingPreferredDuringExecution {
 				p := p.Index(idx)
 
 				if rs.LabelSelector != nil {
 					p := p.Child("labelSelector")
-
-					selector, err := metav1.LabelSelectorAsSelector(rs.LabelSelector)
-					if err != nil {
-						allErrs = append(allErrs, field.Invalid(p, rs.LabelSelector, err.Error()))
-					} else if !selector.Matches(vmLabelSet) {
-						allErrs = append(allErrs, field.Forbidden(p, "label selector must match VM"))
-					}
 
 					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
 						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
@@ -2230,21 +2213,14 @@ func (v validator) validateVMAffinity(
 			}
 		}
 
-		if len(a.PreferredDuringSchedulingIgnoredDuringExecution) > 0 {
-			p := p.Child("preferredDuringSchedulingIgnoredDuringExecution")
+		if len(a.PreferredDuringSchedulingPreferredDuringExecution) > 0 {
+			p := p.Child("preferredDuringSchedulingPreferredDuringExecution")
 
-			for idx, rs := range a.PreferredDuringSchedulingIgnoredDuringExecution {
+			for idx, rs := range a.PreferredDuringSchedulingPreferredDuringExecution {
 				p := p.Index(idx)
 
 				if rs.LabelSelector != nil {
 					p := p.Child("labelSelector")
-
-					selector, err := metav1.LabelSelectorAsSelector(rs.LabelSelector)
-					if err != nil {
-						allErrs = append(allErrs, field.Invalid(p, rs.LabelSelector, err.Error()))
-					} else if !selector.Matches(vmLabelSet) {
-						allErrs = append(allErrs, field.Forbidden(p, "label selector must match VM"))
-					}
 
 					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
 						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
@@ -2275,45 +2251,7 @@ func (v validator) validateVMAffinity(
 	if a := affinity.VMAntiAffinity; a != nil {
 		p := path.Child("vmAntiAffinity")
 
-		if len(a.RequiredDuringSchedulingIgnoredDuringExecution) > 0 {
-			allErrs = append(allErrs, field.Forbidden(p.Child("requiredDuringSchedulingIgnoredDuringExecution"),
-				"VM anti-affinity with RequiredDuringSchedulingIgnoredDuringExecution is not allowed"))
-		}
-
-		if len(a.PreferredDuringSchedulingIgnoredDuringExecution) > 0 {
-			p := p.Child("preferredDuringSchedulingIgnoredDuringExecution")
-
-			for idx, rs := range a.PreferredDuringSchedulingIgnoredDuringExecution {
-				p := p.Index(idx)
-
-				if rs.LabelSelector != nil {
-					p := p.Child("labelSelector")
-
-					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
-						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
-					}
-
-					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
-						p := p.Child("matchExpressions").Index(exprIdx)
-
-						if expr.Operator != metav1.LabelSelectorOpIn {
-							allErrs = append(allErrs, field.NotSupported(
-								p.Child("operator"),
-								expr.Operator,
-								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
-						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
-							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
-						}
-					}
-				}
-
-				if rs.TopologyKey != corev1.LabelTopologyZone {
-					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
-				}
-			}
-		}
-
+		// TODO(sai): Allow this for privileged users.
 		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
 			allErrs = append(allErrs, field.Forbidden(p.Child("requiredDuringSchedulingPreferredDuringExecution"),
 				"VM anti-affinity with RequiredDuringSchedulingPreferredDuringExecution is not allowed"))

@@ -179,7 +179,7 @@ func genConfigSpecAffinityPolicies(
 			// VM affinity is bidirectional, so we only need to send in the label specified
 			// in the VM affinity policy.  Not additional labels.
 			// Note that the validation webhook will ensure that the VM also has the label that it specifies in the affinity policy.
-			for _, affinityTerm := range affinity.VMAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
+			for _, affinityTerm := range affinity.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution {
 				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
 					// Generate a tag name using the key value pair specified in the label selector.
 					for key, value := range affinityTerm.LabelSelector.MatchLabels {
@@ -188,7 +188,7 @@ func genConfigSpecAffinityPolicies(
 
 						placementPols = append(placementPols, &vimtypes.VmVmAffinity{
 							AffinedVmsTagName: label,
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 						})
 					}
@@ -201,7 +201,7 @@ func genConfigSpecAffinityPolicies(
 
 								placementPols = append(placementPols, &vimtypes.VmVmAffinity{
 									AffinedVmsTagName: label,
-									PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementIgnoredDuringExecution),
+									PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
 									PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 								})
 							}
@@ -210,7 +210,7 @@ func genConfigSpecAffinityPolicies(
 				}
 			}
 
-			for _, affinityTerm := range affinity.VMAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+			for _, affinityTerm := range affinity.VMAffinity.PreferredDuringSchedulingPreferredDuringExecution {
 				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
 					// Generate a tag name using the key value pair specified in the label selector.
 					for key, value := range affinityTerm.LabelSelector.MatchLabels {
@@ -219,7 +219,7 @@ func genConfigSpecAffinityPolicies(
 
 						placementPols = append(placementPols, &vimtypes.VmVmAffinity{
 							AffinedVmsTagName: label,
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 						})
 					}
@@ -232,7 +232,7 @@ func genConfigSpecAffinityPolicies(
 
 								placementPols = append(placementPols, &vimtypes.VmVmAffinity{
 									AffinedVmsTagName: label,
-									PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+									PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
 									PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 								})
 							}
@@ -247,8 +247,8 @@ func genConfigSpecAffinityPolicies(
 		if affinity.VMAntiAffinity != nil {
 			var allAntiAffinityLabels []string
 
-			// Handle PreferredDuringSchedulingIgnoredDuringExecution terms
-			for _, affinityTerm := range affinity.VMAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+			// Handle PreferredDuringSchedulingPreferredDuringExecution terms
+			for _, affinityTerm := range affinity.VMAntiAffinity.PreferredDuringSchedulingPreferredDuringExecution {
 				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
 					labels, err := extractLabelsFromSelector(affinityTerm.LabelSelector)
 					if err != nil {
@@ -263,7 +263,7 @@ func genConfigSpecAffinityPolicies(
 			if len(allAntiAffinityLabels) > 0 {
 				placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
 					AntiAffinedVmGroupTags: allAntiAffinityLabels,
-					PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementIgnoredDuringExecution),
+					PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
 					PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 				})
 			}

@@ -170,9 +170,9 @@ func vmGroupTests() {
 	Context("Group placement with VMs specifying affinity policies", func() {
 		It("should process preferred VM affinity policies during group placement", func() {
 			// Add preferred affinity policy to vm1
-			vm1.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-				VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-					PreferredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+			vm1.Spec.Affinity = &vmopv1.AffinitySpec{
+				VMAffinity: &vmopv1.VMAffinitySpec{
+					PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 						{
 							LabelSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
@@ -202,9 +202,9 @@ func vmGroupTests() {
 
 		It("should process required VM affinity policies during group placement", func() {
 			// Add required affinity policy to vm1
-			vm1.Spec.Affinity = &vmopv1.VirtualMachineAffinitySpec{
-				VMAffinity: &vmopv1.VirtualMachineAffinityVMAffinitySpec{
-					RequiredDuringSchedulingIgnoredDuringExecution: []vmopv1.VMAffinityTerm{
+			vm1.Spec.Affinity = &vmopv1.AffinitySpec{
+				VMAffinity: &vmopv1.VMAffinitySpec{
+					RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
 						{
 							LabelSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{

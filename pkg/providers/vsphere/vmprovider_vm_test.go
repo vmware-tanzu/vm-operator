@@ -1880,6 +1880,95 @@ func vmTests() {
 							v3, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
 							Expect(v3).To(Equal(path.Base(ctx.ContentLibraryItemDiskPath)))
 						})
+
+						When("direct mode is used", func() {
+							JustBeforeEach(func() {
+								if vm.Annotations == nil {
+									vm.Annotations = map[string]string{}
+								}
+								vm.Annotations[pkgconst.FastDeployAnnotationKey] = pkgconst.FastDeployModeDirect
+							})
+							It("should succeed", func() {
+								vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+								Expect(err).ToNot(HaveOccurred())
+
+								var moVM mo.VirtualMachine
+								Expect(vcVM.Properties(
+									ctx,
+									vcVM.Reference(),
+									[]string{"config.extraConfig"},
+									&moVM)).To(Succeed())
+								ec := object.OptionValueList(moVM.Config.ExtraConfig)
+								v1, _ := ec.GetString("hello")
+								Expect(v1).To(Equal("world"))
+								v2, _ := ec.GetString("fu")
+								Expect(v2).To(Equal("bar"))
+								_, ok := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+								Expect(ok).To(BeFalse())
+							})
+
+							When("disks are encrypted", func() {
+								BeforeEach(func() {
+									pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+										config.Features.BringYourOwnEncryptionKey = true
+									})
+									parentCtx = vmconfig.WithContext(parentCtx)
+									parentCtx = vmconfig.Register(parentCtx, crypto.New())
+								})
+								JustBeforeEach(func() {
+									m := vimcrypto.NewManagerKmip(ctx.VCClient.Client)
+									Expect(m.MarkDefault(ctx, ctx.NativeKeyProviderID)).To(Succeed())
+
+									var storageClass storagev1.StorageClass
+									Expect(ctx.Client.Get(
+										ctx,
+										client.ObjectKey{Name: ctx.EncryptedStorageClassName},
+										&storageClass)).To(Succeed())
+									Expect(kubeutil.MarkEncryptedStorageClass(
+										ctx,
+										ctx.Client,
+										storageClass,
+										true)).To(Succeed())
+
+									vm.Spec.StorageClass = ctx.EncryptedStorageClassName
+								})
+								It("should succeed", func() {
+									vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+									Expect(err).ToNot(HaveOccurred())
+
+									var moVM mo.VirtualMachine
+									Expect(vcVM.Properties(
+										ctx,
+										vcVM.Reference(),
+										[]string{"config"},
+										&moVM)).To(Succeed())
+									ec := object.OptionValueList(moVM.Config.ExtraConfig)
+									v1, _ := ec.GetString("hello")
+									Expect(v1).To(Equal("world"))
+									v2, _ := ec.GetString("fu")
+									Expect(v2).To(Equal("bar"))
+									_, ok := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
+									Expect(ok).To(BeFalse())
+
+									for _, bd := range moVM.Config.Hardware.Device {
+										if d, ok := bd.(*vimtypes.VirtualDisk); ok {
+											var keyID *vimtypes.CryptoKeyId
+											switch tBack := d.Backing.(type) {
+											case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+												keyID = tBack.KeyId
+											case *vimtypes.VirtualDiskSeSparseBackingInfo:
+												keyID = tBack.KeyId
+											case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+												keyID = tBack.KeyId
+											}
+											Expect(keyID).ToNot(BeNil())
+											Expect(keyID.ProviderId).ToNot(BeNil())
+											Expect(keyID.ProviderId.Id).To(Equal(ctx.NativeKeyProviderID))
+										}
+									}
+								})
+							})
+						})
 					})
 				})
 

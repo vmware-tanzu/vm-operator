@@ -15,6 +15,7 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -25,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -311,7 +313,7 @@ func (r *Reconciler) createBatchAttachment(
 	}
 
 	// Validate the volume specs before creating the batch attachment
-	if err := r.validateVolumeSpecs(ctx, volumeSpecs); err != nil {
+	if err := r.validateVolumeSpecs(ctx, nil, volumeSpecs); err != nil {
 		return fmt.Errorf("volume spec validation failed: %w", err)
 	}
 
@@ -661,18 +663,319 @@ func (r *Reconciler) validateHardwareVersion(_ *pkgctx.VolumeContext) error {
 	return nil
 }
 
-// validateVolumeSpecs validates that the volume specs are valid for attachment.
-// This method validates controller capacity, unit number conflicts, and other constraints.
-// It requires access to the VM's ConfigInfo from vSphere to validate against current controller
-// configuration and existing disk attachments.
-func (r *Reconciler) validateVolumeSpecs(_ *pkgctx.VolumeContext, _ []cnsv1alpha1.VolumeSpec) error {
-	// TODO: Implement validation logic
-	// This method will validate:
-	// - Controller unit number availability (ensure unit numbers don't exceed controller capacity)
-	// - No duplicate unit numbers within the same controller
-	// - No conflicts with existing attached volumes
-	// - Valid controller type and bus number combinations
-	// - Controller capacity limits based on controller type
+type vVolInfo struct {
+	ctrlKey int32
+	unitNum int32
+}
+
+type vCtrlType struct {
+	ctrlType    vmopv1.VirtualControllerType
+	scsiType    vmopv1.SCSIControllerType
+	sharingMode vmopv1.VirtualControllerSharingMode
+}
+
+type vVolKey struct {
+	volName string
+	pvcName string
+}
+
+// assumptions:
+// - vm.spec.volumes[] has at least volumes name and pvc names set
+func (r *Reconciler) validateVolumeSpecs(
+	volCtx *pkgctx.VolumeContext,
+	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	newAttachmentSpec []cnsv1alpha1.VolumeSpec) error {
+
+	if len(newAttachmentSpec) == 0 {
+		return nil
+	}
+
+	managedVolumeMap,
+		classicVolumeSet,
+		ctrlTypeMap,
+		volAppTypeMap := r.constructValidateMaps(volCtx, existingAttachment)
+
+	if err := r.validateVolumeSpecDeviceUnitNumber(
+		managedVolumeMap,
+		classicVolumeSet,
+		ctrlTypeMap,
+		newAttachmentSpec); err != nil {
+		return err
+	}
+
+	if err := r.validateVolumeSpecDeviceApplicationType(
+		volAppTypeMap,
+		ctrlTypeMap,
+		newAttachmentSpec,
+	); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func (r *Reconciler) validateVolumeSpecDeviceApplicationType(
+	volAppTypeMap map[vVolKey]vmopv1.VolumeApplicationType,
+	ctrlTypeMap map[int32]vCtrlType,
+	newAttachmentSpec []cnsv1alpha1.VolumeSpec) error {
+
+	for _, a := range newAttachmentSpec {
+		pvc := a.PersistentVolumeClaim
+
+		appType, ok := volAppTypeMap[vVolKey{
+			volName: a.Name,
+			pvcName: pvc.ClaimName,
+		}]
+		if !ok {
+			return fmt.Errorf("unable to find volume %q"+
+				" in vm.spec.volumes", a.Name)
+		}
+		if appType == "" || pvc.ControllerKey == "" {
+			continue
+		}
+
+		ctrlKey, err := strconv.ParseInt(pvc.ControllerKey, 10, 32)
+		if err != nil {
+			return fmt.Errorf("invalid controller key %s: %w",
+				pvc.ControllerKey, err)
+		}
+		ctrlType, ok := ctrlTypeMap[int32(ctrlKey)]
+		if !ok {
+			return fmt.Errorf("unable to find controllerType "+
+				"for volume %q", a.Name)
+		}
+
+		// Both Oracle RAC and Microsoft WSFC require IndependentPersistent
+		// disk mode and SCSI controller
+		if ctrlType.ctrlType != vmopv1.VirtualControllerTypeSCSI {
+			return fmt.Errorf("controller must be SCSI with %q "+
+				"applicationType", appType)
+		}
+		if pvc.DiskMode != cnsv1alpha1.IndependentPersistent {
+			return fmt.Errorf("PVC must be independent_persistent "+
+				"with %q applicationType", appType)
+		}
+
+		switch appType {
+		case vmopv1.VolumeApplicationTypeOracleRAC:
+			if pvc.SharingMode != cnsv1alpha1.SharingMultiWriter {
+				return fmt.Errorf("PVC sharingMode must be " +
+					"sharingMultiWriter with OracleRAC applicationType")
+			}
+			if ctrlType.sharingMode != vmopv1.VirtualControllerSharingModeNone {
+				return fmt.Errorf("controller sharingMode must be " +
+					"None with OracleRAC applicationType")
+			}
+		case vmopv1.VolumeApplicationTypeMicrosoftWSFC:
+			if pvc.SharingMode != cnsv1alpha1.SharingNone {
+				return fmt.Errorf("PVC sharingMode must be " +
+					"sharingNone with MicrosoftWSFC applicationType")
+			}
+			if ctrlType.sharingMode !=
+				vmopv1.VirtualControllerSharingModePhysical {
+				return fmt.Errorf("controller sharingMode must be " +
+					"Physical with MicrosoftWSFC applicationType")
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *Reconciler) validateVolumeSpecDeviceUnitNumber(
+	managedVolumeMap map[vVolKey]vVolInfo,
+	classicVolumeSet sets.Set[vVolInfo],
+	ctrlTypeMap map[int32]vCtrlType,
+	newAttachmentSpec []cnsv1alpha1.VolumeSpec) error {
+
+	attachmentUnitNumSet := sets.New[vVolInfo]()
+	for _, a := range newAttachmentSpec {
+		var (
+			di  *vVolInfo
+			pvc = a.PersistentVolumeClaim
+		)
+
+		if pvc.ControllerKey != "" &&
+			pvc.UnitNumber != "" {
+			unitNum, ctrlKey, err := vmopv1util.ParseNumericFields(pvc)
+			if err != nil {
+				return err
+			}
+			di = &vVolInfo{ctrlKey: ctrlKey, unitNum: unitNum}
+		} else {
+			if attached, ok := managedVolumeMap[vVolKey{
+				volName: a.Name, pvcName: pvc.ClaimName}]; ok {
+				di = &attached
+			}
+		}
+
+		if di != nil {
+			if classicVolumeSet.Has(*di) {
+				return fmt.Errorf("cannot attach device to a unit" +
+					"number used by a Classic volume")
+			}
+
+			if attachmentUnitNumSet.Has(*di) {
+				return fmt.Errorf("found duplicate device unit number")
+			}
+			attachmentUnitNumSet.Insert(*di)
+		}
+	}
+
+	for a := range attachmentUnitNumSet {
+		if t, ok := ctrlTypeMap[a.ctrlKey]; ok {
+			if a.unitNum < 0 {
+				return fmt.Errorf("unit number cannot be negative")
+			}
+
+			switch t.ctrlType {
+			case vmopv1.VirtualControllerTypeIDE:
+				if a.unitNum > 1 {
+					return fmt.Errorf("IDE controller unit number " +
+						"cannot be greater than 1")
+				}
+			case vmopv1.VirtualControllerTypeNVME:
+				if a.unitNum > 63 {
+					return fmt.Errorf("NVME controller unit number " +
+						"cannot be greater than 63")
+				}
+			case vmopv1.VirtualControllerTypeSATA:
+				if a.unitNum > 29 {
+					return fmt.Errorf("SATA controller unit number " +
+						"cannot be greater than 29")
+				}
+			case vmopv1.VirtualControllerTypeSCSI:
+				switch t.scsiType {
+				case vmopv1.SCSIControllerTypeParaVirtualSCSI:
+					if a.unitNum > 63 {
+						return fmt.Errorf(
+							"SCSI ParaVirtual controller " +
+								"unit number cannot be greater than 63")
+					}
+				default:
+					if a.unitNum > 15 {
+						return fmt.Errorf(
+							"SCSI %s controller unit "+
+								"number cannot be greater than 15", t.scsiType)
+					}
+				}
+				if a.unitNum == 7 {
+					return fmt.Errorf("SCSI controller unit number 7 " +
+						"is reserved")
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *Reconciler) constructValidateMaps(
+	volCtx *pkgctx.VolumeContext,
+	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment) (
+	map[vVolKey]vVolInfo,
+	sets.Set[vVolInfo],
+	map[int32]vCtrlType,
+	map[vVolKey]vmopv1.VolumeApplicationType) {
+	if volCtx == nil || volCtx.VM == nil || volCtx.VM.Status.Hardware == nil ||
+		volCtx.VM.Status.Volumes == nil || volCtx.VM.Spec.Volumes == nil ||
+		existingAttachment == nil {
+		return nil, nil, nil, nil
+	}
+
+	vmHw := volCtx.VM.Status.Hardware
+	volMap := make(map[string]vVolInfo)
+	ctrlTypeMap := make(map[int32]vCtrlType)
+	for _, c := range vmHw.IDEControllers {
+		for _, d := range c.Devices {
+			if d.DiskUUID != "" {
+				volMap[d.DiskUUID] = vVolInfo{
+					ctrlKey: c.DeviceKey,
+					unitNum: d.UnitNumber,
+				}
+				ctrlTypeMap[c.DeviceKey] = vCtrlType{
+					ctrlType: vmopv1.VirtualControllerTypeIDE,
+				}
+			}
+		}
+	}
+	for _, c := range vmHw.NVMEControllers {
+		for _, d := range c.Devices {
+			if d.DiskUUID != "" {
+				volMap[d.DiskUUID] = vVolInfo{
+					ctrlKey: c.DeviceKey,
+					unitNum: d.UnitNumber,
+				}
+				ctrlTypeMap[c.DeviceKey] = vCtrlType{
+					ctrlType:    vmopv1.VirtualControllerTypeNVME,
+					sharingMode: c.SharingMode,
+				}
+			}
+		}
+	}
+	for _, c := range vmHw.SATAControllers {
+		for _, d := range c.Devices {
+			if d.DiskUUID != "" {
+				volMap[d.DiskUUID] = vVolInfo{
+					ctrlKey: c.DeviceKey,
+					unitNum: d.UnitNumber,
+				}
+				ctrlTypeMap[c.DeviceKey] = vCtrlType{
+					ctrlType: vmopv1.VirtualControllerTypeSATA,
+				}
+			}
+		}
+	}
+	for _, c := range vmHw.SCSIControllers {
+		for _, d := range c.Devices {
+			if d.DiskUUID != "" {
+				volMap[d.DiskUUID] = vVolInfo{
+					ctrlKey: c.DeviceKey,
+					unitNum: d.UnitNumber,
+				}
+				ctrlTypeMap[c.DeviceKey] = vCtrlType{
+					ctrlType:    vmopv1.VirtualControllerTypeSCSI,
+					scsiType:    c.Type,
+					sharingMode: c.SharingMode,
+				}
+			}
+		}
+	}
+
+	batchVol := existingAttachment.Status.VolumeStatus
+	batchVolMap := make(map[string]string) // existing volume name to pvc name
+	for _, vol := range batchVol {
+		batchVolMap[vol.Name] = vol.Name
+	}
+
+	vmVolStatus := volCtx.VM.Status.Volumes
+	classicVolumeSet := sets.New[vVolInfo]()
+	managedVolumeMap := make(map[vVolKey]vVolInfo)
+	for _, v := range vmVolStatus {
+		if v.Attached && v.DiskUUID != "" {
+			if v.Type == vmopv1.VolumeTypeClassic {
+				classicVolumeSet.Insert(volMap[v.DiskUUID])
+			} else if v.Type == vmopv1.VolumeTypeManaged {
+				if vpcName, ok := batchVolMap[v.Name]; ok {
+					managedVolumeMap[vVolKey{
+						volName: v.Name,
+						pvcName: vpcName,
+					}] = volMap[v.DiskUUID]
+				}
+			}
+		}
+	}
+
+	vmVolSpec := volCtx.VM.Spec.Volumes
+	volAppTypeMap := make(map[vVolKey]vmopv1.VolumeApplicationType)
+	for _, v := range vmVolSpec {
+		if v.Name != "" && v.PersistentVolumeClaim.ClaimName != "" {
+			volAppTypeMap[vVolKey{
+				volName: v.Name,
+				pvcName: v.PersistentVolumeClaim.ClaimName,
+			}] = v.PersistentVolumeClaim.ApplicationType
+		}
+	}
+
+	return managedVolumeMap, classicVolumeSet, ctrlTypeMap, volAppTypeMap
 }

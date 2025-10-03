@@ -739,16 +739,35 @@ var _ = Describe("UpdateStatus", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Status.Storage = nil
 					})
-					Specify("status.storage to be initialized, snapshot related files are not included", func() {
+					Specify("status.storage to be initialized", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
+							Total: kubeutil.BytesToResource(71 * oneGiBInBytes),
 							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
 								Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							},
 							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Other: kubeutil.BytesToResource(21 * oneGiBInBytes),
 							},
 						}))
+					})
+					When("VMSnapshot feature is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMSnapshots = true
+							})
+						})
+						Specify("status.storage to be initialized, snapshot related files are not included", func() {
+							Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+								Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+									Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								},
+								Used: &vmopv1.VirtualMachineStorageStatusUsed{
+									Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								},
+							}))
+						})
 					})
 				})
 				When("status.storage is not nil", func() {
@@ -763,16 +782,36 @@ var _ = Describe("UpdateStatus", func() {
 							},
 						}
 					})
-					Specify("status.storage to be updated, snapshot related files are not included", func() {
+					Specify("status.storage to be updated", func() {
 						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
-							Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
+							Total: kubeutil.BytesToResource(71 * oneGiBInBytes),
 							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
 								Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
 							},
 							Used: &vmopv1.VirtualMachineStorageStatusUsed{
 								Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Other: kubeutil.BytesToResource(21 * oneGiBInBytes),
 							},
 						}))
+					})
+
+					When("VMSnapshot feature is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+								config.Features.VMSnapshots = true
+							})
+						})
+						Specify("status.storage to be updated, snapshot related files are not included", func() {
+							Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+								Total: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+									Disks: kubeutil.BytesToResource(50 * oneGiBInBytes),
+								},
+								Used: &vmopv1.VirtualMachineStorageStatusUsed{
+									Disks: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								},
+							}))
+						})
 					})
 				})
 			})
@@ -1363,7 +1402,7 @@ var _ = Describe("UpdateStatus", func() {
 						},
 					}
 				})
-				Specify("status.volumes is calculated, and value of 'used' only includes the files in the last chain", func() {
+				Specify("status.volumes is calculated", func() {
 					Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
 						{
 							Name:     "my-disk-100",
@@ -1376,7 +1415,7 @@ var _ = Describe("UpdateStatus", func() {
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 1*oneGiBInBytes + 500 + 0.25*oneGiBInBytes),
 						},
 						{
 							Name:      "my-disk-101",
@@ -1385,7 +1424,7 @@ var _ = Describe("UpdateStatus", func() {
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 0.25*oneGiBInBytes + 500 + 1*oneGiBInBytes),
 						},
 						{
 							Name:      "my-disk-102",
@@ -1394,7 +1433,7 @@ var _ = Describe("UpdateStatus", func() {
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 0.5*oneGiBInBytes + 500 + 0.25*oneGiBInBytes),
 						},
 						{
 							Name:      "my-disk-103",
@@ -1403,7 +1442,7 @@ var _ = Describe("UpdateStatus", func() {
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 1*oneGiBInBytes + 500 + 0.5*oneGiBInBytes),
 						},
 						{
 							Name:      "my-disk-104",
@@ -1412,9 +1451,146 @@ var _ = Describe("UpdateStatus", func() {
 							Attached:  true,
 							Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
 							Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
-							Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+							Used:      kubeutil.BytesToResource(500 + 2*oneGiBInBytes + 500 + 1*oneGiBInBytes),
 						},
 					}))
+				})
+				When("VMSnapshot feature is enabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+							config.Features.VMSnapshots = true
+						})
+
+						vmCtx.MoVM.LayoutEx.Snapshot = []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+							{
+								Key: vimtypes.ManagedObjectReference{
+									Type:  "Snapshot",
+									Value: "Snapshot-1",
+								},
+								Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+									{
+										// classic disk
+										Key: 100,
+										Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+											{
+												FileKey: []int32{3, 4}, // 500 + 500
+											},
+										},
+									},
+									{
+										// managed disk
+										Key: 105,
+										Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+											{
+												FileKey: []int32{13, 14}, // 5 Gib
+											},
+										},
+									},
+								},
+								DataKey:   10, // 2 Gib
+								MemoryKey: -1,
+							},
+							{
+								Key: vimtypes.ManagedObjectReference{
+									Type:  "Snapshot",
+									Value: "Snapshot-2",
+								},
+								Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+									{
+										// classic disk
+										Key: 101,
+										Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+											{
+												FileKey: []int32{1, 2}, // 500 + 500
+											},
+										},
+									},
+									{
+										// managed disk
+										Key: 105,
+										Chain: []vimtypes.VirtualMachineFileLayoutExDiskUnit{
+											{
+												FileKey: []int32{11, 12}, // 1.5 Gib
+											},
+										},
+									},
+								},
+								DataKey:   5, // 500
+								MemoryKey: 4, // 500
+							},
+						}
+					})
+					Specify("status.volumes is calculated, and value of 'used' only includes the files in the last chain", func() {
+						Expect(vmCtx.VM.Status.Volumes).To(Equal([]vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "my-disk-100",
+								DiskUUID: "100",
+								Type:     vmopv1.VolumeTypeClassic,
+								Crypto: &vmopv1.VirtualMachineVolumeCryptoStatus{
+									KeyID:      "my-key-id",
+									ProviderID: "my-provider-id",
+								},
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(10 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							},
+							{
+								Name:      "my-disk-101",
+								DiskUUID:  "101",
+								Type:      vmopv1.VolumeTypeClassic,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(1 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(1 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (0.25 * oneGiBInBytes)),
+							},
+							{
+								Name:      "my-disk-102",
+								DiskUUID:  "102",
+								Type:      vmopv1.VolumeTypeClassic,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(2 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(2 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (0.5 * oneGiBInBytes)),
+							},
+							{
+								Name:      "my-disk-103",
+								DiskUUID:  "103",
+								Type:      vmopv1.VolumeTypeClassic,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(3 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(3 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (1 * oneGiBInBytes)),
+							},
+							{
+								Name:      "my-disk-104",
+								DiskUUID:  "104",
+								Type:      vmopv1.VolumeTypeClassic,
+								Attached:  true,
+								Limit:     kubeutil.BytesToResource(4 * oneGiBInBytes),
+								Requested: kubeutil.BytesToResource(4 * oneGiBInBytes),
+								Used:      kubeutil.BytesToResource(500 + (2 * oneGiBInBytes)),
+							},
+						}))
+					})
+					Specify("status.storage is calculated, it contains snapshot related usage in Snapshot field", func() {
+						Expect(vmCtx.VM.Status.Storage).To(Equal(&vmopv1.VirtualMachineStorageStatus{
+							Total: kubeutil.BytesToResource(74.75*oneGiBInBytes + 3000),
+							Requested: &vmopv1.VirtualMachineStorageStatusRequested{
+								Disks: kubeutil.BytesToResource(20 * oneGiBInBytes),
+							},
+							Used: &vmopv1.VirtualMachineStorageStatusUsed{
+								Disks: kubeutil.BytesToResource(4.75*oneGiBInBytes + 2500),
+								Snapshots: &vmopv1.VirtualMachineStorageStatusUsedSnapshotDetails{
+									// 1, 2, 3, 4, 4, 5, 10
+									VM: kubeutil.BytesToResource(3000 + 2*oneGiBInBytes),
+									// 11, 12, 13, 14
+									Volume: kubeutil.BytesToResource(6.5 * oneGiBInBytes),
+								},
+								Other: kubeutil.BytesToResource(54.75*oneGiBInBytes + 3000),
+							},
+						}))
+					})
 				})
 			})
 
@@ -1614,9 +1790,10 @@ var _ = Describe("UpdateStatus", func() {
 				var scsiController, ideController *vmopv1.VirtualControllerStatus
 				for i := range vmCtx.VM.Status.Hardware.Controllers {
 					controller := &vmCtx.VM.Status.Hardware.Controllers[i]
-					if controller.Type == vmopv1.VirtualControllerTypeSCSI {
+					switch controller.Type {
+					case vmopv1.VirtualControllerTypeSCSI:
 						scsiController = controller
-					} else if controller.Type == vmopv1.VirtualControllerTypeIDE {
+					case vmopv1.VirtualControllerTypeIDE:
 						ideController = controller
 					}
 				}

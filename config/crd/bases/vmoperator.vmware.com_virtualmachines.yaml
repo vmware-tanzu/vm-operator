@@ -9225,7 +9225,7 @@ spec:
                     description: |-
                       Total describes the total storage space used by a VirtualMachine that
                       counts against the Namespace's storage quota.
-                      This value is a sum of requested.disks + used.other.
+                      This value is a sum of requested.disks and used.other.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   usage:
@@ -13209,7 +13209,7 @@ spec:
                         - type: string
                         description: |-
                           Disks describes the total storage space requested by a VirtualMachine's
-                          non-PVC disks.
+                          disks.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object
@@ -13233,7 +13233,7 @@ spec:
                         - type: string
                         description: |-
                           Disks describes the total storage space used by a VirtualMachine's
-                          non-PVC disks.
+                          disks.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       other:
@@ -13242,10 +13242,35 @@ spec:
                         - type: string
                         description: |-
                           Other describes the total storage space used by the VirtualMachine's
-                          non disk files, ex. the configuration file, swap space, logs, snapshots,
-                          etc.
+                          non disk files, ex. the configuration file, swap space, logs, etc.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
+                      snapshots:
+                        description: |-
+                          Snapshots describes the total storage space used by a VirtualMachine's
+                          snapshots.
+                        properties:
+                          vm:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              VM describes the total storage space used by the VirtualMachine's
+                              VirtualMachineSnapshot, including the space for snapshot's metadata,
+                              memory file, delta disks, etc.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          volume:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              Volume describes the total storage space used by the VirtualMachine's
+                              VolumeSnapshot, including the space for first class disk(FCD)'s
+                              delta disks.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
                     type: object
                 type: object
               uniqueID:

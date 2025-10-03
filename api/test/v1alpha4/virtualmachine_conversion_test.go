@@ -6,6 +6,7 @@ package v1alpha4_test
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -261,6 +262,27 @@ func TestVirtualMachineConversion(t *testing.T) {
 						BiosUUID:           uuid.NewString(),
 						GuestID:            "my-guest-id",
 						PromoteDisksMode:   vmopv1.VirtualMachinePromoteDisksModeOffline,
+						BootOptions: &vmopv1.VirtualMachineBootOptions{
+							Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
+							BootDelay: &metav1.Duration{Duration: time.Second * 10},
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+							},
+							BootRetry:           vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
+							BootRetryDelay:      &metav1.Duration{Duration: time.Second * 10},
+							EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootDisabled,
+							NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
+						},
 						Hardware: &vmopv1.VirtualMachineHardwareSpec{
 							Cdrom: []vmopv1.VirtualMachineCdromSpec{
 								{

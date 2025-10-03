@@ -337,13 +337,20 @@ func TestVirtualMachineConversion(t *testing.T) {
 					Firmware:  vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
 					BootDelay: &metav1.Duration{Duration: time.Second * 10},
 					BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
-						vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
-						vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
-						vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+						{
+							Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+							Name: "disk-0",
+						},
+						{
+							Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+							Name: "eth0",
+						},
+						{
+							Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+						},
 					},
 					BootRetry:           vmopv1.VirtualMachineBootOptionsBootRetryEnabled,
 					BootRetryDelay:      &metav1.Duration{Duration: time.Second * 10},
-					EnterBootSetup:      vmopv1.VirtualMachineBootOptionsForceBootEntryEnabled,
 					EFISecureBoot:       vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
 					NetworkBootProtocol: vmopv1.VirtualMachineBootOptionsNetworkBootProtocolIP4,
 				},

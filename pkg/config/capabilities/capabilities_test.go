@@ -168,6 +168,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyGuestCustomizationVCDParity: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyVSpherePolicies: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -186,6 +189,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMWaitForFirstConsumerPVC = true
 							config.Features.VMSharedDisks = true
 							config.Features.GuestCustomizationVCDParity = true
+							config.Features.VSpherePolicies = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -226,6 +230,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVSpherePolicies, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VSpherePolicies).To(BeTrue())
 					})
 				})
 
@@ -268,6 +275,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVSpherePolicies, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VSpherePolicies).To(BeTrue())
 					})
 				})
 			})
@@ -319,6 +329,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyGuestCustomizationVCDParity: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyVSpherePolicies: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -361,6 +374,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVSpherePolicies, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VSpherePolicies).To(BeFalse())
 					})
 				})
 
@@ -415,6 +431,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVSpherePolicies, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VSpherePolicies).To(BeFalse())
 					})
 				})
 			})
@@ -684,6 +703,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyVSpherePolicies, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VSpherePolicies).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVSpherePolicies] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VSpherePolicies=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VSpherePolicies).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -736,6 +768,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyGuestCustomizationVCDParity: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVSpherePolicies: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -761,6 +796,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMWaitForFirstConsumerPVC = true
 					config.Features.VMSharedDisks = true
 					config.Features.GuestCustomizationVCDParity = true
+					config.Features.VSpherePolicies = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -803,6 +839,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVSpherePolicies, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VSpherePolicies).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -818,11 +857,12 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMWaitForFirstConsumerPVC = false
 					config.Features.VMSharedDisks = false
 					config.Features.GuestCustomizationVCDParity = false
+					config.Features.VSpherePolicies = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -859,6 +899,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyGuestCustomizationVCDParity, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVSpherePolicies, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VSpherePolicies).To(BeFalse())
 			})
 		})
 	})

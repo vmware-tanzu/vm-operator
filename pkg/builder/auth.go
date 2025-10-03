@@ -37,6 +37,15 @@ func IsPrivilegedAccount(
 	ctx *pkgctx.WebhookContext,
 	userInfo authv1.UserInfo) bool {
 
+	if ctx != nil {
+		ctx.Logger.V(6).Info("Checking if account is privileged",
+			"Webhook Name", ctx.Name,
+			"Username", userInfo.Username,
+			"UID", userInfo.UID,
+			"Groups", userInfo.Groups,
+			"Extra", userInfo.Extra)
+	}
+
 	return IsVMOperatorServiceAccount(ctx, userInfo) ||
 		IsSystemMasters(ctx, userInfo) ||
 		IsKubeAdmin(ctx, userInfo) ||

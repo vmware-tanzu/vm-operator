@@ -67,6 +67,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
+	vmconfbootoptions "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
@@ -2287,6 +2288,17 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 			return err
 		}
+	}
+
+	if err := vmconfbootoptions.Reconcile(
+		vmCtx,
+		vs.k8sClient,
+		vs.vcClient.VimClient(),
+		vmCtx.VM,
+		vmCtx.MoVM,
+		&createArgs.ConfigSpec); err != nil {
+
+		return err
 	}
 
 	if err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs); err != nil {

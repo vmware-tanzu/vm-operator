@@ -170,7 +170,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateHardware(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMAffinity(ctx, vm)...)
@@ -273,7 +273,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateHardware(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateChecks(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNextPowerStateChangeTimeFormat(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 
@@ -1578,6 +1578,7 @@ func (v validator) validateHardwareWhenPoweredOn(
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, v.validateCdromWhenPoweredOn(ctx, newVM, oldVM)...)
+	allErrs = append(allErrs, v.validateBootOptionsWhenPoweredOn(ctx, newVM, oldVM)...)
 
 	return allErrs
 }
@@ -2112,23 +2113,163 @@ func (v validator) validateNextPowerStateChangeTimeFormat(
 	return allErrs
 }
 
-func (v validator) validateBootOptions(
+func (v validator) validateBootOptionsWhenPoweredOn(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
+	fieldPath := field.NewPath("spec", "bootOptions")
 
-	if vm.Spec.BootOptions != nil {
-		fieldPath := field.NewPath("spec", "bootOptions")
+	if !reflect.DeepEqual(oldVM.Spec.BootOptions, vm.Spec.BootOptions) {
+		allErrs = append(allErrs, field.Forbidden(fieldPath, updatesNotAllowedWhenPowerOn))
+	}
 
-		if vm.Spec.BootOptions.BootRetryDelay != nil && vm.Spec.BootOptions.BootRetry != vmopv1.VirtualMachineBootOptionsBootRetryEnabled {
-			allErrs = append(allErrs, field.Required(fieldPath.Child("bootRetry"), "when setting bootRetryDelay"))
+	return allErrs
+}
+
+func (v validator) validateBootOptions(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+	fieldPath := field.NewPath("spec", "bootOptions")
+
+	bootOptions := vm.Spec.BootOptions
+	if bootOptions != nil {
+		if bootOptions.BootOrder != nil {
+			create := oldVM == nil
+			allErrs = append(allErrs, v.validateBootOrder(ctx, vm, create)...)
 		}
 
-		if vm.Spec.BootOptions.EFISecureBoot == vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled &&
-			vm.Spec.BootOptions.Firmware != vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI {
+		// Both fields are required.
+		if bootOptions.BootRetryDelay != nil && bootOptions.BootRetry != vmopv1.VirtualMachineBootOptionsBootRetryEnabled {
+			allErrs = append(
+				allErrs,
+				field.Required(
+					fieldPath.Child("bootRetry"),
+					"bootRetry must be set when setting bootRetryDelay",
+				))
+		}
 
-			allErrs = append(allErrs, field.Forbidden(fieldPath.Child("efiSecureBoot"), "when image firmware is not EFI"))
+		// EFISecureBoot can only be used in conjunction with EFI firmware
+		if bootOptions.EFISecureBoot == vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled &&
+			bootOptions.Firmware != vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI {
+
+			allErrs = append(
+				allErrs,
+				field.Forbidden(
+					fieldPath.Child("efiSecureBoot"),
+					"cannot set efiSecureBoot when image firmware is not 'efi'",
+				))
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateBootOrder(
+	_ *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	create bool) field.ErrorList {
+
+	var allErrs field.ErrorList
+	fieldPath := field.NewPath("spec", "bootOptions", "bootOrder")
+
+	if create {
+		// We do not allow for specifying bootOrder on create.
+		allErrs = append(allErrs, field.Forbidden(fieldPath, "when creating a VM"))
+	} else {
+		// Validate that the devices listed in bootOrder are valid. That is,
+		// validate that the device type is one of the valid options, that
+		// the device exists, and that there are not duplicate devices listed.
+		bootableDeviceNames := make(map[string]string)
+		for i, bd := range vm.Spec.BootOptions.BootOrder {
+			// Name is required for BootableNetworkDevices and BootableDiskDevices
+			if bd.Type == vmopv1.VirtualMachineBootOptionsBootableNetworkDevice ||
+				bd.Type == vmopv1.VirtualMachineBootOptionsBootableDiskDevice && bd.Name == "" {
+
+				if bd.Name == "" {
+					allErrs = append(
+						allErrs,
+						field.Required(
+							fieldPath.Index(i).Child("name"),
+							fmt.Sprintf("name must not be empty when specifying a bootable device of type %q", bd.Type),
+						))
+
+					continue
+				}
+			}
+
+			// Ensure duplicate devices are not specified
+			if _, ok := bootableDeviceNames[bd.Name]; ok {
+				allErrs = append(allErrs, field.Duplicate(fieldPath.Index(i), bd.Name))
+
+				continue
+			}
+			bootableDeviceNames[bd.Name] = ""
+
+			switch bd.Type {
+			case vmopv1.VirtualMachineBootOptionsBootableNetworkDevice:
+				if vm.Spec.Network == nil {
+					allErrs = append(
+						allErrs,
+						field.Invalid(
+							fieldPath.Index(i),
+							bd,
+							fmt.Sprintf("cannot specify network device %q when vm.spec.network is empty", bd.Name),
+						))
+
+					continue
+				}
+				// Validate that the named network interface is present.
+				found := slices.ContainsFunc(vm.Spec.Network.Interfaces, func(iface vmopv1.VirtualMachineNetworkInterfaceSpec) bool {
+					return iface.Name == bd.Name
+				})
+
+				if !found {
+					allErrs = append(
+						allErrs,
+						field.Invalid(
+							fieldPath.Index(i),
+							bd,
+							fmt.Sprintf("bootable network device %q was not found in vm.Spec.Network.Interfaces", bd.Name),
+						))
+				}
+			case vmopv1.VirtualMachineBootOptionsBootableDiskDevice:
+				// Validate that the named disk is present.
+				found := slices.ContainsFunc(vm.Status.Volumes, func(disk vmopv1.VirtualMachineVolumeStatus) bool {
+					return disk.Name == bd.Name
+				})
+
+				if !found {
+					allErrs = append(
+						allErrs,
+						field.Invalid(
+							fieldPath.Index(i),
+							bd,
+							fmt.Sprintf("bootable disk device %q was not found in vm.Status.Volumes", bd.Name),
+						))
+				}
+			case vmopv1.VirtualMachineBootOptionsBootableCDRomDevice:
+				// Validate that a CD-ROM device has been defined.
+				if len(vm.Spec.Hardware.Cdrom) == 0 {
+					allErrs = append(
+						allErrs,
+						field.Invalid(
+							fieldPath.Index(i),
+							bd,
+							"no CD-ROM device(s) defined for this VM",
+						))
+				}
+			default:
+				allErrs = append(
+					allErrs,
+					field.Invalid(
+						fieldPath.Index(i).Child("type"),
+						bd,
+						fmt.Sprintf("unsupported bootable device type: %q", bd.Type),
+					))
+			}
 		}
 	}
 

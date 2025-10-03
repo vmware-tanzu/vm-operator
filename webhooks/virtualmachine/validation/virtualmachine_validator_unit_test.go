@@ -3040,7 +3040,7 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+						"spec.bootOptions.bootRetry: Required value: bootRetry must be set when setting bootRetryDelay",
 					),
 				},
 			),
@@ -3055,7 +3055,7 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+						"spec.bootOptions.bootRetry: Required value: bootRetry must be set when setting bootRetryDelay",
 					),
 				},
 			),
@@ -3081,7 +3081,7 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+						"spec.bootOptions.efiSecureBoot: Forbidden: cannot set efiSecureBoot when image firmware is not 'efi'",
 					),
 				},
 			),
@@ -3096,7 +3096,7 @@ func unitTestsValidateCreate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+						"spec.bootOptions.efiSecureBoot: Forbidden: cannot set efiSecureBoot when image firmware is not 'efi'",
 					),
 				},
 			),
@@ -3111,6 +3111,27 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting bootOrder on create",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions.bootOrder: Forbidden: when creating a VM",
+					),
 				},
 			),
 		)
@@ -5335,7 +5356,7 @@ func unitTestsValidateUpdate() {
 	})
 
 	Context("BootOptions", func() {
-		DescribeTable("BootOptions create", doTest,
+		DescribeTable("BootOptions update", doTest,
 
 			Entry("allow empty bootOptions",
 				testParams{
@@ -5346,16 +5367,33 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
+			Entry("disallow setting bootRetryDelay VM is PoweredOn",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryEnabled,
+							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+					),
+				},
+			),
+
 			Entry("disallow setting bootRetryDelay when bootRetry is unset",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
 						}
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+						"spec.bootOptions.bootRetry: Required value: bootRetry must be set when setting bootRetryDelay",
 					),
 				},
 			),
@@ -5363,6 +5401,7 @@ func unitTestsValidateUpdate() {
 			Entry("disallow setting bootRetryDelay when bootRetry is disabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryDisabled,
 							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
@@ -5370,7 +5409,7 @@ func unitTestsValidateUpdate() {
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.bootRetry: Required value: when setting bootRetryDelay",
+						"spec.bootOptions.bootRetry: Required value: bootRetry must be set when setting bootRetryDelay",
 					),
 				},
 			),
@@ -5378,6 +5417,7 @@ func unitTestsValidateUpdate() {
 			Entry("allow setting bootRetryDelay when bootRetry is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							BootRetry:      vmopv1.VirtualMachineBootOptionsBootRetryEnabled,
 							BootRetryDelay: &metav1.Duration{Duration: 10 * time.Second},
@@ -5387,16 +5427,33 @@ func unitTestsValidateUpdate() {
 				},
 			),
 
+			Entry("disallow setting efiSecureBoot when VM is PoweredOn",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+					),
+				},
+			),
+
 			Entry("disallow setting efiSecureBoot when firmware is unset",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
 						}
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+						"spec.bootOptions.efiSecureBoot: Forbidden: cannot set efiSecureBoot when image firmware is not 'efi'",
 					),
 				},
 			),
@@ -5404,14 +5461,15 @@ func unitTestsValidateUpdate() {
 			Entry("disallow setting efiSecureBoot when firmware is BIOS",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
-							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeBIOS,
 							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeBIOS,
 						}
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions.efiSecureBoot: Forbidden: when image firmware is not EFI",
+						"spec.bootOptions.efiSecureBoot: Forbidden: cannot set efiSecureBoot when image firmware is not 'efi'",
 					),
 				},
 			),
@@ -5419,10 +5477,428 @@ func unitTestsValidateUpdate() {
 			Entry("allow setting efiSecureBoot when firmware is EFI",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
 							Firmware:      vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
 							EFISecureBoot: vmopv1.VirtualMachineBootOptionsEFISecureBootEnabled,
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting bootOrder when VM is PoweredOn",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								},
+							},
+						}
+					},
+					expectAllowed: false,
+					validate: doValidateWithMsg(
+						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+					),
+				},
+			),
+
+			Entry("allow setting bootOrder when VM is PoweredOff",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow setting bootOrder when disk or network device is missing name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								},
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow setting bootOrder when duplicate disk device is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow setting bootOrder when duplicate network device is present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when specified network interface is not present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth1",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when vm.spec.network is nil",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth1",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+
+						ctx.vm.Spec.Network = nil
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when specified disk is not present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-1",
+								},
+							},
+						}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when CD-ROM is specified, but not configured",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Spec.Hardware.Cdrom = []vmopv1.VirtualMachineCdromSpec{}
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("disallow when type is unsupported",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: "usb",
+									Name: "usb0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
+						}
+					},
+					expectAllowed: false,
+				},
+			),
+
+			Entry("allow when all specified devices are present",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{
+								{
+									Name: "new",
+									Image: vmopv1.VirtualMachineImageRef{
+										Name: "vmi-new",
+										Kind: vmiKind,
+									},
+								},
+							},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+						ctx.vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+							BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+									Name: "eth0",
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+								},
+								{
+									Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+									Name: "disk-0",
+								},
+							},
+						}
+						ctx.vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+						ctx.vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name: "disk-0",
+							},
 						}
 					},
 					expectAllowed: true,

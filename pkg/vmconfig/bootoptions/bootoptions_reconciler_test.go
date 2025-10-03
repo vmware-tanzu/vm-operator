@@ -154,15 +154,6 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 			err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
 		})
 
-		When("moVM config is nil", func() {
-			BeforeEach(func() {
-				moVM.Config = nil
-			})
-			It("should return an error", func() {
-				Expect(err).To(HaveOccurred())
-			})
-		})
-
 		Context("bootDelay", func() {
 			When("bootDelay is added to vm spec", func() {
 				BeforeEach(func() {
@@ -367,60 +358,6 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 			})
 		})
 
-		Context("enterBootSetup", func() {
-			When("enterBootSetup is added to vm spec", func() {
-				BeforeEach(func() {
-					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
-						EnterBootSetup: vmopv1.VirtualMachineBootOptionsForceBootEntryEnabled,
-					}
-				})
-				It("should be set in configSpec", func() {
-					Expect(err).To(BeNil())
-					Expect(configSpec.BootOptions).NotTo(BeNil())
-					Expect(*configSpec.BootOptions.EnterBIOSSetup).To(BeTrue())
-				})
-			})
-
-			When("enterBootSetup is updated from vm spec", func() {
-				BeforeEach(func() {
-					moVM = mo.VirtualMachine{
-						Config: &vimtypes.VirtualMachineConfigInfo{
-							BootOptions: &vimtypes.VirtualMachineBootOptions{
-								EnterBIOSSetup: ptr.To(true),
-							},
-						},
-					}
-					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
-						EnterBootSetup: vmopv1.VirtualMachineBootOptionsForceBootEntryDisabled,
-					}
-				})
-				It("should be updated in configSpec", func() {
-					Expect(err).To(BeNil())
-					Expect(configSpec.BootOptions).NotTo(BeNil())
-					Expect(*configSpec.BootOptions.EnterBIOSSetup).To(BeFalse())
-				})
-			})
-
-			When("enterBootSetup remains unchanged", func() {
-				BeforeEach(func() {
-					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
-						EnterBootSetup: vmopv1.VirtualMachineBootOptionsForceBootEntryEnabled,
-					}
-					moVM = mo.VirtualMachine{
-						Config: &vimtypes.VirtualMachineConfigInfo{
-							BootOptions: &vimtypes.VirtualMachineBootOptions{
-								EnterBIOSSetup: ptr.To(true),
-							},
-						},
-					}
-				})
-				It("should leave an empty configSpec", func() {
-					Expect(err).To(BeNil())
-					Expect(configSpec.BootOptions).To(BeNil())
-				})
-			})
-		})
-
 		Context("efiSecureBootEnabled", func() {
 			When("efiSecureBootEnabled is added to vm spec", func() {
 				BeforeEach(func() {
@@ -525,6 +462,442 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					Expect(err).To(BeNil())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(configSpec.BootOptions.NetworkBootProtocol).To(Equal(string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv6)))
+				})
+			})
+		})
+
+		Context("bootOrder", func() {
+			BeforeEach(func() {
+				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+						},
+					},
+				}
+				vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+					{
+						Name:     "disk-0",
+						DiskUUID: "6000C298-df15-fe89-ddcb-8ea33329595d",
+					},
+				}
+
+				ethDevice := &vimtypes.VirtualVmxnet3{}
+				ethDevice.Key = 4000
+
+				moVM = mo.VirtualMachine{
+					Config: &vimtypes.VirtualMachineConfigInfo{
+						Hardware: vimtypes.VirtualHardware{
+							Device: []vimtypes.BaseVirtualDevice{
+								&vimtypes.VirtualCdrom{},
+								&vimtypes.VirtualDisk{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 2000,
+										Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+											Uuid: "6000C298-df15-fe89-ddcb-8ea33329595d",
+										},
+									},
+								},
+								ethDevice,
+							},
+						},
+					},
+				}
+			})
+
+			When("bootOrder is added to vm spec", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-0",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								Name: "eth0",
+							},
+						},
+					}
+				})
+
+				It("should be set in configSpec", func() {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(configSpec.BootOptions).NotTo(BeNil())
+					Expect(len(configSpec.BootOptions.BootOrder)).To(Equal(len(vm.Spec.BootOptions.BootOrder)))
+					Expect(configSpec.BootOptions.BootOrder[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{}))
+					Expect(configSpec.BootOptions.BootOrder[1]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{}))
+					diskDevice := configSpec.BootOptions.BootOrder[1].(*vimtypes.VirtualMachineBootOptionsBootableDiskDevice)
+					Expect(diskDevice.DeviceKey).To(Equal(int32(2000)))
+					Expect(configSpec.BootOptions.BootOrder[2]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{}))
+					ethDevice := configSpec.BootOptions.BootOrder[2].(*vimtypes.VirtualMachineBootOptionsBootableEthernetDevice)
+					Expect(ethDevice.DeviceKey).To(Equal(int32(4000)))
+				})
+			})
+
+			When("bootOrder is remains unchanged", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-0",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								Name: "eth0",
+							},
+						},
+					}
+					moVM.Config.BootOptions = &vimtypes.VirtualMachineBootOptions{
+						BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+							&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+							&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+								DeviceKey: 2000,
+							},
+							&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{
+								DeviceKey: 4000,
+							},
+						},
+					}
+				})
+
+				It("should not be set in configSpec", func() {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(configSpec.BootOptions).To(BeNil())
+				})
+			})
+
+			When("bootOrder is updated", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-0",
+							},
+						},
+					}
+					moVM.Config.BootOptions = &vimtypes.VirtualMachineBootOptions{
+						BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+							&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+							&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+								DeviceKey: 2000,
+							},
+							&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{
+								DeviceKey: 4000,
+							},
+						},
+					}
+				})
+
+				It("should be updated in configSpec", func() {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(configSpec.BootOptions).NotTo(BeNil())
+					Expect(len(configSpec.BootOptions.BootOrder)).To(Equal(len(vm.Spec.BootOptions.BootOrder)))
+					Expect(configSpec.BootOptions.BootOrder[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{}))
+					Expect(configSpec.BootOptions.BootOrder[1]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{}))
+					diskDevice := configSpec.BootOptions.BootOrder[1].(*vimtypes.VirtualMachineBootOptionsBootableDiskDevice)
+					Expect(diskDevice.DeviceKey).To(Equal(int32(2000)))
+				})
+			})
+
+			When("bootOrder is removed", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = nil
+					moVM.Config.BootOptions = &vimtypes.VirtualMachineBootOptions{
+						BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+							&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+							&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+								DeviceKey: 2000,
+							},
+							&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{
+								DeviceKey: 4000,
+							},
+						},
+					}
+				})
+
+				It("should be removed from configSpec", func() {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(configSpec.BootOptions).To(BeNil())
+				})
+			})
+
+			When("boot disk is not found in status.volumes", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-1",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								Name: "eth0",
+							},
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("unable to locate disk matching name"))
+				})
+			})
+
+			When("boot disk UUID is not found in configInfo", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-0",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								Name: "eth0",
+							},
+						},
+					}
+					moVM = mo.VirtualMachine{
+						Config: &vimtypes.VirtualMachineConfigInfo{
+							Hardware: vimtypes.VirtualHardware{
+								Device: []vimtypes.BaseVirtualDevice{
+									&vimtypes.VirtualCdrom{},
+									&vimtypes.VirtualDisk{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 2000,
+											Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+												Uuid: "6000C298-d873-cdd9-a1e2-bd595af0e6f5",
+											},
+										},
+									},
+								},
+							},
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("unable to locate a disk matching UUID"))
+					Expect(err.Error()).To(ContainSubstring(vm.Status.Volumes[0].DiskUUID))
+				})
+			})
+
+			When("ethernet device is not found", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-0",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								Name: "eth1",
+							},
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("unable to locate a network interface matching name"))
+				})
+			})
+
+			When("CD-ROM device is not found", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-0",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								Name: "eth0",
+							},
+						},
+					}
+					moVM = mo.VirtualMachine{
+						Config: &vimtypes.VirtualMachineConfigInfo{
+							Hardware: vimtypes.VirtualHardware{
+								Device: []vimtypes.BaseVirtualDevice{
+									&vimtypes.VirtualDisk{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 2000,
+											Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+												Uuid: "6000C298-df15-fe89-ddcb-8ea33329595d",
+											},
+										},
+									},
+								},
+							},
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("no cdrom device found"))
+				})
+			})
+
+			When("unsupported device type is specified", func() {
+				BeforeEach(func() {
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: "usb",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableCDRomDevice,
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-1",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								Name: "eth0",
+							},
+						},
+					}
+				})
+
+				It("should return an error", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("unsupported bootable device type"))
+				})
+			})
+
+			When("there are multiple devices", func() {
+				BeforeEach(func() {
+					ethDevice1 := &vimtypes.VirtualVmxnet3{}
+					ethDevice1.Key = 4000
+					ethDevice2 := &vimtypes.VirtualVmxnet3{}
+					ethDevice2.Key = 4001
+					ethDevice3 := &vimtypes.VirtualVmxnet3{}
+					ethDevice3.Key = 4002
+
+					moVM = mo.VirtualMachine{
+						Config: &vimtypes.VirtualMachineConfigInfo{
+							Hardware: vimtypes.VirtualHardware{
+								Device: []vimtypes.BaseVirtualDevice{
+									&vimtypes.VirtualCdrom{},
+									&vimtypes.VirtualDisk{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 2000,
+											Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+												Uuid: "6000C298-df15-fe89-ddcb-8ea33329595d",
+											},
+										},
+									},
+									&vimtypes.VirtualDisk{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 2001,
+											Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+												Uuid: "6000C298-df15-fe89-ddcb-8ea33329595e",
+											},
+										},
+									},
+									&vimtypes.VirtualDisk{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 2002,
+											Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+												Uuid: "6000C298-df15-fe89-ddcb-8ea33329595f",
+											},
+										},
+									},
+									ethDevice1,
+									ethDevice2,
+									ethDevice3,
+								},
+							},
+						},
+					}
+					vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{
+								Name: "eth0",
+							},
+							{
+								Name: "eth1",
+							},
+							{
+								Name: "eth2",
+							},
+						},
+					}
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "disk-2",
+							DiskUUID: "6000C298-df15-fe89-ddcb-8ea33329595f",
+						},
+						{
+							Name:     "disk-0",
+							DiskUUID: "6000C298-df15-fe89-ddcb-8ea33329595d",
+						},
+						{
+							Name:     "disk-1",
+							DiskUUID: "6000C298-df15-fe89-ddcb-8ea33329595e",
+						},
+					}
+					vm.Spec.BootOptions = &vmopv1.VirtualMachineBootOptions{
+						BootOrder: []vmopv1.VirtualMachineBootOptionsBootableDevice{
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-1",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableDiskDevice,
+								Name: "disk-0",
+							},
+							{
+								Type: vmopv1.VirtualMachineBootOptionsBootableNetworkDevice,
+								Name: "eth2",
+							},
+						},
+					}
+				})
+
+				It("should set the correct configSpec bootOrder", func() {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(configSpec.BootOptions).NotTo(BeNil())
+					Expect(len(configSpec.BootOptions.BootOrder)).To(Equal(len(vm.Spec.BootOptions.BootOrder)))
+					Expect(configSpec.BootOptions.BootOrder[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{}))
+					disk1 := configSpec.BootOptions.BootOrder[0].(*vimtypes.VirtualMachineBootOptionsBootableDiskDevice)
+					Expect(disk1.DeviceKey).To(Equal(int32(2001)))
+					Expect(configSpec.BootOptions.BootOrder[1]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{}))
+					disk0 := configSpec.BootOptions.BootOrder[1].(*vimtypes.VirtualMachineBootOptionsBootableDiskDevice)
+					Expect(disk0.DeviceKey).To(Equal(int32(2000)))
+					Expect(configSpec.BootOptions.BootOrder[2]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{}))
+					eth2 := configSpec.BootOptions.BootOrder[2].(*vimtypes.VirtualMachineBootOptionsBootableEthernetDevice)
+					Expect(eth2.DeviceKey).To(Equal(int32(4002)))
 				})
 			})
 		})

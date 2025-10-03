@@ -904,6 +904,15 @@ var _ = Describe("CompareBootOptions", func() {
 					EnterBIOSSetup:       truePtr,
 					EfiSecureBootEnabled: truePtr,
 					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{
+							DeviceKey: 4000,
+						},
+					},
 				},
 			},
 			ConfigSpec{
@@ -914,6 +923,15 @@ var _ = Describe("CompareBootOptions", func() {
 					EnterBIOSSetup:       truePtr,
 					EfiSecureBootEnabled: truePtr,
 					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{
+							DeviceKey: 4000,
+						},
+					},
 				},
 			},
 		),
@@ -937,6 +955,15 @@ var _ = Describe("CompareBootOptions", func() {
 					EnterBIOSSetup:       truePtr,
 					EfiSecureBootEnabled: truePtr,
 					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{
+							DeviceKey: 4000,
+						},
+					},
 				},
 			},
 			ConfigSpec{
@@ -947,6 +974,129 @@ var _ = Describe("CompareBootOptions", func() {
 					EnterBIOSSetup:       truePtr,
 					EfiSecureBootEnabled: truePtr,
 					NetworkBootProtocol:  "",
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{
+							DeviceKey: 4000,
+						},
+					},
+				},
+			},
+		),
+
+		Entry("BootOptions needs updating -- ConfigInfo bootOptions and ConfigSpec bootOrder differ",
+			ConfigInfo{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       falsePtr,
+					EfiSecureBootEnabled: falsePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableEthernetDevice{
+							DeviceKey: 4000,
+						},
+					},
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+					},
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(0),
+					BootRetryEnabled:     nil,
+					BootRetryDelay:       int64(0),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  "",
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+					},
+				},
+			},
+		),
+
+		Entry("BootOptions needs updating -- ConfigInfo bootOptions and ConfigSpec bootOrder device keys differ",
+			ConfigInfo{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       falsePtr,
+					EfiSecureBootEnabled: falsePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2001,
+						},
+					},
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(10 * 1000),
+					BootRetryEnabled:     truePtr,
+					BootRetryDelay:       int64(10 * 1000),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2001,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+					},
+				},
+			},
+			ConfigSpec{
+				BootOptions: &vimtypes.VirtualMachineBootOptions{
+					BootDelay:            int64(0),
+					BootRetryEnabled:     nil,
+					BootRetryDelay:       int64(0),
+					EnterBIOSSetup:       truePtr,
+					EfiSecureBootEnabled: truePtr,
+					NetworkBootProtocol:  "",
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2001,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+					},
 				},
 			},
 		),
@@ -960,6 +1110,15 @@ var _ = Describe("CompareBootOptions", func() {
 					EnterBIOSSetup:       falsePtr,
 					EfiSecureBootEnabled: falsePtr,
 					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2001,
+						},
+					},
 				},
 			},
 			ConfigSpec{
@@ -970,6 +1129,15 @@ var _ = Describe("CompareBootOptions", func() {
 					EnterBIOSSetup:       falsePtr,
 					EfiSecureBootEnabled: falsePtr,
 					NetworkBootProtocol:  string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4),
+					BootOrder: []vimtypes.BaseVirtualMachineBootOptionsBootableDevice{
+						&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2000,
+						},
+						&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{
+							DeviceKey: 2001,
+						},
+					},
 				},
 			},
 			ConfigSpec{},

@@ -248,6 +248,21 @@ console connection to a VM.
 
 
 ## Types
+### AffinitySpec
+
+
+
+AffinitySpec defines the group of affinity scheduling rules.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `vmAffinity` _[VMAffinitySpec](#vmaffinityspec)_ | VMAffinity describes affinity scheduling rules related to other VMs. |
+| `vmAntiAffinity` _[VMAntiAffinitySpec](#vmantiaffinityspec)_ | VMAntiAffinity describes anti-affinity scheduling rules related to other
+VMs. |
+
 ### DynamicDirectPathIODevice
 
 
@@ -331,6 +346,19 @@ All values must adhere to the RE2 regular expression syntax as documented
 at https://golang.org/s/re2syntax. Invalid values may be rejected or
 ignored depending on the implementation of this API. Either way, invalid
 values will not be considered when evaluating the ready state of a VM. |
+
+### IDEControllerSpec
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareSpec](#virtualmachinehardwarespec)
+
+| Field | Description |
+| --- | --- |
+| `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
 
 ### InstanceStorage
 
@@ -417,6 +445,27 @@ _Appears in:_
 Traffic intended for the service should be sent to any of these ingress
 points. |
 
+### NVMEControllerSpec
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareSpec](#virtualmachinehardwarespec)
+
+| Field | Description |
+| --- | --- |
+| `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
+| `pciSlotNumber` _integer_ | PCISlotNumber describes the desired PCI slot number to use for this
+controller.
+
+Please note, most of the time this field should be empty so the system
+can pick an available slot. |
+| `sharingMode` _[VirtualControllerSharingMode](#virtualcontrollersharingmode)_ | SharingMode describes the sharing mode for the controller.
+
+Defaults to None. |
+
 ### NetworkDeviceStatus
 
 
@@ -486,6 +535,127 @@ More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persis
 | `readOnly` _boolean_ | readOnly Will force the ReadOnly setting in VolumeMounts.
 Default false. |
 | `instanceVolumeClaim` _[InstanceVolumeClaimVolumeSource](#instancevolumeclaimvolumesource)_ | InstanceVolumeClaim is set if the PVC is backed by instance storage. |
+| `applicationType` _[VolumeApplicationType](#volumeapplicationtype)_ | ApplicationType describes the type of application for which this volume
+is intended to be used.
+
+  - OracleRAC      -- The volume is configured with
+                      diskMode=IndependentPersistent and
+                      sharingMode=MultiWriter and attached to the first
+                      SCSI controller with an available slot and
+                      sharingMode=None. If no such controller exists,
+                      a new ParaVirtual SCSI controller will be created
+                      with sharingMode=None long as there are currently
+                      three or fewer SCSI controllers.
+  - MicrosoftWSFC  -- The volume is configured with
+                      diskMode=IndependentPersistent and attached to a
+                      SCSI controller with sharingMode=Physical.
+                      If no such controller exists, a new ParaVirtual
+                      SCSI controller will be created with
+                      sharingMode=Physical as long as there are currently
+                      three or fewer SCSI controllers. |
+| `controllerBusNumber` _integer_ | ControllerBusNumber describes the bus number of the controller to which
+this volume should be attached.
+
+The bus number specifies a controller based on the value of the
+controllerType field:
+
+  - IDE  -- spec.hardware.ideControllers
+  - NVME -- spec.hardware.nvmeControllers
+  - SATA -- spec.hardware.sataControllers
+  - SCSI -- spec.hardware.scsiControllers
+
+If this and controllerType are both omitted, the volume will be attached
+to the first available SCSI controller. If there is no SCSI controller
+with an available slot, a new ParaVirtual SCSI controller will be added
+as long as there are currently three or fewer SCSI controllers.
+
+If the specified controller has no available slots, the request will be
+denied. |
+| `controllerType` _[VirtualControllerType](#virtualcontrollertype)_ | ControllerType describes the type of the controller to which this volume
+should be attached.
+
+Please keep in mind the number of volumes supported by the different
+types of controllers:
+
+  - IDE                -- 4 total (2 per controller)
+  - NVME               -- 256 total (64 per controller)
+  - SATA               -- 120 total (30 per controller)
+  - SCSI (ParaVirtual) -- 252 total (63 per controller)
+  - SCSI (BusLogic)    -- 60 total (15 per controller)
+  - SCSI (LsiLogic)    -- 60 total (15 per controller)
+  - SCSI (LsiLogicSAS) -- 60 total (15 per controller)
+
+Please note, the number of supported volumes per SCSI controller may seem
+off, but remember that a SCSI controller occupies a slot on its own bus.
+Thus even though a ParaVirtual SCSI controller supports 64 targets and
+the other types of SCSI controllers support 16 targets, one of the
+targets is occupied by the controller itself.
+
+Defaults to SCSI when controllerBusNumber is also omitted; otherwise the
+default value is determined by the logic outlined in the description of
+the controllerBusNumber field. |
+| `diskMode` _[VolumeDiskMode](#volumediskmode)_ | DiskMode describes the desired mode to use when attaching the volume.
+
+Please note, volumes attached as IndependentNonPersistent or
+IndependentPersistent are not included in a VM's snapshots or backups.
+
+Also, any data written to volumes attached as IndependentNonPersistent or
+NonPersistent will be discarded when the VM is powered off.
+
+Defaults to Persistent. |
+| `sharingMode` _[VolumeSharingMode](#volumesharingmode)_ | SharingMode describes the volume's desired sharing mode.
+
+When applicationType=OracleRAC, the field defaults to MultiWriter.
+Otherwise, defaults to None. |
+| `unitNumber` _integer_ | UnitNumber describes the desired unit number for attaching the volume to
+a storage controller.
+
+When omitted, the next available unit number of the selected controller
+is used.
+
+This value must be unique for the controller referenced by the
+controllerBusNumber and controllerType properties. If the value is
+already used by another device, this volume will not be attached.
+
+Please note the value 7 is invalid if controllerType=SCSI as 7 is the
+unit number of the SCSI controller on its own bus. |
+
+### PolicySpec
+
+_Underlying type:_ `LocalObjectRef`
+
+
+
+_Appears in:_
+- [PolicyStatus](#policystatus)
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an
+object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |
+| `kind` _string_ | Kind is a string value representing the REST resource this object
+represents.
+Servers may infer this from the endpoint the client submits requests to.
+Cannot be updated.
+In CamelCase.
+More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |
+| `name` _string_ | Name refers to a unique resource in the current namespace.
+More info: http://kubernetes.io/docs/user-guide/identifiers#names |
+
+### PolicyStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineStatus](#virtualmachinestatus)
+
+| Field | Description |
+| --- | --- |
+| `generation` _integer_ | Generation describes the observed generation of the policy applied to
+this VM. |
 
 ### QuiesceSpec
 
@@ -535,6 +705,58 @@ _Appears in:_
 | `clusterMoID` _string_ |  |
 | `childResourcePoolMoID` _string_ |  |
 
+### SATAControllerSpec
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareSpec](#virtualmachinehardwarespec)
+
+| Field | Description |
+| --- | --- |
+| `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
+| `pciSlotNumber` _integer_ | PCISlotNumber describes the desired PCI slot number to use for this
+controller.
+
+Please note, most of the time this field should be empty so the system
+can pick an available slot. |
+
+### SCSIControllerSpec
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareSpec](#virtualmachinehardwarespec)
+
+| Field | Description |
+| --- | --- |
+| `busNumber` _integer_ | BusNumber describes the desired bus number of the controller. |
+| `pciSlotNumber` _integer_ | PCISlotNumber describes the desired PCI slot number to use for this
+controller.
+
+Please note, most of the time this field should be empty so the system
+can pick an available slot. |
+| `sharingMode` _[VirtualControllerSharingMode](#virtualcontrollersharingmode)_ | SharingMode describes the sharing mode for the controller.
+
+Defaults to None. |
+| `type` _[SCSIControllerType](#scsicontrollertype)_ | Type describes the desired type of SCSI controller.
+
+Defaults to ParaVirtual. |
+
+### SCSIControllerType
+
+_Underlying type:_ `string`
+
+
+
+_Appears in:_
+- [SCSIControllerSpec](#scsicontrollerspec)
+
+
 ### TCPSocketAction
 
 
@@ -564,6 +786,38 @@ _Appears in:_
 | --- | --- |
 | `profileName` _string_ |  |
 
+### VMAffinitySpec
+
+
+
+VMAffinitySpec defines the affinity requirements for scheduling rules related
+to other VMs.
+
+_Appears in:_
+- [AffinitySpec](#affinityspec)
+
+| Field | Description |
+| --- | --- |
+| `requiredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingPreferredDuringExecution describes affinity
+requirements that must be met or the VM will not be scheduled.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied.
+
+Note: Any update to this field will replace the entire list rather than
+merging with the existing elements. |
+| `preferredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingPreferredDuringExecution describes affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to
+schedule VMs that satisfy the affinity expressions specified by this
+field, but it may choose to violate one or more of the expressions.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied.
+
+Note: Any update to this field will replace the entire list rather than
+merging with the existing elements. |
+
 ### VMAffinityTerm
 
 
@@ -571,8 +825,8 @@ _Appears in:_
 VMAffinityTerm defines the VM affinity/anti-affinity term.
 
 _Appears in:_
-- [VirtualMachineAffinityVMAffinitySpec](#virtualmachineaffinityvmaffinityspec)
-- [VirtualMachineAntiAffinityVMAffinitySpec](#virtualmachineantiaffinityvmaffinityspec)
+- [VMAffinitySpec](#vmaffinityspec)
+- [VMAntiAffinitySpec](#vmantiaffinityspec)
 
 | Field | Description |
 | --- | --- |
@@ -587,13 +841,45 @@ Commonly used values include:
 Please note, The following rules apply when specifying the topology key in the context of a zone/host.
 
 - When topology key is in the context of a zone, the only supported verbs are
-  PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution.
+  PreferredDuringSchedulingPreferredDuringExecution and RequiredDuringSchedulingPreferredDuringExecution.
 - When topology key is in the context of a host, the only supported verbs are
   PreferredDuringSchedulingPreferredDuringExecution and RequiredDuringSchedulingPreferredDuringExecution
-  for VM-VM node-level anti-affinity scheduling.
-- When topology key is in the context of a host, the only supported verbs are
-  PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution
   for VM-VM node-level anti-affinity scheduling. |
+
+### VMAntiAffinitySpec
+
+
+
+VMAntiAffinitySpec defines the anti-affinity requirements for scheduling
+rules related to other VMs.
+
+_Appears in:_
+- [AffinitySpec](#affinityspec)
+
+| Field | Description |
+| --- | --- |
+| `requiredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingPreferredDuringExecution describes anti-affinity
+requirements that must be met or the VM will not be scheduled.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied.
+
+Note: Any update to this field will replace the entire list rather than
+merging with the existing elements. |
+| `preferredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingPreferredDuringExecution describes anti-affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to
+schedule VMs that satisfy the anti-affinity expressions specified by
+this field, but it may choose to violate one or more of the expressions.
+Additionally, it also describes the anti-affinity requirements that
+should be met during run-time, but the VM can still be run if the
+requirements cannot be satisfied.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied.
+
+Note: Any update to this field will replace the entire list rather than
+merging with the existing elements. |
 
 ### VSphereClusterModuleStatus
 
@@ -610,6 +896,70 @@ _Appears in:_
 | `groupName` _string_ |  |
 | `moduleUUID` _string_ |  |
 | `clusterMoID` _string_ |  |
+
+### VirtualControllerSharingMode
+
+_Underlying type:_ `string`
+
+
+
+_Appears in:_
+- [NVMEControllerSpec](#nvmecontrollerspec)
+- [SCSIControllerSpec](#scsicontrollerspec)
+
+
+### VirtualControllerStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareStatus](#virtualmachinehardwarestatus)
+
+| Field | Description |
+| --- | --- |
+| `busNumber` _integer_ | BusNumber describes the observed bus number of the controller. |
+| `type` _[VirtualControllerType](#virtualcontrollertype)_ | Type describes the observed type of the controller. |
+| `devices` _[VirtualDeviceStatus](#virtualdevicestatus) array_ | Devices describes the observed devices connected to the controller. |
+
+### VirtualControllerType
+
+_Underlying type:_ `string`
+
+
+
+_Appears in:_
+- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
+- [VirtualControllerStatus](#virtualcontrollerstatus)
+- [VirtualMachineCdromSpec](#virtualmachinecdromspec)
+- [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
+
+
+### VirtualDeviceStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualControllerStatus](#virtualcontrollerstatus)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ | Name describes the name of the virtual device. |
+| `type` _[VirtualDeviceType](#virtualdevicetype)_ | Type describes the type of the virtual device. |
+| `unitNumber` _integer_ | UnitNumber describes the observed unit number of the device. |
+
+### VirtualDeviceType
+
+_Underlying type:_ `string`
+
+
+
+_Appears in:_
+- [VirtualDeviceStatus](#virtualdevicestatus)
+
 
 ### VirtualDevices
 
@@ -649,148 +999,11 @@ affect the VM.
 
 Please note this field is ignored if the VM is deployed from an ISO with
 CD-ROM devices attached. |
-| `defaultVolumeProvisioningMode` _[VirtualMachineVolumeProvisioningMode](#virtualmachinevolumeprovisioningmode)_ | DefaultVolumeProvisioningMode specifies the default provisioning mode for
+| `defaultVolumeProvisioningMode` _[VolumeProvisioningMode](#volumeprovisioningmode)_ | DefaultVolumeProvisioningMode specifies the default provisioning mode for
 persistent volumes managed by this VM. |
 | `changeBlockTracking` _boolean_ | ChangeBlockTracking is a flag that enables incremental backup support
 for this VM, a feature utilized by external backup systems such as
 VMware Data Recovery. |
-
-### VirtualMachineAffinitySpec
-
-
-
-VirtualMachineAffinitySpec defines the group of affinity scheduling rules.
-
-_Appears in:_
-- [VirtualMachineSpec](#virtualmachinespec)
-
-| Field | Description |
-| --- | --- |
-| `zoneAffinity` _[VirtualMachineAffinityZoneAffinitySpec](#virtualmachineaffinityzoneaffinityspec)_ | ZoneAffinity describes affinity scheduling rules related to a zone. |
-| `zoneAntiAffinity` _[VirtualMachineAntiAffinityZoneAffinitySpec](#virtualmachineantiaffinityzoneaffinityspec)_ | ZoneAntiAffinity describes anti-affinity scheduling rules related to a zone. |
-| `vmAffinity` _[VirtualMachineAffinityVMAffinitySpec](#virtualmachineaffinityvmaffinityspec)_ | VMAffinity describes affinity scheduling rules related to other VMs. |
-| `vmAntiAffinity` _[VirtualMachineAntiAffinityVMAffinitySpec](#virtualmachineantiaffinityvmaffinityspec)_ | VMAntiAffinity describes anti-affinity scheduling rules related to other VMs. |
-
-### VirtualMachineAffinityVMAffinitySpec
-
-
-
-VirtualMachineAffinityVMAffinitySpec defines the affinity requirements for scheduling
-rules related to other VMs.
-
-_Appears in:_
-- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `requiredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that must be met or the VM will not be scheduled.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
-that satisfy the anti-affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-
-### VirtualMachineAffinityZoneAffinitySpec
-
-
-
-VirtualMachineAffinityZoneAffinitySpec defines the affinity scheduling rules
-related to zones.
-
-_Appears in:_
-- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `requiredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that must be met or the VM will not be scheduled.
-
-When there are multiple elements, the lists of zones corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
-that satisfy the anti-affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions.
-
-When there are multiple elements, the lists of zones corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-
-### VirtualMachineAntiAffinityVMAffinitySpec
-
-
-
-VirtualMachineAntiAffinityVMAffinitySpec defines the anti-affinity requirements for scheduling
-rules related to other VMs.
-
-_Appears in:_
-- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `requiredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes anti-affinity
-requirements that must be met or the VM will not be scheduled.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes anti-affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
-that satisfy the affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `requiredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingPreferredExecution describes anti-affinity
-requirements that must be met or the VM will not be scheduled. Additionally,
-it also describes the anti-affinity requirements that should be met during run-time,
-but the VM can still be run if the requirements cannot be satisfied.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingPreferredDuringExecution describes anti-affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
-that satisfy the affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions. Additionally,
-it also describes the anti-affinity requirements that should be met during run-time,
-but the VM can still be run if the requirements cannot be satisfied.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-
-### VirtualMachineAntiAffinityZoneAffinitySpec
-
-
-
-VirtualMachineAntiAffinityZoneAffinitySpec defines the anti-affinity scheduling rules
-related to zones.
-
-_Appears in:_
-- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `requiredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that must be met or the VM will not be scheduled.
-
-When there are multiple elements, the lists of zones corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs to
-that satisfy the anti-affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions.
-
-When there are multiple elements, the lists of zones corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
 
 ### VirtualMachineBootOptions
 
@@ -1006,6 +1219,27 @@ Location is the city, island, or other regional designation.
 
 Please see https://kb.vmware.com/s/article/2145518 for a list of valid
 time zones for Linux systems. |
+| `expirePasswordAfterNextLogin` _boolean_ | ExpirePasswordAfterNextLogin indicates whether or not the root account is required to
+change their password after the next login. |
+| `password` _[PasswordSecretKeySelector](#passwordsecretkeyselector)_ | Password is the new root password for the machine.
+
+When not explicitly specified, the Key field for the selector defaults to
+`password`. |
+| `scriptText` _[ValueOrSecretKeySelector](#valueorsecretkeyselector)_ | ScriptText is the script to run before and after customization.
+
+Please see https://knowledge.broadcom.com/external/article?legacyId=1026614
+for script examples. |
+| `customizeAtNextPowerOn` _boolean_ | CustomizeAtNextPowerOn describes when customization is performed on the VM.
+
+When set to false, the VM will not be customized at the next power on. When
+set to true, the VM will be customized at the next power on, and after the
+customization this field will be set to false. This allows for when
+customization is done explicitly requested, i.e. so that changes made in the
+VM are not overridden by a later customization.
+
+When not set, the VM will only be customized at every power on when the hash
+of the previous customization specification is different from the current
+specification. |
 
 ### VirtualMachineBootstrapSpec
 
@@ -1099,6 +1333,17 @@ The data specified by the Secret key may be plain-text, base64-encoded,
 or gzipped and base64-encoded.
 
 Please note this field and Sysprep are mutually exclusive. |
+| `customizeAtNextPowerOn` _boolean_ | CustomizeAtNextPowerOn describes when customization is performed on the VM.
+
+When set to false, the VM will not be customized at the next power on. When
+set to true, the VM will be customized at the next power on, and after the
+customization this field will be set to false. This allows for when
+customization is done explicitly requested, i.e. so that changes made in the
+VM are not overridden by a later customization.
+
+When not set, the VM will only be customized at every power on when the hash
+of the previous customization specification is different from the current
+specification. |
 
 ### VirtualMachineBootstrapVAppConfigSpec
 
@@ -1121,6 +1366,20 @@ key/value pair.
 
 Please note this field and Properties are mutually exclusive. |
 
+### VirtualMachineCPUAllocationStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareStatus](#virtualmachinehardwarestatus)
+
+| Field | Description |
+| --- | --- |
+| `total` _integer_ | Total describes the observed number of processors. |
+| `reservation` _integer_ | Reservation describes the observed CPU reservation in MHz. |
+
 ### VirtualMachineCdromSpec
 
 
@@ -1128,7 +1387,7 @@ Please note this field and Properties are mutually exclusive. |
 VirtualMachineCdromSpec describes the desired state of a CD-ROM device.
 
 _Appears in:_
-- [VirtualMachineSpec](#virtualmachinespec)
+- [VirtualMachineHardwareSpec](#virtualmachinehardwarespec)
 
 | Field | Description |
 | --- | --- |
@@ -1144,6 +1403,43 @@ This field is immutable when the VM is powered on.
 
 Please note, unlike the spec.imageName field, the value of this
 spec.cdrom.image.name MUST be a Kubernetes object name. |
+| `controllerBusNumber` _integer_ | ControllerBusNumber describes the bus number of the controller to which
+this CD-ROM should be attached.
+
+The bus number specifies a controller based on the value of the
+controllerType field:
+
+  - IDE  -- spec.hardware.ideControllers
+  - SATA -- spec.hardware.sataControllers
+
+If this and controllerType are both omitted, the CD-ROM will be attached
+to the  first available IDE controller. If there is no IDE controller
+with an available slot, a new SATA controller will be added as long as
+there are currently three or fewer SATA controllers.
+
+If the specified controller has no available slots, the request will be
+denied. |
+| `controllerType` _[VirtualControllerType](#virtualcontrollertype)_ | ControllerType describes the type of the controller to which this CD-ROM
+should be attached.
+
+Please keep in mind the number of devices supported by the different
+types of controllers:
+
+  - IDE                -- 4 total (2 per controller)
+  - SATA               -- 120 total (30 per controller)
+
+Defaults to IDE when controllerBusNumber is also omitted; otherwise the
+default value is determined by the logic outlined in the description of
+the controllerBusNumber field. |
+| `unitNumber` _integer_ | UnitNumber describes the desired unit number for attaching the CD-ROM to
+a storage controller.
+
+When omitted, the next available unit number of the selected controller
+is used.
+
+This value must be unique for the controller referenced by the
+controllerBusNumber and controllerType properties. If the value is
+already used by another device, this CD-ROM will not be attached. |
 | `connected` _boolean_ | Connected describes the desired connection state of the CD-ROM device.
 
 When true, the CD-ROM device is added and connected to the VM.
@@ -1410,6 +1706,7 @@ encrypted. |
 | `keyID` _string_ | KeyID describes the key ID used to encrypt the VirtualMachine.
 Please note, this field will be empty if the VirtualMachine is not
 encrypted. |
+| `hasVTPM` _boolean_ | HasVTPM indicates whether or not the VM has a vTPM. |
 
 
 ### VirtualMachineEncryptionType
@@ -1676,6 +1973,89 @@ state of the group was last updated. |
   all of their expected conditions set to True. |
 
 
+### VirtualMachineGuestStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineStatus](#virtualmachinestatus)
+
+| Field | Description |
+| --- | --- |
+| `guestID` _string_ | GuestID describes the ID of the observed operating system. |
+| `guestFullName` _string_ | GuestFullName describes the full name of the observed operating system. |
+
+### VirtualMachineHardwareSpec
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `cdrom` _[VirtualMachineCdromSpec](#virtualmachinecdromspec) array_ | Cdrom describes the desired state of the VM's CD-ROM devices.
+
+Each CD-ROM device requires a reference to an ISO-type
+VirtualMachineImage or ClusterVirtualMachineImage resource as backing.
+
+Multiple CD-ROM devices using the same backing image, regardless of image
+kinds (namespace or cluster scope), are not allowed.
+
+CD-ROM devices can be added, updated, or removed when the VM is powered
+off. When the VM is powered on, only the connection state of existing
+CD-ROM devices can be changed.
+CD-ROM devices are attached to the VM in the specified list-order. |
+| `ideControllers` _[IDEControllerSpec](#idecontrollerspec) array_ | IDEControllers describes the desired list of IDE controllers for the VM.
+
+Defaults to two IDE controllers, with bus 0 and bus 1. |
+| `nvmeControllers` _[NVMEControllerSpec](#nvmecontrollerspec) array_ | NVMEControllers describes the desired list of NVME controllers for the
+VM. |
+| `sataControllers` _[SATAControllerSpec](#satacontrollerspec) array_ | SATAControllers describes the desired list of SATA controllers for the
+VM.
+
+Please note, all SATA controllers are VirtualAHCI. |
+| `scsiControllers` _[SCSIControllerSpec](#scsicontrollerspec) array_ | SCSIControllers describes the desired list of SCSI controllers for the
+VM. |
+
+### VirtualMachineHardwareStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineStatus](#virtualmachinestatus)
+
+| Field | Description |
+| --- | --- |
+| `controllers` _[VirtualControllerStatus](#virtualcontrollerstatus) array_ | Controllers describes the observed list of virtual controllers for the
+VM. |
+| `cpu` _[VirtualMachineCPUAllocationStatus](#virtualmachinecpuallocationstatus)_ | CPU describes the observed CPU allocation of the VM. |
+| `memory` _[VirtualMachineMemoryAllocationStatus](#virtualmachinememoryallocationstatus)_ | Memory describes the observed memory allocation of the VM. |
+| `vGPUs` _[VirtualMachineHardwareVGPUStatus](#virtualmachinehardwarevgpustatus) array_ | VGPUs describes the observed vGPUs used by this VM. |
+
+### VirtualMachineHardwareVGPUStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareStatus](#virtualmachinehardwarestatus)
+
+| Field | Description |
+| --- | --- |
+| `type` _[VirtualMachineVGPUType](#virtualmachinevgputype)_ | Type describes the observed type of the vGPU. |
+| `profile` _string_ | Profile describes the observed profile used by the vGPU.
+
+Please note, this is only applicable to Nvidia vGPUs. |
+| `migrationType` _[VirtualMachineVGPUMigrationType](#virtualmachinevgpumigrationtype)_ | MigrationType describes the vGPU's observed vMotion support. |
+
 ### VirtualMachineImageCacheFileStatus
 
 
@@ -1697,7 +2077,7 @@ The value of this field depends on the type of file:
 - Type=Disk, DiskType=Managed -- The ID value describes a First Class
                                  Disk (FCD). |
 | `type` _[VirtualMachineImageCacheFileType](#virtualmachineimagecachefiletype)_ | Type describes the type of file. |
-| `diskType` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | DiskType describes the type of disk.
+| `diskType` _[VolumeType](#volumetype)_ | DiskType describes the type of disk.
 This field is only non-empty when Type=Disk. |
 
 ### VirtualMachineImageCacheFileType
@@ -1949,6 +2329,20 @@ corresponding Content Library item. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions for this image. |
 | `type` _string_ | Type describes the content library item type (OVF, ISO, or VM) of the
 image. |
+
+### VirtualMachineMemoryAllocationStatus
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareStatus](#virtualmachinehardwarestatus)
+
+| Field | Description |
+| --- | --- |
+| `total` _[Quantity](#quantity)_ | Total describes the observed amount of configured memory. |
+| `reservation` _[Quantity](#quantity)_ | Reservation describes the observed memory reservation. |
 
 ### VirtualMachineNetworkConfigDHCPOptionsStatus
 
@@ -2281,6 +2675,13 @@ Namespace's default network. |
 bootstrap provider is Cloud-Init. Please note it is up to the user to
 ensure the provided device name does not conflict with any other devices
 inside the guest, ex. dvd, cdrom, sda, etc. |
+| `macAddr` _string_ | MACAddr is the optional MAC address of this interface.
+
+If no MAC address is provided, one will be generated by either the network
+provider or vCenter.
+
+Please note this field is only supported when the Network API Group is
+crd.nsx.vmware.com. |
 | `addresses` _string array_ | Addresses is an optional list of IP4 or IP6 addresses to assign to this
 interface.
 
@@ -2316,9 +2717,6 @@ if set to "None", the network provider gateway will be ignored.
 Please note this field is only supported if the network connection
 supports manual IP allocation.
 
-Please note the IP address must include the network prefix length, ex.
-192.168.0.1/24.
-
 Please note this field is mutually exclusive with DHCP4. |
 | `gateway6` _string_ | Gateway6 is the primary IP6 gateway for this interface.
 
@@ -2327,9 +2725,6 @@ if set to "None", the network provider gateway will be ignored.
 
 Please note this field is only supported if the network connection
 supports manual IP allocation.
-
-Please note the IP address must include the network prefix length, ex.
-2001:db8:101::1/64.
 
 Please note this field is mutually exclusive with DHCP6. |
 | `mtu` _integer_ | MTU is the Maximum Transmission Unit size in bytes.
@@ -2546,7 +2941,6 @@ If the bootstrap provider is anything else then this field is set to the
 value of the infrastructure VM's "guest.ipAddress" field. Please see
 https://bit.ly/3Au0jM4 for more information. |
 
-
 ### VirtualMachinePlacementStatus
 
 
@@ -2562,7 +2956,9 @@ _Appears in:_
 | `zoneID` _string_ | Zone describes the recommended zone for this VM. |
 | `node` _string_ | Node describes the recommended node for this VM. |
 | `pool` _string_ | Pool describes the recommended resource pool for this VM. |
-| `datastores` _[VirtualMachineGroupPlacementDatastoreStatus](#virtualmachinegroupplacementdatastorestatus) array_ | Datastores describe the recommended datastores for this VM. |
+| `datastores` _[VirtualMachineGroupPlacementDatastoreStatus](#virtualmachinegroupplacementdatastorestatus) array_ | Datastores describe the recommended datastores for this VM.
+This includes the recommendations for each of the VM's disks
+and files. |
 
 ### VirtualMachinePowerOpMode
 
@@ -2668,6 +3064,9 @@ deleted without the user having to take any direct action.
 If this field is unset then the request resource will not be
 automatically deleted. If this field is set to zero then the request
 resource is eligible for deletion immediately after it finishes. |
+| `backoffLimit` _integer_ | BackoffLimit is the number of status.attempts that should be allowed
+before failing the VirtualMachinePublishRequest and halting any
+future processing. |
 
 ### VirtualMachinePublishRequestStatus
 
@@ -3037,6 +3436,34 @@ _Appears in:_
 | `resourcePools` _[ResourcePoolStatus](#resourcepoolstatus) array_ |  |
 | `clustermodules` _[VSphereClusterModuleStatus](#vsphereclustermodulestatus) array_ |  |
 
+### VirtualMachineSnapshotReference
+
+
+
+
+
+_Appears in:_
+- [VirtualMachineSnapshotStatus](#virtualmachinesnapshotstatus)
+- [VirtualMachineStatus](#virtualmachinestatus)
+
+| Field | Description |
+| --- | --- |
+| `type` _[VirtualMachineSnapshotReferenceType](#virtualmachinesnapshotreferencetype)_ | Type describes the type of the snapshot reference.
+
+Possible values are: Managed, Unmanaged |
+| `name` _string_ | Name is the name of the snapshot resource.  This field is only set
+for managed snapshots. |
+
+### VirtualMachineSnapshotReferenceType
+
+_Underlying type:_ `string`
+
+VirtualMachineSnapshotReferenceType defines the type of the snapshot reference.
+
+_Appears in:_
+- [VirtualMachineSnapshotReference](#virtualmachinesnapshotreference)
+
+
 ### VirtualMachineSnapshotSpec
 
 
@@ -3066,7 +3493,7 @@ that a disk snapshot represents a consistent state of the guest
 file systems. If the virtual machine is powered off or VMware
 Tools are not available, the quiesce spec is ignored. |
 | `description` _string_ | Description represents a description of the snapshot. |
-| `vmRef` _[LocalObjectRef](#localobjectref)_ | VMRef represents the name of the virtual machine for which the
+| `vmName` _string_ | VMName represents the name of the virtual machine for which the
 snapshot is requested. |
 
 ### VirtualMachineSnapshotStatus
@@ -3088,7 +3515,7 @@ state of the guest file system. |
 | `uniqueID` _string_ | UniqueID describes a unique identifier provider by the backing
 infrastructure (e.g., vSphere) that can be used to distinguish
 this snapshot from other snapshots of this virtual machine. |
-| `children` _LocalObjectRef array_ | Children represents the snapshots for which this snapshot is
+| `children` _[VirtualMachineSnapshotReference](#virtualmachinesnapshotreference) array_ | Children represents the snapshots for which this snapshot is
 the parent. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions of the VirtualMachine. |
 | `storage` _[VirtualMachineSnapshotStorageStatus](#virtualmachinesnapshotstoragestatus)_ | Storage describes the observed amount of storage used by a
@@ -3142,18 +3569,6 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `cdrom` _[VirtualMachineCdromSpec](#virtualmachinecdromspec) array_ | Cdrom describes the desired state of the VM's CD-ROM devices.
-
-Each CD-ROM device requires a reference to an ISO-type
-VirtualMachineImage or ClusterVirtualMachineImage resource as backing.
-
-Multiple CD-ROM devices using the same backing image, regardless of image
-kinds (namespace or cluster scope), are not allowed.
-
-CD-ROM devices can be added, updated, or removed when the VM is powered
-off. When the VM is powered on, only the connection state of existing
-CD-ROM devices can be changed.
-CD-ROM devices are attached to the VM in the specified list-order. |
 | `image` _[VirtualMachineImageRef](#virtualmachineimageref)_ | Image describes the reference to the VirtualMachineImage or
 ClusterVirtualMachineImage resource used to deploy this VM.
 
@@ -3232,7 +3647,7 @@ picks the latest instance for the VM class to create the VM.
 If a VM class has been modified and thus, the newly available
 VirtualMachineClassInstance can be specified in spec.class to
 trigger a resize operation. |
-| `affinity` _[VirtualMachineAffinitySpec](#virtualmachineaffinityspec)_ | Affinity describes the VM's scheduling constraints. |
+| `affinity` _[AffinitySpec](#affinityspec)_ | Affinity describes the VM's scheduling constraints. |
 | `crypto` _[VirtualMachineCryptoSpec](#virtualmachinecryptospec)_ | Crypto describes the desired encryption state of the VirtualMachine. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
 used to configure this VM's storage-related attributes.
@@ -3394,15 +3809,14 @@ Defaults to Online. |
 | `bootOptions` _[VirtualMachineBootOptions](#virtualmachinebootoptions)_ | BootOptions describes the settings that control the boot behavior of the
 virtual machine. These settings take effect during the next power-on of the
 virtual machine. |
-| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot represents the desired snapshot that the VM
+| `currentSnapshotName` _string_ | CurrentSnapshotName represents the desired snapshot that the VM
 should point to. This field can be specified to revert the VM
 to a given snapshot. Once the virtual machine has been
 successfully reverted to the desired snapshot, the value of
 this field is cleared.
 
-The value of this field must be an existing object of
-VirtualMachineSnapshot kind that exists on the API server. All
-other values are invalid.
+The value of this field must be the name of an existing
+VirtualMachineSnapshot resource in the same namespace.
 
 Reverting a virtual machine to a snapshot rolls back the data
 and the configuration of the virtual machine to that of the
@@ -3428,6 +3842,17 @@ member, an owner reference to that group is added to this VM.
 
 When this field is deleted or changed, any existing owner reference to
 the previous group will be removed from this VM. |
+| `hardware` _[VirtualMachineHardwareSpec](#virtualmachinehardwarespec)_ | Hardware describes the VM's desired hardware. |
+| `policies` _[PolicySpec](#policyspec) array_ | Policies describes a list of policies that should be explicitly applied
+to this VM.
+
+Please note, not all policies may be applied explicitly to a VM. Please
+consult a policy to determine if it may be applied directly. For example,
+the ComputePolicy object from the vsphere.policy.vmware.com API group
+has a field named spec.type. Only ComputePolicy objects with
+type=Optional may be applied explicitly to a VM.
+
+Valid policy types are: ComputePolicy. |
 
 ### VirtualMachineStatus
 
@@ -3473,12 +3898,16 @@ hardware version.
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
 | `storage` _[VirtualMachineStorageStatus](#virtualmachinestoragestatus)_ | Storage describes the observed state of the VirtualMachine's storage. |
-| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine. |
-| `rootSnapshots` _LocalObjectRef array_ | RootSnapshots represents the observed list of root snapshots of
+| `currentSnapshot` _[VirtualMachineSnapshotReference](#virtualmachinesnapshotreference)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine.
+This field contains the name of the current snapshot. |
+| `rootSnapshots` _[VirtualMachineSnapshotReference](#virtualmachinesnapshotreference) array_ | RootSnapshots represents the observed list of root snapshots of
 a VM. Since each snapshot includes the list of its child
 snapshots, these root snapshot references can effectively be
 used to construct the entire snapshot chain of a virtual
 machine. |
+| `guest` _[VirtualMachineGuestStatus](#virtualmachinegueststatus)_ | Guest describes the observed state of the VM's guest. |
+| `hardware` _[VirtualMachineHardwareStatus](#virtualmachinehardwarestatus)_ | Hardware describes the observed state of the VM's hardware. |
+| `policies` _[PolicyStatus](#policystatus) array_ | Policies describes the observed policies applied to this VM. |
 
 ### VirtualMachineStorageStatus
 
@@ -3546,6 +3975,26 @@ _Appears in:_
 | `metadata` _[ObjectMeta](#objectmeta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineSpec](#virtualmachinespec)_ | Specification of the desired behavior of each replica virtual machine. |
 
+### VirtualMachineVGPUMigrationType
+
+_Underlying type:_ `string`
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareVGPUStatus](#virtualmachinehardwarevgpustatus)
+
+
+### VirtualMachineVGPUType
+
+_Underlying type:_ `string`
+
+
+
+_Appears in:_
+- [VirtualMachineHardwareVGPUStatus](#virtualmachinehardwarevgpustatus)
+
+
 ### VirtualMachineVolume
 
 
@@ -3583,17 +4032,6 @@ encrypted. |
 Please note, this field will be empty if the volume is not
 encrypted. |
 
-### VirtualMachineVolumeProvisioningMode
-
-_Underlying type:_ `string`
-
-VirtualMachineVolumeProvisioningMode is the type used to express the
-desired or observed provisioning mode for a virtual machine disk.
-
-_Appears in:_
-- [VirtualMachineAdvancedSpec](#virtualmachineadvancedspec)
-
-
 ### VirtualMachineVolumeSource
 
 
@@ -3625,7 +4063,11 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `name` _string_ | Name is the name of the attached volume. |
-| `type` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | Type is the type of the attached volume. |
+| `controllerBusNumber` _integer_ | ControllerBusNumber describes volume's observed controller's bus number. |
+| `controllerType` _[VirtualControllerType](#virtualcontrollertype)_ | ControllerType describes volume's observed controller's type. |
+| `type` _[VolumeType](#volumetype)_ | Type is the type of the attached volume. |
+| `diskMode` _[VolumeDiskMode](#volumediskmode)_ | DiskMode describes the volume's observed disk mode. |
+| `sharingMode` _[VolumeSharingMode](#volumesharingmode)_ | SharingMode describes the volume's observed sharing mode. |
 | `crypto` _[VirtualMachineVolumeCryptoStatus](#virtualmachinevolumecryptostatus)_ | Crypto describes the volume's encryption status. |
 | `limit` _[Quantity](#quantity)_ | Limit describes the maximum, requested capacity of the volume. |
 | `requested` _[Quantity](#quantity)_ | Requested describes the minimum, requested capacity of the volume.
@@ -3646,17 +4088,6 @@ the VirtualMachine or not. |
 attachment succeeds. |
 | `error` _string_ | Error represents the last error seen when attaching or detaching a
 volume.  Error will be empty if attachment succeeds. |
-
-### VirtualMachineVolumeType
-
-_Underlying type:_ `string`
-
-VirtualMachineVolumeType describes the type of a VirtualMachine volume.
-
-_Appears in:_
-- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
-- [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
-
 
 ### VirtualMachineWebConsoleRequestSpec
 
@@ -3713,49 +4144,56 @@ In other words, the field may be set to any value that is parsable
 by Go's https://pkg.go.dev/net#ResolveIPAddr and
 https://pkg.go.dev/net#ParseIP functions. |
 
-### ZoneSelectorOperator
+### VolumeApplicationType
 
 _Underlying type:_ `string`
 
-ZoneSelectorOperator specifies the type of operator used by
-the zone selector to represent key-value relationships.
+
 
 _Appears in:_
-- [ZoneSelectorRequirement](#zoneselectorrequirement)
+- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
 
 
-### ZoneSelectorRequirement
+### VolumeDiskMode
+
+_Underlying type:_ `string`
 
 
-
-ZoneSelectorRequirement defines the key value relationships for a matching zone selector.
 
 _Appears in:_
-- [ZoneSelectorTerm](#zoneselectorterm)
-
-| Field | Description |
-| --- | --- |
-| `key` _string_ | Key is the label key to which the selector applies. |
-| `operator` _[ZoneSelectorOperator](#zoneselectoroperator)_ | Operator represents a key's relationship to a set of values.
-Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt. |
-| `values` _string array_ | Values is a list of values to which the operator applies.
-If the operator is In or NotIn, the values list must be non-empty.
-If the operator is Exists or DoesNotExist, the values list must be empty.
-If the operator is Gt or Lt, the values list must have a single element,
-which will be interpreted as an integer. |
-
-### ZoneSelectorTerm
+- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
+- [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 
+### VolumeProvisioningMode
 
-ZoneSelectorTerm defines the matching zone selector requirements for zone based affinity/anti-affinity scheduling.
+_Underlying type:_ `string`
+
+VolumeProvisioningMode is the type used to express the
+desired or observed provisioning mode for a virtual machine disk.
 
 _Appears in:_
-- [VirtualMachineAffinityZoneAffinitySpec](#virtualmachineaffinityzoneaffinityspec)
-- [VirtualMachineAntiAffinityZoneAffinitySpec](#virtualmachineantiaffinityzoneaffinityspec)
+- [VirtualMachineAdvancedSpec](#virtualmachineadvancedspec)
 
-| Field | Description |
-| --- | --- |
-| `matchExpressions` _[ZoneSelectorRequirement](#zoneselectorrequirement) array_ | MatchExpressions is a list of zone selector requirements by zone's
-labels. |
-| `matchFields` _[ZoneSelectorRequirement](#zoneselectorrequirement) array_ | MatchFields is a list of zone selector requirements by zone's fields. |
+
+### VolumeSharingMode
+
+_Underlying type:_ `string`
+
+
+
+_Appears in:_
+- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
+- [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
+
+
+### VolumeType
+
+_Underlying type:_ `string`
+
+VolumeType describes the type of a VirtualMachine volume.
+
+_Appears in:_
+- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
+- [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
+

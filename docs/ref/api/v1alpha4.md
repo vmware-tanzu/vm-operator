@@ -97,24 +97,6 @@ resource.
 | `spec` _[VirtualMachineGroupSpec](#virtualmachinegroupspec)_ |  |
 | `status` _[VirtualMachineGroupStatus](#virtualmachinegroupstatus)_ |  |
 
-### VirtualMachineGroupPublishRequest
-
-
-
-VirtualMachineGroupPublishRequest defines the information necessary to
-publish the VirtualMachines in a VirtualMachineGroup as VirtualMachineImages
-to an image registry.
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
-| `kind` _string_ | `VirtualMachineGroupPublishRequest`
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `spec` _[VirtualMachineGroupPublishRequestSpec](#virtualmachinegrouppublishrequestspec)_ |  |
-| `status` _[VirtualMachineGroupPublishRequestStatus](#virtualmachinegrouppublishrequeststatus)_ |  |
-
 ### VirtualMachineImage
 
 
@@ -130,23 +112,6 @@ VirtualMachineImage is the schema for the virtualmachineimages API.
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachineImageSpec](#virtualmachineimagespec)_ |  |
 | `status` _[VirtualMachineImageStatus](#virtualmachineimagestatus)_ |  |
-
-### VirtualMachineImageCache
-
-
-
-VirtualMachineImageCache is the schema for the
-virtualmachineimagecaches API.
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
-| `kind` _string_ | `VirtualMachineImageCache`
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `spec` _[VirtualMachineImageCacheSpec](#virtualmachineimagecachespec)_ |  |
-| `status` _[VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)_ |  |
 
 ### VirtualMachinePublishRequest
 
@@ -164,22 +129,6 @@ VirtualMachine as a VirtualMachineImage to an image registry.
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
 | `spec` _[VirtualMachinePublishRequestSpec](#virtualmachinepublishrequestspec)_ |  |
 | `status` _[VirtualMachinePublishRequestStatus](#virtualmachinepublishrequeststatus)_ |  |
-
-### VirtualMachineReplicaSet
-
-
-
-VirtualMachineReplicaSet is the schema for the virtualmachinereplicasets API.
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
-| `kind` _string_ | `VirtualMachineReplicaSet`
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `spec` _[VirtualMachineReplicaSetSpec](#virtualmachinereplicasetspec)_ |  |
-| `status` _[VirtualMachineReplicaSetStatus](#virtualmachinereplicasetstatus)_ |  |
 
 ### VirtualMachineService
 
@@ -213,22 +162,6 @@ VirtualMachineSetResourcePolicy is the Schema for the virtualmachinesetresourcep
 | `spec` _[VirtualMachineSetResourcePolicySpec](#virtualmachinesetresourcepolicyspec)_ |  |
 | `status` _[VirtualMachineSetResourcePolicyStatus](#virtualmachinesetresourcepolicystatus)_ |  |
 
-### VirtualMachineSnapshot
-
-
-
-VirtualMachineSnapshot is the schema for the virtualmachinesnapshot API.
-
-
-
-| Field | Description |
-| --- | --- |
-| `apiVersion` _string_ | `vmoperator.vmware.com/v1alpha4`
-| `kind` _string_ | `VirtualMachineSnapshot`
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `spec` _[VirtualMachineSnapshotSpec](#virtualmachinesnapshotspec)_ |  |
-| `status` _[VirtualMachineSnapshotStatus](#virtualmachinesnapshotstatus)_ |  |
-
 ### VirtualMachineWebConsoleRequest
 
 
@@ -248,6 +181,21 @@ console connection to a VM.
 
 
 ## Types
+### AffinitySpec
+
+
+
+AffinitySpec defines the group of affinity scheduling rules.
+
+_Appears in:_
+- [VirtualMachineSpec](#virtualmachinespec)
+
+| Field | Description |
+| --- | --- |
+| `vmAffinity` _[VMAffinitySpec](#vmaffinityspec)_ | VMAffinity describes affinity scheduling rules related to other VMs. |
+| `vmAntiAffinity` _[VMAntiAffinitySpec](#vmantiaffinityspec)_ | VMAntiAffinity describes anti-affinity scheduling rules related to other
+VMs. |
+
 ### DynamicDirectPathIODevice
 
 
@@ -487,22 +435,6 @@ More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persis
 Default false. |
 | `instanceVolumeClaim` _[InstanceVolumeClaimVolumeSource](#instancevolumeclaimvolumesource)_ | InstanceVolumeClaim is set if the PVC is backed by instance storage. |
 
-### QuiesceSpec
-
-
-
-QuiesceSpec represents specifications that will be used to quiesce
-the guest when taking a snapshot.
-
-_Appears in:_
-- [VirtualMachineSnapshotSpec](#virtualmachinesnapshotspec)
-
-| Field | Description |
-| --- | --- |
-| `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | Timeout represents the maximum time in minutes for snapshot
-operation to be performed on the virtual machine. The timeout
-can not be less than 5 minutes or more than 240 minutes. |
-
 ### ResourcePoolSpec
 
 
@@ -564,6 +496,38 @@ _Appears in:_
 | --- | --- |
 | `profileName` _string_ |  |
 
+### VMAffinitySpec
+
+
+
+VMAffinitySpec defines the affinity requirements for scheduling rules related
+to other VMs.
+
+_Appears in:_
+- [AffinitySpec](#affinityspec)
+
+| Field | Description |
+| --- | --- |
+| `requiredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingPreferredDuringExecution describes affinity
+requirements that must be met or the VM will not be scheduled.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied.
+
+Note: Any update to this field will replace the entire list rather than
+merging with the existing elements. |
+| `preferredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingPreferredDuringExecution describes affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to
+schedule VMs that satisfy the affinity expressions specified by this
+field, but it may choose to violate one or more of the expressions.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied.
+
+Note: Any update to this field will replace the entire list rather than
+merging with the existing elements. |
+
 ### VMAffinityTerm
 
 
@@ -571,8 +535,8 @@ _Appears in:_
 VMAffinityTerm defines the VM affinity/anti-affinity term.
 
 _Appears in:_
-- [VirtualMachineAffinityVMAffinitySpec](#virtualmachineaffinityvmaffinityspec)
-- [VirtualMachineAntiAffinityVMAffinitySpec](#virtualmachineantiaffinityvmaffinityspec)
+- [VMAffinitySpec](#vmaffinityspec)
+- [VMAntiAffinitySpec](#vmantiaffinityspec)
 
 | Field | Description |
 | --- | --- |
@@ -587,13 +551,45 @@ Commonly used values include:
 Please note, The following rules apply when specifying the topology key in the context of a zone/host.
 
 - When topology key is in the context of a zone, the only supported verbs are
-  PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution.
+  PreferredDuringSchedulingPreferredDuringExecution and RequiredDuringSchedulingPreferredDuringExecution.
 - When topology key is in the context of a host, the only supported verbs are
   PreferredDuringSchedulingPreferredDuringExecution and RequiredDuringSchedulingPreferredDuringExecution
-  for VM-VM node-level anti-affinity scheduling.
-- When topology key is in the context of a host, the only supported verbs are
-  PreferredDuringSchedulingIgnoredDuringExecution and RequiredDuringSchedulingIgnoredDuringExecution
   for VM-VM node-level anti-affinity scheduling. |
+
+### VMAntiAffinitySpec
+
+
+
+VMAntiAffinitySpec defines the anti-affinity requirements for scheduling
+rules related to other VMs.
+
+_Appears in:_
+- [AffinitySpec](#affinityspec)
+
+| Field | Description |
+| --- | --- |
+| `requiredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingPreferredDuringExecution describes anti-affinity
+requirements that must be met or the VM will not be scheduled.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied.
+
+Note: Any update to this field will replace the entire list rather than
+merging with the existing elements. |
+| `preferredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingPreferredDuringExecution describes anti-affinity
+requirements that should be met, but the VM can still be scheduled if
+the requirement cannot be satisfied. The scheduler will prefer to
+schedule VMs that satisfy the anti-affinity expressions specified by
+this field, but it may choose to violate one or more of the expressions.
+Additionally, it also describes the anti-affinity requirements that
+should be met during run-time, but the VM can still be run if the
+requirements cannot be satisfied.
+
+When there are multiple elements, the lists of nodes corresponding to
+each term are intersected, i.e. all terms must be satisfied.
+
+Note: Any update to this field will replace the entire list rather than
+merging with the existing elements. |
 
 ### VSphereClusterModuleStatus
 
@@ -655,286 +651,6 @@ persistent volumes managed by this VM. |
 for this VM, a feature utilized by external backup systems such as
 VMware Data Recovery. |
 
-### VirtualMachineAffinitySpec
-
-
-
-VirtualMachineAffinitySpec defines the group of affinity scheduling rules.
-
-_Appears in:_
-- [VirtualMachineSpec](#virtualmachinespec)
-
-| Field | Description |
-| --- | --- |
-| `zoneAffinity` _[VirtualMachineAffinityZoneAffinitySpec](#virtualmachineaffinityzoneaffinityspec)_ | ZoneAffinity describes affinity scheduling rules related to a zone. |
-| `zoneAntiAffinity` _[VirtualMachineAntiAffinityZoneAffinitySpec](#virtualmachineantiaffinityzoneaffinityspec)_ | ZoneAntiAffinity describes anti-affinity scheduling rules related to a zone. |
-| `vmAffinity` _[VirtualMachineAffinityVMAffinitySpec](#virtualmachineaffinityvmaffinityspec)_ | VMAffinity describes affinity scheduling rules related to other VMs. |
-| `vmAntiAffinity` _[VirtualMachineAntiAffinityVMAffinitySpec](#virtualmachineantiaffinityvmaffinityspec)_ | VMAntiAffinity describes anti-affinity scheduling rules related to other VMs. |
-
-### VirtualMachineAffinityVMAffinitySpec
-
-
-
-VirtualMachineAffinityVMAffinitySpec defines the affinity requirements for scheduling
-rules related to other VMs.
-
-_Appears in:_
-- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `requiredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that must be met or the VM will not be scheduled.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
-that satisfy the anti-affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-
-### VirtualMachineAffinityZoneAffinitySpec
-
-
-
-VirtualMachineAffinityZoneAffinitySpec defines the affinity scheduling rules
-related to zones.
-
-_Appears in:_
-- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `requiredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that must be met or the VM will not be scheduled.
-
-When there are multiple elements, the lists of zones corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
-that satisfy the anti-affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions.
-
-When there are multiple elements, the lists of zones corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-
-### VirtualMachineAntiAffinityVMAffinitySpec
-
-
-
-VirtualMachineAntiAffinityVMAffinitySpec defines the anti-affinity requirements for scheduling
-rules related to other VMs.
-
-_Appears in:_
-- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `requiredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes anti-affinity
-requirements that must be met or the VM will not be scheduled.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingIgnoredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes anti-affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
-that satisfy the affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `requiredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | RequiredDuringSchedulingPreferredExecution describes anti-affinity
-requirements that must be met or the VM will not be scheduled. Additionally,
-it also describes the anti-affinity requirements that should be met during run-time,
-but the VM can still be run if the requirements cannot be satisfied.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingPreferredDuringExecution` _[VMAffinityTerm](#vmaffinityterm) array_ | PreferredDuringSchedulingPreferredDuringExecution describes anti-affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs
-that satisfy the affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions. Additionally,
-it also describes the anti-affinity requirements that should be met during run-time,
-but the VM can still be run if the requirements cannot be satisfied.
-
-When there are multiple elements, the lists of nodes corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-
-### VirtualMachineAntiAffinityZoneAffinitySpec
-
-
-
-VirtualMachineAntiAffinityZoneAffinitySpec defines the anti-affinity scheduling rules
-related to zones.
-
-_Appears in:_
-- [VirtualMachineAffinitySpec](#virtualmachineaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `requiredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | RequiredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that must be met or the VM will not be scheduled.
-
-When there are multiple elements, the lists of zones corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-| `preferredDuringSchedulingIgnoredDuringExecution` _[ZoneSelectorTerm](#zoneselectorterm) array_ | PreferredDuringSchedulingIgnoredDuringExecution describes affinity
-requirements that should be met, but the VM can still be scheduled if
-the requirement cannot be satisfied. The scheduler will prefer to schedule VMs to
-that satisfy the anti-affinity expressions specified by this field, but it may choose to
-violate one or more of the expressions.
-
-When there are multiple elements, the lists of zones corresponding to
-each term are intersected, i.e. all terms must be satisfied. |
-
-### VirtualMachineBootOptions
-
-
-
-VirtualMachineBootOptions defines the boot-time behavior of a virtual machine.
-
-_Appears in:_
-- [VirtualMachineSpec](#virtualmachinespec)
-
-| Field | Description |
-| --- | --- |
-| `firmware` _[VirtualMachineBootOptionsFirmwareType](#virtualmachinebootoptionsfirmwaretype)_ | Firmware represents the firmware for the virtual machine to use. Any update
-to this value after the virtual machine has already been created will be
-ignored. Setting will happen in the following manner:
-
-1. If this value is specified, it will be used to set the VM firmware. If this
-   value is unset, then
-2. the virtual machine image will be checked. If that value is set, then it will
-   be used to set the VM firmware. If that value is unset, then
-3. the virtual machine class will be checked. If that value is set, then it will
-   be used to set the VM firmware. If that value is unset, then
-4. the VM firmware will be set, by default, to BIOS.
-
-The available values of this field are:
-
-- BIOS
-- EFI |
-| `bootDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | BootDelay is the delay before starting the boot sequence. The boot delay
-specifies a time interval between virtual machine power on or restart and
-the beginning of the boot sequence. |
-| `bootOrder` _[VirtualMachineBootOptionsBootableDevice](#virtualmachinebootoptionsbootabledevice) array_ | BootOrder represents the boot order of the virtual machine. After list is exhausted,
-default BIOS boot device algorithm is used for booting. Note that order of the entries
-in the list is important: device listed first is used for boot first, if that one
-fails second entry is used, and so on. Platform may have some internal limit on the
-number of devices it supports. If bootable device is not reached before platform's limit
-is hit, boot will fail. At least single entry is supported by all products supporting
-boot order settings.
-
-The available devices are:
-
-- Disk    -- If there are classic and managed disks, the first classic disk is selected.
-             If there are only managed disks, the first disk is selected.
-- Network -- The first interface listed in spec.network.interfaces.
-- CDRom   -- The first bootable CD-ROM device. |
-| `bootRetry` _[VirtualMachineBootOptionsBootRetry](#virtualmachinebootoptionsbootretry)_ | BootRetry specifies whether a virtual machine that fails to boot
-will try again. The available values are:
-
-- Enabled -- A virtual machine that fails to boot will try again
-             after BootRetryDelay time period has expired.
-- Disabled -- The virtual machine waits indefinitely for you to
-              initiate boot retry. |
-| `bootRetryDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#duration-v1-meta)_ | BootRetryDelay specifies a time interval between virtual machine boot failure
-and the subsequent attempt to boot again. The virtual machine uses this value
-only if BootRetry is Enabled. |
-| `enterBootSetup` _[VirtualMachineBootOptionsForceBootEntry](#virtualmachinebootoptionsforcebootentry)_ | EnterBootSetup specifies whether to automatically enter BIOS/EFI setup the next
-time the virtual machine boots. The virtual machine resets this flag to false
-so that subsequent boots proceed normally. The available values are:
-
-- Enabled -- The virtual machine will automatically enter BIOS/EFI setup the next
-             time the virtual machine boots.
-- Disabled -- The virtual machine will boot normaally. |
-| `efiSecureBoot` _[VirtualMachineBootOptionsEFISecureBoot](#virtualmachinebootoptionsefisecureboot)_ | EFISecureBoot specifies whether the virtual machine's firmware will
-perform signature checks of any EFI images loaded during startup. If set to
-true, signature checks will be performed and the virtual machine's firmware
-will refuse to start any images which do not pass those signature checks.
-
-Please note, this field will not be honored unless the value of
-spec.bootOptions.firmware is "EFI". The available values are:
-
-- Enabled -- Signature checks will be performed and the virtual machine's firmware
-             will refuse to start any images which do not pass those signature checks.
-- Disabled -- No signature checks will be performed. |
-| `networkBootProtocol` _[VirtualMachineBootOptionsNetworkBootProtocol](#virtualmachinebootoptionsnetworkbootprotocol)_ | NetworkBootProtocol is the protocol to attempt during PXE network boot or NetBoot.
-The available protocols are:
-
-- IP4 -- PXE (or Apple NetBoot) over IPv4. The default.
-- IP6 -- PXE over IPv6. Only meaningful for EFI virtual machines. |
-
-### VirtualMachineBootOptionsBootRetry
-
-_Underlying type:_ `string`
-
-VirtualMachineBootOptionsBootRetry represents whether a virtual machine that fails to boot
-will automatically try again.
-
-_Appears in:_
-- [VirtualMachineBootOptions](#virtualmachinebootoptions)
-
-
-### VirtualMachineBootOptionsBootableDevice
-
-_Underlying type:_ `string`
-
-VirtualMachineBootOptionsBootableDevice represents the type of bootable device
-that a VM may be booted from.
-
-_Appears in:_
-- [VirtualMachineBootOptions](#virtualmachinebootoptions)
-
-
-### VirtualMachineBootOptionsEFISecureBoot
-
-_Underlying type:_ `string`
-
-VirtualMachineBootOptionsEFISecureBoot represents whether the virtual machine will
-perform EFI Secure Boot.
-
-_Appears in:_
-- [VirtualMachineBootOptions](#virtualmachinebootoptions)
-
-
-### VirtualMachineBootOptionsFirmwareType
-
-_Underlying type:_ `string`
-
-VirtualMachineBootOptionsFirmwareType represents the firmware to use.
-
-_Appears in:_
-- [VirtualMachineBootOptions](#virtualmachinebootoptions)
-
-
-### VirtualMachineBootOptionsForceBootEntry
-
-_Underlying type:_ `string`
-
-VirtualMachineBootOptionsForceBootEntry represents whether to force the virtual machine
-to enter BIOS/EFI setup the next time the virtual machine boots.
-
-_Appears in:_
-- [VirtualMachineBootOptions](#virtualmachinebootoptions)
-
-
-### VirtualMachineBootOptionsNetworkBootProtocol
-
-_Underlying type:_ `string`
-
-VirtualMachineBootOptionsNetworkBootProtocol represents the protocol to
-use during PXE network boot or NetBoot.
-
-_Appears in:_
-- [VirtualMachineBootOptions](#virtualmachinebootoptions)
-
-
 ### VirtualMachineBootstrapCloudInitSpec
 
 
@@ -972,16 +688,6 @@ in the NetworkSpec as the per-interface search domains when the per-interface
 search domains is not provided.
 
 Defaults to true if omitted. |
-| `waitOnNetwork4` _boolean_ | WaitOnNetwork4 indicates whether the cloud-init datasource should wait
-for an IPv4 address to be available before writing the instance-data.
-
-When set to true, the cloud-init datasource will sleep for a second,
-check network status, and repeat until an IPv4 address is available. |
-| `waitOnNetwork6` _boolean_ | WaitOnNetwork6 indicates whether the cloud-init datasource should wait
-for an IPv6 address to be available before writing the instance-data.
-
-When set to true, the cloud-init datasource will sleep for a second,
-check network status, and repeat until an IPv6 address is available. |
 
 ### VirtualMachineBootstrapLinuxPrepSpec
 
@@ -1494,109 +1200,6 @@ datastore. |
 | `diskKey` _integer_ | DiskKey describes the device key to which this recommendation applies.
 When omitted, this recommendation is for the VM's home directory. |
 
-### VirtualMachineGroupPublishRequestImageStatus
-
-
-
-
-
-_Appears in:_
-- [VirtualMachineGroupPublishRequestStatus](#virtualmachinegrouppublishrequeststatus)
-
-| Field | Description |
-| --- | --- |
-| `source` _string_ | Source is the name of the published VirtualMachine. |
-| `publishRequestName` _string_ | PublishRequestName is the name of the VirtualMachinePublishRequest object
-created to publish the VM. |
-| `imageName` _string_ | ImageName is the name of the VirtualMachineImage resource that is
-eventually realized after the publication operation completes.
-
-This field will not be set until the VirtualMachineImage resource
-is realized. |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions is a copy of the conditions from the
-VirtualMachinePublishRequest object created to publish the VM. |
-
-### VirtualMachineGroupPublishRequestSpec
-
-
-
-VirtualMachineGroupPublishRequestSpec defines the desired state of a
-VirtualMachineGroupPublishRequest.
-
-All the fields in this spec are optional. This is especially useful when a
-DevOps persona wants to publish a VM Group without doing anything more than
-applying a VirtualMachineGroupPublishRequest resource that has the same name
-as said VMs in the same namespace as said VMs in VM Group.
-
-_Appears in:_
-- [VirtualMachineGroupPublishRequest](#virtualmachinegrouppublishrequest)
-
-| Field | Description |
-| --- | --- |
-| `source` _string_ | Source is the name of the VirtualMachineGroup to be published.
-
-If this value is omitted then the publication controller checks to
-see if there is a VirtualMachineGroup with the same name as this
-VirtualMachineGroupPublishRequest resource. If such a resource exists,
-then it is the source of the publication. |
-| `virtualMachines` _string array_ | VirtualMachines is a list of the VirtualMachine objects from the source
-VirtualMachineGroup that are included in this publish request.
-
-If omitted, this field defaults to the names of all of the VMs currently
-a member of the group, either directly or indirectly via a nested group. |
-| `target` _string_ | Target is the name of the ContentLibrary resource to which the
-VirtualMachines from the VirtualMachineGroup should be published.
-
-When this value is omitted, the controller attempts to identify the
-target location by matching a ContentLibrary resource with the label
-"imageregistry.vmware.com/default".
-
-Please note that while optional, if a VirtualMachineGroupPublishRequest
-sans target information is applied to a namespace without a default
-publication target, then the VirtualMachineGroupPublishRequest resource
-will be marked in error. |
-| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished is the time-to-live duration for how long this
-resource will be allowed to exist once the publication operation
-completes. After the TTL expires, the resource will be automatically
-deleted without the user having to take any direct action.
-This will be passed into each VirtualMachinePublishRequestSpec.
-
-If this field is unset then the request resource will not be
-automatically deleted. If this field is set to zero then the request
-resource is eligible for deletion immediately after it finishes. |
-
-### VirtualMachineGroupPublishRequestStatus
-
-
-
-VirtualMachineGroupPublishRequestStatus defines the observed state of a
-VirtualMachineGroupPublishRequest.
-
-_Appears in:_
-- [VirtualMachineGroupPublishRequest](#virtualmachinegrouppublishrequest)
-
-| Field | Description |
-| --- | --- |
-| `source` _string_ | Source is the name of the published VirtualMachineGroup. |
-| `target` _string_ | Target is the name of the ContentLibrary to which the group is published. |
-| `completionTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | CompletionTime represents when the request was completed. It is not
-guaranteed to be set in happens-before order across separate operations.
-It is represented in RFC3339 form and is in UTC.
-
-The value of this field should be equal to the value of the
-LastTransitionTime for the status condition Type=Complete. |
-| `startTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | StartTime represents when the request was acknowledged by the
-controller. It is not guaranteed to be set in happens-before order
-across separate operations. It is represented in RFC3339 form and is
-in UTC.
-
-Please note that the group will not be published until the group's Ready
-condition is true. |
-| `images` _[VirtualMachineGroupPublishRequestImageStatus](#virtualmachinegrouppublishrequestimagestatus) array_ | Images describes the observed status of the individual VirtualMachine
-publications. |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions is a list of the latest, available observations of the
-request's current state. |
-
 ### VirtualMachineGroupSpec
 
 
@@ -1675,141 +1278,6 @@ state of the group was last updated. |
 - The ReadyType condition is True when all of the group members have
   all of their expected conditions set to True. |
 
-
-### VirtualMachineImageCacheFileStatus
-
-
-
-
-
-_Appears in:_
-- [VirtualMachineImageCacheLocationStatus](#virtualmachineimagecachelocationstatus)
-
-| Field | Description |
-| --- | --- |
-| `id` _string_ | ID describes the value used to locate the file.
-The value of this field depends on the type of file:
-
-- Type=Other                  -- The ID value describes a datastore path,
-                                 ex. "[my-datastore-1] .contentlib-cache/1234/5678/my-disk-1.vmdk"
-- Type=Disk, DiskType=Classic -- The ID value describes a datastore
-                                 path.
-- Type=Disk, DiskType=Managed -- The ID value describes a First Class
-                                 Disk (FCD). |
-| `type` _[VirtualMachineImageCacheFileType](#virtualmachineimagecachefiletype)_ | Type describes the type of file. |
-| `diskType` _[VirtualMachineVolumeType](#virtualmachinevolumetype)_ | DiskType describes the type of disk.
-This field is only non-empty when Type=Disk. |
-
-### VirtualMachineImageCacheFileType
-
-_Underlying type:_ `string`
-
-VirtualMachineImageCacheFileType describes the types of files that may be
-cached.
-
-_Appears in:_
-- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
-
-
-### VirtualMachineImageCacheLocationSpec
-
-
-
-
-
-_Appears in:_
-- [VirtualMachineImageCacheSpec](#virtualmachineimagecachespec)
-
-| Field | Description |
-| --- | --- |
-| `datacenterID` _string_ | DatacenterID describes the ID of the datacenter to which the image should
-be cached. |
-| `profileID` _string_ | ProfileID describes the ID of the storage profile used to cache the
-image.
-Please note, this profile *must* include the datastore specified by the
-datastoreID field. |
-| `datastoreID` _string_ | DatastoreID describes the ID of the datastore to which the image should
-be cached. |
-
-### VirtualMachineImageCacheLocationStatus
-
-
-
-
-
-_Appears in:_
-- [VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)
-
-| Field | Description |
-| --- | --- |
-| `datacenterID` _string_ | DatacenterID describes the ID of the datacenter where the image is
-cached. |
-| `datastoreID` _string_ | DatastoreID describes the ID of the datastore where the image is cached. |
-| `profileID` _string_ | ProfileID describes the ID of the storage profile used to cache the
-image. |
-| `files` _[VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus) array_ | Files describes the image's files cached on this datastore. |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cache location.
-
-Generally this should just include the ReadyType condition. |
-
-### VirtualMachineImageCacheOVFStatus
-
-
-
-
-
-_Appears in:_
-- [VirtualMachineImageCacheStatus](#virtualmachineimagecachestatus)
-
-| Field | Description |
-| --- | --- |
-| `configMapName` _string_ | ConfigMapName describes the name of the ConfigMap resource that contains
-the image's OVF envelope encoded as YAML. The data is located in the
-ConfigMap key "value". |
-| `providerVersion` _string_ | ProviderVersion describes the observed provider version at which the OVF
-is cached.
-The provider is Content Library, the version is the content version. |
-
-### VirtualMachineImageCacheSpec
-
-
-
-VirtualMachineImageCacheSpec defines the desired state of
-VirtualMachineImageCache.
-
-_Appears in:_
-- [VirtualMachineImageCache](#virtualmachineimagecache)
-
-| Field | Description |
-| --- | --- |
-| `providerID` _string_ | ProviderID describes the ID of the provider item to which the image
-corresponds.
-If the provider is Content Library, the ID refers to a Content Library
-item. |
-| `providerVersion` _string_ | ProviderVersion describes the version of the provider item to which the
-image corresponds.
-The provider is Content Library, the version is the content version. |
-| `locations` _[VirtualMachineImageCacheLocationSpec](#virtualmachineimagecachelocationspec) array_ | Locations describes the locations where the image should be cached. |
-
-### VirtualMachineImageCacheStatus
-
-
-
-VirtualMachineImageCacheStatus defines the observed state of
-VirtualMachineImageCache.
-
-_Appears in:_
-- [VirtualMachineImageCache](#virtualmachineimagecache)
-
-| Field | Description |
-| --- | --- |
-| `locations` _[VirtualMachineImageCacheLocationStatus](#virtualmachineimagecachelocationstatus) array_ | Locations describe the observed locations where the image is cached. |
-| `ovf` _[VirtualMachineImageCacheOVFStatus](#virtualmachineimagecacheovfstatus)_ | OVF describes the observed status of the cached OVF content. |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this cached image.
-
-Generally this should just include the ReadyType condition, which will
-only be True if all of the cached locations also have True ReadyType
-condition. |
 
 ### VirtualMachineImageDiskInfo
 
@@ -2281,6 +1749,13 @@ Namespace's default network. |
 bootstrap provider is Cloud-Init. Please note it is up to the user to
 ensure the provided device name does not conflict with any other devices
 inside the guest, ex. dvd, cdrom, sda, etc. |
+| `macAddr` _string_ | MACAddr is the optional MAC address of this interface.
+
+If no MAC address is provided, one will be generated by either the network
+provider or vCenter.
+
+Please note this field is only supported when the Network API Group is
+crd.nsx.vmware.com. |
 | `addresses` _string array_ | Addresses is an optional list of IP4 or IP6 addresses to assign to this
 interface.
 
@@ -2316,9 +1791,6 @@ if set to "None", the network provider gateway will be ignored.
 Please note this field is only supported if the network connection
 supports manual IP allocation.
 
-Please note the IP address must include the network prefix length, ex.
-192.168.0.1/24.
-
 Please note this field is mutually exclusive with DHCP4. |
 | `gateway6` _string_ | Gateway6 is the primary IP6 gateway for this interface.
 
@@ -2327,9 +1799,6 @@ if set to "None", the network provider gateway will be ignored.
 
 Please note this field is only supported if the network connection
 supports manual IP allocation.
-
-Please note the IP address must include the network prefix length, ex.
-2001:db8:101::1/64.
 
 Please note this field is mutually exclusive with DHCP6. |
 | `mtu` _integer_ | MTU is the Maximum Transmission Unit size in bytes.
@@ -2546,7 +2015,6 @@ If the bootstrap provider is anything else then this field is set to the
 value of the infrastructure VM's "guest.ipAddress" field. Please see
 https://bit.ly/3Au0jM4 for more information. |
 
-
 ### VirtualMachinePlacementStatus
 
 
@@ -2562,7 +2030,9 @@ _Appears in:_
 | `zoneID` _string_ | Zone describes the recommended zone for this VM. |
 | `node` _string_ | Node describes the recommended node for this VM. |
 | `pool` _string_ | Pool describes the recommended resource pool for this VM. |
-| `datastores` _[VirtualMachineGroupPlacementDatastoreStatus](#virtualmachinegroupplacementdatastorestatus) array_ | Datastores describe the recommended datastores for this VM. |
+| `datastores` _[VirtualMachineGroupPlacementDatastoreStatus](#virtualmachinegroupplacementdatastorestatus) array_ | Datastores describe the recommended datastores for this VM.
+This includes the recommendations for each of the VM's disks
+and files. |
 
 ### VirtualMachinePowerOpMode
 
@@ -2585,7 +2055,6 @@ VirtualMachinePowerState defines a VM's desired and observed power states.
 _Appears in:_
 - [VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus)
 - [VirtualMachineGroupSpec](#virtualmachinegroupspec)
-- [VirtualMachineSnapshotStatus](#virtualmachinesnapshotstatus)
 - [VirtualMachineSpec](#virtualmachinespec)
 - [VirtualMachineStatus](#virtualmachinestatus)
 
@@ -2834,54 +2303,6 @@ Defaults to 10 seconds. Minimum value is 1. |
 | `periodSeconds` _integer_ | PeriodSeconds specifics how often (in seconds) to perform the probe.
 Defaults to 10 seconds. Minimum value is 1. |
 
-### VirtualMachineReplicaSetSpec
-
-
-
-VirtualMachineReplicaSetSpec is the specification of a VirtualMachineReplicaSet.
-
-_Appears in:_
-- [VirtualMachineReplicaSet](#virtualmachinereplicaset)
-
-| Field | Description |
-| --- | --- |
-| `replicas` _integer_ | Replicas is the number of desired replicas.
-This is a pointer to distinguish between explicit zero and unspecified.
-Defaults to 1. |
-| `deletePolicy` _string_ | DeletePolicy defines the policy used to identify nodes to delete when downscaling.
-Only supported deletion policy is "Random". |
-| `selector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#labelselector-v1-meta)_ | Selector is a label to query over virtual machines that should match the
-replica count. A virtual machine's label keys and values must match in order
-to be controlled by this VirtualMachineReplicaSet.
-
-It must match the VirtualMachine template's labels.
-More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors |
-| `template` _[VirtualMachineTemplateSpec](#virtualmachinetemplatespec)_ | Template is the object that describes the virtual machine that will be
-created if insufficient replicas are detected. |
-
-### VirtualMachineReplicaSetStatus
-
-
-
-VirtualMachineReplicaSetStatus represents the observed state of a
-VirtualMachineReplicaSet resource.
-
-_Appears in:_
-- [VirtualMachineReplicaSet](#virtualmachinereplicaset)
-
-| Field | Description |
-| --- | --- |
-| `replicas` _integer_ | Replicas is the most recently observed number of replicas. |
-| `fullyLabeledReplicas` _integer_ | FullyLabeledReplicas is the number of replicas that have labels matching the
-labels of the virtual machine template of the VirtualMachineReplicaSet. |
-| `readyReplicas` _integer_ | ReadyReplicas is the number of ready replicas for this VirtualMachineReplicaSet. A
-virtual machine is considered ready when it's "Ready" condition is marked as
-true. |
-| `observedGeneration` _integer_ | ObservedGeneration reflects the generation of the most recently observed
-VirtualMachineReplicaSet. |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions represents the latest available observations of a
-VirtualMachineReplicaSet's current state. |
-
 ### VirtualMachineReservedSpec
 
 
@@ -3037,99 +2458,6 @@ _Appears in:_
 | `resourcePools` _[ResourcePoolStatus](#resourcepoolstatus) array_ |  |
 | `clustermodules` _[VSphereClusterModuleStatus](#vsphereclustermodulestatus) array_ |  |
 
-### VirtualMachineSnapshotSpec
-
-
-
-VirtualMachineSnapshotSpec defines the desired state of VirtualMachineSnapshot.
-
-_Appears in:_
-- [VirtualMachineSnapshot](#virtualmachinesnapshot)
-
-| Field | Description |
-| --- | --- |
-| `memory` _boolean_ | Memory represents whether the snapshot includes the VM's
-memory. If true, a dump of the internal state of the virtual
-machine (a memory dump) is included in the snapshot. Memory
-snapshots consume time and resources and thus, take longer to
-create.
-The virtual machine must support this capability.
-When set to false, the power state of the snapshot is set to
-false.
-For a VM in suspended state, memory is always included
-in the snashot. |
-| `quiesce` _[QuiesceSpec](#quiescespec)_ | Quiesce represents the spec used for granular control over
-quiesce details. If quiesceSpec is set and the virtual machine
-is powered on when the snapshot is taken, VMware Tools is used
-to quiesce the file system in the virtual machine. This assures
-that a disk snapshot represents a consistent state of the guest
-file systems. If the virtual machine is powered off or VMware
-Tools are not available, the quiesce spec is ignored. |
-| `description` _string_ | Description represents a description of the snapshot. |
-| `vmRef` _[LocalObjectRef](#localobjectref)_ | VMRef represents the name of the virtual machine for which the
-snapshot is requested. |
-
-### VirtualMachineSnapshotStatus
-
-
-
-VirtualMachineSnapshotStatus defines the observed state of VirtualMachineSnapshot.
-
-_Appears in:_
-- [VirtualMachineSnapshot](#virtualmachinesnapshot)
-
-| Field | Description |
-| --- | --- |
-| `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState represents the observed power state of the virtual
-machine when the snapshot was taken. |
-| `quiesced` _boolean_ | Quiesced represents whether or not the snapshot was created
-with the quiesce option to ensure a snapshot with a consistent
-state of the guest file system. |
-| `uniqueID` _string_ | UniqueID describes a unique identifier provider by the backing
-infrastructure (e.g., vSphere) that can be used to distinguish
-this snapshot from other snapshots of this virtual machine. |
-| `children` _LocalObjectRef array_ | Children represents the snapshots for which this snapshot is
-the parent. |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions of the VirtualMachine. |
-| `storage` _[VirtualMachineSnapshotStorageStatus](#virtualmachinesnapshotstoragestatus)_ | Storage describes the observed amount of storage used by a
-VirtualMachineSnapshot, including the space for FCDs. |
-
-### VirtualMachineSnapshotStorageStatus
-
-
-
-VirtualMachineSnapshotStorageStatus defines the observed state of a
-VirtualMachineSnapshot's storage.
-
-_Appears in:_
-- [VirtualMachineSnapshotStatus](#virtualmachinesnapshotstatus)
-
-| Field | Description |
-| --- | --- |
-| `used` _[Quantity](#quantity)_ | Used describes the observed amount of storage used by a
-VirtualMachineSnapshot, except the space for FCDs. |
-| `requested` _[VirtualMachineSnapshotStorageStatusRequested](#virtualmachinesnapshotstoragestatusrequested) array_ | Requested describes the observed amount of storage requested by a
-VirtualMachineSnapshot. It's a list of requested storage for each
-storage class.
-Since a snapshot can have multiple PVCs, it can point to multiple storage
-classes. |
-
-### VirtualMachineSnapshotStorageStatusRequested
-
-
-
-VirtualMachineSnapshotStorageStatusRequested describes the observed amount of
-storage requested by a VirtualMachineSnapshot for a storage class.
-
-_Appears in:_
-- [VirtualMachineSnapshotStorageStatus](#virtualmachinesnapshotstoragestatus)
-
-| Field | Description |
-| --- | --- |
-| `storageClass` _string_ | StorageClass is the name of the storage class. |
-| `total` _[Quantity](#quantity)_ | Total describes the total storage space requested by a
-VirtualMachineSnapshot for the storage class. |
-
 ### VirtualMachineSpec
 
 
@@ -3138,7 +2466,6 @@ VirtualMachineSpec defines the desired state of a VirtualMachine.
 
 _Appears in:_
 - [VirtualMachine](#virtualmachine)
-- [VirtualMachineTemplateSpec](#virtualmachinetemplatespec)
 
 | Field | Description |
 | --- | --- |
@@ -3198,15 +2525,6 @@ VM image. |
 | `className` _string_ | ClassName describes the name of the VirtualMachineClass resource used to
 deploy this VM.
 
-When creating a virtual machine, if this field is empty and a
-VirtualMachineClassInstance is specified in spec.class, then
-this field is populated with the VirtualMachineClass object's
-name.
-
-Please also note, when creating a new VirtualMachine, if this field and
-spec.class are both non-empty, then they must refer to the same
-VirtualMachineClass or an error is returned.
-
 Please note, this field *may* be empty if the VM was imported instead of
 deployed by VM Operator. An imported VirtualMachine resource references
 an existing VM on the underlying platform that was not deployed from a
@@ -3214,25 +2532,7 @@ VM class.
 
 If a VM is using a class, a different value in spec.className
 leads to the VM being resized. |
-| `class` _[LocalObjectRef](#localobjectref)_ | Class describes the VirtualMachineClassInsance resource that is
-referenced by this virtual machine. This can be the
-VirtualMachineClassInstance that the virtual machine was
-created, or later resized with.
-
-The value of spec.class.Name must be the Kubernetes object name
-of a valid VirtualMachineClassInstance resource.
-
-Please also note, if this field and spec.className are both
-non-empty, then they must refer to the same VirtualMachineClass
-or an error is returned.
-
-If a className is specified, but this field is omitted, VM operator
-picks the latest instance for the VM class to create the VM.
-
-If a VM class has been modified and thus, the newly available
-VirtualMachineClassInstance can be specified in spec.class to
-trigger a resize operation. |
-| `affinity` _[VirtualMachineAffinitySpec](#virtualmachineaffinityspec)_ | Affinity describes the VM's scheduling constraints. |
+| `affinity` _[AffinitySpec](#affinityspec)_ | Affinity describes the VM's scheduling constraints. |
 | `crypto` _[VirtualMachineCryptoSpec](#virtualmachinecryptospec)_ | Crypto describes the desired encryption state of the VirtualMachine. |
 | `storageClass` _string_ | StorageClass describes the name of a Kubernetes StorageClass resource
 used to configure this VM's storage-related attributes.
@@ -3391,32 +2691,6 @@ Please note, this field is ignored for encrypted VMs since they do not
 use delta disks.
 
 Defaults to Online. |
-| `bootOptions` _[VirtualMachineBootOptions](#virtualmachinebootoptions)_ | BootOptions describes the settings that control the boot behavior of the
-virtual machine. These settings take effect during the next power-on of the
-virtual machine. |
-| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot represents the desired snapshot that the VM
-should point to. This field can be specified to revert the VM
-to a given snapshot. Once the virtual machine has been
-successfully reverted to the desired snapshot, the value of
-this field is cleared.
-
-The value of this field must be an existing object of
-VirtualMachineSnapshot kind that exists on the API server. All
-other values are invalid.
-
-Reverting a virtual machine to a snapshot rolls back the data
-and the configuration of the virtual machine to that of the
-specified snapshot. The VirtualMachineSpec of the
-VirtualMachine resource is replaced from the one stored with
-the snapshot.
-
-If the virtual machine is currently powered off, but you revert to
-a snapshot that was taken while the VM was powered on, then the
-VM will be automatically powered on during the revert.
-Additionally, the VirtualMachineSpec will be updated to match
-the power state from the snapshot (i.e., powered on). This can
-be overridden by specifying the PowerState to PoweredOff in the
-VirtualMachineSpec. |
 | `groupName` _string_ | GroupName indicates the name of the VirtualMachineGroup to which this
 VM belongs.
 
@@ -3440,8 +2714,6 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `class` _[LocalObjectRef](#localobjectref)_ | Class is a reference to the VirtualMachineClass resource used to deploy
-this VM. |
 | `nodeName` _string_ | NodeName describes the observed name of the node where the VirtualMachine
 is scheduled. |
 | `powerState` _[VirtualMachinePowerState](#virtualmachinepowerstate)_ | PowerState describes the observed power state of the VirtualMachine. |
@@ -3473,12 +2745,6 @@ hardware version.
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
 | `storage` _[VirtualMachineStorageStatus](#virtualmachinestoragestatus)_ | Storage describes the observed state of the VirtualMachine's storage. |
-| `currentSnapshot` _[LocalObjectRef](#localobjectref)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine. |
-| `rootSnapshots` _LocalObjectRef array_ | RootSnapshots represents the observed list of root snapshots of
-a VM. Since each snapshot includes the list of its child
-snapshots, these root snapshot references can effectively be
-used to construct the entire snapshot chain of a virtual
-machine. |
 
 ### VirtualMachineStorageStatus
 
@@ -3525,26 +2791,13 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `disks` _[Quantity](#quantity)_ | Disks describes the total storage space used by a VirtualMachine's
-non-PVC disks. |
+non-PVC disks. This does not include the any child / delta disks
+created for snapshots. |
 | `other` _[Quantity](#quantity)_ | Other describes the total storage space used by the VirtualMachine's
-non disk files, ex. the configuration file, swap space, logs, snapshots,
-etc. |
+non-disk files, ex. the configuration file, swap space, logs, etc.
+This does not include the non-disk files created for snapshots,
+ex. snapshot data, list, and memory files. |
 
-
-### VirtualMachineTemplateSpec
-
-
-
-VirtualMachineTemplateSpec describes the data needed to create a VirtualMachine
-from a template.
-
-_Appears in:_
-- [VirtualMachineReplicaSetSpec](#virtualmachinereplicasetspec)
-
-| Field | Description |
-| --- | --- |
-| `metadata` _[ObjectMeta](#objectmeta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |
-| `spec` _[VirtualMachineSpec](#virtualmachinespec)_ | Specification of the desired behavior of each replica virtual machine. |
 
 ### VirtualMachineVolume
 
@@ -3654,7 +2907,6 @@ _Underlying type:_ `string`
 VirtualMachineVolumeType describes the type of a VirtualMachine volume.
 
 _Appears in:_
-- [VirtualMachineImageCacheFileStatus](#virtualmachineimagecachefilestatus)
 - [VirtualMachineVolumeStatus](#virtualmachinevolumestatus)
 
 
@@ -3712,50 +2964,3 @@ optional port. For example, valid values include:
 In other words, the field may be set to any value that is parsable
 by Go's https://pkg.go.dev/net#ResolveIPAddr and
 https://pkg.go.dev/net#ParseIP functions. |
-
-### ZoneSelectorOperator
-
-_Underlying type:_ `string`
-
-ZoneSelectorOperator specifies the type of operator used by
-the zone selector to represent key-value relationships.
-
-_Appears in:_
-- [ZoneSelectorRequirement](#zoneselectorrequirement)
-
-
-### ZoneSelectorRequirement
-
-
-
-ZoneSelectorRequirement defines the key value relationships for a matching zone selector.
-
-_Appears in:_
-- [ZoneSelectorTerm](#zoneselectorterm)
-
-| Field | Description |
-| --- | --- |
-| `key` _string_ | Key is the label key to which the selector applies. |
-| `operator` _[ZoneSelectorOperator](#zoneselectoroperator)_ | Operator represents a key's relationship to a set of values.
-Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt. |
-| `values` _string array_ | Values is a list of values to which the operator applies.
-If the operator is In or NotIn, the values list must be non-empty.
-If the operator is Exists or DoesNotExist, the values list must be empty.
-If the operator is Gt or Lt, the values list must have a single element,
-which will be interpreted as an integer. |
-
-### ZoneSelectorTerm
-
-
-
-ZoneSelectorTerm defines the matching zone selector requirements for zone based affinity/anti-affinity scheduling.
-
-_Appears in:_
-- [VirtualMachineAffinityZoneAffinitySpec](#virtualmachineaffinityzoneaffinityspec)
-- [VirtualMachineAntiAffinityZoneAffinitySpec](#virtualmachineantiaffinityzoneaffinityspec)
-
-| Field | Description |
-| --- | --- |
-| `matchExpressions` _[ZoneSelectorRequirement](#zoneselectorrequirement) array_ | MatchExpressions is a list of zone selector requirements by zone's
-labels. |
-| `matchFields` _[ZoneSelectorRequirement](#zoneselectorrequirement) array_ | MatchFields is a list of zone selector requirements by zone's fields. |

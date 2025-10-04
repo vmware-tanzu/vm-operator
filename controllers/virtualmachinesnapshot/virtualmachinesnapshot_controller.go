@@ -133,8 +133,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 				vmSnapshot.Namespace,
 				sc)
 		}
+
 		reconcileSnapshotReadyCondition(vmSnapshot)
-		vmSnapshotCtx.Logger.Info("Patching VirtualMachineSnapshot", "snapshot", vmSnapshot)
+
+		vmSnapshotCtx.Logger.V(4).Info("Patching VirtualMachineSnapshot",
+			"snapshot", vmSnapshot)
 		if err := patchHelper.Patch(ctx, vmSnapshot); err != nil {
 			if reterr == nil {
 				reterr = err

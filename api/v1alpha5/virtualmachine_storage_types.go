@@ -188,6 +188,7 @@ type PersistentVolumeClaimVolumeSource struct {
 	DiskMode VolumeDiskMode `json:"diskMode,omitempty"`
 
 	// +optional
+	// +kubebuilder:default=None
 
 	// SharingMode describes the volume's desired sharing mode.
 	//

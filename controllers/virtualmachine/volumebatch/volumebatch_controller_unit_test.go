@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	storagehelpers "k8s.io/component-helpers/storage/volume"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,6 +53,9 @@ func unitTestsReconcile() {
 	const (
 		ns            = "dummy-ns"
 		dummyBiosUUID = "dummy-bios-uuid"
+		dummyDiskUUID = "111-222-333-disk-uuid"
+		claimName1    = "pvc-volume-1"
+		claimName2    = "pvc-volume-2"
 	)
 	var (
 		reconciler     *volumebatch.Reconciler
@@ -65,6 +69,8 @@ func unitTestsReconcile() {
 		vmVol            *vmopv1.VirtualMachineVolume
 		vmVolumeWithPVC1 *vmopv1.VirtualMachineVolume
 		boundPVC1        *corev1.PersistentVolumeClaim
+		vmVolumeWithPVC2 *vmopv1.VirtualMachineVolume
+		boundPVC2        *corev1.PersistentVolumeClaim
 	)
 
 	BeforeEach(func() {
@@ -84,7 +90,7 @@ func unitTestsReconcile() {
 			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: "pvc-volume-1",
+						ClaimName: claimName1,
 					},
 				},
 			},
@@ -99,6 +105,28 @@ func unitTestsReconcile() {
 				Phase: corev1.ClaimBound,
 			},
 		}
+
+		vmVolumeWithPVC2 = &vmopv1.VirtualMachineVolume{
+			Name: "cns-volume-2",
+			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: claimName2,
+					},
+				},
+			},
+		}
+
+		boundPVC2 = &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vmVolumeWithPVC2.VirtualMachineVolumeSource.PersistentVolumeClaim.ClaimName,
+				Namespace: ns,
+			},
+			Status: corev1.PersistentVolumeClaimStatus{
+				Phase: corev1.ClaimBound,
+			},
+		}
+
 	})
 
 	JustBeforeEach(func() {
@@ -141,6 +169,26 @@ func unitTestsReconcile() {
 		vmVolumeWithPVC1 = nil
 	})
 
+	getCNSBatchAttachmentForVolumeName := func(vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVmBatchAttachment {
+
+		GinkgoHelper()
+
+		objectKey := client.ObjectKey{Name: util.CNSBatchAttachmentNameForVM(vm.Name), Namespace: vm.Namespace}
+		attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{}
+
+		err := ctx.Client.Get(ctx, objectKey, attachment)
+		if err == nil {
+			return attachment
+		}
+
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+
+		Expect(err).ToNot(HaveOccurred())
+		return nil
+	}
+
 	Context("ReconcileNormal", func() {
 		When("VM does not have BiosUUID", func() {
 			BeforeEach(func() {
@@ -154,7 +202,7 @@ func unitTestsReconcile() {
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Did not create CnsNodeVmBatchAttachment", func() {
-					Expect(getCNSBatchAttachmentForVolumeName(ctx, vm)).To(BeNil())
+					Expect(getCNSBatchAttachmentForVolumeName(vm)).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
 			})
@@ -188,7 +236,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
 					Expect(attachment).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
@@ -205,7 +253,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).To(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
 					Expect(attachment).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
@@ -229,14 +277,14 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
 
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
 
 					attVol1 := attachment.Spec.Volumes[0]
 					Expect(attVol1.Name).To(Equal("cns-volume-1"))
-					Expect(attVol1.PersistentVolumeClaim.ClaimName).To(Equal("pvc-volume-1"))
+					Expect(attVol1.PersistentVolumeClaim.ClaimName).To(Equal(claimName1))
 				})
 			})
 
@@ -251,7 +299,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
 
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
@@ -274,7 +322,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
 
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
@@ -282,6 +330,318 @@ func unitTestsReconcile() {
 					attVol1 := attachment.Spec.Volumes[0]
 					Expect(attVol1.PersistentVolumeClaim.ControllerKey).To(Equal("SCSI:1"))
 					Expect(attVol1.PersistentVolumeClaim.UnitNumber).To(Equal("5"))
+				})
+			})
+		})
+
+		When("VM Spec.Volumes has CNS volume with a SOAP error", func() {
+			awfulErrMsg := `failed to attach cns volume: \"88854b48-2b1c-43f8-8889-de4b5ca2cab5\" to node vm: \"VirtualMachine:vm-42
+[VirtualCenterHost: vc.vmware.com, UUID: 42080725-d6b0-c045-b24e-29c4dadca6f2, Datacenter: Datacenter
+[Datacenter: Datacenter:datacenter, VirtualCenterHost: vc.vmware.com]]\".
+fault: \"(*vimtypes.LocalizedMethodFault)(0xc003d9b9a0)({\\n DynamicData: (vimtypes.DynamicData)
+{\\n },\\n Fault: (*vimtypes.ResourceInUse)(0xc002e69080)({\\n VimFault: (vimtypes.VimFault)
+{\\n MethodFault: (vimtypes.MethodFault) {\\n FaultCause: (*vimtypes.LocalizedMethodFault)(\u003cnil\u003e),\\n
+FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (string) \\\"\\\",\\n Name:
+(string) (len=6) \\\"volume\\\"\\n }),\\n LocalizedMessage: (string) (len=32)
+\\\"The resource 'volume' is in use.\\\"\\n})\\n\". opId: \"67d69c68\""
+`
+
+			BeforeEach(func() {
+				vmVol = vmVolumeWithPVC1
+				vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVol)
+				initObjects = append(initObjects, boundPVC1)
+
+				attachment := cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{*vmVol})
+				attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus, cnsv1alpha1.VolumeStatus{
+					Name: vmVol.Name,
+					PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+						Attached:  true,
+						Diskuuid:  dummyDiskUUID,
+						ClaimName: claimName1,
+						Error:     awfulErrMsg,
+					},
+				})
+				initObjects = append(initObjects, attachment)
+			})
+
+			It("returns success", func() {
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Expected VM Status.Volumes with sanitized error", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(attachment).ToNot(BeNil())
+					assertBatchAttachmentSpec(vm, attachment)
+
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					Expect(attachment.Status.VolumeStatus).To(HaveLen(1))
+					attachment.Status.VolumeStatus[0].PersistentVolumeClaim.Error = "failed to attach cns volume"
+					assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 0)
+				})
+			})
+		})
+
+		When("VM Status.Volumes is sorted as expected", func() {
+			var vmVol1 vmopv1.VirtualMachineVolume
+			var vmVol2 vmopv1.VirtualMachineVolume
+
+			BeforeEach(func() {
+				vmVol1 = *vmVolumeWithPVC1
+				vmVol2 = *vmVolumeWithPVC2
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol1, vmVol2)
+
+				initObjects = append(initObjects, boundPVC1, boundPVC2)
+			})
+
+			// We sort by DiskUUID, but the volumes in CnsNodeVmBatchAttachment
+			// haven't been "attached" yet, so expect the Spec.Volumes order.
+			When("CnsNodeVmBatchAttachment do not have DiskUUID set", func() {
+				It("returns success", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(attachment).ToNot(BeNil())
+
+					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						Expect(attachment.Spec.Volumes).To(HaveLen(2))
+						assertVMVolStatusFromBatchAttachmentSpec(vm, attachment, 0, 0)
+						assertVMVolStatusFromBatchAttachmentSpec(vm, attachment, 1, 1)
+					})
+				})
+			})
+
+			When("CnsNodeVmBatchAttachment have DiskUUID set", func() {
+				dummyDiskUUID1 := "z"
+				dummyDiskUUID2 := "a"
+
+				BeforeEach(func() {
+					attachment := cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{vmVol1, vmVol2})
+					attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus,
+						cnsv1alpha1.VolumeStatus{
+							Name: vmVol1.Name,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								ClaimName: claimName1,
+								Attached:  true,
+								Diskuuid:  dummyDiskUUID1,
+							},
+						},
+						cnsv1alpha1.VolumeStatus{
+							Name: vmVol2.Name,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								ClaimName: claimName2,
+								Attached:  true,
+								Diskuuid:  dummyDiskUUID2,
+							},
+						},
+					)
+
+					initObjects = append(initObjects, attachment)
+				})
+
+				It("returns success", func() {
+
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(attachment).ToNot(BeNil())
+
+					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						Expect(attachment.Status.VolumeStatus).To(HaveLen(2))
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 1, 0)
+						assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 0, 1)
+					})
+				})
+
+				When("Collecting limit and usage information", func() {
+
+					classicDisk1 := func() vmopv1.VirtualMachineVolumeStatus {
+						return vmopv1.VirtualMachineVolumeStatus{
+							Name:     "my-disk-0",
+							Type:     vmopv1.VolumeTypeClassic,
+							Limit:    ptr.To(resource.MustParse("10Gi")),
+							Used:     ptr.To(resource.MustParse("91Gi")),
+							Attached: true,
+							DiskUUID: "100",
+						}
+					}
+
+					classicDisk2 := func() vmopv1.VirtualMachineVolumeStatus {
+						return vmopv1.VirtualMachineVolumeStatus{
+							Name:     "my-disk-1",
+							Type:     vmopv1.VolumeTypeClassic,
+							Limit:    ptr.To(resource.MustParse("15Gi")),
+							Used:     ptr.To(resource.MustParse("5Gi")),
+							Attached: true,
+							DiskUUID: "101",
+						}
+					}
+
+					BeforeEach(func() {
+						vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							classicDisk1(),
+							classicDisk2(),
+						}
+					})
+					AfterEach(func() {
+						vm.Status.Volumes = nil
+					})
+
+					assertBaselineVolStatus := func() {
+
+						GinkgoHelper()
+
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						attachment := getCNSBatchAttachmentForVolumeName(vm)
+						Expect(attachment).ToNot(BeNil())
+
+						By("VM Status.Volumes are sorted by DiskUUID", func() {
+							Expect(vm.Status.Volumes).To(HaveLen(4))
+							Expect(attachment.Status.VolumeStatus).To(HaveLen(2))
+
+							Expect(vm.Status.Volumes[0]).To(Equal(classicDisk1()))
+							Expect(vm.Status.Volumes[1]).To(Equal(classicDisk2()))
+
+							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 2, 1)
+							assertVMVolStatusFromBatchAttachmentStatus(vm, attachment, 3, 0)
+						})
+					}
+
+					It("does not remove any existing classic disks", func() {
+						assertBaselineVolStatus()
+					})
+
+					When("Existing status has usage info for a PVC", func() {
+						BeforeEach(func() {
+							vm.Status.Volumes = append(vm.Status.Volumes,
+								vmopv1.VirtualMachineVolumeStatus{
+									Name: vmVol1.Name,
+									Type: vmopv1.VolumeTypeManaged,
+									Used: ptr.To(resource.MustParse("1Gi")),
+								},
+							)
+						})
+
+						assertPVCHasUsage := func() {
+
+							GinkgoHelper()
+
+							Expect(vm.Status.Volumes[3].Used).To(Equal(ptr.To(resource.MustParse("1Gi"))))
+						}
+
+						It("includes the PVC usage in the result", func() {
+							assertBaselineVolStatus()
+							assertPVCHasUsage()
+						})
+
+						When("Existing status has stale PVC", func() {
+							BeforeEach(func() {
+								vm.Status.Volumes = append(vm.Status.Volumes,
+									vmopv1.VirtualMachineVolumeStatus{
+										Name: "non-existing-pvc",
+										Type: vmopv1.VolumeTypeManaged,
+										Used: ptr.To(resource.MustParse("1Gi")),
+									},
+								)
+							})
+
+							It("should be removed from the result", func() {
+								assertBaselineVolStatus()
+								assertPVCHasUsage()
+							})
+						})
+
+						When("PVC resource exists with limit or request", func() {
+
+							assertPVCHasLimit := func() {
+
+								GinkgoHelper()
+
+								Expect(vm.Status.Volumes[3].Limit).To(Equal(ptr.To(resource.MustParse("20Gi"))))
+							}
+
+							When("PVC has limit", func() {
+								It("should report its limit", func() {
+									boundPVC1.Spec.Resources.Limits = corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("20Gi"),
+									}
+									Expect(ctx.Client.Update(ctx, boundPVC1)).To(Succeed())
+
+									assertBaselineVolStatus()
+									assertPVCHasUsage()
+									assertPVCHasLimit()
+								})
+							})
+
+							When("PVC has request", func() {
+								It("should report its request", func() {
+									boundPVC1.Spec.Resources.Requests = corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("20Gi"),
+									}
+									Expect(ctx.Client.Update(ctx, boundPVC1)).To(Succeed())
+
+									assertBaselineVolStatus()
+									assertPVCHasUsage()
+									assertPVCHasLimit()
+								})
+							})
+
+							When("PVC has limit and request", func() {
+								It("should report its limit", func() {
+									boundPVC1.Spec.Resources.Limits = corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("20Gi"),
+									}
+									boundPVC1.Spec.Resources.Requests = corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("10Gi"),
+									}
+									Expect(ctx.Client.Update(ctx, boundPVC1)).To(Succeed())
+
+									assertBaselineVolStatus()
+									assertPVCHasUsage()
+									assertPVCHasLimit()
+								})
+							})
+						})
+					})
+
+					When("Existing status has crypto info for a PVC", func() {
+
+						newCryptoStatus := func() *vmopv1.VirtualMachineVolumeCryptoStatus {
+							return &vmopv1.VirtualMachineVolumeCryptoStatus{
+								ProviderID: "my-provider-id",
+								KeyID:      "my-key-id",
+							}
+						}
+
+						assertPVCHasCrypto := func() {
+
+							GinkgoHelper()
+
+							Expect(vm.Status.Volumes[3].Crypto).To(Equal(newCryptoStatus()))
+						}
+
+						BeforeEach(func() {
+							vm.Status.Volumes = append(vm.Status.Volumes,
+								vmopv1.VirtualMachineVolumeStatus{
+									Name:   vmVol1.Name,
+									Type:   vmopv1.VolumeTypeManaged,
+									Crypto: newCryptoStatus(),
+								},
+							)
+						})
+
+						It("includes the PVC crypto in the result", func() {
+							assertBaselineVolStatus()
+							assertPVCHasCrypto()
+						})
+					})
 				})
 			})
 		})
@@ -411,7 +771,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					batchAtt = &cnsv1alpha1.CnsNodeVmBatchAttachment{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      util.CNSBatchAttachmentNameForVolume(vm.Name),
+							Name:      util.CNSBatchAttachmentNameForVM(vm.Name),
 							Namespace: vm.Namespace,
 						},
 						Spec: cnsv1alpha1.CnsNodeVmBatchAttachmentSpec{
@@ -419,7 +779,7 @@ func unitTestsReconcile() {
 								{
 									Name: "cns-volume-1",
 									PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimSpec{
-										ClaimName: "pvc-volume-1",
+										ClaimName: claimName1,
 									},
 								},
 							},
@@ -450,32 +810,73 @@ func unitTestsReconcile() {
 		})
 
 		When("There is an existing CnsNodeVmBatchAttachment", func() {
-			var batchAtt *cnsv1alpha1.CnsNodeVmBatchAttachment
+			var attachment *cnsv1alpha1.CnsNodeVmBatchAttachment
 			BeforeEach(func() {
-				batchAtt = &cnsv1alpha1.CnsNodeVmBatchAttachment{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      util.CNSBatchAttachmentNameForVolume(vm.Name),
-						Namespace: vm.Namespace,
-					},
-				}
+				attachment = cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{})
 			})
 
 			AfterEach(func() {
-				batchAtt = nil
+				attachment = nil
 			})
 
 			JustBeforeEach(func() {
-				initObjects = append(initObjects, batchAtt)
+				initObjects = append(initObjects, attachment)
 			})
 
 			When("there is no pvcs on the VM", func() {
 				It("Should delete the batchAttachment", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).ToNot(HaveOccurred())
-					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
 
 					Expect(attachment).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
+				})
+			})
+
+			When("VM Spec.Volumes has changed PVC", func() {
+				BeforeEach(func() {
+					vmVol1 := *vmVolumeWithPVC1
+					vmVolWithDifferentPVC := *vmVolumeWithPVC1
+					vmVolWithDifferentPVC.PersistentVolumeClaim.ClaimName = boundPVC2.Name
+					// VM Spec has Volume with new PVC.
+					vm.Spec.Volumes = append(vm.Spec.Volumes, vmVolWithDifferentPVC)
+					initObjects = append(initObjects, boundPVC2)
+
+					// Old attachment still points to vmVol1 with old PVC.
+					attachment = cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{vmVol1})
+					attachment.Status.VolumeStatus = append(attachment.Status.VolumeStatus,
+						cnsv1alpha1.VolumeStatus{
+							Name: vmVol1.Name,
+							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+								ClaimName: claimName1,
+								Attached:  true,
+							},
+						},
+					)
+
+					vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+						{
+							Name:     "cns-volume1-1",
+							Attached: true,
+						},
+					}
+
+					initObjects = append(initObjects, attachment)
+				})
+
+				It("returns success and refresh the vm volume status", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					attachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(attachment).ToNot(BeNil())
+
+					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						Expect(attachment.Status.VolumeStatus).To(HaveLen(1))
+						assertVMVolStatusFromBatchAttachmentSpec(vm, attachment, 0, 0)
+					})
 				})
 			})
 		})
@@ -494,25 +895,92 @@ func unitTestsReconcile() {
 			})
 		})
 	})
-
 }
 
-func getCNSBatchAttachmentForVolumeName(ctx *builder.UnitTestContextForController, vm *vmopv1.VirtualMachine) *cnsv1alpha1.CnsNodeVmBatchAttachment {
+func assertBatchAttachmentSpec(
+	vm *vmopv1.VirtualMachine,
+	attachment *cnsv1alpha1.CnsNodeVmBatchAttachment) {
 
 	GinkgoHelper()
 
-	objectKey := client.ObjectKey{Name: util.CNSBatchAttachmentNameForVolume(vm.Name), Namespace: vm.Namespace}
-	attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{}
+	Expect(attachment.Spec.NodeUUID).To(Equal(vm.Status.BiosUUID))
 
-	err := ctx.Client.Get(ctx, objectKey, attachment)
-	if err == nil {
-		return attachment
+	ownerRefs := attachment.GetOwnerReferences()
+	Expect(ownerRefs).To(HaveLen(1))
+	ownerRef := ownerRefs[0]
+	Expect(ownerRef.Name).To(Equal(vm.Name))
+	Expect(ownerRef.Controller).ToNot(BeNil())
+	Expect(*ownerRef.Controller).To(BeTrue())
+}
+
+func cnsBatchAttachmentForVMVolume(
+	vm *vmopv1.VirtualMachine,
+	vmVols []vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmBatchAttachment {
+	t := true
+	batchAttachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.CNSBatchAttachmentNameForVM(vm.Name),
+			Namespace: vm.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         "vmoperator.vmware.com/v1alpha1",
+					Kind:               "VirtualMachine",
+					Name:               vm.Name,
+					UID:                vm.UID,
+					Controller:         &t,
+					BlockOwnerDeletion: &t,
+				},
+			},
+		},
+		Spec: cnsv1alpha1.CnsNodeVmBatchAttachmentSpec{
+			NodeUUID: vm.Status.BiosUUID,
+			Volumes:  []cnsv1alpha1.VolumeSpec{},
+		},
+		Status: cnsv1alpha1.CnsNodeVmBatchAttachmentStatus{
+			VolumeStatus: []cnsv1alpha1.VolumeStatus{},
+		},
 	}
 
-	if apierrors.IsNotFound(err) {
-		return nil
+	for _, vmVol := range vmVols {
+		batchAttachment.Spec.Volumes = append(batchAttachment.Spec.Volumes,
+			cnsv1alpha1.VolumeSpec{
+				Name: vmVol.PersistentVolumeClaim.ClaimName,
+			})
 	}
 
-	Expect(err).ToNot(HaveOccurred())
-	return nil
+	return batchAttachment
+}
+
+func assertVMVolStatusFromBatchAttachmentStatus(
+	vm *vmopv1.VirtualMachine,
+	attachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	vmVolStatusIndex,
+	attachmentStatusIndex int) {
+
+	GinkgoHelper()
+
+	vmVolStatus := vm.Status.Volumes[vmVolStatusIndex]
+	attachmentVolStatus := attachment.Status.VolumeStatus[attachmentStatusIndex]
+
+	Expect(vmVolStatus.Type).To(Equal(vmopv1.VolumeTypeManaged), "type should match")
+	Expect(vmVolStatus.Name).To(Equal(attachmentVolStatus.Name), "volume name should match")
+	Expect(vmVolStatus.Attached).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Attached), "attached should match")
+	Expect(vmVolStatus.DiskUUID).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Diskuuid), "diskuuid should match")
+	Expect(vmVolStatus.Error).To(Equal(attachmentVolStatus.PersistentVolumeClaim.Error), "error shouuld match")
+}
+
+func assertVMVolStatusFromBatchAttachmentSpec(
+	vm *vmopv1.VirtualMachine,
+	attachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	vmVolStatusIndex,
+	attachmentStatusIndex int) {
+
+	GinkgoHelper()
+
+	vmVolStatus := vm.Status.Volumes[vmVolStatusIndex]
+	attachmentVolSpec := attachment.Spec.Volumes[attachmentStatusIndex]
+
+	Expect(vmVolStatus.Type).To(Equal(vmopv1.VolumeTypeManaged), "type should match")
+	Expect(vmVolStatus.Name).To(Equal(attachmentVolSpec.Name), "volume name should match")
+	Expect(vmVolStatus.Attached).To(BeFalse(), "attached should be set to default")
 }

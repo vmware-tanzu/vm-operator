@@ -836,21 +836,21 @@ func intgTestsMutating() {
 
 				})
 
-				It("should only set the disk mode to persistent, and leave the rest empty", func() {
+				It("should only set the disk mode to persistent, sharing mode to none, and leave the rest empty", func() {
 					vm := &vmopv1.VirtualMachine{}
 					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
 					Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode).
 						To(Equal(vmopv1.VolumeDiskModePersistent))
 					Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode).
-						To(BeEmpty())
+						To(Equal(vmopv1.VolumeSharingModeNone))
 					Expect(vm.Spec.Volumes[1].PersistentVolumeClaim.DiskMode).
 						To(Equal(vmopv1.VolumeDiskModePersistent))
 					Expect(vm.Spec.Volumes[1].PersistentVolumeClaim.SharingMode).
-						To(BeEmpty())
+						To(Equal(vmopv1.VolumeSharingModeNone))
 					Expect(vm.Spec.Volumes[2].PersistentVolumeClaim.DiskMode).
 						To(Equal(vmopv1.VolumeDiskModePersistent))
 					Expect(vm.Spec.Volumes[2].PersistentVolumeClaim.SharingMode).
-						To(BeEmpty())
+						To(Equal(vmopv1.VolumeSharingModeNone))
 				})
 			})
 		})

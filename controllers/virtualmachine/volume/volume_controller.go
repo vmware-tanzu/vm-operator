@@ -1,5 +1,5 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package volume
@@ -1003,19 +1003,6 @@ func (r *Reconciler) deleteOrphanedAttachments(ctx *pkgctx.VolumeContext, attach
 	return apierrorsutil.NewAggregate(errs)
 }
 
-// The CSI controller sometimes puts the serialized SOAP error into the CnsNodeVmAttachment
-// error field, which contains things like OpIds and pointers that change on every failed
-// reconcile attempt. Using this error as-is causes VM object churn, so try to avoid that
-// here. The full error message is always available in the CnsNodeVmAttachment.
-func sanitizeCNSErrorMessage(msg string) string {
-	if strings.Contains(msg, "opId:") {
-		idx := strings.Index(msg, ":")
-		return msg[:idx]
-	}
-
-	return msg
-}
-
 func attachmentToVolumeStatus(
 	volumeName string,
 	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1.VirtualMachineVolumeStatus {
@@ -1024,7 +1011,7 @@ func attachmentToVolumeStatus(
 		Name:     volumeName, // Name of the volume as in the Spec
 		Attached: attachment.Status.Attached,
 		DiskUUID: attachment.Status.AttachmentMetadata[cnsv1alpha1.AttributeFirstClassDiskUUID],
-		Error:    sanitizeCNSErrorMessage(attachment.Status.Error),
+		Error:    pkgutil.SanitizeCNSErrorMessage(attachment.Status.Error),
 		Type:     vmopv1.VolumeTypeManaged,
 	}
 }

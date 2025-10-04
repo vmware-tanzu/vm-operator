@@ -139,6 +139,13 @@ func unitTestsReconcile() {
 			WithObjects(initObjects...).
 			WithInterceptorFuncs(withFuncs).
 			WithStatusSubresource(builder.KnownObjectTypes()...).
+			WithIndex(
+				&cnsv1alpha1.CnsNodeVmAttachment{},
+				"spec.nodeuuid",
+				func(rawObj client.Object) []string {
+					attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
+					return []string{attachment.Spec.NodeUUID}
+				}).
 			Build()
 
 		reconciler = volumebatch.NewReconciler(
@@ -330,6 +337,286 @@ func unitTestsReconcile() {
 					attVol1 := attachment.Spec.Volumes[0]
 					Expect(attVol1.PersistentVolumeClaim.ControllerKey).To(Equal("SCSI:1"))
 					Expect(attVol1.PersistentVolumeClaim.UnitNumber).To(Equal("5"))
+				})
+			})
+		})
+
+		When("VM has legacy CnsNodeVmAttachment resources", func() {
+			var (
+				legacyAttachment1 *cnsv1alpha1.CnsNodeVmAttachment
+				legacyAttachment2 *cnsv1alpha1.CnsNodeVmAttachment
+			)
+
+			BeforeEach(func() {
+				// Create legacy attachments for testing
+				legacyAttachment1 = &cnsv1alpha1.CnsNodeVmAttachment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      util.CNSAttachmentNameForVolume(vm.Name, "legacy-volume-1"),
+						Namespace: ns,
+					},
+					Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
+						NodeUUID:   dummyBiosUUID,
+						VolumeName: "legacy-pvc-1",
+					},
+					Status: cnsv1alpha1.CnsNodeVmAttachmentStatus{
+						Attached: true,
+					},
+				}
+
+				legacyAttachment2 = &cnsv1alpha1.CnsNodeVmAttachment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      util.CNSAttachmentNameForVolume(vm.Name, "legacy-volume-2"),
+						Namespace: ns,
+					},
+					Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
+						NodeUUID:   dummyBiosUUID,
+						VolumeName: "legacy-pvc-2",
+					},
+					Status: cnsv1alpha1.CnsNodeVmAttachmentStatus{
+						Attached: false,
+					},
+				}
+			})
+
+			When("legacy attachments exist but volumes are not in VM spec", func() {
+				BeforeEach(func() {
+					// Add legacy attachments but no corresponding volumes in VM spec
+					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2)
+				})
+
+				It("should delete orphaned legacy attachments", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Verify legacy attachments were deleted
+					legacyKey1 := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}
+					legacyKey2 := client.ObjectKey{Name: legacyAttachment2.Name, Namespace: ns}
+
+					attachment1 := &cnsv1alpha1.CnsNodeVmAttachment{}
+					attachment2 := &cnsv1alpha1.CnsNodeVmAttachment{}
+
+					err1 := ctx.Client.Get(ctx, legacyKey1, attachment1)
+					err2 := ctx.Client.Get(ctx, legacyKey2, attachment2)
+
+					Expect(apierrors.IsNotFound(err1)).To(BeTrue(), "Legacy attachment 1 should be deleted")
+					Expect(apierrors.IsNotFound(err2)).To(BeTrue(), "Legacy attachment 2 should be deleted")
+
+					// No batch attachment should be created since no volumes in spec
+					batchAttachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(batchAttachment).To(BeNil())
+				})
+			})
+
+			When("legacy attachments exist and corresponding volumes are in VM spec", func() {
+				BeforeEach(func() {
+					// Add a volume that matches legacy attachment
+					vmVolWithLegacy := &vmopv1.VirtualMachineVolume{
+						Name: "legacy-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "legacy-pvc-1",
+								},
+							},
+						},
+					}
+
+					legacyPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "legacy-pvc-1",
+							Namespace: ns,
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Phase: corev1.ClaimBound,
+						},
+					}
+
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy)
+					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2, legacyPVC)
+				})
+
+				It("should keep matching legacy attachments and delete orphaned ones", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Verify matching legacy attachment still exists
+					legacyKey1 := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}
+					attachment1 := &cnsv1alpha1.CnsNodeVmAttachment{}
+					err1 := ctx.Client.Get(ctx, legacyKey1, attachment1)
+					Expect(err1).ToNot(HaveOccurred(), "Matching legacy attachment should be preserved")
+
+					// Verify orphaned legacy attachment was deleted
+					legacyKey2 := client.ObjectKey{Name: legacyAttachment2.Name, Namespace: ns}
+					attachment2 := &cnsv1alpha1.CnsNodeVmAttachment{}
+					err2 := ctx.Client.Get(ctx, legacyKey2, attachment2)
+					Expect(apierrors.IsNotFound(err2)).To(BeTrue(), "Orphaned legacy attachment should be deleted")
+
+					// Current behavior: batch attachment IS created even with legacy volumes
+					// (filtering logic not yet implemented in HEAD)
+					batchAttachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(batchAttachment).ToNot(BeNil(), "Batch attachment should be created in current implementation")
+					Expect(batchAttachment.Spec.Volumes).To(HaveLen(1))
+					Expect(batchAttachment.Spec.Volumes[0].Name).To(Equal("legacy-volume-1"))
+				})
+			})
+
+			When("legacy attachment has different PVC name than VM spec", func() {
+				BeforeEach(func() {
+					// Add a volume with same name but different PVC
+					vmVolWithDifferentPVC := &vmopv1.VirtualMachineVolume{
+						Name: "legacy-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "different-pvc", // Different from legacy-pvc-1
+								},
+							},
+						},
+					}
+
+					differentPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "different-pvc",
+							Namespace: ns,
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Phase: corev1.ClaimBound,
+						},
+					}
+
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithDifferentPVC)
+					initObjects = append(initObjects, legacyAttachment1, legacyAttachment2, differentPVC)
+				})
+
+				It("should delete legacy attachment and create batch attachment", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Verify legacy attachments were deleted (PVC mismatch makes them orphaned)
+					legacyKey1 := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}
+					legacyKey2 := client.ObjectKey{Name: legacyAttachment2.Name, Namespace: ns}
+
+					attachment1 := &cnsv1alpha1.CnsNodeVmAttachment{}
+					attachment2 := &cnsv1alpha1.CnsNodeVmAttachment{}
+
+					err1 := ctx.Client.Get(ctx, legacyKey1, attachment1)
+					err2 := ctx.Client.Get(ctx, legacyKey2, attachment2)
+
+					Expect(apierrors.IsNotFound(err1)).To(BeTrue(), "Legacy attachment with wrong PVC should be deleted")
+					Expect(apierrors.IsNotFound(err2)).To(BeTrue(), "Orphaned legacy attachment should be deleted")
+
+					// Batch attachment should be created for the volume
+					batchAttachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(batchAttachment).ToNot(BeNil())
+					Expect(batchAttachment.Spec.Volumes).To(HaveLen(1))
+					Expect(batchAttachment.Spec.Volumes[0].Name).To(Equal("legacy-volume-1"))
+					Expect(batchAttachment.Spec.Volumes[0].PersistentVolumeClaim.ClaimName).To(Equal("different-pvc"))
+				})
+			})
+
+			When("legacy attachment has different NodeUUID (stale)", func() {
+				BeforeEach(func() {
+					// Make legacy attachment have stale NodeUUID
+					legacyAttachment1.Spec.NodeUUID = "stale-bios-uuid"
+
+					vmVolWithLegacy := &vmopv1.VirtualMachineVolume{
+						Name: "legacy-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "legacy-pvc-1",
+								},
+							},
+						},
+					}
+
+					legacyPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "legacy-pvc-1",
+							Namespace: ns,
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Phase: corev1.ClaimBound,
+						},
+					}
+
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy)
+					initObjects = append(initObjects, legacyAttachment1, legacyPVC)
+				})
+
+				It("should treat volume as greenfield and create batch attachment", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Current behavior: stale legacy attachment is NOT automatically deleted
+					// (only orphaned attachments not matching VM spec are deleted)
+					legacyKey1 := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}
+					attachment1 := &cnsv1alpha1.CnsNodeVmAttachment{}
+					err1 := ctx.Client.Get(ctx, legacyKey1, attachment1)
+					Expect(err1).ToNot(HaveOccurred(), "Stale legacy attachment still exists in current implementation")
+
+					// Volume should be processed by batch controller regardless
+					batchAttachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(batchAttachment).ToNot(BeNil())
+					Expect(batchAttachment.Spec.Volumes).To(HaveLen(1))
+					Expect(batchAttachment.Spec.Volumes[0].Name).To(Equal("legacy-volume-1"))
+				})
+			})
+
+			When("error occurs while getting legacy attachments", func() {
+				BeforeEach(func() {
+					// Add a volume to trigger processing
+					vmVol = vmVolumeWithPVC1
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVol)
+					initObjects = append(initObjects, boundPVC1)
+
+					// Set up interceptor to simulate error when listing CnsNodeVmAttachment
+					withFuncs.List = func(ctx context.Context, client client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+						if _, ok := list.(*cnsv1alpha1.CnsNodeVmAttachmentList); ok {
+							return errors.New("simulated list error")
+						}
+						return client.List(ctx, list, opts...)
+					}
+				})
+
+				It("should return error and not proceed with batch processing", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("simulated list error"))
+
+					// No batch attachment should be created due to error
+					batchAttachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(batchAttachment).To(BeNil())
+				})
+			})
+
+			When("error occurs while deleting legacy attachments", func() {
+				BeforeEach(func() {
+					// Add orphaned legacy attachment
+					initObjects = append(initObjects, legacyAttachment1)
+
+					// Set up interceptor to simulate error when deleting CnsNodeVmAttachment
+					withFuncs.Delete = func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if _, ok := obj.(*cnsv1alpha1.CnsNodeVmAttachment); ok {
+							return errors.New("simulated delete error")
+						}
+						return client.Delete(ctx, obj, opts...)
+					}
+				})
+
+				It("should log error but continue with batch processing", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred()) // Should not fail, just log error
+
+					// Legacy attachment should still exist due to delete error
+					legacyKey := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}
+					attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
+					err = ctx.Client.Get(ctx, legacyKey, attachment)
+					Expect(err).ToNot(HaveOccurred(), "Legacy attachment should still exist due to delete error")
+
+					// Batch processing should continue normally (no volumes to process in this case)
+					batchAttachment := getCNSBatchAttachmentForVolumeName(vm)
+					Expect(batchAttachment).To(BeNil())
 				})
 			})
 		})

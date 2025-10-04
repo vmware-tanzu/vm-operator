@@ -361,10 +361,6 @@ spec:
                             - name
                             type: object
                           type: array
-                        name:
-                          description: Name is the name of VirtualMachine member of
-                            this group.
-                          type: string
                         node:
                           description: Node describes the recommended node for this
                             VM.
@@ -377,8 +373,6 @@ spec:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
-                      required:
-                      - name
                       type: object
                     powerState:
                       description: |-
@@ -389,6 +383,10 @@ spec:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
+                      type: string
+                    uid:
+                      description: UID is the K8s metadata UID of this current member
+                        object.
                       type: string
                   required:
                   - kind
@@ -750,10 +748,6 @@ spec:
                             - name
                             type: object
                           type: array
-                        name:
-                          description: Name is the name of VirtualMachine member of
-                            this group.
-                          type: string
                         node:
                           description: Node describes the recommended node for this
                             VM.
@@ -766,8 +760,6 @@ spec:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
-                      required:
-                      - name
                       type: object
                     powerState:
                       description: |-
@@ -778,6 +770,10 @@ spec:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
+                      type: string
+                    uid:
+                      description: UID is the K8s metadata UID of this current member
+                        object.
                       type: string
                   required:
                   - kind
@@ -1139,10 +1135,6 @@ spec:
                             - name
                             type: object
                           type: array
-                        name:
-                          description: Name is the name of VirtualMachine member of
-                            this group.
-                          type: string
                         node:
                           description: Node describes the recommended node for this
                             VM.
@@ -1155,8 +1147,6 @@ spec:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
-                      required:
-                      - name
                       type: object
                     powerState:
                       description: |-
@@ -1167,6 +1157,10 @@ spec:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
+                      type: string
+                    uid:
+                      description: UID is the K8s metadata UID of this current member
+                        object.
                       type: string
                   required:
                   - kind
@@ -1528,10 +1522,6 @@ spec:
                             - name
                             type: object
                           type: array
-                        name:
-                          description: Name is the name of VirtualMachine member of
-                            this group.
-                          type: string
                         node:
                           description: Node describes the recommended node for this
                             VM.
@@ -1544,8 +1534,6 @@ spec:
                           description: Zone describes the recommended zone for this
                             VM.
                           type: string
-                      required:
-                      - name
                       type: object
                     powerState:
                       description: |-
@@ -1556,6 +1544,10 @@ spec:
                       - PoweredOff
                       - PoweredOn
                       - Suspended
+                      type: string
+                    uid:
+                      description: UID is the K8s metadata UID of this current member
+                        object.
                       type: string
                   required:
                   - kind

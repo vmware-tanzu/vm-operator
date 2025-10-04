@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -123,6 +124,7 @@ var _ = Describe(
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: vm1Key.Namespace,
 					Name:      vm1Key.Name,
+					UID:       types.UID(uuid.NewString()),
 				},
 				Spec: vmopv1.VirtualMachineSpec{
 					ImageName:    dummyImage,
@@ -136,6 +138,7 @@ var _ = Describe(
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: vm2Key.Namespace,
 					Name:      vm2Key.Name,
+					UID:       types.UID(uuid.NewString()),
 				},
 				Spec: vmopv1.VirtualMachineSpec{
 					ImageName:    dummyImage,
@@ -149,6 +152,7 @@ var _ = Describe(
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: vm3Key.Namespace,
 					Name:      vm3Key.Name,
+					UID:       types.UID(uuid.NewString()),
 				},
 				Spec: vmopv1.VirtualMachineSpec{
 					ImageName:    dummyImage,
@@ -417,41 +421,10 @@ var _ = Describe(
 		})
 
 		Context("Placement", func() {
-			BeforeEach(func() {
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.PlaceVirtualMachineGroupFn = func(
-					ctx context.Context,
-					group *vmopv1.VirtualMachineGroup,
-					groupPlacement []providers.VMGroupPlacement) error {
+			var (
+				groupPlacementCallCount int
 
-					for _, grpPlacement := range groupPlacement {
-						for _, vm := range grpPlacement.VMMembers {
-							found := false
-							for i := range grpPlacement.VMGroup.Status.Members {
-								ms := &grpPlacement.VMGroup.Status.Members[i]
-								if ms.Name == vm.Name && ms.Kind == "VirtualMachine" {
-									conditions.MarkTrue(ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
-									found = true
-									break
-								}
-							}
-
-							if !found {
-								ms := vmopv1.VirtualMachineGroupMemberStatus{
-									Name: vm.Name,
-									Kind: "VirtualMachine",
-								}
-								conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
-								grpPlacement.VMGroup.Status.Members = append(grpPlacement.VMGroup.Status.Members, ms)
-							}
-						}
-					}
-
-					return nil
-				}
-				intgFakeVMProvider.Unlock()
-
-				setVMUniqueID := func(vmKey types.NamespacedName, uniqueID string) {
+				setVMUniqueID = func(vmKey types.NamespacedName, uniqueID string) {
 					GinkgoHelper()
 					vm := &vmopv1.VirtualMachine{}
 					Expect(ctx.Client.Get(ctx, vmKey, vm)).To(Succeed())
@@ -459,6 +432,77 @@ var _ = Describe(
 					vmCopy.Status.UniqueID = uniqueID
 					Expect(ctx.Client.Status().Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
 				}
+
+				setVMZoneLabel = func(vmKey types.NamespacedName, zoneName string) {
+					GinkgoHelper()
+					vm := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vmKey, vm)).To(Succeed())
+					vmCopy := vm.DeepCopy()
+					if vmCopy.Labels == nil {
+						vmCopy.Labels = make(map[string]string)
+					}
+					vmCopy.Labels[corev1.LabelTopologyZone] = zoneName
+					Expect(ctx.Client.Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
+				}
+
+				verifyGroupPlacementReadyCondition = func(groupKey types.NamespacedName, memberCount int, reason string) {
+					GinkgoHelper()
+					Eventually(func(g Gomega) {
+						group := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, groupKey, group)).To(Succeed())
+						g.Expect(group.Status.Members).To(HaveLen(memberCount))
+						for _, ms := range group.Status.Members {
+							if ms.Kind == virtualMachineKind {
+								g.Expect(conditions.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
+								if reason != "" {
+									g.Expect(conditions.Get(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady).Reason).To(Equal(reason))
+								}
+							}
+						}
+					}, "5s", "100ms").Should(Succeed())
+				}
+
+				setProviderPlaceVirtualMachineGroupFn = func() {
+					intgFakeVMProvider.Lock()
+					intgFakeVMProvider.PlaceVirtualMachineGroupFn = func(
+						ctx context.Context,
+						group *vmopv1.VirtualMachineGroup,
+						groupPlacement []providers.VMGroupPlacement) error {
+
+						groupPlacementCallCount++
+
+						for _, grpPlacement := range groupPlacement {
+							for _, vm := range grpPlacement.VMMembers {
+								found := false
+								for i := range grpPlacement.VMGroup.Status.Members {
+									ms := &grpPlacement.VMGroup.Status.Members[i]
+									if ms.Name == vm.Name && ms.Kind == "VirtualMachine" {
+										conditions.MarkTrue(ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+										found = true
+										break
+									}
+								}
+
+								if !found {
+									ms := vmopv1.VirtualMachineGroupMemberStatus{
+										Name: vm.Name,
+										Kind: "VirtualMachine",
+									}
+									conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+									grpPlacement.VMGroup.Status.Members = append(grpPlacement.VMGroup.Status.Members, ms)
+								}
+							}
+						}
+
+						return nil
+					}
+					intgFakeVMProvider.Unlock()
+				}
+			)
+
+			BeforeEach(func() {
+				groupPlacementCallCount = 0
+				setProviderPlaceVirtualMachineGroupFn()
 
 				By("setting up group-1 with members vm-1, vm-3, and vmgroup-2")
 				setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
@@ -483,43 +527,92 @@ var _ = Describe(
 						},
 					},
 				}, vmGroup1Key.Name)
+			})
 
+			JustBeforeEach(func() {
+				// Assign VMs to groups in JustBeforeEach() so that we can modify
+				// VM objects before triggering reconciliation for group placement.
 				By("assigning VMs to groups")
 				assignVMToGroup(vm1Key, vmGroup1Key.Name)
 				assignVMToGroup(vm3Key, vmGroup1Key.Name)
 				assignVMToGroup(vm2Key, vmGroup2Key.Name)
 
-				By("setting up existing VMs")
-				setVMUniqueID(vm3Key, "vm-345")
-				setVMUniqueID(vm2Key, "vm-123")
+				By("triggering reconciliation of groups")
+				reconcileVMG(vmGroup1Key)
+				reconcileVMG(vmGroup2Key)
 			})
 
-			It("should update groups with placement ready condition", func() {
+			When("VM already has uniqueID", func() {
+				BeforeEach(func() {
+					By("setting uniqueID to VMs before adding to group")
+					setVMUniqueID(vm1Key, "vm-unique-id-1")
+					setVMUniqueID(vm2Key, "vm-unique-id-2")
+					setVMUniqueID(vm3Key, "vm-unique-id-3")
 
-				expectPlacementCondition := func(g Gomega, groupKey types.NamespacedName, vmName, expectedReason string) {
-					group := &vmopv1.VirtualMachineGroup{}
-					g.Expect(ctx.Client.Get(ctx, groupKey, group)).To(Succeed())
-
-					var member *vmopv1.VirtualMachineGroupMemberStatus
-					for i := range group.Status.Members {
-						if group.Status.Members[i].Name == vmName && group.Status.Members[i].Kind == "VirtualMachine" {
-							member = &group.Status.Members[i]
-							break
+					By("verifying VM has uniqueID before adding to group")
+					Eventually(func(g Gomega) {
+						for _, vmKey := range []types.NamespacedName{vm1Key, vm2Key, vm3Key} {
+							vm := &vmopv1.VirtualMachine{}
+							g.Expect(ctx.Client.Get(ctx, vmKey, vm)).To(Succeed())
+							g.Expect(vm.Status.UniqueID).ToNot(BeEmpty())
 						}
-					}
-					g.Expect(member).ToNot(BeNil())
-					g.Expect(conditions.IsTrue(member, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
-					if expectedReason != "" {
-						c := conditions.Get(member, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
-						g.Expect(c.Reason).To(Equal(expectedReason))
-					}
-				}
+					}, "5s", "100ms").Should(Succeed())
+				})
 
-				Eventually(func(g Gomega) {
-					expectPlacementCondition(g, vmGroup2Key, vm2Key.Name, vmopv1.VirtualMachineGroupMemberAlreadyPlacedReason)
-					expectPlacementCondition(g, vmGroup1Key, vm1Key.Name, "") // No AlreadyExists reason if VM was placed through regular group controller driven placement.
-					expectPlacementCondition(g, vmGroup1Key, vm3Key.Name, vmopv1.VirtualMachineGroupMemberAlreadyPlacedReason)
-				}, "5s", "100ms").Should(Succeed())
+				It("should skip placing VM by group and mark PlacementReady true with AlreadyPlaced reason", func() {
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "AlreadyPlaced")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "AlreadyPlaced")
+					Expect(groupPlacementCallCount).To(BeZero(), "VM with uniqueID should not be placed by group")
+				})
+			})
+
+			When("VM member status has PlacementReady condition true and matching UID", func() {
+				JustBeforeEach(func() {
+					By("waiting for initial group placement")
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
+
+					By("resetting group placement call count after initial placement")
+					groupPlacementCallCount = 0
+				})
+
+				It("should skip placing VM by group and mark PlacementReady true", func() {
+					By("triggering reconciliation of groups")
+					reconcileVMG(vmGroup1Key)
+					reconcileVMG(vmGroup2Key)
+
+					By("verifying group placement call count remains 0")
+					Consistently(func(g Gomega) {
+						g.Expect(groupPlacementCallCount).To(BeZero())
+					}, "2s", "100ms").Should(Succeed())
+
+					By("verifying group placement ready condition remains true")
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
+				})
+			})
+
+			When("VM doesn't have PlacementReady nor uniqueID but has zone label", func() {
+				BeforeEach(func() {
+					By("setting zone label to VMs before adding to group")
+					setVMZoneLabel(vm1Key, "zone-a")
+					setVMZoneLabel(vm2Key, "zone-b")
+					setVMZoneLabel(vm3Key, "zone-c")
+				})
+
+				It("should skip placing VM by group and mark PlacementReady true", func() {
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
+					Expect(groupPlacementCallCount).To(BeZero(), "VM with zone label should not be placed by group")
+				})
+			})
+
+			When("VM needs placement by group", func() {
+				It("should place the VM by provider", func() {
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
+					Expect(groupPlacementCallCount).To(BeEquivalentTo(1), "VM should be placed by group")
+				})
 			})
 		})
 

@@ -422,49 +422,7 @@ var _ = Describe(
 
 		Context("Placement", func() {
 			var (
-				groupPlacementCallCount            int
-				setVMUniqueID                      func(vmKey types.NamespacedName, uniqueID string)
-				setVMZoneLabel                     func(vmKey types.NamespacedName, zoneName string)
-				verifyGroupPlacementReadyCondition func(groupKey types.NamespacedName, memberCount int)
-			)
-
-			BeforeEach(func() {
-				groupPlacementCallCount = 0
-
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.PlaceVirtualMachineGroupFn = func(
-					ctx context.Context,
-					group *vmopv1.VirtualMachineGroup,
-					groupPlacement []providers.VMGroupPlacement) error {
-
-					groupPlacementCallCount++
-
-					for _, grpPlacement := range groupPlacement {
-						for _, vm := range grpPlacement.VMMembers {
-							found := false
-							for i := range grpPlacement.VMGroup.Status.Members {
-								ms := &grpPlacement.VMGroup.Status.Members[i]
-								if ms.Name == vm.Name && ms.Kind == "VirtualMachine" {
-									conditions.MarkTrue(ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
-									found = true
-									break
-								}
-							}
-
-							if !found {
-								ms := vmopv1.VirtualMachineGroupMemberStatus{
-									Name: vm.Name,
-									Kind: "VirtualMachine",
-								}
-								conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
-								grpPlacement.VMGroup.Status.Members = append(grpPlacement.VMGroup.Status.Members, ms)
-							}
-						}
-					}
-
-					return nil
-				}
-				intgFakeVMProvider.Unlock()
+				groupPlacementCallCount int
 
 				setVMUniqueID = func(vmKey types.NamespacedName, uniqueID string) {
 					GinkgoHelper()
@@ -487,7 +445,7 @@ var _ = Describe(
 					Expect(ctx.Client.Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
 				}
 
-				verifyGroupPlacementReadyCondition = func(groupKey types.NamespacedName, memberCount int) {
+				verifyGroupPlacementReadyCondition = func(groupKey types.NamespacedName, memberCount int, reason string) {
 					GinkgoHelper()
 					Eventually(func(g Gomega) {
 						group := &vmopv1.VirtualMachineGroup{}
@@ -496,10 +454,55 @@ var _ = Describe(
 						for _, ms := range group.Status.Members {
 							if ms.Kind == virtualMachineKind {
 								g.Expect(conditions.IsTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeTrue())
+								if reason != "" {
+									g.Expect(conditions.Get(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady).Reason).To(Equal(reason))
+								}
 							}
 						}
 					}, "5s", "100ms").Should(Succeed())
 				}
+
+				setProviderPlaceVirtualMachineGroupFn = func() {
+					intgFakeVMProvider.Lock()
+					intgFakeVMProvider.PlaceVirtualMachineGroupFn = func(
+						ctx context.Context,
+						group *vmopv1.VirtualMachineGroup,
+						groupPlacement []providers.VMGroupPlacement) error {
+
+						groupPlacementCallCount++
+
+						for _, grpPlacement := range groupPlacement {
+							for _, vm := range grpPlacement.VMMembers {
+								found := false
+								for i := range grpPlacement.VMGroup.Status.Members {
+									ms := &grpPlacement.VMGroup.Status.Members[i]
+									if ms.Name == vm.Name && ms.Kind == "VirtualMachine" {
+										conditions.MarkTrue(ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+										found = true
+										break
+									}
+								}
+
+								if !found {
+									ms := vmopv1.VirtualMachineGroupMemberStatus{
+										Name: vm.Name,
+										Kind: "VirtualMachine",
+									}
+									conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+									grpPlacement.VMGroup.Status.Members = append(grpPlacement.VMGroup.Status.Members, ms)
+								}
+							}
+						}
+
+						return nil
+					}
+					intgFakeVMProvider.Unlock()
+				}
+			)
+
+			BeforeEach(func() {
+				groupPlacementCallCount = 0
+				setProviderPlaceVirtualMachineGroupFn()
 
 				By("setting up group-1 with members vm-1, vm-3, and vmgroup-2")
 				setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
@@ -539,33 +542,7 @@ var _ = Describe(
 				reconcileVMG(vmGroup2Key)
 			})
 
-			When("VM member status has PlacementReady condition true and matching UID", func() {
-				JustBeforeEach(func() {
-					By("waiting for initial group placement")
-					verifyGroupPlacementReadyCondition(vmGroup1Key, 3)
-					verifyGroupPlacementReadyCondition(vmGroup2Key, 1)
-
-					By("resetting group placement call count after initial placement")
-					groupPlacementCallCount = 0
-				})
-
-				It("should skip placing VM by group and mark PlacementReady true", func() {
-					By("triggering reconciliation of groups")
-					reconcileVMG(vmGroup1Key)
-					reconcileVMG(vmGroup2Key)
-
-					By("verifying group placement call count remains 0")
-					Consistently(func(g Gomega) {
-						g.Expect(groupPlacementCallCount).To(BeZero())
-					}, "2s", "100ms").Should(Succeed())
-
-					By("verifying group placement ready condition remains true")
-					verifyGroupPlacementReadyCondition(vmGroup1Key, 3)
-					verifyGroupPlacementReadyCondition(vmGroup2Key, 1)
-				})
-			})
-
-			When("VM doesn't have PlacementReady condition true but already has uniqueID", func() {
+			When("VM already has uniqueID", func() {
 				BeforeEach(func() {
 					By("setting uniqueID to VMs before adding to group")
 					setVMUniqueID(vm1Key, "vm-unique-id-1")
@@ -582,10 +559,36 @@ var _ = Describe(
 					}, "5s", "100ms").Should(Succeed())
 				})
 
-				It("should skip placing VM by group and mark PlacementReady true", func() {
-					verifyGroupPlacementReadyCondition(vmGroup1Key, 3)
-					verifyGroupPlacementReadyCondition(vmGroup2Key, 1)
+				It("should skip placing VM by group and mark PlacementReady true with AlreadyPlaced reason", func() {
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "AlreadyPlaced")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "AlreadyPlaced")
 					Expect(groupPlacementCallCount).To(BeZero(), "VM with uniqueID should not be placed by group")
+				})
+			})
+
+			When("VM member status has PlacementReady condition true and matching UID", func() {
+				JustBeforeEach(func() {
+					By("waiting for initial group placement")
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
+
+					By("resetting group placement call count after initial placement")
+					groupPlacementCallCount = 0
+				})
+
+				It("should skip placing VM by group and mark PlacementReady true", func() {
+					By("triggering reconciliation of groups")
+					reconcileVMG(vmGroup1Key)
+					reconcileVMG(vmGroup2Key)
+
+					By("verifying group placement call count remains 0")
+					Consistently(func(g Gomega) {
+						g.Expect(groupPlacementCallCount).To(BeZero())
+					}, "2s", "100ms").Should(Succeed())
+
+					By("verifying group placement ready condition remains true")
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
 				})
 			})
 
@@ -598,16 +601,16 @@ var _ = Describe(
 				})
 
 				It("should skip placing VM by group and mark PlacementReady true", func() {
-					verifyGroupPlacementReadyCondition(vmGroup1Key, 3)
-					verifyGroupPlacementReadyCondition(vmGroup2Key, 1)
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
 					Expect(groupPlacementCallCount).To(BeZero(), "VM with zone label should not be placed by group")
 				})
 			})
 
 			When("VM needs placement by group", func() {
 				It("should place the VM by provider", func() {
-					verifyGroupPlacementReadyCondition(vmGroup1Key, 3)
-					verifyGroupPlacementReadyCondition(vmGroup2Key, 1)
+					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
+					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
 					Expect(groupPlacementCallCount).To(BeEquivalentTo(1), "VM should be placed by group")
 				})
 			})

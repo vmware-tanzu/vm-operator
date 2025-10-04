@@ -515,7 +515,7 @@ func (r *Reconciler) reconcilePlacement(
 	}
 
 	if len(groupPlacements) == 0 {
-		pkglog.FromContextOrDefault(ctx).V(5).Info("No group members need placement")
+		pkglog.FromContextOrDefault(ctx).V(4).Info("No group members need placement")
 	} else if err := r.VMProvider.PlaceVirtualMachineGroup(ctx, ctx.VMGroup, groupPlacements); err != nil {
 		return fmt.Errorf("failed to place group members: %w", err)
 	}
@@ -588,20 +588,34 @@ func (r *Reconciler) getVMForPlacement(
 		return nil, fmt.Errorf("VM %q is not in group member status", vmName)
 	}
 
+	var alreadyPlaced bool
+
 	defer func() {
 		if err != nil {
 			conditions.MarkError(
 				memberStatus,
 				vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 				"Error",
-				err)
-		} else if vm == nil {
-			// If both error and vm are nil, it means the VM is already placed,
-			// or will be placed outside the group. Update the PlacementReady
-			// condition to True to be able to set the group as ready.
-			conditions.MarkTrue(
-				memberStatus,
-				vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+				err,
+			)
+			return
+		}
+
+		if vm != nil {
+			// Let the provider update PlacementReady condition for this VM.
+			return
+		}
+
+		// If both error and vm are nil, then the VM is already placed, or will
+		// be placed outside the group. Update PlacementReady condition to True.
+		if alreadyPlaced {
+			conditions.Set(memberStatus, &metav1.Condition{
+				Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+				Status: metav1.ConditionTrue,
+				Reason: "AlreadyPlaced",
+			})
+		} else {
+			conditions.MarkTrue(memberStatus, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
 		}
 	}()
 
@@ -618,12 +632,25 @@ func (r *Reconciler) getVMForPlacement(
 		return nil, fmt.Errorf("VM %q is assigned to group %q instead of expected %q", vmName, gn, vmGroup.Name)
 	}
 
+	// Check if VM has uniqueID set first to update the AlreadyPlaced reason.
+	if vm.Status.UniqueID != "" {
+		alreadyPlaced = true
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
+			"VM has uniqueID, skipping group placement",
+			"vmName", vmName,
+			"uniqueID", vm.Status.UniqueID,
+		)
+		return nil, nil
+	}
+
 	// Skip if the group already has placement condition ready true for this VM.
 	// Need to check the UID in case the VM is recreated with the same name and
 	// without being removed from the group (could have stale placement status).
-	if vm.GetUID() == memberStatus.UID &&
-		conditions.IsTrue(memberStatus, vmopv1.VirtualMachineGroupMemberConditionPlacementReady) {
-		pkglog.FromContextOrDefault(ctx).V(5).Info(
+	if vm.GetUID() == memberStatus.UID && conditions.IsTrue(
+		memberStatus,
+		vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+	) {
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
 			"Group already has placement condition ready for VM, skipping",
 			"vmName", vmName,
 			"vmUID", vm.GetUID(),
@@ -633,26 +660,9 @@ func (r *Reconciler) getVMForPlacement(
 
 	memberStatus.UID = vm.GetUID()
 
-	// If the VM has uniqueID set, then we don't need to do placement
-	// for it.
-	//
-	// Preexisting VMs would already be reconciled and thus will have
-	// MemberLinked condition set. Therefore, will not be part of
-	// placement. But on the off chance that the condition doesn't
-	// exist, we still check for existing VMs explicitly.
-	if vm.Status.UniqueID != "" {
-		pkglog.FromContextOrDefault(ctx).V(5).Info(
-			"VM has uniqueID, skipping group placement",
-			"vmName", vmName,
-			"uniqueID", vm.Status.UniqueID,
-		)
-		return nil, nil
-	}
-
-	// If the VM has an explicit zone label, skip group placement to respect the
-	// zone override.
+	// If VM has a zone label, skip group placement to respect zone override.
 	if zoneName := vm.Labels[corev1.LabelTopologyZone]; zoneName != "" {
-		pkglog.FromContextOrDefault(ctx).V(5).Info(
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
 			"VM has explicit zone label, skipping group placement",
 			"vmName", vmName,
 			"zoneName", zoneName,
@@ -683,12 +693,13 @@ func (r *Reconciler) getGroupsForPlacement(
 		return nil, fmt.Errorf("failed to get group member group %s: %w", groupName, err)
 	}
 
-	// Initialize patch for this child group if it will need status updates.
-	if _, exists := groupPatches[vmGroup]; !exists {
-		groupPatches[vmGroup] = client.MergeFrom(vmGroup.DeepCopy())
+	if _, exists := groupPatches[vmGroup]; exists {
+		return nil, fmt.Errorf("cycle detected in group hierarchy: %q", groupName)
 	}
 
-	// TODO: Detect cycles
+	// Initialize patch for this child group to update its member placement status if needed.
+	groupPatches[vmGroup] = client.MergeFrom(vmGroup.DeepCopy())
+
 	return r.getPlacementMembers(ctx, vmGroup, groupPatches)
 }
 

@@ -92,6 +92,7 @@ KUBECTL            := $(TOOLS_BIN_DIR)/kubectl
 ETCD               := $(TOOLS_BIN_DIR)/etcd
 GOVULNCHECK        := $(TOOLS_BIN_DIR)/govulncheck
 KIND               := $(TOOLS_BIN_DIR)/kind
+MTIMEHASH          := $(TOOLS_BIN_DIR)/mtimehash
 
 # Allow overriding manifest generation destination directory
 MANIFEST_ROOT     ?= config
@@ -241,6 +242,10 @@ coverage-xml:
 coverage: ## Show test coverage in browser
 	go tool cover -html="$(COVERAGE_FILE)"
 
+# Used with GitHub actions
+.PHONY: restore-mtime
+restore-mtime: | $(MTIMEHASH)
+	find . -type f -name '*.go' | $(MTIMEHASH)
 
 ## --------------------------------------
 ## Binaries
@@ -274,7 +279,8 @@ $(VMCLASS): cmd/vmclass/main.go
 TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(CONVERSION_GEN) \
                     $(GOLANGCI_LINT) $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) $(ETCD) \
-                    $(GINKGO) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK) $(KIND)
+                    $(GINKGO) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK) $(KIND) \
+                    $(MTIMEHASH)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
 $(TOOLING_BINARIES):
 	make -C $(TOOLS_DIR) $(@F)

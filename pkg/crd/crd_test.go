@@ -7,6 +7,7 @@ package crd_test
 import (
 	"context"
 	"slices"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -103,7 +104,6 @@ func assertCRDsConsistOf[T any](
 	}
 
 	ExpectWithOffset(1, actualNames).To(ConsistOf(expectedNames))
-
 }
 
 var _ = Describe("UnstructuredBases", func() {
@@ -192,14 +192,7 @@ var _ = Describe("Install", func() {
 
 			DescribeTable("vm api should not have spec fields",
 				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"spec",
-						"properties",
-						field,
-					}
+					fields := specFieldPath(field)
 					assertField(false, fields...)
 				},
 				Entry("bootOptions", "bootOptions"),
@@ -207,18 +200,16 @@ var _ = Describe("Install", func() {
 				Entry("currentSnapshot", "currentSnapshot"),
 				Entry("groupName", "groupName"),
 				Entry("policies", "policies"),
+				Entry("linuxPrep expire password", "bootstrap.linuxPrep.expirePasswordAfterNextLogin"),
+				Entry("linuxPrep root password", "bootstrap.linuxPrep.password"),
+				Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
+				Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
+				Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
 			)
 
 			DescribeTable("vm api should not have status fields",
 				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"status",
-						"properties",
-						field,
-					}
+					fields := statusFieldPath(field)
 					assertField(false, fields...)
 				},
 				Entry("currentSnapshot", "currentSnapshot"),
@@ -254,14 +245,7 @@ var _ = Describe("Install", func() {
 
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"spec",
-						"properties",
-						field,
-					}
+					fields := specFieldPath(field)
 					assertField(true, fields...)
 				},
 				Entry("policies", "policies"),
@@ -269,14 +253,7 @@ var _ = Describe("Install", func() {
 
 			DescribeTable("vm api should have status fields",
 				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"status",
-						"properties",
-						field,
-					}
+					fields := statusFieldPath(field)
 					assertField(true, fields...)
 				},
 				Entry("policies", "policies"),
@@ -297,14 +274,7 @@ var _ = Describe("Install", func() {
 
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"spec",
-						"properties",
-						field,
-					}
+					fields := specFieldPath(field)
 					assertField(true, fields...)
 				},
 				Entry("bootOptions", "bootOptions"),
@@ -326,14 +296,7 @@ var _ = Describe("Install", func() {
 
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"spec",
-						"properties",
-						field,
-					}
+					fields := specFieldPath(field)
 					assertField(true, fields...)
 				},
 				Entry("currentSnapshotName", "currentSnapshotName"),
@@ -341,14 +304,7 @@ var _ = Describe("Install", func() {
 
 			DescribeTable("vm api should have status fields",
 				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"status",
-						"properties",
-						field,
-					}
+					fields := statusFieldPath(field)
 					assertField(true, fields...)
 				},
 				Entry("currentSnapshot", "currentSnapshot"),
@@ -369,17 +325,34 @@ var _ = Describe("Install", func() {
 			})
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
-					fields := []string{
-						"schema",
-						"openAPIV3Schema",
-						"properties",
-						"spec",
-						"properties",
-						field,
-					}
+					fields := specFieldPath(field)
 					assertField(true, fields...)
 				},
 				Entry("class", "class"),
+			)
+		})
+
+		When("Guest customization VCD parity is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.GuestCustomizationVCDParity = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, basesNonGated...)
+			})
+			DescribeTable("vm api should have spec fields",
+				func(field string) {
+					fields := specFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("linuxPrep expire password", "bootstrap.linuxPrep.expirePasswordAfterNextLogin"),
+				Entry("linuxPrep root password", "bootstrap.linuxPrep.password"),
+				Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
+				Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
+				Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
 			)
 		})
 
@@ -405,6 +378,7 @@ var _ = Describe("Install", func() {
 					config.Features.VMSnapshots = true
 					config.Features.VSpherePolicies = true
 					config.Features.BringYourOwnEncryptionKey = true
+					config.Features.GuestCustomizationVCDParity = true
 				})
 			})
 			It("should get the expected crds", func() {
@@ -527,14 +501,7 @@ var _ = Describe("Install", func() {
 
 				DescribeTable("vm api should not have removed spec fields",
 					func(field string) {
-						fields := []string{
-							"schema",
-							"openAPIV3Schema",
-							"properties",
-							"spec",
-							"properties",
-							field,
-						}
+						fields := specFieldPath(field)
 						assertField(true, fields...)
 					},
 					Entry("bootOptions", "bootOptions"),
@@ -542,18 +509,16 @@ var _ = Describe("Install", func() {
 					Entry("currentSnapshotName", "currentSnapshotName"),
 					Entry("groupName", "groupName"),
 					Entry("policies", "policies"),
+					Entry("linuxPrep expire password", "bootstrap.linuxPrep.expirePasswordAfterNextLogin"),
+					Entry("linuxPrep root password", "bootstrap.linuxPrep.password"),
+					Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
+					Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
+					Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
 				)
 
 				DescribeTable("vm api should not have removed status fields",
 					func(field string) {
-						fields := []string{
-							"schema",
-							"openAPIV3Schema",
-							"properties",
-							"status",
-							"properties",
-							field,
-						}
+						fields := statusFieldPath(field)
 						assertField(true, fields...)
 					},
 					Entry("currentSnapshot", "currentSnapshot"),
@@ -583,14 +548,7 @@ var _ = Describe("Install", func() {
 
 				DescribeTable("vm api should have removed spec fields",
 					func(field string) {
-						fields := []string{
-							"schema",
-							"openAPIV3Schema",
-							"properties",
-							"spec",
-							"properties",
-							field,
-						}
+						fields := specFieldPath(field)
 						assertField(false, fields...)
 					},
 					Entry("bootOptions", "bootOptions"),
@@ -598,18 +556,16 @@ var _ = Describe("Install", func() {
 					Entry("currentSnapshot", "currentSnapshot"),
 					Entry("groupName", "groupName"),
 					Entry("policies", "policies"),
+					Entry("linuxPrep expire password", "bootstrap.linuxPrep.expirePasswordAfterNextLogin"),
+					Entry("linuxPrep root password", "bootstrap.linuxPrep.password"),
+					Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
+					Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
+					Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
 					func(field string) {
-						fields := []string{
-							"schema",
-							"openAPIV3Schema",
-							"properties",
-							"status",
-							"properties",
-							field,
-						}
+						fields := statusFieldPath(field)
 						assertField(false, fields...)
 					},
 					Entry("currentSnapshot", "currentSnapshot"),
@@ -639,14 +595,7 @@ var _ = Describe("Install", func() {
 
 					DescribeTable("vm api should have removed spec fields",
 						func(field string) {
-							fields := []string{
-								"schema",
-								"openAPIV3Schema",
-								"properties",
-								"spec",
-								"properties",
-								field,
-							}
+							fields := specFieldPath(field)
 							assertField(false, fields...)
 						},
 						Entry("bootOptions", "bootOptions"),
@@ -654,18 +603,16 @@ var _ = Describe("Install", func() {
 						Entry("currentSnapshot", "currentSnapshot"),
 						Entry("groupName", "groupName"),
 						Entry("policies", "policies"),
+						Entry("linuxPrep expire password", "bootstrap.linuxPrep.expirePasswordAfterNextLogin"),
+						Entry("linuxPrep root password", "bootstrap.linuxPrep.password"),
+						Entry("linuxPrep script text ", "bootstrap.linuxPrep.scriptText"),
+						Entry("sysprep expire password", "bootstrap.sysprep.sysprep.expirePasswordAfterNextLogin"),
+						Entry("sysprep script text", "bootstrap.sysprep.sysprep.scriptText"),
 					)
 
 					DescribeTable("vm api should have removed status fields",
 						func(field string) {
-							fields := []string{
-								"schema",
-								"openAPIV3Schema",
-								"properties",
-								"status",
-								"properties",
-								field,
-							}
+							fields := statusFieldPath(field)
 							assertField(false, fields...)
 						},
 						Entry("currentSnapshot", "currentSnapshot"),
@@ -677,3 +624,22 @@ var _ = Describe("Install", func() {
 		})
 	})
 })
+
+func specFieldPath(fieldPath string) []string {
+	fieldNames := strings.Split(fieldPath, ".")
+	return buildFieldPath("spec", fieldNames...)
+}
+
+func statusFieldPath(fieldPath string) []string {
+	fieldNames := strings.Split(fieldPath, ".")
+	return buildFieldPath("status", fieldNames...)
+}
+
+func buildFieldPath(parentField string, fieldNames ...string) []string {
+	result := []string{"schema", "openAPIV3Schema", "properties", parentField, "properties"}
+	result = append(result, fieldNames[0])
+	for _, name := range fieldNames[1:] {
+		result = append(result, "properties", name)
+	}
+	return result
+}

@@ -78,7 +78,7 @@ func UnstructuredExternal() ([]unstructured.Unstructured, error) {
 // Install installs the CRDs into the provided Kubernetes environment based on
 // the current set of feature/capability flags. This will also remove any APIs
 // from the provided environment if their flags have been disabled.
-func Install(
+func Install( //nolint:gocyclo
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
 	mutateFn func(kind string, obj *unstructured.Unstructured) error) error {
@@ -245,6 +245,23 @@ func Install(
 							shouldRemoveFields,
 							specFieldPath("policies"),
 							statusFieldPath("policies")); err != nil {
+
+							return err
+						}
+					}
+
+					if !pkgcfg.FromContext(ctx).Features.GuestCustomizationVCDParity {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("bootstrap", "linuxPrep", "password"),
+							specFieldPath("bootstrap", "linuxPrep", "scriptText"),
+							specFieldPath("bootstrap", "linuxPrep", "expirePasswordAfterNextLogin"),
+							specFieldPath("bootstrap", "sysprep", "sysprep", "scriptText"),
+							specFieldPath("bootstrap", "sysprep", "sysprep", "expirePasswordAfterNextLogin"),
+						); err != nil {
 
 							return err
 						}
@@ -484,24 +501,20 @@ func decode(fs embed.FS, fileName string, dst ctrlclient.Object) error {
 	return nil
 }
 
-func specFieldPath(fieldName string) []string {
-	return []string{
-		"schema",
-		"openAPIV3Schema",
-		"properties",
-		"spec",
-		"properties",
-		fieldName,
+func specFieldPath(fieldNames ...string) []string {
+	result := []string{"schema", "openAPIV3Schema", "properties", "spec", "properties"}
+	result = append(result, fieldNames[0])
+	for _, name := range fieldNames[1:] {
+		result = append(result, "properties", name)
 	}
+	return result
 }
 
-func statusFieldPath(fieldName string) []string {
-	return []string{
-		"schema",
-		"openAPIV3Schema",
-		"properties",
-		"status",
-		"properties",
-		fieldName,
+func statusFieldPath(fieldNames ...string) []string {
+	result := []string{"schema", "openAPIV3Schema", "properties", "status", "properties"}
+	result = append(result, fieldNames[0])
+	for _, name := range fieldNames[1:] {
+		result = append(result, "properties", name)
 	}
+	return result
 }

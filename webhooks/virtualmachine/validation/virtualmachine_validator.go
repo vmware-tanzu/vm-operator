@@ -2159,7 +2159,7 @@ func (v validator) validateGroupName(
 
 //nolint:gocyclo
 func (v validator) validateVMAffinity(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	affinity := vm.Spec.Affinity
@@ -2251,10 +2251,45 @@ func (v validator) validateVMAffinity(
 	if a := affinity.VMAntiAffinity; a != nil {
 		p := path.Child("vmAntiAffinity")
 
-		// TODO(sai): Allow this for privileged users.
 		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
-			allErrs = append(allErrs, field.Forbidden(p.Child("requiredDuringSchedulingPreferredDuringExecution"),
-				"VM anti-affinity with RequiredDuringSchedulingPreferredDuringExecution is not allowed"))
+			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
+
+			for idx, rs := range a.RequiredDuringSchedulingPreferredDuringExecution {
+				p := p.Index(idx)
+
+				if rs.LabelSelector != nil {
+					p := p.Child("labelSelector")
+
+					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
+						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+					}
+
+					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
+						p := p.Child("matchExpressions").Index(exprIdx)
+
+						if expr.Operator != metav1.LabelSelectorOpIn {
+							allErrs = append(allErrs, field.NotSupported(
+								p.Child("operator"),
+								expr.Operator,
+								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
+							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
+						}
+					}
+				}
+
+				// For non-privileged users, only zone topology key is allowed for anti-affinity required terms.
+				if !ctx.IsPrivilegedAccount && rs.TopologyKey != corev1.LabelTopologyZone {
+					allErrs = append(allErrs, field.NotSupported(
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
+				}
+
+				// For privileged users (mobility operator), either zone or host topology key is allowed for anti-affinity required terms.
+				if ctx.IsPrivilegedAccount && rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
+					allErrs = append(allErrs, field.NotSupported(
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
+				}
+			}
 		}
 
 		if len(a.PreferredDuringSchedulingPreferredDuringExecution) > 0 {
@@ -2284,9 +2319,10 @@ func (v validator) validateVMAffinity(
 					}
 				}
 
-				if rs.TopologyKey != "" && rs.TopologyKey != corev1.LabelHostname {
+				// Either zone or host topology key is allowed for anti-affinity preferred terms.
+				if rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
 					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{"", corev1.LabelHostname}))
+						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
 				}
 			}
 		}

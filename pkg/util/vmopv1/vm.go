@@ -391,6 +391,22 @@ func EncryptionClassToVirtualMachineMapper(
 	}
 }
 
+// CnsRegisterVolumeToVirtualMachineMapper returns a mapper function used to
+// enqueue reconcile requests for VMs in response to an event on the
+// CnsRegisterVolume resource.
+func CnsRegisterVolumeToVirtualMachineMapper(
+	ctx context.Context,
+	k8sClient client.Client) handler.MapFunc {
+
+	// TODO(AllDisksArePVCs)
+	//
+	// Implement this function. Please see the function
+	// reconcileUnmanagedToManagedDisks from vmprovider_vm.go for more
+	// information on how to implement this function.
+
+	return nil
+}
+
 // KubernetesNodeLabelKey is the name of the label key used to identify a
 // Kubernetes cluster node.
 const KubernetesNodeLabelKey = "cluster.x-k8s.io/cluster-name"

@@ -87,6 +87,10 @@ const (
 	// CapabilityKeyVSpherePolicies is the name of the capability key
 	// defined in the Supervisor capabilities CRD for IaaS Policies and Placement.
 	CapabilityKeyVSpherePolicies = "supports_iaas_compute_policies"
+
+	// CapabilityKeyAllDisksArePVCs is the name of the capability key defined in
+	// the Supervisor capabilities CRD for enabling all disks as PVCs in VM Op.
+	CapabilityKeyAllDisksArePVCs = "supports_vm_service_all_disks_are_pvcs"
 )
 
 var (
@@ -245,6 +249,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.GuestCustomizationVCDParity = capStatus.Activated
 		case CapabilityKeyVSpherePolicies:
 			fs.VSpherePolicies = capStatus.Activated
+		case CapabilityKeyAllDisksArePVCs:
+			fs.AllDisksArePVCs = capStatus.Activated
 		}
 
 	}

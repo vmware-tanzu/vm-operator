@@ -28,9 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -40,6 +39,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
 const (
@@ -318,13 +318,14 @@ func (r *Reconciler) createBatchAttachment(
 
 	attachmentName := pkgutil.CNSBatchAttachmentNameForVolume(ctx.VM.Name)
 
-	volumeSpecs, err := r.buildVolumeSpecs(volumes)
+	volumeSpecs, err := r.buildVolumeSpecs(volumes, ctx.VM.Status.Hardware)
 	if err != nil {
 		return fmt.Errorf("failed to build volume specs: %w", err)
 	}
 
 	// Validate the volume specs before creating the batch attachment
-	if err := r.validateVolumeSpecs(ctx, volumeSpecs); err != nil {
+	if err := r.validateVolumeSpecs(
+		ctx, nil); err != nil {
 		return fmt.Errorf("volume spec validation failed: %w", err)
 	}
 
@@ -356,7 +357,7 @@ func (r *Reconciler) updateBatchAttachment(
 	existing *cnsv1alpha1.CnsNodeVmBatchAttachment,
 	volumes []vmopv1.VirtualMachineVolume) error {
 
-	volumeSpecs, err := r.buildVolumeSpecs(volumes)
+	volumeSpecs, err := r.buildVolumeSpecs(volumes, ctx.VM.Status.Hardware)
 	if err != nil {
 		return fmt.Errorf("failed to build volume specs: %w", err)
 	}
@@ -366,6 +367,12 @@ func (r *Reconciler) updateBatchAttachment(
 	if r.volumeSpecsEqual(existing.Spec.Volumes, volumeSpecs) {
 		// No update needed, just update VM status from existing attachment
 		return r.updateVMStatusFromBatchAttachment(ctx, existing)
+	}
+
+	// Validate the volume specs before updating the batch attachment
+	if err := r.validateVolumeSpecs(
+		ctx, existing.Status.VolumeStatus); err != nil {
+		return fmt.Errorf("volume spec validation failed: %w", err)
 	}
 
 	// Update the batch attachment with new volume specs
@@ -381,10 +388,11 @@ func (r *Reconciler) updateBatchAttachment(
 // buildVolumeSpecs builds a volume spec that will be used to create
 // the CnsNodeVmBatchAttachment object.
 func (r *Reconciler) buildVolumeSpecs(
-	volumes []vmopv1.VirtualMachineVolume) ([]cnsv1alpha1.VolumeSpec, error) {
+	volumes []vmopv1.VirtualMachineVolume,
+	hwStatus *vmopv1.VirtualMachineHardwareStatus) ([]cnsv1alpha1.VolumeSpec, error) {
 
 	volumeSpecs := make([]cnsv1alpha1.VolumeSpec, 0, len(volumes))
-
+	ctrlInfoMap, _ := vmopv1util.GetExistingControllersAndDevices(hwStatus)
 	for _, vol := range volumes {
 		pvcSpec := vol.PersistentVolumeClaim
 
@@ -427,9 +435,14 @@ func (r *Reconciler) buildVolumeSpecs(
 		}
 
 		// Map controller key (combination of controller type and bus number)
-		if pvcSpec.ControllerType != "" || pvcSpec.ControllerBusNumber != nil {
-			controllerKey := pkgutil.BuildControllerKey(pvcSpec.ControllerType, pvcSpec.ControllerBusNumber)
-			cnsVolumeSpec.PersistentVolumeClaim.ControllerKey = controllerKey
+		if pvcSpec.ControllerType != "" && pvcSpec.ControllerBusNumber != nil {
+			if ctrlInfo, exist := ctrlInfoMap[vmopv1util.CtrlKey{
+				CtrlType:  pvcSpec.ControllerType,
+				BusNumber: *pvcSpec.ControllerBusNumber,
+			}]; exist {
+				cnsVolumeSpec.PersistentVolumeClaim.ControllerKey =
+					strconv.Itoa(int(ctrlInfo.ControllerKey))
+			}
 		}
 
 		// Map unit number
@@ -713,18 +726,35 @@ func (r *Reconciler) validateHardwareVersion(ctx *pkgctx.VolumeContext) error {
 	return nil
 }
 
-// validateVolumeSpecs validates that the volume specs are valid for attachment.
-// This method validates controller capacity, unit number conflicts, and other constraints.
-// It requires access to the VM's ConfigInfo from vSphere to validate against current controller
-// configuration and existing disk attachments.
-func (r *Reconciler) validateVolumeSpecs(_ *pkgctx.VolumeContext, _ []cnsv1alpha1.VolumeSpec) error {
-	// TODO: Implement validation logic
-	// This method will validate:
-	// - Controller unit number availability (ensure unit numbers don't exceed controller capacity)
-	// - No duplicate unit numbers within the same controller
-	// - No conflicts with existing attached volumes
-	// - Valid controller type and bus number combinations
-	// - Controller capacity limits based on controller type
+// validateVolumeSpecs validates VM spec volumes and Batch spec volumes in the
+// best effort manner. For a volume with incomplete information, this validation
+// simply skips and rely on CNS's volume batch status to report any errors.
+func (r *Reconciler) validateVolumeSpecs(
+	volCtx *pkgctx.VolumeContext,
+	existingAttachmentStatus []cnsv1alpha1.VolumeStatus) error {
+
+	ctrlInfoMap, managedDeviceInfoMap, unmanagedDiskDeviceInfoSet, err :=
+		vmopv1util.GetVolumeValidationInfo(
+			existingAttachmentStatus,
+			volCtx.VM.Status.Volumes,
+			volCtx.VM.Status.Hardware)
+	if err != nil {
+		return err
+	}
+
+	if err := vmopv1util.ValidateVMSpecVolumesApplicationType(
+		volCtx.VM.Spec.Volumes,
+		ctrlInfoMap); err != nil {
+		return err
+	}
+
+	if err := vmopv1util.ValidateVMSpecVolumesUnitNumber(
+		volCtx.VM.Spec.Volumes,
+		managedDeviceInfoMap,
+		unmanagedDiskDeviceInfoSet,
+		ctrlInfoMap); err != nil {
+		return err
+	}
 
 	return nil
 }

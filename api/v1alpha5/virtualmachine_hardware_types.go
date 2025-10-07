@@ -149,9 +149,16 @@ type VirtualDeviceStatus struct {
 
 	// UnitNumber describes the observed unit number of the device.
 	UnitNumber int32 `json:"unitNumber"`
+
+	// +optional
+
+	// DiskUUID represents the underlying virtual disk UUID and is present when
+	// attachment succeeds.
+	DiskUUID string `json:"diskUUID,omitempty"`
 }
 
-type VirtualControllerStatus struct {
+// IDEControllerStatus describes the observed state of an IDE controller.
+type IDEControllerStatus struct {
 	// +required
 
 	// BusNumber describes the observed bus number of the controller.
@@ -159,8 +166,8 @@ type VirtualControllerStatus struct {
 
 	// +required
 
-	// Type describes the observed type of the controller.
-	Type VirtualControllerType `json:"type"`
+	// DeviceKey describes the observed device key of the controller.
+	DeviceKey int32 `json:"deviceKey"`
 
 	// +optional
 	// +listType=map
@@ -169,6 +176,124 @@ type VirtualControllerStatus struct {
 
 	// Devices describes the observed devices connected to the controller.
 	Devices []VirtualDeviceStatus `json:"devices,omitempty"`
+}
+
+// GetDevices returns the devices connected to the controller.
+func (c IDEControllerStatus) GetDevices() []VirtualDeviceStatus {
+	return c.Devices
+}
+
+// GetBusNumber returns the bus number of the controller.
+func (c IDEControllerStatus) GetBusNumber() int32 {
+	return c.BusNumber
+}
+
+// NVMEControllerStatus describes the observed state of an NVMe controller.
+type NVMEControllerStatus struct {
+	// +required
+
+	// BusNumber describes the observed bus number of the controller.
+	BusNumber int32 `json:"busNumber"`
+
+	// +required
+
+	// DeviceKey describes the observed device key of the controller.
+	DeviceKey int32 `json:"deviceKey"`
+
+	// +optional
+
+	// SharingMode describes the observed sharing mode for the controller.
+	SharingMode VirtualControllerSharingMode `json:"sharingMode,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +listMapKey=type
+
+	// Devices describes the observed devices connected to the controller.
+	Devices []VirtualDeviceStatus `json:"devices,omitempty"`
+}
+
+// GetDevices returns the devices connected to the controller.
+func (c NVMEControllerStatus) GetDevices() []VirtualDeviceStatus {
+	return c.Devices
+}
+
+// GetBusNumber returns the bus number of the controller.
+func (c NVMEControllerStatus) GetBusNumber() int32 {
+	return c.BusNumber
+}
+
+// SATAControllerStatus describes the observed state of a SATA controller.
+type SATAControllerStatus struct {
+	// +required
+
+	// BusNumber describes the observed bus number of the controller.
+	BusNumber int32 `json:"busNumber"`
+
+	// +required
+
+	// DeviceKey describes the observed device key of the controller.
+	DeviceKey int32 `json:"deviceKey"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +listMapKey=type
+
+	// Devices describes the observed devices connected to the controller.
+	Devices []VirtualDeviceStatus `json:"devices,omitempty"`
+}
+
+// GetDevices returns the devices connected to the controller.
+func (c SATAControllerStatus) GetDevices() []VirtualDeviceStatus {
+	return c.Devices
+}
+
+// GetBusNumber returns the bus number of the controller.
+func (c SATAControllerStatus) GetBusNumber() int32 {
+	return c.BusNumber
+}
+
+// SCSIControllerStatus describes the observed state of a SCSI controller.
+type SCSIControllerStatus struct {
+	// +required
+
+	// BusNumber describes the observed bus number of the controller.
+	BusNumber int32 `json:"busNumber"`
+
+	// +required
+
+	// Type describes the observed type of SCSI controller.
+	Type SCSIControllerType `json:"type"`
+
+	// +required
+
+	// DeviceKey describes the observed device key of the controller.
+	DeviceKey int32 `json:"deviceKey"`
+
+	// +optional
+
+	// SharingMode describes the observed sharing mode for the controller.
+	SharingMode VirtualControllerSharingMode `json:"sharingMode,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +listMapKey=type
+
+	// Devices describes the observed devices connected to the controller.
+	Devices []VirtualDeviceStatus `json:"devices,omitempty"`
+}
+
+// GetDevices returns the devices connected to the controller.
+func (c SCSIControllerStatus) GetDevices() []VirtualDeviceStatus {
+	return c.Devices
+}
+
+// GetBusNumber returns the bus number of the controller.
+func (c SCSIControllerStatus) GetBusNumber() int32 {
+	return c.BusNumber
 }
 
 // VirtualMachineCdromSpec describes the desired state of a CD-ROM device.
@@ -389,11 +514,34 @@ type VirtualMachineHardwareStatus struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=busNumber
-	// +listMapKey=type
+	// +kubebuilder:validation:MaxItems=2
 
-	// Controllers describes the observed list of virtual controllers for the
-	// VM.
-	Controllers []VirtualControllerStatus `json:"controllers,omitempty"`
+	// IDEControllers describes the observed list of IDE controllers for the VM.
+	IDEControllers []IDEControllerStatus `json:"ideControllers,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=busNumber
+	// +kubebuilder:validation:MaxItems=4
+
+	// NVMEControllers describes the observed list of NVMe controllers for the VM.
+	NVMEControllers []NVMEControllerStatus `json:"nvmeControllers,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=busNumber
+	// +kubebuilder:validation:MaxItems=4
+
+	// SATAControllers describes the observed list of SATA controllers for the VM.
+	SATAControllers []SATAControllerStatus `json:"sataControllers,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=busNumber
+	// +kubebuilder:validation:MaxItems=4
+
+	// SCSIControllers describes the observed list of SCSI controllers for the VM.
+	SCSIControllers []SCSIControllerStatus `json:"scsiControllers,omitempty"`
 
 	// +optional
 

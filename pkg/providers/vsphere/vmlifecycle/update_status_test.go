@@ -1488,7 +1488,10 @@ var _ = Describe("UpdateStatus", func() {
 			})
 			Specify("status.hardware.controllers should be empty", func() {
 				if vmCtx.VM.Status.Hardware != nil {
-					Expect(vmCtx.VM.Status.Hardware.Controllers).To(BeEmpty())
+					Expect(vmCtx.VM.Status.Hardware.IDEControllers).To(BeEmpty())
+					Expect(vmCtx.VM.Status.Hardware.NVMEControllers).To(BeEmpty())
+					Expect(vmCtx.VM.Status.Hardware.SATAControllers).To(BeEmpty())
+					Expect(vmCtx.VM.Status.Hardware.SCSIControllers).To(BeEmpty())
 				}
 			})
 		})
@@ -1503,7 +1506,10 @@ var _ = Describe("UpdateStatus", func() {
 			})
 			Specify("status.hardware.controllers should be empty", func() {
 				if vmCtx.VM.Status.Hardware != nil {
-					Expect(vmCtx.VM.Status.Hardware.Controllers).To(BeEmpty())
+					Expect(vmCtx.VM.Status.Hardware.IDEControllers).To(BeEmpty())
+					Expect(vmCtx.VM.Status.Hardware.NVMEControllers).To(BeEmpty())
+					Expect(vmCtx.VM.Status.Hardware.SATAControllers).To(BeEmpty())
+					Expect(vmCtx.VM.Status.Hardware.SCSIControllers).To(BeEmpty())
 				}
 			})
 		})
@@ -1521,20 +1527,54 @@ var _ = Describe("UpdateStatus", func() {
 									BusNumber: 0,
 								},
 							},
-							&vimtypes.VirtualSCSIController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 1000,
+							&vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 1000,
+										},
+										BusNumber: 0,
 									},
-									BusNumber: 0,
 								},
 							},
-							&vimtypes.VirtualSATAController{
-								VirtualController: vimtypes.VirtualController{
-									VirtualDevice: vimtypes.VirtualDevice{
-										Key: 15000,
+							&vimtypes.VirtualBusLogicController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 2000,
+										},
+										BusNumber: 1,
 									},
-									BusNumber: 0,
+								},
+							},
+							&vimtypes.VirtualLsiLogicController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 3000,
+										},
+										BusNumber: 2,
+									},
+								},
+							},
+							&vimtypes.VirtualLsiLogicSASController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 4000,
+										},
+										BusNumber: 3,
+									},
+								},
+							},
+							&vimtypes.VirtualAHCIController{
+								VirtualSATAController: vimtypes.VirtualSATAController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 16000,
+										},
+										BusNumber: 0,
+									},
 								},
 							},
 							&vimtypes.VirtualNVMEController{
@@ -1551,20 +1591,121 @@ var _ = Describe("UpdateStatus", func() {
 			})
 			Specify("status.hardware.controllers should contain all controller types", func() {
 				Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.Hardware.Controllers).To(HaveLen(4))
 
-				controllerTypes := make([]vmopv1.VirtualControllerType, 0, 4)
-				for _, controller := range vmCtx.VM.Status.Hardware.Controllers {
-					controllerTypes = append(controllerTypes, controller.Type)
-					Expect(controller.BusNumber).To(Equal(int32(0)))
+				// Expected IDE controllers (sorted by bus number)
+				expectedIDEControllers := []vmopv1.IDEControllerStatus{
+					{BusNumber: 0, DeviceKey: 200},
 				}
+				Expect(vmCtx.VM.Status.Hardware.IDEControllers).To(Equal(expectedIDEControllers))
 
-				Expect(controllerTypes).To(ContainElements(
-					vmopv1.VirtualControllerTypeIDE,
-					vmopv1.VirtualControllerTypeSCSI,
-					vmopv1.VirtualControllerTypeSATA,
-					vmopv1.VirtualControllerTypeNVME,
-				))
+				// Expected NVMe controllers (sorted by bus number)
+				expectedNVMEControllers := []vmopv1.NVMEControllerStatus{
+					{BusNumber: 0, DeviceKey: 20000, SharingMode: ""},
+				}
+				Expect(vmCtx.VM.Status.Hardware.NVMEControllers).To(Equal(expectedNVMEControllers))
+
+				// Expected SATA controllers (sorted by bus number)
+				expectedSATAControllers := []vmopv1.SATAControllerStatus{
+					{BusNumber: 0, DeviceKey: 16000},
+				}
+				Expect(vmCtx.VM.Status.Hardware.SATAControllers).To(Equal(expectedSATAControllers))
+
+				// Expected SCSI controllers (sorted by bus number)
+				expectedSCSIControllers := []vmopv1.SCSIControllerStatus{
+					{BusNumber: 0, Type: vmopv1.SCSIControllerTypeParaVirtualSCSI, DeviceKey: 1000, SharingMode: ""},
+					{BusNumber: 1, Type: vmopv1.SCSIControllerTypeBusLogic, DeviceKey: 2000, SharingMode: ""},
+					{BusNumber: 2, Type: vmopv1.SCSIControllerTypeLsiLogic, DeviceKey: 3000, SharingMode: ""},
+					{BusNumber: 3, Type: vmopv1.SCSIControllerTypeLsiLogicSAS, DeviceKey: 4000, SharingMode: ""},
+				}
+				Expect(vmCtx.VM.Status.Hardware.SCSIControllers).To(Equal(expectedSCSIControllers))
+			})
+		})
+
+		When("VM has multiple controllers of same type with different bus numbers", func() {
+			BeforeEach(func() {
+				vmCtx.MoVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							// Multiple SCSI controllers with different bus numbers (out of order)
+							&vimtypes.VirtualLsiLogicController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 3000,
+										},
+										BusNumber: 2,
+									},
+								},
+							},
+							&vimtypes.ParaVirtualSCSIController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 1000,
+										},
+										BusNumber: 0,
+									},
+								},
+							},
+							&vimtypes.VirtualLsiLogicSASController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 4000,
+										},
+										BusNumber: 3,
+									},
+								},
+							},
+							&vimtypes.VirtualBusLogicController{
+								VirtualSCSIController: vimtypes.VirtualSCSIController{
+									VirtualController: vimtypes.VirtualController{
+										VirtualDevice: vimtypes.VirtualDevice{
+											Key: 2000,
+										},
+										BusNumber: 1,
+									},
+								},
+							},
+							// Multiple IDE controllers with different bus numbers (out of order)
+							&vimtypes.VirtualIDEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 300,
+									},
+									BusNumber: 1,
+								},
+							},
+							&vimtypes.VirtualIDEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 200,
+									},
+									BusNumber: 0,
+								},
+							},
+						},
+					},
+				}
+			})
+			Specify("status.hardware.controllers should be sorted by bus number within each type", func() {
+				Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
+
+				// Expected IDE controllers (sorted by bus number)
+				expectedIDEControllers := []vmopv1.IDEControllerStatus{
+					{BusNumber: 0, DeviceKey: 200},
+					{BusNumber: 1, DeviceKey: 300},
+				}
+				Expect(vmCtx.VM.Status.Hardware.IDEControllers).To(Equal(expectedIDEControllers))
+
+				// Expected SCSI controllers (sorted by bus number)
+				expectedSCSIControllers := []vmopv1.SCSIControllerStatus{
+					{BusNumber: 0, Type: vmopv1.SCSIControllerTypeParaVirtualSCSI, DeviceKey: 1000, SharingMode: ""},
+					{BusNumber: 1, Type: vmopv1.SCSIControllerTypeBusLogic, DeviceKey: 2000, SharingMode: ""},
+					{BusNumber: 2, Type: vmopv1.SCSIControllerTypeLsiLogic, DeviceKey: 3000, SharingMode: ""},
+					{BusNumber: 3, Type: vmopv1.SCSIControllerTypeLsiLogicSAS, DeviceKey: 4000, SharingMode: ""},
+				}
+				Expect(vmCtx.VM.Status.Hardware.SCSIControllers).To(Equal(expectedSCSIControllers))
 			})
 		})
 
@@ -1586,6 +1727,11 @@ var _ = Describe("UpdateStatus", func() {
 									Key:           2000,
 									ControllerKey: 1000,
 									UnitNumber:    ptr.To(int32(0)),
+									Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[datastore1] vm/test-disk.vmdk",
+										},
+									},
 								},
 							},
 							&vimtypes.VirtualIDEController{
@@ -1601,6 +1747,11 @@ var _ = Describe("UpdateStatus", func() {
 									Key:           3000,
 									ControllerKey: 200,
 									UnitNumber:    ptr.To(int32(0)),
+									Backing: &vimtypes.VirtualCdromIsoBackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[datastore1] vm/test-cdrom.iso",
+										},
+									},
 								},
 							},
 						},
@@ -1609,29 +1760,26 @@ var _ = Describe("UpdateStatus", func() {
 			})
 			Specify("status.hardware.controllers should contain controllers with their devices", func() {
 				Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
-				Expect(vmCtx.VM.Status.Hardware.Controllers).To(HaveLen(2))
 
-				var scsiController, ideController *vmopv1.VirtualControllerStatus
-				for i := range vmCtx.VM.Status.Hardware.Controllers {
-					controller := &vmCtx.VM.Status.Hardware.Controllers[i]
-					if controller.Type == vmopv1.VirtualControllerTypeSCSI {
-						scsiController = controller
-					} else if controller.Type == vmopv1.VirtualControllerTypeIDE {
-						ideController = controller
-					}
-				}
-
-				Expect(scsiController).ToNot(BeNil())
+				// Check SCSI controllers
+				Expect(vmCtx.VM.Status.Hardware.SCSIControllers).To(HaveLen(1))
+				scsiController := &vmCtx.VM.Status.Hardware.SCSIControllers[0]
 				Expect(scsiController.BusNumber).To(Equal(int32(0)))
+				Expect(scsiController.DeviceKey).To(Equal(int32(1000)))
 				Expect(scsiController.Devices).To(HaveLen(1))
 				Expect(scsiController.Devices[0].UnitNumber).To(Equal(int32(0)))
 				Expect(scsiController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeDisk))
+				Expect(scsiController.Devices[0].Name).To(Equal("test-disk"))
 
-				Expect(ideController).ToNot(BeNil())
+				// Check IDE controllers
+				Expect(vmCtx.VM.Status.Hardware.IDEControllers).To(HaveLen(1))
+				ideController := &vmCtx.VM.Status.Hardware.IDEControllers[0]
 				Expect(ideController.BusNumber).To(Equal(int32(0)))
+				Expect(ideController.DeviceKey).To(Equal(int32(200)))
 				Expect(ideController.Devices).To(HaveLen(1))
 				Expect(ideController.Devices[0].UnitNumber).To(Equal(int32(0)))
 				Expect(ideController.Devices[0].Type).To(Equal(vmopv1.VirtualDeviceTypeCDROM))
+				Expect(ideController.Devices[0].Name).To(Equal("test-cdrom"))
 			})
 		})
 	})

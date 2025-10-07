@@ -204,7 +204,7 @@ var _ = Describe("Install", func() {
 				},
 				Entry("bootOptions", "bootOptions"),
 				Entry("class", "class"),
-				Entry("currentSnapshot", "currentSnapshot"),
+				Entry("currentSnapshotName", "currentSnapshotName"),
 				Entry("groupName", "groupName"),
 				Entry("policies", "policies"),
 			)
@@ -525,7 +525,7 @@ var _ = Describe("Install", func() {
 					}
 				})
 
-				DescribeTable("vm api should not have removed spec fields",
+				DescribeTable("vm api should have removed spec fields",
 					func(field string) {
 						fields := []string{
 							"schema",
@@ -544,7 +544,7 @@ var _ = Describe("Install", func() {
 					Entry("policies", "policies"),
 				)
 
-				DescribeTable("vm api should not have removed status fields",
+				DescribeTable("vm api should have removed status fields",
 					func(field string) {
 						fields := []string{
 							"schema",
@@ -561,7 +561,6 @@ var _ = Describe("Install", func() {
 					Entry("policies", "policies"),
 				)
 			})
-
 		})
 
 		When("CRD cleanup is enabled", func() {
@@ -651,7 +650,7 @@ var _ = Describe("Install", func() {
 						},
 						Entry("bootOptions", "bootOptions"),
 						Entry("class", "class"),
-						Entry("currentSnapshot", "currentSnapshot"),
+						Entry("currentSnapshotName", "currentSnapshotName"),
 						Entry("groupName", "groupName"),
 						Entry("policies", "policies"),
 					)

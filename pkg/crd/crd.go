@@ -229,7 +229,7 @@ func Install(
 							k,
 							obj,
 							shouldRemoveFields,
-							specFieldPath("currentSnapshot"),
+							specFieldPath("currentSnapshotName"),
 							statusFieldPath("currentSnapshot"),
 							statusFieldPath("rootSnapshots")); err != nil {
 

@@ -3420,15 +3420,100 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution",
+			Entry("allow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Zone topology key for non-privileged users",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
 						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
-							RequiredDuringSchedulingPreferredDuringExecution: make([]vmopv1.VMAffinityTerm, 1),
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Zone topology key for privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelTopologyZone,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Host topology key for non-privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingPreferredDuringExecution: Forbidden: VM anti-affinity with RequiredDuringSchedulingPreferredDuringExecution is not allowed`),
+						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "kubernetes.io/hostname": supported values: "topology.kubernetes.io/zone"`),
+				},
+			),
+
+			Entry("allow VM Anti Affinity with RequiredDuringSchedulingPreferredDuringExecution and Host topology key for privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity with PreferredDuringSchedulingPreferredDuringExecution and Host topology key for non-privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity with PreferredDuringSchedulingPreferredDuringExecution and Host topology key for privileged users",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+								{
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						}
+					},
+					expectAllowed: true,
 				},
 			),
 
@@ -3448,7 +3533,7 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: "",
+									TopologyKey: corev1.LabelTopologyZone,
 								},
 								{
 									LabelSelector: &metav1.LabelSelector{
@@ -3486,13 +3571,13 @@ func unitTestsValidateCreate() {
 											},
 										},
 									},
-									TopologyKey: corev1.LabelTopologyZone,
+									TopologyKey: "",
 								},
 							},
 						}
 					},
 					validate: doValidateWithMsg(
-						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "topology.kubernetes.io/zone": supported values: "", "kubernetes.io/hostname"`,
+						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].topologyKey: Unsupported value: "": supported values: "topology.kubernetes.io/zone", "kubernetes.io/hostname"`,
 						`spec.affinity.vmAntiAffinity.preferredDuringSchedulingPreferredDuringExecution[0].labelSelector.matchExpressions[0].operator: Unsupported value: "NotIn": supported values: "In"`),
 				},
 			),
@@ -3509,7 +3594,7 @@ func unitTestsValidateCreate() {
 											"vmicache.vmoperator.vmware.com": "ready",
 										},
 									},
-									TopologyKey: "",
+									TopologyKey: corev1.LabelHostname,
 								},
 							},
 						}

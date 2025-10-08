@@ -1532,15 +1532,6 @@ func (v validator) validateSchemaUpgrade(
 	case oldUpBuildVer != "" && newUpBuildVer == "":
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToBuildVersionAnnotationKey)
-
-		/*
-			case oldUpBuildVer == "" || oldUpBuildVer != pkgcfg.FromContext(ctx).BuildVersion:
-				// If the annotations' values do not match the expected values, then the
-				// VM may not be modified.
-				allErrs = append(allErrs, field.Forbidden(
-					fieldPath.Key(pkgconst.UpgradedToBuildVersionAnnotationKey),
-					notUpgraded))
-		*/
 	}
 
 	switch {
@@ -1554,16 +1545,16 @@ func (v validator) validateSchemaUpgrade(
 		// Allow anyone to delete the annotation.
 		ctx.Logger.V(4).Info("Deleted annotation",
 			"key", pkgconst.UpgradedToSchemaVersionAnnotationKey)
+	}
 
-		/*
-			case oldUpSchemVer == "" || oldUpSchemVer != vmopv1.GroupVersion.Version:
-				// If the annotations' values do not match the expected values, then the
-				// VM may not be modified.
-				allErrs = append(allErrs, field.Forbidden(
-					fieldPath.Key(pkgconst.UpgradedToSchemaVersionAnnotationKey),
-					notUpgraded))
-
-		*/
+	if oldUpBuildVer == "" || oldUpSchemVer == "" ||
+		oldUpBuildVer != pkgcfg.FromContext(ctx).BuildVersion ||
+		oldUpSchemVer != vmopv1.GroupVersion.Version {
+		// Prevent most users from modifying the VM spec fields,
+		// that are backfilled by the schema upgrade and mutable,
+		// before the schema upgrade is completed.
+		allErrs = append(allErrs,
+			v.validateFieldsDuringSchemaUpgrade(newVM, oldVM)...)
 	}
 
 	return allErrs
@@ -2386,6 +2377,52 @@ func (v validator) validateImmutableVMAffinity(
 	if !equality.Semantic.DeepEqual(vm.Spec.Affinity, oldVM.Spec.Affinity) {
 		p := field.NewPath("spec", "affinity")
 		allErrs = append(allErrs, field.Forbidden(p, "updating Affinity is not allowed"))
+	}
+
+	return allErrs
+}
+
+// validateImmutableFieldsDuringSchemaUpgrade checks the fields tht are
+// backfilled by the schema upgrade are not been modified before the schema
+// upgrade has completed. Currently, the schema upgrade backfills fields below:
+// - vm.Spec.BiosUUID
+// - vm.Spec.InstanceUUID (immutable if set)
+// - vm.Spec.Bootstrap.CloudInit.InstanceID (immutable if set)
+// - vm.Spec.Hardware.*Controllers
+// Fields that are immutable will not be validated.
+func (v validator) validateFieldsDuringSchemaUpgrade(
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var (
+		allErrs          field.ErrorList
+		specPath         = field.NewPath("spec")
+		specHardwarePath = specPath.Child("hardware")
+	)
+
+	if !equality.Semantic.DeepEqual(vm.Spec.BiosUUID, oldVM.Spec.BiosUUID) {
+		allErrs = append(allErrs, field.Forbidden(
+			specPath.Child("biosUUID"), notUpgraded))
+	}
+
+	if !equality.Semantic.DeepEqual(oldVM.Spec.Hardware.IDEControllers,
+		vm.Spec.Hardware.IDEControllers) {
+		allErrs = append(allErrs, field.Forbidden(
+			specHardwarePath.Child("ideControllers"), notUpgraded))
+	}
+	if !equality.Semantic.DeepEqual(oldVM.Spec.Hardware.NVMEControllers,
+		vm.Spec.Hardware.NVMEControllers) {
+		allErrs = append(allErrs, field.Forbidden(
+			specHardwarePath.Child("nvmeControllers"), notUpgraded))
+	}
+	if !equality.Semantic.DeepEqual(oldVM.Spec.Hardware.SATAControllers,
+		vm.Spec.Hardware.SATAControllers) {
+		allErrs = append(allErrs, field.Forbidden(
+			specHardwarePath.Child("sataControllers"), notUpgraded))
+	}
+	if !equality.Semantic.DeepEqual(oldVM.Spec.Hardware.SCSIControllers,
+		vm.Spec.Hardware.SCSIControllers) {
+		allErrs = append(allErrs, field.Forbidden(
+			specHardwarePath.Child("scsiControllers"), notUpgraded))
 	}
 
 	return allErrs

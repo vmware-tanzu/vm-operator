@@ -1982,4 +1982,24 @@ func unitTestsMutating() {
 		})
 	})
 
+	Describe("SetDefaultControllers", func() {
+
+		Context("When vm.Spec.Hardware is nil", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Hardware = nil
+			})
+
+			It("should initialize Hardware and set default IDE controllers", func() {
+				wasMutated, err := mutation.SetDefaultControllers(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+				Expect(ctx.vm.Spec.Hardware).ToNot(BeNil())
+				Expect(ctx.vm.Spec.Hardware.IDEControllers).To(HaveLen(2))
+				Expect(ctx.vm.Spec.Hardware.IDEControllers[0].BusNumber).To(Equal(int32(0)))
+				Expect(ctx.vm.Spec.Hardware.IDEControllers[1].BusNumber).To(Equal(int32(1)))
+			})
+		})
+	})
+
 }

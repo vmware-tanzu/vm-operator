@@ -12362,14 +12362,34 @@ spec:
               hardware:
                 description: Hardware describes the observed state of the VM's hardware.
                 properties:
-                  controllers:
-                    description: |-
-                      Controllers describes the observed list of virtual controllers for the
+                  cpu:
+                    description: CPU describes the observed CPU allocation of the
                       VM.
+                    properties:
+                      reservation:
+                        description: Reservation describes the observed CPU reservation
+                          in MHz.
+                        format: int64
+                        type: integer
+                      total:
+                        description: Total describes the observed number of processors.
+                        format: int32
+                        type: integer
+                    type: object
+                  ideControllers:
+                    description: IDEControllers describes the observed list of IDE
+                      controllers for the VM.
                     items:
+                      description: IDEControllerStatus describes the observed state
+                        of an IDE controller.
                       properties:
                         busNumber:
                           description: BusNumber describes the observed bus number
+                            of the controller.
+                          format: int32
+                          type: integer
+                        deviceKey:
+                          description: DeviceKey describes the observed device key
                             of the controller.
                           format: int32
                           type: integer
@@ -12378,6 +12398,11 @@ spec:
                             to the controller.
                           items:
                             properties:
+                              diskUUID:
+                                description: |-
+                                  DiskUUID represents the underlying virtual disk UUID and is present when
+                                  attachment succeeds.
+                                type: string
                               name:
                                 description: Name describes the name of the virtual
                                   device.
@@ -12404,37 +12429,15 @@ spec:
                           - name
                           - type
                           x-kubernetes-list-type: map
-                        type:
-                          description: Type describes the observed type of the controller.
-                          enum:
-                          - IDE
-                          - NVME
-                          - SCSI
-                          - SATA
-                          type: string
                       required:
                       - busNumber
-                      - type
+                      - deviceKey
                       type: object
+                    maxItems: 2
                     type: array
                     x-kubernetes-list-map-keys:
                     - busNumber
-                    - type
                     x-kubernetes-list-type: map
-                  cpu:
-                    description: CPU describes the observed CPU allocation of the
-                      VM.
-                    properties:
-                      reservation:
-                        description: Reservation describes the observed CPU reservation
-                          in MHz.
-                        format: int64
-                        type: integer
-                      total:
-                        description: Total describes the observed number of processors.
-                        format: int32
-                        type: integer
-                    type: object
                   memory:
                     description: Memory describes the observed memory allocation of
                       the VM.
@@ -12455,6 +12458,217 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object
+                  nvmeControllers:
+                    description: NVMEControllers describes the observed list of NVMe
+                      controllers for the VM.
+                    items:
+                      description: NVMEControllerStatus describes the observed state
+                        of an NVMe controller.
+                      properties:
+                        busNumber:
+                          description: BusNumber describes the observed bus number
+                            of the controller.
+                          format: int32
+                          type: integer
+                        deviceKey:
+                          description: DeviceKey describes the observed device key
+                            of the controller.
+                          format: int32
+                          type: integer
+                        devices:
+                          description: Devices describes the observed devices connected
+                            to the controller.
+                          items:
+                            properties:
+                              diskUUID:
+                                description: |-
+                                  DiskUUID represents the underlying virtual disk UUID and is present when
+                                  attachment succeeds.
+                                type: string
+                              name:
+                                description: Name describes the name of the virtual
+                                  device.
+                                type: string
+                              type:
+                                description: Type describes the type of the virtual
+                                  device.
+                                enum:
+                                - CDROM
+                                - Disk
+                                type: string
+                              unitNumber:
+                                description: UnitNumber describes the observed unit
+                                  number of the device.
+                                format: int32
+                                type: integer
+                            required:
+                            - name
+                            - type
+                            - unitNumber
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          - type
+                          x-kubernetes-list-type: map
+                        sharingMode:
+                          description: SharingMode describes the observed sharing
+                            mode for the controller.
+                          enum:
+                          - None
+                          - Physical
+                          - Virtual
+                          type: string
+                      required:
+                      - busNumber
+                      - deviceKey
+                      type: object
+                    maxItems: 4
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - busNumber
+                    x-kubernetes-list-type: map
+                  sataControllers:
+                    description: SATAControllers describes the observed list of SATA
+                      controllers for the VM.
+                    items:
+                      description: SATAControllerStatus describes the observed state
+                        of a SATA controller.
+                      properties:
+                        busNumber:
+                          description: BusNumber describes the observed bus number
+                            of the controller.
+                          format: int32
+                          type: integer
+                        deviceKey:
+                          description: DeviceKey describes the observed device key
+                            of the controller.
+                          format: int32
+                          type: integer
+                        devices:
+                          description: Devices describes the observed devices connected
+                            to the controller.
+                          items:
+                            properties:
+                              diskUUID:
+                                description: |-
+                                  DiskUUID represents the underlying virtual disk UUID and is present when
+                                  attachment succeeds.
+                                type: string
+                              name:
+                                description: Name describes the name of the virtual
+                                  device.
+                                type: string
+                              type:
+                                description: Type describes the type of the virtual
+                                  device.
+                                enum:
+                                - CDROM
+                                - Disk
+                                type: string
+                              unitNumber:
+                                description: UnitNumber describes the observed unit
+                                  number of the device.
+                                format: int32
+                                type: integer
+                            required:
+                            - name
+                            - type
+                            - unitNumber
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          - type
+                          x-kubernetes-list-type: map
+                      required:
+                      - busNumber
+                      - deviceKey
+                      type: object
+                    maxItems: 4
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - busNumber
+                    x-kubernetes-list-type: map
+                  scsiControllers:
+                    description: SCSIControllers describes the observed list of SCSI
+                      controllers for the VM.
+                    items:
+                      description: SCSIControllerStatus describes the observed state
+                        of a SCSI controller.
+                      properties:
+                        busNumber:
+                          description: BusNumber describes the observed bus number
+                            of the controller.
+                          format: int32
+                          type: integer
+                        deviceKey:
+                          description: DeviceKey describes the observed device key
+                            of the controller.
+                          format: int32
+                          type: integer
+                        devices:
+                          description: Devices describes the observed devices connected
+                            to the controller.
+                          items:
+                            properties:
+                              diskUUID:
+                                description: |-
+                                  DiskUUID represents the underlying virtual disk UUID and is present when
+                                  attachment succeeds.
+                                type: string
+                              name:
+                                description: Name describes the name of the virtual
+                                  device.
+                                type: string
+                              type:
+                                description: Type describes the type of the virtual
+                                  device.
+                                enum:
+                                - CDROM
+                                - Disk
+                                type: string
+                              unitNumber:
+                                description: UnitNumber describes the observed unit
+                                  number of the device.
+                                format: int32
+                                type: integer
+                            required:
+                            - name
+                            - type
+                            - unitNumber
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          - type
+                          x-kubernetes-list-type: map
+                        sharingMode:
+                          description: SharingMode describes the observed sharing
+                            mode for the controller.
+                          enum:
+                          - None
+                          - Physical
+                          - Virtual
+                          type: string
+                        type:
+                          description: Type describes the observed type of SCSI controller.
+                          enum:
+                          - ParaVirtual
+                          - BusLogic
+                          - LsiLogic
+                          - LsiLogicSAS
+                          type: string
+                      required:
+                      - busNumber
+                      - deviceKey
+                      - type
+                      type: object
+                    maxItems: 4
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - busNumber
+                    x-kubernetes-list-type: map
                   vGPUs:
                     description: VGPUs describes the observed vGPUs used by this VM.
                     items:

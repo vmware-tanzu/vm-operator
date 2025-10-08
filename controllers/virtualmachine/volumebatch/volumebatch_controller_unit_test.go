@@ -76,6 +76,16 @@ func unitTestsReconcile() {
 			},
 			Status: vmopv1.VirtualMachineStatus{
 				BiosUUID: dummyBiosUUID,
+				Hardware: &vmopv1.VirtualMachineHardwareStatus{
+					SCSIControllers: []vmopv1.SCSIControllerStatus{
+						{
+							BusNumber:   1,
+							DeviceKey:   1000,
+							SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							Type:        vmopv1.SCSIControllerTypeLsiLogic,
+						},
+					},
+				},
 			},
 		}
 
@@ -242,12 +252,15 @@ func unitTestsReconcile() {
 
 			When("there is a PVC with application type: Oracle RAC", func() {
 				BeforeEach(func() {
-					vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC // This sets IndependentPersistent + MultiWriter
-					vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModePersistent              // Override to Persistent
-					vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone              // Override to None
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+					// Oracle RAC requires SCSI controller, IndependentPersistent diskMode, and MultiWriter sharingMode
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
+					vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+					vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
 				})
 
-				It("sets volme variables correctly", func() {
+				It("sets volume variables correctly for Oracle RAC", func() {
 					err := reconciler.ReconcileNormal(volCtx)
 					Expect(err).NotTo(HaveOccurred())
 
@@ -256,9 +269,38 @@ func unitTestsReconcile() {
 					Expect(attachment).NotTo(BeNil())
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
 
-					// Explicit settings should override application type presets
+					// Oracle RAC should use IndependentPersistent and MultiWriter
 					attVol1 := attachment.Spec.Volumes[0]
-					Expect(attVol1.PersistentVolumeClaim.DiskMode).To(Equal(cnsv1alpha1.Persistent))
+					Expect(attVol1.PersistentVolumeClaim.DiskMode).To(Equal(cnsv1alpha1.IndependentPersistent))
+					Expect(attVol1.PersistentVolumeClaim.SharingMode).To(Equal(cnsv1alpha1.SharingMultiWriter))
+				})
+			})
+
+			When("there is a PVC with application type: Microsoft WSFC", func() {
+				BeforeEach(func() {
+					// Set up controller with Physical sharing mode for Microsoft WSFC
+					vm.Status.Hardware.SCSIControllers[0].SharingMode = vmopv1.VirtualControllerSharingModePhysical
+
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+					// Microsoft WSFC requires SCSI controller, IndependentPersistent diskMode, and None sharingMode
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
+					vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+					vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone
+				})
+
+				It("sets volume variables correctly for Microsoft WSFC", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
+
+					Expect(attachment).NotTo(BeNil())
+					Expect(attachment.Spec.Volumes).To(HaveLen(1))
+
+					// Microsoft WSFC should use IndependentPersistent and None sharing mode
+					attVol1 := attachment.Spec.Volumes[0]
+					Expect(attVol1.PersistentVolumeClaim.DiskMode).To(Equal(cnsv1alpha1.IndependentPersistent))
 					Expect(attVol1.PersistentVolumeClaim.SharingMode).To(Equal(cnsv1alpha1.SharingNone))
 				})
 			})
@@ -280,7 +322,7 @@ func unitTestsReconcile() {
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
 
 					attVol1 := attachment.Spec.Volumes[0]
-					Expect(attVol1.PersistentVolumeClaim.ControllerKey).To(Equal("SCSI:1"))
+					Expect(attVol1.PersistentVolumeClaim.ControllerKey).To(Equal("1000"))
 					Expect(attVol1.PersistentVolumeClaim.UnitNumber).To(Equal("5"))
 				})
 			})

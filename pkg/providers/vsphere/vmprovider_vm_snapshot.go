@@ -122,7 +122,8 @@ func (vs *vSphereVMProvider) GetSnapshotSize(
 		return 0, fmt.Errorf("failed to find snapshot %q: %w", vmSnapshotName, err)
 	}
 
-	return virtualmachine.GetSnapshotSize(logger, moVM, &vmSnapshot.Snapshot)
+	total, _, err := virtualmachine.GetSnapshotSize(vmCtx, moVM, &vmSnapshot.Snapshot)
+	return total, err
 }
 
 // SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.

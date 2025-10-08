@@ -354,18 +354,39 @@ type VirtualMachineStorageStatus struct {
 	Used *VirtualMachineStorageStatusUsed `json:"usage,omitempty"`
 }
 
+type VirtualMachineStorageStatusUsedSnapshotDetails struct {
+	// +optional
+
+	// VM describes the total storage space used by the VirtualMachine's
+	// VirtualMachineSnapshot, including the space for snapshot's metadata,
+	// memory file, delta disks, etc.
+	VM *resource.Quantity `json:"vm,omitempty"`
+
+	// +optional
+
+	// Volume describes the total storage space used by the VirtualMachine's
+	// VolumeSnapshot, including the space for first class disk(FCD)'s
+	// delta disks.
+	Volume *resource.Quantity `json:"volume,omitempty"`
+}
+
 type VirtualMachineStorageStatusUsed struct {
 	// +optional
 
 	// Disks describes the total storage space used by a VirtualMachine's
-	// non-PVC disks.
+	// disks.
 	Disks *resource.Quantity `json:"disks,omitempty"`
 
 	// +optional
 
+	// Snapshots describes the total storage space used by a VirtualMachine's
+	// snapshots.
+	Snapshots *VirtualMachineStorageStatusUsedSnapshotDetails `json:"snapshots,omitempty"`
+
+	// +optional
+
 	// Other describes the total storage space used by the VirtualMachine's
-	// non disk files, ex. the configuration file, swap space, logs, snapshots,
-	// etc.
+	// non disk files, ex. the configuration file, swap space, logs, etc.
 	Other *resource.Quantity `json:"other,omitempty"`
 }
 
@@ -373,6 +394,6 @@ type VirtualMachineStorageStatusRequested struct {
 	// +optional
 
 	// Disks describes the total storage space requested by a VirtualMachine's
-	// non-PVC disks.
+	// disks.
 	Disks *resource.Quantity `json:"disks,omitempty"`
 }

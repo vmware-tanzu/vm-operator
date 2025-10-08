@@ -138,6 +138,7 @@ nav:
     - WebConsoleRequest: concepts/workloads/vm-web-console.md
     - Guest Customization: concepts/workloads/guest.md
     - VirtualMachine Placement: concepts/workloads/vm-placement.md
+    - VirtualMachineGroup: concepts/workloads/vm-group.md
   - Images:
     - concepts/images/README.md
     - VirtualMachineImage: concepts/images/vm-image.md

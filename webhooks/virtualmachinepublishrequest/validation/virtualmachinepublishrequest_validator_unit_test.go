@@ -18,6 +18,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -207,6 +208,112 @@ func unitTestsValidateCreate() {
 			"", fmt.Errorf("cannot add the %q label without a VirtualMachineGroupPublishRequest owner reference",
 				vmopv1.VirtualMachinePublishRequestManagedByLabelKey)),
 	)
+
+	type createArgsAnnotations struct {
+		annotationKey           string
+		privilegedUser          bool
+		supervisorProviderAdmin bool
+		expectedReason          string
+		expectedErr             error
+	}
+
+	validateCreateQuotaAnnotations := func(args createArgsAnnotations) {
+		ctx.vmPub.Annotations = map[string]string{args.annotationKey: "doesn't matter"}
+		ctx.IsPrivilegedAccount = args.privilegedUser
+
+		if args.supervisorProviderAdmin {
+			ctx.UserInfo.Groups = append(ctx.UserInfo.Groups, "sso:SupervisorProviderAdministrators@vsphere.local")
+		}
+		ctx.UserInfo.Groups = append(ctx.UserInfo.Groups, "sso:Administrators@vsphere.local")
+
+		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmPub)
+		Expect(err).ToNot(HaveOccurred())
+
+		response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+		Expect(response.Allowed).To(Equal(args.privilegedUser || args.supervisorProviderAdmin))
+		if args.expectedReason != "" {
+			Expect(string(response.Result.Reason)).To(ContainSubstring(args.expectedReason))
+		}
+		if args.expectedErr != nil {
+			Expect(response.Result.Message).To(Equal(args.expectedErr.Error()))
+		}
+	}
+
+	annotationPath := field.NewPath("metadata", "annotations")
+	DescribeTable("create quota annotations table", validateCreateQuotaAnnotations,
+		// vmware-system-vcfa-storage-quota
+		Entry("adding the check annotation should be allowed for a privileged user",
+			createArgsAnnotations{
+				annotationKey:  pkgconst.AsyncQuotaPerformCheckAnnotationKey,
+				privilegedUser: true,
+			}),
+		Entry("adding the check annotation should be allowed for a user in the privileged group",
+			createArgsAnnotations{
+				annotationKey:           pkgconst.AsyncQuotaPerformCheckAnnotationKey,
+				supervisorProviderAdmin: true,
+			}),
+		Entry("adding the check annotation should be denied for an unprivileged user",
+			createArgsAnnotations{
+				annotationKey: pkgconst.AsyncQuotaPerformCheckAnnotationKey,
+				expectedReason: field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaPerformCheckAnnotationKey),
+					"modifying this annotation is not allowed for non-admin users").Error(),
+			}),
+
+		// vcfa.storage.quota.check.vmware.com/requested-capacity
+		Entry("adding the requested capacity annotation should be allowed for a privileged user",
+			createArgsAnnotations{
+				annotationKey:  pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey,
+				privilegedUser: true,
+			}),
+		Entry("adding the requested capacity annotation should be allowed for a user in the privileged group",
+			createArgsAnnotations{
+				annotationKey:           pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey,
+				supervisorProviderAdmin: true,
+			}),
+		Entry("adding the requested capacity annotation should be denied for an unprivileged user",
+			createArgsAnnotations{
+				annotationKey: pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey,
+				expectedReason: field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey),
+					"modifying this annotation is not allowed for non-admin users").Error(),
+			}),
+
+		// vcfa.storage.quota.check.vmware.com/status
+		Entry("adding the status annotation should be allowed for a privileged user",
+			createArgsAnnotations{
+				annotationKey:  pkgconst.AsyncQuotaCheckStatusAnnotationKey,
+				privilegedUser: true,
+			}),
+		Entry("adding the status annotation should be allowed for a user in the privileged group",
+			createArgsAnnotations{
+				annotationKey:           pkgconst.AsyncQuotaCheckStatusAnnotationKey,
+				supervisorProviderAdmin: true,
+			}),
+		Entry("adding the status annotation should be denied for an unprivileged user",
+			createArgsAnnotations{
+				annotationKey: pkgconst.AsyncQuotaCheckStatusAnnotationKey,
+				expectedReason: field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckStatusAnnotationKey),
+					"modifying this annotation is not allowed for non-admin users").Error(),
+			}),
+
+		// vcfa.storage.quota.check.vmware.com/message
+		Entry("adding the message annotation should be allowed for a privileged user",
+			createArgsAnnotations{
+				annotationKey:  pkgconst.AsyncQuotaCheckMessageAnnotationKey,
+				privilegedUser: true,
+			}),
+		Entry("adding the message annotation should be allowed for a user in the privileged group",
+			createArgsAnnotations{
+				annotationKey:           pkgconst.AsyncQuotaCheckMessageAnnotationKey,
+				supervisorProviderAdmin: true,
+			}),
+		Entry("adding the message annotation should be denied for an unprivileged user",
+			createArgsAnnotations{
+				annotationKey: pkgconst.AsyncQuotaCheckMessageAnnotationKey,
+				expectedReason: field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckMessageAnnotationKey),
+					"modifying this annotation is not allowed for non-admin users").Error(),
+			}),
+	)
+
 }
 
 func unitTestsValidateUpdate() {
@@ -224,57 +331,188 @@ func unitTestsValidateUpdate() {
 		ctx = nil
 	})
 
-	JustBeforeEach(func() {
-		response = ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-	})
-
-	Context("Source/Target is updated", func() {
-		BeforeEach(func() {
-			ctx.vmPub.Spec.Source.Name = "updated-vm"
-			ctx.vmPub.Spec.Target.Location.Name = "updated-cl"
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmPub)
-			Expect(err).ToNot(HaveOccurred())
+	When("a publish request is updated", func() {
+		JustBeforeEach(func() {
+			response = ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		})
 
-		It("should not allow the request", func() {
-			Expect(response.Allowed).To(BeFalse())
-			Expect(response.Result).ToNot(BeNil())
-			Expect(string(response.Result.Reason)).To(ContainSubstring("field is immutable"))
-		})
-	})
-
-	Context("Managed-by label is updated", func() {
-		BeforeEach(func() {
-			ctx.IsPrivilegedAccount = false
-		})
-
-		When("try to add managed-by label", func() {
+		Context("Source/Target is updated", func() {
 			BeforeEach(func() {
-				ctx.vmPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
+				ctx.vmPub.Spec.Source.Name = "updated-vm"
+				ctx.vmPub.Spec.Target.Location.Name = "updated-cl"
 				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmPub)
 				Expect(err).ToNot(HaveOccurred())
 			})
+
 			It("should not allow the request", func() {
 				Expect(response.Allowed).To(BeFalse())
-				Expect(response.Result.Message).To(Equal(
-					fmt.Sprintf("cannot add the %q label without a VirtualMachineGroupPublishRequest owner reference",
-						vmopv1.VirtualMachinePublishRequestManagedByLabelKey)))
+				Expect(response.Result).ToNot(BeNil())
+				Expect(string(response.Result.Reason)).To(ContainSubstring("field is immutable"))
 			})
 		})
 
-		When("try to update when object has the managed-by label", func() {
+		Context("Managed-by label is updated", func() {
 			BeforeEach(func() {
-				ctx.oldVMPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
-				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMPub)
-				Expect(err).ToNot(HaveOccurred())
+				ctx.IsPrivilegedAccount = false
 			})
-			It("should not allow the request", func() {
-				Expect(response.Allowed).To(BeFalse())
-				Expect(response.Result.Message).To(ContainSubstring("VirtualMachineGroupPublishRequest owned"))
+
+			When("try to add managed-by label", func() {
+				BeforeEach(func() {
+					ctx.vmPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
+					ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmPub)
+					Expect(err).ToNot(HaveOccurred())
+				})
+				It("should not allow the request", func() {
+					Expect(response.Allowed).To(BeFalse())
+					Expect(response.Result.Message).To(Equal(
+						fmt.Sprintf("cannot add the %q label without a VirtualMachineGroupPublishRequest owner reference",
+							vmopv1.VirtualMachinePublishRequestManagedByLabelKey)))
+				})
+			})
+
+			When("try to update when object has the managed-by label", func() {
+				BeforeEach(func() {
+					ctx.oldVMPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
+					ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMPub)
+					Expect(err).ToNot(HaveOccurred())
+				})
+				It("should not allow the request", func() {
+					Expect(response.Allowed).To(BeFalse())
+					Expect(response.Result.Message).To(ContainSubstring("VirtualMachineGroupPublishRequest owned"))
+				})
+			})
+
+			When("try to update when object has the managed-by label and user is privileged", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = true
+					ctx.oldVMPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
+					ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMPub)
+					Expect(err).ToNot(HaveOccurred())
+				})
+				It("should not allow the request", func() {
+					Expect(response.Allowed).To(BeTrue())
+				})
+			})
+
+			When("try to update when object has the managed-by label and user has privileged group", func() {
+				BeforeEach(func() {
+					ctx.IsPrivilegedAccount = false
+					ctx.UserInfo.Groups = append(ctx.UserInfo.Groups, "sso:SupervisorProviderAdministrators@vsphere.local")
+					ctx.oldVMPub.Labels = map[string]string{vmopv1.VirtualMachinePublishRequestManagedByLabelKey: ""}
+					ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMPub)
+					Expect(err).ToNot(HaveOccurred())
+				})
+				It("should not allow the request", func() {
+					Expect(response.Allowed).To(BeTrue())
+				})
 			})
 		})
-
 	})
+
+	type updateArgsAnnotations struct {
+		annotationKey           string
+		privilegedUser          bool
+		supervisorProviderAdmin bool
+		expectedReason          string
+		expectedErr             error
+	}
+
+	validateUpdateQuotaAnnotations := func(args updateArgsAnnotations) {
+		ctx.oldVMPub.Annotations = map[string]string{args.annotationKey: "doesn't matter"}
+		ctx.IsPrivilegedAccount = args.privilegedUser
+
+		if args.supervisorProviderAdmin {
+			ctx.UserInfo.Groups = append(ctx.UserInfo.Groups, "sso:SupervisorProviderAdministrators@vsphere.local")
+		}
+		ctx.UserInfo.Groups = append(ctx.UserInfo.Groups, "sso:Administrators@vsphere.local")
+
+		ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMPub)
+		Expect(err).ToNot(HaveOccurred())
+
+		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+		Expect(response.Allowed).To(Equal(args.privilegedUser || args.supervisorProviderAdmin))
+		if args.expectedReason != "" {
+			Expect(string(response.Result.Reason)).To(ContainSubstring(args.expectedReason))
+		}
+		if args.expectedErr != nil {
+			Expect(response.Result.Message).To(Equal(args.expectedErr.Error()))
+		}
+	}
+
+	annotationPath := field.NewPath("metadata", "annotations")
+	DescribeTable("update quota annotations table", validateUpdateQuotaAnnotations,
+		// vmware-system-vcfa-storage-quota
+		Entry("removing the check annotation should be allowed for a privileged user",
+			updateArgsAnnotations{
+				annotationKey:  pkgconst.AsyncQuotaPerformCheckAnnotationKey,
+				privilegedUser: true,
+			}),
+		Entry("removing the check annotation should be allowed for a user in the privileged group",
+			updateArgsAnnotations{
+				annotationKey:           pkgconst.AsyncQuotaPerformCheckAnnotationKey,
+				supervisorProviderAdmin: true,
+			}),
+		Entry("removing the check annotation should be denied for an unprivileged user",
+			updateArgsAnnotations{
+				annotationKey: pkgconst.AsyncQuotaPerformCheckAnnotationKey,
+				expectedReason: field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaPerformCheckAnnotationKey),
+					"modifying this annotation is not allowed for non-admin users").Error(),
+			}),
+
+		// vcfa.storage.quota.check.vmware.com/requested-capacity
+		Entry("removing the requested capacity annotation should be allowed for a privileged user",
+			updateArgsAnnotations{
+				annotationKey:  pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey,
+				privilegedUser: true,
+			}),
+		Entry("removing the requested capacity annotation should be allowed for a user in the privileged group",
+			updateArgsAnnotations{
+				annotationKey:           pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey,
+				supervisorProviderAdmin: true,
+			}),
+		Entry("removing the requested capacity annotation should be denied for an privileged user",
+			updateArgsAnnotations{
+				annotationKey: pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey,
+				expectedReason: field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckRequestedCapacityAnnotationKey),
+					"modifying this annotation is not allowed for non-admin users").Error(),
+			}),
+
+		// vcfa.storage.quota.check.vmware.com/status
+		Entry("removing the status annotation should be allowed for a privileged user",
+			updateArgsAnnotations{
+				annotationKey:  pkgconst.AsyncQuotaCheckStatusAnnotationKey,
+				privilegedUser: true,
+			}),
+		Entry("removing the status annotation should be allowed for a user in the privileged group",
+			updateArgsAnnotations{
+				annotationKey:           pkgconst.AsyncQuotaCheckStatusAnnotationKey,
+				supervisorProviderAdmin: true,
+			}),
+		Entry("removing the status annotation should be denied for an unprivileged user",
+			updateArgsAnnotations{
+				annotationKey: pkgconst.AsyncQuotaCheckStatusAnnotationKey,
+				expectedReason: field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckStatusAnnotationKey),
+					"modifying this annotation is not allowed for non-admin users").Error(),
+			}),
+
+		// vcfa.storage.quota.check.vmware.com/message
+		Entry("removing the message annotation should be allowed for a privileged user",
+			updateArgsAnnotations{
+				annotationKey:  pkgconst.AsyncQuotaCheckMessageAnnotationKey,
+				privilegedUser: true,
+			}),
+		Entry("removing the message annotation should be allowed for a user in the privileged group",
+			updateArgsAnnotations{
+				annotationKey:           pkgconst.AsyncQuotaCheckMessageAnnotationKey,
+				supervisorProviderAdmin: true,
+			}),
+		Entry("removing the message annotation should be denied for an privileged user",
+			updateArgsAnnotations{
+				annotationKey: pkgconst.AsyncQuotaCheckMessageAnnotationKey,
+				expectedReason: field.Forbidden(annotationPath.Key(pkgconst.AsyncQuotaCheckMessageAnnotationKey),
+					"modifying this annotation is not allowed for non-admin users").Error(),
+			}),
+	)
 }
 
 func unitTestsValidateDelete() {

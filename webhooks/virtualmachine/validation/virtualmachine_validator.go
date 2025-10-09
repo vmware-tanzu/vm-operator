@@ -157,7 +157,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, nil)...)
-	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
@@ -261,7 +261,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateBootstrapProviderImmutable(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm, oldVM)...)
-	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
@@ -1125,11 +1125,22 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 
 func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
-	var allErrs field.ErrorList
-	volumesPath := field.NewPath("spec", "volumes")
-	volumeNames := map[string]bool{}
+	var (
+		allErrs       field.ErrorList
+		volumesPath   = field.NewPath("spec", "volumes")
+		volumeNames   = map[string]bool{}
+		oldVolumesMap = map[string]*vmopv1.VirtualMachineVolume{}
+	)
+
+	if oldVM != nil {
+		for _, oldVol := range oldVM.Spec.Volumes {
+			if oldVol.Name != "" {
+				oldVolumesMap[oldVol.Name] = &oldVol
+			}
+		}
+	}
 
 	for i, vol := range vm.Spec.Volumes {
 		volPath := volumesPath.Index(i)
@@ -1154,7 +1165,8 @@ func (v validator) validateVolumes(
 		if vol.PersistentVolumeClaim == nil {
 			allErrs = append(allErrs, field.Required(volPath.Child("persistentVolumeClaim"), ""))
 		} else {
-			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vm, vol, volPath)...)
+			allErrs = append(allErrs,
+				v.validateVolumeWithPVC(ctx, oldVolumesMap[vol.Name], vol, volPath)...)
 		}
 	}
 
@@ -1163,7 +1175,7 @@ func (v validator) validateVolumes(
 
 func (v validator) validateVolumeWithPVC(
 	_ *pkgctx.WebhookRequestContext,
-	_ *vmopv1.VirtualMachine,
+	oldVol *vmopv1.VirtualMachineVolume,
 	vol vmopv1.VirtualMachineVolume,
 	volPath *field.Path) field.ErrorList {
 
@@ -1178,6 +1190,40 @@ func (v validator) validateVolumeWithPVC(
 
 	if vol.PersistentVolumeClaim.ClaimName == "" {
 		allErrs = append(allErrs, field.Required(pvcPath.Child("claimName"), ""))
+	}
+
+	if oldVol != nil && oldVol.PersistentVolumeClaim != nil &&
+		oldVol.PersistentVolumeClaim.ClaimName == vol.PersistentVolumeClaim.ClaimName {
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.PersistentVolumeClaim.ApplicationType,
+			oldVol.PersistentVolumeClaim.ApplicationType,
+			pvcPath.Child("applicationType"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.PersistentVolumeClaim.ControllerBusNumber,
+			oldVol.PersistentVolumeClaim.ControllerBusNumber,
+			pvcPath.Child("controllerBusNumber"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.PersistentVolumeClaim.ControllerType,
+			oldVol.PersistentVolumeClaim.ControllerType,
+			pvcPath.Child("controllerType"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.PersistentVolumeClaim.DiskMode,
+			oldVol.PersistentVolumeClaim.DiskMode,
+			pvcPath.Child("diskMode"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.PersistentVolumeClaim.SharingMode,
+			oldVol.PersistentVolumeClaim.SharingMode,
+			pvcPath.Child("sharingMode"))...)
+
+		allErrs = append(allErrs, validation.ValidateImmutableField(
+			vol.PersistentVolumeClaim.UnitNumber,
+			oldVol.PersistentVolumeClaim.UnitNumber,
+			pvcPath.Child("unitNumber"))...)
 	}
 
 	return allErrs

@@ -1029,6 +1029,346 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				})
 			})
 
+			When("interfaceSpec provides multiple IP addresses", func() {
+				const (
+					ipAddr1 = "192.168.1.220"
+					ipAddr2 = "192.168.1.221"
+					ipAddr3 = "fd1a:6c85:79fe:7c98::1"
+					ipCIDR1 = ipAddr1 + "/24"
+					ipCIDR2 = ipAddr2 + "/24"
+					ipCIDR3 = ipAddr3 + "/64"
+				)
+
+				BeforeEach(func() {
+					networkSpec.Interfaces[0].MACAddr = macAddress
+					networkSpec.Interfaces[0].Addresses = []string{ipCIDR1, ipCIDR2, ipCIDR3}
+				})
+
+				It("returns success with multiple IP addresses", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NSX Operator reconcile", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+
+						Expect(subnetPort.Spec.AddressBindings).To(HaveLen(3))
+						Expect(subnetPort.Spec.AddressBindings[0].IPAddress).To(Equal(ipAddr1))
+						Expect(subnetPort.Spec.AddressBindings[0].MACAddress).To(Equal(macAddress))
+						Expect(subnetPort.Spec.AddressBindings[1].IPAddress).To(Equal(ipAddr2))
+						Expect(subnetPort.Spec.AddressBindings[1].MACAddress).To(Equal(macAddress))
+						Expect(subnetPort.Spec.AddressBindings[2].IPAddress).To(Equal(ipAddr3))
+						Expect(subnetPort.Spec.AddressBindings[2].MACAddress).To(Equal(macAddress))
+
+						subnetPort.Status.Attachment.ID = interfaceID
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
+						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
+							{
+								IPAddress: ipCIDR1,
+								Gateway:   "192.168.1.1",
+							},
+							{
+								IPAddress: ipCIDR2,
+								Gateway:   "192.168.1.1",
+							},
+							{
+								IPAddress: ipCIDR3,
+								Gateway:   "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
+							},
+						}
+						subnetPort.Status.Conditions = []vpcv1alpha1.Condition{
+							{
+								Type:   vpcv1alpha1.Ready,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.MacAddress).To(Equal(macAddress))
+					Expect(result.IPConfigs).To(HaveLen(3))
+					ipConfig := result.IPConfigs[0]
+					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR1))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+					ipConfig = result.IPConfigs[1]
+					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR2))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+					ipConfig = result.IPConfigs[2]
+					Expect(ipConfig.IPCIDR).To(Equal(ipCIDR3))
+					Expect(ipConfig.IsIPv4).To(BeFalse())
+					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
+				})
+			})
+
+			When("interfaceSpec provides invalid IP addresses", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces[0].MACAddr = macAddress
+					networkSpec.Interfaces[0].Addresses = []string{
+						"192.168.1.100/24",   // Valid IP
+						"256.256.256.256/24", // Invalid IP - out of range (logged as "invalid CIDR address")
+						"192.168.1.200/24",   // Valid IP
+						"0.0.0.0/24",         // Invalid IP - unspecified (logged as "unspecified")
+						"127.0.0.1/24",       // Invalid IP - loopback (logged as "loopback")
+						"169.254.1.1/24",     // Invalid IP - link local unicast (logged as "link local unicast")
+						"224.0.0.1/24",       // Invalid IP - link local multicast (logged as "link local multicast")
+						"192.168.1.300/24",   // Invalid IP - malformed (logged as "invalid CIDR address")
+						"192.168.1.250/24",   // Valid IP
+					}
+				})
+
+				It("skips invalid IP addresses and processes valid ones", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NSX Operator reconcile", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+
+						// Should only have 3 valid IP addresses (192.168.1.100, 192.168.1.200, 192.168.1.250)
+						Expect(subnetPort.Spec.AddressBindings).To(HaveLen(3))
+						Expect(subnetPort.Spec.AddressBindings[0].IPAddress).To(Equal("192.168.1.100"))
+						Expect(subnetPort.Spec.AddressBindings[0].MACAddress).To(Equal(macAddress))
+						Expect(subnetPort.Spec.AddressBindings[1].IPAddress).To(Equal("192.168.1.200"))
+						Expect(subnetPort.Spec.AddressBindings[1].MACAddress).To(Equal(macAddress))
+						Expect(subnetPort.Spec.AddressBindings[2].IPAddress).To(Equal("192.168.1.250"))
+						Expect(subnetPort.Spec.AddressBindings[2].MACAddress).To(Equal(macAddress))
+
+						subnetPort.Status.Attachment.ID = interfaceID
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
+						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
+							{
+								IPAddress: "192.168.1.100/24",
+								Gateway:   "192.168.1.1",
+							},
+							{
+								IPAddress: "192.168.1.200/24",
+								Gateway:   "192.168.1.1",
+							},
+							{
+								IPAddress: "192.168.1.250/24",
+								Gateway:   "192.168.1.1",
+							},
+						}
+						subnetPort.Status.Conditions = []vpcv1alpha1.Condition{
+							{
+								Type:   vpcv1alpha1.Ready,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.MacAddress).To(Equal(macAddress))
+					Expect(result.IPConfigs).To(HaveLen(3))
+					ipConfig := result.IPConfigs[0]
+					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.100/24"))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+					ipConfig = result.IPConfigs[1]
+					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.200/24"))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+					ipConfig = result.IPConfigs[2]
+					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.250/24"))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+				})
+			})
+
+			When("interfaceSpec provides only invalid IP addresses", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces[0].MACAddr = macAddress
+					networkSpec.Interfaces[0].Addresses = []string{
+						"256.256.256.256/24", // Invalid IP - out of range (logged as "invalid CIDR address")
+						"0.0.0.0/24",         // Invalid IP - unspecified (logged as "unspecified")
+						"127.0.0.1/24",       // Invalid IP - loopback (logged as "loopback")
+						"169.254.1.1/24",     // Invalid IP - link local unicast (logged as "link local unicast")
+						"224.0.0.1/24",       // Invalid IP - link local multicast (logged as "link local multicast")
+						"192.168.1.300/24",   // Invalid IP - malformed (logged as "invalid CIDR address")
+					}
+				})
+
+				It("creates SubnetPort with only MAC address when all IPs are invalid", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NSX Operator reconcile", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+
+						// Should have no address bindings since all IPs were invalid
+						Expect(subnetPort.Spec.AddressBindings).To(BeEmpty())
+
+						subnetPort.Status.Attachment.ID = interfaceID
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
+						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
+							{
+								Gateway: "192.168.1.1",
+							},
+						}
+						subnetPort.Status.Conditions = []vpcv1alpha1.Condition{
+							{
+								Type:   vpcv1alpha1.Ready,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.MacAddress).To(Equal(macAddress))
+					Expect(result.IPConfigs).To(BeEmpty())
+				})
+			})
+
+			When("interfaceSpec provides mixed valid and invalid IP addresses with logging", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces[0].MACAddr = macAddress
+					networkSpec.Interfaces[0].Addresses = []string{
+						"192.168.1.100/24",   // Valid IP
+						"256.256.256.256/24", // Invalid IP - out of range (logged as "invalid CIDR address")
+						"192.168.1.200/24",   // Valid IP
+						"0.0.0.0/24",         // Invalid IP - unspecified (logged as "unspecified")
+						"127.0.0.1/24",       // Invalid IP - loopback (logged as "loopback")
+						"169.254.1.1/24",     // Invalid IP - link local unicast (logged as "link local unicast")
+						"224.0.0.1/24",       // Invalid IP - link local multicast (logged as "link local multicast")
+						"192.168.1.300/24",   // Invalid IP - malformed (logged as "invalid CIDR address")
+						"192.168.1.250/24",   // Valid IP
+					}
+				})
+
+				It("processes valid IPs and logs skipped invalid ones", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NSX Operator reconcile", func() {
+						subnetPort := &vpcv1alpha1.SubnetPort{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+
+						// Should only have 3 valid IP addresses (192.168.1.100, 192.168.1.200, 192.168.1.250)
+						Expect(subnetPort.Spec.AddressBindings).To(HaveLen(3))
+						Expect(subnetPort.Spec.AddressBindings[0].IPAddress).To(Equal("192.168.1.100"))
+						Expect(subnetPort.Spec.AddressBindings[0].MACAddress).To(Equal(macAddress))
+						Expect(subnetPort.Spec.AddressBindings[1].IPAddress).To(Equal("192.168.1.200"))
+						Expect(subnetPort.Spec.AddressBindings[1].MACAddress).To(Equal(macAddress))
+						Expect(subnetPort.Spec.AddressBindings[2].IPAddress).To(Equal("192.168.1.250"))
+						Expect(subnetPort.Spec.AddressBindings[2].MACAddress).To(Equal(macAddress))
+
+						subnetPort.Status.Attachment.ID = interfaceID
+						subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID = builder.GetVPCTLogicalSwitchUUID(0)
+						subnetPort.Status.NetworkInterfaceConfig.MACAddress = macAddress
+						subnetPort.Status.NetworkInterfaceConfig.IPAddresses = []vpcv1alpha1.NetworkInterfaceIPAddress{
+							{
+								IPAddress: "192.168.1.100/24",
+								Gateway:   "192.168.1.1",
+							},
+							{
+								IPAddress: "192.168.1.200/24",
+								Gateway:   "192.168.1.1",
+							},
+							{
+								IPAddress: "192.168.1.250/24",
+								Gateway:   "192.168.1.1",
+							},
+						}
+						subnetPort.Status.Conditions = []vpcv1alpha1.Condition{
+							{
+								Type:   vpcv1alpha1.Ready,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, subnetPort)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						networkSpec)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.MacAddress).To(Equal(macAddress))
+					Expect(result.IPConfigs).To(HaveLen(3))
+					ipConfig := result.IPConfigs[0]
+					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.100/24"))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+					ipConfig = result.IPConfigs[1]
+					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.200/24"))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+					ipConfig = result.IPConfigs[2]
+					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.250/24"))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+				})
+			})
+
 			Context("DHCP is enabled", func() {
 				It("returns success", func() {
 					Expect(err).To(HaveOccurred())

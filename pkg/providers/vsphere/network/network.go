@@ -37,6 +37,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -703,37 +704,62 @@ func createVPCNetworkInterface(
 		}
 		vpcSubnetPort.Annotations[constants.VPCAttachmentRef] = "virtualmachine/" + vmCtx.VM.Name + "/" + interfaceSpec.Name
 
+		vpcSubnetPort.Spec.AddressBindings = nil
+
 		// TBD: It doesn't look like VPC actually reconciles if these change.
 		switch {
 		case len(interfaceSpec.Addresses) > 0:
 			for _, ipCidr := range interfaceSpec.Addresses {
-				// Our interface spec IPs include the CIDR but VPC takes just the IP address. This can
-				// lead to funkiness if the user specified an invalid prefix for this network. Here is
-				// what we're going to do: applyInterfaceSpecToResult() will just use whatever comes
-				// back in the SubnetPort Status, ignoring the user prefix. It might be nicer to allow
-				// bare IPs only when using VPC.
-				ip, _, err := net.ParseCIDR(ipCidr)
-				if err != nil || ip == nil {
+				// Our interface spec IPs include the CIDR but VPC takes just
+				// the IP address. This can lead to funkiness if the user
+				// specified an invalid prefix for this network. Here is what
+				// we're going to do: applyInterfaceSpecToResult() will just use
+				// whatever comes back in the SubnetPort Status, ignoring the
+				// user prefix. It might be nicer to allow bare IPs only when
+				// using VPC.
+				ip, _, err := pkgutil.ParseIP(ipCidr)
+
+				var skipReason string
+				switch {
+				case err != nil:
+					skipReason = err.Error()
+				case ip == nil:
+					skipReason = "nil ip"
+				case ip.IsUnspecified():
+					skipReason = "unspecified"
+				case ip.IsLinkLocalMulticast():
+					skipReason = "link local multicast"
+				case ip.IsLinkLocalUnicast():
+					skipReason = "link local unicast"
+				case ip.IsLoopback():
+					skipReason = "loopback"
+				}
+
+				if skipReason != "" {
+					vmCtx.Logger.Info(
+						"Skipping IP address",
+						"ip", ipCidr,
+						"reason", skipReason)
 					continue
 				}
 
-				vpcSubnetPort.Spec.AddressBindings = []vpcv1alpha1.PortAddressBinding{
-					{
+				vpcSubnetPort.Spec.AddressBindings = append(
+					vpcSubnetPort.Spec.AddressBindings,
+					vpcv1alpha1.PortAddressBinding{
 						IPAddress:  ip.String(),
 						MACAddress: strings.ToLower(interfaceSpec.MACAddr),
 					},
-				}
+				)
 			}
 		case interfaceSpec.MACAddr != "":
-			// TBD: VPC will default the MAC when only specifying an IP, but will not do IPAM when
-			// only the specifying the MAC, but they'll have to fix that for no IPAM, right, right?
+			// TBD: VPC will default the MAC when only specifying an IP, but
+			// will not do IPAM when only the specifying the MAC, but they'll
+			// have to fix that for no IPAM, right, right?
 			vpcSubnetPort.Spec.AddressBindings = []vpcv1alpha1.PortAddressBinding{
 				{
 					MACAddress: strings.ToLower(interfaceSpec.MACAddr),
 				},
 			}
-		default:
-			vpcSubnetPort.Spec.AddressBindings = nil
 		}
 
 		return nil

@@ -97,9 +97,22 @@ image-build-quicktype: $(QUICKTYPE_IMAGE_RECEIPT)
 ## Binaries
 ## --------------------------------------
 
+# Allow passing private NPM registry url and token.
+NPM_FLAGS :=
+ifneq ($(strip $(NPM_REGISTRY)),)
+  # Registry set (no token required)
+  NPM_REGISTRY := $(NPM_REGISTRY:https://%=%)
+  NPM_FLAGS := --registry='https://$(NPM_REGISTRY)'
+
+  # If a token is provided, add auth
+  ifneq ($(strip $(NPM_TOKEN)),)
+    NPM_FLAGS += --//'$(NPM_REGISTRY)':_authToken='$(NPM_TOKEN)'
+  endif
+endif
+
 quicktype: $(QUICKTYPE)
 $(QUICKTYPE): $(QUICK_DIR)/package.json
-	cd $(QUICK_DIR) && npm ci --user quicktype
+	cd $(QUICK_DIR) && npm ci $(NPM_FLAGS) quicktype
 
 
 ## --------------------------------------

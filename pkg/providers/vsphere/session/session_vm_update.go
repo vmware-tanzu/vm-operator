@@ -43,6 +43,7 @@ import (
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
+	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
 )
 
 var (
@@ -1168,6 +1169,25 @@ func reconcileVSpherePolicies(
 	return nil
 }
 
+func reconcileVirtualControllers(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling virtual controllers")
+
+	return vmconfvirtualcontroller.Reconcile(
+		ctx,
+		k8sClient,
+		vcVM.Client(),
+		vm,
+		moVM,
+		configSpec)
+}
+
 func doReconfigure(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1215,6 +1235,19 @@ func doReconfigure(
 
 	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
 		if err := reconcileVSpherePolicies(
+			ctx,
+			k8sClient,
+			vm,
+			vcVM,
+			moVM,
+			&configSpec); err != nil {
+
+			return err
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+		if err := reconcileVirtualControllers(
 			ctx,
 			k8sClient,
 			vm,

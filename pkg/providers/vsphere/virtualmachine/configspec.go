@@ -1,17 +1,10 @@
 // © Broadcom. All Rights Reserved.
-// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
 
 import (
-	"fmt"
-	"slices"
-	"strings"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
@@ -19,7 +12,6 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -156,160 +148,7 @@ func CreateConfigSpec(
 		initResourceAllocation(&configSpec.MemoryAllocation)
 	}
 
-	// Populate the affinity policy for the VM.
-	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
-		genConfigSpecAffinityPolicies(vmCtx, &configSpec)
-		genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec)
-	}
-
 	return configSpec
-}
-
-func genConfigSpecAffinityPolicies(
-	vmCtx pkgctx.VirtualMachineContext,
-	configSpec *vimtypes.VirtualMachineConfigSpec) {
-
-	var (
-		placementPols []vimtypes.BaseVmPlacementPolicy
-	)
-
-	if affinity := vmCtx.VM.Spec.Affinity; affinity != nil {
-		if affinity.VMAffinity != nil {
-
-			// VM affinity is bidirectional, so we only need to send in the label specified
-			// in the VM affinity policy.  Not additional labels.
-			// Note that the validation webhook will ensure that the VM also has the label that it specifies in the affinity policy.
-			for _, affinityTerm := range affinity.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution {
-				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
-					// Generate a tag name using the key value pair specified in the label selector.
-					for key, value := range affinityTerm.LabelSelector.MatchLabels {
-						// TODO: there should be a more concrete way generate the tag name.
-						label := fmt.Sprintf("%s:%s", key, value)
-
-						placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-							AffinedVmsTagName: label,
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-						})
-					}
-
-					for _, expr := range affinityTerm.LabelSelector.MatchExpressions {
-						if expr.Operator == metav1.LabelSelectorOpIn {
-							for _, value := range expr.Values {
-								// TODO: there should be a more concrete way generate the tag name.
-								label := fmt.Sprintf("%s:%s", expr.Key, value)
-
-								placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-									AffinedVmsTagName: label,
-									PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-									PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-								})
-							}
-						}
-					}
-				}
-			}
-
-			for _, affinityTerm := range affinity.VMAffinity.PreferredDuringSchedulingPreferredDuringExecution {
-				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
-					// Generate a tag name using the key value pair specified in the label selector.
-					for key, value := range affinityTerm.LabelSelector.MatchLabels {
-						// TODO: there should be a more concrete way generate the tag name.
-						label := fmt.Sprintf("%s:%s", key, value)
-
-						placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-							AffinedVmsTagName: label,
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-						})
-					}
-
-					for _, expr := range affinityTerm.LabelSelector.MatchExpressions {
-						if expr.Operator == metav1.LabelSelectorOpIn {
-							for _, value := range expr.Values {
-								// TODO: there should be a more concrete way generate the tag name.
-								label := fmt.Sprintf("%s:%s", expr.Key, value)
-
-								placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-									AffinedVmsTagName: label,
-									PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-									PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-								})
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// Handle VM-VM anti-affinity at zonal level.
-		// For VM to VM group anti-affinity, we only support preferred during scheduling type policies.
-		if affinity.VMAntiAffinity != nil {
-			var allAntiAffinityLabels []string
-
-			// Handle PreferredDuringSchedulingPreferredDuringExecution terms
-			for _, affinityTerm := range affinity.VMAntiAffinity.PreferredDuringSchedulingPreferredDuringExecution {
-				if affinityTerm.TopologyKey == corev1.LabelTopologyZone {
-					labels, err := extractLabelsFromSelector(affinityTerm.LabelSelector)
-					if err != nil {
-						vmCtx.Logger.Error(err, "Anti-affinity policy specifies an invalid label selector")
-						continue
-					}
-					allAntiAffinityLabels = append(allAntiAffinityLabels, labels...)
-				}
-			}
-
-			// Create a single effective VmToVmGroupsAntiAffinity policy if we have any labels
-			if len(allAntiAffinityLabels) > 0 {
-				placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
-					AntiAffinedVmGroupTags: allAntiAffinityLabels,
-					PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-					PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-				})
-			}
-		}
-
-	}
-
-	if len(placementPols) > 0 {
-		configSpec.VmPlacementPolicies = placementPols
-	}
-}
-
-func genConfigSpecTagSpecsFromVMLabels(
-	vmCtx pkgctx.VirtualMachineContext,
-	configSpec *vimtypes.VirtualMachineConfigSpec) {
-
-	filteredLabels := kubeutil.RemoveVMOperatorLabels(vmCtx.VM.Labels)
-	if len(filteredLabels) == 0 {
-		return
-	}
-
-	tagsToAdd := make([]vimtypes.TagSpec, 0, len(filteredLabels))
-
-	// Any label on the VM can participate in an affinity/anti-affinity policy.
-	// It does not matter if a label is not participating in any policy.
-	// It could be specified by this, or any other VM's placement policy later.
-	for key, value := range filteredLabels {
-		tagsToAdd = append(tagsToAdd, vimtypes.TagSpec{
-			ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
-				Operation: vimtypes.ArrayUpdateOperationAdd,
-			},
-			Id: vimtypes.TagId{
-				NameId: &vimtypes.TagIdNameId{
-					Tag:      key + ":" + value,
-					Category: vmCtx.VM.Namespace,
-				},
-			},
-		})
-	}
-
-	// Sort the tags to maintain consistent ordering.
-	slices.SortFunc(tagsToAdd, func(a, b vimtypes.TagSpec) int {
-		return strings.Compare(a.Id.NameId.Tag, b.Id.NameId.Tag)
-	})
-
-	configSpec.TagSpecs = tagsToAdd
 }
 
 // CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for
@@ -391,6 +230,12 @@ func CreateConfigSpecForPlacement(
 		return vimtypes.VirtualMachineConfigSpec{}, err
 	}
 
+	// Populate the affinity policy for the VM.
+	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
+		genConfigSpecAffinityPolicies(vmCtx, &configSpec)
+		genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec)
+	}
+
 	// TODO: Add more devices and fields
 	//  - storage profile/class
 	//  - PVC volumes
@@ -443,48 +288,4 @@ func initResourceAllocation(ap **vimtypes.ResourceAllocationInfo) {
 	if a.Limit == nil {
 		a.Limit = ptr.To[int64](-1)
 	}
-}
-
-// extractLabelsFromSelector extracts all labels from a LabelSelector, handling both
-// MatchLabels and MatchExpressions with "In" operator (supporting multiple values).
-// Returns a slice of formatted labels in "key:value" format.
-// If any operation other than "In" is specified in the MatchExpressions, we return an error.
-// We don't de-duplicate labels since DRS handles it on the backend.
-func extractLabelsFromSelector(selector *metav1.LabelSelector) ([]string, error) {
-	if selector == nil {
-		return nil, nil
-	}
-
-	labels := make([]string, 0)
-
-	// Handle MatchLabels - direct key-value pairs.
-	for key, value := range selector.MatchLabels {
-		label := fmt.Sprintf("%s:%s", key, value)
-		labels = append(labels, label)
-	}
-
-	// Handle MatchExpressions - only support "In" operator with AND logic.
-	//
-	// Note: Similar to Kubernetes, we expect the user to know
-	// what they are doing when specifying labels. So, we don't
-	// enforce unique keys across labels and expressions.
-	for _, expr := range selector.MatchExpressions {
-		switch expr.Operator {
-		case metav1.LabelSelectorOpIn:
-			// For "In" operator, create a label for each value
-			for _, value := range expr.Values {
-				label := fmt.Sprintf("%s:%s", expr.Key, value)
-				labels = append(labels, label)
-			}
-		default:
-			// We only support "In" operator for now as specified in requirements
-			return nil, fmt.Errorf("unsupported MatchExpression operator %q, only 'In' is supported",
-				expr.Operator)
-		}
-	}
-
-	// Sort the labels to maintain consistent ordering.
-	slices.Sort(labels)
-
-	return labels, nil
 }

@@ -256,7 +256,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	}
 
 	// Process volumes and create/update batch attachment
-	if err := r.processBatchAttachment(ctx, batchAttachment); err != nil {
+	if err := r.processBatchAttachment(ctx, batchAttachment, legacyAttachments); err != nil {
 		return fmt.Errorf("error processing CnsNodeVmBatchAttachment: %w", err)
 	}
 
@@ -294,12 +294,33 @@ func (r *Reconciler) getBatchAttachmentForVM(
 
 func (r *Reconciler) processBatchAttachment(
 	ctx *pkgctx.VolumeContext,
-	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment) error {
+	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	legacyAttachments map[string]cnsv1alpha1.CnsNodeVmAttachment) error {
 
-	// Filter volumes that have PVC source
+	// Filter volumes that have PVC source and are not already tracked
+	// by legacy CnsNodeVmAttachment
 	pvcVolumes := make([]vmopv1.VirtualMachineVolume, 0)
 	for _, vol := range ctx.VM.Spec.Volumes {
 		if vol.PersistentVolumeClaim != nil {
+			// Check if this volume is already managed by a legacy
+			// CnsNodeVmAttachment. It is safe to rely on the
+			// attachment name for the volume since that's a contract
+			// with CSI.
+			attachmentNameForVol := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, vol.Name)
+			if legacyAttachment, ok := legacyAttachments[attachmentNameForVol]; ok {
+				// Only skip the volume if the legacy attachment's PVC name matches
+				// the current volume's PVC name. If they don't match, the legacy
+				// attachment is stale and will be deleted, so we should include
+				// this volume in the batch.
+				if legacyAttachment.Spec.VolumeName == vol.PersistentVolumeClaim.ClaimName {
+					ctx.Logger.V(4).Info("skipping volume since it is tracked by a CnsNodeVmAttachment",
+						"volume", vol.Name)
+					continue
+				}
+			}
+
+			// Only include greenfield volumes that are not tracked by
+			// legacy CnsNodeVmAttachment
 			pvcVolumes = append(pvcVolumes, vol)
 		}
 	}

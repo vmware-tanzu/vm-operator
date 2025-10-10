@@ -6528,6 +6528,85 @@ func unitTestsValidateUpdate() {
 			),
 		)
 	})
+
+	Context("Volume PVC immutable fields", func() {
+		DescribeTable("Updates", doTest,
+			Entry("should allow identical ApplicationType",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should deny ApplicationType change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].persistentVolumeClaim.applicationType: Invalid value: "MicrosoftWSFC": field is immutable`),
+				},
+			),
+			Entry("should deny ControllerBusNumber change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To(int32(1))
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].persistentVolumeClaim.controllerBusNumber: Invalid value: 1: field is immutable`),
+				},
+			),
+			Entry("should deny ControllerType change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSATA
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].persistentVolumeClaim.controllerType: Invalid value: "SATA": field is immutable`),
+				},
+			),
+			Entry("should deny DiskMode change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModePersistent
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.DiskMode = vmopv1.VolumeDiskModeIndependentPersistent
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].persistentVolumeClaim.diskMode: Invalid value: "IndependentPersistent": field is immutable`),
+				},
+			),
+			Entry("should deny SharingMode change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].persistentVolumeClaim.sharingMode: Invalid value: "MultiWriter": field is immutable`),
+				},
+			),
+			Entry("should deny UnitNumber change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(0))
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To(int32(1))
+					},
+					validate: doValidateWithMsg(`spec.volumes[0].persistentVolumeClaim.unitNumber: Invalid value: 1: field is immutable`),
+				},
+			),
+			Entry("should allow when PVC is replaced",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "old-pvc"
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "new-pvc"
+						ctx.oldVM.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeOracleRAC
+						ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ApplicationType = vmopv1.VolumeApplicationTypeMicrosoftWSFC
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateDelete() {

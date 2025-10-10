@@ -25,6 +25,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -120,6 +121,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				),
 			),
 		)
+	}
+
+	// Watch CnsRegisterVolume resources to trigger VM reconciliation
+	// when all unmanaged disks are being converted to PVCs.
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		builder = builder.Watches(
+			&cnsv1alpha1.CnsRegisterVolume{},
+			handler.EnqueueRequestsFromMapFunc(
+				vmopv1util.CnsRegisterVolumeToVirtualMachineMapper(ctx, r.Client),
+			))
 	}
 
 	// Watch VirtualMachineSnapshot resources to trigger VM reconciliation

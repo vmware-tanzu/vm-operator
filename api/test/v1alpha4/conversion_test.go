@@ -88,6 +88,9 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.VirtualMachineImage{},
 				Spoke:  &vmopv1a4.VirtualMachineImage{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineImageFieldsFuncs,
+				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -108,6 +111,9 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 				Scheme: scheme,
 				Hub:    &vmopv1.ClusterVirtualMachineImage{},
 				Spoke:  &vmopv1a4.ClusterVirtualMachineImage{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+					overrideVirtualMachineImageFieldsFuncs,
+				},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {
@@ -233,6 +239,19 @@ var _ = Describe("Client-side conversion", func() {
 		Expect(scheme.Convert(vm1, vm2, nil)).To(Succeed())
 	})
 })
+
+func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
+	return []interface{}{
+		func(status *vmopv1.VirtualMachineImageStatus, c randfill.Continue) {
+			c.Fill(status)
+			status.Disks = nil
+		},
+		func(status *vmopv1a4.VirtualMachineImageStatus, c randfill.Continue) {
+			c.Fill(status)
+			status.Disks = nil
+		},
+	}
+}
 
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{

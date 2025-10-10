@@ -541,16 +541,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineImageDiskInfo)(nil), (*v1alpha5.VirtualMachineImageDiskInfo)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha4_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo(a.(*VirtualMachineImageDiskInfo), b.(*v1alpha5.VirtualMachineImageDiskInfo), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha5.VirtualMachineImageDiskInfo)(nil), (*VirtualMachineImageDiskInfo)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo(a.(*v1alpha5.VirtualMachineImageDiskInfo), b.(*VirtualMachineImageDiskInfo), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineImageList)(nil), (*v1alpha5.VirtualMachineImageList)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha4_VirtualMachineImageList_To_v1alpha5_VirtualMachineImageList(a.(*VirtualMachineImageList), b.(*v1alpha5.VirtualMachineImageList), scope)
 	}); err != nil {
@@ -1151,6 +1141,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*VirtualMachineImageDiskInfo)(nil), (*v1alpha5.VirtualMachineImageDiskInfo)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha4_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo(a.(*VirtualMachineImageDiskInfo), b.(*v1alpha5.VirtualMachineImageDiskInfo), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*VirtualMachineSpec)(nil), (*v1alpha5.VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha4_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(a.(*VirtualMachineSpec), b.(*v1alpha5.VirtualMachineSpec), scope)
 	}); err != nil {
@@ -1183,6 +1178,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineCryptoStatus)(nil), (*VirtualMachineCryptoStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineCryptoStatus_To_v1alpha4_VirtualMachineCryptoStatus(a.(*v1alpha5.VirtualMachineCryptoStatus), b.(*VirtualMachineCryptoStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha5.VirtualMachineImageDiskInfo)(nil), (*VirtualMachineImageDiskInfo)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo(a.(*v1alpha5.VirtualMachineImageDiskInfo), b.(*VirtualMachineImageDiskInfo), scope)
 	}); err != nil {
 		return err
 	}
@@ -1275,7 +1275,17 @@ func Convert_v1alpha5_ClusterVirtualMachineImage_To_v1alpha4_ClusterVirtualMachi
 
 func autoConvert_v1alpha4_ClusterVirtualMachineImageList_To_v1alpha5_ClusterVirtualMachineImageList(in *ClusterVirtualMachineImageList, out *v1alpha5.ClusterVirtualMachineImageList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1alpha5.ClusterVirtualMachineImage)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1alpha5.ClusterVirtualMachineImage, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha4_ClusterVirtualMachineImage_To_v1alpha5_ClusterVirtualMachineImage(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1286,7 +1296,17 @@ func Convert_v1alpha4_ClusterVirtualMachineImageList_To_v1alpha5_ClusterVirtualM
 
 func autoConvert_v1alpha5_ClusterVirtualMachineImageList_To_v1alpha4_ClusterVirtualMachineImageList(in *v1alpha5.ClusterVirtualMachineImageList, out *ClusterVirtualMachineImageList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]ClusterVirtualMachineImage)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]ClusterVirtualMachineImage, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_ClusterVirtualMachineImage_To_v1alpha4_ClusterVirtualMachineImage(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1572,6 +1592,7 @@ func Convert_v1alpha4_PersistentVolumeClaimVolumeSource_To_v1alpha5_PersistentVo
 
 func autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha4_PersistentVolumeClaimVolumeSource(in *v1alpha5.PersistentVolumeClaimVolumeSource, out *PersistentVolumeClaimVolumeSource, s conversion.Scope) error {
 	out.PersistentVolumeClaimVolumeSource = in.PersistentVolumeClaimVolumeSource
+	// WARNING: in.UnmanagedVolumeClaim requires manual conversion: does not exist in peer-type
 	out.InstanceVolumeClaim = (*InstanceVolumeClaimVolumeSource)(unsafe.Pointer(in.InstanceVolumeClaim))
 	// WARNING: in.ApplicationType requires manual conversion: does not exist in peer-type
 	// WARNING: in.ControllerBusNumber requires manual conversion: does not exist in peer-type
@@ -2606,30 +2627,31 @@ func Convert_v1alpha5_VirtualMachineImage_To_v1alpha4_VirtualMachineImage(in *v1
 }
 
 func autoConvert_v1alpha4_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo(in *VirtualMachineImageDiskInfo, out *v1alpha5.VirtualMachineImageDiskInfo, s conversion.Scope) error {
-	out.Capacity = (*resource.Quantity)(unsafe.Pointer(in.Capacity))
-	out.Size = (*resource.Quantity)(unsafe.Pointer(in.Size))
+	// WARNING: in.Capacity requires manual conversion: does not exist in peer-type
+	// WARNING: in.Size requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha4_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo is an autogenerated conversion function.
-func Convert_v1alpha4_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo(in *VirtualMachineImageDiskInfo, out *v1alpha5.VirtualMachineImageDiskInfo, s conversion.Scope) error {
-	return autoConvert_v1alpha4_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo(in, out, s)
 }
 
 func autoConvert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo(in *v1alpha5.VirtualMachineImageDiskInfo, out *VirtualMachineImageDiskInfo, s conversion.Scope) error {
-	out.Capacity = (*resource.Quantity)(unsafe.Pointer(in.Capacity))
-	out.Size = (*resource.Quantity)(unsafe.Pointer(in.Size))
+	// WARNING: in.Name requires manual conversion: does not exist in peer-type
+	// WARNING: in.Limit requires manual conversion: does not exist in peer-type
+	// WARNING: in.Requested requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo is an autogenerated conversion function.
-func Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo(in *v1alpha5.VirtualMachineImageDiskInfo, out *VirtualMachineImageDiskInfo, s conversion.Scope) error {
-	return autoConvert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo(in, out, s)
 }
 
 func autoConvert_v1alpha4_VirtualMachineImageList_To_v1alpha5_VirtualMachineImageList(in *VirtualMachineImageList, out *v1alpha5.VirtualMachineImageList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1alpha5.VirtualMachineImage)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1alpha5.VirtualMachineImage, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha4_VirtualMachineImage_To_v1alpha5_VirtualMachineImage(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -2640,7 +2662,17 @@ func Convert_v1alpha4_VirtualMachineImageList_To_v1alpha5_VirtualMachineImageLis
 
 func autoConvert_v1alpha5_VirtualMachineImageList_To_v1alpha4_VirtualMachineImageList(in *v1alpha5.VirtualMachineImageList, out *VirtualMachineImageList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]VirtualMachineImage)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]VirtualMachineImage, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineImage_To_v1alpha4_VirtualMachineImage(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -2754,7 +2786,17 @@ func autoConvert_v1alpha4_VirtualMachineImageStatus_To_v1alpha5_VirtualMachineIm
 	if err := Convert_v1alpha4_VirtualMachineImageProductInfo_To_v1alpha5_VirtualMachineImageProductInfo(&in.ProductInfo, &out.ProductInfo, s); err != nil {
 		return err
 	}
-	out.Disks = *(*[]v1alpha5.VirtualMachineImageDiskInfo)(unsafe.Pointer(&in.Disks))
+	if in.Disks != nil {
+		in, out := &in.Disks, &out.Disks
+		*out = make([]v1alpha5.VirtualMachineImageDiskInfo, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha4_VirtualMachineImageDiskInfo_To_v1alpha5_VirtualMachineImageDiskInfo(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Disks = nil
+	}
 	out.ProviderContentVersion = in.ProviderContentVersion
 	out.ProviderItemID = in.ProviderItemID
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))
@@ -2780,7 +2822,17 @@ func autoConvert_v1alpha5_VirtualMachineImageStatus_To_v1alpha4_VirtualMachineIm
 	if err := Convert_v1alpha5_VirtualMachineImageProductInfo_To_v1alpha4_VirtualMachineImageProductInfo(&in.ProductInfo, &out.ProductInfo, s); err != nil {
 		return err
 	}
-	out.Disks = *(*[]VirtualMachineImageDiskInfo)(unsafe.Pointer(&in.Disks))
+	if in.Disks != nil {
+		in, out := &in.Disks, &out.Disks
+		*out = make([]VirtualMachineImageDiskInfo, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineImageDiskInfo_To_v1alpha4_VirtualMachineImageDiskInfo(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Disks = nil
+	}
 	out.ProviderContentVersion = in.ProviderContentVersion
 	out.ProviderItemID = in.ProviderItemID
 	out.Conditions = *(*[]v1.Condition)(unsafe.Pointer(&in.Conditions))

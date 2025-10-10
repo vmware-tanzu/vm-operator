@@ -92,15 +92,21 @@ type VirtualMachineImageProductInfo struct {
 // VirtualMachineImageDiskInfo describes information about any disks associated with
 // this image.
 type VirtualMachineImageDiskInfo struct {
+
+	// +required
+
+	// Name is the unique identifier for the virtual disk.
+	Name string `json:"name"`
+
 	// +optional
 
-	// Capacity is the virtual disk capacity in bytes.
-	Capacity *resource.Quantity `json:"capacity,omitempty"`
+	// Limit is the total virtual disk capacity.
+	Limit *resource.Quantity `json:"limit,omitempty"`
 
 	// +optional
 
-	// Size is the estimated populated size of the virtual disk in bytes.
-	Size *resource.Quantity `json:"size,omitempty"`
+	// Requested is the minimum storage requirements for the virtual disk.
+	Requested *resource.Quantity `json:"requested,omitempty"`
 }
 
 // VirtualMachineImageOSInfo describes the image's guest operating system.
@@ -221,6 +227,8 @@ type VirtualMachineImageStatus struct {
 	ProductInfo VirtualMachineImageProductInfo `json:"productInfo,omitempty"`
 
 	// +optional
+	// +listType=map
+	// +listMapKey=name
 
 	// Disks describes the observed disk information for this image.
 	Disks []VirtualMachineImageDiskInfo `json:"disks,omitempty"`

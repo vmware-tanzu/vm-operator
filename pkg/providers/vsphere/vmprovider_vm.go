@@ -807,12 +807,13 @@ func errOrReconcileErr(reconcileErr, err error) error {
 //  2. Fetch recent tasks
 //  3. Fetch attached tags
 //  4. Reconcile status
-//  5. Reconcile schema upgrade
-//  6. Reconcile backup state
-//  7. Reconcile snapshot revert
-//  8. Reconcile config
-//  9. Reconcile power state
-//  10. Reconcile snapshot create
+//  5. Reconcile unmanaged disk to managed disk upgrade
+//  6. Reconcile schema upgrade
+//  7. Reconcile backup state
+//  8. Reconcile snapshot revert
+//  9. Reconcile config
+//  10. Reconcile power state
+//  11. Reconcile snapshot create
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -863,7 +864,20 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 5. Reconcile schema upgrade
+	// 5. Reconcile unmanaged disks to managed disks
+	//
+	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+		if err := vs.reconcileUnmanagedToManagedDisks(vmCtx); err != nil {
+			if pkgerr.IsNoRequeueError(err) {
+				return errOrReconcileErr(reconcileErr, err)
+			}
+			reconcileErr = getReconcileErr(
+				"unmanaged to managed disks", reconcileErr, err)
+		}
+	}
+
+	//
+	// 6. Reconcile schema upgrade
 	//
 	//    It is important that this step occurs *after* the status is
 	//    reconciled. This is because reconciling the status builds information
@@ -877,7 +891,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 6. Reconcile backup state (VKS nodes excluded)
+	// 7. Reconcile backup state (VKS nodes excluded)
 	//
 	if err := vs.reconcileBackupState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -887,7 +901,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 7. Reconcile snapshot revert
+	// 8. Reconcile snapshot revert
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
@@ -899,7 +913,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 8. Reconcile config
+	// 9. Reconcile config
 	//
 	if err := vs.reconcileConfig(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -916,7 +930,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 9. Reconcile power state
+	// 10. Reconcile power state
 	//
 	if err := vs.reconcilePowerState(vmCtx, vcVM); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -926,7 +940,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	//
-	// 10. Reconcile snapshot create
+	// 11. Reconcile snapshot create
 	//
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
@@ -1051,6 +1065,97 @@ func (vs *vSphereVMProvider) getTags(
 	}
 
 	return ctx.Context, nil
+}
+
+func (vs *vSphereVMProvider) reconcileUnmanagedToManagedDisks(
+	vmCtx pkgctx.VirtualMachineContext) error {
+
+	_ = vmCtx // Remove once vmCtx is used.
+
+	// TODO(AllDisksArePVCs)
+	//
+	// Implement this function. For example, for each of the non-FCD disks in
+	// vmCtx.MoVM.Config.Hardware.Devices, do the following:
+	//
+	// 1. Iterate over spec.volumes and look for an entry with an
+	//    unmanagedVolumeSource with a type of "FromVM" and name set to
+	//    the value that identifies the current disk (the logic for
+	//    deriving this name is located in the updateVolumeStatus
+	//    function in the file vmlifecycle/update_status.go).
+	//
+	// 2. If no such entry exists, then add one. Ensure the information
+	//    about the volume matches the disk's current information, such
+	//    as its controller key, controller type, unit number, etc.
+	//
+	//    If no entry existed, then use random value (that is DNS safe)
+	//    for the value of the claimName field.
+	//
+	// 3. Use the controllerutil.CreateOrPatch function to ensure a
+	//    PersistentVolumeClaim object exists for this disk. The PVC
+	//    *must* have a spec.dataSourceRef set that points to this VM.
+	//    See https://kubernetes.io/docs/concepts/storage/persistent-volumes/#using-volume-populators
+	//    for more information on this field.
+	//
+	//    The name of this PVC *must* match the value of
+	//    spec.volumes[].persistentVolumeClaim.claimName from the prior
+	//    step.
+	//
+	//    The PVC should also have an OwnerRef set that points back to
+	//    this VirtualMachine object. If the prior step created a *new*
+	//    entry in spec.volumes, then this OwnerRef should be a
+	//    ControllerOwnerRef.
+	//
+	//    If the PVC does have a ControllerOwnerRef that points to
+	//    this VM, then the PVC's storageClass,
+	//    resources.requests.storage, and resources.limits.storage
+	//    fields should have their values set to match the analogous
+	//    values of the current disk if those fields's values are empty.
+	//    The same goes for its crypto-related information (TODO -- find
+	//    the PVC annotation that specifies the BYOK EncryptionClass).
+	//
+	//    The use of the ControllerOwnerRef allows us to determine if the
+	//    PVC was created by VM Operator or by an external actor, such as
+	//    a DevOps user or Blueprint service. In the case of the latter,
+	//    they may pre-create the PVC object with the dataSourceRef field
+	//    pointing to this VM in order to ensure the unmanaged volume is
+	//    migrated to a new storage class and/or resized when being
+	//    converted to a managed volume (PVC). Therefore, we only want to
+	//    set those fields if VM Op was the one to create the PVC in the
+	//    first place.
+	//
+	// 4. If the PVC object's status.phase field is empty, then use the
+	//    controllerutil.CreateOrPatch function to ensure a
+	//    CnsRegisterVolume object exists for this disk.
+	//
+	//    See https://docs.google.com/document/d/1L6hGuRMY2Caci5OZyZMxp84Bpquw-WCX2ZQQ_2d5mlE/edit?usp=sharing
+	//    for more details on how CnsRegisterVolume is being augmented.
+	//
+	//    The CnsRegisterVolume field pvcName should match the name of
+	//    the PVC created/patched in the previous step.
+	//
+	//    The CnsRegisterVolume object should have an OwnerRef set to
+	//    this VM.
+	//
+	//    The CnsRegisterVolume object should have a label, ex.
+	//    vmoperator.vmware.com/created-by, with a value that is this
+	//    VM's name.
+	//
+	// 5. If the CnsRegisterVolume status indicates the operation is
+	//    complete, then delete the CnsRegisterVolume object.
+	//
+	// If there were a non-zero number of unmanaged volumes in the above
+	// loop, after the loop, return early with a sentinel NonRequeue
+	// error indicating we are waiting on unmanaged volume upgrades. The
+	// VirtualMachine controller will re-reconcile this VM when any
+	// CnsRegisterVolume objects with OwnerRefs that point to this VM are
+	// modified.
+	//
+	// If there were zero unmanaged volumes in the above loop, after the
+	// loop, uses the K8s client to list all CnsRegisterVolume objects
+	// with a label vmoperator.vmware.com/created-by whose value is the
+	// name of the current VM. If there are any, then delete them.
+
+	return nil
 }
 
 func (vs *vSphereVMProvider) reconcileSchemaUpgrade(
@@ -2333,6 +2438,65 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
 		&createArgs.ConfigSpec,
 		imgConfigSpec,
 		createArgs.StorageProfileID)
+
+	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+		if err := vs.vmCreateGenConfigSpecImagePVCDataSourceRefs(
+			vmCtx,
+			createArgs); err != nil {
+
+			return fmt.Errorf(
+				"failed to get storage info from pvc data source refs: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
+	vmCtx pkgctx.VirtualMachineContext,
+	createArgs *VMCreateArgs) error {
+
+	_, _ = vmCtx, createArgs // Remove once args are used.
+
+	// TODO(AllDisksArePVCs)
+	//
+	// Implement this function. For example, for each of the disks in
+	// createArgs.ConfigSpec, do the following:
+	//
+	// 1. Iterate over spec.volumes and look for an entry with an
+	//    unmanagedVolumeSource with a type of "FromImage" and name set to
+	//    the value that identifies the current disk (the logic for
+	//    deriving this name is located in the UpdateVmiWithOVF and
+	//    UpdateVmiWithVirtualMachine functions in the file
+	//    pkg/providers/vsphere/contentlibrary/content_library_utils.go).
+	//
+	// 2. If no such entry exists, then continue to the next iteration of the
+	//    loop.
+	//
+	// 3. Use the k8s client's Get function (do not use CreateOrPatch)
+	//    to see if a PersistentVolumeClaim object already exists for
+	//    this disk. The name of the PersistentVolumeClaim object should
+	//    be what was specified in the field
+	//    spec.volumes[].persistentVolumeClaim.claimName from the prior
+	//    step.
+	//
+	//    If no such entry exists, then return an error indicating the PVC for
+	//    the specified claim is missing and VM creation may not proceed.
+	//
+	// 4. Get the PVC's specified storage class and requested capacity.
+	//
+	//    The PVC *may* specify a different encryption class from the VM, but it
+	//    is probably too much work to handle multiple encryption classes in our
+	//    BYOK reconciler at this point. We will allow the PVC to be recrypted
+	//    by CSI *after* the VM is created and the disk is turned into a PVC.
+	//
+	//    Update the disk device's specified storage class using the value from
+	//    the PVC. Update the disk device's specified capacity using the value
+	//    from the PVC *if* it is larger than the disk's current requested size.
+	//
+	// That should be it! We are not actually registering these disks as PVCs
+	// at this point. That happens in the VM's update workflow later. For now
+	// we just need the information about these disks *from* the PVCs.
 
 	return nil
 }

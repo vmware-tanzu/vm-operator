@@ -8,13 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -150,7 +150,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 
 	// If the VM has a pause reconcile label key, Skip volume reconciliation.
 	if val, ok := vm.Labels[vmopv1.PausedVMLabelKey]; ok {
-		volCtx.Logger.Info("Skipping reconciliation because a pause operation has been initiated on this VirtualMachine.",
+		volCtx.Logger.Info("Skipping reconciliation because a pause operation "+
+			"has been initiated on this VirtualMachine.",
 			"pausedBy", val)
 		return ctrl.Result{}, nil
 	}
@@ -229,11 +230,14 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 // getBatchAttachmentForVM returns the CnsNodeVmBatchAttachment resource for the
 // VM. We assume that the name of the resource matches the name of the VM.
 // Returns nil if no CNSNodeVMBatchAttachment resource exists for the VM.
-func (r *Reconciler) getBatchAttachmentForVM(ctx *pkgctx.VolumeContext) (*cnsv1alpha1.CnsNodeVmBatchAttachment, error) {
+func (r *Reconciler) getBatchAttachmentForVM(
+	ctx *pkgctx.VolumeContext,
+) (*cnsv1alpha1.CnsNodeVmBatchAttachment, error) {
+
 	attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{}
 
 	if err := r.Client.Get(ctx, client.ObjectKey{
-		Name:      pkgutil.CNSBatchAttachmentNameForVolume(ctx.VM.Name),
+		Name:      pkgutil.CNSBatchAttachmentNameForVM(ctx.VM.Name),
 		Namespace: ctx.VM.Namespace,
 	}, attachment); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -293,95 +297,87 @@ func (r *Reconciler) processBatchAttachment(
 
 	// Return early if the WFFC handling has error.
 	// TODO (Oracle RAC): Do we reflect this as part of volume status for better
-	// visibility to the user? Looks like old logic doesn't do it.
+	// visibility to the user? Looks like old logic didn't do it.
 	if len(createErrs) > 0 {
 		return apierrorsutil.NewAggregate(createErrs)
 	}
 
-	// Use robust error handling for volume processing
-	if err := r.processVolumesWithErrorHandling(ctx, pvcVolumes); err != nil {
-		ctx.Logger.Error(err, "Failed to process volumes with error handling")
-		// Fall back to standard processing
-	}
-
-	// Create or update batch attachment
-	if existingAttachment == nil {
-		return r.createBatchAttachment(ctx, pvcVolumes)
-	}
-
-	return r.updateBatchAttachment(ctx, existingAttachment, pvcVolumes)
-}
-
-func (r *Reconciler) createBatchAttachment(
-	ctx *pkgctx.VolumeContext,
-	volumes []vmopv1.VirtualMachineVolume) error {
-
-	attachmentName := pkgutil.CNSBatchAttachmentNameForVolume(ctx.VM.Name)
-
-	volumeSpecs, err := r.buildVolumeSpecs(volumes)
+	volumeSpecs, err := r.buildVolumeSpecs(pvcVolumes)
 	if err != nil {
 		return fmt.Errorf("failed to build volume specs: %w", err)
 	}
 
-	// Validate the volume specs before creating the batch attachment
+	// Create or update batch attachment
+	return r.CreateOrUpdateBatchAttachment(ctx, existingAttachment, volumeSpecs)
+}
+
+// CreateOrUpdateBatchAttachment handles the creation or update of
+// CnsNodeVmBatchAttachment.
+func (r *Reconciler) CreateOrUpdateBatchAttachment(
+	ctx *pkgctx.VolumeContext,
+	existingBatchAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	volumeSpecs []cnsv1alpha1.VolumeSpec) error {
+
+	// Validate the volume specs before attempting to create/update
 	if err := r.validateVolumeSpecs(ctx, volumeSpecs); err != nil {
 		return fmt.Errorf("volume spec validation failed: %w", err)
 	}
 
-	attachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
+	vm := ctx.VM
+	attachmentName := pkgutil.CNSBatchAttachmentNameForVM(vm.Name)
+	batchAttachment := &cnsv1alpha1.CnsNodeVmBatchAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      attachmentName,
-			Namespace: ctx.VM.Namespace,
-		},
-		Spec: cnsv1alpha1.CnsNodeVmBatchAttachmentSpec{
-			NodeUUID: ctx.VM.Status.BiosUUID,
-			Volumes:  volumeSpecs,
+			Namespace: vm.Namespace,
 		},
 	}
 
-	if err := controllerutil.SetControllerReference(ctx.VM, attachment, r.Client.Scheme()); err != nil {
-		return fmt.Errorf("cannot set controller reference on CnsNodeVmBatchAttachment: %w", err)
-	}
+	operationResult, err := controllerutil.CreateOrPatch(
+		ctx,
+		r.Client,
+		batchAttachment,
+		func() error {
+			if err := controllerutil.SetControllerReference(
+				vm, batchAttachment, r.Client.Scheme(),
+			); err != nil {
+				return fmt.Errorf("failed to set controller reference "+
+					"on CnsNodeVmBatchAttachment: %w", err)
+			}
 
-	if err := r.Create(ctx, attachment); err != nil {
-		return fmt.Errorf("cannot create CnsNodeVmBatchAttachment: %w", err)
-	}
+			// Update the Spec with the desired volumeSpecs
+			batchAttachment.Spec = cnsv1alpha1.CnsNodeVmBatchAttachmentSpec{
+				NodeUUID: vm.Status.BiosUUID,
+				Volumes:  volumeSpecs,
+			}
 
-	ctx.Logger.Info("Created CnsNodeVmBatchAttachment", "attachment", attachmentName)
-	return nil
-}
+			return nil
+		})
 
-func (r *Reconciler) updateBatchAttachment(
-	ctx *pkgctx.VolumeContext,
-	existing *cnsv1alpha1.CnsNodeVmBatchAttachment,
-	volumes []vmopv1.VirtualMachineVolume) error {
-
-	volumeSpecs, err := r.buildVolumeSpecs(volumes)
 	if err != nil {
-		return fmt.Errorf("failed to build volume specs: %w", err)
+		return fmt.Errorf("failed to create or patch CnsNodeVmBatchAttachment %s: %w",
+			attachmentName, err)
 	}
 
-	// TODO (Oracle RAC): this should not just be called when the spec differs.
-	// Check if update is needed.
-	if r.volumeSpecsEqual(existing.Spec.Volumes, volumeSpecs) {
-		// No update needed, just update VM status from existing attachment
-		return r.updateVMStatusFromBatchAttachment(ctx, existing)
+	switch operationResult {
+	case controllerutil.OperationResultCreated:
+		ctx.Logger.Info("Created CnsNodeVmBatchAttachment",
+			"attachment", attachmentName)
+	case controllerutil.OperationResultUpdated:
+		ctx.Logger.Info("Updated CnsNodeVmBatchAttachment",
+			"attachment", attachmentName)
 	}
 
-	// Update the batch attachment with new volume specs
-	existing.Spec.Volumes = volumeSpecs
-	if err := r.Update(ctx, existing); err != nil {
-		return fmt.Errorf("cannot update CnsNodeVmBatchAttachment: %w", err)
-	}
+	// Update VM.status.volumes after BatchAttachment is created or updated.
+	r.updateVMVolumeStatus(ctx, existingBatchAttachment, volumeSpecs)
 
-	ctx.Logger.Info("Updated CnsNodeVmBatchAttachment", "attachment", existing.Name)
 	return nil
 }
 
 // buildVolumeSpecs builds a volume spec that will be used to create
 // the CnsNodeVmBatchAttachment object.
 func (r *Reconciler) buildVolumeSpecs(
-	volumes []vmopv1.VirtualMachineVolume) ([]cnsv1alpha1.VolumeSpec, error) {
+	volumes []vmopv1.VirtualMachineVolume,
+) ([]cnsv1alpha1.VolumeSpec, error) {
 
 	volumeSpecs := make([]cnsv1alpha1.VolumeSpec, 0, len(volumes))
 
@@ -399,7 +395,8 @@ func (r *Reconciler) buildVolumeSpecs(
 		// Apply application type presets first
 		// Ideally, this would already have been mutated by the webhook, but just handle that here anyway.
 		if err := r.applyApplicationTypePresets(pvcSpec, &cnsVolumeSpec); err != nil {
-			return nil, fmt.Errorf("failed to apply application type presets for volume %s: %w", vol.Name, err)
+			return nil, fmt.Errorf("failed to apply application type presets for volume %s: %w",
+				vol.Name, err)
 		}
 
 		// Map disk mode (can override application type presets)
@@ -410,7 +407,8 @@ func (r *Reconciler) buildVolumeSpecs(
 			case vmopv1.VolumeDiskModeIndependentPersistent:
 				cnsVolumeSpec.PersistentVolumeClaim.DiskMode = cnsv1alpha1.IndependentPersistent
 			default:
-				return nil, fmt.Errorf("unsupported disk mode: %s for volume %s", pvcSpec.DiskMode, vol.Name)
+				return nil, fmt.Errorf("unsupported disk mode: %s for volume %s",
+					pvcSpec.DiskMode, vol.Name)
 			}
 		}
 
@@ -422,7 +420,8 @@ func (r *Reconciler) buildVolumeSpecs(
 			case vmopv1.VolumeSharingModeMultiWriter:
 				cnsVolumeSpec.PersistentVolumeClaim.SharingMode = cnsv1alpha1.SharingMultiWriter
 			default:
-				return nil, fmt.Errorf("unsupported sharing mode: %s for volume %s", pvcSpec.SharingMode, vol.Name)
+				return nil, fmt.Errorf("unsupported sharing mode: %s for volume %s",
+					pvcSpec.SharingMode, vol.Name)
 			}
 		}
 
@@ -469,77 +468,87 @@ func (r *Reconciler) applyApplicationTypePresets(
 	return nil
 }
 
-func (r *Reconciler) volumeSpecsEqual(existing, desired []cnsv1alpha1.VolumeSpec) bool {
-
-	if len(existing) != len(desired) {
-		return false
-	}
-
-	existingMap := make(map[string]cnsv1alpha1.VolumeSpec)
-	for _, vol := range existing {
-		existingMap[vol.Name] = vol
-	}
-
-	for _, desiredVol := range desired {
-		existingVol, exists := existingMap[desiredVol.Name]
-		if !exists {
-			return false
-		}
-
-		if !apiequality.Semantic.DeepEqual(existingVol, desiredVol) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func (r *Reconciler) updateVMStatusFromBatchAttachment(
+// updateVMVolumeStatus updates managed volumes from VM.status.volumes list
+// with data extracted from existingBatchAttachment.status.volumeStatus
+// and volumeSpecs.
+// If there is existing volume status in batchAttachment.status and volume's PVC hasn't been
+// changed, then just construct a detailed vmVolStatus using those info.
+// Otherwise just add a basic status.
+// In the end add both managed volumes and unmanaged volumes to vm.status.volumes
+// and sort this array based on diskUUID.
+func (r *Reconciler) updateVMVolumeStatus(
 	ctx *pkgctx.VolumeContext,
-	attachment *cnsv1alpha1.CnsNodeVmBatchAttachment) error {
+	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment,
+	volumeSpecs []cnsv1alpha1.VolumeSpec) {
 
 	// Update VM.Status.Volumes based on the batch attachment status
 	volumeStatuses := make([]vmopv1.VirtualMachineVolumeStatus, 0, len(ctx.VM.Status.Volumes))
 
-	// Keep existing non-managed volumes (Classic type)
-	for _, vol := range ctx.VM.Status.Volumes {
-		if vol.Type == vmopv1.VolumeTypeClassic {
-			volumeStatuses = append(volumeStatuses, vol)
+	existingAttachVolStatus := make(map[string]cnsv1alpha1.VolumeStatus)
+	if existingAttachment != nil {
+		for _, volStatus := range existingAttachment.Status.VolumeStatus {
+			existingAttachVolStatus[volStatus.Name] = volStatus
 		}
 	}
 
-	// Add managed volumes from batch attachment status
-	for _, volStatus := range attachment.Status.VolumeStatus {
+	existingVMManagedVolStatus := map[string]vmopv1.VirtualMachineVolumeStatus{}
+	for i := range ctx.VM.Status.Volumes {
+		vol := ctx.VM.Status.Volumes[i]
+		if vol.Type != vmopv1.VolumeTypeClassic {
+			existingVMManagedVolStatus[vol.Name] = vol
+		}
+	}
+
+	for _, vol := range volumeSpecs {
+		// By default just add a basic status.
 		vmVolStatus := vmopv1.VirtualMachineVolumeStatus{
-			Name:     volStatus.Name,
-			Type:     vmopv1.VolumeTypeManaged,
-			Attached: volStatus.PersistentVolumeClaim.Attached,
-			DiskUUID: volStatus.PersistentVolumeClaim.Diskuuid,
-			Error:    volStatus.PersistentVolumeClaim.Error,
+			Name: vol.Name,
+			Type: vmopv1.VolumeTypeManaged,
 		}
 
-		// Add PVC capacity information
-		if err := r.updateVolumeStatusWithPVCInfo(ctx, volStatus.PersistentVolumeClaim.ClaimName, &vmVolStatus); err != nil {
-			ctx.Logger.Error(err, "Failed to update PVC capacity info for volume",
-				"volume", volStatus.Name, "pvc", volStatus.PersistentVolumeClaim.ClaimName)
-		}
+		// If the batchAttachment.status already has this volume, and its
+		// PVC hasn't been changed, get its detailed info from vm.status.vol
+		// and batchAttachment.status.vol.
+		if volStatus, ok := existingAttachVolStatus[vol.Name]; ok &&
+			vol.PersistentVolumeClaim.ClaimName == volStatus.PersistentVolumeClaim.ClaimName {
 
-		// Sort the volume statuses to ensure consistent ordering.
-		vmopv1.SortVirtualMachineVolumeStatuses(volumeStatuses)
+			vmVolStatus = vmopv1.VirtualMachineVolumeStatus{
+				Name:     volStatus.Name,
+				Type:     vmopv1.VolumeTypeManaged,
+				Attached: volStatus.PersistentVolumeClaim.Attached,
+				DiskUUID: volStatus.PersistentVolumeClaim.Diskuuid,
+				Error:    pkgutil.SanitizeCNSErrorMessage(volStatus.PersistentVolumeClaim.Error),
+				Used:     existingVMManagedVolStatus[vol.Name].Used,
+				Crypto:   existingVMManagedVolStatus[vol.Name].Crypto,
+			}
+
+			// Add PVC capacity information
+			if err := r.updateVolumeStatusWithPVCInfo(
+				ctx,
+				volStatus.PersistentVolumeClaim.ClaimName,
+				&vmVolStatus); err != nil {
+				ctx.Logger.Error(err, "failed to get volume status limit")
+			}
+		}
 
 		volumeStatuses = append(volumeStatuses, vmVolStatus)
 	}
 
-	ctx.VM.Status.Volumes = volumeStatuses
-	return nil
+	// Remove any managed volumes from the existing status.
+	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
+		func(e vmopv1.VirtualMachineVolumeStatus) bool {
+			return e.Type != vmopv1.VolumeTypeClassic
+		})
+
+	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, volumeStatuses...)
+
+	// Sort the volume statuses to ensure consistent ordering.
+	vmopv1.SortVirtualMachineVolumeStatuses(ctx.VM.Status.Volumes)
 }
 
 func (r *Reconciler) updateVolumeStatusWithPVCInfo(
 	ctx *pkgctx.VolumeContext,
 	pvcName string, status *vmopv1.VirtualMachineVolumeStatus) error {
-
-	// This is similar to the existing updateVolumeStatusWithLimitAndRequest function
-	// but adapted for the batch controller
 
 	pvc := &corev1.PersistentVolumeClaim{}
 	pvcKey := client.ObjectKey{
@@ -668,25 +677,6 @@ func (r *Reconciler) handlePVCWithWFFC(
 	if err := r.Client.Update(ctx, &pvc); err != nil {
 		return fmt.Errorf("cannot update PVC to add selected-node annotation: %w", err)
 	}
-
-	return nil
-}
-
-// processVolumesWithErrorHandling processes volumes with robust error handling.
-// This ensures partial failures don't prevent other volumes from being processed.
-func (r *Reconciler) processVolumesWithErrorHandling(_ *pkgctx.VolumeContext, _ []vmopv1.VirtualMachineVolume) error {
-	// TODO: Implement robust volume processing with error aggregation
-	// This method should:
-	// - Process each volume independently
-	// - Collect and aggregate errors from individual volume processing
-	// - Continue processing remaining volumes on partial failures
-	// - Provide detailed error information for troubleshooting
-	// - Filter volumes that are not bound, or have an error.
-
-	// TODO: The prior volume controller only allowed one volume to
-	// be attached when the VM was being powered on to maintain a
-	// consistent ordering since services like VKS may specify the
-	// disks in their cloud-config, so the ordering is super critical.
 
 	return nil
 }

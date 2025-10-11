@@ -6,6 +6,7 @@ package util
 
 import (
 	"fmt"
+	"strings"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
@@ -23,9 +24,9 @@ func CNSAttachmentNameForVolume(vmName, volumeName string) string {
 	return vmName + "-" + volumeName
 }
 
-// CNSBatchAttachmentNameForVolume returns the name of the
+// CNSBatchAttachmentNameForVM returns the name of the
 // CnsNodeVmBatchAttachment based on the VM name.
-func CNSBatchAttachmentNameForVolume(vmName string) string {
+func CNSBatchAttachmentNameForVM(vmName string) string {
 	return vmName
 }
 
@@ -37,4 +38,25 @@ func BuildControllerKey(controllerType vmopv1.VirtualControllerType, busNumber *
 	}
 
 	return string(controllerType)
+}
+
+// SanitizeCNSErrorMessage checks if error message contains opId, if yes,
+// Only extract the prefix before first ":" and return it.
+// The CSI controller sometimes puts the serialized SOAP error into the
+// CnsNodeVmAttachment/CnsNodeVmBatchAttachment error field, which contains
+// things like OpIds and pointers that change on every failed reconcile attempt.
+// Using this error as-is causes VM object churn, so try to avoid that here.
+// The full error message is always available
+// in the CnsNodeVmAttachment/CnsNodeVmBatchAttachment.
+//
+// Issue tracked in CSI repo for them to sanitize the error so we could get
+// rid of this func:
+// https://github.com/kubernetes-sigs/vsphere-csi-driver/issues/3663.
+func SanitizeCNSErrorMessage(msg string) string {
+	if strings.Contains(msg, "opId:") {
+		idx := strings.Index(msg, ":")
+		return msg[:idx]
+	}
+
+	return msg
 }

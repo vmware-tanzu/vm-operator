@@ -11,7 +11,7 @@ import (
 
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volume"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volumebatch"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
@@ -22,14 +22,14 @@ var intgFakeVMProvider = providerfake.NewVMProvider()
 
 var suite = builder.NewTestSuiteForControllerWithContext(
 	pkgcfg.NewContextWithDefaultConfig(),
-	volume.AddToManager,
+	volumebatch.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = intgFakeVMProvider
 		return nil
 	})
 
 func TestBatchVolume(t *testing.T) {
-	suite.Register(t, "Volume batch controller suite", nil, unitTests)
+	suite.Register(t, "Volume batch controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

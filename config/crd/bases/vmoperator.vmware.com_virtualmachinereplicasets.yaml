@@ -2907,6 +2907,7 @@ spec:
                                     Default false.
                                   type: boolean
                                 sharingMode:
+                                  default: None
                                   description: |-
                                     SharingMode describes the volume's desired sharing mode.
 

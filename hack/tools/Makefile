@@ -42,6 +42,7 @@ GOCOV             := $(BIN_DIR)/$(GOHOSTOSARCH)/gocov
 GOCOV_XML         := $(BIN_DIR)/$(GOHOSTOSARCH)/gocov-xml
 GOVULNCHECK       := $(BIN_DIR)/$(GOHOSTOSARCH)/govulncheck
 GOIMPORTS         := $(BIN_DIR)/$(GOHOSTOSARCH)/goimports
+MTIMEHASH         := $(BIN_DIR)/$(GOHOSTOSARCH)/mtimehash
 
 ## --------------------------------------
 ## Help
@@ -130,6 +131,10 @@ $(ETCD) $(KUBE_APISERVER) $(KUBECTL): k8s-envtest  ## Install envtest related bi
 	@mkdir -p $(@D)
 	@cp -f "$$($(SETUP_ENVTEST) use -p path $(K8S_VERSION))/$(@F)" $(@)
 
+mtimehash: $(MTIMEHASH) ## Install mtimehash
+$(MTIMEHASH):
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) github.com/slsyy/mtimehash/cmd/mtimehash
 
 ## --------------------------------------
 ## Generate

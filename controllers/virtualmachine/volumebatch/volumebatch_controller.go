@@ -127,6 +127,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmbatchattachments,verbs=create;delete;get;list;watch;patch;update
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmbatchattachments/status,verbs=get;list
+// +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmattachments,verbs=get;list
 
 // Reconcile reconciles a VirtualMachine object and processes the volumes for batch attachment.
 func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
@@ -260,11 +261,22 @@ func (r *Reconciler) processBatchAttachment(
 	ctx *pkgctx.VolumeContext,
 	existingAttachment *cnsv1alpha1.CnsNodeVmBatchAttachment) error {
 
-	// Filter volumes that have PVC source
+	// Filter volumes that have PVC source.  and are not already tracked by legacy CnsNodeVmAttachment
 	pvcVolumes := make([]vmopv1.VirtualMachineVolume, 0)
 	for _, vol := range ctx.VM.Spec.Volumes {
 		if vol.PersistentVolumeClaim != nil {
-			pvcVolumes = append(pvcVolumes, vol)
+			// Check if this volume is already managed by a legacy CnsNodeVmAttachment
+			isLegacyVolume, err := r.isVolumeTrackedByLegacyAttachment(ctx, vol)
+			if err != nil {
+				ctx.Logger.Error(err, "Failed to check if volume is tracked by legacy attachment", "volume", vol.Name)
+				// Continue processing other volumes even if one check fails
+				continue
+			}
+
+			if !isLegacyVolume {
+				// Only include greenfield volumes that are not tracked by legacy CnsNodeVmAttachment
+				pvcVolumes = append(pvcVolumes, vol)
+			}
 		}
 	}
 
@@ -574,6 +586,76 @@ func (r *Reconciler) updateVolumeStatusWithPVCInfo(
 	}
 
 	return nil
+}
+
+// isVolumeTrackedByLegacyAttachment checks if a volume is already
+// managed by a legacy CnsNodeVmAttachment. Returns true if the volume
+// is tracked by legacy attachment, false if this volume needs to be
+// added to an existing (or a new) CNSNodeVMBatchAttachment spec.
+func (r *Reconciler) isVolumeTrackedByLegacyAttachment(
+	ctx *pkgctx.VolumeContext,
+	volume vmopv1.VirtualMachineVolume) (bool, error) {
+
+	// Skip non PVC backed volumes.
+	if volume.PersistentVolumeClaim == nil {
+		return false, nil
+	}
+
+	legacyAttachmentName := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
+
+	legacyAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
+	err := r.Client.Get(ctx, client.ObjectKey{
+		Name:      legacyAttachmentName,
+		Namespace: ctx.VM.Namespace,
+	}, legacyAttachment)
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// No legacy attachment found, this is a greenfield volume attachment.
+			return false, nil
+		}
+
+		// This can fail due to a number of reasons, but we still err
+		// on the side of caution since the flip side is we have
+		// attachments being tracked in two places.
+		return false, fmt.Errorf("failed to check if volume is handled by CnsNodeVmAttachment %s: %w",
+			legacyAttachmentName, err)
+	}
+
+	// Legacy attachment exists, verify it's for the same VM and PVC
+	//
+	// TODO: AKP: Since we are only going to run the new volume
+	// controller, we need to duplicate the logic from
+	// createCNSAttachmentButAlreadyExists in volume controller v1 to
+	// make sure we are cleaning up the orphaned CnsNodeVmAttachments.
+	if legacyAttachment.Spec.NodeUUID != ctx.VM.Status.BiosUUID {
+		// Legacy attachment exists but for a different VM (stale), treat as greenfield
+		// This can happen if the VM was deleted and then recreated with the same
+		// name but with a new BiosUUID and the CnsNodeVmAttachment is still around.
+		ctx.Logger.V(2).Info("Found stale legacy CnsNodeVmAttachment with different NodeUUID, treating volume as greenfield",
+			"volume", volume.Name, "legacyAttachment", legacyAttachmentName,
+			"attachmentNodeUUID", legacyAttachment.Spec.NodeUUID,
+			"vmBiosUUID", ctx.VM.Status.BiosUUID)
+		return false, nil
+	}
+
+	// If there is a CnsNodeVmAttachment present but for a different PVC, that means the
+	// volume is now being attached to a different PVC now.
+	// TODO: Handle orphaned CnsNodeVmAttachments in a separate PR.
+	if volume.PersistentVolumeClaim != nil &&
+		legacyAttachment.Spec.VolumeName != volume.PersistentVolumeClaim.ClaimName {
+		ctx.Logger.Info("Legacy CnsNodeVmAttachment found, but for a different PVC",
+			"volume", volume.Name, "legacyAttachment", legacyAttachmentName,
+			"attachmentPVC", legacyAttachment.Spec.VolumeName,
+			"volumePVC", volume.PersistentVolumeClaim.ClaimName)
+		return false, nil
+	}
+
+	// Valid legacy attachment found for this volume
+	ctx.Logger.V(2).Info("Legacy CnsNodeVmAttachment found for volume",
+		"volume", volume.Name, "legacyAttachment", legacyAttachmentName,
+		"pvc", legacyAttachment.Spec.VolumeName)
+	return true, nil
 }
 
 func (r *Reconciler) ReconcileDelete(_ *pkgctx.VolumeContext) error {

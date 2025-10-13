@@ -246,10 +246,10 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 	emptyCapacity := resource.NewQuantity(0, resource.BinarySI)
 
 	for _, disk := range imageStatus.Disks {
-		if disk.Capacity == nil {
+		if disk.Limit == nil {
 			capacity.Add(*emptyCapacity)
 		} else {
-			capacity.Add(*disk.Capacity)
+			capacity.Add(*disk.Limit)
 		}
 	}
 

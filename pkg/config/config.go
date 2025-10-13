@@ -198,6 +198,7 @@ type FeatureStates struct {
 	VMWaitForFirstConsumerPVC   bool
 	VMSharedDisks               bool
 	GuestCustomizationVCDParity bool
+	AllDisksArePVCs             bool
 }
 
 type InstanceStorage struct {

@@ -1233,21 +1233,31 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 		)
 
 		switch tb := vd.Backing.(type) {
-		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-			diskUUID = tb.Uuid
-			fileName = tb.FileName
 		case *vimtypes.VirtualDiskSeSparseBackingInfo:
-			diskUUID = tb.Uuid
 			fileName = tb.FileName
-		case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
 			diskUUID = tb.Uuid
+		case *vimtypes.VirtualDiskSparseVer1BackingInfo:
 			fileName = tb.FileName
 		case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-			diskUUID = tb.Uuid
 			fileName = tb.FileName
-		case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
 			diskUUID = tb.Uuid
+		case *vimtypes.VirtualDiskFlatVer1BackingInfo:
+			fileName = tb.FileName
+		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+			fileName = tb.FileName
+			diskUUID = tb.Uuid
+		case *vimtypes.VirtualDiskLocalPMemBackingInfo:
+			fileName = tb.FileName
+			diskUUID = tb.Uuid
+		case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
+			fileName = tb.FileName
+			diskUUID = tb.Uuid
+		case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
 			fileName = tb.DescriptorFileName
+			diskUUID = tb.Uuid
+		case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo:
+			fileName = tb.DescriptorFileName
+			diskUUID = tb.Uuid
 		}
 
 		var diskPath object.DatastorePath

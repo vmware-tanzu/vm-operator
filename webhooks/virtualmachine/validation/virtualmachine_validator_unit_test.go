@@ -122,6 +122,7 @@ func unitTests() {
 		),
 		unitTestsValidateUpdate,
 	)
+	scsiControllerTests()
 	Describe(
 		"Delete",
 		Label(

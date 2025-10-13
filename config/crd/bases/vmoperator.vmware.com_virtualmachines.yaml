@@ -12177,6 +12177,38 @@ spec:
                             unit number of the SCSI controller on its own bus.
                           format: int32
                           type: integer
+                        unmanagedVolumeClaim:
+                          description: |-
+                            UnmanagedVolumeClaim is set if the PVC is backed by an existing,
+                            unmanaged volume.
+                          properties:
+                            name:
+                              description: |-
+                                Name describes the name of the unmanaged volume.
+
+                                For volumes from an image, the name is from the image's
+                                status.disks[].name field.
+
+                                For volumes from the VM, the name is from the VM's
+                                status.volumes[].name field.
+
+                                Please note, specifying the name of an existing, managed volume is not
+                                supported and will be ignored.
+                              type: string
+                            type:
+                              description: |-
+                                Type describes the source of the unmanaged volume.
+
+                                - FromImage - The source is a disk from the VM image.
+                                - FromVM    - The source is an unmanaged volume on the current VM.
+                              enum:
+                              - FromImage
+                              - FromVM
+                              type: string
+                          required:
+                          - name
+                          - type
+                          type: object
                       required:
                       - claimName
                       type: object

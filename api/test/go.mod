@@ -2,10 +2,7 @@ module github.com/vmware-tanzu/vm-operator/api/test
 
 go 1.24.4
 
-replace (
-	github.com/vmware-tanzu/vm-operator => ../../
-	github.com/vmware-tanzu/vm-operator/api => ../
-)
+replace github.com/vmware-tanzu/vm-operator/api => ../
 
 require (
 	github.com/google/go-cmp v0.7.0

@@ -32,6 +32,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+const (
+	disk0 = "disk0"
+	disk1 = "disk1"
+)
+
 func unitTests() {
 	Describe(
 		"ReconcileSPU",
@@ -779,10 +784,12 @@ func unitTestsReconcileSPUForVM() {
 									Status: vmopv1.VirtualMachineImageStatus{
 										Disks: []vmopv1.VirtualMachineImageDiskInfo{
 											{
-												Capacity: ptr.To(size20GB),
+												Name:  disk0,
+												Limit: ptr.To(size20GB),
 											},
 											{
-												Capacity: ptr.To(size50GB),
+												Name:  disk1,
+												Limit: ptr.To(size50GB),
 											},
 										},
 									},
@@ -849,10 +856,12 @@ func unitTestsReconcileSPUForVM() {
 									Status: vmopv1.VirtualMachineImageStatus{
 										Disks: []vmopv1.VirtualMachineImageDiskInfo{
 											{
-												Capacity: ptr.To(size20GB),
+												Name:  disk0,
+												Limit: ptr.To(size20GB),
 											},
 											{
-												Capacity: ptr.To(size50GB),
+												Name:  disk1,
+												Limit: ptr.To(size50GB),
 											},
 										},
 									},
@@ -891,10 +900,12 @@ func unitTestsReconcileSPUForVM() {
 										Status: vmopv1.VirtualMachineImageStatus{
 											Disks: []vmopv1.VirtualMachineImageDiskInfo{
 												{
-													Capacity: ptr.To(size10GB),
+													Name:  disk0,
+													Limit: ptr.To(size10GB),
 												},
 												{
-													Capacity: ptr.To(size40GB),
+													Name:  disk1,
+													Limit: ptr.To(size40GB),
 												},
 											},
 										},
@@ -917,10 +928,12 @@ func unitTestsReconcileSPUForVM() {
 										Status: vmopv1.VirtualMachineImageStatus{
 											Disks: []vmopv1.VirtualMachineImageDiskInfo{
 												{
-													Capacity: ptr.To(size10GB),
+													Name:  disk0,
+													Limit: ptr.To(size10GB),
 												},
 												{
-													Capacity: ptr.To(size40GB),
+													Name:  disk1,
+													Limit: ptr.To(size40GB),
 												},
 											},
 										},

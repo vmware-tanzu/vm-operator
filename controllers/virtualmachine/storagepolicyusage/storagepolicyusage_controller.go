@@ -391,7 +391,7 @@ func reportReserved(
 	}
 
 	for i := range imgDisks {
-		if v := imgDisks[i].Capacity; v != nil {
+		if v := imgDisks[i].Limit; v != nil {
 			total.Add(*v)
 		}
 	}

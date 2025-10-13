@@ -6,6 +6,8 @@ package contentlibrary
 
 import (
 	"context"
+	"fmt"
+	"path"
 	"strconv"
 	"strings"
 
@@ -62,6 +64,8 @@ func UpdateVmiWithOvfEnvelope(obj client.Object, ovfEnvelope ovf.Envelope) {
 
 // UpdateVmiWithVirtualMachine updates the given VMI object from a
 // mo.VirtualMachine data structure.
+//
+//nolint:gocyclo
 func UpdateVmiWithVirtualMachine(
 	ctx context.Context,
 	obj client.Object,
@@ -147,29 +151,62 @@ func UpdateVmiWithVirtualMachine(
 
 	// Populate the disk information.
 	status.Disks = nil
+	diskNames := map[string]struct{}{}
 	for _, bd := range vm.Config.Hardware.Device {
 		if disk, ok := bd.(*vimtypes.VirtualDisk); ok {
 
 			var (
+				name     string
 				capacity *resource.Quantity
 				size     *resource.Quantity
 			)
 
 			var uuid string
 			switch tb := disk.Backing.(type) {
-			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-				uuid = tb.Uuid
 			case *vimtypes.VirtualDiskSeSparseBackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.FileName), path.Ext(tb.FileName))
+				uuid = tb.Uuid
+			case *vimtypes.VirtualDiskSparseVer1BackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.FileName), path.Ext(tb.FileName))
+			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.FileName), path.Ext(tb.FileName))
+				uuid = tb.Uuid
+			case *vimtypes.VirtualDiskFlatVer1BackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.FileName), path.Ext(tb.FileName))
+			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.FileName), path.Ext(tb.FileName))
+				uuid = tb.Uuid
+			case *vimtypes.VirtualDiskLocalPMemBackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.FileName), path.Ext(tb.FileName))
 				uuid = tb.Uuid
 			case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
-				uuid = tb.Uuid
-			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.FileName), path.Ext(tb.FileName))
 				uuid = tb.Uuid
 			case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.DescriptorFileName), path.Ext(tb.DescriptorFileName))
+				uuid = tb.Uuid
+			case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo:
+				name = strings.TrimSuffix(path.Base(tb.DescriptorFileName), path.Ext(tb.DescriptorFileName))
 				uuid = tb.Uuid
 			default:
 				capacity = kubeutil.BytesToResource(disk.CapacityInBytes)
+				if di := disk.DeviceInfo; di != nil {
+					if d := di.GetDescription(); d != nil {
+						name = d.Label
+					}
+				}
 			}
+
+			if name == "" {
+				name = fmt.Sprintf("disk-%d", len(status.Disks))
+				for {
+					if _, ok := diskNames[name]; !ok {
+						break
+					}
+					name += fmt.Sprintf("-%d", len(status.Disks))
+				}
+			}
+			diskNames[name] = struct{}{}
 
 			if uuid != "" {
 				di, _ := vmdk.GetVirtualDiskInfoByUUID(
@@ -186,8 +223,9 @@ func UpdateVmiWithVirtualMachine(
 			status.Disks = append(
 				status.Disks,
 				vmopv1.VirtualMachineImageDiskInfo{
-					Capacity: capacity,
-					Size:     size,
+					Name:      name,
+					Limit:     capacity,
+					Requested: size,
 				})
 		}
 	}
@@ -275,12 +313,29 @@ func initImageStatusFromOVFVirtualSystem(
 
 func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineImageStatus, diskSection *ovf.DiskSection) {
 	imageStatus.Disks = make([]vmopv1.VirtualMachineImageDiskInfo, len(diskSection.Disks))
+	diskNames := map[string]struct{}{}
 
 	for i, disk := range diskSection.Disks {
-		diskDetail := vmopv1.VirtualMachineImageDiskInfo{}
+
+		name := disk.DiskID
+		if name == "" {
+			name = fmt.Sprintf("disk-%d", i)
+			for {
+				if _, ok := diskNames[name]; !ok {
+					break
+				}
+				name += fmt.Sprintf("-%d", i)
+			}
+		}
+		diskNames[name] = struct{}{}
+
+		diskDetail := vmopv1.VirtualMachineImageDiskInfo{
+			Name: name,
+		}
+
 		if disk.PopulatedSize != nil {
 			populatedSize := int64(*disk.PopulatedSize)
-			diskDetail.Size = kubeutil.BytesToResource(populatedSize)
+			diskDetail.Requested = kubeutil.BytesToResource(populatedSize)
 		}
 
 		capacity, _ := strconv.ParseInt(disk.Capacity, 10, 64)
@@ -288,7 +343,7 @@ func populateImageStatusFromOVFDiskSection(imageStatus *vmopv1.VirtualMachineIma
 			bytesMultiplier := ovf.ParseCapacityAllocationUnits(*capacityAllocationUnits)
 			capacity *= bytesMultiplier
 		}
-		diskDetail.Capacity = kubeutil.BytesToResource(capacity)
+		diskDetail.Limit = kubeutil.BytesToResource(capacity)
 
 		imageStatus.Disks[i] = diskDetail
 	}

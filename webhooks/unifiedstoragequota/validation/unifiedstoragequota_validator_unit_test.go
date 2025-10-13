@@ -43,6 +43,10 @@ const (
 	dummyVMSnapshotName = "dummy-vm-snapshot"
 	dummyNamespaceName  = "dummy-vm-namespace-for-webhook-validation"
 	badRequestMsg       = "bad request"
+	disk0               = "disk0"
+	disk1               = "disk1"
+	disk2               = "disk2"
+	disk3               = "disk3"
 )
 
 func unitTests() {
@@ -392,7 +396,8 @@ func testVMRequestedCapacityHandlerServeHTTP() {
 			vmi.Status = vmopv1.VirtualMachineImageStatus{
 				Disks: []vmopv1.VirtualMachineImageDiskInfo{
 					{
-						Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+						Name:  disk0,
+						Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 					},
 				},
 			}
@@ -440,7 +445,7 @@ func testVMRequestedCapacityHandlerServeHTTP() {
 
 			JustBeforeEach(func() {
 				expected = &validation.RequestedCapacity{
-					Capacity:         *vmi.Status.Disks[0].Capacity,
+					Capacity:         *vmi.Status.Disks[0].Limit,
 					StorageClassName: sc.Name,
 					StoragePolicyID:  sc.Parameters["storagePolicyID"],
 				}
@@ -491,7 +496,8 @@ func testVMRequestedCapacityHandlerHandle() {
 			vmi.Status = vmopv1.VirtualMachineImageStatus{
 				Disks: []vmopv1.VirtualMachineImageDiskInfo{
 					{
-						Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+						Name:  disk0,
+						Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 					},
 				},
 			}
@@ -799,7 +805,8 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 					BeforeEach(func() {
 						vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 							{
-								Capacity: nil,
+								Name:  disk0,
+								Limit: nil,
 							},
 						}
 
@@ -829,7 +836,8 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 					BeforeEach(func() {
 						vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 							{
-								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								Name:  disk0,
+								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 						}
 
@@ -859,16 +867,20 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 					BeforeEach(func() {
 						vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 							{
-								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								Name:  disk0,
+								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 							{
-								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								Name:  disk1,
+								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 							{
-								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								Name:  disk2,
+								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 							{
-								Capacity: nil,
+								Name:  disk3,
+								Limit: nil,
 							},
 						}
 
@@ -965,7 +977,8 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 					BeforeEach(func() {
 						cvmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 							{
-								Capacity: nil,
+								Name:  disk0,
+								Limit: nil,
 							},
 						}
 						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
@@ -996,7 +1009,8 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 					BeforeEach(func() {
 						cvmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 							{
-								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								Name:  disk0,
+								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 						}
 						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)
@@ -1027,13 +1041,16 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 					BeforeEach(func() {
 						cvmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
 							{
-								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								Name:  disk0,
+								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 							{
-								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								Name:  disk1,
+								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 							{
-								Capacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+								Name:  disk2,
+								Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
 							},
 						}
 						withObjects = append([]ctrlclient.Object{withObjects[0]}, cvmi)

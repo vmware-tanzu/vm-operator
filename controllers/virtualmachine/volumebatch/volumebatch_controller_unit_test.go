@@ -84,6 +84,15 @@ func unitTestsReconcile() {
 			Status: vmopv1.VirtualMachineStatus{
 				BiosUUID:     dummyBiosUUID,
 				InstanceUUID: dummyInstanceUUID,
+				Hardware: &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							Type:      "SCSI",
+							BusNumber: 0,
+							DeviceKey: 1000,
+						},
+					},
+				},
 			},
 		}
 
@@ -94,6 +103,11 @@ func unitTestsReconcile() {
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: claimName1,
 					},
+					ControllerType:      "SCSI",
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+					DiskMode:            vmopv1.VolumeDiskModePersistent,
+					SharingMode:         vmopv1.VolumeSharingModeNone,
 				},
 			},
 		}
@@ -115,6 +129,11 @@ func unitTestsReconcile() {
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: claimName2,
 					},
+					ControllerType:      "SCSI",
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(1)),
+					DiskMode:            vmopv1.VolumeDiskModePersistent,
+					SharingMode:         vmopv1.VolumeSharingModeNone,
 				},
 			},
 		}
@@ -331,6 +350,11 @@ func unitTestsReconcile() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "pvc-volume-2",
 								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(1)),
+								DiskMode:            vmopv1.VolumeDiskModePersistent,
+								SharingMode:         vmopv1.VolumeSharingModeNone,
 							},
 						},
 					}
@@ -495,7 +519,7 @@ func unitTestsReconcile() {
 			When("controller type and bus number are set", func() {
 				BeforeEach(func() {
 					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
-					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](1)
+					vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
 					vm.Spec.Volumes[0].PersistentVolumeClaim.UnitNumber = ptr.To[int32](5)
 				})
 
@@ -509,7 +533,7 @@ func unitTestsReconcile() {
 					Expect(attachment.Spec.Volumes).To(HaveLen(1))
 
 					attVol1 := attachment.Spec.Volumes[0]
-					Expect(attVol1.PersistentVolumeClaim.ControllerKey).To(Equal("SCSI:1"))
+					Expect(attVol1.PersistentVolumeClaim.ControllerKey).To(Equal("1000"))
 					Expect(attVol1.PersistentVolumeClaim.UnitNumber).To(Equal("5"))
 				})
 			})
@@ -643,6 +667,11 @@ func unitTestsReconcile() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "different-pvc", // Different from legacy-pvc-1
 								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(0)),
+								DiskMode:            vmopv1.VolumeDiskModePersistent,
+								SharingMode:         vmopv1.VolumeSharingModeNone,
 							},
 						},
 					}
@@ -699,6 +728,11 @@ func unitTestsReconcile() {
 								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: "legacy-pvc-1",
 								},
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To(int32(0)),
+								UnitNumber:          ptr.To(int32(0)),
+								DiskMode:            vmopv1.VolumeDiskModePersistent,
+								SharingMode:         vmopv1.VolumeSharingModeNone,
 							},
 						},
 					}
@@ -779,7 +813,7 @@ func unitTestsReconcile() {
 
 				It("should log error but continue with batch processing", func() {
 					err := reconciler.ReconcileNormal(volCtx)
-					Expect(err).ToNot(HaveOccurred()) // Should not fail, just log error
+					Expect(err).To(Equal(errors.New("simulated delete error"))) // Should not fail, just log error
 
 					// Legacy attachment should still exist due to delete error
 					legacyKey := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}

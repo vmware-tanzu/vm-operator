@@ -12414,6 +12414,11 @@ spec:
                             of the controller.
                           format: int32
                           type: integer
+                        deviceKey:
+                          description: DeviceKey describes the observed device key
+                            of the controller.
+                          format: int32
+                          type: integer
                         devices:
                           description: Devices describes the observed devices connected
                             to the controller.
@@ -12455,6 +12460,7 @@ spec:
                           type: string
                       required:
                       - busNumber
+                      - deviceKey
                       - type
                       type: object
                     type: array

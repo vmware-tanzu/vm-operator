@@ -21,6 +21,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -67,6 +68,11 @@ func intgTestsReconcile() {
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: "pvc-volume-1",
 					},
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+					DiskMode:            vmopv1.VolumeDiskModePersistent,
+					SharingMode:         vmopv1.VolumeSharingModeNone,
 				},
 			},
 		}
@@ -95,6 +101,11 @@ func intgTestsReconcile() {
 					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: "pvc-volume-2",
 					},
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(1)),
+					DiskMode:            vmopv1.VolumeDiskModePersistent,
+					SharingMode:         vmopv1.VolumeSharingModeNone,
 				},
 			},
 		}
@@ -124,6 +135,17 @@ func intgTestsReconcile() {
 			Spec: vmopv1.VirtualMachineSpec{
 				ImageName:  "dummy-image",
 				PowerState: vmopv1.VirtualMachinePowerStateOff,
+			},
+			Status: vmopv1.VirtualMachineStatus{
+				Hardware: &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							Type:      "SCSI",
+							BusNumber: 0,
+							DeviceKey: 1000,
+						},
+					},
+				},
 			},
 		}
 		vmKey = types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
@@ -209,6 +231,15 @@ func intgTestsReconcile() {
 			By("Assign VM BiosUUID and InstanceUUID", func() {
 				vm.Status.BiosUUID = dummyBiosUUID
 				vm.Status.InstanceUUID = dummyInstanceUUID
+				vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							Type:      "SCSI",
+							BusNumber: 0,
+							DeviceKey: 1000,
+						},
+					},
+				}
 				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 			})
 
@@ -290,6 +321,15 @@ func intgTestsReconcile() {
 			By("Assign VM BiosUUID and InstanceUUID", func() {
 				vm.Status.BiosUUID = dummyBiosUUID
 				vm.Status.InstanceUUID = dummyInstanceUUID
+				vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{
+					Controllers: []vmopv1.VirtualControllerStatus{
+						{
+							Type:      "SCSI",
+							BusNumber: 0,
+							DeviceKey: 1000,
+						},
+					},
+				}
 				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 			})
 

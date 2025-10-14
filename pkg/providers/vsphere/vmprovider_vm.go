@@ -2456,47 +2456,151 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecImagePVCDataSourceRefs(
 	vmCtx pkgctx.VirtualMachineContext,
 	createArgs *VMCreateArgs) error {
 
-	_, _ = vmCtx, createArgs // Remove once args are used.
+	if createArgs.ConfigSpec.DeviceChange == nil {
+		return nil
+	}
 
-	// TODO(AllDisksArePVCs)
-	//
-	// Implement this function. For example, for each of the disks in
-	// createArgs.ConfigSpec, do the following:
-	//
-	// 1. Iterate over spec.volumes and look for an entry with an
-	//    unmanagedVolumeSource with a type of "FromImage" and name set to
-	//    the value that identifies the current disk (the logic for
-	//    deriving this name is located in the UpdateVmiWithOVF and
-	//    UpdateVmiWithVirtualMachine functions in the file
-	//    pkg/providers/vsphere/contentlibrary/content_library_utils.go).
-	//
-	// 2. If no such entry exists, then continue to the next iteration of the
-	//    loop.
-	//
-	// 3. Use the k8s client's Get function (do not use CreateOrPatch)
-	//    to see if a PersistentVolumeClaim object already exists for
-	//    this disk. The name of the PersistentVolumeClaim object should
-	//    be what was specified in the field
-	//    spec.volumes[].persistentVolumeClaim.claimName from the prior
-	//    step.
-	//
-	//    If no such entry exists, then return an error indicating the PVC for
-	//    the specified claim is missing and VM creation may not proceed.
-	//
-	// 4. Get the PVC's specified storage class and requested capacity.
-	//
-	//    The PVC *may* specify a different encryption class from the VM, but it
-	//    is probably too much work to handle multiple encryption classes in our
-	//    BYOK reconciler at this point. We will allow the PVC to be recrypted
-	//    by CSI *after* the VM is created and the disk is turned into a PVC.
-	//
-	//    Update the disk device's specified storage class using the value from
-	//    the PVC. Update the disk device's specified capacity using the value
-	//    from the PVC *if* it is larger than the disk's current requested size.
-	//
-	// That should be it! We are not actually registering these disks as PVCs
-	// at this point. That happens in the VM's update workflow later. For now
-	// we just need the information about these disks *from* the PVCs.
+	// lookup map to avoid iterating over the volumes for each disk
+	unmanagedVolumeClaimsFromImage := make(map[string]vmopv1.VirtualMachineVolume)
+	for _, vol := range vmCtx.VM.Spec.Volumes {
+		if vol.PersistentVolumeClaim == nil {
+			continue
+		}
+
+		unmanagedVolumeClaim := vol.PersistentVolumeClaim.UnmanagedVolumeClaim
+		if unmanagedVolumeClaim == nil {
+			continue
+		}
+
+		if unmanagedVolumeClaim.Type != vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage {
+			continue
+		}
+
+		unmanagedVolumeClaimsFromImage[unmanagedVolumeClaim.Name] = vol
+	}
+
+	var errs []error
+
+	for _, deviceChange := range createArgs.ConfigSpec.DeviceChange {
+		if deviceSpec := deviceChange.GetVirtualDeviceConfigSpec(); deviceSpec != nil {
+			if disk, ok := deviceSpec.Device.(*vimtypes.VirtualDisk); ok {
+				if di := disk.DeviceInfo; di != nil {
+					if d := di.GetDescription(); d != nil {
+						volume, ok := unmanagedVolumeClaimsFromImage[d.Label]
+						if ok {
+							// update the uuid in the disk backing info
+							vmCreateGenConfigSpecSetDiskBackingUUID(volume, disk)
+
+							// update the storage profile and size based on the PVC
+							if err := vs.updateDiskDeviceFromPVC(
+								vmCtx,
+								volume.PersistentVolumeClaim.ClaimName,
+								createArgs.Storage.StorageClassToPolicyID,
+								deviceSpec,
+								disk,
+							); err != nil {
+								errs = append(errs, err)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return apierrorsutil.NewAggregate(errs)
+	}
+
+	return nil
+}
+
+func vmCreateGenConfigSpecSetDiskBackingUUID(volume vmopv1.VirtualMachineVolume, disk *vimtypes.VirtualDisk) {
+	// The following backing info types do not have a UUID field
+	// - VirtualDiskFlatVer1BackingInfo
+	// - VirtualDiskSparseVer1BackingInfo
+
+	switch tb := disk.Backing.(type) {
+	case *vimtypes.VirtualDiskSeSparseBackingInfo:
+		tb.Uuid = volume.PersistentVolumeClaim.UnmanagedVolumeClaim.UUID
+	case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+		tb.Uuid = volume.PersistentVolumeClaim.UnmanagedVolumeClaim.UUID
+	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+		tb.Uuid = volume.PersistentVolumeClaim.UnmanagedVolumeClaim.UUID
+	case *vimtypes.VirtualDiskLocalPMemBackingInfo:
+		tb.Uuid = volume.PersistentVolumeClaim.UnmanagedVolumeClaim.UUID
+	case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
+		tb.Uuid = volume.PersistentVolumeClaim.UnmanagedVolumeClaim.UUID
+	case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
+		tb.Uuid = volume.PersistentVolumeClaim.UnmanagedVolumeClaim.UUID
+	case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo:
+		tb.Uuid = volume.PersistentVolumeClaim.UnmanagedVolumeClaim.UUID
+	}
+}
+
+func (vs *vSphereVMProvider) updateDiskDeviceFromPVC(
+	vmCtx pkgctx.VirtualMachineContext,
+	claimName string,
+	storageClassToPolicyID map[string]string,
+	deviceSpec *vimtypes.VirtualDeviceConfigSpec,
+	disk *vimtypes.VirtualDisk,
+) error {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := ctrlclient.ObjectKey{
+		Namespace: vmCtx.VM.Namespace,
+		Name:      claimName,
+	}
+
+	if err := vs.k8sClient.Get(vmCtx, key, pvc); err != nil {
+		if apierrors.IsNotFound(err) {
+			// we will likely never hit this case since the PVCs are
+			// validated during the prerequisite checks
+			return fmt.Errorf(
+				"pvc %s/%s not found for the specified claim",
+				key.Namespace, key.Name,
+			)
+		}
+
+		return fmt.Errorf(
+			"failed to get pvc %s/%s for the specified claim: %w",
+			key.Namespace, key.Name, err,
+		)
+	}
+
+	// Update disk device with PVC information
+	// - Set the profile based on the PVC's storage class
+	// - Adjust disk size if PVC requests more than image disk size
+	storageClassName := pvc.Spec.StorageClassName
+
+	if storageClassName == nil {
+		return fmt.Errorf(
+			"pvc %s/%s has no storage class", key.Namespace, key.Name,
+		)
+	}
+
+	profileID, ok := storageClassToPolicyID[*storageClassName]
+	if !ok || profileID == "" {
+		return fmt.Errorf(
+			"no Policy ID mapping exists or empty Policy ID for the storage class: %s",
+			*storageClassName,
+		)
+	}
+
+	deviceSpec.Profile = []vimtypes.BaseVirtualMachineProfileSpec{
+		&vimtypes.VirtualMachineDefinedProfileSpec{
+			ProfileId: profileID,
+		},
+	}
+
+	// NOTE: For Linked Clone mode, the disk size is determined by the base image.
+	if pvcCapacity, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok && !pvcCapacity.IsZero() {
+		pvcSizeBytes := pvcCapacity.Value()
+
+		diskSizeBytes := disk.CapacityInBytes
+		if pvcSizeBytes > diskSizeBytes {
+			disk.CapacityInBytes = pvcSizeBytes
+		}
+	}
 
 	return nil
 }

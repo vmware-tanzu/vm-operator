@@ -53,6 +53,18 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
+	// Set up field index for CnsNodeVmAttachment by NodeUUID to efficiently query legacy attachments
+	if err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&cnsv1alpha1.CnsNodeVmAttachment{},
+		"spec.nodeuuid",
+		func(rawObj client.Object) []string {
+			attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
+			return []string{attachment.Spec.NodeUUID}
+		}); err != nil {
+		return err
+	}
+
 	r := NewReconciler(
 		ctx,
 		mgr.GetClient(),
@@ -127,6 +139,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmbatchattachments,verbs=create;delete;get;list;watch;patch;update
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmbatchattachments/status,verbs=get;list
+// +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmattachments,verbs=delete;get;list;watch
 
 // Reconcile reconciles a VirtualMachine object and processes the volumes for batch attachment.
 func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
@@ -217,6 +230,29 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 		if err := r.validateHardwareVersion(ctx); err != nil {
 			return fmt.Errorf("hardware version validation failed: %w", err)
 		}
+	}
+
+	legacyAttachments, err := r.getAttachmentsForVM(ctx)
+	if err != nil {
+		ctx.Logger.Error(err, "Error getting existing CnsNodeVmAttachments for VM")
+		return err
+	}
+
+	// Get legacy CnsNodeVmAttachments for this VM. We need to handle
+	// detachments via this resource for the brownfield VMs.
+	attachmentsToDelete := r.attachmentsToDelete(ctx, legacyAttachments)
+
+	// Delete attachments for this VM that exist but are not currently referenced in the Spec.
+	deleteErr := r.deleteOrphanedAttachments(ctx, attachmentsToDelete)
+	if deleteErr != nil {
+		ctx.Logger.Error(deleteErr, "Error deleting orphaned CnsNodeVmAttachments")
+		// Keep going to the create/update processing below.
+		//
+		// This is the to maintain the behavior of the existing
+		// volume controller. In batch processing, we will skip
+		// any volume that has a corresponding attachment, so we
+		// should not land in a situation where the attachment is
+		// tracked by both legacy and batch methods.
 	}
 
 	// Process volumes and create/update batch attachment
@@ -717,4 +753,84 @@ func (r *Reconciler) validateVolumeSpecs(_ *pkgctx.VolumeContext, _ []cnsv1alpha
 	// - Controller capacity limits based on controller type
 
 	return nil
+}
+
+// Return the existing CnsNodeVmAttachments that are for this VM.
+func (r *Reconciler) getAttachmentsForVM(ctx *pkgctx.VolumeContext) (map[string]cnsv1alpha1.CnsNodeVmAttachment, error) {
+	// We need to filter the attachments for the ones for this VM. There are a few ways we can do this:
+	//  - Look at the OwnerRefs for this VM. Note that we'd need to compare by the UUID, not the name,
+	//    to handle the situation we the VM is deleted and recreated before the GC deletes any prior
+	//    attachments.
+	//  - Match the attachment NodeUUID to the VM BiosUUID.
+	//
+	// We use the NodeUUID option here. We do a List() here so we discover all attachments including
+	// orphaned ones for this VM (previous code used the VM Status.Volumes as the source of truth).
+
+	list := &cnsv1alpha1.CnsNodeVmAttachmentList{}
+	err := r.Client.List(ctx, list,
+		client.InNamespace(ctx.VM.Namespace),
+		client.MatchingFields{"spec.nodeuuid": ctx.VM.Status.BiosUUID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list CnsNodeVmAttachments: %w", err)
+	}
+
+	attachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(list.Items))
+	for _, attachment := range list.Items {
+		attachments[attachment.Name] = attachment
+	}
+
+	return attachments, nil
+}
+
+func (r *Reconciler) deleteOrphanedAttachments(
+	ctx *pkgctx.VolumeContext,
+	attachments []cnsv1alpha1.CnsNodeVmAttachment) error {
+
+	var errs []error
+
+	for i := range attachments {
+		attachment := attachments[i]
+
+		if !attachment.DeletionTimestamp.IsZero() {
+			continue
+		}
+
+		ctx.Logger.V(2).Info("Deleting orphaned CnsNodeVmAttachment", "attachment", attachment.Name)
+		if err := r.Delete(ctx, &attachment); err != nil {
+			if !apierrors.IsNotFound(err) {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	return apierrorsutil.NewAggregate(errs)
+}
+
+func (r *Reconciler) attachmentsToDelete(
+	ctx *pkgctx.VolumeContext,
+	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment) []cnsv1alpha1.CnsNodeVmAttachment {
+
+	if len(attachments) == 0 {
+		return nil
+	}
+
+	expectedAttachments := make(map[string]string, len(ctx.VM.Spec.Volumes))
+	for _, volume := range ctx.VM.Spec.Volumes {
+		// Only process CNS volumes here.
+		if volume.PersistentVolumeClaim != nil {
+			attachmentName := pkgutil.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
+			expectedAttachments[attachmentName] = volume.PersistentVolumeClaim.ClaimName
+		}
+	}
+
+	// From the existing attachment map, determine which ones shouldn't exist anymore from
+	// the volumes Spec.
+	var attachmentsToDelete []cnsv1alpha1.CnsNodeVmAttachment
+	for _, attachment := range attachments {
+		if claimName, exists := expectedAttachments[attachment.Name]; !exists || claimName != attachment.Spec.VolumeName {
+			attachmentsToDelete = append(attachmentsToDelete, attachment)
+		}
+	}
+
+	return attachmentsToDelete
 }

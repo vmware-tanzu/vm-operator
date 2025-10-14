@@ -17,7 +17,6 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -317,7 +316,7 @@ func (r *Reconciler) reconcileMembers(
 
 	ctx.VMGroup.Status.Members = memberStatuses
 
-	return aggregateOrNoRequeue(memberErrs)
+	return pkgerr.AggregateOrNoRequeue(memberErrs)
 }
 
 // reconcileMember reconciles a group member and updates the member's status.
@@ -886,30 +885,4 @@ func isMemberReady(ms vmopv1.VirtualMachineGroupMemberStatus) (bool, string) {
 	}
 
 	return true, ""
-}
-
-// aggregateOrNoRequeue aggregates the given errors and returns a NoRequeueError
-// if all the errors are NoRequeueError.
-func aggregateOrNoRequeue(errs []error) error {
-	if len(errs) == 0 {
-		return nil
-	}
-
-	allNoRequeue := true
-	for _, err := range errs {
-		if !pkgerr.IsNoRequeueError(err) {
-			allNoRequeue = false
-			break
-		}
-	}
-
-	agg := apierrorsutil.NewAggregate(errs)
-
-	if allNoRequeue {
-		return pkgerr.NoRequeueError{
-			Message: agg.Error(),
-		}
-	}
-
-	return agg
 }

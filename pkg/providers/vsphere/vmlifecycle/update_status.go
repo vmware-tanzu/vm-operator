@@ -1712,11 +1712,8 @@ func reconcileStatusController(
 		vm.Status.Hardware = &vmopv1.VirtualMachineHardwareStatus{}
 	}
 
-	var (
-		// Map controllers to device key and to their busNumber+type.
-		controllerKeyMap = make(map[int32]*vmopv1.VirtualControllerStatus)
-		controllerMap    = make(map[string]*vmopv1.VirtualControllerStatus)
-	)
+	// Map controller's device key to virtual controller status.
+	controllerKeyMap := make(map[int32]*vmopv1.VirtualControllerStatus)
 
 	// Collect all the controllers.
 	for _, device := range moVM.Config.Hardware.Device {
@@ -1729,15 +1726,17 @@ func reconcileStatusController(
 				Type:      vmopv1.VirtualControllerTypeIDE,
 			}
 
-		case *vimtypes.VirtualSCSIController:
+		case vimtypes.BaseVirtualSCSIController:
+			scsiCtrl := ctrl.GetVirtualSCSIController()
 			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
+				BusNumber: scsiCtrl.BusNumber,
 				Type:      vmopv1.VirtualControllerTypeSCSI,
 			}
 
-		case *vimtypes.VirtualSATAController:
+		case vimtypes.BaseVirtualSATAController:
+			sataCtrl := ctrl.GetVirtualSATAController()
 			cs = &vmopv1.VirtualControllerStatus{
-				BusNumber: ctrl.BusNumber,
+				BusNumber: sataCtrl.BusNumber,
 				Type:      vmopv1.VirtualControllerTypeSATA,
 			}
 
@@ -1750,46 +1749,74 @@ func reconcileStatusController(
 
 		if cs != nil {
 			deviceKey := device.GetVirtualDevice().Key
+			cs.DeviceKey = deviceKey
 			controllerKeyMap[deviceKey] = cs
-			displayKey := fmt.Sprintf("%d-%s", cs.BusNumber, cs.Type)
-			controllerMap[displayKey] = cs
 		}
 	}
 
+	diskNames := map[string]struct{}{}
+
 	// Collect all devices attached to controllers.
 	for _, device := range moVM.Config.Hardware.Device {
-		var unitNumber int32
-		if u := device.GetVirtualDevice().UnitNumber; u != nil {
-			unitNumber = *u
-		}
+
+		var (
+			name          string
+			unitNumber    *int32
+			controllerKey int32
+			deviceType    vmopv1.VirtualDeviceType
+		)
 
 		switch dev := device.(type) {
 		case *vimtypes.VirtualDisk:
-			deviceStatus := vmopv1.VirtualDeviceStatus{
-				Type:       vmopv1.VirtualDeviceTypeDisk,
-				UnitNumber: unitNumber,
-			}
-			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
-				c.Devices = append(c.Devices, deviceStatus)
-			}
+			vdi := pkgutil.GetVirtualDiskInfo(dev)
+			name = vdi.UUID
+			unitNumber = vdi.UnitNumber
+			controllerKey = vdi.ControllerKey
+			deviceType = vmopv1.VirtualDeviceTypeDisk
 
 		case *vimtypes.VirtualCdrom:
-			deviceStatus := vmopv1.VirtualDeviceStatus{
-				Type:       vmopv1.VirtualDeviceTypeCDROM,
-				UnitNumber: unitNumber,
-			}
-			if c, ok := controllerKeyMap[dev.ControllerKey]; ok {
-				c.Devices = append(c.Devices, deviceStatus)
+			cdi := pkgutil.GetVirtualCdromInfo(dev)
+			name = cdi.DeviceName
+			unitNumber = cdi.UnitNumber
+			controllerKey = cdi.ControllerKey
+			deviceType = vmopv1.VirtualDeviceTypeCDROM
+		}
+
+		// skip devices that are not attached nor owned by the controllers
+		if _, ok := controllerKeyMap[controllerKey]; !ok ||
+			unitNumber == nil || deviceType == "" {
+			continue
+		}
+
+		// set to fallback name if the name is missing
+		if name == "" {
+			deviceCount := len(controllerKeyMap[controllerKey].Devices)
+			name = fmt.Sprintf("%s-%d", deviceType, deviceCount)
+			for {
+				if _, ok := diskNames[name]; !ok {
+					break
+				}
+				name += fmt.Sprintf("-%d", deviceCount)
 			}
 		}
+		diskNames[name] = struct{}{}
+
+		deviceStatus := vmopv1.VirtualDeviceStatus{
+			Name:       name,
+			Type:       deviceType,
+			UnitNumber: *unitNumber,
+		}
+		controllerKeyMap[controllerKey].Devices = append(
+			controllerKeyMap[controllerKey].Devices, deviceStatus)
+
 	}
 
 	// Convert map to slice and sort for consistent output.
 	var (
 		ctlStatusesIndex int
-		ctlStatuses      = make([]vmopv1.VirtualControllerStatus, len(controllerMap))
+		ctlStatuses      = make([]vmopv1.VirtualControllerStatus, len(controllerKeyMap))
 	)
-	for _, cs := range controllerMap {
+	for _, cs := range controllerKeyMap {
 
 		// Sort the device statuses by type and unit number.
 		slices.SortFunc(cs.Devices, func(a, b vmopv1.VirtualDeviceStatus) int {

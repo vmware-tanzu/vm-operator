@@ -6,6 +6,8 @@ package errors
 
 import (
 	"errors"
+
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 )
 
 // NoRequeueError may be returned from any part of a reconcile call stack and the
@@ -47,4 +49,52 @@ func IsNoRequeueNoError(err error) bool {
 // NoRequeueNoErr returns a NoRequeueErr with DoNotErr=true.
 func NoRequeueNoErr(msg string) error {
 	return NoRequeueError{Message: msg, DoNotErr: true}
+}
+
+// AggregateOrNoRequeue aggregates the given errors and returns a NoRequeueError
+// if all the errors are NoRequeueError and set doNotErr to false
+// if one of them has DoNotErr: false.
+func AggregateOrNoRequeue(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+
+	var (
+		flattenErrs  []error
+		allNoRequeue = true
+		doNotErr     = true
+	)
+
+	for _, err := range errs {
+		// Aggregate error does not support Errors.As()
+		if agg, ok := err.(apierrorsutil.Aggregate); ok { //nolint:errorlint
+			flattenErrs = append(flattenErrs,
+				apierrorsutil.Flatten(agg).Errors()...)
+		} else {
+			flattenErrs = append(flattenErrs, err)
+		}
+	}
+
+	for _, err := range flattenErrs {
+		var noRequeue NoRequeueError
+		if !errors.As(err, &noRequeue) {
+			allNoRequeue = false
+			break
+		}
+
+		if !noRequeue.DoNotErr {
+			doNotErr = false
+		}
+	}
+
+	agg := apierrorsutil.NewAggregate(flattenErrs)
+
+	if allNoRequeue {
+		return NoRequeueError{
+			Message:  agg.Error(),
+			DoNotErr: doNotErr,
+		}
+	}
+
+	return agg
 }

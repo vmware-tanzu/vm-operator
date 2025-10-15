@@ -85,6 +85,7 @@ func genConfigSpecAffinityPolicies(
 // processVMAffinity returns placement policies for VM affinity rules.
 // VM affinity is bidirectional, so we only need to send in the label specified
 // in the VM affinity policy. Not additional labels.
+// Note: only zone topology is supported for VM affinity.
 func processVMAffinity(
 	vmCtx pkgctx.VirtualMachineContext,
 	affinity *vmopv1.VMAffinitySpec) []vimtypes.BaseVmPlacementPolicy {
@@ -92,10 +93,9 @@ func processVMAffinity(
 	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
 
 	// Process required affinity terms associated with zone topology.
-	requiredZoneLabels := extractTermLabelsByTopology(
+	requiredZoneLabels := extractZoneTermLabels(
 		vmCtx,
 		affinity.RequiredDuringSchedulingPreferredDuringExecution,
-		corev1.LabelTopologyZone,
 	)
 	for _, label := range requiredZoneLabels {
 		placementPols = append(placementPols, &vimtypes.VmVmAffinity{
@@ -106,10 +106,9 @@ func processVMAffinity(
 	}
 
 	// Process preferred affinity terms associated with zone topology.
-	preferredZoneLabels := extractTermLabelsByTopology(
+	preferredZoneLabels := extractZoneTermLabels(
 		vmCtx,
 		affinity.PreferredDuringSchedulingPreferredDuringExecution,
-		corev1.LabelTopologyZone,
 	)
 	for _, label := range preferredZoneLabels {
 		placementPols = append(placementPols, &vimtypes.VmVmAffinity{
@@ -124,6 +123,8 @@ func processVMAffinity(
 
 // processVMAntiAffinity returns placement policies from VM anti-affinity rules.
 // Use a single VmToVmGroupsAntiAffinity policy if the labels are non-empty.
+// Note: only zone topology is processed for VM anti-affinity; host topology
+// will be handled by ClusterModules.
 func processVMAntiAffinity(
 	vmCtx pkgctx.VirtualMachineContext,
 	antiAffinity *vmopv1.VMAntiAffinitySpec) []vimtypes.BaseVmPlacementPolicy {
@@ -131,10 +132,9 @@ func processVMAntiAffinity(
 	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
 
 	// Process required anti-affinity terms associated with zone topology.
-	requiredZoneLabels := extractTermLabelsByTopology(
+	requiredZoneLabels := extractZoneTermLabels(
 		vmCtx,
 		antiAffinity.RequiredDuringSchedulingPreferredDuringExecution,
-		corev1.LabelTopologyZone,
 	)
 	if len(requiredZoneLabels) > 0 {
 		placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
@@ -144,25 +144,10 @@ func processVMAntiAffinity(
 		})
 	}
 
-	// Process required anti-affinity terms associated with host topology.
-	requiredHostLabels := extractTermLabelsByTopology(
-		vmCtx,
-		antiAffinity.RequiredDuringSchedulingPreferredDuringExecution,
-		corev1.LabelHostname,
-	)
-	if len(requiredHostLabels) > 0 {
-		placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
-			AntiAffinedVmGroupTags: requiredHostLabels,
-			PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-			PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
-		})
-	}
-
 	// Process preferred anti-affinity terms associated with zone topology.
-	preferredZoneLabels := extractTermLabelsByTopology(
+	preferredZoneLabels := extractZoneTermLabels(
 		vmCtx,
 		antiAffinity.PreferredDuringSchedulingPreferredDuringExecution,
-		corev1.LabelTopologyZone,
 	)
 	if len(preferredZoneLabels) > 0 {
 		placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
@@ -172,34 +157,19 @@ func processVMAntiAffinity(
 		})
 	}
 
-	// Process preferred anti-affinity terms associated with host topology.
-	preferredHostLabels := extractTermLabelsByTopology(
-		vmCtx,
-		antiAffinity.PreferredDuringSchedulingPreferredDuringExecution,
-		corev1.LabelHostname,
-	)
-	if len(preferredHostLabels) > 0 {
-		placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
-			AntiAffinedVmGroupTags: preferredHostLabels,
-			PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-			PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
-		})
-	}
-
 	return placementPols
 }
 
-// extractTermLabelsByTopology returns a list of labels extracted from VM's
-// affinity/anti-affinity terms with the specified topology key.
-func extractTermLabelsByTopology(
+// extractZoneTermLabels returns a list of labels extracted from the given VM's
+// affinity/anti-affinity terms under zone topology.
+func extractZoneTermLabels(
 	vmCtx pkgctx.VirtualMachineContext,
-	terms []vmopv1.VMAffinityTerm,
-	topologyKey string) []string {
+	terms []vmopv1.VMAffinityTerm) []string {
 
 	var labels []string
 
 	for _, term := range terms {
-		if term.TopologyKey != topologyKey {
+		if term.TopologyKey != corev1.LabelTopologyZone {
 			continue
 		}
 

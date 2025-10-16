@@ -79,6 +79,54 @@ var _ = DescribeTable("IsPrivilegedAccount",
 		},
 		true,
 	),
+	Entry(
+		"is service account in priv user list sans the -HASH suffix",
+		&pkgctx.WebhookContext{
+			Context: pkgcfg.WithConfig(pkgcfg.Config{
+				PrivilegedUsers: "hello,system:serviceaccount:vmware-system-mobility-operator:vmware-system-mobility-operator-controller-manager,fubar",
+			}),
+		},
+		authv1.UserInfo{
+			Username: "system:serviceaccount:vmware-system-mobility-operator:vmware-system-mobility-operator-controller-manager",
+		},
+		true,
+	),
+	Entry(
+		"is in priv user list with -HASH suffix",
+		&pkgctx.WebhookContext{
+			Context: pkgcfg.WithConfig(pkgcfg.Config{
+				PrivilegedUsers: "hello,system:serviceaccount:svc-configuration-HASH:configuration-service-controller-manager,fubar",
+			}),
+		},
+		authv1.UserInfo{
+			Username: "system:serviceaccount:svc-configuration-123ab:configuration-service-controller-manager",
+		},
+		true,
+	),
+	Entry(
+		"is in priv user list with -HASH suffix but user has extra chars",
+		&pkgctx.WebhookContext{
+			Context: pkgcfg.WithConfig(pkgcfg.Config{
+				PrivilegedUsers: "hello,system:serviceaccount:svc-configuration-HASH:configuration-service-controller-manager,fubar",
+			}),
+		},
+		authv1.UserInfo{
+			Username: "system:serviceaccount:svc-configuration-invalid-123ab:configuration-service-controller-manager",
+		},
+		false,
+	),
+	Entry(
+		"is in priv user list with -HASH suffix but user has old style suffix",
+		&pkgctx.WebhookContext{
+			Context: pkgcfg.WithConfig(pkgcfg.Config{
+				PrivilegedUsers: "hello,system:serviceaccount:svc-configuration-HASH:configuration-service-controller-manager,fubar",
+			}),
+		},
+		authv1.UserInfo{
+			Username: "system:serviceaccount:svc-configuration-domain-c36:configuration-service-controller-manager",
+		},
+		false,
+	),
 )
 
 var _ = Describe("VerifyWebhookRequest", func() {

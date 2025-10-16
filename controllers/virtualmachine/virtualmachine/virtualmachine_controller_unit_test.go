@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -487,7 +489,7 @@ func unitTestsReconcile() {
 				})
 			})
 
-			When("There are snapshot ", func() {
+			When("There are snapshots", func() {
 				var vmSnapshot *vmopv1.VirtualMachineSnapshot
 
 				BeforeEach(func() {
@@ -514,11 +516,20 @@ func unitTestsReconcile() {
 						initObjects = append(initObjects, vmSnapshot)
 					})
 
-					It("will block VM deletion and keep the snapshot finalizer", func() {
+					It("will delete snapshots first, then delete VM", func() {
+						// First reconciliation should initiate snapshot deletion
 						err := reconciler.ReconcileDelete(vmCtx)
 						Expect(err).To(HaveOccurred())
 						Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
-						Expect(vm.GetFinalizers()).To(ContainElement("vmoperator.vmware.com/virtualmachinesnapshots"))
+
+						// Wait for snapshot deletion
+						Eventually(func() bool {
+							err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmSnapshot), vmSnapshot)
+							return apierrors.IsNotFound(err)
+						}, time.Second*10).Should(BeTrue())
+
+						// Second reconciliation should complete VM deletion
+						Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
 					})
 				})
 
@@ -541,18 +552,22 @@ func unitTestsReconcile() {
 }
 
 func expectEvents(ctx *builder.UnitTestContextForController, eventStrs ...string) {
+	GinkgoHelper()
+
 	for _, s := range eventStrs {
 		var event string
-		EventuallyWithOffset(1, ctx.Events).Should(Receive(&event), "receive expected event: "+s)
+		Eventually(ctx.Events).Should(Receive(&event), "receive expected event: "+s)
 		eventComponents := strings.Split(event, " ")
-		ExpectWithOffset(1, eventComponents[1]).To(Equal(s))
+		Expect(eventComponents[1]).To(Equal(s))
 	}
-	ConsistentlyWithOffset(1, ctx.Events).ShouldNot(Receive())
+	Consistently(ctx.Events).ShouldNot(Receive())
 }
 
 func doNotExpectEvent(ctx *builder.UnitTestContextForController, eventStr string) {
-	ConsistentlyWithOffset(1, func(g Gomega) {
+	GinkgoHelper()
+
+	Consistently(func(g Gomega) {
 		var event string
-		ConsistentlyWithOffset(1, ctx.Events).ShouldNot(Receive(&event), "receive expected event: "+eventStr)
+		Consistently(ctx.Events).ShouldNot(Receive(&event), "receive expected event: "+eventStr)
 	}).Should(Succeed())
 }

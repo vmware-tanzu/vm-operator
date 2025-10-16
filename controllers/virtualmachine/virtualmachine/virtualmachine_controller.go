@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -463,7 +464,7 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 	}
 
 	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
-		if err := r.removeSnapshotFinalizer(ctx); err != nil {
+		if err := r.cleanupSnapshotAndRemoveFinalizer(ctx); err != nil {
 			return fmt.Errorf("failed to remove snapshot finalizer: %w", err)
 		}
 	}
@@ -737,46 +738,53 @@ func filterNoRequeueErr(err error) error {
 	return err
 }
 
-// hasVMSnapshots checks if the VM has any VMSnapshots that are not cleaned up.
-func (r *Reconciler) hasVMSnapshots(ctx *pkgctx.VirtualMachineContext) (bool, error) {
-	// List snapshot with that label VMNameForSnapshotLabel: <vm-name>.
-	snapshotList := &vmopv1.VirtualMachineSnapshotList{}
-	if err := r.List(ctx, snapshotList, client.InNamespace(ctx.VM.Namespace), client.MatchingLabels{
-		vmopv1.VMNameForSnapshotLabel: ctx.VM.Name,
-	}); err != nil {
-		return false, fmt.Errorf("failed to list VirtualMachineSnapshots with"+
-			" label %q=%q: %w",
-			vmopv1.VMNameForSnapshotLabel, ctx.VM.Name, err)
-	}
-
-	pkglog.FromContextOrDefault(ctx).V(4).Info("VM has snapshots", "count", len(snapshotList.Items))
-
-	return len(snapshotList.Items) > 0, nil
-}
-
-// removeSnapshotFinalizer removes the snapshot finalizer if the VM has no
-// snapshots.
-func (r *Reconciler) removeSnapshotFinalizer(ctx *pkgctx.VirtualMachineContext) error {
+// cleanupSnapshotAndRemoveFinalizer removes the snapshot finalizer if the VM
+// has no snapshots.
+// Otherwise, it tries to delete all snapshots and returns a NoRequeueError so
+// the VM will be reconciled again when snapshots are actually deleted.
+func (r *Reconciler) cleanupSnapshotAndRemoveFinalizer(ctx *pkgctx.VirtualMachineContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.VM, snapshotFinalizerName) {
 		return nil
 	}
 
-	hasSnapshots, err := r.hasVMSnapshots(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to check if VM has snapshots: %w", err)
+	// List all snapshots for this VM
+	snapshotList := &vmopv1.VirtualMachineSnapshotList{}
+	if err := r.List(
+		ctx,
+		snapshotList,
+		client.InNamespace(ctx.VM.Namespace),
+		client.MatchingLabels{
+			vmopv1.VMNameForSnapshotLabel: ctx.VM.Name,
+		}); err != nil {
+		return fmt.Errorf("failed to list VirtualMachineSnapshots with label %q=%q: %w",
+			vmopv1.VMNameForSnapshotLabel, ctx.VM.Name, err)
 	}
 
-	if hasSnapshots {
-		// Return a noRequeueError to requeue if there are remaining snapshots,
-		// as we wait for VMSnapshot events to trigger the next reconciliation.
-		return pkgerr.NoRequeueError{
-			Message: "VM has snapshots, keep snapshot finalizer",
+	if len(snapshotList.Items) == 0 {
+		ctx.Logger.V(4).Info("No snapshots found for VM, removing finalizer")
+		controllerutil.RemoveFinalizer(ctx.VM, snapshotFinalizerName)
+
+		return nil
+	}
+
+	for _, snapshot := range snapshotList.Items {
+		if !snapshot.DeletionTimestamp.IsZero() {
+			continue
+		}
+		var errs []error
+		if err := r.Delete(ctx, &snapshot); err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete snapshot %q: %w", snapshot.Name, err))
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("failed to delete snapshots: %w", apierrorsutil.NewAggregate(errs))
 		}
 	}
 
-	controllerutil.RemoveFinalizer(ctx.VM, snapshotFinalizerName)
-
-	return nil
+	// Return a noRequeueError to requeue if there are remaining snapshots,
+	// as we wait for VMSnapshot events to trigger the next reconciliation.
+	return pkgerr.NoRequeueError{
+		Message: "VM has snapshots, keep snapshot finalizer",
+	}
 }
 
 // addSnapshotFinalizer adds the snapshot finalizer.
@@ -785,5 +793,6 @@ func addSnapshotFinalizer(ctx *pkgctx.VirtualMachineContext) bool {
 	if controllerutil.ContainsFinalizer(ctx.VM, snapshotFinalizerName) {
 		return false
 	}
+
 	return controllerutil.AddFinalizer(ctx.VM, snapshotFinalizerName)
 }

@@ -293,9 +293,11 @@ func SnapshotToVMMapperFn(
 			return nil
 		}
 
-		// Only process snapshots that are not ready.
-		if conditions.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
-			logger.V(4).Info("Skipping snapshot that is already ready")
+		// For delete events: process any snapshot (deletionTimestamp will be set)
+		// For create/update events: only process snapshots that are not ready
+		if snapshot.DeletionTimestamp.IsZero() &&
+			conditions.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+			logger.V(4).Info("Skipping snapshot that is already ready and not being deleted")
 			return nil
 		}
 

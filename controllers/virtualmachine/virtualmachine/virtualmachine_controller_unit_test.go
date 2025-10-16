@@ -162,6 +162,29 @@ func unitTestsReconcile() {
 			Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
 		})
 
+		Context("Snapshot feature enabled", func() {
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMSnapshots = true
+				})
+			})
+
+			It("will add snapshot finalizer", func() {
+				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				Expect(vm.GetFinalizers()).To(ContainElement("vmoperator.vmware.com/virtualmachinesnapshots"))
+			})
+
+			When("Called multiple times", func() {
+				It("will add snapshot finalizer only once", func() {
+					Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+					Expect(vm.GetFinalizers()).To(ContainElement("vmoperator.vmware.com/virtualmachinesnapshots"))
+
+					Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+					Expect(vm.GetFinalizers()).To(ContainElement("vmoperator.vmware.com/virtualmachinesnapshots"))
+				})
+			})
+		})
+
 		Context("ProberManager", func() {
 
 			It("Should call add to Prober Manager if ReconcileNormal fails", func() {
@@ -440,6 +463,78 @@ func unitTestsReconcile() {
 			It("will delete the created VM and will not emit corresponding event", func() {
 				Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
 				doNotExpectEvent(ctx, "DeleteSuccess")
+			})
+		})
+
+		Context("Snapshot feature enabled", func() {
+			BeforeEach(func() {
+				vm.Finalizers = append(vm.Finalizers, "vmoperator.vmware.com/virtualmachinesnapshots")
+				initObjects = nil
+				initObjects = append(initObjects, vm)
+			})
+
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMSnapshots = true
+				})
+			})
+
+			When("VM has no snapshots", func() {
+				It("delete successfully", func() {
+					Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
+
+					expectEvents(ctx, "DeleteSuccess")
+				})
+			})
+
+			When("There are snapshot ", func() {
+				var vmSnapshot *vmopv1.VirtualMachineSnapshot
+
+				BeforeEach(func() {
+					vmSnapshot = &vmopv1.VirtualMachineSnapshot{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "dummy-snapshot",
+							Namespace: "dummy-ns",
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: "vmoperator.vmware.com/v1alpha5",
+									Kind:       "VirtualMachine",
+									Name:       vm.Name,
+								},
+							},
+							Labels: map[string]string{
+								vmopv1.VMNameForSnapshotLabel: vm.Name,
+							},
+						},
+					}
+				})
+
+				When("Snapshots belongs to the VM", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, vmSnapshot)
+					})
+
+					It("will block VM deletion and keep the snapshot finalizer", func() {
+						err := reconciler.ReconcileDelete(vmCtx)
+						Expect(err).To(HaveOccurred())
+						Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+						Expect(vm.GetFinalizers()).To(ContainElement("vmoperator.vmware.com/virtualmachinesnapshots"))
+					})
+				})
+
+				When("Snapshots does not belong to the VM", func() {
+					BeforeEach(func() {
+						vmSnapshot.OwnerReferences[0].Name = "other-vm"
+						vmSnapshot.Labels[vmopv1.VMNameForSnapshotLabel] = "other-vm"
+						initObjects = append(initObjects, vmSnapshot)
+					})
+
+					It("will delete the VM", func() {
+						Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
+
+						expectEvents(ctx, "DeleteSuccess")
+					})
+				})
 			})
 		})
 	})

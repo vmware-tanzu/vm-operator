@@ -2002,4 +2002,389 @@ func unitTestsMutating() {
 		})
 	})
 
+	Describe("SetPVCUnmanagedVolumeClaimUUIDs", func() {
+		var (
+			vm         *vmopv1.VirtualMachine
+			wasMutated bool
+			err        error
+		)
+
+		BeforeEach(func() {
+			vm = ctx.vm.DeepCopy()
+		})
+
+		JustBeforeEach(func() {
+			wasMutated, err = mutation.SetPVCUnmanagedVolumeClaimUUIDs(&ctx.WebhookRequestContext, ctx.Client, vm)
+		})
+
+		When("vm has no volumes", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+			})
+
+			It("should not mutate", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+			})
+		})
+
+		When("vm has volumes but no PVC volumes", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: nil,
+						},
+					},
+					{
+						Name: "test-volume-2",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: nil,
+						},
+					},
+				}
+			})
+
+			It("should not mutate", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+			})
+		})
+
+		When("vm has PVC volumes but no UnmanagedVolumeClaim", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-1",
+								},
+							},
+						},
+					},
+					{
+						Name: "test-volume-2",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-2",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should not mutate", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+			})
+		})
+
+		When("vm has PVC volumes with UnmanagedVolumeClaim but unsupported type", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-1",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: "UnsupportedType",
+									Name: "test-uvc-1",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should not mutate", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+			})
+		})
+
+		When("vm has PVC volume with UnmanagedVolumeClaim Type FromImage and empty UUID", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-1",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
+									Name: "test-uvc-1",
+									UUID: "",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should mutate and set UUID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).ToNot(BeEmpty())
+				// Verify it's a valid UUID format
+				_, err := uuid.Parse(vm.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID)
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
+		When("vm has PVC volume with UnmanagedVolumeClaim Type FromImage and existing UUID", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-1",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
+									Name: "test-uvc-1",
+									UUID: "existing-uuid-123",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should not mutate", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).To(Equal("existing-uuid-123"))
+			})
+		})
+
+		When("vm has PVC volume with UnmanagedVolumeClaim Type FromVM and empty UUID", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-1",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
+									Name: "test-uvc-1",
+									UUID: "",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should mutate and set UUID to Name", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).To(Equal("test-uvc-1"))
+			})
+		})
+
+		When("vm has PVC volume with UnmanagedVolumeClaim Type FromVM and existing UUID", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-1",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
+									Name: "test-uvc-1",
+									UUID: "existing-uuid-456",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should not mutate", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).To(Equal("existing-uuid-456"))
+			})
+		})
+
+		When("vm has multiple volumes with mixed scenarios", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					// Volume with no PVC
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: nil,
+						},
+					},
+					// Volume with PVC but no UnmanagedVolumeClaim
+					{
+						Name: "test-volume-2",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-2",
+								},
+							},
+						},
+					},
+					// Volume with UnmanagedVolumeClaim FromImage and empty UUID
+					{
+						Name: "test-volume-3",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-3",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
+									Name: "test-uvc-3",
+									UUID: "",
+								},
+							},
+						},
+					},
+					// Volume with UnmanagedVolumeClaim FromImage and existing UUID
+					{
+						Name: "test-volume-4",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-4",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage,
+									Name: "test-uvc-4",
+									UUID: "existing-uuid-789",
+								},
+							},
+						},
+					},
+					// Volume with UnmanagedVolumeClaim FromVM and empty UUID
+					{
+						Name: "test-volume-5",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-5",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
+									Name: "test-uvc-5",
+									UUID: "",
+								},
+							},
+						},
+					},
+					// Volume with UnmanagedVolumeClaim FromVM and existing UUID
+					{
+						Name: "test-volume-6",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-6",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM,
+									Name: "test-uvc-6",
+									UUID: "existing-uuid-101112",
+								},
+							},
+						},
+					},
+					// Volume with UnmanagedVolumeClaim unsupported type
+					{
+						Name: "test-volume-7",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-7",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: "UnsupportedType",
+									Name: "test-uvc-7",
+									UUID: "",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should mutate only volumes with empty UUIDs and supported types", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeTrue())
+
+				// Volume 1 (no PVC) - should not be affected
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim).To(BeNil())
+
+				// Volume 2 (PVC, no UnmanagedVolumeClaim) - should not be affected
+				Expect(vm.Spec.Volumes[1].PersistentVolumeClaim.UnmanagedVolumeClaim).To(BeNil())
+
+				// Volume 3 (FromImage, empty UUID) - should be mutated
+				Expect(vm.Spec.Volumes[2].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).ToNot(BeEmpty())
+				_, err := uuid.Parse(vm.Spec.Volumes[2].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Volume 4 (FromImage, existing UUID) - should not be mutated
+				Expect(vm.Spec.Volumes[3].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).To(Equal("existing-uuid-789"))
+
+				// Volume 5 (FromVM, empty UUID) - should be mutated
+				Expect(vm.Spec.Volumes[4].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).To(Equal("test-uvc-5"))
+
+				// Volume 6 (FromVM, existing UUID) - should not be mutated
+				Expect(vm.Spec.Volumes[5].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).To(Equal("existing-uuid-101112"))
+
+				// Volume 7 (unsupported type, empty UUID) - should not be mutated
+				Expect(vm.Spec.Volumes[6].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).To(BeEmpty())
+			})
+		})
+
+		When("vm has volumes with UnmanagedVolumeClaim but nil Type", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "test-volume-1",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc-1",
+								},
+								UnmanagedVolumeClaim: &vmopv1.UnmanagedVolumeClaimVolumeSource{
+									Type: "",
+									Name: "test-uvc-1",
+									UUID: "",
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("should not mutate", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(wasMutated).To(BeFalse())
+				Expect(vm.Spec.Volumes[0].PersistentVolumeClaim.UnmanagedVolumeClaim.UUID).To(BeEmpty())
+			})
+		})
+	})
+
 }

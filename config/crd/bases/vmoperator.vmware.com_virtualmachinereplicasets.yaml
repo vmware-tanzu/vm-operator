@@ -7578,6 +7578,15 @@ spec:
                                       - FromImage
                                       - FromVM
                                       type: string
+                                    uuid:
+                                      description: |-
+                                        UUID describes the UUID of the unmanaged volume.
+
+                                        For volumes from an image, the value is mutated in on create operations.
+
+                                        For volumes from the VM, this field may be omitted as its value is
+                                        already stored in the name field.
+                                      type: string
                                   required:
                                   - name
                                   - type

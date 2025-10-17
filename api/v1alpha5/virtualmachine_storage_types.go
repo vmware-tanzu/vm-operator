@@ -248,6 +248,16 @@ type UnmanagedVolumeClaimVolumeSource struct {
 	// Please note, specifying the name of an existing, managed volume is not
 	// supported and will be ignored.
 	Name string `json:"name"`
+
+	// +optional
+
+	// UUID describes the UUID of the unmanaged volume.
+	//
+	// For volumes from an image, the value is mutated in on create operations.
+	//
+	// For volumes from the VM, this field may be omitted as its value is
+	// already stored in the name field.
+	UUID string `json:"uuid,omitempty"`
 }
 
 // InstanceVolumeClaimVolumeSource contains information about the instance

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -174,6 +175,9 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMAffinity(ctx, vm)...)
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		fieldErrs = append(fieldErrs, v.validatePVCUnmanagedVolumeClaimInfo(ctx, vm)...)
+	}
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -1604,6 +1608,10 @@ func (v validator) validateImmutableFields(
 	allErrs = append(allErrs, v.validateImmutableNetwork(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateImmutableVMAffinity(ctx, vm, oldVM)...)
 
+	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+		allErrs = append(allErrs, v.validatePVCUnmanagedVolumeClaimImmutability(ctx, vm, oldVM)...)
+	}
+
 	return allErrs
 }
 
@@ -2423,6 +2431,114 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 		vm.Spec.Hardware.SCSIControllers) {
 		allErrs = append(allErrs, field.Forbidden(
 			specHardwarePath.Child("scsiControllers"), notUpgraded))
+	}
+
+	return allErrs
+}
+
+func (v validator) validatePVCUnmanagedVolumeClaimInfo(
+	_ *pkgctx.WebhookRequestContext,
+	newVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var (
+		allErrs field.ErrorList
+		p       = field.NewPath("spec", "volumes")
+	)
+
+	for i, v := range newVM.Spec.Volumes {
+
+		pp := p.Index(i)
+		if pvc := v.PersistentVolumeClaim; pvc != nil {
+
+			pp = pp.Child("persistentVolumeClaim")
+			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
+
+				pp = pp.Child("unmanagedVolumeClaim")
+
+				switch uvc.Type {
+				case vmopv1.UnmanagedVolumeClaimVolumeTypeFromImage:
+					if uvc.UUID == "" {
+						allErrs = append(allErrs, field.Required(
+							pp.Child("uuid"),
+							"uuid is required when type=FromImage"))
+					} else if _, err := uuid.Parse(uvc.UUID); err != nil {
+						allErrs = append(allErrs, field.Invalid(
+							pp.Child("uuid"),
+							uvc.UUID,
+							err.Error()))
+					}
+				case vmopv1.UnmanagedVolumeClaimVolumeTypeFromVM:
+					if _, err := uuid.Parse(uvc.Name); err != nil {
+						allErrs = append(allErrs, field.Invalid(
+							pp.Child("name"),
+							uvc.UUID,
+							err.Error()))
+					}
+					if _, err := uuid.Parse(uvc.UUID); err != nil {
+						allErrs = append(allErrs, field.Invalid(
+							pp.Child("uuid"),
+							uvc.UUID,
+							err.Error()))
+					}
+				}
+			}
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validatePVCUnmanagedVolumeClaimImmutability(
+	_ *pkgctx.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var (
+		allErrs          field.ErrorList
+		p                = field.NewPath("spec", "volumes")
+		oldUVCsByVolName = map[string]*vmopv1.UnmanagedVolumeClaimVolumeSource{}
+	)
+
+	for _, v := range oldVM.Spec.Volumes {
+		if pvc := v.PersistentVolumeClaim; pvc != nil {
+			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
+				oldUVCsByVolName[v.Name] = uvc
+			}
+		}
+	}
+
+	for i, v := range newVM.Spec.Volumes {
+
+		pp := p.Index(i)
+		if pvc := v.PersistentVolumeClaim; pvc != nil {
+
+			pp = pp.Child("persistentVolumeClaim", "unmanagedVolumeClaim")
+			if uvc := pvc.UnmanagedVolumeClaim; uvc != nil {
+
+				if oldUVC := oldUVCsByVolName[v.Name]; oldUVC != nil {
+					if err := validation.ValidateImmutableField(
+						uvc.Type, oldUVC.Type, pp.Child("type"),
+					); err != nil {
+						allErrs = append(allErrs, err...)
+					}
+					if err := validation.ValidateImmutableField(
+						uvc.Name, oldUVC.Name, pp.Child("name"),
+					); err != nil {
+						allErrs = append(allErrs, err...)
+					}
+					if err := validation.ValidateImmutableField(
+						uvc.UUID, oldUVC.UUID, pp.Child("uuid"),
+					); err != nil {
+						allErrs = append(allErrs, err...)
+					}
+				}
+			} else if oldUVC := oldUVCsByVolName[v.Name]; oldUVC != nil {
+				if err := validation.ValidateImmutableField(
+					uvc, oldUVC, pp,
+				); err != nil {
+					allErrs = append(allErrs, err...)
+				}
+			}
+		}
 	}
 
 	return allErrs

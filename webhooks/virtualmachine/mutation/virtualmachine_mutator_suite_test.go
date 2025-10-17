@@ -20,8 +20,9 @@ var suite = builder.NewTestSuiteForMutatingWebhookWithContext(
 		pkgcfg.Config{
 			BuildVersion: "v1",
 			Features: pkgcfg.FeatureStates{
-				BringYourOwnEncryptionKey: true,
-				VMGroups:                  true,
+				BringYourOwnEncryptionKey:   true,
+				VMGroups:                    true,
+				GuestCustomizationVCDParity: true,
 			},
 			PodNamespace: "default",
 		}),

@@ -93,28 +93,28 @@ func processVMAffinity(
 	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
 
 	// Process required affinity terms associated with zone topology.
-	requiredZoneLabels := extractZoneTermLabels(
+	requiredZoneTagIDs := buildTagIDsFromZoneTopology(
 		vmCtx,
 		affinity.RequiredDuringSchedulingPreferredDuringExecution,
 	)
-	for _, label := range requiredZoneLabels {
+	for _, tagID := range requiredZoneTagIDs {
 		placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-			AffinedVmsTagName: label,
-			PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-			PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+			AffinedVmsTag:    tagID,
+			PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+			PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 		})
 	}
 
 	// Process preferred affinity terms associated with zone topology.
-	preferredZoneLabels := extractZoneTermLabels(
+	preferredZoneTagIDs := buildTagIDsFromZoneTopology(
 		vmCtx,
 		affinity.PreferredDuringSchedulingPreferredDuringExecution,
 	)
-	for _, label := range preferredZoneLabels {
+	for _, tagID := range preferredZoneTagIDs {
 		placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-			AffinedVmsTagName: label,
-			PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-			PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+			AffinedVmsTag:    tagID,
+			PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
+			PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 		})
 	}
 
@@ -132,26 +132,26 @@ func processVMAntiAffinity(
 	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
 
 	// Process required anti-affinity terms associated with zone topology.
-	requiredZoneLabels := extractZoneTermLabels(
+	requiredZoneTagIDs := buildTagIDsFromZoneTopology(
 		vmCtx,
 		antiAffinity.RequiredDuringSchedulingPreferredDuringExecution,
 	)
-	if len(requiredZoneLabels) > 0 {
+	if len(requiredZoneTagIDs) > 0 {
 		placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
-			AntiAffinedVmGroupTags: requiredZoneLabels,
+			AntiAffinedVmGroupTags: requiredZoneTagIDs,
 			PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
 			PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 		})
 	}
 
 	// Process preferred anti-affinity terms associated with zone topology.
-	preferredZoneLabels := extractZoneTermLabels(
+	preferredZoneTagIDs := buildTagIDsFromZoneTopology(
 		vmCtx,
 		antiAffinity.PreferredDuringSchedulingPreferredDuringExecution,
 	)
-	if len(preferredZoneLabels) > 0 {
+	if len(preferredZoneTagIDs) > 0 {
 		placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
-			AntiAffinedVmGroupTags: preferredZoneLabels,
+			AntiAffinedVmGroupTags: preferredZoneTagIDs,
 			PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
 			PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
 		})
@@ -160,13 +160,14 @@ func processVMAntiAffinity(
 	return placementPols
 }
 
-// extractZoneTermLabels returns a list of labels extracted from the given VM's
-// affinity/anti-affinity terms under zone topology.
-func extractZoneTermLabels(
+// buildTagIDsFromZoneTopology returns a list of TagIds built from the given
+// affinity/anti-affinity terms that have zone topology.
+// Terms with other topology types are ignored.
+func buildTagIDsFromZoneTopology(
 	vmCtx pkgctx.VirtualMachineContext,
-	terms []vmopv1.VMAffinityTerm) []string {
+	terms []vmopv1.VMAffinityTerm) []vimtypes.TagId {
 
-	var labels []string
+	var tagIDs []vimtypes.TagId
 
 	for _, term := range terms {
 		if term.TopologyKey != corev1.LabelTopologyZone {
@@ -179,10 +180,18 @@ func extractZoneTermLabels(
 			continue
 		}
 
-		labels = append(labels, termLabels...)
+		// Convert label strings (in "key:value" format) to TagId objects.
+		for _, label := range termLabels {
+			tagIDs = append(tagIDs, vimtypes.TagId{
+				NameId: &vimtypes.TagIdNameId{
+					Tag:      label,
+					Category: vmCtx.VM.Namespace,
+				},
+			})
+		}
 	}
 
-	return labels
+	return tagIDs
 }
 
 // extractLabelsFromSelector extracts all labels from a LabelSelector, handling both

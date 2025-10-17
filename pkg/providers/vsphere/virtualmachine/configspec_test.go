@@ -680,19 +680,34 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 					pols := []vimtypes.BaseVmPlacementPolicy{
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-							AffinedVmsTagName: fmt.Sprintf("%s:%s", "env", "prod"),
+							PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+							PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTag: vimtypes.TagId{
+								NameId: &vimtypes.TagIdNameId{
+									Tag:      fmt.Sprintf("%s:%s", "env", "prod"),
+									Category: vmCtx.VM.Namespace,
+								},
+							},
 						},
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-							AffinedVmsTagName: fmt.Sprintf("%s:%s", "app", "db"),
+							PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+							PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTag: vimtypes.TagId{
+								NameId: &vimtypes.TagIdNameId{
+									Tag:      fmt.Sprintf("%s:%s", "app", "db"),
+									Category: vmCtx.VM.Namespace,
+								},
+							},
 						},
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-							AffinedVmsTagName: fmt.Sprintf("%s:%s", "zone", "us-west"),
+							PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+							PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTag: vimtypes.TagId{
+								NameId: &vimtypes.TagIdNameId{
+									Tag:      fmt.Sprintf("%s:%s", "zone", "us-west"),
+									Category: vmCtx.VM.Namespace,
+								},
+							},
 						},
 					}
 
@@ -744,19 +759,34 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 					pols := []vimtypes.BaseVmPlacementPolicy{
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-							AffinedVmsTagName: fmt.Sprintf("%s:%s", "env", "prod"),
+							PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
+							PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTag: vimtypes.TagId{
+								NameId: &vimtypes.TagIdNameId{
+									Tag:      fmt.Sprintf("%s:%s", "env", "prod"),
+									Category: vmCtx.VM.Namespace,
+								},
+							},
 						},
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-							AffinedVmsTagName: fmt.Sprintf("%s:%s", "app", "db"),
+							PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
+							PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTag: vimtypes.TagId{
+								NameId: &vimtypes.TagIdNameId{
+									Tag:      fmt.Sprintf("%s:%s", "app", "db"),
+									Category: vmCtx.VM.Namespace,
+								},
+							},
 						},
 						&vimtypes.VmVmAffinity{
-							PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-							PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-							AffinedVmsTagName: fmt.Sprintf("%s:%s", "zone", "us-east"),
+							PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
+							PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTag: vimtypes.TagId{
+								NameId: &vimtypes.TagIdNameId{
+									Tag:      fmt.Sprintf("%s:%s", "zone", "us-east"),
+									Category: vmCtx.VM.Namespace,
+								},
+							},
 						},
 					}
 
@@ -816,7 +846,32 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 					Expect(ok).To(BeTrue())
 
 					// Validate AntiAffinedVmGroupTags contains all labels from selectors.
-					expectedAntiAffinityLabels := []string{"component:web", "tier:frontend", "tier:backend", "environment:prod"}
+					expectedAntiAffinityLabels := []vimtypes.TagId{
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "component:web",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "tier:frontend",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "tier:backend",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "environment:prod",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+					}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution)))
@@ -866,7 +921,32 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 					Expect(ok).To(BeTrue())
 
 					// Validate AntiAffinedVmGroupTags contains all labels from selectors.
-					expectedAntiAffinityLabels := []string{"component:web", "tier:frontend", "tier:backend", "environment:prod"}
+					expectedAntiAffinityLabels := []vimtypes.TagId{
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "component:web",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "tier:frontend",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "tier:backend",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "environment:prod",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+					}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))
@@ -968,7 +1048,20 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 					Expect(ok).To(BeTrue())
 
 					// Validate AntiAffinedVmGroupTags contains selector labels
-					expectedAntiAffinityLabels := []string{"tier:frontend", "environment:prod"}
+					expectedAntiAffinityLabels := []vimtypes.TagId{
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "tier:frontend",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "environment:prod",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+					}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))
@@ -1007,7 +1100,26 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 					Expect(ok).To(BeTrue())
 
 					// Validate AntiAffinedVmGroupTags contains all expanded labels.
-					expectedAntiAffinityLabels := []string{"tier:frontend", "tier:backend", "tier:middleware"}
+					expectedAntiAffinityLabels := []vimtypes.TagId{
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "tier:frontend",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "tier:backend",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+						{
+							NameId: &vimtypes.TagIdNameId{
+								Tag:      "tier:middleware",
+								Category: vmCtx.VM.Namespace,
+							},
+						},
+					}
 					Expect(policy.AntiAffinedVmGroupTags).To(ConsistOf(expectedAntiAffinityLabels))
 
 					Expect(policy.PolicyStrictness).To(Equal(string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution)))

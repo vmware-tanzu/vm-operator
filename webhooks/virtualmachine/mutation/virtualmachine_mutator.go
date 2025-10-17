@@ -119,6 +119,10 @@ func init() {
 		"create.vmoperator.vmware.com/set-created-at-annotations",
 		(MutateOnCreateFn)(SetCreatedAtAnnotations))
 
+	MutateOnCreateFuncs.Store(
+		"create.vmoperator.vmware.com/set-default-controllers",
+		(MutateOnCreateFn)(SetDefaultControllers))
+
 	MutateOnUpdateFuncs.Store(
 		"update.vmoperator.vmware.com/set-default-cdrom-image-kind",
 		(MutateOnUpdateFn)(SetDefaultCdromImgKindOnUpdate))
@@ -730,6 +734,21 @@ func SetCreatedAtAnnotations(
 	}
 	vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = pkgcfg.FromContext(ctx).BuildVersion
 	vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+	return true, nil
+}
+
+// SetDefaultControllers sets the default device controllers for a VM.
+func SetDefaultControllers(
+	_ *pkgctx.WebhookRequestContext,
+	_ ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) (_ bool, _ error) {
+	if vm.Spec.Hardware == nil {
+		vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+	}
+	vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+		{BusNumber: 0},
+		{BusNumber: 1},
+	}
 	return true, nil
 }
 

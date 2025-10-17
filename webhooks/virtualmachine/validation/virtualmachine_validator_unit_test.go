@@ -6299,7 +6299,7 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		XEntry("disallow change when upgradedToBuildVersion is missing",
+		Entry("disallow BiosUUID change when upgradedToBuildVersion annotation is missing",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
@@ -6308,25 +6308,54 @@ func unitTestsValidateUpdate() {
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
+					// Change a field that is validated during schema upgrade
+					ctx.vm.Spec.BiosUUID = "new-bios-uuid"
 				},
 				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`metadata.annotations[vmoperator.vmware.com/upgraded-to-build-version]: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.biosUUID: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
 			},
 		),
 
-		XEntry("disallow change when upgradedToSchemaVersion is missing",
+		Entry("disallow IDEControllers change when upgradedToSchemaVersion annotation is missing",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
+					// Change a field that is validated during schema upgrade
+					if ctx.vm.Spec.Hardware == nil {
+						ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+					}
+					ctx.vm.Spec.Hardware.IDEControllers = []vmopv1.IDEControllerSpec{
+						{BusNumber: 0},
+						{BusNumber: 1},
+					}
 				},
 				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
 				validate: doValidateWithMsg(
-					`metadata.annotations[vmoperator.vmware.com/upgraded-to-schema-version]: Forbidden: modifying this VM is not allowed until it is upgraded`,
+					`spec.hardware.ideControllers: Forbidden: modifying this VM is not allowed until it is upgraded`,
 				),
+			},
+		),
+
+		Entry("allow change to unrestricted field when upgradedToBuildVersion annotation is missing",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.BuildVersion = fake
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					// Change a field that is NOT validated during schema upgrade
+					ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
 			},
 		),
 

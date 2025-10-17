@@ -1172,7 +1172,7 @@ func (v validator) validateVolumes(
 			allErrs = append(allErrs, field.Required(volPath.Child("persistentVolumeClaim"), ""))
 		} else {
 			allErrs = append(allErrs,
-				v.validateVolumeWithPVC(ctx, oldVolumesMap[vol.Name], vol, volPath)...)
+				v.validateVolumeWithPVC(ctx, oldVM, vm, oldVolumesMap[vol.Name], vol, volPath)...)
 		}
 	}
 
@@ -1180,7 +1180,8 @@ func (v validator) validateVolumes(
 }
 
 func (v validator) validateVolumeWithPVC(
-	_ *pkgctx.WebhookRequestContext,
+	ctx *pkgctx.WebhookRequestContext,
+	oldVM, vm *vmopv1.VirtualMachine,
 	oldVol *vmopv1.VirtualMachineVolume,
 	vol vmopv1.VirtualMachineVolume,
 	volPath *field.Path) field.ErrorList {
@@ -1232,7 +1233,171 @@ func (v validator) validateVolumeWithPVC(
 			pvcPath.Child("unitNumber"))...)
 	}
 
+	// Validate PVC access mode, sharing mode, and controller combinations
+	// if VM is being created or the PVC is being updated.
+	// We skip the validation if the PVC is not being updated because
+	// we want to avoid rejecting an update because of an external state change.
+	volumeChanged := oldVol == nil || !equality.Semantic.DeepEqual(
+		*oldVol,
+		vol,
+	)
+	hardwareChanged := oldVM == nil || vm == nil || !equality.Semantic.DeepEqual(
+		oldVM.Spec.Hardware,
+		vm.Spec.Hardware,
+	)
+
+	if !ctx.IsPrivilegedAccount && (volumeChanged || hardwareChanged) {
+		allErrs = append(allErrs,
+			v.validatePVCAccessModeAndSharingModeCombinations(
+				ctx,
+				vm,
+				vol,
+				volPath,
+			)...,
+		)
+
+	} else {
+		ctx.Logger.V(4).Info(
+			"Skipping PVC access mode and sharing mode combinations validation",
+			"volume", vol.Name,
+			"volumeChanged", volumeChanged,
+			"hardwareChanged", hardwareChanged,
+			"isPrivilegedAccount", ctx.IsPrivilegedAccount,
+		)
+	}
+
 	return allErrs
+}
+
+// validatePVCAccessModeAndSharingModeCombinations validates the combinations
+// of PVC access mode, volume sharing mode, and controller sharing mode
+// according to the business rules.
+func (v validator) validatePVCAccessModeAndSharingModeCombinations(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume,
+	volPath *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+	pvcPath := volPath.Child("persistentVolumeClaim")
+
+	// Skip validation if claim name is empty (handled by required validation)
+	if vol.PersistentVolumeClaim.ClaimName == "" {
+		return allErrs
+	}
+
+	// Fetch the PVC to get its access modes
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := v.client.Get(ctx, ctrlclient.ObjectKey{
+		Namespace: ctx.Namespace,
+		Name:      vol.PersistentVolumeClaim.ClaimName,
+	}, pvc); err != nil {
+		// If the PVC doesn't exist, skip validation
+		// The PVC existence will be validated elsewhere or at runtime
+		if apierrors.IsNotFound(err) {
+			return allErrs
+		}
+		// For other errors, return the error
+		allErrs = append(allErrs, field.Invalid(pvcPath.Child("claimName"),
+			vol.PersistentVolumeClaim.ClaimName, err.Error()))
+		return allErrs
+	}
+
+	// Get the controller sharing mode for the specified controller
+	controllerSharingMode := v.getControllerSharingMode(
+		ctx,
+		vm,
+		vol.PersistentVolumeClaim.ControllerType,
+		vol.PersistentVolumeClaim.ControllerBusNumber,
+	)
+
+	// Rule 1: If volume is ReadWriteOnce, the disk's sharing mode cannot be
+	// MultiWriter and the controller's sharing mode cannot be Physical.
+	if slices.Contains(pvc.Spec.AccessModes, corev1.ReadWriteOnce) {
+		if vol.PersistentVolumeClaim.SharingMode == vmopv1.VolumeSharingModeMultiWriter {
+			allErrs = append(allErrs,
+				field.Invalid(
+					pvcPath.Child("sharingMode"),
+					vol.PersistentVolumeClaim.SharingMode,
+					fmt.Sprintf("Disk MultiWriter sharing mode is not allowed "+
+						"for ReadWriteOnce volumes for PVC %s",
+						vol.PersistentVolumeClaim.ClaimName),
+				),
+			)
+		}
+
+		if controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical {
+			allErrs = append(allErrs,
+				field.Invalid(
+					pvcPath.Child("controllerType"),
+					vol.PersistentVolumeClaim.ControllerType,
+					fmt.Sprintf("Physical controller sharing mode is not "+
+						"allowed for ReadWriteOnce volume for PVC %s",
+						vol.PersistentVolumeClaim.ClaimName),
+				),
+			)
+		}
+	}
+
+	// Rule 2: If volume is ReadWriteMany, either the disk's sharing mode
+	// is MultiWriter or the controller's sharing mode should be Physical
+	if slices.Contains(pvc.Spec.AccessModes, corev1.ReadWriteMany) {
+		// Check if neither condition is met
+		hasMultiWriterSharing := vol.PersistentVolumeClaim.SharingMode == vmopv1.VolumeSharingModeMultiWriter
+		hasPhysicalController := controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical
+
+		if !hasMultiWriterSharing && !hasPhysicalController {
+			allErrs = append(allErrs,
+				field.Invalid(
+					pvcPath.Child("accessModes"),
+					pvc.Spec.AccessModes,
+					fmt.Sprintf(
+						"Either disk sharing mode must be MultiWriter or "+
+							"controller sharing mode must be Physical for "+
+							"ReadWriteMany volume for PVC %s",
+						vol.PersistentVolumeClaim.ClaimName,
+					),
+				),
+			)
+		}
+	}
+
+	return allErrs
+}
+
+// getControllerSharingMode gets the sharing mode of the specified controller
+// from the VM hardware spec.
+// Returns the sharing mode if the controller was found and it supports
+// sharing mode, otherwise returns None.
+func (v validator) getControllerSharingMode(
+	_ *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	controllerType vmopv1.VirtualControllerType,
+	controllerBusNumber *int32) vmopv1.VirtualControllerSharingMode {
+
+	if vm.Spec.Hardware == nil ||
+		controllerType == "" ||
+		controllerBusNumber == nil {
+		return vmopv1.VirtualControllerSharingModeNone
+	}
+
+	// Find the controller with the specified type and bus number
+	switch controllerType {
+	case vmopv1.VirtualControllerTypeSCSI:
+		for _, controller := range vm.Spec.Hardware.SCSIControllers {
+			if controller.BusNumber == *controllerBusNumber {
+				return controller.SharingMode
+			}
+		}
+	case vmopv1.VirtualControllerTypeNVME:
+		for _, controller := range vm.Spec.Hardware.NVMEControllers {
+			if controller.BusNumber == *controllerBusNumber {
+				return controller.SharingMode
+			}
+		}
+	}
+
+	return vmopv1.VirtualControllerSharingModeNone
 }
 
 // validateInstanceStorageVolumes validates if instance storage volumes are added/modified.

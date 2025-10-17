@@ -58,6 +58,7 @@ const (
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
 	dummyClusterModuleAnnVal       = "dummy-cluster-module"
 	dummyGroupName                 = "dummy-group"
+	dummyPVCName                   = "dummy-pvc"
 	vmiKind                        = "VirtualMachineImage"
 	cvmiKind                       = "Cluster" + vmiKind
 	invalidKind                    = "InvalidKind"
@@ -2566,7 +2567,6 @@ func unitTestsValidateCreate() {
 				},
 			),
 		)
-
 		DescribeTable("network create - host and domain names", doTest,
 
 			Entry("allow simple host name",
@@ -3814,6 +3814,239 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
+		)
+	})
+
+	Context("PVC Access Mode and Sharing Mode Combinations", func() {
+		DescribeTable("validate PVC access mode and sharing mode combinations",
+			func(testName string, setup func(*unitValidatingWebhookContext), expectAllowed bool) {
+				setup(ctx)
+
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(expectAllowed))
+			},
+
+			Entry("should allow ReadWriteOnce volume with None sharing mode and None controller",
+				"readwriteonce-none-sharing-none-controller",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteOnce volume and None sharing mode
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
+
+					// Add SCSI controller with None sharing mode
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						},
+					}
+				},
+				true),
+
+			Entry("should reject ReadWriteOnce volume with MultiWriter sharing mode "+
+				"and PVC with ReadWriteOnce access mode",
+				"readwriteonce-multiwriter-sharing-pvc-readwriteonce",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteOnce volume and MultiWriter sharing mode
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+				},
+				false,
+			),
+
+			Entry("should reject ReadWriteOnce volume with Physical controller sharing mode",
+				"readwriteonce-physical-controller",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteOnce volume and Physical controller
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
+
+					// Add SCSI controller with Physical sharing mode
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+							},
+						},
+					}
+				},
+				false),
+
+			Entry("should allow ReadWriteMany volume with MultiWriter sharing mode",
+				"readwritemany-multiwriter-sharing",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteMany PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteMany volume and MultiWriter sharing mode
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+				},
+				true,
+			),
+
+			Entry("should allow ReadWriteMany volume with Physical controller",
+				"readwritemany-physical-controller",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteMany PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteMany volume and Physical controller
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
+
+					// Add SCSI controller with Physical sharing mode
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+							},
+						},
+					}
+				},
+				true,
+			),
+
+			Entry("should reject ReadWriteMany volume with neither MultiWriter sharing mode nor Physical controller",
+				"readwritemany-neither-multiwriter-nor-physical",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteMany PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteMany volume but neither MultiWriter nor Physical controller
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeNone
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
+
+					// Add SCSI controller with None sharing mode
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						},
+					}
+				},
+				false),
+
+			Entry("should allow ReadWriteMany volume with both MultiWriter sharing mode and Physical controller",
+				"readwritemany-both-multiwriter-and-physical",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteMany PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Configure VM with ReadWriteMany volume with both MultiWriter and Physical controller
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = dummyPVCName
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.SharingMode = vmopv1.VolumeSharingModeMultiWriter
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerType = vmopv1.VirtualControllerTypeSCSI
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ControllerBusNumber = ptr.To[int32](0)
+
+					// Add SCSI controller with Physical sharing mode
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   0,
+								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+							},
+						},
+					}
+				},
+				true,
+			),
+
+			Entry("should handle missing PVC gracefully",
+				"missing-pvc",
+				func(ctx *unitValidatingWebhookContext) {
+					// Configure VM with non-existent PVC
+					ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "non-existent-pvc"
+				},
+				true),
 		)
 	})
 
@@ -7026,6 +7259,245 @@ func unitTestsValidateUpdate() {
 						field.Invalid(field.NewPath("spec", "volumes").Index(0).Child("persistentVolumeClaim").Child("unmanagedVolumeClaim"), nil, apivalidation.FieldImmutableErrorMsg).Error(),
 					),
 				},
+			),
+		)
+	})
+
+	Context("PVC Access Mode and Sharing Mode Combinations", func() {
+		DescribeTable("validate PVC access mode and sharing mode combinations",
+			func(testName string,
+				setup func(*unitValidatingWebhookContext),
+				expectAllowed bool) {
+
+				setup(ctx)
+
+				var err error
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(expectAllowed))
+			},
+			Entry("should reject when only volume is updated with invalid combination",
+				"only-volume-updated-invalid",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{
+								corev1.ReadWriteOnce,
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Ensure oldVM and vm have the same hardware
+					scsiController := vmopv1.SCSIControllerSpec{
+						BusNumber:   0,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					}
+					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							scsiController,
+						},
+					}
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							scsiController,
+						},
+					}
+
+					// Configure oldVM with a valid volume
+					oldVol := vmopv1.VirtualMachineVolume{
+						Name: "old-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+								SharingMode: vmopv1.VolumeSharingModeNone,
+							},
+						},
+					}
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{oldVol}
+
+					// Configure vm with an invalid volume (ReadWriteOnce with MultiWriter)
+					newVol := vmopv1.VirtualMachineVolume{
+						Name: "new-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+							},
+						},
+					}
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{newVol}
+				},
+				false,
+			),
+
+			Entry("should reject when only hardware is updated with invalid combination",
+				"only-hardware-updated-invalid",
+				func(ctx *unitValidatingWebhookContext) {
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Ensure oldVM and vm have the same volume
+					vol := vmopv1.VirtualMachineVolume{
+						Name: "test-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+								SharingMode:         vmopv1.VolumeSharingModeNone,
+								ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+								ControllerBusNumber: ptr.To[int32](0),
+							},
+						},
+					}
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{vol}
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{vol}
+
+					// Configure oldVM with a valid controller (None sharing)
+					oldScsiController := vmopv1.SCSIControllerSpec{
+						BusNumber:   0,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					}
+					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							oldScsiController,
+						},
+					}
+
+					// Configure vm with an invalid controller (Physical sharing)
+					newScsiController := vmopv1.SCSIControllerSpec{
+						BusNumber:   0,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					}
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							newScsiController,
+						},
+					}
+				},
+				false,
+			),
+
+			Entry("should allow when neither volume nor hardware has changed",
+				"neither-volume-nor-hardware-changed",
+				func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+						{
+							Name: "non-existent-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "non-existent-pvc",
+									},
+									SharingMode: vmopv1.VolumeSharingModeNone,
+								},
+							},
+						},
+					}
+
+					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							{
+								BusNumber:   1,
+								SharingMode: vmopv1.VirtualControllerSharingModeNone,
+							},
+						},
+					}
+
+					ctx.vm = ctx.oldVM.DeepCopy()
+				},
+				true,
+			),
+
+			Entry("should allow when privileged account updates with invalid combination",
+				"privileged-account-invalid-combination",
+				func(ctx *unitValidatingWebhookContext) {
+					// Mark as privileged account
+					ctx.IsPrivilegedAccount = true
+
+					// Create a ReadWriteOnce PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dummyPVCName,
+							Namespace: ctx.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{
+								corev1.ReadWriteOnce,
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+					// Ensure oldVM and vm have the same hardware
+					scsiController := vmopv1.SCSIControllerSpec{
+						BusNumber:   0,
+						SharingMode: vmopv1.VirtualControllerSharingModeNone,
+					}
+					ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							scsiController,
+						},
+					}
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						SCSIControllers: []vmopv1.SCSIControllerSpec{
+							scsiController,
+						},
+					}
+
+					// Configure oldVM with a valid volume
+					oldVol := vmopv1.VirtualMachineVolume{
+						Name: "old-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+								SharingMode: vmopv1.VolumeSharingModeNone,
+							},
+						},
+					}
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{oldVol}
+
+					// Configure vm with an invalid volume (ReadWriteOnce with MultiWriter)
+					// but should be allowed for privileged account
+					newVol := vmopv1.VirtualMachineVolume{
+						Name: "new-volume",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: dummyPVCName,
+								},
+								SharingMode: vmopv1.VolumeSharingModeMultiWriter,
+							},
+						},
+					}
+					ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{newVol}
+				},
+				true,
 			),
 		)
 	})

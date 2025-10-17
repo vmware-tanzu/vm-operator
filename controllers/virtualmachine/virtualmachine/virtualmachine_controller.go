@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -52,6 +53,7 @@ import (
 const (
 	deprecatedFinalizerName = "virtualmachine.vmoperator.vmware.com"
 	finalizerName           = "vmoperator.vmware.com/virtualmachine"
+	snapshotFinalizerName   = "vmoperator.vmware.com/virtualmachinesnapshots"
 )
 
 // SkipNameValidation is used for testing to allow multiple controllers with the
@@ -134,7 +136,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 
 	// Watch VirtualMachineSnapshot resources to trigger VM reconciliation
-	// when snapshots are created or updated.
+	// when snapshots are created/updated (only for not ready snapshots) or deleted.
 	// We could also use the owner reference to queue the request, but on
 	// the off chance that the owner ref has not been set, use a custom mapper.
 	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
@@ -456,11 +458,16 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 		controllerutil.RemoveFinalizer(ctx.VM, finalizerName)
 		controllerutil.RemoveFinalizer(ctx.VM, deprecatedFinalizerName)
+
+		r.vmMetrics.DeleteMetrics(ctx)
+		r.Prober.RemoveFromProberManager(ctx.VM)
 	}
 
-	// BMV: Shouldn't these be in the ContainsFinalizer block?
-	r.vmMetrics.DeleteMetrics(ctx)
-	r.Prober.RemoveFromProberManager(ctx.VM)
+	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
+		if err := r.cleanupSnapshotAndRemoveFinalizer(ctx); err != nil {
+			return fmt.Errorf("failed to remove snapshot finalizer: %w", err)
+		}
+	}
 
 	ctx.Logger.Info("Finished Reconciling VirtualMachine Deletion")
 	return nil
@@ -486,6 +493,16 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		// object, and then we'll proceed on the next reconciliation.
 		controllerutil.AddFinalizer(ctx.VM, finalizerName)
 		return nil
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMSnapshots {
+		// Add snapshot finalizer based on whether the VM has any VMSnapshots
+		if addSnapshotFinalizer(ctx) {
+			// The finalizer must be present before proceeding in order to ensure that the VM will
+			// be cleaned up. Return immediately after here to let the patcher helper update the
+			// object, and then we'll proceed on the next reconciliation.
+			return nil
+		}
 	}
 
 	ctx.Logger.Info("Reconciling VirtualMachine")
@@ -719,4 +736,63 @@ func filterNoRequeueErr(err error) error {
 		return nil
 	}
 	return err
+}
+
+// cleanupSnapshotAndRemoveFinalizer removes the snapshot finalizer if the VM
+// has no snapshots.
+// Otherwise, it tries to delete all snapshots and returns a NoRequeueError so
+// the VM will be reconciled again when snapshots are actually deleted.
+func (r *Reconciler) cleanupSnapshotAndRemoveFinalizer(ctx *pkgctx.VirtualMachineContext) error {
+	if !controllerutil.ContainsFinalizer(ctx.VM, snapshotFinalizerName) {
+		return nil
+	}
+
+	// List all snapshots for this VM
+	snapshotList := &vmopv1.VirtualMachineSnapshotList{}
+	if err := r.List(
+		ctx,
+		snapshotList,
+		client.InNamespace(ctx.VM.Namespace),
+		client.MatchingLabels{
+			vmopv1.VMNameForSnapshotLabel: ctx.VM.Name,
+		}); err != nil {
+		return fmt.Errorf("failed to list VirtualMachineSnapshots with label %q=%q: %w",
+			vmopv1.VMNameForSnapshotLabel, ctx.VM.Name, err)
+	}
+
+	if len(snapshotList.Items) == 0 {
+		ctx.Logger.V(4).Info("No snapshots found for VM, removing finalizer")
+		controllerutil.RemoveFinalizer(ctx.VM, snapshotFinalizerName)
+
+		return nil
+	}
+
+	for _, snapshot := range snapshotList.Items {
+		if !snapshot.DeletionTimestamp.IsZero() {
+			continue
+		}
+		var errs []error
+		if err := r.Delete(ctx, &snapshot); err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete snapshot %q: %w", snapshot.Name, err))
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("failed to delete snapshots: %w", apierrorsutil.NewAggregate(errs))
+		}
+	}
+
+	// Return a noRequeueError to requeue if there are remaining snapshots,
+	// as we wait for VMSnapshot events to trigger the next reconciliation.
+	return pkgerr.NoRequeueError{
+		Message: "VM has snapshots, keep snapshot finalizer",
+	}
+}
+
+// addSnapshotFinalizer adds the snapshot finalizer.
+// Returns true if the snapshot finalizer is added, false if it's a no-op.
+func addSnapshotFinalizer(ctx *pkgctx.VirtualMachineContext) bool {
+	if controllerutil.ContainsFinalizer(ctx.VM, snapshotFinalizerName) {
+		return false
+	}
+
+	return controllerutil.AddFinalizer(ctx.VM, snapshotFinalizerName)
 }

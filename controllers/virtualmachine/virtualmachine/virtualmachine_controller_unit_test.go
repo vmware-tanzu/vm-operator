@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -160,6 +162,29 @@ func unitTestsReconcile() {
 			err = reconciler.ReconcileNormal(vmCtx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
+		})
+
+		Context("Snapshot feature enabled", func() {
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMSnapshots = true
+				})
+			})
+
+			It("will add snapshot finalizer", func() {
+				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				Expect(vm.GetFinalizers()).To(ContainElement("vmoperator.vmware.com/virtualmachinesnapshots"))
+			})
+
+			When("Called multiple times", func() {
+				It("will add snapshot finalizer only once", func() {
+					Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+					Expect(vm.GetFinalizers()).To(ContainElement("vmoperator.vmware.com/virtualmachinesnapshots"))
+
+					Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+					Expect(vm.GetFinalizers()).To(ContainElement("vmoperator.vmware.com/virtualmachinesnapshots"))
+				})
+			})
 		})
 
 		Context("ProberManager", func() {
@@ -442,22 +467,107 @@ func unitTestsReconcile() {
 				doNotExpectEvent(ctx, "DeleteSuccess")
 			})
 		})
+
+		Context("Snapshot feature enabled", func() {
+			BeforeEach(func() {
+				vm.Finalizers = append(vm.Finalizers, "vmoperator.vmware.com/virtualmachinesnapshots")
+				initObjects = nil
+				initObjects = append(initObjects, vm)
+			})
+
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMSnapshots = true
+				})
+			})
+
+			When("VM has no snapshots", func() {
+				It("delete successfully", func() {
+					Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
+
+					expectEvents(ctx, "DeleteSuccess")
+				})
+			})
+
+			When("There are snapshots", func() {
+				var vmSnapshot *vmopv1.VirtualMachineSnapshot
+
+				BeforeEach(func() {
+					vmSnapshot = &vmopv1.VirtualMachineSnapshot{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "dummy-snapshot",
+							Namespace: "dummy-ns",
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: "vmoperator.vmware.com/v1alpha5",
+									Kind:       "VirtualMachine",
+									Name:       vm.Name,
+								},
+							},
+							Labels: map[string]string{
+								vmopv1.VMNameForSnapshotLabel: vm.Name,
+							},
+						},
+					}
+				})
+
+				When("Snapshots belongs to the VM", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, vmSnapshot)
+					})
+
+					It("will delete snapshots first, then delete VM", func() {
+						// First reconciliation should initiate snapshot deletion
+						err := reconciler.ReconcileDelete(vmCtx)
+						Expect(err).To(HaveOccurred())
+						Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+
+						// Wait for snapshot deletion
+						Eventually(func() bool {
+							err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmSnapshot), vmSnapshot)
+							return apierrors.IsNotFound(err)
+						}, time.Second*10).Should(BeTrue())
+
+						// Second reconciliation should complete VM deletion
+						Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
+					})
+				})
+
+				When("Snapshots does not belong to the VM", func() {
+					BeforeEach(func() {
+						vmSnapshot.OwnerReferences[0].Name = "other-vm"
+						vmSnapshot.Labels[vmopv1.VMNameForSnapshotLabel] = "other-vm"
+						initObjects = append(initObjects, vmSnapshot)
+					})
+
+					It("will delete the VM", func() {
+						Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
+
+						expectEvents(ctx, "DeleteSuccess")
+					})
+				})
+			})
+		})
 	})
 }
 
 func expectEvents(ctx *builder.UnitTestContextForController, eventStrs ...string) {
+	GinkgoHelper()
+
 	for _, s := range eventStrs {
 		var event string
-		EventuallyWithOffset(1, ctx.Events).Should(Receive(&event), "receive expected event: "+s)
+		Eventually(ctx.Events).Should(Receive(&event), "receive expected event: "+s)
 		eventComponents := strings.Split(event, " ")
-		ExpectWithOffset(1, eventComponents[1]).To(Equal(s))
+		Expect(eventComponents[1]).To(Equal(s))
 	}
-	ConsistentlyWithOffset(1, ctx.Events).ShouldNot(Receive())
+	Consistently(ctx.Events).ShouldNot(Receive())
 }
 
 func doNotExpectEvent(ctx *builder.UnitTestContextForController, eventStr string) {
-	ConsistentlyWithOffset(1, func(g Gomega) {
+	GinkgoHelper()
+
+	Consistently(func(g Gomega) {
 		var event string
-		ConsistentlyWithOffset(1, ctx.Events).ShouldNot(Receive(&event), "receive expected event: "+eventStr)
+		Consistently(ctx.Events).ShouldNot(Receive(&event), "receive expected event: "+eventStr)
 	}).Should(Succeed())
 }

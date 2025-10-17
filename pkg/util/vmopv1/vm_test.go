@@ -1010,3 +1010,117 @@ var _ = DescribeTable("ConvertPowerState",
 		vmopv1.VirtualMachinePowerStateOff,
 	),
 )
+
+var _ = Describe("SnapshotToVMMapperFn", func() {
+	var (
+		ctx    context.Context
+		logger logr.Logger
+		mapFn  func(_ context.Context, o ctrlclient.Object) []reconcile.Request
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		logger = logr.Discard()
+		mapFn = vmopv1util.SnapshotToVMMapperFn(ctx, logger)
+	})
+
+	Context("when snapshot has no VM name set", func() {
+		var snapshot *vmopv1.VirtualMachineSnapshot
+
+		BeforeEach(func() {
+			snapshot = &vmopv1.VirtualMachineSnapshot{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-snapshot",
+					Namespace: "test-namespace",
+				},
+				Spec: vmopv1.VirtualMachineSnapshotSpec{
+					VMName: "", // No VM reference
+				},
+			}
+		})
+
+		It("should return empty reconcile requests", func() {
+			reqs := mapFn(ctx, snapshot)
+			Expect(reqs).To(BeEmpty())
+		})
+	})
+
+	Context("when snapshot has VM name set", func() {
+		var snapshot *vmopv1.VirtualMachineSnapshot
+
+		BeforeEach(func() {
+			snapshot = &vmopv1.VirtualMachineSnapshot{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-snapshot",
+					Namespace: "test-namespace",
+				},
+				Spec: vmopv1.VirtualMachineSnapshotSpec{
+					VMName: "test-vm",
+				},
+			}
+		})
+
+		Context("and snapshot is being deleted", func() {
+			BeforeEach(func() {
+				now := metav1.Now()
+				snapshot.DeletionTimestamp = &now
+			})
+
+			It("should return reconcile request for the VM", func() {
+				reqs := mapFn(ctx, snapshot)
+				Expect(reqs).To(HaveLen(1))
+				Expect(reqs[0].NamespacedName).To(Equal(types.NamespacedName{
+					Namespace: "test-namespace",
+					Name:      "test-vm",
+				}))
+			})
+		})
+
+		Context("and snapshot is not ready", func() {
+			BeforeEach(func() {
+				snapshot.Status.Conditions = []metav1.Condition{
+					{
+						Type:   vmopv1.VirtualMachineSnapshotReadyCondition,
+						Status: metav1.ConditionFalse,
+					},
+				}
+			})
+
+			It("should return reconcile request for the VM", func() {
+				reqs := mapFn(ctx, snapshot)
+				Expect(reqs).To(HaveLen(1))
+				Expect(reqs[0].NamespacedName).To(Equal(types.NamespacedName{
+					Namespace: "test-namespace",
+					Name:      "test-vm",
+				}))
+			})
+		})
+
+		Context("and snapshot is ready", func() {
+			BeforeEach(func() {
+				snapshot.Status.Conditions = []metav1.Condition{
+					{
+						Type:   vmopv1.VirtualMachineSnapshotReadyCondition,
+						Status: metav1.ConditionTrue,
+					},
+				}
+			})
+
+			It("should return empty reconcile requests", func() {
+				reqs := mapFn(ctx, snapshot)
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+
+		Context("and snapshot has no conditions", func() {
+			It("should return reconcile request for the VM", func() {
+				reqs := mapFn(ctx, snapshot)
+				Expect(reqs).To(HaveLen(1))
+				Expect(reqs[0].NamespacedName).To(Equal(types.NamespacedName{
+					Namespace: "test-namespace",
+					Name:      "test-vm",
+				}))
+			})
+		})
+	})
+})

@@ -639,21 +639,14 @@ func SetDefaultInstanceUUID(
 	return false, nil
 }
 
-// SetDefaultBiosUUID sets a default bios uuid for a new VM.
-// If CloudInit is the Bootstrap method, CloudInit InstanceID is also set to
-// BiosUUID.
+// SetDefaultBiosUUID sets a default bios uuid for a new VM if one was not
+// provided. If CloudInit is the Bootstrap method, CloudInit InstanceID
+// is also set to BiosUUID.
 // Return true if a default bios uuid was set, otherwise false.
 func SetDefaultBiosUUID(
 	ctx *pkgctx.WebhookRequestContext,
 	client ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
-
-	// DevOps users are not allowed to set spec.biosUUID when creating a VM.
-	if !ctx.IsPrivilegedAccount && vm.Spec.BiosUUID != "" {
-		return false, field.Forbidden(
-			field.NewPath("spec", "biosUUID"),
-			"only privileged users may set this field")
-	}
 
 	var wasMutated bool
 

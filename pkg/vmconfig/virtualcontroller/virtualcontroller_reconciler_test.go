@@ -334,7 +334,6 @@ var _ = Describe("Reconcile", func() {
 						vimtypes.VirtualDeviceConfigSpecOperationAdd,
 						int32(0),
 						nil,
-						ptr.To[int32](-1),
 						vimtypes.VirtualNVMEControllerSharingNoSharing,
 					)
 				})
@@ -397,7 +396,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationRemove,
 							int32(1),
 							nil,
-							nil,
 							vimtypes.VirtualNVMEControllerSharingNoSharing,
 						)
 						assertNVMEControllerDeviceChange(
@@ -406,7 +404,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(0),
 							nil,
-							ptr.To[int32](-1),
 							vimtypes.VirtualNVMEControllerSharingNoSharing,
 						)
 					})
@@ -437,13 +434,20 @@ var _ = Describe("Reconcile", func() {
 						)
 					})
 
-					It("should create two new NVME controllers, and having different deviceKey", func() {
+					It("should create two more NVME controllers, and having different deviceKey", func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
 						Expect(configSpec.DeviceChange).To(HaveLen(2))
-						_, ok := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualNVMEController)
+						d1, ok := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualNVMEController)
 						Expect(ok).To(BeTrue())
-						_, ok = configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualNVMEController)
+						d2, ok := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualNVMEController)
 						Expect(ok).To(BeTrue())
+						// Compare DeviceKey first since it's not deterministic
+						// which device will get what key value.
+						Expect([]int32{-1, -2}).To(ConsistOf(
+							d1.Key,
+							d2.Key,
+						))
+
 						// Sort the DeviceChange by bus number so the order is
 						// deterministic.
 						sort.SliceStable(configSpec.DeviceChange, func(i, j int) bool {
@@ -458,7 +462,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(1),
 							nil,
-							ptr.To[int32](-1),
 							vimtypes.VirtualNVMEControllerSharingPhysicalSharing,
 						)
 						assertNVMEControllerDeviceChange(
@@ -467,7 +470,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(2),
 							nil,
-							ptr.To[int32](-2),
 							vimtypes.VirtualNVMEControllerSharingPhysicalSharing,
 						)
 					})
@@ -503,7 +505,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationEdit,
 							int32(0),
 							ptr.To(int32(1)),
-							nil,
 							vimtypes.VirtualNVMEControllerSharingNoSharing,
 						)
 					})
@@ -523,7 +524,6 @@ var _ = Describe("Reconcile", func() {
 							0,
 							vimtypes.VirtualDeviceConfigSpecOperationEdit,
 							int32(0),
-							nil,
 							nil,
 							vimtypes.VirtualNVMEControllerSharingPhysicalSharing,
 						)
@@ -577,7 +577,6 @@ var _ = Describe("Reconcile", func() {
 						vimtypes.VirtualDeviceConfigSpecOperationAdd,
 						int32(0),
 						nil,
-						ptr.To[int32](-1),
 					)
 				})
 
@@ -629,7 +628,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationRemove,
 							int32(1),
 							nil,
-							nil,
 						)
 						assertSATAControllerDeviceChange(
 							configSpec.DeviceChange,
@@ -637,7 +635,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(0),
 							nil,
-							ptr.To[int32](-1),
 						)
 					})
 				})
@@ -669,10 +666,16 @@ var _ = Describe("Reconcile", func() {
 					It("should create two more SATA controllers, and having different deviceKey", func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
 						Expect(configSpec.DeviceChange).To(HaveLen(2))
-						_, ok := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualAHCIController)
+						d1, ok := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualAHCIController)
 						Expect(ok).To(BeTrue())
-						_, ok = configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualAHCIController)
+						d2, ok := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualAHCIController)
 						Expect(ok).To(BeTrue())
+						// Compare DeviceKey first since it's not deterministic
+						// which device will get what key value.
+						Expect([]int32{-1, -2}).To(ConsistOf(
+							d1.Key,
+							d2.Key,
+						))
 						// Sort the DeviceChange by bus number so the order is
 						// deterministic.
 						sort.SliceStable(configSpec.DeviceChange, func(i, j int) bool {
@@ -687,7 +690,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(1),
 							nil,
-							ptr.To[int32](-1),
 						)
 						assertSATAControllerDeviceChange(
 							configSpec.DeviceChange,
@@ -695,7 +697,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(2),
 							nil,
-							ptr.To[int32](-2),
 						)
 					})
 				})
@@ -731,7 +732,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationEdit,
 							int32(0),
 							ptr.To(int32(1)),
-							nil,
 						)
 					})
 				})
@@ -787,7 +787,6 @@ var _ = Describe("Reconcile", func() {
 						vimtypes.VirtualDeviceConfigSpecOperationAdd,
 						int32(0),
 						nil,
-						ptr.To[int32](-1),
 						vimtypes.VirtualSCSISharingNoSharing,
 						vmopv1.SCSIControllerTypeParaVirtualSCSI)
 				})
@@ -876,7 +875,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationRemove,
 							int32(1),
 							nil,
-							nil,
 							vimtypes.VirtualSCSISharingPhysicalSharing,
 							vmopv1.SCSIControllerTypeBusLogic,
 						)
@@ -886,7 +884,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(0),
 							nil,
-							ptr.To[int32](-1),
 							vimtypes.VirtualSCSISharingNoSharing,
 							vmopv1.SCSIControllerTypeParaVirtualSCSI,
 						)
@@ -925,10 +922,17 @@ var _ = Describe("Reconcile", func() {
 					It("should create two more SCSI controllers, and having different deviceKey", func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
 						Expect(configSpec.DeviceChange).To(HaveLen(2))
-						_, ok := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(vimtypes.BaseVirtualSCSIController)
+						d1, ok := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(vimtypes.BaseVirtualSCSIController)
 						Expect(ok).To(BeTrue())
-						_, ok = configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec().Device.(vimtypes.BaseVirtualSCSIController)
+						d2, ok := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec().Device.(vimtypes.BaseVirtualSCSIController)
 						Expect(ok).To(BeTrue())
+						// Compare DeviceKey first since it's not deterministic
+						// which device will get what key value.
+						Expect([]int32{-1, -2}).To(ConsistOf(
+							d1.GetVirtualSCSIController().Key,
+							d2.GetVirtualSCSIController().Key,
+						))
+
 						// Sort the DeviceChange by bus number so the order is
 						// deterministic.
 						sort.SliceStable(configSpec.DeviceChange, func(i, j int) bool {
@@ -943,7 +947,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(1),
 							nil,
-							ptr.To[int32](-1),
 							vimtypes.VirtualSCSISharingPhysicalSharing,
 							vmopv1.SCSIControllerTypeLsiLogic)
 						assertSCSIControllerDeviceChange(
@@ -952,7 +955,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(2),
 							nil,
-							ptr.To[int32](-2),
 							vimtypes.VirtualSCSISharingPhysicalSharing,
 							vmopv1.SCSIControllerTypeLsiLogicSAS)
 					})
@@ -990,7 +992,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationEdit,
 							int32(0),
 							ptr.To(int32(2)),
-							nil,
 							vimtypes.VirtualSCSISharingNoSharing,
 							vmopv1.SCSIControllerTypeParaVirtualSCSI)
 					})
@@ -1024,7 +1025,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationEdit,
 							int32(0),
 							nil,
-							nil,
 							vimtypes.VirtualSCSISharingPhysicalSharing,
 							vmopv1.SCSIControllerTypeParaVirtualSCSI)
 					})
@@ -1056,7 +1056,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationRemove,
 							int32(0),
 							nil,
-							nil,
 							vimtypes.VirtualSCSISharingNoSharing,
 							vmopv1.SCSIControllerTypeBusLogic)
 
@@ -1066,7 +1065,6 @@ var _ = Describe("Reconcile", func() {
 							vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							int32(0),
 							nil,
-							ptr.To[int32](-1),
 							vimtypes.VirtualSCSISharingNoSharing,
 							vmopv1.SCSIControllerTypeParaVirtualSCSI)
 					})
@@ -1105,7 +1103,7 @@ func assertNVMEControllerDeviceChange(
 	index int,
 	expectedOperation vimtypes.VirtualDeviceConfigSpecOperation,
 	busNumber int32,
-	pciSlotNumber, deviceKey *int32,
+	pciSlotNumber *int32,
 	sharingMode vimtypes.VirtualNVMEControllerSharing,
 ) {
 
@@ -1125,9 +1123,6 @@ func assertNVMEControllerDeviceChange(
 		Expect(ok).To(BeTrue(), fmt.Sprintf("slot info is not a VirtualDevicePciBusSlotInfo: %v", devNVME.SlotInfo))
 		Expect(slotInfo.PciSlotNumber).To(Equal(*pciSlotNumber), "PCI slot number doesn't match")
 	}
-	if deviceKey != nil {
-		Expect(devNVME.Key).To(Equal(*deviceKey))
-	}
 	Expect(devNVME.SharedBus).To(Equal(string(sharingMode)), "sharing mode doesn't match")
 }
 
@@ -1136,7 +1131,7 @@ func assertSATAControllerDeviceChange(
 	index int,
 	expectedOperation vimtypes.VirtualDeviceConfigSpecOperation,
 	busNumber int32,
-	pciSlotNumber, deviceKey *int32,
+	pciSlotNumber *int32,
 ) {
 
 	GinkgoHelper()
@@ -1155,9 +1150,6 @@ func assertSATAControllerDeviceChange(
 		Expect(ok).To(BeTrue(), "slot info is not a VirtualDevicePciBusSlotInfo")
 		Expect(slotInfo.PciSlotNumber).To(Equal(*pciSlotNumber), "PCI slot number doesn't match")
 	}
-	if deviceKey != nil {
-		Expect(devSATA.Key).To(Equal(*deviceKey))
-	}
 }
 
 func assertSCSIControllerDeviceChange(
@@ -1165,7 +1157,7 @@ func assertSCSIControllerDeviceChange(
 	index int,
 	expectedOperation vimtypes.VirtualDeviceConfigSpecOperation,
 	busNumber int32,
-	pciSlotNumber, deviceKey *int32,
+	pciSlotNumber *int32,
 	sharingMode vimtypes.VirtualSCSISharing,
 	scsiControllerType vmopv1.SCSIControllerType,
 ) {
@@ -1190,7 +1182,4 @@ func assertSCSIControllerDeviceChange(
 		Expect(slotInfo.PciSlotNumber).To(Equal(*pciSlotNumber), "PCI slot number doesn't match")
 	}
 	Expect(devSCSIController.SharedBus).To(Equal(sharingMode), "sharing mode doesn't match")
-	if deviceKey != nil {
-		Expect(devSCSIController.Key).To(Equal(*deviceKey))
-	}
 }

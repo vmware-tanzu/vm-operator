@@ -321,3 +321,11 @@ func isEncryptedStorageClass(
 
 	return false, "", nil
 }
+
+func GetPVC(ctx context.Context, k8sClient ctrlclient.Client, pvcNamespace string, pvcName string) (*corev1.PersistentVolumeClaim, error) {
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: pvcNamespace, Name: pvcName}, pvc); err != nil {
+		return nil, err
+	}
+	return pvc, nil
+}

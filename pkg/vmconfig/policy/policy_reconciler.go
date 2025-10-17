@@ -30,7 +30,7 @@ const ExtraConfigPolicyTagsKey = "vmservice.policy.tags"
 // not yet ready.
 var ErrPolicyNotReady = pkgerr.NoRequeueNoErr("policy not ready")
 
-// Reconcile configures the VM's annotations that should be ExtraConfig.
+// Reconcile configures the VM's Policies and Tags.
 func Reconcile(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,

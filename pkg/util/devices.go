@@ -5,7 +5,9 @@
 package util
 
 import (
+	"path"
 	"reflect"
+	"strings"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
@@ -235,4 +237,93 @@ func GetPreferredDiskFormat[T string | vimtypes.DatastoreSectorFormat](
 	}
 
 	return vimtypes.DatastoreSectorFormat(diskFormats[0])
+}
+
+// VirtualDiskInfo holds basic disk information extracted from a VirtualDisk.
+type VirtualDiskInfo struct {
+	FileName        string
+	Label           string
+	UUID            string
+	DeviceKey       int32
+	CryptoKey       *vimtypes.CryptoKeyId
+	Sharing         vimtypes.VirtualDiskSharing
+	HasParent       bool
+	ControllerKey   int32
+	UnitNumber      *int32
+	CapacityInBytes int64
+	Device          *vimtypes.VirtualDisk
+}
+
+// Name returns the name of the disk to use in the volume status as well as
+// the UnmanagedVolumeSource.ID field.
+func (vdi VirtualDiskInfo) Name() string {
+	if vdi.FileName != "" {
+		return strings.TrimSuffix(path.Base(vdi.FileName), path.Ext(vdi.FileName))
+	}
+	return vdi.Label
+}
+
+// GetVirtualDiskInfo extracts disk information from a VirtualDisk.
+func GetVirtualDiskInfo(
+	vd *vimtypes.VirtualDisk) VirtualDiskInfo {
+
+	var vdi VirtualDiskInfo
+
+	if vd == nil {
+		return vdi
+	}
+
+	vdi.Device = vd
+	vdi.DeviceKey = vd.Key
+	vdi.ControllerKey = vd.ControllerKey
+	vdi.CapacityInBytes = vd.CapacityInBytes
+	vdi.UnitNumber = vd.UnitNumber
+
+	switch tb := vd.Backing.(type) {
+	case *vimtypes.VirtualDiskSeSparseBackingInfo:
+		vdi.FileName = tb.FileName
+		vdi.UUID = tb.Uuid
+		vdi.CryptoKey = tb.KeyId
+		vdi.HasParent = tb.Parent != nil
+	case *vimtypes.VirtualDiskSparseVer1BackingInfo: // No UUID or Crypto
+		vdi.FileName = tb.FileName
+		vdi.HasParent = tb.Parent != nil
+	case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+		vdi.FileName = tb.FileName
+		vdi.UUID = tb.Uuid
+		vdi.CryptoKey = tb.KeyId
+		vdi.HasParent = tb.Parent != nil
+	case *vimtypes.VirtualDiskFlatVer1BackingInfo: // No UUID or Crypto
+		vdi.FileName = tb.FileName
+		vdi.HasParent = tb.Parent != nil
+	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+		vdi.FileName = tb.FileName
+		vdi.UUID = tb.Uuid
+		vdi.CryptoKey = tb.KeyId
+		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+		vdi.HasParent = tb.Parent != nil
+	case *vimtypes.VirtualDiskLocalPMemBackingInfo: // No Crypto
+		vdi.FileName = tb.FileName
+		vdi.UUID = tb.Uuid
+	case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo: // No Crypto
+		vdi.FileName = tb.FileName
+		vdi.UUID = tb.Uuid
+		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+	case *vimtypes.VirtualDiskRawDiskVer2BackingInfo: // No Crypto
+		vdi.FileName = tb.DescriptorFileName
+		vdi.UUID = tb.Uuid
+		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+	case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo: // No Crypto
+		vdi.FileName = tb.DescriptorFileName
+		vdi.UUID = tb.Uuid
+		vdi.Sharing = vimtypes.VirtualDiskSharing(tb.Sharing)
+	}
+
+	if di := vd.DeviceInfo; di != nil {
+		if d := di.GetDescription(); d != nil {
+			vdi.Label = d.Label
+		}
+	}
+
+	return vdi
 }
